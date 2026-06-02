@@ -6,6 +6,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -384,6 +385,94 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         // Should have at least an object ID field
         layerResponse.Fields.Should().Contain(f =>
             f.Name.Equals(layerResponse.ObjectIdField, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
+    public async Task GetLayerMetadata_WithSubtypes_ReturnsSubtypeFieldAndSubtypes()
+    {
+        // honua-server#1378 (#1254): an Esri subtype set carried on the canonical
+        // resource must be served on the FeatureServer layer metadata as
+        // subtypeField / subtypes / defaultSubtypeCode, reusing the shared domain mapper
+        // for per-subtype field domains.
+
+        // Arrange: declare an integer subtype field on the served resource, then attach
+        // a subtype set referencing it (one subtype carries a default value + a domain).
+        var subtypeField = new MetadataV2Field
+        {
+            Name = "buildingtype",
+            Type = MetadataV2FieldType.Integer,
+            Title = "Building Type",
+            Alias = "Building Type",
+            Nullable = true,
+        };
+        _fixture.UpdateV2ResourceSchemaField(TestLayerId, subtypeField);
+
+        var statusOverride = new MetadataV2SubtypeFieldOverride
+        {
+            DefaultValue = JsonSerializer.SerializeToElement("occupied"),
+            Domain = new MetadataV2FieldDomain
+            {
+                Name = "OccupancyDomain",
+                Type = "codedValue",
+                CodedValues =
+                [
+                    new MetadataV2CodedValue { Code = JsonSerializer.SerializeToElement("occupied"), Name = "Occupied" },
+                    new MetadataV2CodedValue { Code = JsonSerializer.SerializeToElement("vacant"), Name = "Vacant" },
+                ],
+            },
+        };
+
+        var subtypes = new MetadataV2Subtypes
+        {
+            SubtypeField = "buildingtype",
+            DefaultSubtypeCode = JsonSerializer.SerializeToElement(1),
+            Subtypes =
+            [
+                new MetadataV2Subtype { Code = JsonSerializer.SerializeToElement(1), Name = "Commercial" },
+                new MetadataV2Subtype
+                {
+                    Code = JsonSerializer.SerializeToElement(2),
+                    Name = "Residential",
+                    FieldOverrides = new Dictionary<string, MetadataV2SubtypeFieldOverride>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        ["status"] = statusOverride,
+                    },
+                },
+            ],
+        };
+
+        try
+        {
+            _fixture.UpdateV2ResourceSubtypes(TestLayerId, subtypes);
+
+            // Act
+            var layerResponse = await GetLayerMetadataAsync();
+
+            // Assert
+            layerResponse.SubtypeField.Should().Be("buildingtype");
+            layerResponse.DefaultSubtypeCode.Should().NotBeNull();
+            layerResponse.DefaultSubtypeCode!.Value.GetInt32().Should().Be(1);
+            layerResponse.Subtypes.Should().NotBeNull();
+            layerResponse.Subtypes!.Select(s => s.Name)
+                .Should().BeEquivalentTo(["Commercial", "Residential"]);
+
+            var residential = layerResponse.Subtypes.Single(s => s.Name == "Residential");
+            residential.Code.GetInt32().Should().Be(2);
+            residential.DefaultValues.Should().NotBeNull();
+            residential.DefaultValues!["status"].GetString().Should().Be("occupied");
+            residential.Domains.Should().NotBeNull();
+            residential.Domains!["status"].Type.Should().Be("codedValue");
+            residential.Domains["status"].CodedValues.Should().NotBeNull();
+            residential.Domains["status"].CodedValues!.Select(v => v.Name)
+                .Should().BeEquivalentTo(["Occupied", "Vacant"]);
+        }
+        finally
+        {
+            // Restore the seeded graph so sibling tests in the collection are unaffected.
+            _fixture.UpdateV2ResourceSubtypes(TestLayerId, null);
+        }
     }
 
     [IntegrationTest]

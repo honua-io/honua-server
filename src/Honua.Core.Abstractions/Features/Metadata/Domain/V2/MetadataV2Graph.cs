@@ -245,6 +245,15 @@ public sealed record MetadataV2Resource
     public MetadataV2PermanentFilter? PermanentFilter { get; init; }
 
     /// <summary>
+    /// Optional Esri-style subtype set partitioning this resource's rows by an integer
+    /// subtype field. Unset for resources with no subtypes. Carried through publish so
+    /// it survives the compat-compile snapshot and is served on the FeatureServer layer
+    /// metadata (<c>subtypeField</c> / <c>subtypes</c> / <c>defaultSubtypeCode</c>).
+    /// </summary>
+    [JsonPropertyName("subtypes")]
+    public MetadataV2Subtypes? Subtypes { get; init; }
+
+    /// <summary>
     /// Optional extrusion metadata used by FeatureServer layer metadata and 3D Tiles generation.
     /// </summary>
     [JsonPropertyName("extrusion")]

@@ -178,7 +178,13 @@ internal static partial class FeatureServerEndpoints
             EditFieldsInfo = null,
             EditingInfo = supportsEditing ? new EditingInfo() : null,
             Templates = [],
-            AdvancedQueryCapabilities = advancedQueryCapabilities
+            AdvancedQueryCapabilities = advancedQueryCapabilities,
+            // Esri subtype surface (subtypeField / subtypes / defaultSubtypeCode) carried
+            // from the canonical resource so it survives import → publish → compat-compile
+            // and reaches Esri clients (honua-server#1378). Omitted when the layer has none.
+            SubtypeField = resource.Subtypes?.SubtypeField,
+            DefaultSubtypeCode = resource.Subtypes?.DefaultSubtypeCode,
+            Subtypes = GeoServicesSubtypeMapper.Map(resource.Subtypes)
         };
     }
 

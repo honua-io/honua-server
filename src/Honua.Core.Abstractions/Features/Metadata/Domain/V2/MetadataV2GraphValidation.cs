@@ -147,8 +147,37 @@ public static class MetadataV2GraphValidator
             ValidateResourceTemporal(errors, resource);
             ValidateResourceSchemaFields(errors, resource);
             ValidateResourceDisplayEditing(errors, resource);
+            ValidateResourceSubtypes(errors, resource);
             ValidateResourceExtrusion(errors, resource);
             ValidateResourceSymbology3D(errors, resource);
+        }
+    }
+
+    private static void ValidateResourceSubtypes(List<string> errors, MetadataV2Resource resource)
+    {
+        var subtypes = resource.Subtypes;
+        if (subtypes is null)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(subtypes.SubtypeField))
+        {
+            errors.Add($"resource '{resource.Metadata.Id}' subtypes.subtypeField is required.");
+        }
+        else
+        {
+            EnsureFieldDeclared(errors, resource, subtypes.SubtypeField, "subtypes.subtypeField");
+        }
+
+        // Per-subtype field overrides must reference declared fields so an Esri client
+        // never receives an override for an attribute the layer does not expose.
+        foreach (var subtype in subtypes.Subtypes)
+        {
+            foreach (var fieldName in subtype.FieldOverrides.Keys)
+            {
+                EnsureFieldDeclared(errors, resource, fieldName, "subtypes.subtypes.fieldOverrides");
+            }
         }
     }
 

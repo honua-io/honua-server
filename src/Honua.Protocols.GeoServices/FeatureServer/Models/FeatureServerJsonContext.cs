@@ -30,6 +30,8 @@ namespace Honua.Protocols.GeoServices.FeatureServer.Models;
 [JsonSerializable(typeof(GeoServicesFieldDomainInfo))]
 [JsonSerializable(typeof(GeoServicesFieldDomainCodedValueInfo))]
 [JsonSerializable(typeof(GeoServicesFieldDomainCodedValueInfo[]))]
+[JsonSerializable(typeof(GeoServicesSubtypeInfo))]
+[JsonSerializable(typeof(GeoServicesSubtypeInfo[]))]
 [JsonSerializable(typeof(QueryResponse))]
 [JsonSerializable(typeof(ServiceQueryResponse))]
 [JsonSerializable(typeof(ServiceQueryLayerResponse))]

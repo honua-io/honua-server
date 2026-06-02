@@ -78,6 +78,16 @@ public sealed class LayerPublishRequest
     /// </summary>
     public IReadOnlyDictionary<string, Honua.Core.Features.Metadata.Domain.V2.MetadataV2FieldDomain> FieldDomains { get; init; }
         = new Dictionary<string, Honua.Core.Features.Metadata.Domain.V2.MetadataV2FieldDomain>(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Optional Esri-style subtype set captured from the migration source. When the
+    /// declared <see cref="Honua.Core.Features.Metadata.Domain.V2.MetadataV2Subtypes.SubtypeField"/>
+    /// matches a published column, the subtypes are carried into the Metadata v2
+    /// resource so they persist into the graph and are served on the FeatureServer
+    /// layer metadata (<c>subtypeField</c> / <c>subtypes</c> / <c>defaultSubtypeCode</c>).
+    /// Null when the source layer declared no subtypes.
+    /// </summary>
+    public Honua.Core.Features.Metadata.Domain.V2.MetadataV2Subtypes? Subtypes { get; init; }
 }
 
 /// <summary>
