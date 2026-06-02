@@ -50,6 +50,16 @@ public class OgcMapsConformanceHandlerTests
 
     [UnitTest]
     [Operation(Operations.Metadata)]
+    public async Task GetConformanceAsync_IncludesStyledMapConformance()
+    {
+        var result = await _handler.GetConformanceAsync();
+
+        result.ConformsTo.Should().Contain(
+            "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/styled-map");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
     public async Task GetConformanceAsync_IncludesDatasetMapConformance()
     {
         var result = await _handler.GetConformanceAsync();
