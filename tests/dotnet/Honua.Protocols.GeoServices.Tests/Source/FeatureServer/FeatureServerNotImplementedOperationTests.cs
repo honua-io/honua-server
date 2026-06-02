@@ -19,6 +19,17 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 /// assertions verify the documented spec shape and honest status codes rather than
 /// fabricated success.
 /// </summary>
+/// <remarks>
+/// The endpoints are intentionally exercised in a handful of grouped test methods
+/// (service reads, service rejections, layer reads, layer rejections) rather than
+/// one method per endpoint. Each <see cref="WebAppFixture"/> initialization seeds an
+/// isolated Postgres schema (several seconds), so grouping keeps this file's
+/// contribution to the FeatureServer test shard to a few fixture inits while still
+/// sending a real HTTP request to every registered route — including both the
+/// happy-path and the invalid-service (404) branch for each operation. Each route is
+/// written as a full literal path so the EndpointRegistry HTTP-backing drift guard
+/// can anchor every registry entry to a same-method request in this file.
+/// </remarks>
 [Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class FeatureServerNotImplementedOperationTests : IAsyncLifetime
@@ -32,352 +43,203 @@ public sealed class FeatureServerNotImplementedOperationTests : IAsyncLifetime
     private static StringContent EmptyJsonBody()
         => new("{}", Encoding.UTF8, "application/json");
 
-    // ----- queryContingentValues -----
+    // ----- Service-level read operations (GET, spec-shaped 200) -----
 
     [IntegrationTest]
-    [Operation(Operations.QueryContingentValues)]
+    [Operation(Operations.QueryContingentValues, Operations.SharedTemplates, Operations.HtmlPopup, Operations.Image)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/queryContingentValues")]
-    public async Task QueryContingentValues_ValidService_ReturnsSpecShapedDocument()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/queryContingentValues?f=json");
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        var content = await response.Content.ReadAsStringAsync();
-        using var document = JsonDocument.Parse(content);
-        var root = document.RootElement;
-
-        root.TryGetProperty("typeCodes", out var typeCodes).Should().BeTrue();
-        typeCodes.ValueKind.Should().Be(JsonValueKind.Array);
-        root.TryGetProperty("contingentValuesDefinitions", out var defs).Should().BeTrue();
-        defs.ValueKind.Should().Be(JsonValueKind.Array);
-        defs.GetArrayLength().Should().Be(0);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.QueryContingentValues)]
-    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/queryContingentValues")]
-    public async Task QueryContingentValues_InvalidService_ReturnsNotFound()
-    {
-        var response = await _fixture.Client.GetAsync(
-            "/rest/services/nonexistent/FeatureServer/queryContingentValues?f=json");
-
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-    }
-
-    // ----- sharedTemplates -----
-
-    [IntegrationTest]
-    [Operation(Operations.SharedTemplates)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/sharedTemplates")]
-    public async Task SharedTemplates_ValidService_ReturnsEmptyCollection()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/sharedTemplates?f=json");
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        var content = await response.Content.ReadAsStringAsync();
-        using var document = JsonDocument.Parse(content);
-        var root = document.RootElement;
-
-        root.TryGetProperty("sharedTemplates", out var templates).Should().BeTrue();
-        templates.ValueKind.Should().Be(JsonValueKind.Array);
-        templates.GetArrayLength().Should().Be(0);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.SharedTemplates)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/sharedTemplates/query")]
-    public async Task SharedTemplatesQuery_ValidService_ReturnsEmptyCollection()
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/htmlPopup")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/image")]
+    public async Task ServiceLevelReadOperations_ReturnSpecShapedResponsesAndHonest404s()
     {
-        var response = await _fixture.Client.GetAsync(
+        // queryContingentValues: spec-shaped empty document.
+        var contingent = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/queryContingentValues?f=json");
+        contingent.StatusCode.Should().Be(HttpStatusCode.OK);
+        using (var document = JsonDocument.Parse(await contingent.Content.ReadAsStringAsync()))
+        {
+            var root = document.RootElement;
+            root.TryGetProperty("typeCodes", out var typeCodes).Should().BeTrue();
+            typeCodes.ValueKind.Should().Be(JsonValueKind.Array);
+            root.TryGetProperty("contingentValuesDefinitions", out var defs).Should().BeTrue();
+            defs.ValueKind.Should().Be(JsonValueKind.Array);
+            defs.GetArrayLength().Should().Be(0);
+        }
+
+        // sharedTemplates: empty collection.
+        var shared = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/sharedTemplates?f=json");
+        shared.StatusCode.Should().Be(HttpStatusCode.OK);
+        using (var document = JsonDocument.Parse(await shared.Content.ReadAsStringAsync()))
+        {
+            document.RootElement.TryGetProperty("sharedTemplates", out var templates).Should().BeTrue();
+            templates.ValueKind.Should().Be(JsonValueKind.Array);
+            templates.GetArrayLength().Should().Be(0);
+        }
+
+        // sharedTemplates/query: empty collection.
+        var sharedQuery = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/sharedTemplates/query?f=json");
+        sharedQuery.StatusCode.Should().Be(HttpStatusCode.OK);
+        using (var document = JsonDocument.Parse(await sharedQuery.Content.ReadAsStringAsync()))
+        {
+            document.RootElement.TryGetProperty("sharedTemplates", out var templates).Should().BeTrue();
+            templates.ValueKind.Should().Be(JsonValueKind.Array);
+        }
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        // htmlPopup: always type none until author content is supported.
+        var htmlPopup = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/htmlPopup?f=json");
+        htmlPopup.StatusCode.Should().Be(HttpStatusCode.OK);
+        using (var document = JsonDocument.Parse(await htmlPopup.Content.ReadAsStringAsync()))
+        {
+            document.RootElement.GetProperty("htmlPopupType").GetString()
+                .Should().Be("esriServerHTMLPopupTypeNone");
+        }
 
-        var content = await response.Content.ReadAsStringAsync();
-        using var document = JsonDocument.Parse(content);
-        document.RootElement.TryGetProperty("sharedTemplates", out var templates).Should().BeTrue();
-        templates.ValueKind.Should().Be(JsonValueKind.Array);
+        // image: honest 404; this server stores no FeatureServer image resource.
+        var image = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/image");
+        image.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        // Invalid-service branch (404) for each GET surface.
+        (await _fixture.Client.GetAsync(
+            "/rest/services/nonexistent/FeatureServer/queryContingentValues?f=json"))
+            .StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await _fixture.Client.GetAsync(
+            "/rest/services/nonexistent/FeatureServer/sharedTemplates?f=json"))
+            .StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await _fixture.Client.GetAsync(
+            "/rest/services/nonexistent/FeatureServer/sharedTemplates/query?f=json"))
+            .StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await _fixture.Client.GetAsync(
+            "/rest/services/nonexistent/FeatureServer/htmlPopup?f=json"))
+            .StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await _fixture.Client.GetAsync(
+            "/rest/services/nonexistent/FeatureServer/image"))
+            .StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
+
+    // ----- Service-level mutation operations (POST, honest rejection) -----
 
     [IntegrationTest]
     [Operation(Operations.SharedTemplates)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/sharedTemplates/add")]
-    public async Task SharedTemplatesAdd_ValidService_ReturnsBadRequestHonestly()
-    {
-        var response = await _fixture.Client.PostAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/sharedTemplates/add",
-            EmptyJsonBody());
-
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.SharedTemplates)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/sharedTemplates/update")]
-    public async Task SharedTemplatesUpdate_ValidService_ReturnsBadRequestHonestly()
-    {
-        var response = await _fixture.Client.PostAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/sharedTemplates/update",
-            EmptyJsonBody());
-
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.SharedTemplates)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/sharedTemplates/delete")]
-    public async Task SharedTemplatesDelete_InvalidService_ReturnsNotFound()
+    public async Task ServiceLevelSharedTemplateMutations_RejectHonestlyAnd404OnMissingService()
     {
-        var response = await _fixture.Client.PostAsync(
+        // Valid service: honest rejection (no shared-template store).
+        (await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/sharedTemplates/add",
+            EmptyJsonBody())).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/sharedTemplates/update",
+            EmptyJsonBody())).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        // Invalid service: 404 takes precedence over rejection.
+        (await _fixture.Client.PostAsync(
+            "/rest/services/nonexistent/FeatureServer/sharedTemplates/add",
+            EmptyJsonBody())).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await _fixture.Client.PostAsync(
+            "/rest/services/nonexistent/FeatureServer/sharedTemplates/update",
+            EmptyJsonBody())).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await _fixture.Client.PostAsync(
             "/rest/services/nonexistent/FeatureServer/sharedTemplates/delete",
-            EmptyJsonBody());
-
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            EmptyJsonBody())).StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
-    // ----- htmlPopup -----
+    // ----- Layer-level read operations (GET, spec-shaped 200) -----
 
     [IntegrationTest]
-    [Operation(Operations.HtmlPopup)]
-    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/htmlPopup")]
-    public async Task HtmlPopup_ValidService_ReturnsPopupTypeNone()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/htmlPopup?f=json");
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        var content = await response.Content.ReadAsStringAsync();
-        using var document = JsonDocument.Parse(content);
-        document.RootElement.GetProperty("htmlPopupType").GetString()
-            .Should().Be("esriServerHTMLPopupTypeNone");
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.HtmlPopup)]
-    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/htmlPopup")]
-    public async Task HtmlPopup_InvalidService_ReturnsNotFound()
-    {
-        var response = await _fixture.Client.GetAsync(
-            "/rest/services/nonexistent/FeatureServer/htmlPopup?f=json");
-
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-    }
-
-    // ----- image -----
-
-    [IntegrationTest]
-    [Operation(Operations.Image)]
-    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/image")]
-    public async Task ServiceImage_ValidService_ReturnsNotFoundHonestly()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/image");
-
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Image)]
-    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/image")]
-    public async Task ServiceImage_InvalidService_ReturnsNotFound()
-    {
-        var response = await _fixture.Client.GetAsync(
-            "/rest/services/nonexistent/FeatureServer/image");
-
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-    }
-
-    // ----- hasAssets -----
-
-    [IntegrationTest]
-    [Operation(Operations.HasAssets)]
+    [Operation(Operations.HasAssets, Operations.QueryAssets, Operations.CleanupAssets)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/hasAssets")]
-    public async Task HasAssets_ValidLayer_ReturnsFalse()
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryAssets")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/cleanupAssets")]
+    public async Task LayerLevelAssetReads_ReturnEmptyAssetStoreAndHonest404s()
     {
-        var response = await _fixture.Client.GetAsync(
+        // hasAssets: false; no layer asset store.
+        var hasAssets = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/hasAssets?f=json");
+        hasAssets.StatusCode.Should().Be(HttpStatusCode.OK);
+        using (var document = JsonDocument.Parse(await hasAssets.Content.ReadAsStringAsync()))
+        {
+            document.RootElement.GetProperty("hasAssets").GetBoolean().Should().BeFalse();
+        }
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        var content = await response.Content.ReadAsStringAsync();
-        using var document = JsonDocument.Parse(content);
-        document.RootElement.GetProperty("hasAssets").GetBoolean().Should().BeFalse();
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.HasAssets)]
-    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/hasAssets")]
-    public async Task HasAssets_InvalidService_ReturnsNotFound()
-    {
-        var response = await _fixture.Client.GetAsync(
-            "/rest/services/nonexistent/FeatureServer/0/hasAssets?f=json");
-
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-    }
-
-    // ----- queryAssets -----
-
-    [IntegrationTest]
-    [Operation(Operations.QueryAssets)]
-    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryAssets")]
-    public async Task QueryAssets_ValidLayer_ReturnsEmptyCollection()
-    {
-        var response = await _fixture.Client.GetAsync(
+        // queryAssets: empty collection.
+        var queryAssets = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryAssets?f=json");
+        queryAssets.StatusCode.Should().Be(HttpStatusCode.OK);
+        using (var document = JsonDocument.Parse(await queryAssets.Content.ReadAsStringAsync()))
+        {
+            var root = document.RootElement;
+            root.TryGetProperty("assets", out var assets).Should().BeTrue();
+            assets.ValueKind.Should().Be(JsonValueKind.Array);
+            assets.GetArrayLength().Should().Be(0);
+        }
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        var content = await response.Content.ReadAsStringAsync();
-        using var document = JsonDocument.Parse(content);
-        var root = document.RootElement;
-
-        root.TryGetProperty("assets", out var assets).Should().BeTrue();
-        assets.ValueKind.Should().Be(JsonValueKind.Array);
-        assets.GetArrayLength().Should().Be(0);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.QueryAssets)]
-    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryAssets")]
-    public async Task QueryAssets_InvalidService_ReturnsNotFound()
-    {
-        var response = await _fixture.Client.GetAsync(
-            "/rest/services/nonexistent/FeatureServer/0/queryAssets?f=json");
-
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-    }
-
-    // ----- cleanupAssets -----
-
-    [IntegrationTest]
-    [Operation(Operations.CleanupAssets)]
-    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/cleanupAssets")]
-    public async Task CleanupAssets_ValidLayer_ReturnsSuccessNoOp()
-    {
-        var response = await _fixture.Client.GetAsync(
+        // cleanupAssets: success no-op (nothing to clean).
+        var cleanup = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/cleanupAssets?f=json");
+        cleanup.StatusCode.Should().Be(HttpStatusCode.OK);
+        using (var document = JsonDocument.Parse(await cleanup.Content.ReadAsStringAsync()))
+        {
+            var root = document.RootElement;
+            root.GetProperty("success").GetBoolean().Should().BeTrue();
+            root.GetProperty("cleanedAssetCount").GetInt32().Should().Be(0);
+        }
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        var content = await response.Content.ReadAsStringAsync();
-        using var document = JsonDocument.Parse(content);
-        var root = document.RootElement;
-
-        root.GetProperty("success").GetBoolean().Should().BeTrue();
-        root.GetProperty("cleanedAssetCount").GetInt32().Should().Be(0);
+        // Invalid-service branch (404) for each GET surface.
+        (await _fixture.Client.GetAsync(
+            "/rest/services/nonexistent/FeatureServer/0/hasAssets?f=json"))
+            .StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await _fixture.Client.GetAsync(
+            "/rest/services/nonexistent/FeatureServer/0/queryAssets?f=json"))
+            .StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await _fixture.Client.GetAsync(
+            "/rest/services/nonexistent/FeatureServer/0/cleanupAssets?f=json"))
+            .StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
-    [IntegrationTest]
-    [Operation(Operations.CleanupAssets)]
-    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/cleanupAssets")]
-    public async Task CleanupAssets_InvalidService_ReturnsNotFound()
-    {
-        var response = await _fixture.Client.GetAsync(
-            "/rest/services/nonexistent/FeatureServer/0/cleanupAssets?f=json");
-
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-    }
-
-    // ----- uploadAssets -----
+    // ----- Layer-level rejection operations (honest rejection) -----
 
     [IntegrationTest]
-    [Operation(Operations.UploadAssets)]
+    [Operation(Operations.UploadAssets, Operations.Convert3D, Operations.Query3D, Operations.UpdateMetadata)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/uploadAssets")]
-    public async Task UploadAssets_ValidLayer_ReturnsBadRequestHonestly()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/uploadAssets?f=json");
-
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.UploadAssets)]
-    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/uploadAssets")]
-    public async Task UploadAssets_InvalidService_ReturnsNotFound()
-    {
-        var response = await _fixture.Client.GetAsync(
-            "/rest/services/nonexistent/FeatureServer/0/uploadAssets?f=json");
-
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-    }
-
-    // ----- convert3D -----
-
-    [IntegrationTest]
-    [Operation(Operations.Convert3D)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/convert3D")]
-    public async Task Convert3D_ValidLayer_ReturnsBadRequestHonestly()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/convert3D?f=json");
-
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Convert3D)]
-    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/convert3D")]
-    public async Task Convert3D_InvalidService_ReturnsNotFound()
-    {
-        var response = await _fixture.Client.GetAsync(
-            "/rest/services/nonexistent/FeatureServer/0/convert3D?f=json");
-
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-    }
-
-    // ----- query3D -----
-
-    [IntegrationTest]
-    [Operation(Operations.Query3D)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query3D")]
-    public async Task Query3D_ValidLayer_ReturnsBadRequestHonestly()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query3D?f=json");
-
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Query3D)]
-    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query3D")]
-    public async Task Query3D_InvalidService_ReturnsNotFound()
-    {
-        var response = await _fixture.Client.GetAsync(
-            "/rest/services/nonexistent/FeatureServer/0/query3D?f=json");
-
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-    }
-
-    // ----- metadata/update -----
-
-    [IntegrationTest]
-    [Operation(Operations.UpdateMetadata)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/metadata/update")]
-    public async Task UpdateMetadata_ValidLayer_ReturnsBadRequestHonestly()
+    public async Task LayerLevelUnsupportedOperations_RejectHonestlyAnd404OnMissingService()
     {
-        var response = await _fixture.Client.PostAsync(
+        // Valid layer: honest rejection (no asset / 3D / metadata-write surface).
+        (await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/uploadAssets?f=json"))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/convert3D?f=json"))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query3D?f=json"))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/metadata/update",
-            EmptyJsonBody());
+            EmptyJsonBody())).StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.UpdateMetadata)]
-    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/metadata/update")]
-    public async Task UpdateMetadata_InvalidService_ReturnsNotFound()
-    {
-        var response = await _fixture.Client.PostAsync(
+        // Invalid service: 404 takes precedence over rejection.
+        (await _fixture.Client.GetAsync(
+            "/rest/services/nonexistent/FeatureServer/0/uploadAssets?f=json"))
+            .StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await _fixture.Client.GetAsync(
+            "/rest/services/nonexistent/FeatureServer/0/convert3D?f=json"))
+            .StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await _fixture.Client.GetAsync(
+            "/rest/services/nonexistent/FeatureServer/0/query3D?f=json"))
+            .StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await _fixture.Client.PostAsync(
             "/rest/services/nonexistent/FeatureServer/0/metadata/update",
-            EmptyJsonBody());
-
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            EmptyJsonBody())).StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 }
