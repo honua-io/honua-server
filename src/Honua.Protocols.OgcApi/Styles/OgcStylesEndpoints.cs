@@ -98,19 +98,23 @@ public static class OgcStylesEndpoints
             .Produces(StatusCodes.Status404NotFound)
             .Produces(StatusCodes.Status415UnsupportedMediaType);
 
-        group.MapPost(string.Empty, CreateStyleNotSupported)
-            .WithDisplayName("Create Style (not supported in Phase 1)")
-            .WithName("CreateStyleNotSupported")
-            .WithSummary("Create a standalone style - not supported until Phase 2")
-            .WithDescription("Standalone style creation arrives with the Phase 2 independent style catalog (issue #1389).")
-            .Produces(StatusCodes.Status501NotImplemented);
+        group.MapPost(string.Empty, CreateStyle)
+            .WithDisplayName("Create Style")
+            .WithName("CreateStyle")
+            .WithSummary("Create a standalone style (manage-styles)")
+            .WithDescription("Validates and stores a MapLibre stylesheet as a new standalone style in the independent style catalog (ADR-0048 Phase 2). The new style's stable identifier is returned in the Location header. Honors Prefer: handling=strict and ?validate.")
+            .Produces(StatusCodes.Status201Created)
+            .Produces(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status409Conflict)
+            .Produces(StatusCodes.Status415UnsupportedMediaType);
 
-        group.MapDelete("/{styleId}", DeleteStyleNotSupported)
-            .WithDisplayName("Delete Style (not supported in Phase 1)")
-            .WithName("DeleteStyleNotSupported")
-            .WithSummary("Delete a style - not supported until Phase 2")
-            .WithDescription("Standalone style deletion arrives with the Phase 2 independent style catalog (issue #1389).")
-            .Produces(StatusCodes.Status501NotImplemented);
+        group.MapDelete("/{styleId}", DeleteStyle)
+            .WithDisplayName("Delete Style")
+            .WithName("DeleteStyle")
+            .WithSummary("Delete a style (manage-styles)")
+            .WithDescription("Deletes a standalone style from the independent style catalog (ADR-0048 Phase 2).")
+            .Produces(StatusCodes.Status204NoContent)
+            .Produces(StatusCodes.Status404NotFound);
     }
 
     /// <summary>
@@ -355,15 +359,100 @@ public static class OgcStylesEndpoints
         }
     }
 
-    private static IResult CreateStyleNotSupported(HttpContext context)
-        => StandardErrorHelpers.CreateNotImplemented(
-            context,
-            "Creating a standalone style is not supported in Phase 1. Independent style storage (POST-create) arrives with the Phase 2 style catalog (issue #1389). Use PUT /ogc/styles/{styleId} to update an existing collection's style.");
+    /// <summary>
+    /// Create a standalone style (manage-styles, POST). Stores a MapLibre stylesheet in
+    /// the independent style catalog (ADR-0048 Phase 2). The optional desired identifier
+    /// is read from the X-Style-Id header; otherwise the server assigns one.
+    /// </summary>
+    private static async Task<IResult> CreateStyle(
+        HttpContext context,
+        IOgcStyleProjection projection,
+        ILoggerFactory loggerFactory,
+        CancellationToken cancellationToken = default)
+    {
+        var contentType = context.Request.ContentType;
+        if (!string.IsNullOrWhiteSpace(contentType)
+            && !IsMapboxStyleContentType(contentType))
+        {
+            return StandardErrorHelpers.CreateUnsupportedMediaType(
+                context,
+                "manage-styles create accepts only MapLibre/Mapbox style JSON (application/vnd.mapbox.style+json or application/json).");
+        }
 
-    private static IResult DeleteStyleNotSupported(string styleId, HttpContext context)
-        => StandardErrorHelpers.CreateNotImplemented(
-            context,
-            "Deleting a style is not supported in Phase 1. Independent style storage (DELETE) arrives with the Phase 2 style catalog (issue #1389); Phase 1 styles are bound to their collection's per-layer storage.");
+        string body;
+        using (var reader = new StreamReader(context.Request.Body, Encoding.UTF8))
+        {
+            body = await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, "Request body must contain a MapLibre style document.");
+        }
+
+        string? requestedStyleId = null;
+        if (context.Request.Headers.TryGetValue("X-Style-Id", out var styleIdHeader))
+        {
+            requestedStyleId = styleIdHeader.ToString();
+        }
+
+        var strict = IsStrictRequested(context);
+        var result = await projection.CreateStyleAsync(requestedStyleId, body, strict, cancellationToken).ConfigureAwait(false);
+        var logger = loggerFactory.CreateLogger("Honua.Protocols.Ogc.Api.Styles.OgcStylesEndpoints");
+
+        switch (result.Status)
+        {
+            case OgcStyleCreateStatus.Created:
+                var styleId = result.StyleId!;
+                OgcStylesLog.StyleCreated(logger, styleId);
+                var baseUrl = BaseUrlResolver.GetBaseUrl(context);
+                var location = $"{baseUrl}/ogc/styles/{Uri.EscapeDataString(styleId)}";
+                context.Response.Headers.Location = location;
+                var entry = new StyleEntry
+                {
+                    Id = styleId,
+                    Links = BuildStylesheetLinks(baseUrl, styleId)
+                };
+                return Results.Json(
+                    entry,
+                    OgcStylesJsonContext.Default.StyleEntry,
+                    contentType: MediaTypes.Json,
+                    statusCode: StatusCodes.Status201Created);
+            case OgcStyleCreateStatus.Conflict:
+                OgcStylesLog.StyleCreateRejected(logger, result.ErrorMessage ?? "conflict");
+                return StandardErrorHelpers.CreateConflict(context, result.ErrorMessage ?? "A style with that identifier already exists.");
+            default:
+                OgcStylesLog.StyleCreateRejected(logger, result.ErrorMessage ?? "invalid");
+                return StandardErrorHelpers.CreateBadRequest(context, result.ErrorMessage ?? "MapLibre style is invalid.");
+        }
+    }
+
+    /// <summary>
+    /// Delete a standalone style (manage-styles, DELETE) from the independent style
+    /// catalog (ADR-0048 Phase 2).
+    /// </summary>
+    private static async Task<IResult> DeleteStyle(
+        string styleId,
+        HttpContext context,
+        IOgcStyleProjection projection,
+        ILoggerFactory loggerFactory,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await projection.DeleteStyleAsync(styleId, cancellationToken).ConfigureAwait(false);
+        var logger = loggerFactory.CreateLogger("Honua.Protocols.Ogc.Api.Styles.OgcStylesEndpoints");
+
+        switch (result.Status)
+        {
+            case OgcStyleDeleteStatus.Deleted:
+                OgcStylesLog.StyleDeleted(logger, styleId);
+                return Results.NoContent();
+            case OgcStyleDeleteStatus.Forbidden:
+                return StandardErrorHelpers.CreateBadRequest(context, result.ErrorMessage ?? $"Style '{styleId}' cannot be deleted through this surface.");
+            default:
+                OgcStylesLog.StyleNotFound(logger, styleId);
+                return StandardErrorHelpers.CreateNotFound(context, result.ErrorMessage ?? $"Style '{styleId}' not found.");
+        }
+    }
 
     private static ImmutableArray<Link> BuildStylesheetLinks(string baseUrl, string styleId)
     {

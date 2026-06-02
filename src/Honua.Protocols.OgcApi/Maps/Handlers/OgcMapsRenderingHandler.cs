@@ -9,6 +9,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Shared.Models;
+using Honua.Core.Features.Styling.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Rendering;
@@ -56,15 +57,18 @@ internal sealed class OgcMapsRenderingHandler
 
     private readonly IMetadataV2GraphProvider _graphProvider;
     private readonly IRasterMapRenderer _mapRenderer;
+    private readonly IOgcStyleProjection _styleProjection;
     private readonly ILogger<OgcMapsRenderingHandler> _logger;
 
     public OgcMapsRenderingHandler(
         IMetadataV2GraphProvider graphProvider,
         IRasterMapRenderer mapRenderer,
+        IOgcStyleProjection styleProjection,
         ILogger<OgcMapsRenderingHandler> logger)
     {
         _graphProvider = graphProvider ?? throw new ArgumentNullException(nameof(graphProvider));
         _mapRenderer = mapRenderer ?? throw new ArgumentNullException(nameof(mapRenderer));
+        _styleProjection = styleProjection ?? throw new ArgumentNullException(nameof(styleProjection));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -453,7 +457,24 @@ internal sealed class OgcMapsRenderingHandler
 
             OgcMapsLog.StyledMapRenderStarted(_logger, layerId, styleId, renderRequest.Value.Width, renderRequest.Value.Height);
 
-            // Render the styled map
+            // Renderer dispatch (ADR-0048): vector collections render through the shared
+            // Skia pipeline with an explicit styleId-resolved MapLibre style (the same path
+            // WMS GetMap / MapServer export use). Raster coverages keep the raster-only
+            // renderer, which reports an honest 501 for styled requests.
+            if (ResourceHasGeometry(resource))
+            {
+                return await RenderStyledVectorMapAsync(
+                    layerId,
+                    styleId,
+                    resource,
+                    service,
+                    renderRequest.Value,
+                    context,
+                    scope,
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            // Render the styled map (raster path)
             var result = await _mapRenderer.RenderStyledMapAsync(layerId, styleId, renderRequest.Value, cancellationToken);
             if (result.Data.Length == 0)
             {
@@ -485,6 +506,109 @@ internal sealed class OgcMapsRenderingHandler
             scope.RecordException(ex);
             return CreateErrorResult(context, "An error occurred while rendering the styled map.");
         }
+    }
+
+    /// <summary>
+    /// Renders a styled map for a vector collection through the shared Skia pipeline,
+    /// resolving the MapLibre style for <paramref name="styleId"/> via the OGC API - Styles
+    /// projection (ADR-0048). Falls back to default styling when the styleId does not
+    /// resolve to a stored style for the collection.
+    /// </summary>
+    private async Task<IResult> RenderStyledVectorMapAsync(
+        int layerId,
+        string styleId,
+        MetadataV2Resource resource,
+        MetadataV2Service? service,
+        MapRenderRequest renderRequest,
+        HttpContext? context,
+        HonuaTelemetryScope scope,
+        CancellationToken cancellationToken)
+    {
+        // The Skia pipeline resolves request-scoped services (feature reader, capacity
+        // limiter, coordinate transform) from the HTTP context, so styled vector rendering
+        // requires a live request. Without one we surface the same honest 501 as raster.
+        if (context is null)
+        {
+            return Results.Problem(
+                title: "Styled vector map rendering requires an active request context.",
+                statusCode: StatusCodes.Status501NotImplemented);
+        }
+
+        // Resolve the requested style (canonical MapLibre). A missing/unknown style renders
+        // with the collection's default styling rather than failing the request.
+        string? mapLibreStyleJson = null;
+        var stylesheet = await _styleProjection
+            .GetStylesheetAsync(styleId, OgcStyleEncoding.MapboxStyle, cancellationToken)
+            .ConfigureAwait(false);
+        if (stylesheet is not null)
+        {
+            mapLibreStyleJson = stylesheet.Content;
+        }
+
+        var geometryType = resource.ReadGeometryType();
+        var serviceSrid = service?.SpatialReference?.ResolveSrid()
+            ?? resource.ReadSrid()
+            ?? DefaultBboxCrsSrid;
+        var requestSrid = renderRequest.BoundingBoxCrs ?? renderRequest.Crs ?? DefaultBboxCrsSrid;
+        var requestExtent = new SkiaMapRenderer.RenderExtent(
+            renderRequest.BoundingBox[0],
+            renderRequest.BoundingBox[1],
+            renderRequest.BoundingBox[2],
+            renderRequest.BoundingBox[3]);
+        var format = renderRequest.Format switch
+        {
+            RasterFormat.JPEG => "jpeg",
+            RasterFormat.TIFF => "tiff",
+            _ => "png"
+        };
+
+        var renderResult = await RasterMapRenderingPipeline.RenderVectorCollectionAsync(
+            context,
+            layerId,
+            geometryType,
+            serviceSrid,
+            mapLibreStyleJson,
+            requestExtent,
+            requestSrid,
+            renderRequest.Width,
+            renderRequest.Height,
+            format,
+            renderRequest.Transparent,
+            backgroundColor: null,
+            temporalFilter: null,
+            cancellationToken).ConfigureAwait(false);
+
+        if (!renderResult.IsSuccess)
+        {
+            return renderResult.Error!;
+        }
+
+        OgcMapsLog.StyledMapRenderCompleted(_logger, layerId, styleId, renderResult.ImageBytes.Length);
+        scope.SetSuccess(renderResult.FeatureCount);
+
+        var result = new RasterResult
+        {
+            Data = renderResult.ImageBytes,
+            ContentType = renderRequest.Format.ToContentType(),
+            Width = renderRequest.Width,
+            Height = renderRequest.Height,
+            Srid = requestSrid
+        };
+
+        return CreateMapFileResult(context, result, renderRequest);
+    }
+
+    private static bool ResourceHasGeometry(MetadataV2Resource resource)
+    {
+        if (resource.ReadGeometryType() != MetadataV2GeometryType.None)
+        {
+            return true;
+        }
+
+        // V2 graphs that don't fill in the typed Spatial slot still surface geometry through
+        // the schema (Geometry/Geography field). Match the WMS/WMTS V2 ports — both treat
+        // such a layer as renderable.
+        return resource.FindPrimaryGeometryField() is not null;
     }
 
     /// <summary>

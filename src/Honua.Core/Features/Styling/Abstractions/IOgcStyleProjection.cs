@@ -61,6 +61,37 @@ public interface IOgcStyleProjection
         string mapLibreStyleJson,
         bool strict,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Creates a new standalone style in the independent style catalog (OGC
+    /// <c>manage-styles</c>, POST). Available from Phase 2 (ADR-0048, issue #1389).
+    /// The new style is decoupled from any layer; it can later be associated with
+    /// data resources to render them.
+    /// </summary>
+    /// <param name="styleId">
+    /// Requested stable style identifier. When <c>null</c> or blank the server assigns one.
+    /// </param>
+    /// <param name="mapLibreStyleJson">Candidate MapLibre style JSON document.</param>
+    /// <param name="strict">When <c>true</c>, validation failures reject the request.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The create outcome, including the assigned style identifier on success.</returns>
+    Task<OgcStyleCreateResult> CreateStyleAsync(
+        string? styleId,
+        string mapLibreStyleJson,
+        bool strict,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Deletes a style from the independent style catalog (OGC <c>manage-styles</c>,
+    /// DELETE). Available from Phase 2. Default per-layer styles (those still backing a
+    /// Phase 1 collection) cannot be deleted through this surface.
+    /// </summary>
+    /// <param name="styleId">Stable style identifier.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The delete outcome.</returns>
+    Task<OgcStyleDeleteResult> DeleteStyleAsync(
+        string styleId,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -131,3 +162,48 @@ public enum OgcStyleUpdateStatus
 /// <param name="Status">Outcome status.</param>
 /// <param name="ErrorMessage">Human-readable error message when <paramref name="Status"/> is not <see cref="OgcStyleUpdateStatus.Updated"/>.</param>
 public sealed record OgcStyleUpdateResult(OgcStyleUpdateStatus Status, string? ErrorMessage);
+
+/// <summary>
+/// Status of an OGC style create attempt.
+/// </summary>
+public enum OgcStyleCreateStatus
+{
+    /// <summary>The style was created.</summary>
+    Created,
+
+    /// <summary>A style with the requested identifier already exists.</summary>
+    Conflict,
+
+    /// <summary>The supplied stylesheet was invalid.</summary>
+    Invalid
+}
+
+/// <summary>
+/// Outcome of an OGC style create attempt.
+/// </summary>
+/// <param name="Status">Outcome status.</param>
+/// <param name="StyleId">Assigned style identifier when <paramref name="Status"/> is <see cref="OgcStyleCreateStatus.Created"/>.</param>
+/// <param name="ErrorMessage">Human-readable error message when creation did not succeed.</param>
+public sealed record OgcStyleCreateResult(OgcStyleCreateStatus Status, string? StyleId, string? ErrorMessage);
+
+/// <summary>
+/// Status of an OGC style delete attempt.
+/// </summary>
+public enum OgcStyleDeleteStatus
+{
+    /// <summary>The style was deleted.</summary>
+    Deleted,
+
+    /// <summary>No style with the requested identifier exists in the catalog.</summary>
+    NotFound,
+
+    /// <summary>The style cannot be deleted through this surface (e.g. a Phase 1 default per-layer style).</summary>
+    Forbidden
+}
+
+/// <summary>
+/// Outcome of an OGC style delete attempt.
+/// </summary>
+/// <param name="Status">Outcome status.</param>
+/// <param name="ErrorMessage">Human-readable error message when deletion did not succeed.</param>
+public sealed record OgcStyleDeleteResult(OgcStyleDeleteStatus Status, string? ErrorMessage);

@@ -40,4 +40,22 @@ internal static partial class OgcStylesLog
         Level = LogLevel.Warning,
         Message = "OGC Style '{StyleId}' update rejected: {Reason}")]
     public static partial void StyleUpdateRejected(ILogger logger, string styleId, string reason);
+
+    [LoggerMessage(
+        EventId = 5955,
+        Level = LogLevel.Information,
+        Message = "OGC Style '{StyleId}' created")]
+    public static partial void StyleCreated(ILogger logger, string styleId);
+
+    [LoggerMessage(
+        EventId = 5956,
+        Level = LogLevel.Warning,
+        Message = "OGC Style create rejected: {Reason}")]
+    public static partial void StyleCreateRejected(ILogger logger, string reason);
+
+    [LoggerMessage(
+        EventId = 5957,
+        Level = LogLevel.Information,
+        Message = "OGC Style '{StyleId}' deleted")]
+    public static partial void StyleDeleted(ILogger logger, string styleId);
 }

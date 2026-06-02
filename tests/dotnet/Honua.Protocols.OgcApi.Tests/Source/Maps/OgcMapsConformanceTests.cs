@@ -129,12 +129,12 @@ public class OgcMapsConformanceTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Metadata)]
     [Endpoint("GET /ogc/maps/conformance")]
-    public async Task GetConformance_DoesNotClaimStyledMapConformance()
+    public async Task GetConformance_ClaimsStyledMapConformance()
     {
         var classes = await GetConformanceClassesAsync();
 
-        classes.Should().NotContain("https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/styled-map",
-            "the full styled-map conformance class is not claimed by this service");
+        classes.Should().Contain("https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/styled-map",
+            "styled-map rendering of vector collections is now supported via the Skia pipeline (ADR-0048)");
     }
 
     [IntegrationTest]
