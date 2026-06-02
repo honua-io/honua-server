@@ -59,14 +59,26 @@ runs:
     - name: Start Honua Server
       shell: bash
       run: |
+        # Always capture stdout/stderr to a log so a failed readiness wait is
+        # diagnosable. When the caller supplies an explicit log-path we honour it;
+        # otherwise fall back to a runner-temp log that the timeout branch dumps.
         if [ -n "$LOG_PATH" ]; then
           mkdir -p "$(dirname "$LOG_PATH")"
-          dotnet run --project src/Honua.Server --configuration Release --no-build --no-launch-profile > "$LOG_PATH" 2>&1 &
+          SERVER_LOG="$LOG_PATH"
         else
-          dotnet run --project src/Honua.Server --configuration Release --no-build --no-launch-profile &
+          SERVER_LOG="${RUNNER_TEMP:-/tmp}/honua-server-setup.log"
         fi
 
-        for _ in $(seq 1 15); do
+        dotnet run --project src/Honua.Server --configuration Release --no-build --no-launch-profile > "$SERVER_LOG" 2>&1 &
+
+        # A cold `dotnet run --no-build` start runs the PostGIS preflight check,
+        # the full database migration set, and high-frequency query preparation
+        # before /healthz/ready reports 200. On CI runners seeding a fresh
+        # database this routinely exceeds the previous 30s budget and left the
+        # server unbound when the JS/Esri-Leaflet lanes began polling
+        # http://localhost:5000 (curl: (7) connection refused). Budget generously
+        # (90 iterations x 2s = 180s), mirroring load-soak-nightly's readiness wait.
+        for _ in $(seq 1 90); do
           if curl -fsS http://localhost:5000/healthz/ready >/dev/null; then
             exit 0
           fi
@@ -74,6 +86,9 @@ runs:
           sleep 2
         done
 
+        echo "Honua Server did not become ready within the readiness budget." >&2
+        echo "----- server log (${SERVER_LOG}) -----" >&2
+        cat "$SERVER_LOG" >&2 || true
         exit 1
       env:
         ConnectionStrings__DefaultConnection: "Host=localhost;Database=honua_test;Username=honua;Password=honua"
