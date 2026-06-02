@@ -260,6 +260,34 @@ public class OgcMapsBasicTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /ogc/maps/collections/{collectionId}/styles/{styleId}/map")]
+    [Operation(Operations.Render)]
+    public async Task GetStyledMap_VectorCollection_RendersPngInsteadOf501()
+    {
+        // The styled-map endpoint routes vector collections through the Skia rendering
+        // pipeline (ADR-0048) instead of the raster-only path that returns 501. Layer 0
+        // is a seeded vector (Point) collection, so a styled request must produce a PNG.
+        var queryParams = "?bbox=-180,-90,180,90&width=256&height=256&f=png";
+
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/maps/collections/{TestLayerId}/styles/default/map{queryParams}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().NotBe(HttpStatusCode.NotImplemented);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+
+        var bytes = await response.Content.ReadAsByteArrayAsync();
+        bytes.Should().NotBeEmpty();
+
+        // PNG signature: 89 50 4E 47 0D 0A 1A 0A.
+        bytes.Should().HaveCountGreaterThan(8);
+        bytes[0].Should().Be(0x89);
+        bytes[1].Should().Be(0x50);
+        bytes[2].Should().Be(0x4E);
+        bytes[3].Should().Be(0x47);
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /ogc/maps/collections/{collectionId}/map/tiles")]
     [Operation(Operations.GetTileMetadata)]
     public async Task GetMapTileSets_ValidCollection_ReturnsTileSetMetadata()
