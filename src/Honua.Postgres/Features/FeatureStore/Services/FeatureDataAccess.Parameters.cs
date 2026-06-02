@@ -38,6 +38,12 @@ internal sealed partial class FeatureDataAccess
             return;
         }
 
+        // Non-KNN `returnDistance` queries project a runtime distance column in the SELECT
+        // clause whose geometry parameter is appended to the WHERE-parameter list by the
+        // select-clause builder itself (see FeatureQueryBuilder select clauses). It is bound
+        // here as part of AddWhereParameters in positional order, so no separate add is
+        // needed — and count/objectIds/optimized builders that omit the distance column also
+        // omit the parameter, keeping the binding self-consistent across query shapes.
         AddWhereParameters(command, whereParameters, ref parameterIndex);
 
         AddRegularPaginationParameters(command, query, ref parameterIndex);

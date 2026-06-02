@@ -141,6 +141,16 @@ public sealed record GeoservicesLayerInfo
     /// MapLibre style alongside the original Esri renderer.
     /// </summary>
     public string? DrawingInfoJson { get; init; }
+
+    /// <summary>
+    /// Canonical Esri subtype set captured from the source layer (subtype field,
+    /// per-subtype labels, and per-subtype field defaults/domains), or <c>null</c>
+    /// when the layer declares no subtypes. Carried through the auto-publish pipeline
+    /// so the subtypes persist into the Metadata v2 graph and are served on the
+    /// FeatureServer layer metadata (<c>subtypeField</c> / <c>subtypes</c> /
+    /// <c>defaultSubtypeCode</c>).
+    /// </summary>
+    public Honua.Core.Features.Metadata.Domain.V2.MetadataV2Subtypes? Subtypes { get; init; }
 }
 
 /// <summary>

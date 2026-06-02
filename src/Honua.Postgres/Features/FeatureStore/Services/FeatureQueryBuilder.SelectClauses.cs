@@ -11,6 +11,46 @@ namespace Honua.Postgres.Features.FeatureStore.Services;
 
 internal sealed partial class FeatureQueryBuilder
 {
+    /// <summary>
+    /// Whether the SELECT clause should project the runtime <c>distance</c> column.
+    /// <c>returnDistance</c> is spec-compliant for the general layer /query operation:
+    /// the column is computed whenever a spatial filter geometry is present (KNN or any
+    /// other relationship), measuring each feature's geodesic distance from the query
+    /// geometry. The boolean mirrors the parameter binding in
+    /// <c>FeatureDataAccess.AddQueryParameters</c>, which prepends the distance geometry
+    /// parameter ahead of the WHERE parameters.
+    /// </summary>
+    internal static bool ShouldComputeDistance(SpatialFilter? spatialFilter)
+        => spatialFilter is { ReturnDistance: true };
+
+    /// <summary>
+    /// Builds the <c>ST_Distance(...)</c> geography operand for the runtime distance column
+    /// and, for non-KNN queries, appends the filter geometry to the WHERE-parameter list so
+    /// it is bound in positional order alongside the rest of the SELECT clause.
+    /// </summary>
+    /// <remarks>
+    /// KNN queries intentionally do not append here: their distance geometry is bound
+    /// up-front by <c>FeatureDataAccess.AddQueryParameters</c> (ahead of the WHERE params),
+    /// which is the established KNN ordering. Non-KNN queries have no such manual binding, so
+    /// the geometry is threaded through <paramref name="parameters"/> instead — this keeps the
+    /// distance parameter present only when the SELECT clause actually projects the column.
+    /// </remarks>
+    private string BuildDistanceSelectOperand(
+        SpatialFilter filter,
+        FeatureQuery query,
+        bool isKnnQuery,
+        ref int paramIndex,
+        List<object> parameters)
+    {
+        var expression = BuildGeographyFilterExpression(filter, query, ref paramIndex);
+        if (!isKnnQuery)
+        {
+            parameters.Add(filter.Geometry);
+        }
+
+        return expression;
+    }
+
     private void BuildSelectClause(
         StringBuilder sql,
         FeatureQuery query,
@@ -23,10 +63,10 @@ internal sealed partial class FeatureQueryBuilder
         var geometrySelect = _geometryProcessor.GetGeometrySelectExpression(geometryStorageType, query);
         var attributesSelect = BuildAttributesSelectExpression(query, ref paramIndex, parameters);
 
-        if (isKnnQuery && spatialFilter!.Value.ReturnDistance)
+        if (ShouldComputeDistance(spatialFilter))
         {
             var geographyOperand = _geometryProcessor.GetGeographyOperand(geometryStorageType, query.SpatialReferenceSrid);
-            var distanceParamExpression = BuildGeographyFilterExpression(spatialFilter.Value, query, ref paramIndex);
+            var distanceParamExpression = BuildDistanceSelectOperand(spatialFilter!.Value, query, isKnnQuery, ref paramIndex, parameters);
             sql.Append(CultureInfo.InvariantCulture,
                 $"SELECT {DatabaseSchema.ObjectIdColumn}, {geometrySelect}, {attributesSelect} AS {DatabaseSchema.AttributesColumn}, ST_Distance({geographyOperand}, {distanceParamExpression}) as {FeatureQueryEncoding.InternalDistanceColumn} FROM {_tableName} WHERE {DatabaseSchema.LayerIdColumn} = $1");
         }
@@ -49,10 +89,10 @@ internal sealed partial class FeatureQueryBuilder
         var geometrySelect = _geometryProcessor.GetGeometryGmlExpression(geometryStorageType, query);
         var attributesSelect = BuildAttributesSelectExpression(query, ref paramIndex, parameters);
 
-        if (isKnnQuery && spatialFilter!.Value.ReturnDistance)
+        if (ShouldComputeDistance(spatialFilter))
         {
             var geographyOperand = _geometryProcessor.GetGeographyOperand(geometryStorageType, query.SpatialReferenceSrid);
-            var distanceParamExpression = BuildGeographyFilterExpression(spatialFilter.Value, query, ref paramIndex);
+            var distanceParamExpression = BuildDistanceSelectOperand(spatialFilter!.Value, query, isKnnQuery, ref paramIndex, parameters);
             sql.Append(CultureInfo.InvariantCulture,
                 $"SELECT {DatabaseSchema.ObjectIdColumn}, {geometrySelect} AS {FeatureQueryEncoding.GeometryColumn}, {attributesSelect} AS {DatabaseSchema.AttributesColumn}, ST_Distance({geographyOperand}, {distanceParamExpression}) as {FeatureQueryEncoding.InternalDistanceColumn} FROM {_tableName} WHERE {DatabaseSchema.LayerIdColumn} = $1");
         }
@@ -75,10 +115,10 @@ internal sealed partial class FeatureQueryBuilder
         var geometrySelect = _geometryProcessor.GetGeometryGeoJsonExpression(geometryStorageType, query);
         var attributesSelect = BuildAttributesSelectExpression(query, ref paramIndex, parameters);
 
-        if (isKnnQuery && spatialFilter!.Value.ReturnDistance)
+        if (ShouldComputeDistance(spatialFilter))
         {
             var geographyOperand = _geometryProcessor.GetGeographyOperand(geometryStorageType, query.SpatialReferenceSrid);
-            var distanceParamExpression = BuildGeographyFilterExpression(spatialFilter.Value, query, ref paramIndex);
+            var distanceParamExpression = BuildDistanceSelectOperand(spatialFilter!.Value, query, isKnnQuery, ref paramIndex, parameters);
             sql.Append(CultureInfo.InvariantCulture,
                 $"SELECT {DatabaseSchema.ObjectIdColumn}, {geometrySelect} AS {FeatureQueryEncoding.GeometryColumn}, {attributesSelect} AS {DatabaseSchema.AttributesColumn}, ST_Distance({geographyOperand}, {distanceParamExpression}) as {FeatureQueryEncoding.InternalDistanceColumn} FROM {_tableName} WHERE {DatabaseSchema.LayerIdColumn} = $1");
         }
@@ -101,10 +141,10 @@ internal sealed partial class FeatureQueryBuilder
         var geometrySelect = _geometryProcessor.GetGeometryGeoJsonExpression(geometryStorageType, query);
         var (publicIdSelect, attributesSelect) = BuildRawAttributeSelectExpressions(query, ref paramIndex, parameters);
 
-        if (isKnnQuery && spatialFilter!.Value.ReturnDistance)
+        if (ShouldComputeDistance(spatialFilter))
         {
             var geographyOperand = _geometryProcessor.GetGeographyOperand(geometryStorageType, query.SpatialReferenceSrid);
-            var distanceParamExpression = BuildGeographyFilterExpression(spatialFilter.Value, query, ref paramIndex);
+            var distanceParamExpression = BuildDistanceSelectOperand(spatialFilter!.Value, query, isKnnQuery, ref paramIndex, parameters);
             sql.Append(CultureInfo.InvariantCulture,
                 $"SELECT {DatabaseSchema.ObjectIdColumn}, {geometrySelect} AS {FeatureQueryEncoding.GeometryColumn}, {publicIdSelect} AS public_id, {attributesSelect} AS {DatabaseSchema.AttributesColumn}, ST_Distance({geographyOperand}, {distanceParamExpression}) as {FeatureQueryEncoding.InternalDistanceColumn} FROM {_tableName} WHERE {DatabaseSchema.LayerIdColumn} = $1");
         }
@@ -127,10 +167,10 @@ internal sealed partial class FeatureQueryBuilder
         var geometrySelect = _geometryProcessor.GetGeometryKmlExpression(geometryStorageType, query);
         var attributesSelect = BuildAttributesSelectExpression(query, ref paramIndex, parameters);
 
-        if (isKnnQuery && spatialFilter!.Value.ReturnDistance)
+        if (ShouldComputeDistance(spatialFilter))
         {
             var geographyOperand = _geometryProcessor.GetGeographyOperand(geometryStorageType, query.SpatialReferenceSrid);
-            var distanceParamExpression = BuildGeographyFilterExpression(spatialFilter.Value, query, ref paramIndex);
+            var distanceParamExpression = BuildDistanceSelectOperand(spatialFilter!.Value, query, isKnnQuery, ref paramIndex, parameters);
             sql.Append(CultureInfo.InvariantCulture,
                 $"SELECT {DatabaseSchema.ObjectIdColumn}, {geometrySelect} AS {FeatureQueryEncoding.GeometryColumn}, {attributesSelect} AS {DatabaseSchema.AttributesColumn}, ST_Distance({geographyOperand}, {distanceParamExpression}) as {FeatureQueryEncoding.InternalDistanceColumn} FROM {_tableName} WHERE {DatabaseSchema.LayerIdColumn} = $1");
         }

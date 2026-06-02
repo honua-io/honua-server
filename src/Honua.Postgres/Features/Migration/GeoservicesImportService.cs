@@ -180,7 +180,12 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
                 Fields = [],
                 ServiceName = request.ServiceName,
                 Enabled = true,
-                FieldDomains = BuildFieldDomainMap(layerInfo)
+                FieldDomains = BuildFieldDomainMap(layerInfo),
+                // Carry the captured Esri subtype set through publish. The subtype field
+                // is the canonical 'type' column on the imported layer; the publish path
+                // only attaches the subtypes when that column is actually published, so a
+                // subtype set referencing a dropped column never false-fails reconciliation.
+                Subtypes = layerInfo.Subtypes
             };
 
             var published = await _layerPublishingService.PublishLayerAsync(

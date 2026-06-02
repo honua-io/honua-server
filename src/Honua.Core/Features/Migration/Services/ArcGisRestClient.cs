@@ -180,7 +180,14 @@ internal sealed partial class ArcGisRestClient
             FeatureCount = featureCount,
             DrawingInfoJson = layerResponse.DrawingInfo is { ValueKind: JsonValueKind.Object } drawingInfo
                 ? drawingInfo.GetRawText()
-                : null
+                : null,
+            // Persisted through publish so the subtype field + subtype labels/overrides
+            // survive to the served FeatureServer surface. A subtype set over the cap is
+            // reported via the inventory warning path and intentionally not persisted.
+            Subtypes = EsriSubtypeParser.Parse(
+                layerResponse.SubtypeField,
+                layerResponse.DefaultSubtypeCode,
+                layerResponse.Subtypes).Subtypes
         };
     }
 
@@ -971,6 +978,15 @@ internal sealed record ArcGisLayerResponse
 
     [JsonPropertyName("drawingInfo")]
     public JsonElement? DrawingInfo { get; init; }
+
+    [JsonPropertyName("subtypeField")]
+    public string? SubtypeField { get; init; }
+
+    [JsonPropertyName("defaultSubtypeCode")]
+    public JsonElement? DefaultSubtypeCode { get; init; }
+
+    [JsonPropertyName("subtypes")]
+    public JsonElement? Subtypes { get; init; }
 }
 
 internal sealed record ArcGisSpatialReference

@@ -624,8 +624,13 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         }
 
         // PERFORMANCE OPTIMIZATION: Use single query with window function instead of separate count + select
-        // This reduces database round trips from 2 to 1, improving performance by 30-50%
-        if (query.Limit.HasValue || query.Offset.HasValue)
+        // This reduces database round trips from 2 to 1, improving performance by 30-50%.
+        // returnDistance queries opt out: the window-count select builder does not project the
+        // runtime distance column, so they fall through to the count + plain-select path (the
+        // plain select clause emits the distance column). Distance is only meaningful with a
+        // spatial filter, so this affects a narrow slice of queries.
+        if ((query.Limit.HasValue || query.Offset.HasValue) &&
+            !FeatureQueryBuilder.ShouldComputeDistance(query.SpatialFilter))
         {
             return await executeOptimized(layerId, query, geometryStorageType, cancellationToken);
         }

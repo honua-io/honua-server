@@ -934,6 +934,16 @@ public static class EndpointRegistry
         new("GET", "/ogc/maps/collections/{collectionId}/map/tiles/{tileMatrixSetId}"),
         new("GET", "/ogc/maps/map"),
 
+        // OGC API - Styles (ADR-0048, Phase 1)
+        new("GET", "/ogc/styles"),
+        new("GET", "/ogc/styles/conformance"),
+        new("GET", "/ogc/styles/openapi.json"),
+        new("GET", "/ogc/styles/{styleId}"),
+        new("GET", "/ogc/styles/{styleId}/metadata"),
+        new("PUT", "/ogc/styles/{styleId}"),
+        new("POST", "/ogc/styles"),
+        new("DELETE", "/ogc/styles/{styleId}"),
+
         // Static Map
         new("GET", "/static/{serviceId}/{center}/{dimensions}.{format}"),
         new("GET", "/static/{serviceId}/bbox/{bbox}/{dimensions}.{format}"),

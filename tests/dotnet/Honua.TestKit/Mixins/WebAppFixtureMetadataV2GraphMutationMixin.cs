@@ -198,6 +198,50 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
     }
 
     /// <summary>
+    /// Sets (or clears) the Esri subtype set on the resource published at
+    /// <paramref name="layerIndex"/> so FeatureServer layer-metadata serving of
+    /// <c>subtypeField</c> / <c>subtypes</c> / <c>defaultSubtypeCode</c> can be exercised
+    /// end-to-end against the served graph (honua-server#1378).
+    /// </summary>
+    internal static void UpdateResourceSubtypes(WebAppFixture fixture, int layerIndex, MetadataV2Subtypes? subtypes)
+    {
+        var provider = RequireProvider(fixture);
+
+        var snapshot = provider.GetCurrentAsync().AsTask().GetAwaiter().GetResult();
+        var pub = snapshot.Graph.Publications.FirstOrDefault(p => p.LayerIndex == layerIndex);
+        if (pub is null)
+        {
+            throw new InvalidOperationException(
+                $"No publication for layer {layerIndex} in the test V2 graph.");
+        }
+
+        var resources = snapshot.Graph.Resources.ToArray();
+        var mutated = false;
+        for (var i = 0; i < resources.Length; i++)
+        {
+            if (!string.Equals(resources[i].Metadata.Id, pub.ResourceId, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            resources[i] = resources[i] with { Subtypes = subtypes };
+            mutated = true;
+        }
+
+        if (!mutated)
+        {
+            return;
+        }
+
+        var updatedGraph = snapshot.Graph with
+        {
+            Resources = resources,
+            Revision = snapshot.Graph.Revision + 1,
+        };
+        provider.SetGraph(updatedGraph);
+    }
+
+    /// <summary>
     /// Renames the resource bound to the publication with <paramref name="layerIndex"/>.
     /// Mirrors the v1 layer-rename behaviour CITE-conformance tests depend on.
     /// </summary>

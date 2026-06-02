@@ -12,6 +12,10 @@ protocol slice does with that document.
 - Theme engine: implemented (`default`, `dark`, `colorblind-safe`, `print`)
 - Style revision metadata: implemented (`styleVersion`, `revisedAt`,
   `revisedBy`, `changeSummary` returned on admin GET/PUT)
+- OGC API – Styles Phase 1 adapter: implemented (ADR-0048, issue #1388;
+  `core`, `mapbox-styles`, `sld-10`, `sld-11`, `style-validation`, partial
+  `manage-styles`). Independent style catalog (Phase 2, full POST/DELETE) is
+  issue #1389.
 - Visual diff UX in the Admin UI: deferred to a follow-up ticket
 
 ## Storage shape
@@ -197,13 +201,36 @@ equivalent hex literal.
 - Theme transforms applied to `/api/styles/{layerId}.json?theme=...` return a
   deterministic variant that shares the underlying `layer-styles` cache tag.
 
-### OGC API Styles (planned)
+### OGC API Styles (Phase 1 — shipped)
 
-The cross-protocol contract is designed so a future OGC API Styles slice can
-expose the same canonical document through the OGC negotiation surface
-without re-translating it. The revision metadata fields (`styleVersion`,
-`revisedAt`, `revisedBy`, `changeSummary`) are stable enough to back an OGC
-"style version" identifier or the visual-diff UX in the Admin UI.
+The OGC API – Styles Phase 1 adapter (ADR-0048, issue #1388) exposes the same
+canonical per-layer style document through the OGC negotiation surface without
+re-translating it. It is a thin protocol slice in
+`src/Honua.Protocols.OgcApi/Styles/` mounted under `/ogc/styles`, projecting the
+existing per-layer store; it reaches the internal style services through the
+public `IOgcStyleProjection` abstraction (`Honua.Core`, implemented by
+`OgcStyleProjection` in `Honua.Server`), mirroring the existing
+`ISldStyleConverter` / `IGeoServicesStyleConverter` cross-project pattern.
+
+| Endpoint | Method | Behavior |
+|----------|--------|----------|
+| `/ogc/styles` | GET | Landing links + styles list (one entry per collection that has a stored MapLibre style). |
+| `/ogc/styles/conformance` | GET | Declares `core`, `mapbox-styles`, `sld-10`, `sld-11`, `style-validation`, partial `manage-styles`. |
+| `/ogc/styles/openapi.json` | GET | OpenAPI document for the slice. |
+| `/ogc/styles/{styleId}` | GET | Content-negotiated stylesheet: MapLibre (`application/vnd.mapbox.style+json`, default) or derived SLD 1.0/1.1 by `Accept`. |
+| `/ogc/styles/{styleId}/metadata` | GET | `id`, `title`, `description`, `keywords`, `license`, `version` + stylesheet / `describedby` (schema) / `preview` links. |
+| `/ogc/styles/{styleId}` | PUT | `manage-styles`: validates MapLibre via the normalizer and writes through `ILayerStyleService`. Honors `Prefer: handling=strict` and `?validate`. |
+| `/ogc/styles` (POST), `/ogc/styles/{styleId}` (DELETE) | POST/DELETE | `501 Not Implemented` — standalone style CRUD arrives with the Phase 2 independent catalog (issue #1389). |
+
+The `styleId` is the collection's stable resource name — the same identifier
+used as the OGC API Features collectionId — chosen to be forward-compatible with
+the Phase 2 styleId-keyed catalog. SLD encodings are derived on demand from the
+canonical MapLibre style via `MapLibreToSldConverter`; the canonical store only
+holds MapLibre. The collection metadata (`GET /ogc/features/collections/{id}`)
+carries `rel:"style"` (the `/api/styles/{layerId}.json` alias, unchanged),
+`rel:"styles"` (→ `/ogc/styles`), and `rel:"stylesheet"` (→ `/ogc/styles/{styleId}`)
+links. The revision metadata fields (`styleVersion`, `revisedAt`, `revisedBy`,
+`changeSummary`) back the OGC style `version` field.
 
 ## Symbolizer support matrix
 

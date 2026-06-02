@@ -287,8 +287,60 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 Queryable = true,
                 DefaultVisibility = request.Enabled
             },
+            // Carry the captured Esri subtypes into the canonical graph so they survive
+            // the compat-compile snapshot and are served on the FeatureServer layer
+            // metadata (subtypeField / subtypes / defaultSubtypeCode) (honua-server#1378).
+            Subtypes = ResolveSubtypesForPublish(request.Subtypes, fields),
             Status = ActiveReadyStatus(now)
         };
+    }
+
+    // Attaches the captured subtype set only when its subtype field was actually
+    // published as a column on the layer. A subtype set referencing a column that was
+    // not published (e.g. dropped during selection) is omitted rather than persisted
+    // against a missing field, which would fail graph validation and false-fail later
+    // reconciliation.
+    private static MetadataV2Subtypes? ResolveSubtypesForPublish(
+        MetadataV2Subtypes? subtypes,
+        IReadOnlyList<LayerFieldInsert> fields)
+    {
+        if (subtypes is null || string.IsNullOrWhiteSpace(subtypes.SubtypeField))
+        {
+            return null;
+        }
+
+        var publishedField = fields.FirstOrDefault(field =>
+            string.Equals(field.Name, subtypes.SubtypeField, StringComparison.OrdinalIgnoreCase));
+        if (publishedField is null)
+        {
+            return null;
+        }
+
+        // Drop per-subtype overrides that reference columns the layer did not publish so
+        // graph validation (which requires every override field be declared) passes.
+        var publishedNames = new HashSet<string>(
+            fields.Select(field => field.Name),
+            StringComparer.OrdinalIgnoreCase);
+
+        var prunedSubtypes = subtypes.Subtypes
+            .Select(subtype =>
+            {
+                if (subtype.FieldOverrides.Count == 0)
+                {
+                    return subtype;
+                }
+
+                var keptOverrides = subtype.FieldOverrides
+                    .Where(pair => publishedNames.Contains(pair.Key))
+                    .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
+
+                return keptOverrides.Count == subtype.FieldOverrides.Count
+                    ? subtype
+                    : subtype with { FieldOverrides = keptOverrides };
+            })
+            .ToArray();
+
+        return subtypes with { Subtypes = prunedSubtypes };
     }
 
     private MetadataV2StorageBinding BuildPublishedStorageBinding(
