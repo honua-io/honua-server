@@ -170,6 +170,13 @@ internal static partial class FeatureServerEndpoints
             SupportsRollbackOnFailureParameter = supportsEditing,
             SupportsApplyEditsWithGlobalIds = false,
             HasAttachments = supportsAttachments && supportsAttachmentUploads,
+            // When the layer exposes attachments, advertise the attachment-capability
+            // flags Esri clients inspect. The JS SDK gates queryAttachments(where) on
+            // supportsQueryAttachments, and the attachment query surface honors the
+            // documented keywords/uploadId parameters (#1453).
+            SupportsQueryAttachments = supportsAttachments && supportsAttachmentUploads,
+            SupportsAttachmentKeywords = supportsAttachments && supportsAttachmentUploads,
+            SupportsAttachmentsByUploadId = supportsAttachments && supportsAttachmentUploads,
             SupportsQueryRelated = supportsRelated,
             SupportedQueryFormats = NormalizeSupportedQueryFormats(supportedFormats, supportsGeobufOutput),
             SupportsCoordinatesQuantization = false,

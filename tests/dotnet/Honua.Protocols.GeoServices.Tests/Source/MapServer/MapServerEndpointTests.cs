@@ -1246,6 +1246,37 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/layers")]
+    public async Task MapServer_Layers_ReturnsSameDocumentAsAllLayersAndTables()
+    {
+        // Regression for #1454: the ArcGIS Maps SDK for JavaScript and the .NET SDK
+        // hydrate sublayers via /MapServer/layers (not /allLayersAndTables). The
+        // /layers resource must exist and return the identical {layers,tables} document.
+        var layersResponse = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/layers?f=json");
+        var layersContent = await layersResponse.Content.ReadAsStringAsync();
+        layersResponse.StatusCode.Should().Be(HttpStatusCode.OK, layersContent);
+
+        var layersResult = JsonSerializer.Deserialize(layersContent, MapServerJsonContext.Default.AllLayersAndTablesResponse);
+        layersResult.Should().NotBeNull();
+        layersResult!.Layers.Should().NotBeNullOrEmpty();
+        layersResult.Tables.Should().NotBeNull();
+
+        var layer = layersResult.Layers!.First();
+        layer.Id.Should().BeGreaterThanOrEqualTo(0);
+        layer.Name.Should().NotBeNullOrWhiteSpace();
+        layer.Fields.Should().NotBeNullOrEmpty();
+
+        // Must match the allLayersAndTables document exactly (same handler).
+        var allResponse = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/allLayersAndTables?f=json");
+        var allContent = await allResponse.Content.ReadAsStringAsync();
+        allResponse.StatusCode.Should().Be(HttpStatusCode.OK, allContent);
+        layersContent.Should().Be(allContent);
+    }
+
+    [IntegrationTest]
     [Operation(Operations.QueryDomains)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/queryDomains")]
     public async Task MapServer_QueryDomains_ReturnsDomainsArray()

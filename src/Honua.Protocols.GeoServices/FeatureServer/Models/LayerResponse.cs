@@ -191,6 +191,28 @@ public sealed class LayerResponse
     public bool HasAttachments { get; init; }
 
     /// <summary>
+    /// Whether the layer supports the <c>queryAttachments</c> operation. The ArcGIS
+    /// Maps SDK for JavaScript reads this flag off the layer root and refuses to
+    /// issue <c>queryAttachments(where)</c> when it is absent/false, so it must be
+    /// emitted as <c>true</c> whenever the layer actually has attachments (#1453).
+    /// </summary>
+    public bool SupportsQueryAttachments { get; init; }
+
+    /// <summary>
+    /// Whether the layer supports filtering attachment queries by keyword. Emitted
+    /// alongside <see cref="SupportsQueryAttachments"/> because the attachment query
+    /// surface honors the documented Esri <c>keywords</c> parameter (#1453).
+    /// </summary>
+    public bool SupportsAttachmentKeywords { get; init; }
+
+    /// <summary>
+    /// Whether attachment payloads may be supplied by upload id. Emitted with the
+    /// other attachment-capability flags Esri clients inspect when a layer supports
+    /// attachments (#1453).
+    /// </summary>
+    public bool SupportsAttachmentsByUploadId { get; init; }
+
+    /// <summary>
     /// HTML popup information
     /// </summary>
     public object? PopupInfo { get; init; }

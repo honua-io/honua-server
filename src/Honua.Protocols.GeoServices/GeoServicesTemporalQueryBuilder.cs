@@ -38,8 +38,10 @@ internal static class GeoServicesTemporalQueryBuilder
     /// canonical resource. The resource must be configured as opt-in time-aware
     /// (start-time field declared on the temporal extension and resolving to a
     /// date/datetime schema field) before a non-empty time= filter is honored.
-    /// When the resource is not time-enabled the time= filter is IGNORED and null
-    /// is returned (Esri ignores time on non-time-aware layers rather than erroring).
+    /// When the resource is not time-enabled a non-empty time= filter is REJECTED with
+    /// an <see cref="ArgumentException"/> (HTTP 400) per honua's documented temporal
+    /// contract (docs/gis/temporal-animation-api.md); this is an intentional divergence
+    /// from Esri's lenient "ignore time" behavior (issue #1444).
     /// The <c>time=null,null</c> no-op form returns null without throwing.
     /// </summary>
     internal static FilterExpression? BuildTemporalExpression(
@@ -73,11 +75,15 @@ internal static class GeoServicesTemporalQueryBuilder
 
         if (!TemporalExtentHelpers.TryResolveOptInTemporalFieldsV2(resource, out var selection))
         {
-            // Esri behavior: a time= parameter supplied against a layer that is not
-            // time-enabled (no timeInfo / no opt-in temporal fields) is IGNORED rather
-            // than rejected. Return null so the query proceeds with no temporal predicate
-            // instead of surfacing a 400 "Invalid time parameter".
-            return null;
+            // Honua's temporal-animation contract (docs/gis/temporal-animation-api.md,
+            // "Empty-range and non-time-aware behavior") deliberately REJECTS a non-empty
+            // time= filter against a layer that is not time-enabled, rather than silently
+            // ignoring it (or, as an earlier bug did, falling back to an arbitrary date
+            // field). Surface a 400 so clients learn the layer has no temporal dimension.
+            // (This is an intentional, documented divergence from Esri's lenient "ignore
+            // time" behavior — see issue #1444.)
+            throw new ArgumentException(
+                "The time parameter is not supported: this layer is not time-aware (no timeInfo / temporal fields).");
         }
 
         var startField = FindV2Field(resource, selection.StartFieldName)

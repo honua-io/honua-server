@@ -66,7 +66,11 @@ internal static class GeoServicesRequestValueHelpers
             "multipatchOption",
             "featureEncoding",
             "parameterValues",
-            "rangeValues"
+            "rangeValues",
+            // The Esri .NET Runtime SDK (ServiceFeatureTable.LoadAsync) sends
+            // returnAdvancedSymbols on layer queries; accept-and-ignore so the
+            // entire .NET FeatureServer client is not blocked with a 400 (#1455).
+            "returnAdvancedSymbols"
         }
         .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 

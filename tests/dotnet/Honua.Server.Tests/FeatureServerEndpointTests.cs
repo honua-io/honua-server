@@ -1347,6 +1347,22 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query?returnAdvancedSymbols=true")]
+    public async Task QueryFeatures_WithReturnAdvancedSymbols_ReturnsOk()
+    {
+        // Regression for #1455: the Esri .NET Runtime SDK (ServiceFeatureTable.LoadAsync)
+        // sends returnAdvancedSymbols=true on every layer query. It must be accepted and
+        // ignored (HTTP 200) rather than rejected with 400, which would block the entire
+        // .NET FeatureServer client.
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query" +
+            "?where=1=1&returnAdvancedSymbols=true&f=json");
+
+        response.HaveStatusCode(System.Net.HttpStatusCode.OK);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_WithNonExistentService_Returns404()
     {

@@ -209,7 +209,7 @@ internal sealed class FeatureServerRelatedRecordsHandler(
 
             // Group results by origin object ID
             var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resolvedRelatedResource);
-            RelatedRecordGroup[] relatedRecordGroups = _relatedRecordsService.GroupRelatedRecords(
+            var grouped = _relatedRecordsService.GroupRelatedRecords(
                 result,
                 objectIds,
                 relationship,
@@ -223,13 +223,23 @@ internal sealed class FeatureServerRelatedRecordsHandler(
                 relatedQuery.OutFields,
                 resolvedRelatedResource);
 
-            // Build response
+            var relatedRecordGroups = grouped.Groups;
+
+            // Build response. Per the Esri queryRelatedRecords contract, the field
+            // schema / object-id field / geometry metadata are emitted once at the
+            // top level and each group carries a flat relatedRecords array (#1452).
             var response = new QueryRelatedRecordsResponse
             {
+                ObjectIdFieldName = grouped.ObjectIdFieldName,
+                Fields = grouped.Fields,
+                GeometryType = grouped.GeometryType,
+                SpatialReference = grouped.SpatialReference,
+                HasZ = grouped.HasZ,
+                HasM = grouped.HasM,
                 RelatedRecordGroups = relatedRecordGroups
             };
 
-            var totalRelatedRecords = relatedRecordGroups.Sum(g => g.RelatedRecords?.Features?.Length ?? 0);
+            var totalRelatedRecords = relatedRecordGroups.Sum(g => g.RelatedRecords?.Length ?? 0);
             FeatureServerLog.RelatedRecordsQueryCompleted(_logger, serviceId, layerId,
                 totalRelatedRecords, relatedRecordGroups.Length);
 

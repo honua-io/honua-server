@@ -201,7 +201,7 @@ public sealed class FeatureServerExceptionMappingTests
             return Task.FromResult(QueryResult<Feature>.Empty());
         }
 
-        public RelatedRecordGroup[] GroupRelatedRecords(
+        public GroupedRelatedRecords GroupRelatedRecords(
             QueryResult<Feature> result,
             long[] objectIds,
             MetadataV2Relationship relationship,
@@ -215,7 +215,7 @@ public sealed class FeatureServerExceptionMappingTests
             ImmutableArray<string>? outFields,
             MetadataV2Resource relatedResource)
         {
-            return [];
+            return new GroupedRelatedRecords([], [], objectIdFieldName, null, null, false, false);
         }
     }
 }

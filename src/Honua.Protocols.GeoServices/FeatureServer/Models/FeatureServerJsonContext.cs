@@ -51,7 +51,7 @@ namespace Honua.Protocols.GeoServices.FeatureServer.Models;
 [JsonSerializable(typeof(QueryRelatedRecordsParameters))]
 [JsonSerializable(typeof(QueryRelatedRecordsResponse))]
 [JsonSerializable(typeof(RelatedRecordGroup))]
-[JsonSerializable(typeof(RelatedRecords))]
+[JsonSerializable(typeof(RelatedRecordGroup[]))]
 [JsonSerializable(typeof(double[]))]
 [JsonSerializable(typeof(double[][]))]
 [JsonSerializable(typeof(double[][][]))]

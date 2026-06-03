@@ -67,8 +67,11 @@ internal interface IRelatedRecordsService
     /// <param name="maxAllowableOffset">Output geometry simplification tolerance override</param>
     /// <param name="outFields">Fields to include in response</param>
     /// <param name="relatedResource">Canonical metadata for the related layer used to populate field schema</param>
-    /// <returns>Grouped related record results</returns>
-    RelatedRecordGroup[] GroupRelatedRecords(
+    /// <returns>
+    /// Grouped related record results plus the shared field/geometry metadata that
+    /// the Esri queryRelatedRecords contract emits at the response top level.
+    /// </returns>
+    GroupedRelatedRecords GroupRelatedRecords(
         QueryResult<Feature> result,
         long[] objectIds,
         MetadataV2Relationship relationship,
@@ -82,6 +85,27 @@ internal interface IRelatedRecordsService
         ImmutableArray<string>? outFields,
         MetadataV2Resource relatedResource);
 }
+
+/// <summary>
+/// Grouped related records together with the shared metadata (field schema,
+/// object-id field name, spatial reference) that the Esri queryRelatedRecords
+/// response carries once at the top level rather than per group.
+/// </summary>
+/// <param name="Groups">Related record groups, one per requested object id.</param>
+/// <param name="Fields">Field definitions for the returned attributes.</param>
+/// <param name="ObjectIdFieldName">Object id field name for the related records.</param>
+/// <param name="GeometryType">Esri geometry-type token for related records that include geometry; null for tables or geometry-suppressed responses.</param>
+/// <param name="SpatialReference">Spatial reference for returned geometries; null when no geometry is emitted.</param>
+/// <param name="HasZ">Whether any returned geometry carries Z values.</param>
+/// <param name="HasM">Whether any returned geometry carries M values.</param>
+internal readonly record struct GroupedRelatedRecords(
+    RelatedRecordGroup[] Groups,
+    GeoServicesFieldInfo[] Fields,
+    string ObjectIdFieldName,
+    string? GeometryType,
+    GeoServicesSpatialReference? SpatialReference,
+    bool HasZ,
+    bool HasM);
 
 /// <summary>
 /// Implementation of related records processing for FeatureServer operations.
@@ -168,7 +192,7 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
     /// <summary>
     /// Groups related records by their origin object IDs for API response.
     /// </summary>
-    public RelatedRecordGroup[] GroupRelatedRecords(
+    public GroupedRelatedRecords GroupRelatedRecords(
         QueryResult<Feature> result,
         long[] objectIds,
         MetadataV2Relationship relationship,
@@ -190,13 +214,28 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
             outFieldSet = new HashSet<string>(outFields.Value, StringComparer.OrdinalIgnoreCase);
         }
 
-        // Esri spec: each relatedRecordGroup's relatedRecords block carries the field
-        // definitions for the returned attributes. Build them from the related layer
-        // schema using the same field projection the main query response uses.
+        // Esri spec: the field definitions for the returned attributes are carried
+        // once at the response top level. Build them from the related layer schema
+        // using the same field projection the main query response uses (#1431).
         var relatedFields = QueryFormatter.BuildQueryFields(
             relatedResource,
             outFields.HasValue && outFields.Value.Length > 0 ? outFields.Value.ToArray() : null,
             objectIdFieldName);
+
+        // Geometry metadata (geometryType / spatialReference / hasZ / hasM) is emitted
+        // once at the response top level per the Esri queryRelatedRecords contract, and
+        // only when geometry is actually returned (layers, returnGeometry=true).
+        var canonicalGeometryType = relatedResource.ReadGeometryType();
+        var resourceHasGeometry = canonicalGeometryType != MetadataV2GeometryType.None
+            || relatedResource.FindPrimaryGeometryField() is not null;
+        var emitGeometryMetadata = returnGeometry && resourceHasGeometry;
+
+        var srid = outputSrid.HasValue && outputSrid.Value > 0
+            ? outputSrid.Value
+            : relatedResource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
+        var spatialReference = emitGeometryMetadata
+            ? new GeoServicesSpatialReference { Wkid = srid, LatestWkid = srid }
+            : null;
 
         var effectiveGeometryLimits = GeometryOutputProcessor.CreateEffectiveLimits(
             _geometryLimits,
@@ -221,38 +260,64 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
             }
         }
 
-        // Create a related record group for each requested object ID
-        return [.. objectIds.Select(objectId =>
+        // Create a related record group for each requested object ID. Per the Esri
+        // queryRelatedRecords contract, relatedRecords is a FLAT array of records
+        // (each {attributes, geometry}); the JS SDK reads relatedRecords.length.
+        var groups = objectIds.Select(objectId =>
         {
             bool hasRelatedFeatures = featuresByOriginId.TryGetValue(objectId, out List<Feature>? relatedFeatures);
-            var spatialReference = outputSrid.HasValue && outputSrid.Value > 0
-                ? new GeoServicesSpatialReference { Wkid = outputSrid.Value, LatestWkid = outputSrid.Value }
-                : null;
 
             return new RelatedRecordGroup
             {
                 ObjectId = objectId,
                 RelatedRecords = hasRelatedFeatures && relatedFeatures!.Count > 0
-                    ? new RelatedRecords
-                    {
-                        ObjectIdFieldName = objectIdFieldName,
-                        Fields = relatedFields,
-                        SpatialReference = spatialReference,
-                        Features =
-                        [
-                            ..relatedFeatures!.Select(f => ConvertToGeoServicesFeature(
-                                f,
-                                returnGeometry,
-                                outputSrid,
-                                returnZ,
-                                returnM,
-                                outFieldSet,
-                                effectiveGeometryLimits))
-                        ]
-                    }
+                    ?
+                    [
+                        ..relatedFeatures!.Select(f => ConvertToGeoServicesFeature(
+                            f,
+                            returnGeometry,
+                            outputSrid,
+                            returnZ,
+                            returnM,
+                            outFieldSet,
+                            effectiveGeometryLimits))
+                    ]
                     : null
             };
-        })];
+        }).ToArray();
+
+        var hasZ = false;
+        var hasM = false;
+        if (emitGeometryMetadata)
+        {
+            foreach (var group in groups)
+            {
+                if (group.RelatedRecords is null)
+                {
+                    continue;
+                }
+
+                foreach (var record in group.RelatedRecords)
+                {
+                    if (record.Geometry is null)
+                    {
+                        continue;
+                    }
+
+                    hasZ |= record.Geometry.HasZ;
+                    hasM |= record.Geometry.HasM;
+                }
+            }
+        }
+
+        return new GroupedRelatedRecords(
+            groups,
+            relatedFields,
+            objectIdFieldName,
+            emitGeometryMetadata ? QueryFormatter.MapGeometryType(canonicalGeometryType) : null,
+            spatialReference,
+            hasZ,
+            hasM);
     }
 
     /// <summary>

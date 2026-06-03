@@ -1,10 +1,15 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json.Serialization;
+
 namespace Honua.Protocols.GeoServices.FeatureServer.Models;
 
 /// <summary>
-/// Related records grouped by source object ID
+/// Related records grouped by source object ID.
+/// Per the Esri queryRelatedRecords contract, <c>relatedRecords</c> is a flat
+/// array of records (each with <c>attributes</c> and optional <c>geometry</c>);
+/// the field/geometry metadata is carried at the response top level.
 /// </summary>
 public sealed class RelatedRecordGroup
 {
@@ -14,7 +19,9 @@ public sealed class RelatedRecordGroup
     public required long ObjectId { get; init; }
 
     /// <summary>
-    /// Related records for this source feature (null if no related records)
+    /// Flat array of related records for this source feature. Omitted when the
+    /// source feature has no related records.
     /// </summary>
-    public RelatedRecords? RelatedRecords { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public GeoServicesFeature[]? RelatedRecords { get; init; }
 }
