@@ -364,4 +364,9 @@ public static class MediaTypes
     /// OGC Styled Layer Descriptor 1.1 media type.
     /// </summary>
     public const string Sld11 = "application/vnd.ogc.sld+xml;version=1.1";
+
+    /// <summary>
+    /// Esri GeoServices drawingInfo renderer media type (OGC API - Styles derived encoding, ADR-0002).
+    /// </summary>
+    public const string EsriDrawingInfo = "application/vnd.esri.drawinginfo+json";
 }

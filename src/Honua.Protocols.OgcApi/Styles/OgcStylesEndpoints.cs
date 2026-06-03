@@ -71,10 +71,11 @@ public static class OgcStylesEndpoints
             .WithDisplayName("Get Stylesheet")
             .WithName("GetStylesheet")
             .WithSummary("Get a stylesheet")
-            .WithDescription("Returns the stylesheet for a style. The encoding is selected by the Accept header: MapLibre/Mapbox JSON (default), or derived SLD 1.0/1.1.")
+            .WithDescription("Returns the stylesheet for a style. The encoding is selected by the Accept header: MapLibre/Mapbox JSON (default), derived SLD 1.0/1.1, or derived Esri drawingInfo.")
             .Produces<object>(StatusCodes.Status200OK, MediaTypes.MapboxStyle)
             .Produces(StatusCodes.Status200OK, contentType: MediaTypes.Sld10)
             .Produces(StatusCodes.Status200OK, contentType: MediaTypes.Sld11)
+            .Produces(StatusCodes.Status200OK, contentType: MediaTypes.EsriDrawingInfo)
             .Produces(StatusCodes.Status404NotFound)
             .Produces(StatusCodes.Status406NotAcceptable)
             .CacheOutput("OgcStylesStylesheet");
@@ -319,12 +320,14 @@ public static class OgcStylesEndpoints
         CancellationToken cancellationToken = default)
     {
         var contentType = context.Request.ContentType;
+        var isEsri = IsEsriDrawingInfoContentType(contentType);
         if (!string.IsNullOrWhiteSpace(contentType)
-            && !IsMapboxStyleContentType(contentType))
+            && !IsMapboxStyleContentType(contentType)
+            && !isEsri)
         {
             return StandardErrorHelpers.CreateUnsupportedMediaType(
                 context,
-                "Phase 1 manage-styles accepts only MapLibre/Mapbox style JSON (application/vnd.mapbox.style+json or application/json).");
+                "manage-styles accepts MapLibre/Mapbox style JSON (application/vnd.mapbox.style+json or application/json) or Esri drawingInfo (application/vnd.esri.drawinginfo+json).");
         }
 
         string body;
@@ -335,27 +338,45 @@ public static class OgcStylesEndpoints
 
         if (string.IsNullOrWhiteSpace(body))
         {
-            return StandardErrorHelpers.CreateBadRequest(context, "Request body must contain a MapLibre style document.");
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                isEsri
+                    ? "Request body must contain an Esri drawingInfo document."
+                    : "Request body must contain a MapLibre style document.");
         }
 
         var strict = IsStrictRequested(context);
 
-        var result = await projection.UpdateStyleAsync(styleId, body, strict, cancellationToken).ConfigureAwait(false);
+        var result = isEsri
+            ? await projection.UpdateStyleFromDrawingInfoAsync(styleId, body, strict, cancellationToken).ConfigureAwait(false)
+            : await projection.UpdateStyleAsync(styleId, body, strict, cancellationToken).ConfigureAwait(false);
         var logger = loggerFactory.CreateLogger("Honua.Protocols.Ogc.Api.Styles.OgcStylesEndpoints");
 
         switch (result.Status)
         {
             case OgcStyleUpdateStatus.Updated:
                 OgcStylesLog.StyleUpdated(logger, styleId);
+                // Surface lossy-conversion warnings non-blockingly so the client can show them (the canonical
+                // MapLibre was still stored). Mirrors the unsupportedSymbolizers[] contract.
+                if (result.UnsupportedSymbolizers is { Count: > 0 })
+                {
+                    context.Response.Headers["X-Style-Unsupported-Symbolizers"] =
+                        string.Join(" | ", result.UnsupportedSymbolizers);
+                }
+
                 return Results.NoContent();
             case OgcStyleUpdateStatus.NotFound:
                 OgcStylesLog.StyleNotFound(logger, styleId);
                 return StandardErrorHelpers.CreateNotFound(context, $"Style '{styleId}' not found.");
             default:
                 OgcStylesLog.StyleUpdateRejected(logger, styleId, result.ErrorMessage ?? "invalid");
-                return StandardErrorHelpers.CreateBadRequest(
-                    context,
-                    result.ErrorMessage ?? "MapLibre style is invalid.");
+                var detail = result.ErrorMessage ?? "Style is invalid.";
+                if (result.UnsupportedSymbolizers is { Count: > 0 })
+                {
+                    detail = $"{detail} Unsupported: {string.Join(" | ", result.UnsupportedSymbolizers)}";
+                }
+
+                return StandardErrorHelpers.CreateBadRequest(context, detail);
         }
     }
 
@@ -557,6 +578,9 @@ public static class OgcStylesEndpoints
                     ? OgcStyleEncoding.Sld11
                     : OgcStyleEncoding.Sld10;
                 return true;
+            case "application/vnd.esri.drawinginfo+json":
+                encoding = OgcStyleEncoding.EsriDrawingInfo;
+                return true;
             default:
                 return false;
         }
@@ -584,6 +608,16 @@ public static class OgcStylesEndpoints
 
         var mediaType = media.MediaType.Value ?? string.Empty;
         return mediaType is "application/vnd.mapbox.style+json" or "application/json";
+    }
+
+    private static bool IsEsriDrawingInfoContentType(string? contentType)
+    {
+        if (string.IsNullOrWhiteSpace(contentType) || !MediaTypeHeaderValue.TryParse(contentType, out var media))
+        {
+            return false;
+        }
+
+        return string.Equals(media.MediaType.Value, "application/vnd.esri.drawinginfo+json", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsStrictRequested(HttpContext context)
