@@ -196,4 +196,10 @@ internal static partial class ImageServerLog
         Level = LogLevel.Error,
         Message = "Failed to get multidimensional info for layer {LayerId}")]
     public static partial void MultidimensionalInfoFailed(ILogger logger, Exception ex, int layerId);
+
+    [LoggerMessage(
+        EventId = 5831,
+        Level = LogLevel.Error,
+        Message = "Failed to get raster metadata resource '{Resource}' for layer {LayerId}")]
+    public static partial void RasterMetadataResourceFailed(ILogger logger, Exception ex, int layerId, string resource);
 }

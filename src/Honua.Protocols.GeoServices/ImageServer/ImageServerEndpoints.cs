@@ -259,6 +259,73 @@ internal static class ImageServerEndpoints
             .Produces(400)
             .Produces(404);
 
+        // Read-only raster metadata child resources: statistics, histograms,
+        // rasterAttributeTable, rasterFunctionInfos. GET + POST mirrors are provided
+        // because ArcGIS SDK clients hydrate several of these resources via POST.
+        group.MapGet("/statistics", GetStatisticsResource)
+            .WithDisplayName("Get Raster Statistics")
+            .WithName("GetImageServerStatistics")
+            .WithSummary("Get per-band raster statistics")
+            .WithDescription("Returns Esri-shaped per-band statistics for the layer's primary raster or resolved mosaic")
+            .Produces<StatisticsResourceResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+        group.MapPost("/statistics", GetStatisticsResourcePost)
+            .WithDisplayName("Get Raster Statistics (POST)")
+            .WithName("GetImageServerStatisticsPost")
+            .WithSummary("Get per-band raster statistics via POST")
+            .Produces<StatisticsResourceResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+
+        group.MapGet("/histograms", GetHistogramsResource)
+            .WithDisplayName("Get Raster Histograms")
+            .WithName("GetImageServerHistograms")
+            .WithSummary("Get per-band raster histograms")
+            .WithDescription("Returns Esri-shaped per-band histograms for the layer's primary raster or resolved mosaic")
+            .Produces<HistogramsResourceResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+        group.MapPost("/histograms", GetHistogramsResourcePost)
+            .WithDisplayName("Get Raster Histograms (POST)")
+            .WithName("GetImageServerHistogramsPost")
+            .WithSummary("Get per-band raster histograms via POST")
+            .Produces<HistogramsResourceResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+
+        group.MapGet("/rasterAttributeTable", GetRasterAttributeTableResource)
+            .WithDisplayName("Get Raster Attribute Table")
+            .WithName("GetImageServerRasterAttributeTable")
+            .WithSummary("Get the raster value attribute table")
+            .WithDescription("Returns the Esri-shaped raster attribute table; continuous rasters return the canonical schema with no rows")
+            .Produces<RasterAttributeTableResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+        group.MapPost("/rasterAttributeTable", GetRasterAttributeTableResourcePost)
+            .WithDisplayName("Get Raster Attribute Table (POST)")
+            .WithName("GetImageServerRasterAttributeTablePost")
+            .WithSummary("Get the raster value attribute table via POST")
+            .Produces<RasterAttributeTableResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+
+        group.MapGet("/rasterFunctionInfos", GetRasterFunctionInfosResource)
+            .WithDisplayName("Get Raster Function Infos")
+            .WithName("GetImageServerRasterFunctionInfos")
+            .WithSummary("List the raster functions the service can apply")
+            .WithDescription("Returns Esri-shaped rasterFunctionInfos advertising the raster functions accepted through renderingRule")
+            .Produces<RasterFunctionInfosResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+        group.MapPost("/rasterFunctionInfos", GetRasterFunctionInfosResourcePost)
+            .WithDisplayName("Get Raster Function Infos (POST)")
+            .WithName("GetImageServerRasterFunctionInfosPost")
+            .WithSummary("List the raster functions the service can apply via POST")
+            .Produces<RasterFunctionInfosResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+
         var serviceGroup = app.MapGroup("/rest/services/{serviceId:regex(^(?!\\d+$).+$)}/ImageServer")
             .WithTags("ImageServer")
             // Read-only Esri ImageServer surface; access is enforced by the
@@ -438,6 +505,66 @@ internal static class ImageServerEndpoints
             .WithName("ImageServerMultidimensionalInfoPostByService")
             .WithSummary("Get multidimensional variables and dimensions via POST")
             .Produces<MultidimensionalInfoResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+
+        serviceGroup.MapGet("/statistics", GetStatisticsResourceByService)
+            .WithDisplayName("Get Raster Statistics by Service")
+            .WithName("GetImageServerStatisticsByService")
+            .WithSummary("Get per-band raster statistics")
+            .Produces<StatisticsResourceResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+        serviceGroup.MapPost("/statistics", GetStatisticsResourcePostByService)
+            .WithDisplayName("Get Raster Statistics by Service (POST)")
+            .WithName("GetImageServerStatisticsByServicePost")
+            .WithSummary("Get per-band raster statistics via POST")
+            .Produces<StatisticsResourceResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+
+        serviceGroup.MapGet("/histograms", GetHistogramsResourceByService)
+            .WithDisplayName("Get Raster Histograms by Service")
+            .WithName("GetImageServerHistogramsByService")
+            .WithSummary("Get per-band raster histograms")
+            .Produces<HistogramsResourceResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+        serviceGroup.MapPost("/histograms", GetHistogramsResourcePostByService)
+            .WithDisplayName("Get Raster Histograms by Service (POST)")
+            .WithName("GetImageServerHistogramsByServicePost")
+            .WithSummary("Get per-band raster histograms via POST")
+            .Produces<HistogramsResourceResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+
+        serviceGroup.MapGet("/rasterAttributeTable", GetRasterAttributeTableResourceByService)
+            .WithDisplayName("Get Raster Attribute Table by Service")
+            .WithName("GetImageServerRasterAttributeTableByService")
+            .WithSummary("Get the raster value attribute table")
+            .Produces<RasterAttributeTableResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+        serviceGroup.MapPost("/rasterAttributeTable", GetRasterAttributeTableResourcePostByService)
+            .WithDisplayName("Get Raster Attribute Table by Service (POST)")
+            .WithName("GetImageServerRasterAttributeTableByServicePost")
+            .WithSummary("Get the raster value attribute table via POST")
+            .Produces<RasterAttributeTableResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+
+        serviceGroup.MapGet("/rasterFunctionInfos", GetRasterFunctionInfosResourceByService)
+            .WithDisplayName("Get Raster Function Infos by Service")
+            .WithName("GetImageServerRasterFunctionInfosByService")
+            .WithSummary("List the raster functions the service can apply")
+            .Produces<RasterFunctionInfosResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+        serviceGroup.MapPost("/rasterFunctionInfos", GetRasterFunctionInfosResourcePostByService)
+            .WithDisplayName("Get Raster Function Infos by Service (POST)")
+            .WithName("GetImageServerRasterFunctionInfosByServicePost")
+            .WithSummary("List the raster functions the service can apply via POST")
+            .Produces<RasterFunctionInfosResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(400)
             .Produces(404);
     }
@@ -1276,6 +1403,144 @@ internal static class ImageServerEndpoints
     {
         var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
         return resolution.ErrorResult ?? await GetImageTile(resolution.LayerId, level, row, col, context, handler, format, cancellationToken);
+    }
+
+    // Read-only raster metadata child resources. Each GET validates the f format and the
+    // layer, then delegates to the shared handler; each POST mirror reads the body solely to
+    // honour the f parameter (ArcGIS SDK clients hydrate these resources via POST {"f":"json"}).
+    private static Task<IResult> GetStatisticsResource(
+        int id, string? f, HttpContext context, ImageServerRasterMetadataHandler handler, CancellationToken cancellationToken = default)
+        => ExecuteRasterMetadataAsync(id, f, context, (l, ct) => handler.GetStatisticsAsync(context, l, ct), cancellationToken);
+
+    private static async Task<IResult> GetStatisticsResourceByService(
+        string serviceId, string? f, HttpContext context, ImageServerRasterMetadataHandler handler, CancellationToken cancellationToken = default)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        return resolution.ErrorResult ?? await GetStatisticsResource(resolution.LayerId, f, context, handler, cancellationToken);
+    }
+
+    private static async Task<IResult> GetStatisticsResourcePost(
+        int id, HttpContext context, ImageServerRasterMetadataHandler handler, CancellationToken cancellationToken = default)
+    {
+        var (f, error) = await ReadPostFormatAsync(context, cancellationToken);
+        return error ?? await GetStatisticsResource(id, f, context, handler, cancellationToken);
+    }
+
+    private static async Task<IResult> GetStatisticsResourcePostByService(
+        string serviceId, HttpContext context, ImageServerRasterMetadataHandler handler, CancellationToken cancellationToken = default)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        return resolution.ErrorResult ?? await GetStatisticsResourcePost(resolution.LayerId, context, handler, cancellationToken);
+    }
+
+    private static Task<IResult> GetHistogramsResource(
+        int id, string? f, HttpContext context, ImageServerRasterMetadataHandler handler, CancellationToken cancellationToken = default)
+        => ExecuteRasterMetadataAsync(id, f, context, (l, ct) => handler.GetHistogramsAsync(context, l, ct), cancellationToken);
+
+    private static async Task<IResult> GetHistogramsResourceByService(
+        string serviceId, string? f, HttpContext context, ImageServerRasterMetadataHandler handler, CancellationToken cancellationToken = default)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        return resolution.ErrorResult ?? await GetHistogramsResource(resolution.LayerId, f, context, handler, cancellationToken);
+    }
+
+    private static async Task<IResult> GetHistogramsResourcePost(
+        int id, HttpContext context, ImageServerRasterMetadataHandler handler, CancellationToken cancellationToken = default)
+    {
+        var (f, error) = await ReadPostFormatAsync(context, cancellationToken);
+        return error ?? await GetHistogramsResource(id, f, context, handler, cancellationToken);
+    }
+
+    private static async Task<IResult> GetHistogramsResourcePostByService(
+        string serviceId, HttpContext context, ImageServerRasterMetadataHandler handler, CancellationToken cancellationToken = default)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        return resolution.ErrorResult ?? await GetHistogramsResourcePost(resolution.LayerId, context, handler, cancellationToken);
+    }
+
+    private static Task<IResult> GetRasterAttributeTableResource(
+        int id, string? f, HttpContext context, ImageServerRasterMetadataHandler handler, CancellationToken cancellationToken = default)
+        => ExecuteRasterMetadataAsync(id, f, context, (l, ct) => handler.GetRasterAttributeTableAsync(context, l, ct), cancellationToken);
+
+    private static async Task<IResult> GetRasterAttributeTableResourceByService(
+        string serviceId, string? f, HttpContext context, ImageServerRasterMetadataHandler handler, CancellationToken cancellationToken = default)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        return resolution.ErrorResult ?? await GetRasterAttributeTableResource(resolution.LayerId, f, context, handler, cancellationToken);
+    }
+
+    private static async Task<IResult> GetRasterAttributeTableResourcePost(
+        int id, HttpContext context, ImageServerRasterMetadataHandler handler, CancellationToken cancellationToken = default)
+    {
+        var (f, error) = await ReadPostFormatAsync(context, cancellationToken);
+        return error ?? await GetRasterAttributeTableResource(id, f, context, handler, cancellationToken);
+    }
+
+    private static async Task<IResult> GetRasterAttributeTableResourcePostByService(
+        string serviceId, HttpContext context, ImageServerRasterMetadataHandler handler, CancellationToken cancellationToken = default)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        return resolution.ErrorResult ?? await GetRasterAttributeTableResourcePost(resolution.LayerId, context, handler, cancellationToken);
+    }
+
+    private static Task<IResult> GetRasterFunctionInfosResource(
+        int id, string? f, HttpContext context, ImageServerRasterMetadataHandler handler, CancellationToken cancellationToken = default)
+        => ExecuteRasterMetadataAsync(id, f, context, (l, ct) => handler.GetRasterFunctionInfosAsync(context, l, ct), cancellationToken);
+
+    private static async Task<IResult> GetRasterFunctionInfosResourceByService(
+        string serviceId, string? f, HttpContext context, ImageServerRasterMetadataHandler handler, CancellationToken cancellationToken = default)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        return resolution.ErrorResult ?? await GetRasterFunctionInfosResource(resolution.LayerId, f, context, handler, cancellationToken);
+    }
+
+    private static async Task<IResult> GetRasterFunctionInfosResourcePost(
+        int id, HttpContext context, ImageServerRasterMetadataHandler handler, CancellationToken cancellationToken = default)
+    {
+        var (f, error) = await ReadPostFormatAsync(context, cancellationToken);
+        return error ?? await GetRasterFunctionInfosResource(id, f, context, handler, cancellationToken);
+    }
+
+    private static async Task<IResult> GetRasterFunctionInfosResourcePostByService(
+        string serviceId, HttpContext context, ImageServerRasterMetadataHandler handler, CancellationToken cancellationToken = default)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        return resolution.ErrorResult ?? await GetRasterFunctionInfosResourcePost(resolution.LayerId, context, handler, cancellationToken);
+    }
+
+    private static async Task<IResult> ExecuteRasterMetadataAsync(
+        int id,
+        string? f,
+        HttpContext context,
+        Func<int, CancellationToken, Task<IResult>> handler,
+        CancellationToken cancellationToken)
+    {
+        if (!IsSupportedJsonResponseFormat(f))
+        {
+            return CreateUnsupportedJsonFormatResult(context);
+        }
+
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        if (layerError is not null)
+        {
+            return layerError;
+        }
+
+        return await handler(id, cancellationToken);
+    }
+
+    private static async Task<(string? Format, IResult? Error)> ReadPostFormatAsync(
+        HttpContext context,
+        CancellationToken cancellationToken)
+    {
+        var bodyValues = await ReadPostValuesAsync(context, cancellationToken);
+        if (bodyValues.Error != null)
+        {
+            return (null, bodyValues.Error);
+        }
+
+        var merged = MergeQueryAndBodyValues(context, bodyValues.Values!);
+        return (GetString(merged, "f"), null);
     }
 
     private static async Task<(int LayerId, IResult? ErrorResult)> ResolveImageServiceLayerIdAsync(
