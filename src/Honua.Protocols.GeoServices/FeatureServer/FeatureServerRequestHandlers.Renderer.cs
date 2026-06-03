@@ -27,6 +27,39 @@ internal static partial class FeatureServerEndpoints
                 [error ?? "Invalid query parameter."]);
         }
 
+        // ArcGIS API for Python POSTs generateRenderer; accept the form/body payload
+        // in addition to the query string so the POST companion behaves like the
+        // sibling query operations (which all support GET+POST).
+        var cancellationToken = GetTimeoutAwareCancellationToken(context);
+        var values = ToCaseInsensitiveDictionary(context.Request.Query);
+        if (!HttpMethods.IsGet(context.Request.Method))
+        {
+            var (bodyValues, readError) = await TryReadRequestValuesAsync(context.Request, cancellationToken);
+            if (bodyValues == null)
+            {
+                if (TryGetUnsupportedMediaType(readError, out var receivedContentType))
+                {
+                    return CreateUnsupportedRequestContentTypeResult(context, receivedContentType);
+                }
+
+                return StandardErrorHelpers.CreateBadRequest(context,
+                    "Invalid query parameters",
+                    [readError ?? "Invalid request body."]);
+            }
+
+            if (!TryValidateAllowedParameters(bodyValues, queryValidator, AllowedQueryParameters.GenerateRenderer, out error))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context,
+                    "Invalid query parameters",
+                    [error ?? "Invalid query parameter."]);
+            }
+
+            foreach (var pair in bodyValues)
+            {
+                values[pair.Key] = pair.Value;
+            }
+        }
+
         var serviceError = RouteValidationHelpers.ValidateServiceId(context, out var serviceId);
         if (serviceError is not null)
         {
@@ -40,7 +73,6 @@ internal static partial class FeatureServerEndpoints
         }
 
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
-        var cancellationToken = GetTimeoutAwareCancellationToken(context);
         var validationResult = await FeatureServerResourceValidationHelpers.ValidateServiceLayerV2Async(
             resourceValidator,
             serviceId,
@@ -61,7 +93,6 @@ internal static partial class FeatureServerEndpoints
             return accessError;
         }
 
-        var values = ToCaseInsensitiveDictionary(context.Request.Query);
         var classificationDef = GetValueString(values, "classificationDef");
         JsonDocument? classificationDocument = null;
         if (!string.IsNullOrWhiteSpace(classificationDef)

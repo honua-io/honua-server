@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using Grpc.Core;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -103,7 +104,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
 
         var layer = await ValidateGrpcLayerAsync(
             request.ServiceId, request.LayerId, context.CancellationToken).ConfigureAwait(false);
-        EnsureReadAccess(context, layer.Service, layer.Resource);
+        await EnsureReadAccessAsync(context, layer.Service, layer.Resource).ConfigureAwait(false);
         var queryContext = await CreateQueryContextAsync(request, layer, context.CancellationToken).ConfigureAwait(false);
         var query = queryContext.Query;
         var pkField = layer.ObjectIdFieldName;
@@ -175,7 +176,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
 
         var layer = await ValidateGrpcLayerAsync(
             request.ServiceId, request.LayerId, context.CancellationToken).ConfigureAwait(false);
-        EnsureReadAccess(context, layer.Service, layer.Resource);
+        await EnsureReadAccessAsync(context, layer.Service, layer.Resource).ConfigureAwait(false);
         var queryContext = await CreateQueryContextAsync(request, layer, context.CancellationToken).ConfigureAwait(false);
         var query = queryContext.Query;
         var pkField = layer.ObjectIdFieldName;
@@ -654,11 +655,15 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
     {
         var httpContext = context.GetHttpContext();
 
-        var decision = AccessPolicyHelpers.EvaluateAccess(
+        // Per-operation RBAC grants are consulted first (#1376); when a grant
+        // matches the request is authorized directly. Otherwise we fall through
+        // to the coarse AccessPolicy + scoped data-editor behavior unchanged.
+        var decision = await AccessPolicyHelpers.EvaluateResourceAccessAsync(
             httpContext,
-            resource.AccessPolicy,
-            service.AccessPolicy,
-            AccessScope.Write);
+            resource,
+            service,
+            AuthorizationOperation.Update,
+            context.CancellationToken).ConfigureAwait(false);
 
         ThrowIfAccessDenied(decision);
 
@@ -675,18 +680,21 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         ThrowIfAccessDenied(rbacDecision);
     }
 
-    private static void EnsureReadAccess(
+    private static async Task EnsureReadAccessAsync(
         ServerCallContext context,
         MetadataV2Service service,
         MetadataV2Resource resource)
     {
         var httpContext = context.GetHttpContext();
 
-        var decision = AccessPolicyHelpers.EvaluateAccess(
+        // Per-operation RBAC grants are consulted first (#1376) via the shared
+        // seam; the coarse AccessPolicy read evaluation is the no-grant fallback.
+        var decision = await AccessPolicyHelpers.EvaluateResourceAccessAsync(
             httpContext,
-            resource.AccessPolicy,
-            service.AccessPolicy,
-            AccessScope.Read);
+            resource,
+            service,
+            AuthorizationOperation.Query,
+            context.CancellationToken).ConfigureAwait(false);
 
         ThrowIfAccessDenied(decision);
     }

@@ -271,4 +271,22 @@ public sealed class LayerResponse
     /// Esri clients (ArcGIS Pro, JS API) check this object to enable pagination, statistics, orderBy, etc.
     /// </summary>
     public AdvancedQueryCapabilities? AdvancedQueryCapabilities { get; init; }
+
+    /// <summary>
+    /// Name of the integer field that selects the subtype for each row. Null (and
+    /// omitted from the response) when the layer declares no subtypes.
+    /// </summary>
+    public string? SubtypeField { get; init; }
+
+    /// <summary>
+    /// Default subtype code applied to new rows when none is supplied. Null (and
+    /// omitted from the response) when the layer declares no subtypes or no default.
+    /// </summary>
+    public System.Text.Json.JsonElement? DefaultSubtypeCode { get; init; }
+
+    /// <summary>
+    /// Esri subtype definitions for the layer. Null (and omitted from the response)
+    /// when the layer declares no subtypes.
+    /// </summary>
+    public GeoServicesSubtypeInfo[]? Subtypes { get; init; }
 }

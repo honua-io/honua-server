@@ -106,6 +106,34 @@ ALTER TABLE IF EXISTS honua.layers
 ALTER TABLE IF EXISTS honua.layers
     ADD COLUMN IF NOT EXISTS enabled BOOLEAN NOT NULL DEFAULT TRUE;
 
+-- Independent styleId-keyed style catalog (ADR-0048 Phase 2, migration 042, #1389).
+CREATE TABLE IF NOT EXISTS honua.styles (
+    style_id            TEXT PRIMARY KEY,
+    title               TEXT,
+    description         TEXT,
+    maplibre_style      JSONB NOT NULL,
+    drawing_info        JSONB,
+    style_version       INT NOT NULL DEFAULT 1,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    revised_by          TEXT,
+    change_summary      TEXT,
+    CONSTRAINT styles_style_id_not_blank_check CHECK (length(btrim(style_id)) > 0),
+    CONSTRAINT styles_change_summary_length_check
+        CHECK (change_summary IS NULL OR char_length(change_summary) <= 1000)
+);
+
+CREATE TABLE IF NOT EXISTS honua.layer_style_refs (
+    layer_id    INT NOT NULL REFERENCES honua.layers (layer_id) ON DELETE CASCADE,
+    style_id    TEXT NOT NULL REFERENCES honua.styles (style_id) ON DELETE CASCADE,
+    ordinal     INT NOT NULL DEFAULT 0,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (layer_id, style_id)
+);
+
+CREATE INDEX IF NOT EXISTS layer_style_refs_layer_idx ON honua.layer_style_refs (layer_id, ordinal);
+CREATE INDEX IF NOT EXISTS layer_style_refs_style_idx ON honua.layer_style_refs (style_id);
+
 CREATE TABLE IF NOT EXISTS honua.service_layers (
     service_name VARCHAR(64) NOT NULL REFERENCES honua.services(service_name) ON DELETE CASCADE,
     layer_id INT NOT NULL REFERENCES honua.layers(layer_id) ON DELETE CASCADE,
@@ -621,8 +649,13 @@ BEGIN
                     'metadata', jsonb_build_object('id', 'svc-' || service_part || '-feature', 'name', service_name, 'title', service_name),
                     'serviceType', 'esri-feature-service',
                     'publicationIds', '[]'::jsonb,
-                    'protocols', to_jsonb(ARRAY['FeatureServer', 'MapServer', 'OData', 'Grpc', 'OgcFeatures', 'Wfs20', 'Wms', 'Wmts', 'OGC-API-Maps', 'OGC-API-Tiles']::text[]),
-                    'enabledProtocols', to_jsonb(ARRAY['FeatureServer', 'MapServer', 'OData', 'Grpc', 'OgcFeatures', 'Wfs20', 'Wms', 'Wmts', 'OGC-API-Maps', 'OGC-API-Tiles']::text[]),
+                    -- Name-based service routing (ServicesByName / FindService) is first-wins on
+                    -- the lowest service id 'svc-<part>-feature', so the feature service must carry
+                    -- the full protocol union (including Wcs / OGC API Coverages / ImageServer) the
+                    -- way the production publish path does. Otherwise WCS GetCapabilities 404s with
+                    -- OperationNotSupported. Mirrors MetadataV2CompatSnapshotSql. (honua-server#1412.)
+                    'protocols', to_jsonb(ARRAY['FeatureServer', 'MapServer', 'ImageServer', 'OData', 'Grpc', 'OgcFeatures', 'Wfs20', 'Wms', 'Wmts', 'Wcs', 'OGC-API-Maps', 'OGC-API-Tiles', 'OGC-API-Coverages']::text[]),
+                    'enabledProtocols', to_jsonb(ARRAY['FeatureServer', 'MapServer', 'ImageServer', 'OData', 'Grpc', 'OgcFeatures', 'Wfs20', 'Wms', 'Wmts', 'Wcs', 'OGC-API-Maps', 'OGC-API-Tiles', 'OGC-API-Coverages']::text[]),
                     'options', '{}'::jsonb,
                     'accessPolicy', service_access_policy,
                     'status', (SELECT value FROM status_doc),

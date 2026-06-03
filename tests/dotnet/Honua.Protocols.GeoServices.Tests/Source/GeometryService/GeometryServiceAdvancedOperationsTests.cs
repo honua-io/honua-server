@@ -108,6 +108,9 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
     [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/clip")]
     public async Task Clip_PostValidRequest_ReturnsGeometry()
     {
+        // Regression for #1443: clip clips each input geometry to the Esri `envelope`
+        // parameter (not a `geometry` operand). A request that omits envelope must fail,
+        // and a request supplying envelope must succeed.
         var body = """
         {
             "geometries": {
@@ -116,8 +119,9 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
                     {"rings": [[[0,0],[3,0],[3,3],[0,3],[0,0]]]}
                 ]
             },
-            "geometry": {
-                "rings": [[[1,1],[2,1],[2,2],[1,2],[1,1]]]
+            "envelope": {
+                "xmin": 1, "ymin": 1, "xmax": 2, "ymax": 2,
+                "spatialReference": {"wkid": 4326}
             },
             "sr": "4326"
         }
@@ -137,13 +141,11 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Clip)]
     [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/clip")]
-    public async Task Clip_NonRectangularClipGeometry_UsesEnvelopeForClipping()
+    public async Task Clip_WithEnvelope_ClipsToEnvelopeBounds()
     {
-        // The clip geometry is a triangle with vertices at (1,1), (3,1), (2,3).
-        // Its envelope is the rectangle (1,1)-(3,3).
-        // The target polygon is (0,0)-(4,4).
-        // If clip correctly uses the envelope, the result should be a rectangle (1,1)-(3,3),
-        // NOT the intersection with the triangle itself.
+        // Regression for #1443. The target polygon is (0,0)-(4,4); the clip envelope is
+        // (1,1)-(3,3). The clipped result is the (1,1)-(3,3) window, which differs from the
+        // unclipped target, proving the envelope parameter is honored.
         var body = """
         {
             "geometries": {
@@ -152,8 +154,9 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
                     {"rings": [[[0,0],[4,0],[4,4],[0,4],[0,0]]]}
                 ]
             },
-            "geometry": {
-                "rings": [[[1,1],[3,1],[2,3],[1,1]]]
+            "envelope": {
+                "xmin": 1, "ymin": 1, "xmax": 3, "ymax": 3,
+                "spatialReference": {"wkid": 4326}
             },
             "sr": "4326"
         }
@@ -169,23 +172,45 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
         clipResult.Should().NotBeNull();
         clipResult!.Geometries.Should().HaveCount(1);
 
-        // Also run the same inputs through intersect to verify the results differ
-        var intersectResponse = await _fixture.Client.PostAsync(
-            "/rest/services/Utilities/Geometry/GeometryServer/intersect",
+        // Every clipped ring coordinate must fall inside the (1,1)-(3,3) envelope, proving
+        // the envelope actually constrained the output away from the original 4x4 target.
+        var clipGeom = clipResult.Geometries![0];
+        clipGeom.TryGetProperty("rings", out var rings).Should().BeTrue();
+        foreach (var ring in rings.EnumerateArray())
+        {
+            foreach (var point in ring.EnumerateArray())
+            {
+                var px = point[0].GetDouble();
+                var py = point[1].GetDouble();
+                px.Should().BeInRange(1, 3);
+                py.Should().BeInRange(1, 3);
+            }
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Clip)]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/clip")]
+    public async Task Clip_MissingEnvelope_Returns400()
+    {
+        // Regression for #1443: clip requires the `envelope` parameter, not `geometry`.
+        var body = """
+        {
+            "geometries": {
+                "geometryType": "esriGeometryPolygon",
+                "geometries": [
+                    {"rings": [[[0,0],[3,0],[3,3],[0,3],[0,0]]]}
+                ]
+            },
+            "sr": "4326"
+        }
+        """;
+
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/Utilities/Geometry/GeometryServer/clip",
             new StringContent(body, Encoding.UTF8, "application/json"));
 
-        intersectResponse.Be200Ok();
-        var intersectContent = await intersectResponse.Content.ReadAsStringAsync();
-        var intersectResult = JsonSerializer.Deserialize(intersectContent, GeometryServiceJsonContext.Default.GeometryServiceResponse);
-        intersectResult.Should().NotBeNull();
-        intersectResult!.Geometries.Should().HaveCount(1);
-
-        // Clip (envelope-based) and intersect (full geometry) should produce different geometries
-        // because the clip uses the rectangular envelope of the triangle, not the triangle itself
-        var clipGeom = clipResult.Geometries![0].GetRawText();
-        var intersectGeom = intersectResult.Geometries![0].GetRawText();
-        clipGeom.Should().NotBe(intersectGeom,
-            "clip should use the envelope of the clip geometry, producing a different result than intersect");
+        response.Be400BadRequest();
     }
 
     [IntegrationTest]

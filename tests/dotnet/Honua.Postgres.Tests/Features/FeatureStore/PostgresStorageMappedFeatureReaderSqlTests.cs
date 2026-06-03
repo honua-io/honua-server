@@ -62,4 +62,38 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
         expression.Should().Contain("'field_1', \"field_1\"");
         expression.Should().Contain("'field_51', \"field_51\"");
     }
+
+    [Fact]
+    public void BuildAttributesExpressionText_WithJsonbColumn_PreservesNumericTypeButStringifiesText()
+    {
+        var fields = new[]
+        {
+            new MetadataV2Field { Name = "site_name", Type = MetadataV2FieldType.String },
+            new MetadataV2Field { Name = "sync_version", Type = MetadataV2FieldType.Integer },
+            new MetadataV2Field { Name = "elevation", Type = MetadataV2FieldType.Double },
+            new MetadataV2Field { Name = "serviceable", Type = MetadataV2FieldType.Boolean },
+            new MetadataV2Field { Name = "inspected", Type = MetadataV2FieldType.Date },
+        };
+
+        var method = typeof(PostgresStorageMappedFeatureReader).GetMethod(
+            "BuildAttributesExpressionText",
+            BindingFlags.NonPublic | BindingFlags.Static,
+            binder: null,
+            types: [typeof(MetadataV2Field[]), typeof(string)],
+            modifiers: null);
+
+        method.Should().NotBeNull();
+
+        var expression = (string)method!.Invoke(null, [fields, "attributes"])!;
+
+        // Numeric/boolean fields use the jsonb-preserving accessor (->) so they
+        // round-trip as JSON numbers/booleans, not strings.
+        expression.Should().Contain("'sync_version', \"attributes\" -> 'sync_version'");
+        expression.Should().Contain("'elevation', \"attributes\" -> 'elevation'");
+        expression.Should().Contain("'serviceable', \"attributes\" -> 'serviceable'");
+
+        // Text/date fields keep the text accessor (->>) — formatting unchanged.
+        expression.Should().Contain("'site_name', \"attributes\" ->> 'site_name'");
+        expression.Should().Contain("'inspected', \"attributes\" ->> 'inspected'");
+    }
 }

@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Compliance;
 using Honua.Core.Features.Metadata;
+using Honua.Core.Features.Portal;
 using Honua.Core.Features.Temporal;
 using Honua.Server.Features.Temporal;
 using Honua.Postgres.Features.Scene;
@@ -39,6 +40,7 @@ using Honua.Protocols.Ogc.Api.Features;
 using Honua.Protocols.Ogc.Api.Maps;
 using Honua.Protocols.Ogc.Api.Processes;
 using Honua.Protocols.Ogc.Api.Records;
+using Honua.Protocols.Ogc.Api.Styles;
 using Honua.Protocols.Ogc.Api.Tiles;
 using Honua.Server.Features.Orchestration;
 using Honua.PackageReview;
@@ -85,6 +87,7 @@ internal static class FeatureRegistrationExtensions
         services.AddOgcCoverages();
         services.AddOgcFeatures(configuration);
         services.AddOgcMaps();
+        services.AddOgcStyles();
         services.AddOgcProcesses(configuration);
         services.AddWfs20(configuration);
         services.AddWcs20();
@@ -119,6 +122,9 @@ internal static class FeatureRegistrationExtensions
         services.AddSpec(configuration);
         services.AddEnhancedAdminServices();
         services.AddMetadataReleaseServices();
+        // RBAC-aware ArcGIS Portal item projector consumed by the Portal/Sharing
+        // REST read surface (#1371 → #1243).
+        services.AddPortalItemProjection();
         services.AddStudioPackageLifecycle();
         // Durable Studio map collaboration: comment threads + activity feed (#1278, slice 1).
         // In-memory store is the default; AddPostgreSqlServices overrides it with durable storage.
@@ -171,6 +177,7 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapOgcCoveragesEndpoints();
         endpoints.MapOgcFeaturesEndpoints();
         endpoints.MapOgcMapsEndpoints();
+        endpoints.MapOgcStylesEndpoints();
         endpoints.MapOgcProcessesEndpoints();
         endpoints.MapOgcRecordsEndpoints();
         endpoints.MapOgcTilesEndpoints();

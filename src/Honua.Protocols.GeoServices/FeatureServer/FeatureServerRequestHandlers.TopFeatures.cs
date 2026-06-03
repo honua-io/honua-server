@@ -112,6 +112,13 @@ internal static partial class FeatureServerEndpoints
                 [parseError ?? "topFilter must be valid JSON."]);
         }
 
+        if (!TryParseBoolValue(values, "returnCountOnly", false, out var returnCountOnly, out var countError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid returnCountOnly parameter",
+                [countError ?? "returnCountOnly must be a boolean."]);
+        }
+
         // Build query from common parameters
         var query = new FeatureQuery
         {
@@ -131,6 +138,18 @@ internal static partial class FeatureServerEndpoints
 
         var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
         var result = await featureReader.QueryTopFeaturesAsync(storageLayerId.Value, query, cancellationToken);
+
+        // returnCountOnly: Esri's queryTopFeatures honors this and returns the
+        // top-feature count, not a FeatureSet. The ArcGIS API for Python issues
+        // it as the first step of query_top_features paging; ignoring it left the
+        // SDK with a null total and a TypeError in its paginator.
+        if (returnCountOnly)
+        {
+            return Results.Json(
+                new QueryResponse { Count = result.Items.Length, Features = null },
+                FeatureServerJsonContext.Default.QueryResponse,
+                contentType: "application/json");
+        }
 
         var responseFeatures = result.Items.Select(feature => new GeoServicesFeature
         {

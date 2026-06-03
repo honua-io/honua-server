@@ -1147,7 +1147,9 @@
       "protocol": "ArcGIS Portal Sharing",
       "canonicalIdentifier": "/sharing/rest/generateToken",
       "parentSurfaceId": null,
-      "endpointPrefixes": [],
+      "endpointPrefixes": [
+        "/sharing/rest/"
+      ],
       "endpointExactMatches": [
         "/sharing/rest/generateToken"
       ],
@@ -2189,6 +2191,49 @@
           "ownerRepo": "honua-server",
           "status": "implemented",
           "linkedTicket": "honua-server#521",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
+      "surfaceId": "ogc-api-styles",
+      "displayName": "OGC API Styles",
+      "surfaceKind": "http-route-family",
+      "protocol": "OGC API Styles",
+      "canonicalIdentifier": "/ogc/styles",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/ogc/styles"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage and endpoint integration tests for the OGC API Styles Phase 1 adapter (ADR-0048)",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Styling/OgcStylesEndpointTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "honua-server#1388",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "standards-conformance",
+          "proofMechanism": "OGC API Styles Phase 1 conformance classes (core, mapbox-styles, sld-10, sld-11, style-validation, partial manage-styles) are declared at /ogc/styles/conformance and documented, with targeted endpoint coverage",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "docs/gis/style-engine-protocol-consumption.md",
+            "tests/dotnet/Honua.Server.Tests/Features/Styling/OgcStylesEndpointTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "honua-server#1388",
           "versionCaptureRule": null
         }
       ]

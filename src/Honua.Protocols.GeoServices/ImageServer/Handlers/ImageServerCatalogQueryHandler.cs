@@ -184,6 +184,16 @@ internal sealed class ImageServerCatalogQueryHandler
         var returnCountOnly = ParseBool(GetString(values, "returnCountOnly"), defaultValue: false);
         var returnExtentOnly = ParseBool(GetString(values, "returnExtentOnly"), defaultValue: false);
 
+        if (!TryParseOrderByFields(GetString(values, "orderByFields"), out var orderBy, out error))
+        {
+            return false;
+        }
+
+        if (!TryParseOutFields(GetString(values, "outFields"), out var outFields, out error))
+        {
+            return false;
+        }
+
         query = new ImageServerCatalogQuery
         {
             Where = where,
@@ -192,11 +202,101 @@ internal sealed class ImageServerCatalogQueryHandler
             Time = time,
             Offset = offset,
             Limit = limit,
+            OrderBy = orderBy,
+            OutFields = outFields,
             ReturnGeometry = returnGeometry,
             ReturnIdsOnly = returnIdsOnly,
             ReturnCountOnly = returnCountOnly,
             ReturnExtentOnly = returnExtentOnly,
         };
+        return true;
+    }
+
+    /// <summary>
+    /// Parses the Esri <c>orderByFields</c> parameter: a comma-separated list of
+    /// <c>field [ASC|DESC]</c> terms. Unknown field names are rejected with a 400.
+    /// </summary>
+    private static bool TryParseOrderByFields(
+        string? raw,
+        out IReadOnlyList<ImageServerCatalogOrderBy> orderBy,
+        out string? error)
+    {
+        error = null;
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            orderBy = [];
+            return true;
+        }
+
+        var terms = new List<ImageServerCatalogOrderBy>();
+        foreach (var part in raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var tokens = part.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+            var fieldName = tokens.Length > 0 ? tokens[0] : string.Empty;
+            var canonical = ImageServerCatalogFields.ResolveCanonicalName(fieldName);
+            if (canonical is null)
+            {
+                error = $"Unknown orderByFields field '{fieldName}'.";
+                orderBy = [];
+                return false;
+            }
+
+            var descending = false;
+            if (tokens.Length > 1)
+            {
+                if (tokens[1].Equals("DESC", StringComparison.OrdinalIgnoreCase))
+                {
+                    descending = true;
+                }
+                else if (!tokens[1].Equals("ASC", StringComparison.OrdinalIgnoreCase))
+                {
+                    error = $"Invalid sort direction '{tokens[1]}' in orderByFields. Use ASC or DESC.";
+                    orderBy = [];
+                    return false;
+                }
+            }
+
+            terms.Add(new ImageServerCatalogOrderBy(canonical, descending));
+        }
+
+        orderBy = terms;
+        return true;
+    }
+
+    /// <summary>
+    /// Parses the Esri <c>outFields</c> parameter into a canonical field set.
+    /// <c>*</c> (or omitted) selects all fields. <c>OBJECTID</c> is always
+    /// retained. Unknown field names are rejected with a 400.
+    /// </summary>
+    private static bool TryParseOutFields(
+        string? raw,
+        out IReadOnlyList<string>? outFields,
+        out string? error)
+    {
+        error = null;
+        outFields = null;
+        if (string.IsNullOrWhiteSpace(raw) || raw.Trim() == "*")
+        {
+            return true;
+        }
+
+        var selected = new List<string> { "OBJECTID" };
+        foreach (var part in raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var canonical = ImageServerCatalogFields.ResolveCanonicalName(part);
+            if (canonical is null)
+            {
+                error = $"Unknown outFields field '{part}'.";
+                return false;
+            }
+
+            if (!selected.Contains(canonical, StringComparer.Ordinal))
+            {
+                selected.Add(canonical);
+            }
+        }
+
+        outFields = selected;
         return true;
     }
 
@@ -259,7 +359,7 @@ internal sealed class ImageServerCatalogQueryHandler
                 Wkid = responseSrid,
                 LatestWkid = responseSrid,
             },
-            Fields = BuildCatalogFields(),
+            Fields = BuildCatalogFields(query.OutFields),
             Features = page.Items.Select(item => BuildFeature(item, query)).ToArray(),
             ExceededTransferLimit = page.ExceededTransferLimit,
         };
@@ -288,6 +388,16 @@ internal sealed class ImageServerCatalogQueryHandler
             ["CreatedAt"] = item.CreatedAt.ToUnixTimeMilliseconds(),
         };
 
+        // Project to the requested outFields when supplied. OBJECTID is always
+        // retained by TryParseOutFields so the projected set is never empty.
+        if (query.OutFields is { Count: > 0 })
+        {
+            var allowed = new HashSet<string>(query.OutFields, StringComparer.OrdinalIgnoreCase);
+            attributes = attributes
+                .Where(pair => allowed.Contains(pair.Key))
+                .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
+        }
+
         CatalogQueryGeometry? geometry = null;
         if (query.ReturnGeometry && item.FootprintRings is { Length: > 0 })
         {
@@ -313,9 +423,9 @@ internal sealed class ImageServerCatalogQueryHandler
         };
     }
 
-    internal static Field[] BuildCatalogFields()
+    internal static Field[] BuildCatalogFields(IReadOnlyList<string>? outFields = null)
     {
-        return
+        Field[] allFields =
         [
             new Field { Name = "OBJECTID", Type = "esriFieldTypeOID", Alias = "OBJECTID" },
             new Field { Name = "Name", Type = "esriFieldTypeString", Alias = "Name", Nullable = true },
@@ -333,6 +443,16 @@ internal sealed class ImageServerCatalogQueryHandler
             new Field { Name = "AcquisitionDate", Type = "esriFieldTypeDate", Alias = "AcquisitionDate", Nullable = true },
             new Field { Name = "CreatedAt", Type = "esriFieldTypeDate", Alias = "CreatedAt" },
         ];
+
+        if (outFields is not { Count: > 0 })
+        {
+            return allFields;
+        }
+
+        // Preserve the canonical field order rather than the caller's order so the
+        // schema stays stable and matches the attribute emit order.
+        var allowed = new HashSet<string>(outFields, StringComparer.OrdinalIgnoreCase);
+        return allFields.Where(field => allowed.Contains(field.Name)).ToArray();
     }
 
     private static List<long>? ParseObjectIds(string? raw)

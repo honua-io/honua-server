@@ -179,7 +179,13 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
                 PrimaryKey = FieldNames.ObjectId,
                 Fields = [],
                 ServiceName = request.ServiceName,
-                Enabled = true
+                Enabled = true,
+                FieldDomains = BuildFieldDomainMap(layerInfo),
+                // Carry the captured Esri subtype set through publish. The subtype field
+                // is the canonical 'type' column on the imported layer; the publish path
+                // only attaches the subtypes when that column is actually published, so a
+                // subtype set referencing a dropped column never false-fails reconciliation.
+                Subtypes = layerInfo.Subtypes
             };
 
             var published = await _layerPublishingService.PublishLayerAsync(
@@ -209,6 +215,26 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
             warnings.Add("AutoPublish was requested, but publishing did not complete.");
             return null;
         }
+    }
+
+    // Projects the captured per-field Esri domains onto the publish request, keyed
+    // by source field name. Coded-value domains over the capture cap are not present
+    // here (the source parser omitted them and the inventory raised the truncation
+    // warning), so they intentionally publish without a domain rather than as a
+    // misleading partial lookup.
+    private static Dictionary<string, MetadataV2FieldDomain> BuildFieldDomainMap(
+        GeoservicesLayerInfo layerInfo)
+    {
+        var map = new Dictionary<string, MetadataV2FieldDomain>(StringComparer.OrdinalIgnoreCase);
+        foreach (var field in layerInfo.Fields)
+        {
+            if (field.Domain is { } domain && !string.IsNullOrWhiteSpace(field.Name))
+            {
+                map[field.Name] = domain;
+            }
+        }
+
+        return map;
     }
 
     private async Task TryAttachLayerStyleAsync(

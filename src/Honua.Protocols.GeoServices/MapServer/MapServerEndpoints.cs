@@ -175,6 +175,31 @@ internal static partial class MapServerEndpoints
             .WithTags("MapServer")
             .AllowAnonymous();
 
+        endpoints.MapGet("/rest/services/{serviceId}/MapServer/allLayersAndTables",
+                static (HttpContext context, CancellationToken cancellationToken) => HandleAllLayersAndTables(context))
+            .WithDisplayName("Get All Layers and Tables")
+            .WithName("MapServerAllLayersAndTables")
+            .WithSummary("Get metadata for all layers and tables")
+            .WithDescription("Returns the full metadata for every layer and table in the service in a single document")
+            .WithTags("MapServer")
+            .CacheOutput("LayerMetadata");
+
+        endpoints.MapGet("/rest/services/{serviceId}/MapServer/queryDomains",
+                static (HttpContext context, CancellationToken cancellationToken) => HandleQueryDomains(context))
+            .WithDisplayName("Query MapServer Domains")
+            .WithName("MapServerQueryDomains")
+            .WithSummary("Query coded-value and range domains")
+            .WithDescription("Returns the domains referenced by the requested layers")
+            .WithTags("MapServer")
+            .CacheOutput("LayerMetadata");
+
+        endpoints.MapGet("/rest/services/{serviceId}/MapServer/{layerId:int}/{featureId:long}", HandleFeatureResource)
+            .WithDisplayName("Get MapServer Feature")
+            .WithName("MapServerFeatureResource")
+            .WithSummary("Get a single feature by object id")
+            .WithDescription("Returns a single feature identified by its object id from a MapServer layer")
+            .WithTags("MapServer");
+
         endpoints.MapGet("/rest/services/{serviceId}/MapServer/tile/{z:int}/{y:int}/{x:int}",
                 static (HttpContext context, CancellationToken cancellationToken) => HandleTile(context))
             .WithDisplayName("Get Map Tile")

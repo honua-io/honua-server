@@ -32,18 +32,22 @@ internal static partial class AttachmentHandler
             layerId,
             [featureId],
             returnUrl: false,
+            AttachmentQueryFilter.None,
             attachmentStore,
             logger,
             context,
             cancellationToken);
 
     /// <summary>
-    /// Queries attachments for one or more features.
+    /// Queries attachments for one or more features, optionally narrowing the
+    /// per-feature attachment list with the Esri <c>attachmentTypes</c>,
+    /// <c>keywords</c>, and <c>size</c> facets carried by <paramref name="filter"/>.
     /// </summary>
     public static async Task<IResult> QueryAttachmentsAsync(
         int layerId,
         IReadOnlyList<long> featureIds,
         bool returnUrl,
+        AttachmentQueryFilter filter,
         IAttachmentStore attachmentStore,
         ILogger<AttachmentOperations> logger,
         HttpContext context,
@@ -61,6 +65,11 @@ internal static partial class AttachmentHandler
                 LogQueryAttachments(logger, layerId, featureId);
 
                 var attachments = await attachmentStore.ListAsync(layerId, featureId, cancellationToken);
+                if (filter.HasAnyFacet)
+                {
+                    attachments = Array.FindAll(attachments, filter.Matches);
+                }
+
                 var infos = MapAttachmentInfos(attachments, context, layerId, featureId, returnUrl);
 
                 groups.Add(new AttachmentGroup

@@ -12,6 +12,22 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Features.Styling;
 
+/// <summary>
+/// Public read endpoint for the canonical MapLibre style of a layer.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The route <c>GET /api/styles/{layerId}.json</c> is a <b>deprecated</b>
+/// layerId-keyed alias. The canonical style identifier is <c>styleId</c> via
+/// <c>GET /ogc/styles/{styleId}</c> (ADR-0048), which serves MapLibre and
+/// derived SLD encodings through content negotiation.
+/// </para>
+/// <para>
+/// The alias is kept working for back-compat and emits advisory
+/// <c>Deprecation</c>/<c>Sunset</c> response headers. Per ADR-0048 it is
+/// retired only after the cross-repo styleId rollout (Phase 3) completes.
+/// </para>
+/// </remarks>
 internal static class StyleEndpoints
 {
     /// <summary>
@@ -24,10 +40,10 @@ internal static class StyleEndpoints
     public static IEndpointRouteBuilder MapStyleEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("/api/styles/{layerId:int}.json", HandleGetStyle)
-            .WithDisplayName("Get MapLibre Style")
+            .WithDisplayName("Get MapLibre Style (deprecated layerId alias)")
             .WithName("GetMapLibreStyle")
-            .WithSummary("Get MapLibre style for a layer")
-            .WithDescription("Returns a MapLibre style JSON document for the requested layer. Pass ?theme=dark|colorblind-safe|print for theme transforms.")
+            .WithSummary("[Deprecated] Get MapLibre style for a layer by layerId")
+            .WithDescription("DEPRECATED layerId-keyed alias. The canonical style identifier is styleId via GET /ogc/styles/{styleId} (ADR-0048); content negotiation there serves MapLibre and derived SLD. This endpoint keeps working as a back-compat alias and returns advisory Deprecation/Sunset response headers; it will be removed only after downstream styleId migration completes. Returns a MapLibre style JSON document for the requested layer. Pass ?theme=dark|colorblind-safe|print for theme transforms.")
             .WithTags("Styles")
             .CacheOutput("LayerStyle")
             .WithETag()
@@ -48,6 +64,10 @@ internal static class StyleEndpoints
         [FromServices] ILoggerFactory loggerFactory,
         CancellationToken cancellationToken)
     {
+        // Advisory deprecation signaling for the layerId-keyed alias. Behavior is
+        // unchanged; the canonical identifier is styleId via /ogc/styles/{styleId}.
+        StyleDeprecationHeaders.Apply(context, "/ogc/styles");
+
         if (!TryParseTheme(theme, out var themeProfile))
         {
             return StandardErrorHelpers.CreateBadRequest(

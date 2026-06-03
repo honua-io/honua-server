@@ -328,7 +328,7 @@ public sealed class FeatureServerMaintenanceTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.ValidateSql)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/validateSQL")]
-    public async Task ValidateSql_MissingWhereClause_ReturnsBadRequest()
+    public async Task ValidateSql_MissingSqlClause_ReturnsBadRequest()
     {
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/validateSQL?f=json");
@@ -336,7 +336,7 @@ public sealed class FeatureServerMaintenanceTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
         var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("where");
+        content.Should().Contain("sql");
     }
 
     [IntegrationTest]
@@ -348,5 +348,56 @@ public sealed class FeatureServerMaintenanceTests : IAsyncLifetime
             "/rest/services/nonexistent/FeatureServer/0/validateSQL?where=1%3D1&f=json");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    // Regression for #1446: validateSQL must accept the Esri `sql` parameter
+    // (with optional `sqlType`) and support both GET and a POST companion route.
+    [IntegrationTest]
+    [Operation(Operations.ValidateSql)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/validateSQL")]
+    public async Task ValidateSql_SqlParameterWithSqlType_ReturnsIsValid()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/validateSQL?sql=1%3D1&sqlType=standard&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+        document.RootElement.GetProperty("isValidSQL").GetBoolean().Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ValidateSql)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/validateSQL")]
+    public async Task ValidateSql_InvalidSqlType_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/validateSQL?sql=1%3D1&sqlType=bogus&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ValidateSql)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/validateSQL")]
+    public async Task ValidateSql_PostSqlParameter_ReturnsIsValid()
+    {
+        var content = new FormUrlEncodedContent(new[]
+        {
+            new KeyValuePair<string, string>("sql", "1=1"),
+            new KeyValuePair<string, string>("sqlType", "native"),
+            new KeyValuePair<string, string>("f", "json"),
+        });
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/validateSQL",
+            content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var body = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(body);
+        document.RootElement.GetProperty("isValidSQL").GetBoolean().Should().BeTrue();
     }
 }

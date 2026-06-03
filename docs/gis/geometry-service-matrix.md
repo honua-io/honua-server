@@ -15,51 +15,48 @@ Sources:
 
 | Esri resource | Esri path | Methods | Honua status | Notes |
 | --- | --- | --- | --- | --- |
-| Geometry Service metadata | `/Utilities/Geometry/GeometryServer` | GET | Not implemented | Honua does not expose a root metadata resource equivalent to Esri `GeometryServer`. Only operation endpoints under `/rest/services/geometry/*` are exposed. |
+| Geometry Service metadata | `/Utilities/Geometry/GeometryServer` | GET, POST | Implemented | Returns the ArcGIS-style service descriptor (`currentVersion`, `serviceDescription`, `maxBufferCount`, `maxSimplifyCount`) so probing clients (ArcGIS Pro, the ArcGIS Maps SDK for JavaScript, the ArcGIS API for Python) can complete their discovery handshake. Both GET and the `{"f":"json"}` POST companion are served. |
 
 ## Esri Geometry Service operation coverage
 
+All operations are served under the canonical Esri route
+`/rest/services/Utilities/Geometry/GeometryServer/<operation>` and accept both
+GET and POST, mirroring the ArcGIS specification. Operations are thin adapters
+over the shared geometry pipeline (NetTopologySuite for topology, the
+PROJ-backed projection service for CRS transforms, and the geography-based
+measurement path for geodesic area/length).
+
 ### Implemented
-
-| Esri operation | Esri path | Methods | Honua status | Honua endpoint(s) | Notes |
-| --- | --- | --- | --- | --- | --- |
-| Buffer | `/GeometryServer/buffer` | GET, POST | Implemented | `GET/POST /rest/services/geometry/buffer` | Supports `inSR`, optional `outSR`, `bufferSR`, `distances`, `unit`, `unionResults`, `geodesic`. |
-| Simplify | `/GeometryServer/simplify` | GET, POST | Implemented | `GET/POST /rest/services/geometry/simplify` | Topological correction via `ST_MakeValid`. |
-| Project | `/GeometryServer/project` | GET, POST | Implemented | `GET/POST /rest/services/geometry/project` | Supports numeric WKIDs plus Esri-style spatial-reference JSON with `latestWkid` or `name`. |
-| Intersect | `/GeometryServer/intersect` | GET, POST | Implemented | `GET/POST /rest/services/geometry/intersect` | Uses `geometries` plus a single `geometry`. |
-| Union | `/GeometryServer/union` | GET, POST | Implemented | `GET/POST /rest/services/geometry/union` | Returns a single unioned geometry. |
-| Clip | `/GeometryServer/clip` | GET, POST | Implemented | `GET/POST /rest/services/geometry/clip` | Uses `geometries` plus a clipping `geometry`; see limitations for envelope behavior. |
-| Difference | `/GeometryServer/difference` | GET, POST | Implemented | `GET/POST /rest/services/geometry/difference` | Uses `geometries` plus an eraser `geometry`. |
-| To Geo Coordinate String | `/GeometryServer/toGeoCoordinateString` | GET, POST | Implemented | `GET/POST /rest/services/Utilities/Geometry/GeometryServer/toGeoCoordinateString` | Supports `conversionType` of `MGRS` and `USNG`. Coordinates are reprojected to WGS84 when `sr` is not 4326. `UTM`, `GARS`, and `GEOREF` return a clear 400. |
-| From Geo Coordinate String | `/GeometryServer/fromGeoCoordinateString` | GET, POST | Implemented | `GET/POST /rest/services/Utilities/Geometry/GeometryServer/fromGeoCoordinateString` | Supports `conversionType` of `MGRS` and `USNG`. Decoded WGS84 coordinates are reprojected to `sr` when it is not 4326. |
-
-### Not implemented
 
 | Esri operation | Esri path | Methods | Honua status | Notes |
 | --- | --- | --- | --- | --- |
-| Areas and Lengths | `/GeometryServer/areasAndLengths` | GET, POST | Not implemented | Honua exposes separate non-Esri supplemental routes at `/rest/services/geometry/area` and `/rest/services/geometry/length`. |
-| Auto Complete | `/GeometryServer/autoComplete` | GET, POST | Not implemented | |
-| Convex Hull | `/GeometryServer/convexHull` | GET, POST | Not implemented | |
-| Cut | `/GeometryServer/cut` | GET, POST | Not implemented | |
-| Densify | `/GeometryServer/densify` | GET, POST | Not implemented | |
-| Distance | `/GeometryServer/distance` | GET, POST | Not implemented | |
-| Find Transformations | `/GeometryServer/findTransformations` | GET, POST | Not implemented | |
-| Generalize | `/GeometryServer/generalize` | GET, POST | Not implemented | |
-| Label Points | `/GeometryServer/labelPoints` | GET, POST | Not implemented | |
-| Lengths | `/GeometryServer/lengths` | GET, POST | Not implemented | Honua exposes `/rest/services/geometry/length` instead of the Esri canonical route. |
-| Offset | `/GeometryServer/offset` | GET, POST | Not implemented | |
-| Relation | `/GeometryServer/relation` | GET, POST | Not implemented | |
-| Reshape | `/GeometryServer/reshape` | GET, POST | Not implemented | |
-| Trim/Extend | `/GeometryServer/trimExtend` | GET, POST | Not implemented | |
+| Buffer | `/GeometryServer/buffer` | GET, POST | Implemented | Supports `inSR`, optional `outSR`, `bufferSR`, `distances` (comma-separated), `unit`, `unionResults`, and `geodesic`. `bufferSR` cascades (`bufferSR ?? outSR ?? inSR`); a `bufferSR` that conflicts with `geodesic=true` is rejected with a clear 400. |
+| Simplify | `/GeometryServer/simplify` | GET, POST | Implemented | Topological correction via `ST_MakeValid`. Handles multipart and self-intersecting inputs. |
+| Project | `/GeometryServer/project` | GET, POST | Implemented | Supports numeric WKIDs and Esri-style spatial-reference JSON (`wkid`/`latestWkid`/`wkt`/`name`). Verified across datum transforms (e.g. `4326 -> 4267` NAD27) and mixed/multipart geometry batches. |
+| Intersect | `/GeometryServer/intersect` | GET, POST | Implemented | Uses `geometries` plus a single `geometry`. |
+| Union | `/GeometryServer/union` | GET, POST | Implemented | Returns a single merged `geometry` (not a `geometries` array), matching Esri. |
+| Clip | `/GeometryServer/clip` | GET, POST | Implemented | Uses `geometries` plus a clipping `geometry`; see limitations for envelope behavior. |
+| Difference | `/GeometryServer/difference` | GET, POST | Implemented | Uses `geometries` plus an eraser `geometry`. |
+| Areas and Lengths | `/GeometryServer/areasAndLengths` | GET, POST | Implemented | Returns `areas[]` and `lengths[]`. Supports `calculationType` (`planar`, `geodesic`, `preserveShape`), `areaUnit`, and `lengthUnit`. Geodesic measurements run through the geography-based pipeline. |
+| Lengths | `/GeometryServer/lengths` | GET, POST | Implemented | Returns `lengths[]` for polylines. Supports `calculationType` and `lengthUnit`. |
+| Distance | `/GeometryServer/distance` | GET, POST | Implemented | Distance between `geometry1` and `geometry2`. Supports `distanceUnit` and `geodesic` (geodesic distance measures the closest-points line through the geography pipeline). |
+| Relation | `/GeometryServer/relation` | GET, POST | Implemented | Pairwise topological relations between `geometries1` and `geometries2`. Supports the Esri `esriGeometryRelation*` set plus the DE-9IM `esriGeometryRelationRelation` form (requires `relationParam`). |
+| Densify | `/GeometryServer/densify` | GET, POST | Implemented | Adds vertices so no segment exceeds `maxSegmentLength`. |
+| Convex Hull | `/GeometryServer/convexHull` | GET, POST | Implemented | Single hull over the union of all input geometries. |
+| Generalize | `/GeometryServer/generalize` | GET, POST | Implemented | Douglas–Peucker simplification controlled by `maxDeviation`. |
+| Label Points | `/GeometryServer/labelPoints` | GET, POST | Implemented | Returns interior label points under the Esri `labelPoints` key. |
+| Cut | `/GeometryServer/cut` | GET, POST | Implemented | Splits each `target` geometry by a `cutter` polyline; returns the resulting pieces and a `cutIndexes` array mapping each piece to its source. |
+| Trim/Extend | `/GeometryServer/trimExtend` | GET, POST | Implemented | Trims polylines at their intersection with `trimExtendTo`, or extends the terminal segment to reach it. |
+| Offset | `/GeometryServer/offset` | GET, POST | Implemented | Offsets lines (`OffsetCurve`) and polygons (buffer) by `offsetDistance`. Supports `offsetUnit`, `offsetHow` (rounded/bevelled/mitered), and `bevelRatio`. |
+| Auto Complete | `/GeometryServer/autoComplete` | GET, POST | Implemented | Forms new polygons from existing `polygons` boundaries plus connecting `polylines` by noding and polygonizing. |
+| Reshape | `/GeometryServer/reshape` | GET, POST | Implemented | Reshapes a `target` polygon/polyline using a `reshaper` line. |
+| Find Transformations | `/GeometryServer/findTransformations` | GET, POST | Implemented | Returns the applicable transformation list for `inSR -> outSR`. Honua performs CRS transformation through the shared PROJ-backed pipeline rather than exposing a discrete Esri datum-transformation catalog, so the list is empty when no explicit transformation is required; see limitations. |
+| To Geo Coordinate String | `/GeometryServer/toGeoCoordinateString` | GET, POST | Implemented | Supports `conversionType` of `MGRS` and `USNG`. Coordinates are reprojected to WGS84 when `sr` is not 4326. `UTM`, `GARS`, `GEOREF`, `DD`, `DDM`, and `DMS` return a clear 400. |
+| From Geo Coordinate String | `/GeometryServer/fromGeoCoordinateString` | GET, POST | Implemented | Supports `conversionType` of `MGRS` and `USNG`. Decoded WGS84 coordinates are reprojected to `sr` when it is not 4326. |
 
-## Honua supplemental routes
+### Not implemented
 
-These routes are implemented in Honua, but they are not Esri Geometry Service operation names.
-
-| Honua route | Honua status | Notes |
-| --- | --- | --- |
-| `GET/POST /rest/services/geometry/area` | Implemented | Returns `areas[]` for polygon inputs with optional `areaUnit`. |
-| `GET/POST /rest/services/geometry/length` | Implemented | Returns `lengths[]` for polyline inputs with optional `lengthUnit`. |
+All ArcGIS Geometry Service operations are implemented. No operation-level gaps remain.
 
 ## Request parameter coverage
 
@@ -69,53 +66,58 @@ These routes are implemented in Honua, but they are not Esri Geometry Service op
 | --- | --- | --- |
 | `f` | Partial | Supports `json` and `pjson` only. Esri `html` output is not supported. |
 | `geometries` | Implemented | Accepts ArcGIS wrapper JSON (`geometryType` + `geometries`) and GET-encoded JSON payloads. |
+| `geometry` | Implemented | Single operand geometry. Required for intersect, clip, and difference. |
+| `sr` / `inSR` / `outSR` / `bufferSR` | Implemented | Each accepts numeric WKID, `EPSG:####`, OGC CRS URI/URN, bracket-safe forms (`[EPSG:####]`), `CRS84` aliases, and JSON objects with `wkid`, `latestWkid`, or `wkt`. |
 
 ### Buffer
 
 | Parameter | Honua status | Notes |
 | --- | --- | --- |
-| `inSR` | Implemented | Supports numeric WKID, `EPSG:####`, OGC CRS URI/URN, bracket-safe forms (`[EPSG:####]`), `CRS84` aliases, and JSON objects with `wkid`, `latestWkid`, or `wkt`. |
-| `outSR` | Implemented | Same parser forms as `inSR`. Optional. |
-| `bufferSR` | Implemented | Same parser forms as `inSR`. Optional. |
 | `distances` | Implemented | Supports comma-separated multiple distances. |
-| `unit` | Implemented | Used for distance calculations. |
-| `unionResults` | Implemented | Returns a single merged geometry when `true`. |
-| `geodesic` | Implemented | Supported for geographic and projected inputs. |
+| `unit` | Implemented | Linear unit applied to `distances`. |
+| `unionResults` | Implemented | Returns a single merged geometry per distance when `true`. |
+| `geodesic` | Implemented | Geodesic buffering for geographic and projected inputs. |
 
-### Simplify, Intersect, Union, Clip, Difference
-
-| Parameter | Honua status | Notes |
-| --- | --- | --- |
-| `sr` | Implemented | Required. Supports numeric WKID, `EPSG:####`, OGC CRS URI/URN, bracket-safe forms (`[EPSG:####]`), `CRS84` aliases, and JSON objects with `wkid`, `latestWkid`, or `wkt`. |
-| `geometry` | Implemented | Required for intersect, clip, and difference. |
-
-### Project
+### Areas and Lengths / Lengths / Distance
 
 | Parameter | Honua status | Notes |
 | --- | --- | --- |
-| `inSR` | Implemented | Supports numeric WKID, `EPSG:####`, OGC CRS URI/URN, bracket-safe forms (`[EPSG:####]`), `CRS84` aliases, and JSON objects with `wkid`, `latestWkid`, or `wkt`. |
-| `outSR` | Implemented | Same parser forms as `inSR`. |
+| `calculationType` | Implemented | `planar`, `geodesic`, or `preserveShape`; falls back to `geodesic` boolean when omitted. |
+| `areaUnit` | Implemented | Esri `esriSquare*`, ares, hectares, acres, plus derived linear-unit squares. |
+| `lengthUnit` / `distanceUnit` | Implemented | Esri linear units. |
 
-### Honua supplemental `area` and `length`
+### Densify / Generalize / Offset / Cut / Trim-Extend / Reshape / Relation / GeoCoordinateString
 
 | Parameter | Honua status | Notes |
 | --- | --- | --- |
-| `sr` | Implemented | Required. Supports numeric WKID, `EPSG:####`, OGC CRS URI/URN, bracket-safe forms (`[EPSG:####]`), `CRS84` aliases, and JSON objects with `wkid`, `latestWkid`, or `wkt`. |
-| `areaUnit` | Implemented | Supported by `/rest/services/geometry/area`. |
-| `lengthUnit` | Implemented | Supported by `/rest/services/geometry/length`. |
+| `maxSegmentLength` (densify) | Implemented | Required positive number. |
+| `maxDeviation` (generalize) | Implemented | Required positive number. |
+| `offsetDistance`, `offsetUnit`, `offsetHow`, `bevelRatio` (offset) | Implemented | Round/bevel/mitre join styles. |
+| `cutter` (cut) | Implemented | Cutting polyline. |
+| `trimExtendTo`, `extendHow` (trimExtend) | Implemented | Trim/extend reference line. |
+| `target`, `reshaper` (reshape) | Implemented | Reshape operands. |
+| `relation`, `relationParam` (relation) | Implemented | Esri relation set plus DE-9IM. |
+| `conversionType`, `conversionMode`, `numOfDigits` (to/from GCS) | Implemented | MGRS/USNG. |
 
 ## Known limitations
 
-- Honua does not expose a root geometry-service metadata endpoint equivalent to Esri `GeometryServer`.
 - Only JSON-style responses are supported. `f=html` is rejected by the request parser.
 - `clip` uses the envelope of the supplied clip geometry rather than the full geometry shape; this is covered by integration tests and is called out here because it differs from how users often interpret clip semantics.
-- The implemented `area` and `length` routes are Honua-specific helpers, not drop-in replacements for Esri `areasAndLengths` and `lengths`.
-- Most ArcGIS Geometry Service operations remain intentionally unimplemented in the MVP surface.
+- `findTransformations` returns an empty transformation list because Honua applies CRS transformations through its PROJ-backed projection pipeline instead of exposing the discrete Esri geographic-transformation catalog. Clients that drive a transformation picker from this list will see no entries; `project` still performs the correct datum transform directly.
+- `toGeoCoordinateString` / `fromGeoCoordinateString` support `MGRS` and `USNG`; the remaining Esri conversion types (`UTM`, `GARS`, `GEOREF`, `DD`, `DDM`, `DMS`) return a clear 400.
+
+## Verification
+
+The live surface was exercised end-to-end through the ArcGIS API for Python
+(`arcgis.geometry`) against a running Honua stack, covering every operation
+including mixed and multipart geometries, geodesic buffer/area/length/distance,
+datum transforms (`4326 -> 4267`), the buffer-SR cascade, cut/reshape/trimExtend,
+and MGRS round-trips.
 
 ## Implementation evidence
 
-- Endpoint mapping: [GeometryServiceEndpoints](../../src/Honua.Server/Features/Protocols/GeoServices/GeometryService/GeometryServiceEndpoints.cs)
-- Request parsing and format validation: [GeometryServiceRequestParser](../../src/Honua.Server/Features/Protocols/GeoServices/GeometryService/Services/GeometryServiceRequestParser.cs)
-- Operation implementation: [GeometryServiceHandler](../../src/Honua.Server/Features/Protocols/GeoServices/GeometryService/Services/GeometryServiceHandler.cs)
-- Integration tests: [GeometryServiceBufferTests](../../tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/GeometryService/GeometryServiceBufferTests.cs), [GeometryServiceProjectTests](../../tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/GeometryService/GeometryServiceProjectTests.cs), [GeometryServiceSimplifyTests](../../tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/GeometryService/GeometryServiceSimplifyTests.cs), [GeometryServiceAdvancedOperationsTests](../../tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/GeometryService/GeometryServiceAdvancedOperationsTests.cs)
-- Contract depth check: [ContractCoverageMatrixTests](../../tests/dotnet/Honua.Server.Tests/Comprehensive/ContractCoverageMatrixTests.cs)
+- Endpoint mapping: [GeometryServiceEndpoints](../../src/Honua.Protocols.GeoServices/GeometryService/GeometryServiceEndpoints.cs)
+- Request parsing and format validation: [GeometryServiceRequestParser](../../src/Honua.Protocols.GeoServices/GeometryService/Services/GeometryServiceRequestParser.cs)
+- Operation implementation: [GeometryServiceHandler](../../src/Honua.Protocols.GeoServices/GeometryService/Services/GeometryServiceHandler.cs)
+- Route registration: [EndpointRegistry](../../src/Honua.Server/EndpointRegistry.cs)
+- Integration tests: [GeometryServiceBufferTests](../../tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GeometryService/GeometryServiceBufferTests.cs), [GeometryServiceProjectTests](../../tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GeometryService/GeometryServiceProjectTests.cs), [GeometryServiceSimplifyTests](../../tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GeometryService/GeometryServiceSimplifyTests.cs), [GeometryServiceAdvancedOperationsTests](../../tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GeometryService/GeometryServiceAdvancedOperationsTests.cs), [GeometryServiceEditOperationsTests](../../tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GeometryService/GeometryServiceEditOperationsTests.cs), [GeometryServiceMeasureAnalysisTests](../../tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GeometryService/GeometryServiceMeasureAnalysisTests.cs), [GeometryServiceGeoCoordinateStringTests](../../tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GeometryService/GeometryServiceGeoCoordinateStringTests.cs), [GeometryServiceInfoTests](../../tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GeometryService/GeometryServiceInfoTests.cs)

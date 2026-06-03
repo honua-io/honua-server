@@ -18,7 +18,7 @@ namespace Honua.Postgres.Features.Metadata;
 /// refreshed in the same transaction. <c>metadata_v2_current</c> tracks the active
 /// revision per environment.
 /// </summary>
-internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore
+internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMetadataV2GraphWriteBaseReader
 {
     private readonly IDatabaseConnectionProvider _connectionProvider;
     private readonly string _environment;
@@ -60,8 +60,24 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore
         var current = await TryLoadCurrentAsync(cancellationToken).ConfigureAwait(false);
         if (current is null)
         {
-            throw new InvalidOperationException(
-                $"No Metadata v2 snapshot has been activated for environment '{_environment}'.");
+            // No Metadata v2 snapshot has been activated for this environment. Before the
+            // v2 cutover every protocol read the legacy V1 catalog (honua.services /
+            // honua.layers / the shared JSONB-attributes `features` table) directly, and
+            // the SQL test seeds still synthesize a compat snapshot from it
+            // (honua.seed_metadata_v2_compat_snapshot, tests/seed/base-schema.sql). A
+            // production or CITE deployment that only ever populated the V1 catalog has no
+            // activated snapshot, so throwing here regressed OGC API Features /collections
+            // (and the collection-detail/items paths) to HTTP 500 alongside every other
+            // protocol that resolves through this same shared metadata seam. Restore parity
+            // by synthesizing the equivalent snapshot from the V1 catalog at read time.
+            // When the V1 catalog is also empty there is genuinely nothing to serve, so we
+            // keep the original throw. (honua-server#1412.)
+            current = await TryBuildCompatSnapshotFromV1CatalogAsync(cancellationToken).ConfigureAwait(false);
+            if (current is null)
+            {
+                throw new InvalidOperationException(
+                    $"No Metadata v2 snapshot has been activated for environment '{_environment}'.");
+            }
         }
 
         if (_cachedCurrent is not null && _cachedCurrent.Etag == current.Etag)
@@ -71,6 +87,61 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore
 
         _cachedCurrent = current;
         return current;
+    }
+
+    /// <inheritdoc />
+    public Task<MetadataV2GraphSnapshot?> TryGetPersistedCurrentAsync(CancellationToken cancellationToken = default)
+        // Write/publish base load: only the genuinely-activated snapshot, never the V1
+        // compat synthesis. See IMetadataV2GraphWriteBaseReader for why. (honua-server#1412.)
+        => TryLoadCurrentAsync(cancellationToken);
+
+    /// <summary>
+    /// Synthesizes a Metadata v2 graph snapshot from the legacy V1 catalog when no
+    /// snapshot has been activated for the environment. Read-only: it neither writes to
+    /// the metadata_v2 tables nor activates a revision, so an operator's first real
+    /// publish (which goes through <see cref="SaveAsync"/>) still takes precedence on the
+    /// next read. Returns <c>null</c> when the V1 catalog has no published service layers
+    /// (a truly empty database) or when the legacy tables do not exist. (honua-server#1412.)
+    /// </summary>
+    private async Task<MetadataV2GraphSnapshot?> TryBuildCompatSnapshotFromV1CatalogAsync(
+        CancellationToken cancellationToken)
+    {
+        // Read the V1 catalog from the same schema the store qualifies its v2 tables
+        // with (validated + quoted to keep it injection-safe).
+        var catalogSchema = Infrastructure.SchemaSearchPath.ValidateAndQuote(_schemaName);
+        var sql = MetadataV2CompatSnapshotSql.BuildDocumentFromV1Catalog
+            .Replace(MetadataV2CompatSnapshotSql.CatalogSchemaPlaceholder, catalogSchema, StringComparison.Ordinal);
+
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@environment", _environment);
+
+        try
+        {
+            var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+            if (result is not string json || string.IsNullOrWhiteSpace(json))
+            {
+                return null;
+            }
+
+            var snapshot = MaterializeSnapshot(json, ComputeEtag(json));
+
+            // No published service layers => an empty graph (no services/resources). Treat
+            // that as "no snapshot" so callers keep their existing not-found/empty handling
+            // rather than serving an empty compat catalog.
+            if (snapshot.Graph.Services.Count == 0 && snapshot.Graph.Resources.Count == 0)
+            {
+                return null;
+            }
+
+            return snapshot;
+        }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UndefinedTable)
+        {
+            // Legacy V1 catalog tables are absent (e.g. a v2-only fixture database). There
+            // is no catalog to fall back to; let the caller surface "no snapshot".
+            return null;
+        }
     }
 
     public async ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(

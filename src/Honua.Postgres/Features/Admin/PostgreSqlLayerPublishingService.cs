@@ -28,7 +28,8 @@ internal sealed partial class PostgreSqlLayerPublishingService(
     ITableDiscoveryService tableDiscoveryService,
     IMetadataV2GraphStore metadataGraphStore,
     ILogger<PostgreSqlLayerPublishingService> logger,
-    string? metadataSchema = null) : ILayerPublishingService
+    string? metadataSchema = null,
+    Honua.Core.Features.Styling.Abstractions.IStyleCatalog? styleCatalog = null) : ILayerPublishingService
 {
     private const string DefaultServiceName = "default";
     private const int CatalogExtentSrid = 4326;
@@ -46,7 +47,18 @@ internal sealed partial class PostgreSqlLayerPublishingService(
 
     private readonly ITableDiscoveryService _tableDiscoveryService = tableDiscoveryService;
     private readonly IMetadataV2GraphStore _metadataGraphStore = metadataGraphStore;
+
+    // The publish path loads the current graph as the base it mutates and saves. It must
+    // read only the genuinely-activated snapshot, never the V1-catalog compat synthesis
+    // that GetCurrentAsync performs for serving paths (honua-server#1412): a synthesized
+    // base is never persisted, so SaveAsync's reconciliation against metadata_v2_current
+    // fails and every AutoPublish import reports "publishing did not complete". The
+    // Postgres store implements this seam; a non-implementing test double falls back to
+    // the legacy throw-on-missing GetCurrentAsync behavior below.
+    private readonly Features.Metadata.IMetadataV2GraphWriteBaseReader? _metadataWriteBaseReader =
+        metadataGraphStore as Features.Metadata.IMetadataV2GraphWriteBaseReader;
     private readonly ILogger<PostgreSqlLayerPublishingService> _logger = logger;
+    private readonly Honua.Core.Features.Styling.Abstractions.IStyleCatalog? _styleCatalog = styleCatalog;
 
     // The Honua-managed metadata schema that owns the shared `features` table
     // (default 'honua', overridable via Database:Schema). Only a `features` table in
@@ -255,7 +267,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                 "Primary key must be an integer column.");
         }
 
-        var fields = BuildLayerFields(selectedColumns, primaryKeyColumn, geometryColumn);
+        var fields = BuildLayerFields(selectedColumns, primaryKeyColumn, geometryColumn, request.FieldDomains);
 
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
@@ -644,7 +656,8 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         int? MaxLength,
         bool Nullable,
         string? Description,
-        object? DefaultValue = null);
+        object? DefaultValue = null,
+        MetadataV2FieldDomain? Domain = null);
 
     private sealed record LayerExtentInsert(
         double MinX,

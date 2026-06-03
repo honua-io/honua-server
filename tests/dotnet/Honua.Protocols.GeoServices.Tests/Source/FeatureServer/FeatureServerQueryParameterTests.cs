@@ -526,6 +526,32 @@ public sealed class FeatureServerQueryParameterTests : IAsyncLifetime
         categories.Distinct(StringComparer.OrdinalIgnoreCase).Should().HaveCount(categories.Count);
     }
 
+    // Regression: returnDistinctValues must honor the caller's outFields verbatim.
+    // Force-appending objectid would give every distinct row a unique OID and defeat
+    // de-duplication, so the OID must NOT appear in the returned attributes (#1427).
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithReturnDistinctValues_DoesNotIncludeObjectId()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?outFields=category&returnDistinctValues=true&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.QueryResponse);
+        queryResponse.Should().NotBeNull();
+        queryResponse!.Features.Should().NotBeNull().And.NotBeEmpty();
+
+        foreach (var feature in queryResponse.Features!)
+        {
+            feature.Attributes.Keys.Should().NotContain(
+                key => key.Equals("objectid", StringComparison.OrdinalIgnoreCase),
+                "distinct results have no stable OID and must not force-append objectid");
+        }
+    }
+
     // The test layer (layer 0) has five features whose `category` is either
     // "test" (objectids 1, 3, 5) or "sample" (objectids 2, 4). Grouping by
     // category and filtering COUNT(objectid) > 2 keeps only the "test" group.

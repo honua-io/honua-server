@@ -125,6 +125,19 @@ internal static partial class FeatureServerEndpoints
         .Produces(400)
         .Produces(404);
 
+        var generateRendererPost = endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/{layerId:int}/generateRenderer", (Delegate)HandleGenerateRenderer)
+            .WithDisplayName("Generate Renderer (POST)")
+            .WithName("GenerateRendererPost")
+            .WithSummary("Generate a renderer for a FeatureServer layer using POST")
+            .WithDescription("Generates a renderer definition based on classification parameters via POST body")
+            .WithTags("FeatureServer")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            // Read-only Esri renderer POST (mirrors the GET form); access is enforced
+            // by the handler via the layer access policy.
+            .AllowAnonymous()
+        .Produces(400)
+        .Produces(404);
+
         endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/applyEdits", HandleServiceApplyEdits)
             .WithDisplayName("Apply Service-Level Feature Edits")
             .WithName("ServiceApplyEdits")
@@ -433,9 +446,20 @@ internal static partial class FeatureServerEndpoints
         endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/{layerId:int}/validateSQL", HandleValidateSql)
             .WithDisplayName("Validate SQL")
             .WithName("ValidateSQL")
-            .WithSummary("Validate a SQL WHERE clause")
-            .WithDescription("Validates a SQL expression against a layer schema and returns whether it is syntactically valid")
-            .WithTags("FeatureServer");
+            .WithSummary("Validate a SQL expression")
+            .WithDescription("Validates a SQL expression (sql parameter; where tolerated as an alias) against a layer schema and returns whether it is syntactically valid")
+            .WithTags("FeatureServer")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+
+        endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/{layerId:int}/validateSQL", HandleValidateSql)
+            .WithDisplayName("Validate SQL (POST)")
+            .WithName("ValidateSQLPost")
+            .WithSummary("Validate a SQL expression using POST")
+            .WithDescription("Validates a SQL expression (sql parameter; where tolerated as an alias) against a layer schema and returns whether it is syntactically valid")
+            .WithTags("FeatureServer")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            // Read-only Esri validation POST; access is enforced by the handler.
+            .AllowAnonymous();
 
         endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/{layerId:int}/queryH3", HandleQueryH3Get)
             .WithDisplayName("Query H3 (GET)")
@@ -462,6 +486,8 @@ internal static partial class FeatureServerEndpoints
             .WithDescription("Generates vector tiles with H3 cell boundaries and feature counts, with resolution from zoom or query parameter")
             .WithTags("Tiles")
             .CacheOutput("H3MvtTile");
+
+        MapFeatureServerNotImplementedEndpoints(endpoints);
 
         return endpoints;
     }

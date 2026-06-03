@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -77,7 +78,8 @@ internal static partial class FeatureServerEndpoints
 
         var service = validationResult.Service!;
         var resource = validationResult.Resource!;
-        var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service, AccessScope.Write);
+        var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+            context, resource, AuthorizationOperation.Insert, service, cancellationToken).ConfigureAwait(false);
         if (accessError != null)
         {
             return accessError;
@@ -146,7 +148,8 @@ internal static partial class FeatureServerEndpoints
 
         var service = validationResult.Service!;
         var resource = validationResult.Resource!;
-        var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service, AccessScope.Write);
+        var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+            context, resource, AuthorizationOperation.Insert, service, cancellationToken).ConfigureAwait(false);
         if (accessError != null)
         {
             return accessError;
@@ -232,7 +235,8 @@ internal static partial class FeatureServerEndpoints
         var service = validationResult.Service!;
         var publication = validationResult.Publication!;
         var resource = validationResult.Resource!;
-        var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service, AccessScope.Write);
+        var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+            context, resource, AuthorizationOperation.Update, service, cancellationToken).ConfigureAwait(false);
         if (accessError != null)
         {
             return accessError;
@@ -828,23 +832,67 @@ internal static partial class FeatureServerEndpoints
 
         var service = validationResult.Service!;
         var resource = validationResult.Resource!;
-        var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service);
+        var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+            context, resource, AuthorizationOperation.Query, service, cancellationToken).ConfigureAwait(false);
         if (accessError != null)
         {
             return accessError;
         }
 
-        var values = ToCaseInsensitiveDictionary(context.Request.Query);
-        var whereClause = GetValueString(values, "where");
-        if (string.IsNullOrWhiteSpace(whereClause))
+        // validateSQL is GET or POST. Merge query and (for POST) form/body values so the
+        // Esri parameters can arrive via either transport.
+        IReadOnlyDictionary<string, StringValues> values = ToCaseInsensitiveDictionary(context.Request.Query);
+        if (HttpMethods.IsPost(context.Request.Method))
+        {
+            var (bodyValues, readError) = await TryReadRequestValuesAsync(context.Request, cancellationToken);
+            if (bodyValues == null)
+            {
+                if (TryGetUnsupportedMediaType(readError, out var receivedContentType))
+                {
+                    return CreateUnsupportedRequestContentTypeResult(context, receivedContentType);
+                }
+
+                return StandardErrorHelpers.CreateBadRequest(context, readError ?? "Invalid request body.");
+            }
+
+            var mergedValues = ToCaseInsensitiveDictionary(context.Request.Query);
+            foreach (var pair in bodyValues)
+            {
+                mergedValues[pair.Key] = pair.Value;
+            }
+
+            values = mergedValues;
+        }
+
+        // Esri's validateSQL uses the `sql` parameter. We tolerate the legacy `where` alias
+        // for backward compatibility.
+        var sqlExpression = GetValueString(values, "sql");
+        if (string.IsNullOrWhiteSpace(sqlExpression))
+        {
+            sqlExpression = GetValueString(values, "where");
+        }
+
+        if (string.IsNullOrWhiteSpace(sqlExpression))
         {
             return StandardErrorHelpers.CreateBadRequest(context,
-                "where parameter is required");
+                "sql parameter is required");
+        }
+
+        // sqlType is optional (standard|native). Only the value is validated; both map to the
+        // ArcGIS SQL filter dialect for parsing/validation purposes.
+        var sqlType = GetValueString(values, "sqlType");
+        if (!string.IsNullOrWhiteSpace(sqlType) &&
+            !string.Equals(sqlType, "standard", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(sqlType, "native", StringComparison.OrdinalIgnoreCase))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid sqlType parameter",
+                ["sqlType must be 'standard' or 'native'."]);
         }
 
         // Attempt to parse the SQL expression using the filter service
         var filterService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
-        var parseResult = filterService.Parse(FilterLanguage.ArcGisSql, whereClause);
+        var parseResult = filterService.Parse(FilterLanguage.ArcGisSql, sqlExpression);
 
         if (!parseResult.IsSuccess)
         {

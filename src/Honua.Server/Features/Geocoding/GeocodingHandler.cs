@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Geocoding.Abstractions;
 using Honua.Core.Features.Geocoding.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Protocols.GeoServices.FeatureServer;
 using Honua.Infrastructure.Models;
 using Microsoft.Extensions.Options;
@@ -22,6 +23,13 @@ internal sealed class GeocodingHandler(
     private const string JsonFormat = "json";
     private const string PrettyJsonFormat = "pjson";
     private const string JsonContentType = "application/json";
+
+    /// <summary>
+    /// Default spatial reference (WGS84) for a reverseGeocode <c>location</c> when the
+    /// location JSON does not declare its own <c>spatialReference</c>. This matches the
+    /// GeoServices reverseGeocode contract where the input location defaults to 4326.
+    /// </summary>
+    private const int GeocodeDefaultLocationWkid = 4326;
 
     private readonly IGeocodeCoordinatorService _coordinatorService = coordinatorService ?? throw new ArgumentNullException(nameof(coordinatorService));
     private readonly IGeocodeProviderRegistry _providerRegistry = providerRegistry ?? throw new ArgumentNullException(nameof(providerRegistry));
@@ -125,13 +133,6 @@ internal sealed class GeocodingHandler(
             return StandardErrorHelpers.CreateBadRequest(context, "Invalid outSR parameter.");
         }
 
-        if (outSrid != _options.DefaultSpatialReferenceWkid)
-        {
-            return StandardErrorHelpers.CreateBadRequest(
-                context,
-                $"Only outSR={_options.DefaultSpatialReferenceWkid} is currently supported.");
-        }
-
         try
         {
             var requestedProviderName = GetValue(values, "provider");
@@ -143,11 +144,17 @@ internal sealed class GeocodingHandler(
                 return StandardErrorHelpers.CreateBadRequest(context, $"Geocoding provider '{requestedProviderName}' not found.");
             }
 
+            if (!TryParseSearchExtent(GetValue(values, "searchExtent"), out var searchBounds, out var searchExtentError))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, searchExtentError ?? "Invalid searchExtent parameter.");
+            }
+
             var providerRequest = new Core.Features.Geocoding.Domain.ForwardGeocodeRequest(
                 Query: query,
                 MaxResults: maxLocations,
-                SpatialReferenceWkid: outSrid,
-                CountryCodes: GetValue(values, "countryCodes") ?? GetValue(values, "countryCode"));
+                SpatialReferenceWkid: _options.DefaultSpatialReferenceWkid,
+                CountryCodes: GetValue(values, "countryCodes") ?? GetValue(values, "countryCode"),
+                SearchBounds: searchBounds);
 
             var stopwatch = Stopwatch.StartNew();
             var result = await _coordinatorService.ForwardGeocodeAsync(providerRequest, providerName, cancellationToken).ConfigureAwait(false);
@@ -161,21 +168,23 @@ internal sealed class GeocodingHandler(
             }
 
             var candidates = result.Data ?? [];
-            var response = new FindAddressCandidatesResponse
+            var reprojectedCandidates = new List<GeocodeCandidateResponse>(candidates.Count);
+            foreach (var candidate in candidates)
             {
-                SpatialReference = new GeocodeSpatialReference
+                var projected = await TryReprojectGeocodePointAsync(context, candidate.X, candidate.Y, outSrid, cancellationToken).ConfigureAwait(false);
+                if (projected is null)
                 {
-                    Wkid = outSrid,
-                    LatestWkid = outSrid
-                },
-                Candidates = [.. candidates.Select(candidate => new GeocodeCandidateResponse
+                    return CreateUnsupportedOutSrResult(context, outSrid);
+                }
+
+                reprojectedCandidates.Add(new GeocodeCandidateResponse
                 {
                     Address = candidate.Address,
                     Score = candidate.Score,
                     Location = new GeocodePoint
                     {
-                        X = candidate.X,
-                        Y = candidate.Y,
+                        X = projected.Value.X,
+                        Y = projected.Value.Y,
                         SpatialReference = new GeocodeSpatialReference
                         {
                             Wkid = outSrid,
@@ -183,7 +192,17 @@ internal sealed class GeocodingHandler(
                         }
                     },
                     Attributes = candidate.Attributes
-                })]
+                });
+            }
+
+            var response = new FindAddressCandidatesResponse
+            {
+                SpatialReference = new GeocodeSpatialReference
+                {
+                    Wkid = outSrid,
+                    LatestWkid = outSrid
+                },
+                Candidates = [.. reprojectedCandidates]
             };
 
             GeocodingLog.OperationCompleted(_logger, "findAddressCandidates", result.ProviderName, response.Candidates.Length, stopwatch.Elapsed.TotalMilliseconds);
@@ -219,23 +238,21 @@ internal sealed class GeocodingHandler(
             return StandardErrorHelpers.CreateBadRequest(context, "Output format must be json or pjson.");
         }
 
-        if (!TryParseLocation(GetValue(values, "location"), out var x, out var y))
+        if (!TryParseLocation(GetValue(values, "location"), out var x, out var y, out var locationWkid))
         {
             return StandardErrorHelpers.CreateBadRequest(
                 context,
                 "location is required and must be either 'x,y' or JSON {\"x\":...,\"y\":...}.");
         }
 
-        if (!TryParseSpatialReference(GetValue(values, "outSR"), _options.DefaultSpatialReferenceWkid, out var outSrid))
+        // The input location is interpreted in its own spatialReference, defaulting to
+        // WGS84 (4326) per the GeoServices reverseGeocode contract. outSR controls only the
+        // spatial reference of the returned address location, never the input location.
+        var inputSrid = locationWkid ?? GeocodeDefaultLocationWkid;
+
+        if (!TryParseSpatialReference(GetValue(values, "outSR"), inputSrid, out var outSrid))
         {
             return StandardErrorHelpers.CreateBadRequest(context, "Invalid outSR parameter.");
-        }
-
-        if (outSrid != _options.DefaultSpatialReferenceWkid)
-        {
-            return StandardErrorHelpers.CreateBadRequest(
-                context,
-                $"Only outSR={_options.DefaultSpatialReferenceWkid} is currently supported.");
         }
 
         try
@@ -249,7 +266,22 @@ internal sealed class GeocodingHandler(
                 return StandardErrorHelpers.CreateBadRequest(context, $"Geocoding provider '{requestedProviderName}' not found.");
             }
 
-            var providerRequest = new Core.Features.Geocoding.Domain.ReverseGeocodeRequest(x, y, outSrid);
+            // The input location is expressed in its own spatial reference (inputSrid).
+            // Reproject it to the provider's default reference before querying, then project
+            // the match back to outSR for the response.
+            var inputPoint = await TryReprojectGeocodePointAsync(context, x, y, inputSrid, _options.DefaultSpatialReferenceWkid, cancellationToken).ConfigureAwait(false);
+            if (inputPoint is null)
+            {
+                return StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    $"location spatial reference {inputSrid} is not supported for reprojection.");
+            }
+
+            var langCode = GetValue(values, "langCode");
+            var providerRequest = new Core.Features.Geocoding.Domain.ReverseGeocodeRequest(inputPoint.Value.X, inputPoint.Value.Y, _options.DefaultSpatialReferenceWkid)
+            {
+                LanguageCode = string.IsNullOrWhiteSpace(langCode) ? null : langCode.Trim()
+            };
 
             var stopwatch = Stopwatch.StartNew();
             var result = await _coordinatorService.ReverseGeocodeAsync(providerRequest, providerName, cancellationToken).ConfigureAwait(false);
@@ -269,6 +301,12 @@ internal sealed class GeocodingHandler(
                 return StandardErrorHelpers.CreateNotFound(context, "No matching address was found for the supplied location.");
             }
 
+            var matchPoint = await TryReprojectGeocodePointAsync(context, match.X, match.Y, outSrid, cancellationToken).ConfigureAwait(false);
+            if (matchPoint is null)
+            {
+                return CreateUnsupportedOutSrResult(context, outSrid);
+            }
+
             var address = new Dictionary<string, string?>(match.Attributes, StringComparer.Ordinal)
             {
                 ["Match_addr"] = match.Address,
@@ -280,8 +318,8 @@ internal sealed class GeocodingHandler(
                 Address = address,
                 Location = new GeocodePoint
                 {
-                    X = match.X,
-                    Y = match.Y,
+                    X = matchPoint.Value.X,
+                    Y = matchPoint.Value.Y,
                     SpatialReference = new GeocodeSpatialReference
                     {
                         Wkid = outSrid,
@@ -360,10 +398,33 @@ internal sealed class GeocodingHandler(
                     "Suggest is not supported by the configured geocode provider.");
             }
 
+            if (!TryParseSearchExtent(GetValue(values, "searchExtent"), out var suggestBounds, out var suggestExtentError))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, suggestExtentError ?? "Invalid searchExtent parameter.");
+            }
+
+            Core.Features.Geocoding.Domain.GeocodePoint? biasLocation = null;
+            var rawLocation = GetValue(values, "location");
+            if (!string.IsNullOrWhiteSpace(rawLocation))
+            {
+                if (!TryParseLocation(rawLocation, out var biasX, out var biasY))
+                {
+                    return StandardErrorHelpers.CreateBadRequest(
+                        context,
+                        "location must be either 'x,y' or JSON {\"x\":...,\"y\":...}.");
+                }
+
+                biasLocation = new Core.Features.Geocoding.Domain.GeocodePoint(biasX, biasY, _options.DefaultSpatialReferenceWkid);
+            }
+
             var providerRequest = new Core.Features.Geocoding.Domain.SuggestGeocodeRequest(
                 Text: text.Trim(),
                 MaxResults: maxSuggestions,
-                CountryCodes: GetValue(values, "countryCodes") ?? GetValue(values, "countryCode"));
+                CountryCodes: GetValue(values, "countryCodes") ?? GetValue(values, "countryCode"))
+            {
+                SearchBounds = suggestBounds,
+                BiasLocation = biasLocation
+            };
 
             var stopwatch = Stopwatch.StartNew();
 
@@ -473,18 +534,11 @@ internal sealed class GeocodingHandler(
             return StandardErrorHelpers.CreateBadRequest(context, "Invalid outSR parameter.");
         }
 
-        if (outSrid != _options.DefaultSpatialReferenceWkid)
-        {
-            return StandardErrorHelpers.CreateBadRequest(
-                context,
-                $"Only outSR={_options.DefaultSpatialReferenceWkid} is currently supported.");
-        }
-
         try
         {
             var batchRequest = new Core.Features.Geocoding.Domain.BatchGeocodeRequest(
                 Queries: queries,
-                SpatialReferenceWkid: outSrid,
+                SpatialReferenceWkid: _options.DefaultSpatialReferenceWkid,
                 CountryCodes: GetValue(values, "countryCodes") ?? GetValue(values, "countryCode"));
 
             var stopwatch = Stopwatch.StartNew();
@@ -499,21 +553,23 @@ internal sealed class GeocodingHandler(
             }
 
             var candidates = result.Data ?? [];
-            var response = new GeocodeAddressesResponse
+            var reprojectedLocations = new List<GeocodeAddressLocation>(candidates.Count);
+            foreach (var candidate in candidates)
             {
-                SpatialReference = new GeocodeSpatialReference
+                var projected = await TryReprojectGeocodePointAsync(context, candidate.X, candidate.Y, outSrid, cancellationToken).ConfigureAwait(false);
+                if (projected is null)
                 {
-                    Wkid = outSrid,
-                    LatestWkid = outSrid
-                },
-                Locations = [.. candidates.Select(candidate => new GeocodeAddressLocation
+                    return CreateUnsupportedOutSrResult(context, outSrid);
+                }
+
+                reprojectedLocations.Add(new GeocodeAddressLocation
                 {
                     Address = candidate.Address,
                     Score = candidate.Score,
                     Location = new GeocodePoint
                     {
-                        X = candidate.X,
-                        Y = candidate.Y,
+                        X = projected.Value.X,
+                        Y = projected.Value.Y,
                         SpatialReference = new GeocodeSpatialReference
                         {
                             Wkid = outSrid,
@@ -521,7 +577,17 @@ internal sealed class GeocodingHandler(
                         }
                     },
                     Attributes = candidate.Attributes
-                })]
+                });
+            }
+
+            var response = new GeocodeAddressesResponse
+            {
+                SpatialReference = new GeocodeSpatialReference
+                {
+                    Wkid = outSrid,
+                    LatestWkid = outSrid
+                },
+                Locations = [.. reprojectedLocations]
             };
 
             GeocodingLog.OperationCompleted(_logger, "geocodeAddresses", result.ProviderName, response.Locations.Length, stopwatch.Elapsed.TotalMilliseconds);
@@ -847,6 +913,45 @@ internal sealed class GeocodingHandler(
         return true;
     }
 
+    /// <summary>
+    /// Reprojects a point from the provider's default reference to the requested output SRID,
+    /// returning <see langword="null"/> when the transform is not supported.
+    /// </summary>
+    private ValueTask<(double X, double Y)?> TryReprojectGeocodePointAsync(
+        HttpContext context,
+        double x,
+        double y,
+        int outSrid,
+        CancellationToken cancellationToken)
+        => TryReprojectGeocodePointAsync(context, x, y, _options.DefaultSpatialReferenceWkid, outSrid, cancellationToken);
+
+    /// <summary>
+    /// Reprojects a point between two SRIDs using the shared coordinate transform service.
+    /// Returns the input unchanged when both SRIDs match, or <see langword="null"/> when the
+    /// transform cannot be performed.
+    /// </summary>
+    private static ValueTask<(double X, double Y)?> TryReprojectGeocodePointAsync(
+        HttpContext context,
+        double x,
+        double y,
+        int fromSrid,
+        int toSrid,
+        CancellationToken cancellationToken)
+    {
+        if (fromSrid == toSrid)
+        {
+            return ValueTask.FromResult<(double X, double Y)?>((x, y));
+        }
+
+        var transformService = context.RequestServices.GetRequiredService<ICoordinateTransformService>();
+        return transformService.TransformPointAsync(x, y, fromSrid, toSrid, cancellationToken);
+    }
+
+    private static IResult CreateUnsupportedOutSrResult(HttpContext context, int outSrid)
+        => StandardErrorHelpers.CreateBadRequest(
+            context,
+            $"outSR={outSrid} is not supported for reprojection.");
+
     private static bool TryParseSpatialReference(string? rawOutSpatialReference, int defaultWkid, out int wkid)
     {
         if (string.IsNullOrWhiteSpace(rawOutSpatialReference))
@@ -864,10 +969,106 @@ internal sealed class GeocodingHandler(
         return false;
     }
 
+    private bool TryParseSearchExtent(
+        string? rawExtent,
+        out Core.Features.Geocoding.Domain.GeocodeBounds? bounds,
+        out string? error)
+    {
+        bounds = null;
+        error = null;
+
+        if (string.IsNullOrWhiteSpace(rawExtent))
+        {
+            return true;
+        }
+
+        var trimmed = rawExtent.Trim();
+
+        double xmin, ymin, xmax, ymax;
+        var extentWkid = _options.DefaultSpatialReferenceWkid;
+
+        if (trimmed.StartsWith('{'))
+        {
+            try
+            {
+                using var document = JsonDocument.Parse(trimmed);
+                var root = document.RootElement;
+
+                if (!TryReadCoordinate(root, "xmin", out xmin) ||
+                    !TryReadCoordinate(root, "ymin", out ymin) ||
+                    !TryReadCoordinate(root, "xmax", out xmax) ||
+                    !TryReadCoordinate(root, "ymax", out ymax))
+                {
+                    error = "searchExtent must contain numeric xmin, ymin, xmax, and ymax values.";
+                    return false;
+                }
+
+                if (root.TryGetProperty("spatialReference", out var sr) && sr.ValueKind == JsonValueKind.Object)
+                {
+                    if (sr.TryGetProperty("wkid", out var wkidElement) && wkidElement.ValueKind == JsonValueKind.Number &&
+                        wkidElement.TryGetInt32(out var parsedWkid))
+                    {
+                        extentWkid = parsedWkid;
+                    }
+                    else if (sr.TryGetProperty("latestWkid", out var latestElement) && latestElement.ValueKind == JsonValueKind.Number &&
+                             latestElement.TryGetInt32(out var parsedLatest))
+                    {
+                        extentWkid = parsedLatest;
+                    }
+                }
+            }
+            catch (JsonException)
+            {
+                error = "searchExtent contains invalid JSON.";
+                return false;
+            }
+        }
+        else
+        {
+            var parts = trimmed.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (parts.Length != 4 ||
+                !double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out xmin) ||
+                !double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out ymin) ||
+                !double.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out xmax) ||
+                !double.TryParse(parts[3], NumberStyles.Float, CultureInfo.InvariantCulture, out ymax))
+            {
+                error = "searchExtent must be 'xmin,ymin,xmax,ymax' or a JSON envelope.";
+                return false;
+            }
+        }
+
+        if (extentWkid != _options.DefaultSpatialReferenceWkid)
+        {
+            error = $"Only searchExtent in spatial reference {_options.DefaultSpatialReferenceWkid} is currently supported.";
+            return false;
+        }
+
+        if (xmin > xmax || ymin > ymax)
+        {
+            error = "searchExtent is invalid: xmin/ymin must not exceed xmax/ymax.";
+            return false;
+        }
+
+        bounds = new Core.Features.Geocoding.Domain.GeocodeBounds(xmin, ymin, xmax, ymax, extentWkid);
+        return true;
+    }
+
     private static bool TryParseLocation(string? rawLocation, out double x, out double y)
+        => TryParseLocation(rawLocation, out x, out y, out _);
+
+    /// <summary>
+    /// Parses a reverse-geocode <c>location</c> parameter into x/y coordinates and the
+    /// spatial reference declared by the location JSON itself (Esri location geometries
+    /// carry their own <c>spatialReference</c>). The input SR defaults to WGS84 (4326)
+    /// when the location is a bare "x,y" pair or carries no spatialReference, matching
+    /// the GeoServices reverseGeocode default. The output SR (<c>outSR</c>) is handled
+    /// separately by the caller and never used to interpret the input location.
+    /// </summary>
+    private static bool TryParseLocation(string? rawLocation, out double x, out double y, out int? inputWkid)
     {
         x = default;
         y = default;
+        inputWkid = null;
 
         if (string.IsNullOrWhiteSpace(rawLocation))
         {
@@ -881,6 +1082,20 @@ internal sealed class GeocodingHandler(
             {
                 using var document = JsonDocument.Parse(trimmed);
                 var root = document.RootElement;
+
+                if (root.TryGetProperty("spatialReference", out var sr) && sr.ValueKind == JsonValueKind.Object)
+                {
+                    if (sr.TryGetProperty("wkid", out var wkidElement) && wkidElement.ValueKind == JsonValueKind.Number &&
+                        wkidElement.TryGetInt32(out var parsedWkid) && parsedWkid > 0)
+                    {
+                        inputWkid = parsedWkid;
+                    }
+                    else if (sr.TryGetProperty("latestWkid", out var latestElement) && latestElement.ValueKind == JsonValueKind.Number &&
+                             latestElement.TryGetInt32(out var parsedLatest) && parsedLatest > 0)
+                    {
+                        inputWkid = parsedLatest;
+                    }
+                }
 
                 if (TryReadCoordinate(root, "x", out x) && TryReadCoordinate(root, "y", out y))
                 {

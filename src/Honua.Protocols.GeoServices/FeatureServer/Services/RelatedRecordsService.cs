@@ -66,6 +66,7 @@ internal interface IRelatedRecordsService
     /// <param name="geometryPrecision">Output geometry precision override</param>
     /// <param name="maxAllowableOffset">Output geometry simplification tolerance override</param>
     /// <param name="outFields">Fields to include in response</param>
+    /// <param name="relatedResource">Canonical metadata for the related layer used to populate field schema</param>
     /// <returns>Grouped related record results</returns>
     RelatedRecordGroup[] GroupRelatedRecords(
         QueryResult<Feature> result,
@@ -78,7 +79,8 @@ internal interface IRelatedRecordsService
         bool returnM,
         int? geometryPrecision,
         double? maxAllowableOffset,
-        ImmutableArray<string>? outFields);
+        ImmutableArray<string>? outFields,
+        MetadataV2Resource relatedResource);
 }
 
 /// <summary>
@@ -177,13 +179,24 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
         bool returnM,
         int? geometryPrecision,
         double? maxAllowableOffset,
-        ImmutableArray<string>? outFields)
+        ImmutableArray<string>? outFields,
+        MetadataV2Resource relatedResource)
     {
+        ArgumentNullException.ThrowIfNull(relatedResource);
+
         HashSet<string>? outFieldSet = null;
         if (outFields.HasValue && outFields.Value.Length > 0)
         {
             outFieldSet = new HashSet<string>(outFields.Value, StringComparer.OrdinalIgnoreCase);
         }
+
+        // Esri spec: each relatedRecordGroup's relatedRecords block carries the field
+        // definitions for the returned attributes. Build them from the related layer
+        // schema using the same field projection the main query response uses.
+        var relatedFields = QueryFormatter.BuildQueryFields(
+            relatedResource,
+            outFields.HasValue && outFields.Value.Length > 0 ? outFields.Value.ToArray() : null,
+            objectIdFieldName);
 
         var effectiveGeometryLimits = GeometryOutputProcessor.CreateEffectiveLimits(
             _geometryLimits,
@@ -223,6 +236,7 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
                     ? new RelatedRecords
                     {
                         ObjectIdFieldName = objectIdFieldName,
+                        Fields = relatedFields,
                         SpatialReference = spatialReference,
                         Features =
                         [

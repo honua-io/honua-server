@@ -416,6 +416,133 @@ public class PostgresSqlFilterTranslatorTests
     }
 
     [Fact]
+    public void Translate_TemporalPredicateOnAttributeBackedTimestampField_UsesAttributesJsonPath()
+    {
+        // Regression: a schema field literally named "created_at"/"updated_at" is
+        // stored in the JSONB attributes column on managed feature tables and must
+        // be resolved through the schema, not rewritten to a bare physical column
+        // (which previously produced invalid SQL and a 500 from the OGC pipeline).
+        var jsonTranslator = new PostgresSqlFilterTranslator(useJsonAttributes: true);
+        var resource = CreateResource() with
+        {
+            SchemaFields = [.. CreateResource().SchemaFields, Field("created_at", MetadataV2FieldType.DateTime)],
+        };
+
+        var predicate = new TemporalPredicate(
+            TemporalOperator.After,
+            new PropertyReference("created_at"),
+            new Literal(new DateTimeOffset(2024, 01, 01, 0, 0, 0, TimeSpan.Zero), LiteralType.DateTime));
+
+        var result = jsonTranslator.Translate(predicate, resource);
+
+        result.Sql.Should().Contain("\"attributes\" ->> 'created_at'");
+        result.Sql.Should().NotContain("\"created_at\"");
+    }
+
+    [Fact]
+    public void Translate_TemporalPredicateOnUndefinedField_ThrowsArgumentException()
+    {
+        // Regression: T_BEFORE(updated_at, ...) on a layer that does not define an
+        // "updated_at" queryable previously emitted a bare column reference and
+        // failed at the database (500). It must surface a client error (400) via
+        // an ArgumentException instead.
+        var jsonTranslator = new PostgresSqlFilterTranslator(useJsonAttributes: true);
+
+        var predicate = new TemporalPredicate(
+            TemporalOperator.Before,
+            new PropertyReference("updated_at"),
+            new Literal(new DateTimeOffset(2024, 12, 31, 23, 59, 59, TimeSpan.Zero), LiteralType.DateTime));
+
+        var action = () => jsonTranslator.Translate(predicate, _resource);
+
+        action.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void Translate_ComparisonOnUpdatedSystemAlias_MapsToUpdatedAtColumn()
+    {
+        // Regression (#1436): the OData $deltatoken "changed since" predicate
+        // targets the reserved audit-trail system alias "updated", which must
+        // resolve to the bare physical "updated_at" column on managed feature
+        // tables. #1415 mapped the alias to a bare "updated" column that does not
+        // exist (migration 001 defines created_at/updated_at), dropping the delta
+        // filter; this ensures the delta predicate applies again.
+        var jsonTranslator = new PostgresSqlFilterTranslator(useJsonAttributes: true);
+
+        var predicate = new BinaryExpression(
+            new PropertyReference("updated"),
+            BinaryOperator.GreaterThan,
+            new Literal(new DateTimeOffset(2024, 01, 01, 0, 0, 0, TimeSpan.Zero), LiteralType.DateTime));
+
+        var result = jsonTranslator.Translate(predicate, _resource);
+
+        result.Sql.Should().Contain("\"updated_at\"");
+        result.Sql.Should().NotContain("\"attributes\"");
+    }
+
+    [Fact]
+    public void Translate_ComparisonOnCreatedSystemAlias_MapsToCreatedAtColumn()
+    {
+        // Companion to the "updated" alias: the reserved "created" alias resolves
+        // to the bare physical "created_at" column, not a JSONB attributes path.
+        var jsonTranslator = new PostgresSqlFilterTranslator(useJsonAttributes: true);
+
+        var predicate = new BinaryExpression(
+            new PropertyReference("created"),
+            BinaryOperator.LessThanOrEqual,
+            new Literal(new DateTimeOffset(2024, 12, 31, 0, 0, 0, TimeSpan.Zero), LiteralType.DateTime));
+
+        var result = jsonTranslator.Translate(predicate, _resource);
+
+        result.Sql.Should().Contain("\"created_at\"");
+        result.Sql.Should().NotContain("\"attributes\"");
+    }
+
+    [Fact]
+    public void Translate_ComparisonOnUpdatedAlias_WhenResourceDeclaresQueryable_UsesAttributesJsonPath()
+    {
+        // Guard: if the resource explicitly declares a queryable named "updated",
+        // it is resolved through the schema as a JSONB attribute (not the system
+        // column), preserving the #1415 schema-resolution contract.
+        var jsonTranslator = new PostgresSqlFilterTranslator(useJsonAttributes: true);
+        var resource = CreateResource() with
+        {
+            SchemaFields = [.. CreateResource().SchemaFields, Field("updated", MetadataV2FieldType.DateTime)],
+        };
+
+        var predicate = new BinaryExpression(
+            new PropertyReference("updated"),
+            BinaryOperator.GreaterThan,
+            new Literal(new DateTimeOffset(2024, 01, 01, 0, 0, 0, TimeSpan.Zero), LiteralType.DateTime));
+
+        var result = jsonTranslator.Translate(predicate, resource);
+
+        result.Sql.Should().Contain("\"attributes\" ->> 'updated'");
+        result.Sql.Should().NotContain("\"updated_at\"");
+    }
+
+    [Fact]
+    public void Translate_ArrayPredicateOnJsonField_WithJsonAttributes_ReturnsAttributesJsonPath()
+    {
+        // Regression coverage for the CQL2-text array operators (A_CONTAINS /
+        // A_OVERLAPS) over a JSON-backed attribute field in the OGC pipeline mode.
+        var jsonTranslator = new PostgresSqlFilterTranslator(useJsonAttributes: true);
+        var array = new ArrayLiteral([
+            new Literal("red", LiteralType.Text),
+            new Literal("blue", LiteralType.Text)
+        ]);
+
+        var predicate = new ArrayPredicate(
+            ArrayOperator.Contains,
+            new PropertyReference("tags"),
+            array);
+
+        var result = jsonTranslator.Translate(predicate, _resource);
+
+        result.Sql.Should().Be("\"attributes\" -> 'tags' @> @p0::jsonb");
+    }
+
+    [Fact]
     public void Translate_CaseInsensitiveFunction_ReturnsLoweredSQL()
     {
         // Arrange

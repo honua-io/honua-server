@@ -208,6 +208,151 @@ internal static class RasterMapRenderingPipeline
         var imageBytes = SkiaMapRenderer.EncodeSurface(surface, "png");
         return RasterTileRenderResult.Success(imageBytes, totalFeatureCount);
     }
+    /// <summary>
+    /// Result of a single-collection vector render through the Skia pipeline.
+    /// </summary>
+    internal readonly record struct VectorCollectionRenderResult(
+        bool IsSuccess,
+        byte[] ImageBytes,
+        int FeatureCount,
+        IResult? Error)
+    {
+        public static VectorCollectionRenderResult Success(byte[] imageBytes, int featureCount)
+            => new(true, imageBytes, featureCount, null);
+
+        public static VectorCollectionRenderResult Failure(IResult error)
+            => new(false, [], 0, error);
+    }
+
+    /// <summary>
+    /// Renders a single vector collection to an encoded image using the shared Skia
+    /// pipeline and an explicit MapLibre style document. This is the vector counterpart
+    /// to the raster-coverage renderer used by OGC API Maps styled-map requests: the
+    /// caller resolves the style (e.g. from a styleId-keyed projection) and supplies the
+    /// already-validated request extent. Reprojection, capacity limiting, feature
+    /// querying, and drawing all reuse the same helpers WMS GetMap and MapServer export
+    /// invoke, so no rendering or geodesy logic is duplicated.
+    /// </summary>
+    /// <param name="context">The current HTTP context (used to resolve request-scoped services).</param>
+    /// <param name="layerId">Storage layer identifier for the collection.</param>
+    /// <param name="geometryType">Geometry type used to drive default styling and the point fast-path.</param>
+    /// <param name="serviceSrid">Storage CRS the feature geometries are stored in.</param>
+    /// <param name="mapLibreStyleJson">Resolved MapLibre style JSON to apply, or <c>null</c> for default styling.</param>
+    /// <param name="requestExtent">Requested map extent in <paramref name="requestSrid"/>.</param>
+    /// <param name="requestSrid">CRS the requested extent (and output image) is expressed in.</param>
+    /// <param name="imageWidth">Output image width in pixels.</param>
+    /// <param name="imageHeight">Output image height in pixels.</param>
+    /// <param name="format">Output image format string (e.g. <c>png</c>, <c>jpeg</c>).</param>
+    /// <param name="transparent">Whether the background should be transparent.</param>
+    /// <param name="backgroundColor">Background fill used when not transparent (defaults to white).</param>
+    /// <param name="temporalFilter">Optional temporal filter for time-enabled collections.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    internal static async Task<VectorCollectionRenderResult> RenderVectorCollectionAsync(
+        HttpContext context,
+        int layerId,
+        MetadataV2GeometryType geometryType,
+        int serviceSrid,
+        string? mapLibreStyleJson,
+        SkiaMapRenderer.RenderExtent requestExtent,
+        int requestSrid,
+        int imageWidth,
+        int imageHeight,
+        string format,
+        bool transparent,
+        SKColor? backgroundColor,
+        TemporalFilter? temporalFilter,
+        CancellationToken cancellationToken)
+    {
+        await using var renderLease = await context.RequestServices
+            .GetRequiredService<RasterRenderCapacityLimiter>()
+            .TryAcquireAsync(imageWidth, imageHeight, cancellationToken)
+            .ConfigureAwait(false);
+        if (renderLease is null)
+        {
+            return VectorCollectionRenderResult.Failure(StandardErrorHelpers.CreateServiceUnavailable(
+                context,
+                RasterRenderCapacityLimiter.CapacityExceededMessage,
+                RasterRenderCapacityLimiter.RetryAfterSeconds));
+        }
+
+        // Reproject the request extent into the storage CRS the feature reader expects,
+        // mirroring WMS GetMap's per-layer handling.
+        var queryExtent = requestExtent;
+        if (requestSrid != serviceSrid)
+        {
+            var extentTransformResult = await TryTransformExtentAsync(
+                context,
+                requestExtent,
+                requestSrid,
+                serviceSrid,
+                cancellationToken).ConfigureAwait(false);
+            if (!extentTransformResult.IsSuccess)
+            {
+                return VectorCollectionRenderResult.Failure(
+                    StandardErrorHelpers.CreateBadRequest(context, extentTransformResult.Error ?? InvalidSpatialReferenceMessage));
+            }
+
+            queryExtent = extentTransformResult.Extent;
+        }
+
+        using var surface = SKSurface.Create(new SKImageInfo(imageWidth, imageHeight, SKColorType.Rgba8888, SKAlphaType.Premul));
+        if (surface is null)
+        {
+            return VectorCollectionRenderResult.Failure(
+                StandardErrorHelpers.CreateInternalServerError(context, "Failed to allocate render surface."));
+        }
+
+        var canvas = surface.Canvas;
+        var effectiveTransparent = transparent && string.Equals(format, "png", StringComparison.OrdinalIgnoreCase);
+        canvas.Clear(effectiveTransparent ? SKColors.Transparent : backgroundColor ?? SKColors.White);
+
+        var totalFeatureCount = 0;
+        if (geometryType != MetadataV2GeometryType.None)
+        {
+            var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
+            var transform = SkiaMapRenderer.BuildTransform(requestExtent, imageWidth, imageHeight);
+            var stylePlan = BuildRasterStylePlanFromJson(mapLibreStyleJson);
+            var spatialFilter = CreateBboxSpatialFilter(queryExtent, serviceSrid);
+            var featureQuery = CreateRasterFeatureQuery(
+                stylePlan,
+                spatialFilter,
+                serviceSrid,
+                requestSrid,
+                MaxFeaturesPerLayer,
+                temporalFilter: temporalFilter);
+
+            var renderedPointCount = await TryRenderRasterPointFastPathAsync(
+                canvas,
+                featureReader,
+                layerId,
+                geometryType,
+                stylePlan,
+                featureQuery,
+                requestExtent,
+                imageWidth,
+                imageHeight,
+                transform,
+                cancellationToken).ConfigureAwait(false);
+            if (renderedPointCount >= 0)
+            {
+                totalFeatureCount += renderedPointCount;
+            }
+            else
+            {
+                var features = await QueryRasterFeaturesAsync(featureReader, layerId, featureQuery, cancellationToken)
+                    .ConfigureAwait(false);
+                if (features.Length > 0)
+                {
+                    totalFeatureCount += features.Length;
+                    RenderLayerToCanvas(canvas, features, stylePlan.StyleLayers, transform, geometryType);
+                }
+            }
+        }
+
+        var imageBytes = SkiaMapRenderer.EncodeSurface(surface, format);
+        return VectorCollectionRenderResult.Success(imageBytes, totalFeatureCount);
+    }
+
     internal static void RenderLayerToCanvas(
         SKCanvas canvas,
         ImmutableArray<Feature> features,
@@ -620,8 +765,17 @@ internal static class RasterMapRenderingPipeline
     }
 
     private static RasterStylePlan BuildRasterStylePlan(LayerStyleDefinition? style)
+        => BuildRasterStylePlanFromJson(style?.MapLibreStyleJson);
+
+    /// <summary>
+    /// Builds a render-time style plan directly from an explicit MapLibre style JSON
+    /// document, bypassing the per-layer style catalog. Used by callers (such as OGC API
+    /// Maps styled-map rendering) that resolve the style from an external source — e.g. a
+    /// styleId-keyed projection — rather than the layer's stored default style.
+    /// </summary>
+    internal static RasterStylePlan BuildRasterStylePlanFromJson(string? mapLibreStyleJson)
     {
-        var styleLayers = StyleTranslator.ParseStyleLayers(style?.MapLibreStyleJson);
+        var styleLayers = StyleTranslator.ParseStyleLayers(mapLibreStyleJson);
         var referencedFields = StyleTranslator.CollectReferencedFields(styleLayers);
 
         return new RasterStylePlan

@@ -202,11 +202,29 @@ internal static class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
                 configuration["Database:Schema"]));
 
+        // Register Postgres-backed RBAC role/permission store (#1374). Durable
+        // storage wins over the in-memory default registered in Program.cs, so
+        // roles, per-operation grants, and memberships survive restart and are
+        // shared across scaled nodes.
+        services.AddScoped<Honua.Core.Features.Authorization.Abstractions.IRoleStore>(serviceProvider =>
+            new Features.Authorization.PostgresRoleStore(
+                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                configuration["Database:Schema"]));
+
         // Register layer style catalog for MapLibre/GeoServices styling
         services.AddScoped<ILayerStyleCatalog>(serviceProvider =>
             new PostgresLayerStyleCatalog(
                 serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
                 configuration["Database:Schema"]));
+
+        // Register the independent, styleId-keyed style catalog (ADR-0048 Phase 2, #1389)
+        services.AddScoped<IStyleCatalog>(serviceProvider =>
+            new PostgresStyleCatalog(
+                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                configuration["Database:Schema"]));
+
+        // Reconciles Type=Style graph resources + StyleResourceIds with the style catalog
+        services.AddScoped<IMetadataV2StyleGraphSync, Features.Metadata.PostgresMetadataV2StyleGraphSync>();
 
         // Register field profiling service for style suggestions (#400)
         services.AddScoped<IFieldProfilingService>(serviceProvider =>
@@ -224,7 +242,8 @@ internal static class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<ITableDiscoveryService>(),
                 serviceProvider.GetRequiredService<IMetadataV2GraphStore>(),
                 serviceProvider.GetRequiredService<ILogger<PostgreSqlLayerPublishingService>>(),
-                configuration["Database:Schema"]));
+                configuration["Database:Schema"],
+                serviceProvider.GetService<IStyleCatalog>()));
 
         // Register health checker
         services.AddScoped<IDatabaseHealthChecker, PostgresDatabaseHealthChecker>();

@@ -141,6 +141,16 @@ public sealed record GeoservicesLayerInfo
     /// MapLibre style alongside the original Esri renderer.
     /// </summary>
     public string? DrawingInfoJson { get; init; }
+
+    /// <summary>
+    /// Canonical Esri subtype set captured from the source layer (subtype field,
+    /// per-subtype labels, and per-subtype field defaults/domains), or <c>null</c>
+    /// when the layer declares no subtypes. Carried through the auto-publish pipeline
+    /// so the subtypes persist into the Metadata v2 graph and are served on the
+    /// FeatureServer layer metadata (<c>subtypeField</c> / <c>subtypes</c> /
+    /// <c>defaultSubtypeCode</c>).
+    /// </summary>
+    public Honua.Core.Features.Metadata.Domain.V2.MetadataV2Subtypes? Subtypes { get; init; }
 }
 
 /// <summary>
@@ -148,6 +158,15 @@ public sealed record GeoservicesLayerInfo
 /// </summary>
 public sealed record GeoservicesFieldInfo : FieldDefinitionBase
 {
+    /// <summary>
+    /// Canonical value domain (coded values or numeric range) captured from the
+    /// source field, or <c>null</c> when the field carries no domain. Carried
+    /// through the auto-publish pipeline so the domain persists into the
+    /// Metadata v2 graph and is served via the FeatureServer field <c>domain</c>
+    /// and <c>queryDomains</c> surfaces.
+    /// </summary>
+    public Honua.Core.Features.Metadata.Domain.V2.MetadataV2FieldDomain? Domain { get; init; }
+
     /// <summary>
     /// Whether this is the ObjectID field.
     /// </summary>

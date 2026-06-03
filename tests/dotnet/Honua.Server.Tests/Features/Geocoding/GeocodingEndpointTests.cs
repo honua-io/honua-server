@@ -15,6 +15,8 @@ using CoreSuggestGeocodeRequest = Honua.Core.Features.Geocoding.Domain.SuggestGe
 using CoreBatchGeocodeRequest = Honua.Core.Features.Geocoding.Domain.BatchGeocodeRequest;
 using CoreGeocodeSuggestion = Honua.Core.Features.Geocoding.Domain.GeocodeSuggestion;
 using CoreGeocodeProviderException = Honua.Core.Features.Geocoding.Domain.GeocodeProviderException;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Geocoding;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -22,6 +24,7 @@ using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Geocoding;
 
@@ -56,6 +59,90 @@ public sealed class GeocodingEndpointTests
         Assert.Equal("1600 Pennsylvania Ave NW", firstCandidate.GetProperty("address").GetString());
         Assert.True(firstCandidate.TryGetProperty("location", out _));
         Assert.True(firstCandidate.TryGetProperty("attributes", out _));
+    }
+
+    // Regression (#1428): findAddressCandidates must reproject candidate locations to a
+    // requested outSR (e.g. Web Mercator 3857) instead of rejecting it with 400.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
+    public async Task FindAddressCandidates_WithOutSr3857_ReprojectsLocations()
+    {
+        using var factory = CreateDefaultFactory();
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync(
+            "/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=1600+Pennsylvania+Ave+NW&outSR=3857&f=json");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = payload.RootElement;
+
+        Assert.Equal(3857, root.GetProperty("spatialReference").GetProperty("wkid").GetInt32());
+
+        var location = root.GetProperty("candidates")[0].GetProperty("location");
+        var x = location.GetProperty("x").GetDouble();
+        var y = location.GetProperty("y").GetDouble();
+
+        // -77.03655, 38.89768 (WGS84) projected to Web Mercator.
+        Assert.InRange(x, -8576000, -8574000);
+        Assert.InRange(y, 4706000, 4708000);
+    }
+
+    // Regression (#1442): reverseGeocode must read the INPUT location's own
+    // spatialReference (here Web Mercator 3857) and use outSR only for the OUTPUT
+    // geometry. A location in 3857 with outSR=3857 must reproject to the provider SRID
+    // for the query and back to 3857 for the response (rather than 404).
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/reverseGeocode")]
+    public async Task ReverseGeocode_WithLocationSrAndOutSr3857_ReprojectsLocation()
+    {
+        using var factory = CreateDefaultFactory();
+        using var client = factory.CreateClient();
+
+        // Web Mercator coordinates (roughly -77.03655, 38.89768) declared via the
+        // location's own spatialReference.
+        var location = Uri.EscapeDataString(
+            """{"x":-8575155,"y":4707030,"spatialReference":{"wkid":3857}}""");
+        using var response = await client.GetAsync(
+            $"/rest/services/World/GeocodeServer/reverseGeocode?location={location}&outSR=3857&f=json");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var locationElement = payload.RootElement.GetProperty("location");
+
+        Assert.Equal(3857, locationElement.GetProperty("spatialReference").GetProperty("wkid").GetInt32());
+        Assert.InRange(locationElement.GetProperty("x").GetDouble(), -8576000, -8574000);
+        Assert.InRange(locationElement.GetProperty("y").GetDouble(), 4706000, 4708000);
+    }
+
+    // Regression (#1442): a location expressed in WGS84 (4326, the default input SR)
+    // with outSR=3857 must reproject the OUTPUT to Web Mercator without 404 and without
+    // misinterpreting the input location as being in outSR.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/reverseGeocode")]
+    public async Task ReverseGeocode_Wgs84LocationWithOutSr3857_ReprojectsOutputToWebMercator()
+    {
+        using var factory = CreateDefaultFactory();
+        using var client = factory.CreateClient();
+
+        // Bare "lon,lat" defaults to the WGS84 input SR; outSR controls only the output.
+        using var response = await client.GetAsync(
+            "/rest/services/World/GeocodeServer/reverseGeocode?location=-77.03655,38.89768&outSR=3857&f=json");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var location = payload.RootElement.GetProperty("location");
+
+        Assert.Equal(3857, location.GetProperty("spatialReference").GetProperty("wkid").GetInt32());
+        // -77.03655, 38.89768 (WGS84) projected to Web Mercator.
+        Assert.InRange(location.GetProperty("x").GetDouble(), -8576000, -8574000);
+        Assert.InRange(location.GetProperty("y").GetDouble(), 4706000, 4708000);
     }
 
     [IntegrationTest]
@@ -698,6 +785,101 @@ public sealed class GeocodingEndpointTests
             $"Expected error status code but got {response.StatusCode}");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
+    [Endpoint("POST /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
+    public async Task FindAddressCandidates_WithSearchExtent_PassesSearchBoundsToProvider()
+    {
+        var fakeProvider = new FakeGeocodeProvider(DefaultCapabilities);
+        using var factory = CreateFactory(fakeProvider);
+        using var client = factory.CreateClient();
+
+        // GET path accepts the Esri JSON envelope form of searchExtent.
+        var envelope = """{"xmin":-90.0,"ymin":39.0,"xmax":-89.0,"ymax":40.0,"spatialReference":{"wkid":4326}}""";
+        using var getResponse = await client.GetAsync(
+            $"/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=Springfield&searchExtent={Uri.EscapeDataString(envelope)}&f=json");
+
+        Assert.Equal(HttpStatusCode.OK, getResponse.StatusCode);
+        Assert.NotNull(fakeProvider.LastForwardRequest);
+        Assert.NotNull(fakeProvider.LastForwardRequest!.SearchBounds);
+        Assert.Equal(-90.0, fakeProvider.LastForwardRequest.SearchBounds!.XMin, precision: 5);
+        Assert.Equal(39.0, fakeProvider.LastForwardRequest.SearchBounds.YMin, precision: 5);
+        Assert.Equal(-89.0, fakeProvider.LastForwardRequest.SearchBounds.XMax, precision: 5);
+        Assert.Equal(40.0, fakeProvider.LastForwardRequest.SearchBounds.YMax, precision: 5);
+
+        // POST path accepts the comma-delimited "xmin,ymin,xmax,ymax" form.
+        var postContent = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["singleLine"] = "Springfield",
+            ["searchExtent"] = "-100.0,30.0,-99.0,31.0",
+            ["f"] = "json"
+        });
+        using var postResponse = await client.PostAsync("/rest/services/World/GeocodeServer/findAddressCandidates", postContent);
+
+        Assert.Equal(HttpStatusCode.OK, postResponse.StatusCode);
+        Assert.NotNull(fakeProvider.LastForwardRequest!.SearchBounds);
+        Assert.Equal(-100.0, fakeProvider.LastForwardRequest.SearchBounds!.XMin, precision: 5);
+        Assert.Equal(31.0, fakeProvider.LastForwardRequest.SearchBounds.YMax, precision: 5);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
+    public async Task FindAddressCandidates_WithInvalidSearchExtent_Returns400()
+    {
+        using var factory = CreateDefaultFactory();
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync(
+            "/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=test&searchExtent=not-an-extent&f=json");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("searchExtent", body, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/reverseGeocode")]
+    public async Task ReverseGeocode_WithLangCode_PassesLanguageCodeToProvider()
+    {
+        var fakeProvider = new FakeGeocodeProvider(DefaultCapabilities);
+        using var factory = CreateFactory(fakeProvider);
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync(
+            "/rest/services/World/GeocodeServer/reverseGeocode?location=2.3522,48.8566&langCode=fr&f=json");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.NotNull(fakeProvider.LastReverseRequest);
+        Assert.Equal("fr", fakeProvider.LastReverseRequest!.LanguageCode);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/suggest")]
+    [Endpoint("POST /rest/services/{locatorName}/GeocodeServer/suggest")]
+    public async Task Suggest_WithSearchExtentAndLocation_PassesBoundsAndBiasToProvider()
+    {
+        var fakeProvider = new FakeGeocodeProvider(DefaultCapabilities);
+        using var factory = CreateFactory(fakeProvider);
+        using var client = factory.CreateClient();
+
+        var envelope = """{"xmin":-1.0,"ymin":50.0,"xmax":1.0,"ymax":52.0}""";
+        using var response = await client.GetAsync(
+            $"/rest/services/World/GeocodeServer/suggest?text=Vic&location=-0.12,51.5&searchExtent={Uri.EscapeDataString(envelope)}&f=json");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.NotNull(fakeProvider.LastSuggestRequest);
+        Assert.NotNull(fakeProvider.LastSuggestRequest!.SearchBounds);
+        Assert.Equal(-1.0, fakeProvider.LastSuggestRequest.SearchBounds!.XMin, precision: 5);
+        Assert.Equal(52.0, fakeProvider.LastSuggestRequest.SearchBounds.YMax, precision: 5);
+        Assert.NotNull(fakeProvider.LastSuggestRequest.BiasLocation);
+        Assert.Equal(-0.12, fakeProvider.LastSuggestRequest.BiasLocation!.X, precision: 5);
+        Assert.Equal(51.5, fakeProvider.LastSuggestRequest.BiasLocation.Y, precision: 5);
+    }
+
     private static readonly CoreGeocodeProviderCapabilities DefaultCapabilities = new(
         SupportsSuggest: true,
         SupportsBatch: false,
@@ -725,6 +907,11 @@ public sealed class GeocodingEndpointTests
             builder.ConfigureServices(services =>
             {
                 services.AddGeocodeProvider(fakeProvider.Name, _ => fakeProvider, ServiceLifetime.Singleton);
+                // The lightweight geocoding test harness does not wire the provider
+                // infrastructure, so register a WGS84<->Web Mercator transform for the
+                // outSR reprojection path (#1428).
+                services.RemoveAll<ICoordinateTransformService>();
+                services.AddSingleton<ICoordinateTransformService, WebMercatorCoordinateTransformService>();
             });
         });
     }
@@ -768,8 +955,18 @@ public sealed class GeocodingEndpointTests
 
         public CoreGeocodeProviderCapabilities Capabilities => capabilities;
 
+        // Captured request inputs so adapter parameter wiring (searchExtent/location/langCode)
+        // can be asserted without depending on a live upstream geocoder.
+        public CoreForwardGeocodeRequest? LastForwardRequest { get; private set; }
+
+        public CoreReverseGeocodeRequest? LastReverseRequest { get; private set; }
+
+        public CoreSuggestGeocodeRequest? LastSuggestRequest { get; private set; }
+
         public Task<IReadOnlyList<CoreGeocodeCandidate>> ForwardGeocodeAsync(CoreForwardGeocodeRequest request, CancellationToken cancellationToken)
         {
+            LastForwardRequest = request;
+
             var candidate = new CoreGeocodeCandidate(
                 Address: "1600 Pennsylvania Ave NW",
                 X: -77.03655,
@@ -787,6 +984,8 @@ public sealed class GeocodingEndpointTests
 
         public Task<CoreReverseGeocodeMatch?> ReverseGeocodeAsync(CoreReverseGeocodeRequest request, CancellationToken cancellationToken)
         {
+            LastReverseRequest = request;
+
             var match = new CoreReverseGeocodeMatch(
                 Address: "1600 Pennsylvania Ave NW",
                 X: request.X,
@@ -803,6 +1002,8 @@ public sealed class GeocodingEndpointTests
 
         public Task<IReadOnlyList<CoreGeocodeSuggestion>> SuggestAsync(CoreSuggestGeocodeRequest request, CancellationToken cancellationToken)
         {
+            LastSuggestRequest = request;
+
             var suggestion = new CoreGeocodeSuggestion("Honua HQ", "fake-suggest-1", false);
             return Task.FromResult<IReadOnlyList<CoreGeocodeSuggestion>>([suggestion]);
         }
@@ -858,5 +1059,41 @@ public sealed class GeocodingEndpointTests
 
         public Task<CoreGeocodeProviderHealth> CheckHealthAsync(CancellationToken cancellationToken = default)
             => Task.FromResult(new CoreGeocodeProviderHealth(Name, false));
+    }
+
+    private sealed class WebMercatorCoordinateTransformService : ICoordinateTransformService
+    {
+        public ValueTask<(double MinX, double MinY, double MaxX, double MaxY)?> TransformExtentAsync(
+            double minX, double minY, double maxX, double maxY, int fromSrid, int toSrid, CancellationToken cancellationToken = default)
+        {
+            var (x0, y0) = Transform(minX, minY, fromSrid, toSrid);
+            var (x1, y1) = Transform(maxX, maxY, fromSrid, toSrid);
+            return ValueTask.FromResult<(double MinX, double MinY, double MaxX, double MaxY)?>((x0, y0, x1, y1));
+        }
+
+        public ValueTask<(double X, double Y)?> TransformPointAsync(
+            double x, double y, int fromSrid, int toSrid, CancellationToken cancellationToken = default)
+            => ValueTask.FromResult<(double X, double Y)?>(Transform(x, y, fromSrid, toSrid));
+
+        private static (double X, double Y) Transform(double x, double y, int fromSrid, int toSrid)
+        {
+            if (fromSrid == toSrid)
+            {
+                return (x, y);
+            }
+
+            if (fromSrid == 4326 && toSrid == 3857)
+            {
+                return WebMercatorMath.LonLatToWebMercator(x, y);
+            }
+
+            if (fromSrid == 3857 && toSrid == 4326)
+            {
+                var (lon, lat) = WebMercatorMath.WebMercatorToLonLat(x, y);
+                return (lon, lat);
+            }
+
+            throw new NotSupportedException($"Unsupported transform {fromSrid}->{toSrid}.");
+        }
     }
 }

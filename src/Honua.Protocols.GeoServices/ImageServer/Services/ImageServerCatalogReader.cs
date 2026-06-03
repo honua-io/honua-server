@@ -103,6 +103,20 @@ internal sealed class ImageServerCatalogQuery
 
     public DateTimeOffset? Time { get; init; }
 
+    /// <summary>
+    /// Ordering specification applied after filtering and before pagination.
+    /// Each entry is a canonical catalog field name plus a descending flag.
+    /// Empty means the catalog's natural order is preserved.
+    /// </summary>
+    public IReadOnlyList<ImageServerCatalogOrderBy> OrderBy { get; init; } = [];
+
+    /// <summary>
+    /// Canonical field names to include in feature attributes and the field
+    /// schema. <c>null</c> means all catalog fields are returned. <c>OBJECTID</c>
+    /// is always included so clients can correlate features.
+    /// </summary>
+    public IReadOnlyList<string>? OutFields { get; init; }
+
     public bool ReturnGeometry { get; init; } = true;
 
     public bool ReturnIdsOnly { get; init; }
@@ -111,6 +125,12 @@ internal sealed class ImageServerCatalogQuery
 
     public bool ReturnExtentOnly { get; init; }
 }
+
+/// <summary>
+/// A single <c>orderByFields</c> term: the canonical catalog field name and
+/// whether it sorts descending.
+/// </summary>
+internal sealed record ImageServerCatalogOrderBy(string Field, bool Descending);
 
 /// <summary>
 /// Default <see cref="IImageServerCatalogReader"/> built on <see cref="IRasterStore"/>.
@@ -201,6 +221,13 @@ internal sealed class ImageServerCatalogReader : IImageServerCatalogReader
             projected = projected.Where(p => filteredObjectIds.Contains(p.Item.ObjectId)).ToList();
         }
 
+        // Apply orderByFields after filtering and before pagination, so paging
+        // walks the requested ordering rather than the catalog's natural order.
+        if (query.OrderBy is { Count: > 0 })
+        {
+            projected = ApplyOrdering(projected, query.OrderBy);
+        }
+
         // Compute aggregate extent BEFORE pagination but AFTER filtering, so returnExtentOnly
         // honours objectIds/where filters per Esri spec.
         RasterExtent? aggregateExtent = null;
@@ -267,6 +294,105 @@ internal sealed class ImageServerCatalogReader : IImageServerCatalogReader
             AggregateExtent = aggregateExtent,
             NativeSrid = nativeSrid,
         };
+    }
+
+    /// <summary>
+    /// Applies the requested <c>orderByFields</c> terms in priority order. The
+    /// first term is the primary sort key; subsequent terms break ties. Values
+    /// are compared via <see cref="FieldValueComparer"/>, which orders numbers
+    /// and dates naturally and falls back to ordinal string comparison.
+    /// </summary>
+    private static List<(ImageServerCatalogItem Item, RasterInfo Source)> ApplyOrdering(
+        List<(ImageServerCatalogItem Item, RasterInfo Source)> projected,
+        IReadOnlyList<ImageServerCatalogOrderBy> orderBy)
+    {
+        IOrderedEnumerable<(ImageServerCatalogItem Item, RasterInfo Source)>? ordered = null;
+        foreach (var term in orderBy)
+        {
+            var localTerm = term;
+            object? KeySelector((ImageServerCatalogItem Item, RasterInfo Source) entry)
+                => ImageServerCatalogFields.TryResolve(localTerm.Field, entry.Item, out var value) ? value : null;
+
+            if (ordered is null)
+            {
+                ordered = localTerm.Descending
+                    ? projected.OrderByDescending(KeySelector, FieldValueComparer.Instance)
+                    : projected.OrderBy(KeySelector, FieldValueComparer.Instance);
+            }
+            else
+            {
+                ordered = localTerm.Descending
+                    ? ordered.ThenByDescending(KeySelector, FieldValueComparer.Instance)
+                    : ordered.ThenBy(KeySelector, FieldValueComparer.Instance);
+            }
+        }
+
+        return ordered is null ? projected : ordered.ToList();
+    }
+
+    /// <summary>
+    /// Comparer used for <c>orderByFields</c>. Numbers and dates compare
+    /// naturally; everything else falls back to ordinal string comparison.
+    /// Nulls sort first.
+    /// </summary>
+    private sealed class FieldValueComparer : IComparer<object?>
+    {
+        public static readonly FieldValueComparer Instance = new();
+
+        public int Compare(object? x, object? y)
+        {
+            if (x is null && y is null)
+            {
+                return 0;
+            }
+
+            if (x is null)
+            {
+                return -1;
+            }
+
+            if (y is null)
+            {
+                return 1;
+            }
+
+            if (TryToDouble(x, out var xd) && TryToDouble(y, out var yd))
+            {
+                return xd.CompareTo(yd);
+            }
+
+            if (x is DateTime xDate && y is DateTime yDate)
+            {
+                return DateTime.Compare(xDate, yDate);
+            }
+
+            return string.Compare(x.ToString(), y.ToString(), StringComparison.Ordinal);
+        }
+
+        private static bool TryToDouble(object value, out double result)
+        {
+            switch (value)
+            {
+                case double d:
+                    result = d;
+                    return true;
+                case float f:
+                    result = f;
+                    return true;
+                case long l:
+                    result = l;
+                    return true;
+                case int i:
+                    result = i;
+                    return true;
+                case decimal m:
+                    result = (double)m;
+                    return true;
+                default:
+                    result = 0;
+                    return false;
+            }
+        }
     }
 
     private static ImageServerCatalogItem ProjectRaster(RasterInfo raster, bool includeGeometry)

@@ -180,7 +180,13 @@ internal static partial class FeatureServerEndpoints
             EditFieldsInfo = null,
             EditingInfo = supportsEditing ? new EditingInfo() : null,
             Templates = [],
-            AdvancedQueryCapabilities = advancedQueryCapabilities
+            AdvancedQueryCapabilities = advancedQueryCapabilities,
+            // Esri subtype surface (subtypeField / subtypes / defaultSubtypeCode) carried
+            // from the canonical resource so it survives import → publish → compat-compile
+            // and reaches Esri clients (honua-server#1378). Omitted when the layer has none.
+            SubtypeField = resource.Subtypes?.SubtypeField,
+            DefaultSubtypeCode = resource.Subtypes?.DefaultSubtypeCode,
+            Subtypes = GeoServicesSubtypeMapper.Map(resource.Subtypes)
         };
     }
 
@@ -282,6 +288,15 @@ internal static partial class FeatureServerEndpoints
             capabilities.Add("Extract");
         }
 
+        // Advertise "Sync" when the service declares it (syncEnabled). The
+        // createReplica / synchronizeReplica endpoints are served, but Esri SDK
+        // clients only attempt the sync surface when the capabilities string
+        // includes "Sync"; omitting it left a working sync backend unreachable.
+        if (ServiceSupportsSyncV2(service))
+        {
+            capabilities.Add("Sync");
+        }
+
         if (supportsAttachmentUploads && publications.Any(pair => ResourceSupportsAttachmentsV2(pair.Resource)))
         {
             capabilities.Add("Uploads");
@@ -320,6 +335,15 @@ internal static partial class FeatureServerEndpoints
         if (declared.Any(capability => capability.Equals("Extract", StringComparison.OrdinalIgnoreCase)))
         {
             capabilities.Add("Extract");
+        }
+
+        // Advertise "Sync" when the service declares it (syncEnabled). The
+        // createReplica / synchronizeReplica endpoints are served, but Esri SDK
+        // clients only attempt the sync surface when the capabilities string
+        // includes "Sync"; omitting it left a working sync backend unreachable.
+        if (ServiceSupportsSyncV2(service))
+        {
+            capabilities.Add("Sync");
         }
 
         if (supportsAttachmentUploads && ResourceSupportsAttachmentsV2(resource))

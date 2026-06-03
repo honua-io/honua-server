@@ -1,10 +1,12 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using System.Globalization;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
@@ -135,7 +137,7 @@ internal static class AttachmentEndpoints
         var layerId = resource.Value.StorageLayerId;
         var cancellationToken = context.RequestAborted;
 
-        IReadOnlyDictionary<string, StringValues> values;
+        Dictionary<string, StringValues> values;
         if (HttpMethods.IsPost(context.Request.Method))
         {
             var (bodyValues, readError) = await FeatureServerEndpoints.TryReadRequestValuesAsync(context.Request, cancellationToken);
@@ -172,6 +174,18 @@ internal static class AttachmentEndpoints
             values = FeatureServerEndpoints.ToCaseInsensitiveDictionary(context.Request.Query);
         }
 
+        // globalIds is a documented Esri parameter, but Honua attachments are keyed by
+        // integer object IDs only (no global/GUID identity column), so we cannot resolve
+        // it. Reject explicitly rather than silently ignore so clients do not assume a
+        // global-id filter was applied.
+        if (values.ContainsKey("globalIds") || values.ContainsKey("globalids"))
+        {
+            await RouteValidationHelpers.WriteValidationErrorAsync(
+                context,
+                "globalIds is not supported; query attachments by objectIds.");
+            return;
+        }
+
         if (!TryParseObjectIds(values, out var featureIds, out var objectIdsError))
         {
             await RouteValidationHelpers.WriteValidationErrorAsync(context, objectIdsError ?? "objectIds parameter is required");
@@ -184,6 +198,40 @@ internal static class AttachmentEndpoints
             return;
         }
 
+        if (!TryParseAttachmentFilter(values, out var filter, out var filterError))
+        {
+            await RouteValidationHelpers.WriteValidationErrorAsync(context, filterError ?? "Invalid attachment filter parameter");
+            return;
+        }
+
+        // definitionExpression narrows the parent feature set with a SQL WHERE clause.
+        // Resolve it through the shared feature-query pipeline to the matching object IDs
+        // and intersect with the requested objectIds, so attachments are only returned for
+        // features that satisfy the expression (matching Esri queryAttachments semantics).
+        var definitionExpression = GetFirst(values, "definitionExpression", "definitionexpression");
+        if (!string.IsNullOrWhiteSpace(definitionExpression))
+        {
+            var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
+            ImmutableArray<long> matchingIds;
+            try
+            {
+                matchingIds = await featureReader.QueryObjectIdsAsync(
+                    layerId,
+                    new FeatureQuery { Where = definitionExpression, ExcludeAttributes = true },
+                    cancellationToken);
+            }
+            catch (Exception ex) when (ex is ArgumentException or FormatException or InvalidOperationException)
+            {
+                await RouteValidationHelpers.WriteValidationErrorAsync(
+                    context,
+                    "definitionExpression is not a valid WHERE clause for this layer.");
+                return;
+            }
+
+            var allowed = matchingIds.ToHashSet();
+            featureIds = Array.FindAll(featureIds, allowed.Contains);
+        }
+
         var attachmentStore = context.RequestServices.GetRequiredService<IAttachmentStore>();
         var logger = context.RequestServices.GetRequiredService<ILogger<AttachmentOperations>>();
 
@@ -191,6 +239,7 @@ internal static class AttachmentEndpoints
             layerId,
             featureIds,
             returnUrl,
+            filter,
             attachmentStore,
             logger,
             context,
@@ -633,7 +682,12 @@ internal static class AttachmentEndpoints
         var publication = validationResult.Publication!;
         var resource = validationResult.Resource!;
 
-        var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service, scope);
+        var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+            context,
+            resource,
+            AccessPolicyHelpers.DefaultOperationForScope(scope),
+            service,
+            context.RequestAborted).ConfigureAwait(false);
         if (accessError != null)
         {
             await accessError.ExecuteAsync(context);
@@ -669,7 +723,7 @@ internal static class AttachmentEndpoints
     }
 
     private static bool TryParseObjectIds(
-        IReadOnlyDictionary<string, StringValues> values,
+        Dictionary<string, StringValues> values,
         out long[] objectIds,
         out string? error)
     {
@@ -726,7 +780,7 @@ internal static class AttachmentEndpoints
     }
 
     private static bool TryParseReturnUrl(
-        IReadOnlyDictionary<string, StringValues> values,
+        Dictionary<string, StringValues> values,
         out bool returnUrl,
         out string? error)
     {
@@ -756,8 +810,111 @@ internal static class AttachmentEndpoints
         return false;
     }
 
+    /// <summary>
+    /// Parses the Esri <c>attachmentTypes</c>, <c>keywords</c>, and <c>size</c>
+    /// queryAttachments facets into an <see cref="AttachmentQueryFilter"/>.
+    /// </summary>
+    /// <remarks>
+    /// <c>size</c> follows the Esri convention of an inclusive <c>lower,upper</c>
+    /// byte range; a single value is treated as the lower bound. Either bound may be
+    /// omitted (e.g. <c>,2048</c> or <c>1024,</c>).
+    /// </remarks>
+    private static bool TryParseAttachmentFilter(
+        Dictionary<string, StringValues> values,
+        out AttachmentQueryFilter filter,
+        out string? error)
+    {
+        filter = AttachmentQueryFilter.None;
+        error = null;
+
+        var attachmentTypes = SplitCsv(GetFirst(values, "attachmentTypes", "attachmenttypes"));
+        var keywords = SplitCsv(GetFirst(values, "keywords"));
+
+        long? minSize = null;
+        long? maxSize = null;
+        var sizeRaw = GetFirst(values, "size");
+        if (!string.IsNullOrWhiteSpace(sizeRaw))
+        {
+            var parts = sizeRaw.Split(',', StringSplitOptions.TrimEntries);
+            if (parts.Length is < 1 or > 2)
+            {
+                error = "size must be a single value or an inclusive 'lower,upper' byte range";
+                return false;
+            }
+
+            if (!TryParseOptionalSize(parts[0], out minSize, out error))
+            {
+                return false;
+            }
+
+            if (parts.Length == 2 && !TryParseOptionalSize(parts[1], out maxSize, out error))
+            {
+                return false;
+            }
+
+            if (minSize.HasValue && maxSize.HasValue && minSize.Value > maxSize.Value)
+            {
+                error = "size lower bound must not exceed the upper bound";
+                return false;
+            }
+        }
+
+        filter = new AttachmentQueryFilter
+        {
+            AttachmentTypes = [.. attachmentTypes],
+            Keywords = [.. keywords],
+            MinSize = minSize,
+            MaxSize = maxSize
+        };
+
+        return true;
+    }
+
+    private static bool TryParseOptionalSize(string raw, out long? size, out string? error)
+    {
+        size = null;
+        error = null;
+
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return true;
+        }
+
+        if (!long.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) || parsed < 0)
+        {
+            error = "size bounds must be non-negative integers (bytes)";
+            return false;
+        }
+
+        size = parsed;
+        return true;
+    }
+
+    private static List<string> SplitCsv(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return [];
+        }
+
+        return [.. raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
+    }
+
+    private static string? GetFirst(Dictionary<string, StringValues> values, params string[] keys)
+    {
+        foreach (var key in keys)
+        {
+            if (values.TryGetValue(key, out var raw) && !StringValues.IsNullOrEmpty(raw))
+            {
+                return raw.ToString();
+            }
+        }
+
+        return null;
+    }
+
     private static bool TryGetObjectIdValues(
-        IReadOnlyDictionary<string, StringValues> values,
+        Dictionary<string, StringValues> values,
         out StringValues rawValues)
     {
         if (values.TryGetValue("objectIds", out rawValues) ||

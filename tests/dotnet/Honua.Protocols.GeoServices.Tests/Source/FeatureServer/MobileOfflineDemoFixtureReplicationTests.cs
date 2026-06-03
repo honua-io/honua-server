@@ -363,6 +363,41 @@ public sealed class MobileOfflineDemoFixtureReplicationTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/mobile_offline_demo/FeatureServer")]
+    public async Task MobileOfflineFixture_ServiceMetadata_AdvertisesSyncCapability()
+    {
+        // syncEnabled=true is necessary but not sufficient: Esri SDK clients gate the
+        // sync/replica surface on the "Sync" token appearing in the capabilities STRING.
+        // The createReplica/synchronizeReplica handlers were served, but the capabilities
+        // string omitted "Sync", so a working sync backend was unreachable. Assert both
+        // the service and layer capabilities strings advertise Sync.
+        var serviceResponse = await _fixture.Client.GetAsync(
+            $"/rest/services/{ServiceId}/FeatureServer?f=json");
+        serviceResponse.Be200Ok();
+
+        using (var serviceDocument = await ReadJsonDocumentAsync(serviceResponse))
+        {
+            var serviceCapabilities = serviceDocument.RootElement.GetProperty("capabilities").GetString();
+            serviceCapabilities.Should().NotBeNull();
+            serviceCapabilities!.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+                .Should().Contain("Sync",
+                    "Esri SDK clients only attempt the sync surface when 'Sync' is in the capabilities string");
+        }
+
+        var layerResponse = await _fixture.Client.GetAsync(
+            $"/rest/services/{ServiceId}/FeatureServer/{OfflineSitesLayerId}?f=json");
+        layerResponse.Be200Ok();
+
+        using var layerDocument = await ReadJsonDocumentAsync(layerResponse);
+        var layerCapabilities = layerDocument.RootElement.GetProperty("capabilities").GetString();
+        layerCapabilities.Should().NotBeNull();
+        layerCapabilities!.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+            .Should().Contain("Sync",
+                "the layer capabilities string must also advertise Sync for sync-enabled services");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
     [Endpoint("GET /rest/services/mobile_offline_demo/FeatureServer/68910")]
     public async Task MobileOfflineFixture_LayerMetadata_AdvertisesSupportsTopFeaturesQuery()
     {

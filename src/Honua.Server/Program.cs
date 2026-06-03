@@ -440,6 +440,11 @@ builder.Services.AddSingleton<Honua.Core.Features.Identity.Abstractions.IUserSto
     Honua.Server.Features.Admin.Services.InMemoryUserStore>();
 builder.Services.AddSingleton<Honua.Core.Features.Authorization.Abstractions.IRoleStore,
     Honua.Server.Features.Admin.Services.InMemoryRoleStore>();
+// Canonical per-operation permission resolver (#1375): the shared authorization
+// seam over EffectivePermissions. Scoped so it can consume the (scoped) Postgres
+// role store when durable RBAC is active.
+builder.Services.AddScoped<Honua.Core.Features.Authorization.Abstractions.IPermissionResolver,
+    Honua.Core.Features.Authorization.PermissionResolver>();
 builder.Services.AddSingleton<Honua.Infrastructure.Authentication.IAdminApiKeyStore>(sp =>
     new Honua.Infrastructure.Authentication.InMemoryAdminApiKeyStore(sp.GetService<TimeProvider>()));
 // v1 metadata-resource / manifest-approval / gitops-watch admin surface removed in #1035 cutover.
@@ -480,6 +485,8 @@ Honua.Core.Features.Publishing.Content.ContentPublishingServiceCollectionExtensi
 builder.Services.AddScoped<Honua.Infrastructure.Services.IGeometryConverter,
     Honua.Infrastructure.Services.GeometryConverter>();
 builder.Services.AddScoped<ILayerStyleService, LayerStyleService>();
+builder.Services.AddScoped<Honua.Core.Features.Styling.Abstractions.IOgcStyleProjection,
+    Honua.Server.Features.Styling.OgcStyleProjection>();
 builder.Services.AddSingleton<Honua.Core.Features.Styling.Abstractions.IGeoServicesStyleConverter,
     Honua.Server.Features.Styling.GeoServicesStyleConverter>();
 builder.Services.AddSingleton<Honua.Core.Features.Styling.Abstractions.ISldStyleConverter,
@@ -599,6 +606,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Protocols.Ogc.Api.Features.OgcJsonContext.Default,
         Honua.Protocols.Ogc.Api.Maps.Models.OgcMapsJsonContext.Default,
         Honua.Protocols.Ogc.Api.Records.OgcRecordsJsonContext.Default,
+        Honua.Protocols.Ogc.Api.Styles.OgcStylesJsonContext.Default,
         Honua.Protocols.Ogc.Api.Tiles.OgcTilesJsonContext.Default,
         Honua.Server.Features.Admin.Models.SecureConnectionJsonContext.Default,
         Honua.Server.Features.Admin.Models.LayerPublishingJsonContext.Default,

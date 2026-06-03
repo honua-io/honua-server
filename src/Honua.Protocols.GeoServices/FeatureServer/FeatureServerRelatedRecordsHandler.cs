@@ -5,6 +5,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
@@ -68,7 +69,8 @@ internal sealed class FeatureServerRelatedRecordsHandler(
             var service = resourceValidationResult.Service!;
             var publication = resourceValidationResult.Publication!;
             var resource = resourceValidationResult.Resource!;
-            var accessError = AccessPolicyHelpers.RequireResourceAccess(httpContext, resource, service);
+            var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+                httpContext, resource, AuthorizationOperation.Query, service, cancellationToken).ConfigureAwait(false);
             if (accessError != null)
             {
                 return accessError;
@@ -144,7 +146,8 @@ internal sealed class FeatureServerRelatedRecordsHandler(
             var resolvedRelatedResource = relatedResource!;
             var resolvedRelatedPublication = relatedPublication!;
 
-            accessError = AccessPolicyHelpers.RequireResourceAccess(httpContext, resolvedRelatedResource, service);
+            accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+                httpContext, resolvedRelatedResource, AuthorizationOperation.Query, service, cancellationToken).ConfigureAwait(false);
             if (accessError != null)
             {
                 return accessError;
@@ -217,7 +220,8 @@ internal sealed class FeatureServerRelatedRecordsHandler(
                 validatedParams.ReturnM,
                 validatedParams.GeometryPrecision,
                 validatedParams.MaxAllowableOffset,
-                relatedQuery.OutFields);
+                relatedQuery.OutFields,
+                resolvedRelatedResource);
 
             // Build response
             var response = new QueryRelatedRecordsResponse

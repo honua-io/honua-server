@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -21,15 +22,21 @@ internal sealed class LayerStyleService : ILayerStyleService
     private readonly ILayerStyleCatalog _styleCatalog;
     private readonly ILogger<LayerStyleService> _logger;
     private readonly IMetadataV2GraphProvider? _metadataV2GraphProvider;
+    private readonly IStyleCatalog? _independentStyleCatalog;
+    private readonly IMetadataV2StyleGraphSync? _styleGraphSync;
 
     public LayerStyleService(
         ILayerStyleCatalog styleCatalog,
         ILogger<LayerStyleService> logger,
-        IMetadataV2GraphProvider? metadataV2GraphProvider = null)
+        IMetadataV2GraphProvider? metadataV2GraphProvider = null,
+        IStyleCatalog? independentStyleCatalog = null,
+        IMetadataV2StyleGraphSync? styleGraphSync = null)
     {
         _styleCatalog = styleCatalog ?? throw new ArgumentNullException(nameof(styleCatalog));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _metadataV2GraphProvider = metadataV2GraphProvider;
+        _independentStyleCatalog = independentStyleCatalog;
+        _styleGraphSync = styleGraphSync;
     }
 
     /// <inheritdoc />
@@ -126,6 +133,15 @@ internal sealed class LayerStyleService : ILayerStyleService
 
             var generatedDrawingInfoJson = MapLibreToGeoServicesConverter.Convert(normalized, styleLayer);
 
+            await SyncIndependentStyleCatalogAsync(
+                styleLayer.Id,
+                resource,
+                normalized,
+                generatedDrawingInfoJson,
+                revisedBy,
+                changeSummary,
+                cancellationToken).ConfigureAwait(false);
+
             return new LayerStyleUpdateResult(
                 LayerStyleUpdateStatus.Updated,
                 BuildSnapshot(updated, normalized, generatedDrawingInfoJson),
@@ -151,11 +167,72 @@ internal sealed class LayerStyleService : ILayerStyleService
             return new LayerStyleUpdateResult(LayerStyleUpdateStatus.NotFound, null, null);
         }
 
+        await SyncIndependentStyleCatalogAsync(
+            styleLayer.Id,
+            resource,
+            mapLibreJson,
+            drawingInfoJson,
+            revisedBy,
+            changeSummary,
+            cancellationToken).ConfigureAwait(false);
+
         return new LayerStyleUpdateResult(
             LayerStyleUpdateStatus.Updated,
             BuildSnapshot(saved, mapLibreJson, drawingInfoJson),
             null,
             conversion.Unsupported);
+    }
+
+    // ADR-0048 Phase 2 (#1389): mirror the per-layer style update into the independent
+    // styleId-keyed catalog as the layer's default style ("style-layer-{id}"), associate
+    // it at the primary ordinal, then reconcile the canonical graph so the Type=Style
+    // resource and the data resource's StyleResourceIds reflect the edit immediately.
+    // Best-effort: a failure here must not fail the per-layer style update (Phase 1
+    // contract), so exceptions are logged and swallowed.
+    private async Task SyncIndependentStyleCatalogAsync(
+        int storageLayerId,
+        MetadataV2Resource resource,
+        string mapLibreStyleJson,
+        string? drawingInfoJson,
+        string? revisedBy,
+        string? changeSummary,
+        CancellationToken cancellationToken)
+    {
+        if (_independentStyleCatalog is null)
+        {
+            return;
+        }
+
+        var styleId = $"style-layer-{storageLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+        var title = resource.Metadata.Title ?? resource.Metadata.Name;
+
+        try
+        {
+            _ = await _independentStyleCatalog
+                .UpsertStyleAsync(
+                    styleId,
+                    mapLibreStyleJson,
+                    title,
+                    resource.Metadata.Description,
+                    drawingInfoJson,
+                    revisedBy,
+                    changeSummary,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            _ = await _independentStyleCatalog
+                .AssociateLayerAsync(storageLayerId, styleId, ordinal: 0, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (_styleGraphSync is not null)
+            {
+                await _styleGraphSync.SyncLayerStylesAsync(storageLayerId, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex)
+        {
+            LayerStyleLog.StyleCatalogSyncFailed(_logger, storageLayerId, ex);
+        }
     }
 
     private async ValueTask<StyleLayerDescriptor> ResolveStyleLayerAsync(

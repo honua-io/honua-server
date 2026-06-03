@@ -180,7 +180,14 @@ internal sealed partial class ArcGisRestClient
             FeatureCount = featureCount,
             DrawingInfoJson = layerResponse.DrawingInfo is { ValueKind: JsonValueKind.Object } drawingInfo
                 ? drawingInfo.GetRawText()
-                : null
+                : null,
+            // Persisted through publish so the subtype field + subtype labels/overrides
+            // survive to the served FeatureServer surface. A subtype set over the cap is
+            // reported via the inventory warning path and intentionally not persisted.
+            Subtypes = EsriSubtypeParser.Parse(
+                layerResponse.SubtypeField,
+                layerResponse.DefaultSubtypeCode,
+                layerResponse.Subtypes).Subtypes
         };
     }
 
@@ -774,7 +781,11 @@ internal sealed partial class ArcGisRestClient
             Type = f.Type ?? "esriFieldTypeString",
             Alias = f.Alias,
             Length = f.Length,
-            Nullable = f.Nullable ?? true
+            Nullable = f.Nullable ?? true,
+            // Persisted through publish so coded-value/range domains survive to the
+            // served FeatureServer surface. A coded-value domain over the cap is
+            // reported via the inventory warning path and intentionally not persisted.
+            Domain = EsriFieldDomainParser.ParseDomain(f.Domain).Domain
         }).ToArray();
     }
 
@@ -967,6 +978,15 @@ internal sealed record ArcGisLayerResponse
 
     [JsonPropertyName("drawingInfo")]
     public JsonElement? DrawingInfo { get; init; }
+
+    [JsonPropertyName("subtypeField")]
+    public string? SubtypeField { get; init; }
+
+    [JsonPropertyName("defaultSubtypeCode")]
+    public JsonElement? DefaultSubtypeCode { get; init; }
+
+    [JsonPropertyName("subtypes")]
+    public JsonElement? Subtypes { get; init; }
 }
 
 internal sealed record ArcGisSpatialReference
@@ -1012,6 +1032,9 @@ internal sealed record ArcGisField
 
     [JsonPropertyName("nullable")]
     public bool? Nullable { get; init; }
+
+    [JsonPropertyName("domain")]
+    public JsonElement? Domain { get; init; }
 }
 
 internal sealed record ArcGisCountResponse

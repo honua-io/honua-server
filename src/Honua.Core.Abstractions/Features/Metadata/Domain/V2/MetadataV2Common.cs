@@ -508,3 +508,82 @@ public sealed record MetadataV2CodedValue
     [JsonPropertyName("name")]
     public string Name { get; init; } = string.Empty;
 }
+
+/// <summary>
+/// Esri-style subtype set owned by a resource. A subtype partitions the rows of a
+/// layer by an integer <see cref="SubtypeField"/>; each <see cref="MetadataV2Subtype"/>
+/// code carries a label and per-subtype field overrides (default values and value
+/// domains). Captured from an Esri source layer and carried through publish so it
+/// survives the compat-compile snapshot and is served on the FeatureServer layer
+/// metadata (<c>subtypeField</c> / <c>subtypes</c> / <c>defaultSubtypeCode</c>).
+/// </summary>
+public sealed record MetadataV2Subtypes
+{
+    /// <summary>
+    /// Name of the integer field that selects the subtype for each row. References a
+    /// declared <see cref="MetadataV2Resource.SchemaFields"/> entry.
+    /// </summary>
+    [JsonPropertyName("subtypeField")]
+    public string SubtypeField { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Code of the subtype applied to new rows when none is supplied, or <c>null</c>
+    /// when the source declared no default subtype.
+    /// </summary>
+    [JsonPropertyName("defaultSubtypeCode")]
+    public JsonElement? DefaultSubtypeCode { get; init; }
+
+    /// <summary>
+    /// The subtype definitions keyed by their integer code. Ordered deterministically
+    /// by code so the served metadata and the compat-compile snapshot are stable.
+    /// </summary>
+    [JsonPropertyName("subtypes")]
+    public IReadOnlyList<MetadataV2Subtype> Subtypes { get; init; } = Array.Empty<MetadataV2Subtype>();
+}
+
+/// <summary>
+/// A single Esri subtype: an integer <see cref="Code"/>, a human-readable
+/// <see cref="Name"/>, and the per-field overrides (default values and value domains)
+/// that apply to rows of this subtype.
+/// </summary>
+public sealed record MetadataV2Subtype
+{
+    /// <summary>Integer subtype code, JSON-typed to match the subtype field's value type.</summary>
+    [JsonPropertyName("code")]
+    public JsonElement Code { get; init; }
+
+    /// <summary>Human-readable display name for the subtype.</summary>
+    [JsonPropertyName("name")]
+    public string Name { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Per-field overrides (default value and/or value domain) that apply only to rows
+    /// of this subtype, keyed by field name (case-insensitive). Empty when the subtype
+    /// declares no field-level overrides.
+    /// </summary>
+    [JsonPropertyName("fieldOverrides")]
+    public IReadOnlyDictionary<string, MetadataV2SubtypeFieldOverride> FieldOverrides { get; init; }
+        = new Dictionary<string, MetadataV2SubtypeFieldOverride>(StringComparer.OrdinalIgnoreCase);
+}
+
+/// <summary>
+/// Per-subtype override for a single field — the default value and/or value domain
+/// that applies to rows of the owning <see cref="MetadataV2Subtype"/>.
+/// </summary>
+public sealed record MetadataV2SubtypeFieldOverride
+{
+    /// <summary>
+    /// Default value used by edit-capable services for this field when no value is
+    /// supplied on insert of a row of this subtype, or <c>null</c> when the subtype
+    /// declares no default for the field.
+    /// </summary>
+    [JsonPropertyName("defaultValue")]
+    public JsonElement? DefaultValue { get; init; }
+
+    /// <summary>
+    /// Per-subtype value domain (coded values or numeric range) for this field, or
+    /// <c>null</c> when the subtype declares no domain override for the field.
+    /// </summary>
+    [JsonPropertyName("domain")]
+    public MetadataV2FieldDomain? Domain { get; init; }
+}

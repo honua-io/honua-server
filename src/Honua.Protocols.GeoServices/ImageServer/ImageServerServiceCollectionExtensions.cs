@@ -21,6 +21,7 @@ internal static class ImageServerServiceCollectionExtensions
         // Register handlers
         services.AddScoped<ImageServerMetadataHandler>();
         services.AddScoped<ImageServerMultidimensionalInfoHandler>();
+        services.AddScoped<ImageServerSlicesHandler>();
         services.AddScoped<ImageServerExportHandler>();
         services.AddScoped<ImageServerIdentifyHandler>();
         services.AddScoped<ImageServerTileHandler>();
@@ -30,6 +31,7 @@ internal static class ImageServerServiceCollectionExtensions
         services.AddScoped<ImageServerKeyPropertiesHandler>();
         services.AddScoped<ImageServerLegendHandler>();
         services.AddScoped<ImageServerAnalyzeHandler>();
+        services.AddScoped<ImageServerRasterMetadataHandler>();
 
         // Register supporting services
         services.AddScoped<IImageServerLayerResolver, MetadataV2ImageServerLayerResolver>();

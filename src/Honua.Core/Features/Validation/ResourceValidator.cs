@@ -32,19 +32,46 @@ public sealed class ResourceValidator : IResourceValidator
         CancellationToken cancellationToken = default)
     {
         var snapshot = await RequireV2SnapshotAsync(cancellationToken).ConfigureAwait(false);
-        var pub = snapshot.Graph.Publications.FirstOrDefault(p => p.LayerIndex == layerId);
-        if (pub is null)
+
+        // A single storage layer index can be published more than once (for
+        // example a feature dataset and a raster sidecar that share the same
+        // integer layer id, as the client-compat seed does for layer 2000).
+        // Prefer the publication whose backing resource resolves to a usable
+        // storage-layer handle so the integer-collection-id contract returns a
+        // storage-backed layer rather than an arbitrary first match (which may
+        // be a raster resource with no integer storage handle, leaving callers
+        // such as OGC API Maps unable to resolve the layer). Fall back to any
+        // matching publication's resource so existing single-publication and
+        // non-storage-backed cases keep their previous behaviour.
+        MetadataV2Resource? firstResource = null;
+        foreach (var candidate in snapshot.Graph.Publications)
+        {
+            if (candidate.LayerIndex != layerId)
+            {
+                continue;
+            }
+
+            var candidateResource = snapshot.ResolveResource(candidate);
+            if (candidateResource is null)
+            {
+                continue;
+            }
+
+            firstResource ??= candidateResource;
+
+            if (snapshot.ResolveStorageLayerId(candidate).HasValue)
+            {
+                return ResourceValidationResult.Success(candidateResource);
+            }
+        }
+
+        if (firstResource is null)
         {
             return ResourceValidationResult.NotFound<MetadataV2Resource>(
                 ErrorMessages.NotFound.FormatLayer(layerId));
         }
-        var resource = snapshot.ResolveResource(pub);
-        if (resource is null)
-        {
-            return ResourceValidationResult.NotFound<MetadataV2Resource>(
-                ErrorMessages.NotFound.FormatLayer(layerId));
-        }
-        return ResourceValidationResult.Success(resource);
+
+        return ResourceValidationResult.Success(firstResource);
     }
 
     /// <inheritdoc />

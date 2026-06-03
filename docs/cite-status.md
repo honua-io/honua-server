@@ -88,6 +88,35 @@ The WFS 2.0 explicit transactional slice is tracked separately and passes
 - **WMS 1.3 `default`** — the official ETS default profile.
 - **WMTS 1.0 `default`** — the official ETS default profile.
 
+## OGC API surfaces without an official CITE ETS
+
+Some OGC API standards do not (yet) have an official CITE Executable Test Suite,
+so they are not part of the 952/952 suite count above. They are still shipped as
+conformant protocol adapters and proven with targeted integration tests plus an
+accurate `/conformance` declaration:
+
+- **OGC API – Styles (Part 1)** — `/ogc/styles`. Phase 1 adapter over Honua's
+  per-layer style storage (ADR-0048, issue #1388). Declares `core`,
+  `mapbox-styles`, `sld-10`, `sld-11`, `style-validation`, and
+  `manage-styles` (Phase 2 promoted POST-create / DELETE to full CRUD; the
+  Phase 1 disclosure that POST/DELETE returned `501` no longer applies).
+  MapLibre is served from canonical storage; SLD 1.0/1.1 are derived on demand.
+  **Conformance status: there is no official OGC API – Styles CITE/ETS
+  executable test suite yet**, so this surface is not part of the 952/952 count
+  above and there is no external pass-rate to report. Honua's status is proven
+  by internal integration tests that exercise every claimed conformance class —
+  `GetConformance_ListsThePhase1ConformanceClasses` asserts all six classes are
+  declared, and sibling tests cover the read path (MapLibre + derived SLD
+  1.0/1.1), `/metadata`, `style-validation` (`Prefer: handling=strict`), and the
+  `manage-styles` PUT/POST/DELETE lifecycle — in
+  `tests/dotnet/Honua.Server.Tests/Features/Styling/OgcStylesEndpointTests.cs`.
+  When the official OGC Styles ETS becomes available it will be wired in like the
+  other suites and reflected here (issue #1417 item 3). The canonical `styleId`
+  surface supersedes the deprecated layerId-keyed style aliases
+  (`/api/styles/{layerId}.json`, admin `…/layers/{layerId}/style`), which remain
+  working but emit advisory `Deprecation`/`Sunset` headers pending removal.
+  See [`docs/gis/style-engine-protocol-consumption.md`](gis/style-engine-protocol-consumption.md).
+
 ## How To Refresh This Page
 
 1. Trigger the

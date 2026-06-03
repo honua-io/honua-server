@@ -94,12 +94,30 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 .ToArray()
         };
 
+        // ADR-0048 Phase 2 (#1389): project the independent style catalog into the
+        // canonical graph. Emit a Type=Style resource per associated catalog style and
+        // point the data resource's StyleResourceIds at them ([0] = primary), so the
+        // FeatureServer/MapServer StyleResourceIds read path lights up with real data
+        // and one style can be shared by many resources.
+        var (styleResources, styleResourceIds) =
+            await BuildStyleResourcesForLayerAsync(layerId, now, cancellationToken).ConfigureAwait(false);
+        if (styleResourceIds.Count > 0)
+        {
+            resource = resource with { StyleResourceIds = styleResourceIds };
+        }
+
+        var resourcesWithStyles = UpsertById(graph.Resources, resource, static item => item.Metadata.Id);
+        foreach (var styleResource in styleResources)
+        {
+            resourcesWithStyles = UpsertById(resourcesWithStyles, styleResource, static item => item.Metadata.Id);
+        }
+
         var updatedGraph = graph with
         {
             Revision = Math.Max(graph.Revision + 1, 1),
             GeneratedAt = now,
             Services = UpsertById(graph.Services, service, static item => item.Metadata.Id),
-            Resources = UpsertById(graph.Resources, resource, static item => item.Metadata.Id),
+            Resources = resourcesWithStyles,
             StorageBindings = UpsertById(graph.StorageBindings, binding, static item => item.Metadata.Id),
             Publications = UpsertPublication(graph.Publications, publication),
             Connections = connection is null
@@ -122,9 +140,27 @@ internal sealed partial class PostgreSqlLayerPublishingService
     // but the compat/bootstrap compile has not). In that case we start from an
     // empty graph and force the first write (null expectedEtag) instead of 500ing
     // the admin layer-publish path. (honua-server#1341.)
+    //
+    // This deliberately reads only the persisted snapshot via the write-base reader,
+    // NOT GetCurrentAsync. GetCurrentAsync synthesizes a graph from the V1 catalog when
+    // no snapshot is activated (honua-server#1412); building a publish on top of that
+    // synthesized-but-never-persisted base makes SaveAsync's reconciliation fail, so
+    // every AutoPublish import would report "publishing did not complete".
     private async Task<(MetadataV2Graph Graph, string? ExpectedEtag)> LoadCurrentOrEmptyGraphAsync(
         CancellationToken cancellationToken)
     {
+        if (_metadataWriteBaseReader is not null)
+        {
+            var persisted = await _metadataWriteBaseReader
+                .TryGetPersistedCurrentAsync(cancellationToken)
+                .ConfigureAwait(false);
+            return persisted is null
+                ? (new MetadataV2Graph(), null)
+                : (persisted.Graph, persisted.Etag);
+        }
+
+        // Test doubles that do not implement the write-base seam: preserve the legacy
+        // throw-on-missing behavior (start empty + force first write).
         try
         {
             var snapshot = await _metadataGraphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
@@ -145,7 +181,27 @@ internal sealed partial class PostgreSqlLayerPublishingService
             return;
         }
 
-        var snapshot = await _metadataGraphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        // Extent refresh mutates the current graph and saves it, so it must read the
+        // persisted snapshot only (same rationale as LoadCurrentOrEmptyGraphAsync): a
+        // synthesized V1-compat graph is never persisted and would fail SaveAsync.
+        // When no snapshot is activated there is nothing to update — extents are served
+        // straight from the V1 catalog — so skip. (honua-server#1412.)
+        MetadataV2GraphSnapshot? snapshot;
+        if (_metadataWriteBaseReader is not null)
+        {
+            snapshot = await _metadataWriteBaseReader
+                .TryGetPersistedCurrentAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (snapshot is null)
+            {
+                return;
+            }
+        }
+        else
+        {
+            snapshot = await _metadataGraphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        }
+
         var graph = snapshot.Graph;
 
         // Map layer_id -> resource ids (a layer may be published into multiple services).
@@ -287,8 +343,60 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 Queryable = true,
                 DefaultVisibility = request.Enabled
             },
+            // Carry the captured Esri subtypes into the canonical graph so they survive
+            // the compat-compile snapshot and are served on the FeatureServer layer
+            // metadata (subtypeField / subtypes / defaultSubtypeCode) (honua-server#1378).
+            Subtypes = ResolveSubtypesForPublish(request.Subtypes, fields),
             Status = ActiveReadyStatus(now)
         };
+    }
+
+    // Attaches the captured subtype set only when its subtype field was actually
+    // published as a column on the layer. A subtype set referencing a column that was
+    // not published (e.g. dropped during selection) is omitted rather than persisted
+    // against a missing field, which would fail graph validation and false-fail later
+    // reconciliation.
+    private static MetadataV2Subtypes? ResolveSubtypesForPublish(
+        MetadataV2Subtypes? subtypes,
+        IReadOnlyList<LayerFieldInsert> fields)
+    {
+        if (subtypes is null || string.IsNullOrWhiteSpace(subtypes.SubtypeField))
+        {
+            return null;
+        }
+
+        var publishedField = fields.FirstOrDefault(field =>
+            string.Equals(field.Name, subtypes.SubtypeField, StringComparison.OrdinalIgnoreCase));
+        if (publishedField is null)
+        {
+            return null;
+        }
+
+        // Drop per-subtype overrides that reference columns the layer did not publish so
+        // graph validation (which requires every override field be declared) passes.
+        var publishedNames = new HashSet<string>(
+            fields.Select(field => field.Name),
+            StringComparer.OrdinalIgnoreCase);
+
+        var prunedSubtypes = subtypes.Subtypes
+            .Select(subtype =>
+            {
+                if (subtype.FieldOverrides.Count == 0)
+                {
+                    return subtype;
+                }
+
+                var keptOverrides = subtype.FieldOverrides
+                    .Where(pair => publishedNames.Contains(pair.Key))
+                    .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
+
+                return keptOverrides.Count == subtype.FieldOverrides.Count
+                    ? subtype
+                    : subtype with { FieldOverrides = keptOverrides };
+            })
+            .ToArray();
+
+        return subtypes with { Subtypes = prunedSubtypes };
     }
 
     private MetadataV2StorageBinding BuildPublishedStorageBinding(
@@ -443,7 +551,11 @@ internal sealed partial class PostgreSqlLayerPublishingService
             SemanticRoles = semanticRoles.ToArray(),
             Alias = field.Name,
             Editable = field.Type != MetadataV2FieldType.Geometry,
-            Length = field.MaxLength
+            Length = field.MaxLength,
+            // Carry the captured Esri coded-value/range domain into the canonical
+            // graph so it survives the compat-compile snapshot and is served via the
+            // FeatureServer field domain and queryDomains surfaces (honua-server#1255).
+            Domain = field.Domain
         };
     }
 
@@ -565,6 +677,45 @@ internal sealed partial class PostgreSqlLayerPublishingService
         }
 
         return result;
+    }
+
+    // Builds the Type=Style graph resources for a layer's associated catalog styles
+    // and the ordered StyleResourceIds the data resource should reference. Returns
+    // empty when the style catalog is unavailable or the layer has no associations
+    // (e.g. a freshly published, not-yet-styled layer), so the publish path degrades
+    // gracefully and the data resource simply carries no StyleResourceIds.
+    private async Task<(IReadOnlyList<MetadataV2Resource> Styles, IReadOnlyList<string> StyleResourceIds)>
+        BuildStyleResourcesForLayerAsync(int layerId, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        if (_styleCatalog is null)
+        {
+            return (Array.Empty<MetadataV2Resource>(), Array.Empty<string>());
+        }
+
+        var styles = await _styleCatalog.GetStylesForLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+        if (styles.Count == 0)
+        {
+            return (Array.Empty<MetadataV2Resource>(), Array.Empty<string>());
+        }
+
+        var resources = new List<MetadataV2Resource>(styles.Count);
+        var ids = new List<string>(styles.Count);
+        foreach (var style in styles)
+        {
+            var resourceId = MetadataV2StyleResourceFactory.BuildStyleResourceId(style.StyleId);
+            resources.Add(MetadataV2StyleResourceFactory.BuildStyleResource(
+                style.StyleId,
+                style.MapLibreStyleJson,
+                style.Title,
+                style.Description,
+                style.DrawingInfoJson,
+                style.StyleVersion,
+                style.CreatedAt == default ? now : style.CreatedAt,
+                style.UpdatedAt == default ? now : style.UpdatedAt));
+            ids.Add(resourceId);
+        }
+
+        return (resources, ids);
     }
 
     private static string BuildResourceId(int layerId)

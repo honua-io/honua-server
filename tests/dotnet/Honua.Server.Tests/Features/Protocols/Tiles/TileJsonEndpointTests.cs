@@ -151,6 +151,26 @@ public sealed class TileJsonEndpointTests : IAsyncLifetime
         root.GetProperty("layers").GetArrayLength().Should().BeGreaterThan(0);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /api/styles/{layerId}.json")]
+    public async Task GetStyle_DeprecatedLayerIdAlias_EmitsDeprecationHeaders()
+    {
+        var response = await _fixture.Client.GetAsync($"/api/styles/{WebAppFixture.TestLayerId}.json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // The layerId-keyed alias is deprecated in favour of /ogc/styles/{styleId}
+        // (ADR-0048) but kept working; it must advertise advisory deprecation.
+        response.Headers.TryGetValues("Deprecation", out var deprecation).Should().BeTrue();
+        deprecation!.Should().Contain("true");
+        response.Headers.Contains("Sunset").Should().BeTrue();
+        response.Headers.TryGetValues("Link", out var link).Should().BeTrue();
+        link!.Should().Contain(value =>
+            value.Contains("/ogc/styles", StringComparison.Ordinal)
+            && value.Contains("successor-version", StringComparison.Ordinal));
+    }
+
     private Task<HttpResponseMessage> GetStyleFromTileJsonAsync(string styleUrl)
     {
         if (Uri.TryCreate(styleUrl, UriKind.Absolute, out var absolute))

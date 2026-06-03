@@ -37,16 +37,16 @@ MapServer coverage is tracked separately:
 | Synchronize Replica | `/rest/services/{serviceName}/FeatureServer/synchronizeReplica` | POST | Implemented | `POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica` | Synchronizes a replica. Supports `download`, `upload`, and `bidirectional` sync directions. Incoming edits on upload/bidirectional syncs are applied via `applyEdits`. |
 | Unregister Replica | `/rest/services/{serviceName}/FeatureServer/unRegisterReplica` | POST | Implemented | `POST /rest/services/{serviceId}/FeatureServer/unRegisterReplica` | Removes a registered replica. |
 | Get Estimates | `/rest/services/{serviceName}/FeatureServer/getEstimates` | GET | Implemented | `GET /rest/services/{serviceId}/FeatureServer/getEstimates` | Returns approximate feature count and spatial extent aggregated across service layers. |
+| Query Contingent Values | `/rest/services/{serviceName}/FeatureServer/queryContingentValues` | GET | Implemented | `GET /rest/services/{serviceId}/FeatureServer/queryContingentValues` | Thin adapter over the shared service-validation/access pipeline. Returns the spec-shaped contingent values document (`typeCodes`, `stringDicts`, `contingentValuesDefinitions`). **Deferred data model:** Honua does not yet store contingent attribute value rules, so `stringDicts` and `contingentValuesDefinitions` are always empty. SDK clients parse the document and observe that no contingent value rules are configured. |
+| Shared Templates | `/rest/services/{serviceName}/FeatureServer/sharedTemplates` and child `query`/`add`/`update`/`delete` operations | GET, POST | Implemented | `GET /rest/services/{serviceId}/FeatureServer/sharedTemplates`, `GET .../sharedTemplates/query`, `POST .../sharedTemplates/{add,update,delete}` | Thin adapter over the shared validation/access pipeline. `sharedTemplates` and `sharedTemplates/query` return an empty `sharedTemplates` collection. **Deferred data model:** Honua does not persist shared editing templates, so the mutation operations (`add`/`update`/`delete`) resolve the service and enforce write access, then honestly return HTTP 400 (no template store) rather than fabricating success. |
+| HTML Popup | `/rest/services/{serviceName}/FeatureServer/htmlPopup` | GET | Implemented | `GET /rest/services/{serviceId}/FeatureServer/htmlPopup` | Thin adapter over the shared service-validation/access pipeline. Returns `{ "htmlPopupType": "esriServerHTMLPopupTypeNone" }` per the Esri spec. **Deferred data model:** Honua does not serve author-defined HTML pop-up content (authored in ArcGIS Pro), so the type is always `esriServerHTMLPopupTypeNone`. |
+| Image | `/rest/services/{serviceName}/FeatureServer/image` | GET | Implemented | `GET /rest/services/{serviceId}/FeatureServer/image` | Thin adapter over the shared service-validation/access pipeline. **Deferred data model:** Honua does not store author-attached feature images served by the FeatureServer image resource, so the endpoint resolves the service (404 for unknown services, 401/403 for unauthorized callers) and then honestly returns HTTP 404 rather than fabricating a placeholder image. |
 
 ### Not implemented (service-level resources and operations)
 
 | Esri operation or resource | Esri path | Methods | Honua status | Notes |
 | --- | --- | --- | --- | --- |
-| Cleanup Change Tracking | `/rest/services/{serviceName}/FeatureServer/cleanupChangeTracking` | POST | Not implemented | |
-| Query Contingent Values | `/rest/services/{serviceName}/FeatureServer/queryContingentValues` | GET | Not implemented | |
-| Shared Templates | `/rest/services/{serviceName}/FeatureServer/sharedTemplates` and child add/update/delete/query operations | GET, POST | Not implemented | |
-| HTML Popup | `/rest/services/{serviceName}/FeatureServer/htmlPopup` | GET | Not implemented | |
-| Image | `/rest/services/{serviceName}/FeatureServer/image` | GET | Not implemented | |
+| Cleanup Change Tracking | `/rest/services/{serviceName}/FeatureServer/cleanupChangeTracking` | POST | Not implemented | Honua does not maintain change-tracking tables (see `extractChanges`), so there is nothing to clean up; deferred until change tracking is implemented. |
 
 ## Feature Layer (resource + operations)
 
@@ -60,8 +60,9 @@ MapServer coverage is tracked separately:
 | Add Features | `/rest/services/{serviceName}/FeatureServer/{layerId}/addFeatures` | POST | Implemented | `POST /rest/services/{serviceId}/FeatureServer/{layerId}/addFeatures` | Standalone add endpoint. rollbackOnFailure defaults to `true`. |
 | Update Features | `/rest/services/{serviceName}/FeatureServer/{layerId}/updateFeatures` | POST | Implemented | `POST /rest/services/{serviceId}/FeatureServer/{layerId}/updateFeatures` | Standalone update endpoint. rollbackOnFailure defaults to `true`. |
 | Delete Features | `/rest/services/{serviceName}/FeatureServer/{layerId}/deleteFeatures` | POST | Implemented | `POST /rest/services/{serviceId}/FeatureServer/{layerId}/deleteFeatures` | Supports `objectIds`, `where` clause, and `geometry`/`geometryType`/`spatialRel`/`inSR` for spatial deletes. rollbackOnFailure defaults to `true`. |
-| Query Related Records | `/rest/services/{serviceName}/FeatureServer/{layerId}/queryRelatedRecords` | GET, POST | Implemented | `GET/POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords` | Supports objectIds, relationshipId, where, outFields, returnGeometry, resultRecordCount. |
-| Generate Renderer | `/rest/services/{serviceName}/FeatureServer/{layerId}/generateRenderer` | GET | Partial | `GET /rest/services/{serviceId}/FeatureServer/{layerId}/generateRenderer` | Returns a simple renderer. `classificationDef` is rejected with 400. For classification-based styling (equal interval, quantile, natural breaks, unique value), use the Admin API `POST /api/v1/admin/metadata/layers/{layerId}/suggest-style` endpoint, gated by the `styling.auto-suggest` entitlement. |
+| Query Related Records | `/rest/services/{serviceName}/FeatureServer/{layerId}/queryRelatedRecords` | GET, POST | Implemented | `GET/POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords` | Supports `objectIds`, `relationshipId`, `where`/`definitionExpression`, `outFields`, `returnGeometry`, `resultRecordCount`/`resultOffset`, `outSR`, `returnZ`/`returnM`, `geometryPrecision`, `maxAllowableOffset`. See parameter coverage below. |
+| Query Attachments | `/rest/services/{serviceName}/FeatureServer/{layerId}/queryAttachments` | GET, POST | Implemented | `GET/POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryAttachments` | Accepts `objectIds`/`objectId`, `returnUrl`, and the documented filter facets `attachmentTypes` (MIME types or file extensions), `keywords` (comma-separated; any-match), and `size` (inclusive `lower,upper` byte range). `definitionExpression` narrows the parent feature set through the shared query pipeline (matching object IDs are intersected with `objectIds`). `globalIds` is rejected with HTTP 400 because attachments are keyed by integer object IDs only. Returns grouped `attachmentGroups` plus a flattened `attachmentInfos` for single-feature queries. |
+| Generate Renderer | `/rest/services/{serviceName}/FeatureServer/{layerId}/generateRenderer` | GET | Implemented | `GET /rest/services/{serviceId}/FeatureServer/{layerId}/generateRenderer` | Returns a simple renderer when `classificationDef` is omitted. `classificationDef` generates a classification-based renderer: `classBreaksDef` (with `classificationMethod` `esriClassifyEqualInterval`, `esriClassifyQuantile`, `esriClassifyNaturalBreaks`, or `esriClassifyStandardDeviation`; honors `breakCount` and `normalizationField`) returns a `classBreaks` renderer, and `uniqueValueDef` (1–3 `uniqueValueFields`, optional `fieldDelimiter`) returns a `uniqueValue` renderer. Breaks and distinct values are computed through the shared FeatureServer query/statistics pipeline. The Admin API `POST /api/v1/admin/metadata/layers/{layerId}/suggest-style` endpoint (gated by the `styling.auto-suggest` entitlement) remains available for richer auto-suggestion. |
 | Append | `/rest/services/{serviceName}/FeatureServer/{layerId}/append` | POST | Implemented | `POST /rest/services/{serviceId}/FeatureServer/{layerId}/append` | Bulk append features. Parses `edits` as a JSON array of GeoServices features; delegates to `applyEdits` internally. Returns `numFeaturesAppended` / `numFeaturesFailed`. |
 | Calculate | `/rest/services/{serviceName}/FeatureServer/{layerId}/calculate` | GET | Implemented | `GET /rest/services/{serviceId}/FeatureServer/{layerId}/calculate` | Calculates field values using expressions. Supports `where` filter, `calcExpression` as JSON array of `{field, sqlExpression}`. Applies string literals, numeric literals, NULL, and field references. |
 | Validate SQL | `/rest/services/{serviceName}/FeatureServer/{layerId}/validateSQL` | GET | Implemented | `GET /rest/services/{serviceId}/FeatureServer/{layerId}/validateSQL` | Validates a SQL WHERE clause against the layer schema. Returns `isValidSQL` and `validationError`. |
@@ -88,23 +89,19 @@ The analytics routes are mapped unconditionally and reach a PostGIS-backed `ISpa
 | Query Buffer Aggregate | POST | `POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryBufferAggregate` | Buffers each input feature by `distance` (in `unit`: `meters`/`kilometers`/`feet`/`miles`, aliases `m`/`km`/`ft`/`mi`). The cap (`Limits.Analytics.MaxBufferDistanceMeters`) is enforced in meters after unit conversion so it cannot be bypassed by switching units. `dissolve=true` (default) unions overlapping buffers per group via `ST_Union` and returns dissolved polygons with `featureCount` plus any group/stat columns; `dissolve=false` returns one row per input feature with buffered geometry and the source `objectId`. `groupByFields` and `outStatistics` follow the standard GeoServices statistics shape. `outStatistics` requires `dissolve=true` — per-feature output (`dissolve=false`) cannot carry aggregate columns and the server returns HTTP 400 if both are supplied. |
 | Query Density | POST | `POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryDensity` | Hex (`mode=hex`/`hexgrid`/`hex-grid`) or square grid (`mode=square`/`squaregrid`/`square-grid`) binning over Web Mercator. `cellSize` is meters and is clamped to `[Limits.Analytics.MinDensityCellSizeMeters, Limits.Analytics.MaxDensityCellSizeMeters]`. Output rows include `cellId` and `featureCount`; optional `weightField` adds a weighted sum column named `weight`. Output is bounded by `Limits.Analytics.MaxDensityCells`. |
 
-### Partial
+### Layer-level operations completed as honest, spec-shaped adapters
+
+These layer-level operations are now registered as thin protocol adapters over the shared (service, layer) validation and access pipeline. Each enforces the appropriate access scope (read for queries; write for asset cleanup/upload and metadata updates) and returns the Esri specification's response shape. The underlying data model (layer asset storage, 3D geometry, FeatureServer-side metadata persistence) is deferred, so read-style operations return empty/`false` results and mutation/conversion operations return spec-compliant HTTP 400 rather than fabricating success.
 
 | Esri operation | Esri path | Methods | Honua status | Honua endpoint(s) | Notes |
 | --- | --- | --- | --- | --- | --- |
-| Query Attachments | `/rest/services/{serviceName}/FeatureServer/{layerId}/queryAttachments` | GET, POST | Partial | `GET/POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryAttachments` | Requires `objectId`; other Esri parameters not supported. |
-
-### Not implemented
-
-| Esri operation | Esri path | Methods | Honua status | Notes |
-| --- | --- | --- | --- | --- |
-| Cleanup Assets | `/rest/services/{serviceName}/FeatureServer/{layerId}/cleanupAssets` | GET | Not implemented | |
-| Convert 3D | `/rest/services/{serviceName}/FeatureServer/{layerId}/convert3D` | GET | Not implemented | |
-| Has Assets | `/rest/services/{serviceName}/FeatureServer/{layerId}/hasAssets` | GET | Not implemented | |
-| Query 3D | `/rest/services/{serviceName}/FeatureServer/{layerId}/query3D` | GET | Not implemented | |
-| Query Assets | `/rest/services/{serviceName}/FeatureServer/{layerId}/queryAssets` | GET | Not implemented | |
-| Update Metadata | `/rest/services/{serviceName}/FeatureServer/{layerId}/metadata/update` | POST | Not implemented | |
-| Upload Assets | `/rest/services/{serviceName}/FeatureServer/{layerId}/uploadAssets` | GET | Not implemented | |
+| Has Assets | `/rest/services/{serviceName}/FeatureServer/{layerId}/hasAssets` | GET | Implemented | `GET /rest/services/{serviceId}/FeatureServer/{layerId}/hasAssets` | Returns `{ "hasAssets": false }`. **Deferred data model:** no layer asset store. |
+| Query Assets | `/rest/services/{serviceName}/FeatureServer/{layerId}/queryAssets` | GET | Implemented | `GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryAssets` | Returns an empty `assets` collection with `exceededTransferLimit=false`. **Deferred data model:** no layer asset store. |
+| Cleanup Assets | `/rest/services/{serviceName}/FeatureServer/{layerId}/cleanupAssets` | GET | Implemented | `GET /rest/services/{serviceId}/FeatureServer/{layerId}/cleanupAssets` | Requires write access; returns `{ "success": true, "cleanedAssetCount": 0 }` (no-op). **Deferred data model:** no layer asset store, so no orphaned assets exist. |
+| Upload Assets | `/rest/services/{serviceName}/FeatureServer/{layerId}/uploadAssets` | GET | Implemented | `GET /rest/services/{serviceId}/FeatureServer/{layerId}/uploadAssets` | Requires write access; honestly returns HTTP 400 (nowhere to persist assets). **Deferred data model:** no layer asset store. |
+| Convert 3D | `/rest/services/{serviceName}/FeatureServer/{layerId}/convert3D` | GET | Implemented | `GET /rest/services/{serviceId}/FeatureServer/{layerId}/convert3D` | Resolves the layer; honestly returns HTTP 400. **Deferred data model:** no 3D geometry conversion pipeline. |
+| Query 3D | `/rest/services/{serviceName}/FeatureServer/{layerId}/query3D` | GET | Implemented | `GET /rest/services/{serviceId}/FeatureServer/{layerId}/query3D` | Resolves the layer; honestly returns HTTP 400. **Deferred data model:** no 3D query surface. |
+| Update Metadata | `/rest/services/{serviceName}/FeatureServer/{layerId}/metadata/update` | POST | Implemented | `POST /rest/services/{serviceId}/FeatureServer/{layerId}/metadata/update` | Requires write access; honestly returns HTTP 400. **Deferred behavior:** layer metadata is authored through the Honua Admin API; the FeatureServer protocol surface is read-through only. |
 
 ## Attachments
 
@@ -130,30 +127,30 @@ The analytics routes are mapped unconditionally and reach a PostGIS-backed `ISpa
 | Output flags | `returnGeometry`, `returnIdsOnly`, `returnCountOnly`, `returnExtentOnly`, `returnZ`, `returnM` | Implemented | Standard query outputs supported. `returnZ` and `returnM` are applied by `json`, `geojson`, and `pbf`. `parquet` applies `returnZ` but always strips M values (GeoParquet 1.1.0 only supports XY/XYZ). `arrow` matches `parquet` (honors `returnZ`, always strips M values; `returnM=true` is rejected). `fgb` and `geobuf` write raw geometry and do not filter dimensions. |
 | Distinct | `returnDistinctValues` | Implemented | In-memory distinct over returned features; works best with explicit `outFields`. |
 | Statistics | `outStatistics`, `groupByFieldsForStatistics` | Implemented | Aggregate queries with COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR. Supports GROUP BY on any layer field. |
-| KNN output | `nearestCount`, `returnDistance` | Partial | `returnDistance` only affects KNN queries. The computed `distance` attribute is included in `json`, `geojson`, `parquet`, and `arrow` output; `pbf`, `fgb`, and `geobuf` build their schema from layer fields only and omit runtime-computed attributes. |
+| Distance output | `nearestCount`, `returnDistance` | Implemented | `nearestCount` runs a KNN query. `returnDistance` is spec-compliant for the general layer `/query` operation: when a spatial filter geometry is supplied (KNN or any other relationship, including `esriSpatialRelWithinDistance`/`esriSpatialRelBeyondDistance` and buffered intersects), each returned feature carries its geodesic distance (meters) from the query geometry under the runtime `distance` attribute. The computed `distance` attribute is included in `json`, `geojson`, `parquet`, and `arrow` output; `pbf`, `fgb`, and `geobuf` build their schema from layer fields only and omit runtime-computed attributes. `returnDistance` has no effect without a spatial filter and is then ignored. |
 | Temporal | `time`, `timeRelation` | Implemented | Uses layer timeInfo or first temporal field. |
 | Output format | `f=json`, `f=geojson`, `f=pbf`, `f=fgb`, `f=geobuf`, `f=parquet`, `f=arrow` | Implemented | Seven output formats supported. Binary formats (`fgb`, `geobuf`, `parquet`, `arrow`) also accept `Accept` header negotiation; `f=` takes precedence. See [Output format details](#output-format-details) below. |
 | Geometry precision | `geometryPrecision` | Implemented | Rounds coordinates to specified decimal places. |
 | Geometry simplification | `maxAllowableOffset` | Implemented | Simplifies geometry to the given tolerance. Applies to `json`, `geojson`, `pbf`, `parquet`, and `arrow`; `fgb` and `geobuf` do not apply it. |
+| Statistics HAVING | `having` | Implemented | Parsed and applied as a post-aggregation filter on statistics queries (`AGG(field) <op> number` terms, AND-combined). Requires `outStatistics`; supplying `having` without `outStatistics` is rejected with `400`. |
 
 ### Partial / compatibility-only
 
 | Area | Esri parameters | Honua status | Notes |
 | --- | --- | --- | --- |
 | Result type | `resultType=standard|tile` | Partial | Accepted for GeoServices parity and browser-client compatibility. Values other than `standard` and `tile` are rejected. The current implementation follows the standard query path for both accepted values. |
+| SQL format | `sqlFormat` | Partial | Accepted for ArcGIS Pro / SDK compatibility. `standard`, `native`, and `none` are accepted; the where clause is always parsed under Honua's standardized ArcGIS-SQL dialect regardless of value. Unrecognized tokens are rejected with `400`. |
+| GDB version | `gdbVersion` | Partial | Accepted but ignored (versioned geodatabase workflows not supported). |
+| Quantization | `quantizationParameters` | Partial | Accepted but ignored (server-side coordinate quantization not implemented). |
+| Datum transform | `datumTransformation` | Partial | Accepted but ignored (custom datum transformations not applied; `outSR` reprojection only). |
 
 ### Not implemented (explicitly rejected)
 
 | Area | Esri parameters | Notes |
 | --- | --- | --- |
-| Having | `having` | Rejected; HAVING clause for statistics not yet supported. |
-| Centroid | `returnCentroid` | Rejected. |
-| True curves | `returnTrueCurves` | Rejected. |
-| Exceeded limit | `returnExceededLimitFeatures` | Rejected. |
-| SQL format | `sqlFormat` | Rejected. |
-| GDB version | `gdbVersion` | Rejected. |
-| Quantization | `quantizationParameters` | Rejected. |
-| Datum transform | `datumTransformation` | Rejected. |
+| Centroid | `returnCentroid` | Rejected with `400`. |
+| True curves | `returnTrueCurves` | Rejected with `400`. |
+| Exceeded limit | `returnExceededLimitFeatures` | Rejected with `400`. |
 
 ### Output format details
 
@@ -185,27 +182,36 @@ All non-JSON formats also accept `Accept` header negotiation (e.g. `Accept: appl
 | `updates` | Requires `objectId` in attributes. |
 | `deletes` | Expects object ID values; global/unique IDs not supported. |
 | `rollbackOnFailure` | Default `false` for applyEdits, `true` for standalone add/update/delete endpoints. |
+| `f` | Accepted for compatibility but only JSON output is produced; a non-JSON `f` value is rejected with `400`. |
 
-### Not implemented
+### Not implemented (explicitly rejected)
+
+These parameters are modeled and actively rejected with `400 Bad Request` when supplied with an effective value.
 
 | Esri parameter | Notes |
 | --- | --- |
 | `useGlobalIds` | Rejected; object IDs are required. |
 | `gdbVersion` | Rejected (`400 Bad Request`). |
-| `returnEditMoment` | Ignored. |
-| `attachments` | Use dedicated attachment endpoints. |
+| `returnEditMoment` | Rejected (`400 Bad Request`). |
+| `attachments` | Rejected (`400 Bad Request`); use the dedicated attachment endpoints. |
+
+### Not implemented (accepted but ignored)
+
+These parameters are not present on the request model, so they are silently dropped during deserialization and have no effect.
+
+| Esri parameter | Notes |
+| --- | --- |
 | `assetMaps` | Ignored. |
 | `trueCurveClient` | Ignored. |
 | `sessionID` | Ignored. |
 | `usePreviousEditMoment` | Ignored. |
-| `datumTransformation` | Geometry must match layer SRID. |
+| `datumTransformation` | Ignored; geometry must already match the layer SRID (a mismatched geometry `spatialReference` is rejected with `400`). |
 | `timeReferenceUnknownClient` | Ignored. |
-| `async` | Ignored. |
-| `returnEditResults` | Results are always returned. |
+| `async` | Ignored; edits always apply synchronously. |
+| `returnEditResults` | Ignored; per-row results are always returned. |
 | `editsUploadId` | Ignored. |
 | `editsUploadFormat` | Ignored. |
 | `useUniqueIds` | Ignored. |
-| `f` | Response is always JSON. |
 
 ## QueryRelatedRecords parameter coverage (layer `/queryRelatedRecords`)
 
@@ -220,22 +226,22 @@ All non-JSON formats also accept `Accept` header negotiation (e.g. `Accept: appl
 | `returnGeometry` | Defaults to true. |
 | `resultRecordCount` | Applies limit. |
 | `resultOffset` | Applies offset. |
+| `outSR` | Resolved and validated; related-record geometry is reprojected to the requested SR (falls back to the related layer SR when omitted). An unresolvable `outSR` is rejected with `400`. |
+| `returnZ` | Applied when building the output geometry. |
+| `returnM` | Applied when building the output geometry. |
+| `geometryPrecision` | Applied; rounds output geometry coordinates. |
+| `maxAllowableOffset` | Applied; simplifies output geometry to the given tolerance. |
+| `f` | Accepted for compatibility but only JSON output is produced; a non-JSON `f` value is rejected with `400`. |
 
-### Not implemented
+### Not implemented (explicitly rejected)
 
 | Esri parameter | Notes |
 | --- | --- |
-| `maxAllowableOffset` | Ignored. |
-| `geometryPrecision` | Ignored. |
-| `historicMoment` | Ignored. |
-| `outSR` | Output SR always uses the related layer SR. |
-| `returnZ` | Ignored. |
-| `returnM` | Ignored. |
-| `returnTrueCurves` | Ignored. |
+| `returnTrueCurves` | Rejected (`400 Bad Request`) when `true`. |
 | `gdbVersion` | Rejected (`400 Bad Request`). |
-| `orderByFields` | Ignored. |
-| `returnCountOnly` | Ignored. |
-| `f` | Response is always JSON. |
+| `historicMoment` | Rejected (`400 Bad Request`). |
+| `orderByFields` | Not in the accepted-parameter set; rejected with `400` (unknown parameter). |
+| `returnCountOnly` | Not in the accepted-parameter set; rejected with `400` (unknown parameter). |
 
 ## Service metadata properties
 
