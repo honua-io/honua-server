@@ -12,6 +12,7 @@ namespace Honua.Infrastructure.Validation;
 public static class ValidationExtensions
 {
     internal const string WfsGmlIdentifierAttributeName = "__honua_wfs_gml_identifier";
+    internal const string WfsGmlIdentifierCodeSpaceAttributeName = "__honua_wfs_gml_identifier_codespace";
     internal const string WfsGmlNameAttributeName = "__honua_wfs_gml_name";
     internal const string WfsGmlDescriptionAttributeName = "__honua_wfs_gml_description";
 
@@ -27,6 +28,7 @@ public static class ValidationExtensions
     internal static bool IsReservedMutationAttribute(string attributeName)
     {
         return attributeName.Equals(WfsGmlIdentifierAttributeName, StringComparison.Ordinal) ||
+               attributeName.Equals(WfsGmlIdentifierCodeSpaceAttributeName, StringComparison.Ordinal) ||
                attributeName.Equals(WfsGmlNameAttributeName, StringComparison.Ordinal) ||
                attributeName.Equals(WfsGmlDescriptionAttributeName, StringComparison.Ordinal);
     }

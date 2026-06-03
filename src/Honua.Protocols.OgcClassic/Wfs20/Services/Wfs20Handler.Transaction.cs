@@ -723,6 +723,12 @@ internal sealed partial class Wfs20Handler
                 out var reservedAttributeName))
             {
                 attributes[reservedAttributeName] = ParseTransactionReservedAttributeValue(propertyElement);
+                if (reservedAttributeName.Equals(ValidationExtensions.WfsGmlIdentifierAttributeName, StringComparison.Ordinal))
+                {
+                    attributes[ValidationExtensions.WfsGmlIdentifierCodeSpaceAttributeName] =
+                        ParseTransactionGmlCodeSpace(propertyElement);
+                }
+
                 continue;
             }
 
@@ -813,6 +819,13 @@ internal sealed partial class Wfs20Handler
                 attributes[reservedAttributeName] = valueElement == null
                     ? null
                     : ParseTransactionReservedAttributeValue(valueElement);
+                if (reservedAttributeName.Equals(ValidationExtensions.WfsGmlIdentifierAttributeName, StringComparison.Ordinal))
+                {
+                    attributes[ValidationExtensions.WfsGmlIdentifierCodeSpaceAttributeName] = valueElement == null
+                        ? null
+                        : ParseTransactionGmlCodeSpace(valueElement);
+                }
+
                 continue;
             }
 
@@ -1173,6 +1186,34 @@ internal sealed partial class Wfs20Handler
         }
 
         return valueElement.Value.Trim();
+    }
+
+
+    /// <summary>
+    /// Extracts the <c>codeSpace</c> attribute carried by a <c>gml:identifier</c> property so it can
+    /// be persisted and round-tripped. <c>gml:identifier</c> is of type
+    /// <c>gml:CodeWithAuthorityType</c>, for which <c>codeSpace</c> is mandatory; the WFS 2.0 ETS
+    /// asserts the standard property survives a Replace round-trip and validates it against the GML
+    /// schema, so dropping the authority would emit schema-invalid GML on read-back.
+    /// </summary>
+    private static string? ParseTransactionGmlCodeSpace(XElement valueElement)
+    {
+        var direct = valueElement.Attributes()
+            .FirstOrDefault(attribute => string.Equals(attribute.Name.LocalName, "codeSpace", StringComparison.OrdinalIgnoreCase))
+            ?.Value;
+        if (!string.IsNullOrWhiteSpace(direct))
+        {
+            return direct.Trim();
+        }
+
+        // For Update payloads the identifier may be wrapped inside a gml:identifier child of wfs:Value.
+        var nested = valueElement.Elements()
+            .FirstOrDefault(element => string.Equals(element.Name.LocalName, "identifier", StringComparison.OrdinalIgnoreCase))
+            ?.Attributes()
+            .FirstOrDefault(attribute => string.Equals(attribute.Name.LocalName, "codeSpace", StringComparison.OrdinalIgnoreCase))
+            ?.Value;
+
+        return string.IsNullOrWhiteSpace(nested) ? null : nested.Trim();
     }
 
 
