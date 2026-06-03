@@ -2,8 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Protocols.OData.Models;
 using Honua.Protocols.OData.Services;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -71,9 +73,11 @@ public sealed class ODataDeltaTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Query)]
+    [InterfaceOperation(TestProtocols.ODataV4, "DeltaTracking")]
     [Endpoint("GET /odata/Features({layerId})")]
-    public async Task Query_WithDeltaToken_ReturnsResults()
+    public async Task Query_WithDeltaToken_ReturnsChangesSinceToken()
     {
+        // Capture a delta link (token timestamp) over the current snapshot of layer 0.
         var firstRequest = new HttpRequestMessage(HttpMethod.Get, $"/odata/Features({TestLayerId})?$top=100");
         firstRequest.Headers.TryAddWithoutValidation("Prefer", "odata.track-changes");
 
@@ -86,7 +90,30 @@ public sealed class ODataDeltaTests : IAsyncLifetime
         var deltaLink = firstDocument.RootElement.GetProperty("@odata.deltaLink").GetString();
         var deltaUri = new Uri(deltaLink!);
 
-        // Follow the delta link
+        // Make a known change AFTER the token timestamp so the delta query has a
+        // deterministic, isolation-safe expectation: this specific feature must appear
+        // in the delta page regardless of any concurrent changes other tests in the
+        // shard make to layer 0 (which live in this fixture's own schema anyway).
+        var createRequest = new ODataFeatureRequest
+        {
+            Attributes = new Dictionary<string, object?>
+            {
+                ["name"] = "Delta Tracked City"
+            }
+        };
+
+        var createJson = JsonSerializer.Serialize(createRequest, ODataJsonContext.Default.ODataFeatureRequest);
+        var createResponse = await _fixture.Client.PostAsync(
+            $"/odata/Layers({TestLayerId})/Features",
+            new StringContent(createJson, Encoding.UTF8, "application/json"));
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var createdContent = await createResponse.Content.ReadAsStringAsync();
+        using var createdDocument = JsonDocument.Parse(createdContent);
+        var createdObjectId = createdDocument.RootElement.GetProperty("ObjectId").GetInt64();
+        createdObjectId.Should().BeGreaterThan(0);
+
+        // Follow the delta link: the delta page must track the change we just made.
         var secondResponse = await _fixture.Client.GetAsync(deltaUri.PathAndQuery);
 
         secondResponse.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -95,7 +122,15 @@ public sealed class ODataDeltaTests : IAsyncLifetime
 
         secondDocument.RootElement.TryGetProperty("value", out var valueElement).Should().BeTrue();
         valueElement.ValueKind.Should().Be(JsonValueKind.Array);
-        valueElement.GetArrayLength().Should().Be(0);
+
+        var trackedObjectIds = valueElement.EnumerateArray()
+            .Select(element => element.GetProperty("ObjectId").GetInt64())
+            .ToList();
+        trackedObjectIds.Should().Contain(
+            createdObjectId,
+            "the delta page must include the feature changed after the token timestamp");
+
+        // The final delta page must continue to expose a delta link for the next round-trip.
         secondDocument.RootElement.TryGetProperty("@odata.deltaLink", out _).Should().BeTrue();
     }
 
