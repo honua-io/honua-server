@@ -746,18 +746,35 @@ internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBa
             return true;
         }
 
-        // Audit-trail system columns are physically named "created"/"updated" on
-        // managed feature tables (see DatabaseSchema.CreatedColumn/UpdatedColumn).
-        // Only map them when the resource actually exposes them as queryable
-        // fields; otherwise fall through to normal schema resolution so unknown or
-        // attribute-backed temporal fields (e.g. a "created_at" defined in the
-        // layer schema and stored in the JSONB attributes column) are not rewritten
-        // into a bare column reference that does not exist on the table.
-        if ((propertyName.Equals(DatabaseSchema.CreatedColumn, StringComparison.OrdinalIgnoreCase) ||
-             propertyName.Equals(DatabaseSchema.UpdatedColumn, StringComparison.OrdinalIgnoreCase)) &&
+        // Audit-trail system columns. The canonical aliases "created"/"updated"
+        // (DatabaseSchema.CreatedColumn/UpdatedColumn) are the reserved, server-side
+        // names that resolve to the physical audit-timestamp columns on managed
+        // feature tables. Those physical columns are named "created_at"/"updated_at"
+        // (see migration 001_CreateHonuaSchema and the metadata-v1
+        // FeatureQueryBuilder), so the alias must be rewritten to the real column
+        // rather than emitted verbatim (a bare "updated" column does not exist).
+        // The OData $deltatoken "changed since" predicate targets the "updated"
+        // alias so the delta filter resolves to the real updated_at column (#1436).
+        //
+        // Only map the alias when the resource does not expose it as a queryable
+        // attribute (TryGetField == null); otherwise fall through to normal schema
+        // resolution. This intentionally does NOT recognize the literal physical
+        // names "created_at"/"updated_at" here: per #1415 those names are resolved
+        // through the schema so a user CQL2/OData filter on a layer-defined
+        // attribute field (JSONB) maps to the typed attributes path (200), and a
+        // filter on an undefined field raises ArgumentException (400) instead of
+        // emitting an invalid bare column reference (PostgreSQL 42883 -> HTTP 500).
+        if (propertyName.Equals(DatabaseSchema.CreatedColumn, StringComparison.OrdinalIgnoreCase) &&
             context.TryGetField(propertyName) is null)
         {
-            expression = QuoteIdentifier(propertyName.ToLowerInvariant());
+            expression = QuoteIdentifier("created_at");
+            return true;
+        }
+
+        if (propertyName.Equals(DatabaseSchema.UpdatedColumn, StringComparison.OrdinalIgnoreCase) &&
+            context.TryGetField(propertyName) is null)
+        {
+            expression = QuoteIdentifier("updated_at");
             return true;
         }
 

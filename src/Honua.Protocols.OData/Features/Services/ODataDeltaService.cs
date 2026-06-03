@@ -117,16 +117,33 @@ internal static class ODataDeltaService
     }
 
     /// <summary>
+    /// The OData property name the delta "changed since" predicate targets.
+    /// </summary>
+    /// <remarks>
+    /// This is the reserved audit-trail system alias (DatabaseSchema.UpdatedColumn)
+    /// that the shared filter pipeline maps to the physical <c>updated_at</c> "last
+    /// modified" column on managed feature tables. The alias resolves to the bare
+    /// system column when the resource does not declare a queryable of the same name,
+    /// so the delta filter applies again without reintroducing #1415's bug (treating
+    /// an arbitrary <c>updated_at</c> attribute field name as a bare timestamp
+    /// column). The predicate previously used the literal physical name
+    /// <c>updated_at</c>, which #1415 stopped mapping to a column, silently dropping
+    /// the delta filter (it was swallowed during filter translation, returning all
+    /// rows instead of only those changed since the token timestamp).
+    /// </remarks>
+    private const string SystemUpdatedField = "updated";
+
+    /// <summary>
     /// Builds the defining OData filter used by a delta request.
     /// </summary>
     public static string BuildDeltaFilter(string? filter, DateTimeOffset timestamp, DateTimeOffset? upperBoundTimestamp = null)
     {
         var encodedTimestamp = timestamp.ToString("O", CultureInfo.InvariantCulture);
-        var deltaPredicate = $"updated_at gt datetimeoffset'{encodedTimestamp}'";
+        var deltaPredicate = $"{SystemUpdatedField} gt datetimeoffset'{encodedTimestamp}'";
         if (upperBoundTimestamp.HasValue)
         {
             var encodedUpperBound = upperBoundTimestamp.Value.ToString("O", CultureInfo.InvariantCulture);
-            deltaPredicate = $"{deltaPredicate} and updated_at le datetimeoffset'{encodedUpperBound}'";
+            deltaPredicate = $"{deltaPredicate} and {SystemUpdatedField} le datetimeoffset'{encodedUpperBound}'";
         }
 
         return string.IsNullOrWhiteSpace(filter)
