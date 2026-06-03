@@ -243,7 +243,10 @@ cite-gml32-results/
 cite-gpkg12-results/
 cite-kml22-results/
 cite-tiles-results/
+cite-wfs10-results/
+cite-wfs11-results/
 cite-wfs20-results/
+cite-wcs20-results/
 cite-wms-results/
 cite-wmts-results/
 ogc-maps-results/

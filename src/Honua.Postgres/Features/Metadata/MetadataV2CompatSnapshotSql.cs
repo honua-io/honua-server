@@ -328,8 +328,19 @@ internal static class MetadataV2CompatSnapshotSql
                         'metadata', jsonb_build_object('id', 'svc-' || service_part || '-feature', 'name', service_name, 'title', service_name),
                         'serviceType', 'esri-feature-service',
                         'publicationIds', '[]'::jsonb,
-                        'protocols', to_jsonb(ARRAY['FeatureServer', 'MapServer', 'OData', 'Grpc', 'OgcFeatures', 'Wfs20', 'Wms', 'Wmts', 'OGC-API-Maps', 'OGC-API-Tiles']::text[]),
-                        'enabledProtocols', to_jsonb(ARRAY['FeatureServer', 'MapServer', 'OData', 'Grpc', 'OgcFeatures', 'Wfs20', 'Wms', 'Wmts', 'OGC-API-Maps', 'OGC-API-Tiles']::text[]),
+                        -- The synthesis emits one V2 service per protocol family (feature/map/
+                        -- image/ogc/stac) that all share the V1 service display name. Name-based
+                        -- routing (MetadataV2GraphIndex.ServicesByName / FindService) is first-wins
+                        -- on the lowest service id, which is always 'svc-<part>-feature'. Raster
+                        -- protocols (WCS, OGC API Coverages, ImageServer) resolve the service by
+                        -- name and then require that resolved service to advertise the protocol, so
+                        -- the feature service must carry the full protocol union the way the
+                        -- production publish path does (PostgreSqlLayerPublishingService.MetadataV2Graph
+                        -- sets MetadataV2ServiceProtocols.All on a single service). Without Wcs here
+                        -- the WCS GetCapabilities preflight 404s with OperationNotSupported even
+                        -- though the raster-backed layers exist. (honua-server#1412.)
+                        'protocols', to_jsonb(ARRAY['FeatureServer', 'MapServer', 'ImageServer', 'OData', 'Grpc', 'OgcFeatures', 'Wfs20', 'Wms', 'Wmts', 'Wcs', 'OGC-API-Maps', 'OGC-API-Tiles', 'OGC-API-Coverages']::text[]),
+                        'enabledProtocols', to_jsonb(ARRAY['FeatureServer', 'MapServer', 'ImageServer', 'OData', 'Grpc', 'OgcFeatures', 'Wfs20', 'Wms', 'Wmts', 'Wcs', 'OGC-API-Maps', 'OGC-API-Tiles', 'OGC-API-Coverages']::text[]),
                         'options', '{}'::jsonb,
                         'accessPolicy', service_access_policy,
                         'status', (SELECT value FROM status_doc),

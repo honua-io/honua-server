@@ -10,6 +10,12 @@ services:
       - HONUA_DEV_AUTH=true
       - HONUA_REGISTER_TEST_INFRASTRUCTURE=true
       - HONUA_SKIP_MIGRATIONS=true
+      # Disable metadata/catalog caching so WFS-T insert/update/delete are
+      # immediately visible to the read-back the ETS transaction tests perform.
+      # Otherwise a cached GetFeature/resourceId response serves the pre-mutation
+      # state within the cache TTL and DeleteTests/ReplaceTests see stale features.
+      # Mirrors docker/cite/wcs20/compose.yml. (honua-server#1412.)
+      - Cache__Enabled=false
       - ConnectionStrings__DefaultConnection=Host=postgres;Database=honua_cite;Username=postgres;Password=postgres;Include Error Detail=true
       - HONUA_ADMIN_PASSWORD=CiteAdminPassword123!
       - Security__ConnectionEncryption__MasterKey=cite_testing_master_key_for_testing_only_not_secure

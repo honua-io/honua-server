@@ -649,8 +649,13 @@ BEGIN
                     'metadata', jsonb_build_object('id', 'svc-' || service_part || '-feature', 'name', service_name, 'title', service_name),
                     'serviceType', 'esri-feature-service',
                     'publicationIds', '[]'::jsonb,
-                    'protocols', to_jsonb(ARRAY['FeatureServer', 'MapServer', 'OData', 'Grpc', 'OgcFeatures', 'Wfs20', 'Wms', 'Wmts', 'OGC-API-Maps', 'OGC-API-Tiles']::text[]),
-                    'enabledProtocols', to_jsonb(ARRAY['FeatureServer', 'MapServer', 'OData', 'Grpc', 'OgcFeatures', 'Wfs20', 'Wms', 'Wmts', 'OGC-API-Maps', 'OGC-API-Tiles']::text[]),
+                    -- Name-based service routing (ServicesByName / FindService) is first-wins on
+                    -- the lowest service id 'svc-<part>-feature', so the feature service must carry
+                    -- the full protocol union (including Wcs / OGC API Coverages / ImageServer) the
+                    -- way the production publish path does. Otherwise WCS GetCapabilities 404s with
+                    -- OperationNotSupported. Mirrors MetadataV2CompatSnapshotSql. (honua-server#1412.)
+                    'protocols', to_jsonb(ARRAY['FeatureServer', 'MapServer', 'ImageServer', 'OData', 'Grpc', 'OgcFeatures', 'Wfs20', 'Wms', 'Wmts', 'Wcs', 'OGC-API-Maps', 'OGC-API-Tiles', 'OGC-API-Coverages']::text[]),
+                    'enabledProtocols', to_jsonb(ARRAY['FeatureServer', 'MapServer', 'ImageServer', 'OData', 'Grpc', 'OgcFeatures', 'Wfs20', 'Wms', 'Wmts', 'Wcs', 'OGC-API-Maps', 'OGC-API-Tiles', 'OGC-API-Coverages']::text[]),
                     'options', '{}'::jsonb,
                     'accessPolicy', service_access_policy,
                     'status', (SELECT value FROM status_doc),
