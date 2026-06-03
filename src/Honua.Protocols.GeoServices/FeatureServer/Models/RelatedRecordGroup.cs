@@ -24,4 +24,12 @@ public sealed class RelatedRecordGroup
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public GeoServicesFeature[]? RelatedRecords { get; init; }
+
+    /// <summary>
+    /// Count of related records for this source feature. Populated only for
+    /// <c>returnCountOnly=true</c> queries (Esri queryRelatedRecords count-only
+    /// mode), in which case <see cref="RelatedRecords"/> is omitted.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public long? Count { get; init; }
 }

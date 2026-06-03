@@ -126,7 +126,9 @@ internal sealed class FeatureQueryValidator : IFeatureQueryValidator
             ReturnTrueCurves = queryParams.ReturnTrueCurves,
             ResultOffset = pagination.Offset,
             ResultRecordCount = pagination.Limit,
-            Where = queryParams.Where
+            Where = queryParams.Where,
+            OrderByFields = queryParams.OrderByFields,
+            ReturnCountOnly = queryParams.ReturnCountOnly
         };
 
         return RelatedRecordsValidationResult.Valid(validatedParams);

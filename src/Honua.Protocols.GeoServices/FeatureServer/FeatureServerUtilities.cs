@@ -124,6 +124,8 @@ internal static partial class FeatureServerEndpoints
                 "returnGeometry",
                 "resultOffset",
                 "resultRecordCount",
+                "orderByFields",
+                "returnCountOnly",
                 "outSR",
                 "returnZ",
                 "returnM",
