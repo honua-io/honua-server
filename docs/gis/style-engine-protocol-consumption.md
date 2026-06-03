@@ -12,10 +12,12 @@ protocol slice does with that document.
 - Theme engine: implemented (`default`, `dark`, `colorblind-safe`, `print`)
 - Style revision metadata: implemented (`styleVersion`, `revisedAt`,
   `revisedBy`, `changeSummary` returned on admin GET/PUT)
-- OGC API – Styles Phase 1 adapter: implemented (ADR-0048, issue #1388;
-  `core`, `mapbox-styles`, `sld-10`, `sld-11`, `style-validation`, partial
-  `manage-styles`). Independent style catalog (Phase 2, full POST/DELETE) is
-  issue #1389.
+- OGC API – Styles adapter: implemented (ADR-0048, issue #1388;
+  `core`, `mapbox-styles`, `sld-10`, `sld-11`, `style-validation`,
+  `manage-styles`). The independent style catalog (Phase 2, full POST/DELETE,
+  issue #1389) is implemented. No official OGC Styles CITE/ETS exists yet; the
+  surface is proven by the integration tests in
+  `tests/dotnet/Honua.Server.Tests/Features/Styling/OgcStylesEndpointTests.cs`.
 - Visual diff UX in the Admin UI: deferred to a follow-up ticket
 
 ## Storage shape
@@ -60,7 +62,29 @@ newly-published row increments `0 -> 1` deterministically.
 | Submit MapLibre style | `PUT /api/v1/admin/metadata/layers/{layerId}/style` body `{ "mapLibreStyle": { ... } }` | Validated by `MapLibreStyleNormalizer`; rejected with 400 on schema errors. |
 | Submit GeoServices drawingInfo | `PUT /api/v1/admin/metadata/layers/{layerId}/style` body `{ "drawingInfo": { ... } }` | Converted to MapLibre by `GeoServicesToMapLibreConverter`. Unsupported renderer/symbol types are reported in the response body via `unsupportedSymbolizers[]` with stable codes from `StyleErrorCodes`. |
 | Read canonical style | `GET /api/v1/admin/metadata/layers/{layerId}/style` | Returns the canonical MapLibre document plus revision metadata. |
-| Read public style | `GET /api/styles/{layerId}.json[?theme=dark|colorblind-safe|print]` | Public read endpoint with output cache; theme transforms applied deterministically per query key. |
+| Read public style | `GET /api/styles/{layerId}.json[?theme=dark|colorblind-safe|print]` | **Deprecated layerId alias** — prefer `GET /ogc/styles/{styleId}` (see below). Still working with output cache; theme transforms applied deterministically per query key. Emits advisory `Deprecation`/`Sunset` headers. |
+
+## Canonical style identifier and deprecated layerId aliases
+
+The canonical style identifier is **`styleId`**, addressed through the OGC
+API – Styles surface (`/ogc/styles`, ADR-0048). `GET /ogc/styles/{styleId}`
+serves the MapLibre style and, via content negotiation, derived SLD 1.0/1.1;
+`PUT /ogc/styles/{styleId}` writes it.
+
+The older **layerId-keyed paths are deprecated aliases** that are kept working
+for back-compat:
+
+| Deprecated layerId alias | Canonical styleId replacement |
+|--------------------------|-------------------------------|
+| `GET /api/styles/{layerId}.json` | `GET /ogc/styles/{styleId}` (content-negotiated MapLibre/SLD) |
+| `GET /api/v1/admin/metadata/layers/{layerId}/style` | `GET /ogc/styles/{styleId}` (+ `/metadata`) |
+| `PUT /api/v1/admin/metadata/layers/{layerId}/style` | `PUT /ogc/styles/{styleId}` |
+
+Each alias returns advisory `Deprecation: true` and `Sunset` response headers
+plus a `Link: rel="successor-version"` pointing at `/ogc/styles`, and is marked
+`deprecated` in its OpenAPI metadata. Behavior is otherwise identical. Per
+ADR-0048 the aliases are **not removed yet**: hard removal (Phase 3) is gated on
+the SDK / console / MCP consumers migrating to `styleId`.
 
 ## Unsupported symbolizers
 
@@ -215,19 +239,20 @@ public `IOgcStyleProjection` abstraction (`Honua.Core`, implemented by
 | Endpoint | Method | Behavior |
 |----------|--------|----------|
 | `/ogc/styles` | GET | Landing links + styles list (one entry per collection that has a stored MapLibre style). |
-| `/ogc/styles/conformance` | GET | Declares `core`, `mapbox-styles`, `sld-10`, `sld-11`, `style-validation`, partial `manage-styles`. |
+| `/ogc/styles/conformance` | GET | Declares `core`, `mapbox-styles`, `sld-10`, `sld-11`, `style-validation`, `manage-styles`. |
 | `/ogc/styles/openapi.json` | GET | OpenAPI document for the slice. |
 | `/ogc/styles/{styleId}` | GET | Content-negotiated stylesheet: MapLibre (`application/vnd.mapbox.style+json`, default) or derived SLD 1.0/1.1 by `Accept`. |
 | `/ogc/styles/{styleId}/metadata` | GET | `id`, `title`, `description`, `keywords`, `license`, `version` + stylesheet / `describedby` (schema) / `preview` links. |
 | `/ogc/styles/{styleId}` | PUT | `manage-styles`: validates MapLibre via the normalizer and writes through `ILayerStyleService`. Honors `Prefer: handling=strict` and `?validate`. |
-| `/ogc/styles` (POST), `/ogc/styles/{styleId}` (DELETE) | POST/DELETE | `501 Not Implemented` — standalone style CRUD arrives with the Phase 2 independent catalog (issue #1389). |
+| `/ogc/styles` (POST) | POST | `manage-styles`: creates a standalone style in the Phase 2 independent style catalog (issue #1389); the new stable identifier is returned in `Location`. Honors `Prefer: handling=strict` and `?validate`. |
+| `/ogc/styles/{styleId}` (DELETE) | DELETE | `manage-styles`: deletes a standalone style from the Phase 2 independent catalog. |
 
 The `styleId` is the collection's stable resource name — the same identifier
 used as the OGC API Features collectionId — chosen to be forward-compatible with
 the Phase 2 styleId-keyed catalog. SLD encodings are derived on demand from the
 canonical MapLibre style via `MapLibreToSldConverter`; the canonical store only
 holds MapLibre. The collection metadata (`GET /ogc/features/collections/{id}`)
-carries `rel:"style"` (the `/api/styles/{layerId}.json` alias, unchanged),
+carries `rel:"style"` (the deprecated `/api/styles/{layerId}.json` alias, retained),
 `rel:"styles"` (→ `/ogc/styles`), and `rel:"stylesheet"` (→ `/ogc/styles/{styleId}`)
 links. The revision metadata fields (`styleVersion`, `revisedAt`, `revisedBy`,
 `changeSummary`) back the OGC style `version` field.

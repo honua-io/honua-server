@@ -1,11 +1,23 @@
 # ADR-0007: Embedded Maputnik Style Editor
 
 ## Status
-Accepted; implementation tracked in `honua-server-admin#80` (admin embed)
-and `honua-portal#39` (portal saved-map style overrides). The honua-server
-side of this ADR has no remaining work — server delivers MapLibre style
-JSON via the existing endpoints; the iframe integration lives in the admin
-and portal repositories.
+Accepted; the embedded editor is re-homed to **honua-console** (the active
+admin/console UI home). The earlier routing to `honua-server-admin#80` is
+**stale** — `honua-server-admin` is archived/dead and is no longer an active
+target. Portal saved-map style overrides remain tracked in `honua-portal#39`
+(the portal is a separate end-user surface). The honua-server side of this ADR
+has no remaining work — the server delivers the canonical style via the OGC
+API – Styles surface (`/ogc/styles/{styleId}`, ADR-0048) and the legacy
+`/api/styles/{layerId}.json` alias; the editor integration lives in
+honua-console.
+
+**Product decision — dual-mode editor.** The honua-console style editor is
+**dual-mode**: it supports both **MapLibre/Maputnik** visual authoring and
+**Esri-renderer (`drawingInfo`)** authoring (simple / unique-value /
+class-breaks) for users familiar with the Esri model. Both modes author the
+single canonical style over `/ogc/styles`; the server round-trips MapLibre ↔
+Esri `drawingInfo` (ADR-0002), so there is one source of truth regardless of
+the authoring mode the user chooses.
 
 ## Context
 MVP needs a visual style editor for MapLibre styles. Options:
@@ -14,9 +26,12 @@ MVP needs a visual style editor for MapLibre styles. Options:
 - No visual editor (JSON only)
 
 ## Decision
-Embed Maputnik in the admin UI via iframe with postMessage API for style exchange.
-
-Current source still exposes JSON text editing in `honua-server-admin`; the active implementation work is tracked in `honua-server-admin#80`. Portal saved-map style overrides are tracked separately in `honua-portal#39`.
+Embed Maputnik in **honua-console** via iframe with postMessage API for style
+exchange, as one mode of the dual-mode (MapLibre/Maputnik + Esri-renderer)
+editor described in Status. The original framing targeted the now-archived
+`honua-server-admin`; that target is dead and the editor re-homes to
+honua-console (which already hosts the styleId-picker foundation). Portal
+saved-map style overrides are tracked separately in `honua-portal#39`.
 
 **Integration:**
 ```html

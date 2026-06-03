@@ -57,6 +57,29 @@ public sealed class LayerStyleEndpointsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Metadata)]
     [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/style")]
+    public async Task GetLayerStyle_DeprecatedLayerIdAlias_EmitsDeprecationHeaders()
+    {
+        var client = _fixture.CreateAdminClient();
+
+        var response = await client.GetAsync(
+            $"/api/v1/admin/metadata/layers/{WebAppFixture.TestLayerId}/style");
+
+        response.Be200Ok();
+
+        // The layerId-keyed admin alias is deprecated in favour of the canonical
+        // styleId surface /ogc/styles/{styleId} (ADR-0048) but kept working.
+        response.Headers.TryGetValues("Deprecation", out var deprecation).Should().BeTrue();
+        deprecation!.Should().Contain("true");
+        response.Headers.Contains("Sunset").Should().BeTrue();
+        response.Headers.TryGetValues("Link", out var link).Should().BeTrue();
+        link!.Should().Contain(value =>
+            value.Contains("/ogc/styles", StringComparison.Ordinal)
+            && value.Contains("successor-version", StringComparison.Ordinal));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/style")]
     [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/style")]
     public async Task UnstyledLayer_ReadsAtVersionZero_AndFirstPutLandsAsRevisionOne()
     {

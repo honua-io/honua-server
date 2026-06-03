@@ -1499,8 +1499,9 @@
           "Styles"
         ],
         "summary": "Get Layer Style",
-        "description": "Get the canonical MapLibre style document for a layer plus revision metadata (styleVersion, revisedAt, revisedBy, changeSummary). The cached drawingInfo conversion is included when available.",
+        "description": "DEPRECATED layerId-keyed alias. The canonical style identifier is styleId via GET /ogc/styles/{styleId} (ADR-0048). This alias is kept working for back-compat and returns advisory Deprecation/Sunset response headers; it will be removed only after downstream styleId migration completes. Get the canonical MapLibre style document for a layer plus revision metadata (styleVersion, revisedAt, revisedBy, changeSummary). The cached drawingInfo conversion is included when available.",
         "operationId": "getAdminLayerStyle",
+        "deprecated": true,
         "parameters": [
           {
             "name": "layerId",
@@ -1540,7 +1541,8 @@
           "Styles"
         ],
         "summary": "Update Layer Style",
-        "description": "Update the canonical MapLibre style for a layer. Supply mapLibreStyle directly or a GeoServices drawingInfo payload that the engine converts. Optional changedBy and changeSummary populate the layer's revision metadata; changeSummary longer than 1000 characters returns 400. The response includes the persisted style, the incremented styleVersion, the new revisedAt timestamp, and unsupportedSymbolizers[] entries with stable StyleErrorCodes for any symbolizers that could not be losslessly translated. Style intent is never silently dropped: a best-effort MapLibre fallback is still returned alongside the unsupported list.",
+        "deprecated": true,
+        "description": "DEPRECATED layerId-keyed alias. The canonical style identifier is styleId via PUT /ogc/styles/{styleId} (ADR-0048). This alias is kept working for back-compat and returns advisory Deprecation/Sunset response headers; it will be removed only after downstream styleId migration completes. Update the canonical MapLibre style for a layer. Supply mapLibreStyle directly or a GeoServices drawingInfo payload that the engine converts. Optional changedBy and changeSummary populate the layer's revision metadata; changeSummary longer than 1000 characters returns 400. The response includes the persisted style, the incremented styleVersion, the new revisedAt timestamp, and unsupportedSymbolizers[] entries with stable StyleErrorCodes for any symbolizers that could not be losslessly translated. Style intent is never silently dropped: a best-effort MapLibre fallback is still returned alongside the unsupported list.",
         "operationId": "updateAdminLayerStyle",
         "parameters": [
           {
