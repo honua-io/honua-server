@@ -10,6 +10,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\..\src\Honua.Core\Honua.Core.csproj" />
     <ProjectReference Include="..\Honua.TestKit\Honua.TestKit.csproj" />
+    <ProjectReference Include="..\..\..\src\Honua.Scene\Honua.Scene.csproj" />
   </ItemGroup>
 
   <ItemGroup>

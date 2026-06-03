@@ -104,6 +104,8 @@
     <ProjectReference Include="..\Honua.Protocols.Stac\Honua.Protocols.Stac.csproj" />
 
     <ProjectReference Include="..\Honua.Protocols.GeoServices\Honua.Protocols.GeoServices.csproj" />
+
+    <ProjectReference Include="..\Honua.Scene\Honua.Scene.csproj" />
   </ItemGroup>
 
 
