@@ -945,7 +945,8 @@ internal sealed partial class FeatureServerQueryHandler(
                     validatedParams.ReturnM,
                     validatedParams.GeometryPrecision,
                     validatedParams.MaxAllowableOffset,
-                    outFields);
+                    outFields,
+                    suppressObjectId: shouldApplyDistinct);
 
                 FeatureServerLog.QueryCompleted(_logger, serviceId, layerId, result.Items.Length, result.TotalCount);
                 HonuaTelemetry.SetSuccess(featureActivity, result.Items.Length);
@@ -1608,7 +1609,8 @@ internal sealed partial class FeatureServerQueryHandler(
             validatedParams.ReturnM,
             validatedParams.GeometryPrecision,
             validatedParams.MaxAllowableOffset,
-            outFields).ConfigureAwait(false);
+            outFields,
+            suppressObjectId: shouldApplyDistinct).ConfigureAwait(false);
 
         var response = (QueryResponse)formattedResponse!;
         FeatureServerLog.QueryCompleted(_logger, serviceId, layerId, queryResult.Items.Length, queryResult.TotalCount);

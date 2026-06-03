@@ -602,6 +602,7 @@ public static class EndpointRegistry
         new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/generateRenderer"),
+        new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/generateRenderer"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/createReplica"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/extractChanges"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/synchronizeReplica"),

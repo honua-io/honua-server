@@ -28,5 +28,6 @@ internal interface IFeatureServerQueryServices
         bool returnM,
         int? geometryPrecision,
         double? maxAllowableOffset,
-        string[]? outFields);
+        string[]? outFields,
+        bool suppressObjectId = false);
 }

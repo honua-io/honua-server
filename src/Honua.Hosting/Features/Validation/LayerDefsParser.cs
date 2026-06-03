@@ -29,9 +29,99 @@ internal static class LayerDefsParser
         }
 
         var trimmed = layerDefsValue.Trim();
-        return trimmed.StartsWith('{')
-            ? TryParseJson(trimmed, queryValidator, layerDefs, out error)
-            : TryParsePairs(trimmed, queryValidator, layerDefs, out error);
+        if (trimmed.StartsWith('{'))
+        {
+            return TryParseJson(trimmed, queryValidator, layerDefs, out error);
+        }
+
+        if (trimmed.StartsWith('['))
+        {
+            return TryParseJsonArray(trimmed, queryValidator, layerDefs, out error);
+        }
+
+        return TryParsePairs(trimmed, queryValidator, layerDefs, out error);
+    }
+
+    private static bool TryParseJsonArray(
+        string layerDefsValue,
+        ICommonQueryValidator queryValidator,
+        Dictionary<int, string?> layerDefs,
+        out string? error)
+    {
+        error = null;
+
+        try
+        {
+            using var document = JsonDocument.Parse(layerDefsValue);
+            if (document.RootElement.ValueKind != JsonValueKind.Array)
+            {
+                error = "layerDefs must be a JSON array.";
+                return false;
+            }
+
+            foreach (var element in document.RootElement.EnumerateArray())
+            {
+                if (element.ValueKind != JsonValueKind.Object)
+                {
+                    error = "layerDefs array entries must be JSON objects with a layerId.";
+                    return false;
+                }
+
+                if (!element.TryGetProperty("layerId", out var layerIdElement))
+                {
+                    error = "layerDefs array entries must include a 'layerId'.";
+                    return false;
+                }
+
+                int layerId;
+                if (layerIdElement.ValueKind == JsonValueKind.Number)
+                {
+                    if (!layerIdElement.TryGetInt32(out layerId))
+                    {
+                        error = $"Invalid layer id '{layerIdElement.GetRawText()}' in layerDefs.";
+                        return false;
+                    }
+                }
+                else if (layerIdElement.ValueKind == JsonValueKind.String &&
+                         int.TryParse(layerIdElement.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out layerId))
+                {
+                    // Parsed string-form layer id.
+                }
+                else
+                {
+                    error = $"Invalid layer id '{layerIdElement.GetRawText()}' in layerDefs.";
+                    return false;
+                }
+
+                string? where = null;
+                if (element.TryGetProperty("where", out var whereElement))
+                {
+                    if (whereElement.ValueKind == JsonValueKind.String)
+                    {
+                        where = whereElement.GetString();
+                    }
+                    else if (whereElement.ValueKind != JsonValueKind.Null)
+                    {
+                        error = $"Invalid layerDefs where value for layer '{layerId}'. Expected a string.";
+                        return false;
+                    }
+                }
+
+                if (!ValidateWhere(where, queryValidator, out error))
+                {
+                    return false;
+                }
+
+                layerDefs[layerId] = string.IsNullOrWhiteSpace(where) ? null : where;
+            }
+
+            return true;
+        }
+        catch (JsonException)
+        {
+            error = InvalidLayerDefsJsonMessage;
+            return false;
+        }
     }
 
     private static bool TryParseJson(

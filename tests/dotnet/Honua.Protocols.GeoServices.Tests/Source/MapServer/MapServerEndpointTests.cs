@@ -434,6 +434,22 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
         content.Should().NotContain("System.Text.Json");
     }
 
+    // Regression (#1430): the Esri layerDefs array form [{"layerId":N,"where":...}]
+    // must be accepted (previously rejected with "Invalid layer id").
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
+    public async Task MapServer_Export_WithJsonArrayLayerDefs_ReturnsOk()
+    {
+        var layerDefs = Uri.EscapeDataString(
+            $$"""[{"layerId":{{WebAppFixture.TestLayerId}},"where":"1=1"}]""");
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&size=256,256&f=json&layerDefs={layerDefs}");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+    }
+
     [IntegrationTest]
     [Operation(Operations.Export)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
@@ -590,6 +606,27 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     {
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry=-122.5,37.5&geometryType=esriGeometryPoint&mapExtent=-180,-90,180,90&imageDisplay=800,600,96&f=json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        var identify = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.IdentifyResponse);
+
+        identify.Should().NotBeNull();
+        identify!.Results.Should().NotBeNull();
+        identify.Results!.Length.Should().BeGreaterThan(0);
+    }
+
+    // Regression (#1429): the ArcGIS JS SDK and arcpy send mapExtent as an Esri JSON
+    // envelope ({"xmin":..,"ymin":..,"xmax":..,"ymax":..}); it must be accepted, not 400.
+    [IntegrationTest]
+    [Operation(Operations.Identify)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/identify")]
+    public async Task MapServer_Identify_WithJsonEnvelopeMapExtent_ReturnsResults()
+    {
+        var mapExtent = Uri.EscapeDataString(
+            """{"xmin":-180,"ymin":-90,"xmax":180,"ymax":90,"spatialReference":{"wkid":4326}}""");
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry=-122.5,37.5&geometryType=esriGeometryPoint&mapExtent={mapExtent}&imageDisplay=800,600,96&f=json");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);

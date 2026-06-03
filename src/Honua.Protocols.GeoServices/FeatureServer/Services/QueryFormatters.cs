@@ -38,7 +38,8 @@ internal interface IQueryFormatter
         bool returnM,
         int? geometryPrecision,
         double? maxAllowableOffset,
-        string[]? outFields = null);
+        string[]? outFields = null,
+        bool suppressObjectId = false);
 }
 
 /// <summary>
@@ -67,7 +68,8 @@ internal sealed class QueryFormatter : IQueryFormatter
         bool returnM,
         int? geometryPrecision,
         double? maxAllowableOffset,
-        string[]? outFields = null)
+        string[]? outFields = null,
+        bool suppressObjectId = false)
     {
         ArgumentNullException.ThrowIfNull(resource);
 
@@ -84,7 +86,7 @@ internal sealed class QueryFormatter : IQueryFormatter
             "geojson" => ValueTask.FromResult<(object response, string contentType)>(
                 FormatAsGeoJson(result, resource, returnGeometry, returnZ, returnM, effectiveLimits, outFields)),
             "json" => ValueTask.FromResult<(object response, string contentType)>(
-                FormatAsGeoServicesJson(result, resource, returnGeometry, outputSrid, returnZ, returnM, effectiveLimits, outFields)),
+                FormatAsGeoServicesJson(result, resource, returnGeometry, outputSrid, returnZ, returnM, effectiveLimits, outFields, suppressObjectId)),
             "parquet" => ValueTask.FromResult<(object response, string contentType)>(
                 FormatParquet(result, resource, returnGeometry, outputSrid, returnZ, returnM, effectiveLimits, outFields)),
             "arrow" => new ValueTask<(object response, string contentType)>(
@@ -98,7 +100,7 @@ internal sealed class QueryFormatter : IQueryFormatter
                     effectiveLimits,
                     outFields)),
             _ => ValueTask.FromResult<(object response, string contentType)>(
-                FormatAsGeoServicesJson(result, resource, returnGeometry, outputSrid, returnZ, returnM, effectiveLimits, outFields))
+                FormatAsGeoServicesJson(result, resource, returnGeometry, outputSrid, returnZ, returnM, effectiveLimits, outFields, suppressObjectId))
         };
     }
 
@@ -157,7 +159,8 @@ internal sealed class QueryFormatter : IQueryFormatter
         bool returnZ,
         bool returnM,
         GeometryLimits geometryLimits,
-        string[]? outFields)
+        string[]? outFields,
+        bool suppressObjectId = false)
     {
         var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
         var allDeclaredAttributeFields = resource.SchemaFields
@@ -183,9 +186,10 @@ internal sealed class QueryFormatter : IQueryFormatter
                 objectIdFieldName,
                 returnZ,
                 returnM,
-                geometryLimits))
+                geometryLimits,
+                suppressObjectId))
             .ToArray();
-        var queryFields = BuildQueryFields(resource, outFields, objectIdFieldName, runtimeFields);
+        var queryFields = BuildQueryFields(resource, outFields, objectIdFieldName, runtimeFields, suppressObjectId);
         var displayFieldName = ResolveDisplayFieldName(queryFields, objectIdFieldName);
         var geometryType = resource.ReadGeometryType();
         var hasGeometry = geometryType != MetadataV2GeometryType.None || resource.FindPrimaryGeometryField() is not null;
@@ -262,7 +266,8 @@ internal sealed class QueryFormatter : IQueryFormatter
         string objectIdFieldName,
         bool returnZ,
         bool returnM,
-        GeometryLimits geometryLimits)
+        GeometryLimits geometryLimits,
+        bool suppressObjectId = false)
     {
         Dictionary<string, object?> attributes = FilterAttributes(
             feature.Attributes,
@@ -270,7 +275,8 @@ internal sealed class QueryFormatter : IQueryFormatter
             declaredAttributeFields,
             runtimeAttributeFields,
                 objectIdFieldName,
-                GeoServicesObjectIdFieldResolver.ResolveObjectIdValue(feature, objectIdFieldName));
+                GeoServicesObjectIdFieldResolver.ResolveObjectIdValue(feature, objectIdFieldName),
+                suppressObjectId);
 
         return new GeoServicesFeature
         {
@@ -310,7 +316,8 @@ internal sealed class QueryFormatter : IQueryFormatter
         IReadOnlySet<string> declaredAttributeFields,
         IReadOnlySet<string> runtimeAttributeFields,
         string objectIdFieldName,
-        long objectIdValue)
+        long objectIdValue,
+        bool suppressObjectId = false)
     {
         if (outFields == null || outFields.Length == 0 ||
             (outFields.Length == 1 && outFields[0].Equals("*", StringComparison.Ordinal)))
@@ -324,25 +331,35 @@ internal sealed class QueryFormatter : IQueryFormatter
                 }
             }
 
-            if (!all.ContainsKey(objectIdFieldName))
+            // returnDistinctValues has no stable OID; do not force-append it (#1427).
+            if (!suppressObjectId)
             {
-                all[objectIdFieldName] = objectIdValue;
+                if (!all.ContainsKey(objectIdFieldName))
+                {
+                    all[objectIdFieldName] = objectIdValue;
+                }
+                AddObjectIdAlias(all, objectIdFieldName);
             }
-            AddObjectIdAlias(all, objectIdFieldName);
+
             return all;
         }
 
         var filtered = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
 
-        // Always include objectid field for GeoServices compatibility
-        if (attributes.TryGetValue(objectIdFieldName, out object? objectIdFromAttributes))
+        // Always include objectid field for GeoServices compatibility, except for
+        // distinct results which intentionally carry only the requested outFields.
+        if (!suppressObjectId)
         {
-            filtered[objectIdFieldName] = FeatureAttributeValueNormalizer.Normalize(objectIdFromAttributes);
+            if (attributes.TryGetValue(objectIdFieldName, out object? objectIdFromAttributes))
+            {
+                filtered[objectIdFieldName] = FeatureAttributeValueNormalizer.Normalize(objectIdFromAttributes);
+            }
+            else
+            {
+                filtered[objectIdFieldName] = objectIdValue;
+            }
         }
-        else
-        {
-            filtered[objectIdFieldName] = objectIdValue;
-        }
+
         foreach (string field in outFields)
         {
             if (attributes.TryGetValue(field, out object? fieldValue)
@@ -418,7 +435,8 @@ internal sealed class QueryFormatter : IQueryFormatter
         MetadataV2Resource resource,
         string[]? outFields,
         string objectIdFieldName,
-        IReadOnlyCollection<GeoServicesFieldInfo>? runtimeFields = null)
+        IReadOnlyCollection<GeoServicesFieldInfo>? runtimeFields = null,
+        bool suppressObjectId = false)
     {
         var includeAllFields = outFields == null || outFields.Length == 0
             || (outFields.Length == 1 && outFields[0].Equals("*", StringComparison.Ordinal));
@@ -426,10 +444,11 @@ internal sealed class QueryFormatter : IQueryFormatter
         HashSet<string>? requestedFields = null;
         if (!includeAllFields)
         {
-            requestedFields = new HashSet<string>(outFields!, StringComparer.OrdinalIgnoreCase)
+            requestedFields = new HashSet<string>(outFields!, StringComparer.OrdinalIgnoreCase);
+            if (!suppressObjectId)
             {
-                objectIdFieldName
-            };
+                requestedFields.Add(objectIdFieldName);
+            }
         }
 
         var mappedFields = resource.SchemaFields
@@ -439,7 +458,8 @@ internal sealed class QueryFormatter : IQueryFormatter
             .Select(field => MapFieldInfo(field, objectIdFieldName))
             .ToList();
 
-        if (!mappedFields.Any(field => field.Name.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase)))
+        if (!suppressObjectId &&
+            !mappedFields.Any(field => field.Name.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase)))
         {
             mappedFields.Add(new GeoServicesFieldInfo
             {

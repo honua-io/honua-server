@@ -220,7 +220,8 @@ internal sealed class FeatureServerRelatedRecordsHandler(
                 validatedParams.ReturnM,
                 validatedParams.GeometryPrecision,
                 validatedParams.MaxAllowableOffset,
-                relatedQuery.OutFields);
+                relatedQuery.OutFields,
+                resolvedRelatedResource);
 
             // Build response
             var response = new QueryRelatedRecordsResponse

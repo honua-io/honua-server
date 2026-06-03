@@ -242,8 +242,17 @@ internal static partial class MapServerEndpoints
                     geometrySrid,
                     AxisOrder.EastNorth,
                     SpatialReference.Create(geometrySrid).IsGeographic);
+            // ArcGIS JS SDK and arcpy send mapExtent as an Esri JSON envelope
+            // ({"xmin":..,"ymin":..,"xmax":..,"ymax":..,"spatialReference":..}).
+            // Normalize that to the comma form before the shared bbox parser, which
+            // also keeps the existing "xmin,ymin,xmax,ymax" string form working.
+            if (!TryNormalizeIdentifyMapExtent(mapExtentValue, out var normalizedMapExtent, out var mapExtentError))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, mapExtentError ?? "Invalid mapExtent parameter. Expected format: xmin,ymin,xmax,ymax");
+            }
+
             if (!TryParseBbox(
-                    mapExtentValue,
+                    normalizedMapExtent,
                     mapExtentCrsDefinition.AxisOrder,
                     mapExtentCrsDefinition.IsGeographic,
                     out var mapExtent))
@@ -586,6 +595,64 @@ internal static partial class MapServerEndpoints
 
         srid = serviceSrid;
         return true;
+    }
+
+    /// <summary>
+    /// Normalizes a mapExtent value into the comma-delimited "xmin,ymin,xmax,ymax"
+    /// form. Accepts both the legacy comma string and the Esri JSON envelope object
+    /// ({"xmin":..,"ymin":..,"xmax":..,"ymax":..}) that the ArcGIS JS SDK and arcpy emit.
+    /// </summary>
+    private static bool TryNormalizeIdentifyMapExtent(
+        string? mapExtentValue,
+        out string? normalized,
+        out string? error)
+    {
+        normalized = mapExtentValue;
+        error = null;
+
+        if (string.IsNullOrWhiteSpace(mapExtentValue))
+        {
+            return true;
+        }
+
+        var trimmed = mapExtentValue.TrimStart();
+        if (!trimmed.StartsWith('{'))
+        {
+            // Legacy comma form (or anything else) — let the shared bbox parser decide.
+            return true;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(mapExtentValue);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                error = "Invalid mapExtent parameter. Expected an Esri JSON envelope or xmin,ymin,xmax,ymax.";
+                return false;
+            }
+
+            var root = doc.RootElement;
+            var xmin = TryGetDouble(root, "xmin");
+            var ymin = TryGetDouble(root, "ymin");
+            var xmax = TryGetDouble(root, "xmax");
+            var ymax = TryGetDouble(root, "ymax");
+
+            if (!(xmin.HasValue && ymin.HasValue && xmax.HasValue && ymax.HasValue))
+            {
+                error = "mapExtent envelope must include xmin, ymin, xmax, and ymax.";
+                return false;
+            }
+
+            normalized = string.Create(
+                CultureInfo.InvariantCulture,
+                $"{xmin.Value},{ymin.Value},{xmax.Value},{ymax.Value}");
+            return true;
+        }
+        catch (JsonException)
+        {
+            error = "Invalid mapExtent parameter. Expected an Esri JSON envelope or xmin,ymin,xmax,ymax.";
+            return false;
+        }
     }
 
     private static bool TryParseIdentifyGeometry(
