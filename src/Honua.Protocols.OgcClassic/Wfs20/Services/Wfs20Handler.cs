@@ -1181,9 +1181,17 @@ internal sealed partial class Wfs20Handler
             writer.WriteElementString("gml", "description", Wfs20Utilities.GmlNamespace, gmlDescription);
         }
 
-        if (TryGetGmlIdentifierValue(feature.Attributes, out var gmlIdentifier))
+        if (TryGetGmlIdentifierValue(feature.Attributes, out var gmlIdentifier, out var gmlIdentifierCodeSpace))
         {
-            writer.WriteElementString("gml", "identifier", Wfs20Utilities.GmlNamespace, gmlIdentifier);
+            writer.WriteStartElement("gml", "identifier", Wfs20Utilities.GmlNamespace);
+            // codeSpace is mandatory on gml:CodeWithAuthorityType; fall back to the WFS namespace
+            // URI when a transaction supplied an identifier without an explicit authority so the
+            // emitted GML stays schema-valid.
+            writer.WriteAttributeString(
+                "codeSpace",
+                string.IsNullOrWhiteSpace(gmlIdentifierCodeSpace) ? FeatureNamespaceUri : gmlIdentifierCodeSpace);
+            writer.WriteString(gmlIdentifier);
+            writer.WriteEndElement();
         }
 
         if (!includeMemberWrapper &&
@@ -1264,12 +1272,23 @@ internal sealed partial class Wfs20Handler
 
     private static bool TryGetGmlIdentifierValue(
         ImmutableDictionary<string, object?> attributes,
-        out string? gmlIdentifier)
+        out string? gmlIdentifier,
+        out string? gmlIdentifierCodeSpace)
     {
-        return TryGetReservedTransactionValue(
+        if (TryGetReservedTransactionValue(
             attributes,
             ValidationExtensions.WfsGmlIdentifierAttributeName,
-            out gmlIdentifier);
+            out gmlIdentifier))
+        {
+            TryGetReservedTransactionValue(
+                attributes,
+                ValidationExtensions.WfsGmlIdentifierCodeSpaceAttributeName,
+                out gmlIdentifierCodeSpace);
+            return true;
+        }
+
+        gmlIdentifierCodeSpace = null;
+        return false;
     }
 
     private static bool TryGetTransactionMappedValue(

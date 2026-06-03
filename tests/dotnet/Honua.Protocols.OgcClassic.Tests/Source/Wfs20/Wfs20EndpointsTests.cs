@@ -1326,7 +1326,63 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
         queryContent.Should().Contain("<honua:test_layer");
         queryContent.Should().Contain("WFS Replace Name");
         queryContent.Should().Contain("WFS Replace Description");
-        queryContent.Should().Contain($"<gml:identifier>{replacementIdentifier}</gml:identifier>");
+        // gml:identifier is gml:CodeWithAuthorityType; codeSpace is mandatory. When the transaction
+        // omits an authority the serializer falls back to the feature namespace URI so the emitted
+        // GML remains schema-valid.
+        queryContent.Should().Contain(
+            $"<gml:identifier codeSpace=\"http://honua.io/wfs\">{replacementIdentifier}</gml:identifier>");
+        queryContent.Should().NotContain("FeatureCollection");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("POST /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "Transaction")]
+    public async Task Wfs_Transaction_Replace_RoundTripsGmlDescriptionAndIdentifierCodeSpace()
+    {
+        // Mirrors the WFS 2.0 ETS ReplaceTests flow (#1433): the harness replaces a feature with
+        // standard gml:description / gml:identifier properties (the identifier carrying a CITE
+        // codeSpace) and then asserts they survive a GetFeatureById read-back. gml:identifier is
+        // gml:CodeWithAuthorityType, so the codeSpace authority must round-trip too.
+        var featureId = await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, "WFS Replace CodeSpace Original");
+        var replacementIdentifier = Guid.NewGuid().ToString();
+        const string codeSpace = "http://cite.opengeospatial.org/";
+
+        var requestBody = $$"""
+            <wfs:Transaction service="WFS" version="2.0.0"
+                xmlns:wfs="http://www.opengis.net/wfs/2.0"
+                xmlns:fes="http://www.opengis.net/fes/2.0"
+                xmlns:gml="http://www.opengis.net/gml/3.2"
+                xmlns:honua="http://honua.io/wfs">
+              <wfs:Replace>
+                <honua:test_layer gml:id="test_layer.{{featureId}}">
+                  <gml:description>Lorem ipsum dolor sit amet.</gml:description>
+                  <gml:identifier codeSpace="{{codeSpace}}">{{replacementIdentifier}}</gml:identifier>
+                  <gml:name>WFS Replace CodeSpace Name</gml:name>
+                  <honua:name>WFS Replace CodeSpace Name</honua:name>
+                </honua:test_layer>
+                <fes:Filter>
+                  <fes:ResourceId rid="test_layer.{{featureId}}" />
+                </fes:Filter>
+              </wfs:Replace>
+            </wfs:Transaction>
+            """;
+
+        using var requestContent = new StringContent(requestBody, Encoding.UTF8, "application/xml");
+        var response = await _fixture.Client.PostAsync("/wfs", requestContent);
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().Contain("<wfs:totalReplaced>1</wfs:totalReplaced>");
+
+        var queryResponse = await _fixture.Client.GetAsync(
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&STOREDQUERY_ID={Uri.EscapeDataString(GetFeatureByIdStoredQueryId)}&ID=test_layer.{featureId}");
+        var queryContent = await queryResponse.Content.ReadAsStringAsync();
+
+        queryResponse.StatusCode.Should().Be(HttpStatusCode.OK, queryContent);
+        queryContent.Should().Contain("<gml:description>Lorem ipsum dolor sit amet.</gml:description>");
+        queryContent.Should().Contain(
+            $"<gml:identifier codeSpace=\"{codeSpace}\">{replacementIdentifier}</gml:identifier>");
         queryContent.Should().NotContain("FeatureCollection");
     }
 
