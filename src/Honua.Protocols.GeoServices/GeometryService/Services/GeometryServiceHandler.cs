@@ -440,11 +440,17 @@ internal sealed class GeometryServiceHandler(
 
     public async Task<IResult> HandleClipAsync(HttpContext context, CancellationToken ct)
     {
+        // The GeoServices clip operation clips each input geometry to an "envelope"
+        // parameter (Esri envelope JSON: {xmin,ymin,xmax,ymax,spatialReference}). This
+        // differs from the other binary ops, which take a "geometry" operand. The shared
+        // geometry converter already materializes an Esri envelope into a polygon, so we
+        // reuse the binary-operation pipeline with the envelope as the clipping operand.
         return await HandleBinaryGeometryOperationAsync(
             context,
             operationName: "clip",
             operation: (target, other, srid, token) => _operationService.ClipAsync(target, other, srid, token),
-            ct);
+            ct,
+            operatorParameterName: "envelope");
     }
 
     public async Task<IResult> HandleDifferenceAsync(HttpContext context, CancellationToken ct)
@@ -2691,7 +2697,8 @@ internal sealed class GeometryServiceHandler(
         HttpContext context,
         string operationName,
         Func<byte[], byte[], int, CancellationToken, Task<byte[]>> operation,
-        CancellationToken ct)
+        CancellationToken ct,
+        string operatorParameterName = "geometry")
     {
         using var scope = HonuaTelemetryScope.StartFeature(
             operationName, HonuaTelemetry.Protocols.GeometryService, "geometry");
@@ -2730,12 +2737,13 @@ internal sealed class GeometryServiceHandler(
             }
 
             var (operatorGeometry, operatorError) = GeometryServiceRequestParser.ParseSingleGeometry(
-                GeometryServiceRequestParser.GetValue(values, "geometry"),
+                GeometryServiceRequestParser.GetValue(values, operatorParameterName),
+                parameterName: operatorParameterName,
                 maxGeometryJsonLength: requestLimits.MaxGeometryJsonLength);
             if (operatorError is not null || string.IsNullOrWhiteSpace(operatorGeometry))
             {
-                GeometryServiceLog.InvalidGeometryInput(_logger, operationName, operatorError ?? "Missing geometry");
-                return CreateError(context, 400, operatorError ?? "Parameter 'geometry' is required.");
+                GeometryServiceLog.InvalidGeometryInput(_logger, operationName, operatorError ?? $"Missing {operatorParameterName}");
+                return CreateError(context, 400, operatorError ?? $"Parameter '{operatorParameterName}' is required.");
             }
 
             var (sr, srError) = await ResolveRequiredSpatialReferenceAsync(values, "sr", ct);

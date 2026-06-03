@@ -90,19 +90,49 @@ public sealed class GeocodingEndpointTests
         Assert.InRange(y, 4706000, 4708000);
     }
 
-    // Regression (#1428): reverseGeocode must accept an outSR, reprojecting both the
-    // input location (from outSR to provider SRID) and the returned match back to outSR.
+    // Regression (#1442): reverseGeocode must read the INPUT location's own
+    // spatialReference (here Web Mercator 3857) and use outSR only for the OUTPUT
+    // geometry. A location in 3857 with outSR=3857 must reproject to the provider SRID
+    // for the query and back to 3857 for the response (rather than 404).
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/reverseGeocode")]
-    public async Task ReverseGeocode_WithOutSr3857_ReprojectsLocation()
+    public async Task ReverseGeocode_WithLocationSrAndOutSr3857_ReprojectsLocation()
     {
         using var factory = CreateDefaultFactory();
         using var client = factory.CreateClient();
 
-        // Web Mercator coordinates for roughly -77.03655, 38.89768.
+        // Web Mercator coordinates (roughly -77.03655, 38.89768) declared via the
+        // location's own spatialReference.
+        var location = Uri.EscapeDataString(
+            """{"x":-8575155,"y":4707030,"spatialReference":{"wkid":3857}}""");
         using var response = await client.GetAsync(
-            "/rest/services/World/GeocodeServer/reverseGeocode?location=-8575155,4707030&outSR=3857&f=json");
+            $"/rest/services/World/GeocodeServer/reverseGeocode?location={location}&outSR=3857&f=json");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var locationElement = payload.RootElement.GetProperty("location");
+
+        Assert.Equal(3857, locationElement.GetProperty("spatialReference").GetProperty("wkid").GetInt32());
+        Assert.InRange(locationElement.GetProperty("x").GetDouble(), -8576000, -8574000);
+        Assert.InRange(locationElement.GetProperty("y").GetDouble(), 4706000, 4708000);
+    }
+
+    // Regression (#1442): a location expressed in WGS84 (4326, the default input SR)
+    // with outSR=3857 must reproject the OUTPUT to Web Mercator without 404 and without
+    // misinterpreting the input location as being in outSR.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/reverseGeocode")]
+    public async Task ReverseGeocode_Wgs84LocationWithOutSr3857_ReprojectsOutputToWebMercator()
+    {
+        using var factory = CreateDefaultFactory();
+        using var client = factory.CreateClient();
+
+        // Bare "lon,lat" defaults to the WGS84 input SR; outSR controls only the output.
+        using var response = await client.GetAsync(
+            "/rest/services/World/GeocodeServer/reverseGeocode?location=-77.03655,38.89768&outSR=3857&f=json");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
@@ -110,6 +140,7 @@ public sealed class GeocodingEndpointTests
         var location = payload.RootElement.GetProperty("location");
 
         Assert.Equal(3857, location.GetProperty("spatialReference").GetProperty("wkid").GetInt32());
+        // -77.03655, 38.89768 (WGS84) projected to Web Mercator.
         Assert.InRange(location.GetProperty("x").GetDouble(), -8576000, -8574000);
         Assert.InRange(location.GetProperty("y").GetDouble(), 4706000, 4708000);
     }

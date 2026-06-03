@@ -24,6 +24,13 @@ internal sealed class GeocodingHandler(
     private const string PrettyJsonFormat = "pjson";
     private const string JsonContentType = "application/json";
 
+    /// <summary>
+    /// Default spatial reference (WGS84) for a reverseGeocode <c>location</c> when the
+    /// location JSON does not declare its own <c>spatialReference</c>. This matches the
+    /// GeoServices reverseGeocode contract where the input location defaults to 4326.
+    /// </summary>
+    private const int GeocodeDefaultLocationWkid = 4326;
+
     private readonly IGeocodeCoordinatorService _coordinatorService = coordinatorService ?? throw new ArgumentNullException(nameof(coordinatorService));
     private readonly IGeocodeProviderRegistry _providerRegistry = providerRegistry ?? throw new ArgumentNullException(nameof(providerRegistry));
     private readonly GeocodingOptions _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
@@ -231,14 +238,19 @@ internal sealed class GeocodingHandler(
             return StandardErrorHelpers.CreateBadRequest(context, "Output format must be json or pjson.");
         }
 
-        if (!TryParseLocation(GetValue(values, "location"), out var x, out var y))
+        if (!TryParseLocation(GetValue(values, "location"), out var x, out var y, out var locationWkid))
         {
             return StandardErrorHelpers.CreateBadRequest(
                 context,
                 "location is required and must be either 'x,y' or JSON {\"x\":...,\"y\":...}.");
         }
 
-        if (!TryParseSpatialReference(GetValue(values, "outSR"), _options.DefaultSpatialReferenceWkid, out var outSrid))
+        // The input location is interpreted in its own spatialReference, defaulting to
+        // WGS84 (4326) per the GeoServices reverseGeocode contract. outSR controls only the
+        // spatial reference of the returned address location, never the input location.
+        var inputSrid = locationWkid ?? GeocodeDefaultLocationWkid;
+
+        if (!TryParseSpatialReference(GetValue(values, "outSR"), inputSrid, out var outSrid))
         {
             return StandardErrorHelpers.CreateBadRequest(context, "Invalid outSR parameter.");
         }
@@ -254,12 +266,15 @@ internal sealed class GeocodingHandler(
                 return StandardErrorHelpers.CreateBadRequest(context, $"Geocoding provider '{requestedProviderName}' not found.");
             }
 
-            // The input location is expressed in the requested outSR. Reproject it to the
-            // provider's default reference before querying, then project the match back.
-            var inputPoint = await TryReprojectGeocodePointAsync(context, x, y, outSrid, _options.DefaultSpatialReferenceWkid, cancellationToken).ConfigureAwait(false);
+            // The input location is expressed in its own spatial reference (inputSrid).
+            // Reproject it to the provider's default reference before querying, then project
+            // the match back to outSR for the response.
+            var inputPoint = await TryReprojectGeocodePointAsync(context, x, y, inputSrid, _options.DefaultSpatialReferenceWkid, cancellationToken).ConfigureAwait(false);
             if (inputPoint is null)
             {
-                return CreateUnsupportedOutSrResult(context, outSrid);
+                return StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    $"location spatial reference {inputSrid} is not supported for reprojection.");
             }
 
             var langCode = GetValue(values, "langCode");
@@ -1039,9 +1054,21 @@ internal sealed class GeocodingHandler(
     }
 
     private static bool TryParseLocation(string? rawLocation, out double x, out double y)
+        => TryParseLocation(rawLocation, out x, out y, out _);
+
+    /// <summary>
+    /// Parses a reverse-geocode <c>location</c> parameter into x/y coordinates and the
+    /// spatial reference declared by the location JSON itself (Esri location geometries
+    /// carry their own <c>spatialReference</c>). The input SR defaults to WGS84 (4326)
+    /// when the location is a bare "x,y" pair or carries no spatialReference, matching
+    /// the GeoServices reverseGeocode default. The output SR (<c>outSR</c>) is handled
+    /// separately by the caller and never used to interpret the input location.
+    /// </summary>
+    private static bool TryParseLocation(string? rawLocation, out double x, out double y, out int? inputWkid)
     {
         x = default;
         y = default;
+        inputWkid = null;
 
         if (string.IsNullOrWhiteSpace(rawLocation))
         {
@@ -1055,6 +1082,20 @@ internal sealed class GeocodingHandler(
             {
                 using var document = JsonDocument.Parse(trimmed);
                 var root = document.RootElement;
+
+                if (root.TryGetProperty("spatialReference", out var sr) && sr.ValueKind == JsonValueKind.Object)
+                {
+                    if (sr.TryGetProperty("wkid", out var wkidElement) && wkidElement.ValueKind == JsonValueKind.Number &&
+                        wkidElement.TryGetInt32(out var parsedWkid) && parsedWkid > 0)
+                    {
+                        inputWkid = parsedWkid;
+                    }
+                    else if (sr.TryGetProperty("latestWkid", out var latestElement) && latestElement.ValueKind == JsonValueKind.Number &&
+                             latestElement.TryGetInt32(out var parsedLatest) && parsedLatest > 0)
+                    {
+                        inputWkid = parsedLatest;
+                    }
+                }
 
                 if (TryReadCoordinate(root, "x", out x) && TryReadCoordinate(root, "y", out y))
                 {

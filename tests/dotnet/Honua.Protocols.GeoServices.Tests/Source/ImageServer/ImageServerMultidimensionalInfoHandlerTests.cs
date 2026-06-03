@@ -198,3 +198,98 @@ public class ImageServerMultidimensionalInfoHandlerTests
                 publicationType: MetadataV2PublicationType.EsriImageLayer)
             .BuildProvider();
 }
+
+/// <summary>
+/// Unit tests for <see cref="ImageServerSlicesBuilder"/> (#1445), which derives the Esri
+/// slices document from a multidimensional info document.
+/// </summary>
+[Protocol(TestProtocols.ImageServer)]
+public class ImageServerSlicesBuilderTests
+{
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
+    public void Build_NoVariables_ReturnsEmpty()
+    {
+        var slices = ImageServerSlicesBuilder.Build(new ImageServerMultidimensionalInfo());
+
+        slices.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
+    public void Build_DimensionsWithoutEnumerableValues_ReturnsEmpty()
+    {
+        // Dimensions known only by extent (no enumerable values) cannot be sliced.
+        var info = new ImageServerMultidimensionalInfo
+        {
+            Variables =
+            [
+                new ImageServerMultidimensionalVariable
+                {
+                    Name = "temperature",
+                    Dimensions =
+                    [
+                        new ImageServerMultidimensionalDimension
+                        {
+                            Name = "StdTime",
+                            Extent = [0, 86_400_000],
+                            DimensionSize = 2
+                        }
+                    ]
+                }
+            ]
+        };
+
+        ImageServerSlicesBuilder.Build(info).Should().BeEmpty();
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
+    public void Build_EnumerableValues_ProducesCartesianProductSlices()
+    {
+        var info = new ImageServerMultidimensionalInfo
+        {
+            Variables =
+            [
+                new ImageServerMultidimensionalVariable
+                {
+                    Name = "temperature",
+                    Dimensions =
+                    [
+                        new ImageServerMultidimensionalDimension
+                        {
+                            Name = "StdTime",
+                            Values = [0, 86_400_000],
+                            DimensionSize = 2
+                        },
+                        new ImageServerMultidimensionalDimension
+                        {
+                            Name = "StdZ",
+                            Values = [1000],
+                            DimensionSize = 1
+                        }
+                    ]
+                }
+            ]
+        };
+
+        var slices = ImageServerSlicesBuilder.Build(info);
+
+        // 2 time values x 1 depth value = 2 slices, each pinning both dimensions.
+        slices.Should().HaveCount(2);
+        slices[0].SliceId.Should().Be(0);
+        slices[1].SliceId.Should().Be(1);
+
+        slices[0].MultidimensionalDefinition.Should().HaveCount(2);
+        slices[0].MultidimensionalDefinition.Should()
+            .ContainSingle(d => d.DimensionName == "StdTime" && d.VariableName == "temperature")
+            .Which.Values.Should().Equal(0);
+        slices[0].MultidimensionalDefinition.Should()
+            .ContainSingle(d => d.DimensionName == "StdZ")
+            .Which.Values.Should().Equal(1000);
+
+        slices[1].MultidimensionalDefinition.Should()
+            .ContainSingle(d => d.DimensionName == "StdTime")
+            .Which.Values.Should().Equal(86_400_000);
+    }
+}

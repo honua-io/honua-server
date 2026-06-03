@@ -794,4 +794,62 @@ public class ImageServerEndpointsTests
             await fixture.DisposeAsync();
         }
     }
+
+    // Regression coverage for #1445: the /slices route was unmapped and returned 404
+    // (GET and POST) for a hasMultidimensions:true service. The route is now mapped and
+    // returns the Esri slices document; with no enumerable multidimensional coverage it
+    // honestly returns a spec-shaped { "slices": [] } rather than 404.
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/slices")]
+    [Endpoint("POST /rest/services/{id}/ImageServer/slices")]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task Slices_GetAndPost_NonMultidimensionalLayer_ReturnEmptySlices()
+    {
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            var getResponse = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/slices?f=json");
+
+            getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            getResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+            var getJson = JsonDocument.Parse(await getResponse.Content.ReadAsStringAsync());
+            getJson.RootElement.GetProperty("slices").GetArrayLength().Should().Be(0);
+
+            var content = new FormUrlEncodedContent(new[]
+            {
+                new KeyValuePair<string, string>("f", "json"),
+            });
+            var postResponse = await fixture.Client.PostAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/slices",
+                content);
+
+            postResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            var postJson = JsonDocument.Parse(await postResponse.Content.ReadAsStringAsync());
+            postJson.RootElement.GetProperty("slices").GetArrayLength().Should().Be(0);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/slices")]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task Slices_NonExistentLayer_ReturnsNotFound()
+    {
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            var response = await fixture.Client.GetAsync(
+                "/rest/services/99999/ImageServer/slices?f=json");
+
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
 }
