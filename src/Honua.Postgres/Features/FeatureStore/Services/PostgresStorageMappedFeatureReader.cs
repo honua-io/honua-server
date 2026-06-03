@@ -682,8 +682,16 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
         return filter.SpatialRelationship switch
         {
-            SpatialRelationship.Within => $"ST_Within({geometryColumn}, {filterGeometry})",
-            SpatialRelationship.Contains => $"ST_Contains({geometryColumn}, {filterGeometry})",
+            // Esri semantics (mirroring the canonical FeatureQueryBuilder path):
+            // esriSpatialRelWithin  => filter geometry is within the feature geometry
+            //                          => ST_Within(filter, feature).
+            // esriSpatialRelContains => filter geometry contains the feature geometry
+            //                          => ST_Contains(filter, feature).
+            // The operands must lead with the filter geometry; reversing them (feature, filter)
+            // makes an envelope/feature .within(bounds) query return 0 because a point feature
+            // can never ST_Contains an enclosing envelope.
+            SpatialRelationship.Within => $"ST_Within({filterGeometry}, {geometryColumn})",
+            SpatialRelationship.Contains => $"ST_Contains({filterGeometry}, {geometryColumn})",
             SpatialRelationship.EnvelopeIntersects => $"{geometryColumn} && {filterGeometry}",
             SpatialRelationship.Crosses => $"ST_Crosses({geometryColumn}, {filterGeometry})",
             SpatialRelationship.Touches => $"ST_Touches({geometryColumn}, {filterGeometry})",
