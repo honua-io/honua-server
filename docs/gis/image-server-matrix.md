@@ -28,9 +28,9 @@ Sources:
 | Esri operation | Esri path | Methods | Honua status | Honua endpoint(s) | Notes |
 | --- | --- | --- | --- | --- | --- |
 | Compute Class Statistics | `/rest/services/{serviceName}/ImageServer/computeClassStatistics` | GET, POST | Partial | `GET\|POST /rest/services/{id}/ImageServer/computeClassStatistics` | Route is wired and validates `classDescriptions` (must be a JSON object with a `classes` array) and the response `f` format. Class-signature computation is not yet implemented — valid requests return `501 Not Implemented` until the signature pipeline lands. |
-| Export Image | `/rest/services/{serviceName}/ImageServer/exportImage` | GET | Partial | `GET /rest/services/{id}/ImageServer/exportImage` | Default response is a JSON envelope with a temporary `href` to the rendered image. `f=image` returns the rendered bytes inline with the format-specific media type. Spatially intersecting rasters are exported as a mosaic, with optional `mosaicRule` and single-instant `time` support. |
-| Identify | `/rest/services/{serviceName}/ImageServer/identify` | GET | Partial | `GET /rest/services/{id}/ImageServer/identify` | Supports point-only identify requests and JSON responses. When multiple rasters overlap the identify point, Honua returns the mosaic value and can include all participating catalog items. Several Esri response-shaping and raster-processing parameters remain unsupported. |
-| Query | `/rest/services/{serviceName}/ImageServer/query` | GET, POST | Partial | `GET\|POST /rest/services/{id}/ImageServer/query` | Returns the layer's raster catalog as Esri-compatible features with `OBJECTID`, footprint geometry, pixel-size attributes, `BandCount`, `PixelType`, `AcquisitionDate`, and `CreatedAt`. Supports `where`, `objectIds`, `outSR`, `time`, `orderByFields`, `outFields`, `resultOffset`, `resultRecordCount`, and the `returnGeometry`/`returnIdsOnly`/`returnCountOnly`/`returnExtentOnly` shaping flags. The MVP applies WHERE filters via the GeoServices SQL parser in-memory and does not reproject footprint geometry — `outSR` is honoured for the response envelope only. |
+| Export Image | `/rest/services/{serviceName}/ImageServer/exportImage` | GET | Partial | `GET /rest/services/{id}/ImageServer/exportImage` | Default response is a JSON envelope with a temporary `href` to the rendered image. `f=image` returns the rendered bytes inline with the format-specific media type. Spatially intersecting rasters are exported as a mosaic, with optional `mosaicRule` and single-instant `time` support. `bandIds` selects/orders output bands; `noData`/`noDataInterpretation` are validated and applied where the driver supports it; `png8`/`png24`/`png32`/`jpgpng` normalise to a concrete encoding. `bmp`/`gif` are accepted for shape but rejected with a `400` because the shared export pipeline only emits png/jpeg/tiff. |
+| Identify | `/rest/services/{serviceName}/ImageServer/identify` | GET | Partial | `GET /rest/services/{id}/ImageServer/identify` | Supports `esriGeometryPoint`, `esriGeometryEnvelope`, and `esriGeometryPolygon` geometry (area geometries identify at their bounding-envelope centroid) and JSON responses. `returnGeometry` controls whether participating catalog items carry their footprint envelope. When multiple rasters overlap the identify location, Honua returns the mosaic value and can include all participating catalog items. `pixelSize` is accepted and echoed in the response properties; resolution-specific pyramid selection and `renderingRule` remain unsupported. |
+| Query | `/rest/services/{serviceName}/ImageServer/query` | GET, POST | Partial | `GET\|POST /rest/services/{id}/ImageServer/query` | Returns the layer's raster catalog as Esri-compatible features with `OBJECTID`, footprint geometry, pixel-size attributes, `BandCount`, `PixelType`, `AcquisitionDate`, and `CreatedAt`. Supports `where`, `objectIds`, `geometry`/`geometryType`/`inSR`/`spatialRel` spatial filtering, `outSR` footprint reprojection, `time`, `orderByFields`, `outFields`, `resultOffset`, `resultRecordCount`, and the `returnGeometry`/`returnIdsOnly`/`returnCountOnly`/`returnExtentOnly` shaping flags. WHERE filters and the spatial filter are applied in-memory against the catalog (small N); footprint reprojection reuses the shared CRS pipeline. |
 | Compute Statistics and Histograms | `/rest/services/{serviceName}/ImageServer/computeStatisticsHistograms` | GET, POST | Partial | `GET\|POST /rest/services/{id}/ImageServer/computeStatisticsHistograms` | Returns per-band statistics and histograms for one or more rasters in the catalog. Supports `rasterIds` (catalog object IDs), the Honua-specific `bandIds` selector, `mosaicRule`, single-instant `time`, and `histogramParameters.size` for bin count. AOI clipping via `geometry`/`geometryType` is not yet honoured — analysis always covers the full selected raster or mosaic. |
 
 ### Not implemented
@@ -98,7 +98,7 @@ Sources:
 | `bbox` | Implemented | Envelope clipping region. When omitted, Honua uses the selected raster mosaic extent. |
 | `imageSR` | Implemented | Accepts numeric WKID, `EPSG:####`, OGC CRS URI/URN, bracket-safe forms (`[EPSG:####]`), and `CRS84` aliases. |
 | `bboxSR` | Implemented | Accepts numeric WKID, `EPSG:####`, OGC CRS URI/URN, bracket-safe forms (`[EPSG:####]`), and `CRS84` aliases. |
-| `format` | Partial | Supports `png`, `jpg`, `jpeg`, `tif`, `tiff`. Esri formats such as `png8`, `png24`, `bmp`, and `gif` are not supported. |
+| `format` | Partial | Supports `png`, `jpg`, `jpeg`, `tif`, `tiff`, and the Esri `png8`/`png24`/`png32`/`jpgpng` tokens (normalised to a concrete encoding). `bmp` and `gif` are accepted by validation but rejected with a `400` because the export pipeline only emits png/jpeg/tiff containers. |
 | `interpolation` | Implemented | Parsed into raster resampling behavior. |
 | `compressionQuality` | Implemented | Validated to `0-100`. Applied as JPEG `QUALITY` for JPEG output and as `JPEG_QUALITY` when TIFF compression is `JPEG`. |
 | `f` | Partial | Supports `json`, `pjson`, and `image` (inline rendered bytes with the format-specific media type). `html` is not supported. |
@@ -117,10 +117,15 @@ Sources:
 
 | Esri parameter | Notes |
 | --- | --- |
-| `bandIds` | Accepted by the request model but not applied by the export handler. |
-| `renderingRule` | Accepted by the request model but not applied. |
-| `noData` | Accepted by the request model but not applied. |
-| `noDataInterpretation` | Accepted by the request model but not applied. |
+| `renderingRule` | Accepted by the request model but not applied; a non-empty value returns `501 Not Implemented`. |
+
+#### Newly honoured
+
+| Esri parameter | Honua status | Notes |
+| --- | --- | --- |
+| `bandIds` | Implemented | Comma-separated 0-based band indices selecting and ordering the output bands. Shifted to the store's 1-based indexing and forwarded through the shared export pipeline as `RasterQuery.Bands`. Empty means all bands. Negative/non-numeric indices return `400`. |
+| `noData` | Partial | Validated as a number or comma-separated per-band number list (`400` otherwise). Applied as the export NoData fill where the underlying driver supports it. |
+| `noDataInterpretation` | Partial | Constrained to `esriNoDataMatchAny` (default) or `esriNoDataMatchAll`; other values return `400`. |
 
 ### Identify (`GET .../ImageServer/identify`)
 
@@ -128,8 +133,9 @@ Sources:
 
 | Esri parameter | Honua status | Notes |
 | --- | --- | --- |
-| `geometry` | Implemented | Supports comma-separated `x,y` input or JSON point objects. |
-| `geometryType` | Partial | Only `esriGeometryPoint` is supported. |
+| `geometry` | Implemented | Supports comma-separated `x,y` input, JSON point objects, and JSON envelope/polygon objects (area geometries identify at the bounding-envelope centroid). |
+| `geometryType` | Implemented | Supports `esriGeometryPoint`, `esriGeometryEnvelope`, and `esriGeometryPolygon`. Other types return `400 Bad Request`. |
+| `returnGeometry` | Implemented | When `true` (default), each participating catalog item carries its footprint envelope; `false` omits the footprint. |
 | `sr` | Implemented | Accepts numeric WKID, `EPSG:####`, OGC CRS URI/URN, bracket-safe forms (`[EPSG:####]`), and `CRS84` aliases. |
 | `returnCatalogItems` | Implemented | When `true`, returns the raster catalog items participating in the identify result in `catalogItems[]`. |
 | `f` | Partial | Only `json` and `pjson` are supported. |
@@ -146,9 +152,7 @@ Sources:
 | Esri parameter | Notes |
 | --- | --- |
 | `renderingRule` | Accepted by the request model but not applied. |
-| `pixelSize` | Accepted by the request model but not applied. |
-| `returnGeometry` | Accepted by the request model but not applied; the response always includes `location`. |
-| Non-point `geometryType` values | Rejected with `400 Bad Request`. |
+| `pixelSize` | Accepted and echoed in the response `properties` as `PixelSize`, but sampling is at the source/mosaic native resolution; resolution-specific pyramid selection is deferred. |
 
 ### Tile (`GET .../ImageServer/tile/{level}/{row}/{col}`)
 
@@ -168,7 +172,8 @@ Sources:
 | `f` | Partial | Only `json` and `pjson` are supported. |
 | `where` | Partial | Parsed via the shared GeoServices SQL filter parser and applied in-memory against catalog metadata fields (`OBJECTID`, `Name`, `MinPS`, `MaxPS`, `LowPS`, `HighPS`, `CenterX`, `CenterY`, `ZOrder`, `Shape_Length`, `Shape_Area`, `BandCount`, `PixelType`, `AcquisitionDate`, `CreatedAt`). Limited to 2000 characters. |
 | `objectIds` | Implemented | Accepts CSV (`1,3,5`) or JSON array (`[1,3,5]`) form. |
-| `outSR` | Partial | Stamped onto the response `spatialReference`. Footprint geometry is NOT reprojected — clients must inspect each feature's geometry-level `spatialReference` to detect that the rings remain in the raster's native SRID. |
+| `geometry` / `geometryType` / `inSR` / `spatialRel` | Implemented | Spatially filters the catalog by intersecting the supplied geometry's envelope with each raster footprint extent. Accepts `esriGeometryEnvelope`/`esriGeometryPolygon`/`esriGeometryPoint`/`esriGeometryMultipoint`/`esriGeometryPolyline` (JSON or the `xmin,ymin,xmax,ymax`/`x,y` shorthand). `inSR` (or the geometry's embedded `spatialReference`) sets the filter SRID; the filter box is transformed into each footprint's SRID via the shared CRS pipeline before the intersect test. `spatialRel` accepts `esriSpatialRelIntersects` (default), `esriSpatialRelEnvelopeIntersects`, `esriSpatialRelContains`, `esriSpatialRelWithin`, and `esriSpatialRelOverlaps` — all reduce to an envelope-overlap test at footprint-extent granularity; unsupported relationships return `400`. |
+| `outSR` | Implemented | Reprojects footprint rings and the response/extent envelope into the requested SRID via the shared CRS pipeline (the same `ICoordinateTransformService` FeatureServer uses). Footprints are axis-aligned rectangles, so transforming the extent corners is exact. When the transform is unavailable the native-SRID geometry is retained and its geometry-level `spatialReference` reflects the actual coordinates. |
 | `resultOffset` | Implemented | Non-negative integer offset, defaults to `0`. |
 | `resultRecordCount` | Implemented | Defaults to `100`, capped at `1000`. |
 | `returnGeometry` | Implemented | When `false`, suppresses the `geometry` envelope on each feature. |
@@ -188,8 +193,8 @@ Sources:
 
 | Esri parameter | Notes |
 | --- | --- |
-| `geometry` / `geometryType` / `inSR` / `spatialRel` | Spatial filtering against arbitrary client geometries is not yet supported by the catalog reader. |
 | `pixelSize` | Not honoured. |
+| Exact (non-envelope) spatial predicates | The catalog filter operates on footprint extents, so all supported `spatialRel` values reduce to an envelope-overlap test; per-footprint exact ring tests are deferred. |
 
 ### Compute Statistics and Histograms (`GET|POST .../ImageServer/computeStatisticsHistograms`)
 
@@ -307,7 +312,7 @@ Merge strategy resolution is request `mosaicRule` first, then the layer's admin 
 - The current Honua route shape is layer-scoped: `GET /rest/services/{id}/ImageServer`, where `{id}` is the addressed raster layer identifier rather than a FeatureServer/MapServer-style `{serviceId}`.
 - Raster imports are rejected with `400 Bad Request` when the upload's SRID or band count differs from the layer's existing rasters; ST_Union requires homogeneity, and the guard fires before commit so callers get a structured error rather than a query-time PostGIS failure.
 - Default `exportImage` responses return JSON with a temporary file URL; `f=image` returns rendered bytes inline and does not create a temporary export envelope. Temporary exports are stored through `ITemporaryFileService`, expire after one hour, and use shared cloud file storage instead of node-local disk when the configured `FileStorage` provider is `AwsS3` or `AzureBlob`. Shared cloud-backed temporary files require Redis coordination so quota enforcement remains correct across replicas.
-- Catalog filtering still happens in memory after the raster catalog is read; arbitrary geometry filters and `orderByFields` are not pushed to PostGIS yet.
+- Catalog filtering (WHERE, `geometry` spatial filter, `orderByFields`) and footprint/extent `outSR` reprojection still happen in memory after the raster catalog is read; they are not pushed to PostGIS yet. The spatial filter and reprojection are envelope-level (footprint extents and axis-aligned rectangles), which is exact for the rectangular footprints Honua stores but does not perform per-footprint exact-ring tests.
 - `exportImage` and `identify` accept more request fields than they currently honor. Unsupported fields are intentionally documented here so they are not mistaken for full parity.
 - Rendered `exportImage`/`tile` byte output still depends on the PostGIS raster output drivers configured in the database.
 - Tile access returns rendered raster tiles only. Honua does not expose ImageServer WMTS or offline tile-export workflows.

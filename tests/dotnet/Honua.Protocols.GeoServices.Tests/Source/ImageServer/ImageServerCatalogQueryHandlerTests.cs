@@ -3,6 +3,7 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit.Infrastructure;
 using Honua.Core.Features.Raster.Abstractions;
@@ -35,8 +36,16 @@ public class ImageServerCatalogQueryHandlerTests
 
     public ImageServerCatalogQueryHandlerTests()
     {
-        var catalogReader = new ImageServerCatalogReader(_rasterStore, new ImageServerCatalogFilterEvaluator());
-        _handler = new ImageServerCatalogQueryHandler(
+        _handler = BuildHandler(transformService: null);
+    }
+
+    private ImageServerCatalogQueryHandler BuildHandler(ICoordinateTransformService? transformService)
+    {
+        var catalogReader = new ImageServerCatalogReader(
+            _rasterStore,
+            new ImageServerCatalogFilterEvaluator(),
+            transformService);
+        return new ImageServerCatalogQueryHandler(
             _graphProvider,
             catalogReader,
             NullLogger<ImageServerCatalogQueryHandler>.Instance);
@@ -730,6 +739,167 @@ public class ImageServerCatalogQueryHandlerTests
         await result.ExecuteAsync(context);
 
         context.Response.StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_GeometryEnvelopeFilter_ReturnsOnlyIntersectingFootprints()
+    {
+        SetupLayerWithRasters([
+            CreateRaster(100, "west", xMin: -10, yMin: -5, xMax: -1, yMax: 5),
+            CreateRaster(200, "east", xMin: 1, yMin: -5, xMax: 10, yMax: 5),
+        ]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            // Envelope covering only the eastern footprint.
+            ["geometry"] = "{\"xmin\":2,\"ymin\":-1,\"xmax\":8,\"ymax\":1}",
+            ["geometryType"] = "esriGeometryEnvelope",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+
+        var jsonResult = result as JsonHttpResult<CatalogQueryResponse>;
+        jsonResult.Should().NotBeNull();
+        jsonResult!.Value!.Features.Select(f => f.Attributes["OBJECTID"])
+            .Should().BeEquivalentTo([200L]);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_GeometryBboxShorthandFilter_ReturnsIntersectingFootprints()
+    {
+        SetupLayerWithRasters([
+            CreateRaster(100, "west", xMin: -10, yMin: -5, xMax: -1, yMax: 5),
+            CreateRaster(200, "east", xMin: 1, yMin: -5, xMax: 10, yMax: 5),
+        ]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            // xmin,ymin,xmax,ymax shorthand covering only the western footprint.
+            ["geometry"] = "-9,-1,-2,1",
+            ["geometryType"] = "esriGeometryEnvelope",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+
+        var jsonResult = result as JsonHttpResult<CatalogQueryResponse>;
+        jsonResult.Should().NotBeNull();
+        jsonResult!.Value!.Features.Select(f => f.Attributes["OBJECTID"])
+            .Should().BeEquivalentTo([100L]);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_UnsupportedSpatialRel_ReturnsBadRequest()
+    {
+        SetupLayerWithRasters([CreateRaster(100, "first")]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["geometry"] = "{\"xmin\":0,\"ymin\":0,\"xmax\":1,\"ymax\":1}",
+            ["geometryType"] = "esriGeometryEnvelope",
+            ["spatialRel"] = "esriSpatialRelTouches",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_InvalidInSr_ReturnsBadRequest()
+    {
+        SetupLayerWithRasters([CreateRaster(100, "first")]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["geometry"] = "{\"xmin\":0,\"ymin\":0,\"xmax\":1,\"ymax\":1}",
+            ["geometryType"] = "esriGeometryEnvelope",
+            ["inSR"] = "not-a-srid",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_OutSr_ReprojectsFootprintRingsViaTransformService()
+    {
+        SetupLayerWithRasters([
+            CreateRaster(100, "scene", xMin: 0, yMin: 0, xMax: 100, yMax: 100, srid: 3857),
+        ]);
+
+        var transform = Substitute.For<ICoordinateTransformService>();
+        transform.TransformExtentAsync(
+                Arg.Any<double>(), Arg.Any<double>(), Arg.Any<double>(), Arg.Any<double>(),
+                3857, 4326, Arg.Any<CancellationToken>())
+            .Returns(((double MinX, double MinY, double MaxX, double MaxY)?)(1.0, 2.0, 3.0, 4.0));
+
+        var handler = BuildHandler(transform);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["outSR"] = "4326",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+
+        var jsonResult = result as JsonHttpResult<CatalogQueryResponse>;
+        jsonResult.Should().NotBeNull();
+        var feature = jsonResult!.Value!.Features[0];
+        feature.Geometry.Should().NotBeNull();
+        // Reprojected rings carry the target SRID, not the native 3857.
+        feature.Geometry!.SpatialReference.Wkid.Should().Be(4326);
+        // The rebuilt rectangle uses the transformed extent corners.
+        feature.Geometry.Rings[0].Should().Contain(r => r[0] == 1.0 && r[1] == 2.0);
+        feature.Geometry.Rings[0].Should().Contain(r => r[0] == 3.0 && r[1] == 4.0);
+        jsonResult.Value.SpatialReference.Wkid.Should().Be(4326);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_GeometryFilterCrossSrid_TransformsFilterBox()
+    {
+        // Footprint is in 3857; the filter box is supplied in 4326 and must be transformed
+        // into 3857 before the intersect test. The stub transform maps the 4326 box onto the
+        // footprint so the raster is kept.
+        SetupLayerWithRasters([
+            CreateRaster(100, "scene", xMin: 0, yMin: 0, xMax: 100, yMax: 100, srid: 3857),
+        ]);
+
+        var transform = Substitute.For<ICoordinateTransformService>();
+        transform.TransformExtentAsync(
+                Arg.Any<double>(), Arg.Any<double>(), Arg.Any<double>(), Arg.Any<double>(),
+                4326, 3857, Arg.Any<CancellationToken>())
+            .Returns(((double MinX, double MinY, double MaxX, double MaxY)?)(10.0, 10.0, 50.0, 50.0));
+
+        var handler = BuildHandler(transform);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["geometry"] = "{\"xmin\":-1,\"ymin\":-1,\"xmax\":1,\"ymax\":1}",
+            ["geometryType"] = "esriGeometryEnvelope",
+            ["inSR"] = "4326",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+
+        var jsonResult = result as JsonHttpResult<CatalogQueryResponse>;
+        jsonResult.Should().NotBeNull();
+        jsonResult!.Value!.Features.Select(f => f.Attributes["OBJECTID"])
+            .Should().BeEquivalentTo([100L]);
     }
 
     private void SetupLayerWithRasters(RasterInfo[] rasters)
