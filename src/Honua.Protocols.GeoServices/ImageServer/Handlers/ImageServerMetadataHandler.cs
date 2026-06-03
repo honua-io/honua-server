@@ -39,6 +39,12 @@ internal sealed class ImageServerMetadataHandler
     /// <summary>Maximum number of records returned in catalog queries.</summary>
     private const int MaxRecordCount = 1000;
 
+    /// <summary>Pixel-block width advertised in <c>storageInfo</c> (standard Esri tile size).</summary>
+    private const int BlockWidth = 128;
+
+    /// <summary>Pixel-block height advertised in <c>storageInfo</c> (standard Esri tile size).</summary>
+    private const int BlockHeight = 128;
+
     private readonly IMetadataV2GraphProvider _graphProvider;
     private readonly IRasterStore _rasterStore;
     private readonly IImageServerMultidimensionalInfoBuilder _multidimensionalInfoBuilder;
@@ -131,14 +137,13 @@ internal sealed class ImageServerMetadataHandler
                 // fields.find(...) during ImageryLayer.load) get a non-null fields
                 // array with the OID field they expect.
                 Fields = ImageServerCatalogQueryHandler.BuildCatalogFields(),
-                Extent = new ImageServerExtent
-                {
-                    XMin = extent.Value.XMin,
-                    YMin = extent.Value.YMin,
-                    XMax = extent.Value.XMax,
-                    YMax = extent.Value.YMax,
-                    SpatialReference = CreateSpatialReference(extent.Value.Srid)
-                },
+                Extent = BuildExtent(extent.Value),
+                // The native .NET ImageServiceRaster.LoadAsync reads fullExtent /
+                // initialExtent (not the legacy `extent`) and the storageInfo block;
+                // without them it fails "Failed to read configuration data" (#1456).
+                FullExtent = BuildExtent(extent.Value),
+                InitialExtent = BuildExtent(extent.Value),
+                StorageInfo = BuildStorageInfo(),
                 SpatialReference = CreateSpatialReference(referenceRaster.Srid),
                 PixelSizeX = CalculatePixelSize(extent.Value, referenceRaster.Width),
                 PixelSizeY = CalculatePixelSize(extent.Value, referenceRaster.Height, isHeight: true),
@@ -199,6 +204,27 @@ internal sealed class ImageServerMetadataHandler
             LatestWkid = srid ?? 4326
         };
     }
+
+    private static ImageServerExtent BuildExtent(RasterExtent extent) => new()
+    {
+        XMin = extent.XMin,
+        YMin = extent.YMin,
+        XMax = extent.XMax,
+        YMax = extent.YMax,
+        SpatialReference = CreateSpatialReference(extent.Srid)
+    };
+
+    /// <summary>
+    /// Builds the pixel-block <c>storageInfo</c> block. Honua's ImageServer is a
+    /// dynamic (non-tiled) service, so we advertise the standard 128x128 pixel-block
+    /// size that lets <c>ImageServiceRaster.LoadAsync</c> read configuration data
+    /// without ever requesting a tile-cache <c>conf.json</c> (#1456).
+    /// </summary>
+    private static ImageServerStorageInfo BuildStorageInfo() => new()
+    {
+        BlockWidth = BlockWidth,
+        BlockHeight = BlockHeight
+    };
 
     private static double CalculatePixelSize(Core.Features.Raster.Domain.RasterExtent extent, int pixelCount, bool isHeight = false)
     {

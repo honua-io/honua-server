@@ -26,6 +26,7 @@ namespace Honua.Protocols.GeoServices.ImageServer.Models;
 [JsonSerializable(typeof(IdentifyRequest))]
 [JsonSerializable(typeof(SpatialReference))]
 [JsonSerializable(typeof(ImageServerExtent))]
+[JsonSerializable(typeof(ImageServerStorageInfo))]
 [JsonSerializable(typeof(Field))]
 [JsonSerializable(typeof(TileInfo))]
 [JsonSerializable(typeof(Point))]

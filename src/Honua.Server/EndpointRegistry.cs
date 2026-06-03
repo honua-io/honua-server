@@ -731,6 +731,7 @@ public static class EndpointRegistry
         new("GET", "/rest/services/{serviceId}/MapServer/query"),
         new("POST", "/rest/services/{serviceId}/MapServer/query"),
         new("GET", "/rest/services/{serviceId}/MapServer/allLayersAndTables"),
+        new("GET", "/rest/services/{serviceId}/MapServer/layers"),
         new("GET", "/rest/services/{serviceId}/MapServer/queryDomains"),
         new("GET", "/rest/services/{serviceId}/MapServer/{layerId}/{featureId}"),
         new("GET", "/rest/services/{serviceId}/MapServer/tile/{z}/{y}/{x}"),

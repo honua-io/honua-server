@@ -111,8 +111,17 @@ public sealed class FeatureServerAccessFilteringTests
         layerResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         using var layerDocument = JsonDocument.Parse(await layerResponse.Content.ReadAsStringAsync());
-        layerDocument.RootElement.GetProperty("capabilities").GetString().Should().Contain("Uploads");
-        layerDocument.RootElement.GetProperty("hasAttachments").GetBoolean().Should().BeTrue();
+        var root = layerDocument.RootElement;
+        root.GetProperty("capabilities").GetString().Should().Contain("Uploads");
+        root.GetProperty("hasAttachments").GetBoolean().Should().BeTrue();
+
+        // Regression for #1453: when a layer exposes attachments it must also advertise
+        // the attachment-capability flags Esri clients inspect. The ArcGIS Maps SDK for
+        // JavaScript gates queryAttachments(where) on supportsQueryAttachments and refuses
+        // to issue the request when it is absent/false.
+        root.GetProperty("supportsQueryAttachments").GetBoolean().Should().BeTrue();
+        root.GetProperty("supportsAttachmentKeywords").GetBoolean().Should().BeTrue();
+        root.GetProperty("supportsAttachmentsByUploadId").GetBoolean().Should().BeTrue();
     }
 
     private static WebApplicationFactory<Program> CreateFactory()

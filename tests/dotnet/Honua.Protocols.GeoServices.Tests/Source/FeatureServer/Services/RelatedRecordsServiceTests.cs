@@ -16,10 +16,12 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Servic
 
 public sealed class RelatedRecordsServiceTests
 {
-    // Regression (#1431): queryRelatedRecords must populate relatedRecords.fields from
-    // the related layer schema so clients can map the returned attributes.
+    // Regression (#1431 + #1452): queryRelatedRecords must populate the field schema
+    // from the related layer (so clients can map the returned attributes) and, per the
+    // Esri spec, those fields live at the response top level while each group's
+    // relatedRecords is a flat array of records.
     [Fact]
-    public void GroupRelatedRecords_PopulatesFieldsFromRelatedLayerSchema()
+    public void GroupRelatedRecords_PopulatesTopLevelFieldsAndFlatRecords()
     {
         var sut = CreateSut(Substitute.For<IRelationshipStore>());
 
@@ -43,7 +45,7 @@ public sealed class RelatedRecordsServiceTests
 
         var result = QueryResult<Feature>.Create(1, [relatedFeature]);
 
-        var groups = sut.GroupRelatedRecords(
+        var grouped = sut.GroupRelatedRecords(
             result,
             objectIds: [1],
             relationship,
@@ -57,12 +59,19 @@ public sealed class RelatedRecordsServiceTests
             outFields: null,
             relatedResource: CreateRelatedResource());
 
-        var related = groups.Should().ContainSingle().Which.RelatedRecords;
-        related.Should().NotBeNull();
-        related!.Fields.Should().NotBeEmpty();
-        related.Fields.Select(field => field.Name)
+        // Field schema is carried once at the top level (#1431 population preserved).
+        grouped.Fields.Should().NotBeEmpty();
+        grouped.Fields.Select(field => field.Name)
             .Should().Contain("label")
             .And.Contain("objectid");
+        grouped.ObjectIdFieldName.Should().Be("objectid");
+
+        // Each group's relatedRecords is now a flat array of records (#1452).
+        var group = grouped.Groups.Should().ContainSingle().Which;
+        group.ObjectId.Should().Be(1L);
+        group.RelatedRecords.Should().NotBeNull();
+        group.RelatedRecords!.Should().ContainSingle();
+        group.RelatedRecords[0].Attributes.Should().ContainKey("label");
     }
 
     private static MetadataV2Resource CreateRelatedResource()

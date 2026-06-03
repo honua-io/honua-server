@@ -847,7 +847,11 @@ internal sealed class QueryFormatter : IQueryFormatter
         return values.ToArray();
     }
 
-    private static string MapGeometryType(MetadataV2GeometryType geometryType)
+    /// <summary>
+    /// Maps a canonical geometry type to its Esri geometry-type token. Shared with
+    /// the queryRelatedRecords response builder so both surfaces agree (#1452).
+    /// </summary>
+    internal static string MapGeometryType(MetadataV2GeometryType geometryType)
         => geometryType switch
         {
             MetadataV2GeometryType.Point => "esriGeometryPoint",
