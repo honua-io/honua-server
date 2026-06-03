@@ -268,6 +268,7 @@ internal static partial class FeatureServerEndpoints
                 cancellationToken).ConfigureAwait(false);
 
             var drawingInfo = ResolveDrawingInfoV2(resource, snapshot);
+            var popupInfo = ResolvePopupInfoV2(resource);
 
             var extrusionValidationErrors = ValidateExtrusionInfoV2(resource, out var extrusionInfo);
             if (extrusionValidationErrors.Count > 0)
@@ -286,6 +287,7 @@ internal static partial class FeatureServerEndpoints
                 limits,
                 timeInfo,
                 drawingInfo: drawingInfo,
+                popupInfo: popupInfo,
                 extrusionInfo: extrusionInfo,
                 supportsGeobufOutput: featureReader is IGeobufFeatureStore,
                 supportsAttachmentUploads: supportsAttachmentUploads);
@@ -426,6 +428,25 @@ internal static partial class FeatureServerEndpoints
 
         drawingInfo = default;
         return false;
+    }
+
+    /// <summary>
+    /// Returns an author-supplied Esri <c>popupInfo</c> template stored on the resource
+    /// (<c>resource.Extensions["geoservices:popupInfo"]</c>), or null when none is set. Esri clients read
+    /// popupInfo to drive feature popups; the FeatureServer omits it unless an operator has authored one.
+    /// </summary>
+    private static JsonElement? ResolvePopupInfoV2(MetadataV2Resource resource)
+    {
+        if (resource.Extensions is not null
+            && (resource.Extensions.TryGetValue("geoservices:popupInfo", out var popupInfo)
+                || resource.Extensions.TryGetValue("popupInfo", out popupInfo))
+            && popupInfo.ValueKind != JsonValueKind.Null
+            && popupInfo.ValueKind != JsonValueKind.Undefined)
+        {
+            return popupInfo;
+        }
+
+        return null;
     }
 
     private static bool TryParseJsonElement(string json, out JsonElement element)

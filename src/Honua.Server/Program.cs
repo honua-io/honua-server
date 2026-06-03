@@ -622,6 +622,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Admin.TileOperations.TileOperationsJsonContext.Default,
         Honua.Server.Features.Admin.Models.LayerStyleJsonContext.Default,
         Honua.Server.Features.Admin.Models.LayerFieldConfigurationJsonContext.Default,
+        Honua.Server.Features.Admin.Models.LayerAuthoringJsonContext.Default,
         Honua.Server.Features.Admin.Models.LayerValidationJsonContext.Default,
         Honua.Server.Features.Admin.Models.StyleSuggestionJsonContext.Default,
         Honua.Server.Features.Admin.Models.AlertAdminJsonContext.Default,
@@ -1039,6 +1040,7 @@ app.MapDeployControlEndpoints();
 // Configure admin layer style endpoints
 app.MapAdminLayerStyleEndpoints();
 app.MapAdminLayerFieldConfigurationEndpoints();
+app.MapAdminLayerAuthoringEndpoints();
 app.MapAdminLayerFilterConfigurationEndpoints();
 app.MapReplicaManagementEndpoints();
 app.MapAdminLayerValidationEndpoints();
