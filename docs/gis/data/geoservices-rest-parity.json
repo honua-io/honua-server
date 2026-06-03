@@ -716,16 +716,17 @@
         ],
         "queryRelatedRecords": [
           {
-            "name": "objectIds, relationshipId, outFields, definitionExpression, returnGeometry, resultRecordCount, resultOffset",
+            "name": "objectIds, relationshipId, outFields, definitionExpression, returnGeometry, resultRecordCount, resultOffset, orderByFields, returnCountOnly, outSR, returnZ, returnM, geometryPrecision, maxAllowableOffset",
             "status": "implemented"
           },
           {
-            "name": "maxAllowableOffset, geometryPrecision, historicMoment, outSR, returnZ, returnM, returnTrueCurves, orderByFields, returnCountOnly, f",
-            "status": "ignored"
+            "name": "historicMoment, returnTrueCurves, gdbVersion",
+            "status": "rejected"
           },
           {
-            "name": "gdbVersion",
-            "status": "rejected"
+            "name": "f",
+            "status": "ignored",
+            "notes": "Only JSON output is produced; a non-JSON value is rejected."
           }
         ]
       },

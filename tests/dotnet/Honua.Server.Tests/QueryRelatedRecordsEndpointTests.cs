@@ -263,6 +263,80 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.QueryRelatedRecords)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
+    public async Task QueryRelatedRecords_WithReturnCountOnly_ReturnsCountsWithoutRecords()
+    {
+        // #1396: returnCountOnly returns a per-source-object count instead of the
+        // related-record attributes/geometry.
+        var response = await GetWithRetryAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1,2&relationshipId={TestRelationshipId}&returnCountOnly=true");
+
+        response.Be200Ok();
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var jsonDoc = JsonDocument.Parse(content);
+        var root = jsonDoc.RootElement;
+
+        var groups = root.GetProperty("relatedRecordGroups");
+        groups.ValueKind.Should().Be(JsonValueKind.Array);
+        groups.GetArrayLength().Should().Be(2);
+
+        foreach (var group in groups.EnumerateArray())
+        {
+            group.TryGetProperty("count", out var count).Should().BeTrue(
+                "returnCountOnly groups carry a count");
+            count.GetInt64().Should().BeGreaterThanOrEqualTo(0);
+            group.TryGetProperty("relatedRecords", out _).Should().BeFalse(
+                "returnCountOnly suppresses the per-record payload");
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryRelatedRecords)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
+    public async Task QueryRelatedRecords_WithOrderByFields_ReturnsSortedRecords()
+    {
+        // #1396: orderByFields sorts the related records of each source object.
+        var response = await GetWithRetryAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1&relationshipId={TestRelationshipId}&orderByFields={Uri.EscapeDataString("name DESC")}");
+
+        response.Be200Ok();
+
+        var content = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize<QueryRelatedRecordsResponse>(
+            content, FeatureServerJsonContext.Default.QueryRelatedRecordsResponse);
+
+        queryResponse.Should().NotBeNull();
+        var relatedRecords = queryResponse!.RelatedRecordGroups[0].RelatedRecords;
+
+        if (relatedRecords is { Length: > 1 })
+        {
+            var names = relatedRecords
+                .Select(r => r.Attributes.TryGetValue("name", out var value) ? value?.ToString() : null)
+                .Where(name => name is not null)
+                .ToArray();
+
+            names.Should().BeInDescendingOrder();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryRelatedRecords)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
+    public async Task QueryRelatedRecords_WithUnknownOrderByField_Returns400()
+    {
+        // #1396: orderByFields is validated against the related layer schema.
+        var response = await GetWithRetryAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1&relationshipId={TestRelationshipId}&orderByFields=does_not_exist");
+
+        response.Be400BadRequest();
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("orderByFields");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryRelatedRecords)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
     public async Task QueryRelatedRecords_WithPostRequest_ReturnsRelatedFeatures()
     {

@@ -213,7 +213,9 @@ public sealed class FeatureServerExceptionMappingTests
             int? geometryPrecision,
             double? maxAllowableOffset,
             ImmutableArray<string>? outFields,
-            MetadataV2Resource relatedResource)
+            MetadataV2Resource relatedResource,
+            ImmutableArray<OrderByClause>? orderBy = null,
+            bool returnCountOnly = false)
         {
             return new GroupedRelatedRecords([], [], objectIdFieldName, null, null, false, false);
         }
