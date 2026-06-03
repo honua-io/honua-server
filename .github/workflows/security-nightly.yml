@@ -315,8 +315,35 @@ jobs:
 
       - name: Start container for runtime security analysis
         run: |
+          set -euo pipefail
+
+          # The published image runs a Production cold start that performs the
+          # PostGIS preflight compatibility check before migrations, so a
+          # reachable PostGIS database is required even when migrations are
+          # skipped. Provision one on a dedicated network and point the
+          # hardened app container at it by service name.
+          docker network create honua-runtime-net
+
+          docker run -d \
+            --name honua-runtime-db \
+            --network honua-runtime-net \
+            -e POSTGRES_DB=honua \
+            -e POSTGRES_USER=honua \
+            -e POSTGRES_PASSWORD=honua_password \
+            postgis/postgis:16-3.4
+
+          echo "Waiting for PostGIS to accept connections..."
+          for _ in $(seq 1 60); do
+            if docker exec honua-runtime-db pg_isready -U honua -d honua >/dev/null 2>&1; then
+              break
+            fi
+            sleep 2
+          done
+          docker exec honua-runtime-db pg_isready -U honua -d honua
+
           docker run -d \
             --name honua-runtime-test \
+            --network honua-runtime-net \
             --read-only \
             --tmpfs /tmp \
             --cap-drop ALL \
@@ -324,7 +351,7 @@ jobs:
             -e HONUA_SKIP_MIGRATIONS=true \
             -e HONUA_ADMIN_PASSWORD="Security-Nightly-Admin-Pass1!" \
             -e Security__ConnectionEncryption__MasterKey="security-nightly-master-key-at-least-32-chars" \
-            -e ConnectionStrings__DefaultConnection="Host=localhost;Port=5432;Database=honua;Username=honua;Password=honua_password" \
+            -e ConnectionStrings__DefaultConnection="Host=honua-runtime-db;Port=5432;Database=honua;Username=honua;Password=honua_password" \
             -p 8080:8080 \
             ${{ env.IMAGE_NAME }}:security-test
 
@@ -359,6 +386,9 @@ jobs:
         run: |
           docker stop honua-runtime-test || true
           docker rm honua-runtime-test || true
+          docker stop honua-runtime-db || true
+          docker rm honua-runtime-db || true
+          docker network rm honua-runtime-net || true
 
       - name: Generate container security summary
         if: always()
