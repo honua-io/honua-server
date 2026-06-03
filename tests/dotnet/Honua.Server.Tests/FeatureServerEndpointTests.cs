@@ -1139,6 +1139,51 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         }
     }
 
+    // Regression (#1426): ArcGIS API for Python POSTs generateRenderer (form body).
+    // The POST companion must accept the body payload instead of returning 405.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/generateRenderer")]
+    public async Task GenerateRenderer_PostWithClassBreaksDef_ReturnsClassBreaksRenderer()
+    {
+        var form = new FormUrlEncodedContent(new[]
+        {
+            new KeyValuePair<string, string>(
+                "classificationDef",
+                """{"type":"classBreaksDef","classificationField":"objectid","classificationMethod":"esriClassifyEqualInterval","breakCount":3}"""),
+            new KeyValuePair<string, string>("f", "json")
+        });
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/generateRenderer",
+            form);
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+        using var jsonDoc = JsonDocument.Parse(content);
+        jsonDoc.RootElement.GetProperty("type").GetString().Should().Be("classBreaks");
+        jsonDoc.RootElement.GetProperty("field").GetString().Should().Be("objectid");
+    }
+
+    // Regression (#1426): POST generateRenderer with no body returns the simple
+    // renderer (mirrors the GET form) rather than 405.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/generateRenderer")]
+    public async Task GenerateRenderer_PostWithoutClassificationDef_ReturnsSimpleRenderer()
+    {
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/generateRenderer",
+            new FormUrlEncodedContent([new KeyValuePair<string, string>("f", "json")]));
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+        using var jsonDoc = JsonDocument.Parse(content);
+        jsonDoc.RootElement.GetProperty("type").GetString().Should().Be("simple");
+    }
+
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/generateRenderer")]

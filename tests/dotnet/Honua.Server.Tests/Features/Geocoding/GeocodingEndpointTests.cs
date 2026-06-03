@@ -15,6 +15,8 @@ using CoreSuggestGeocodeRequest = Honua.Core.Features.Geocoding.Domain.SuggestGe
 using CoreBatchGeocodeRequest = Honua.Core.Features.Geocoding.Domain.BatchGeocodeRequest;
 using CoreGeocodeSuggestion = Honua.Core.Features.Geocoding.Domain.GeocodeSuggestion;
 using CoreGeocodeProviderException = Honua.Core.Features.Geocoding.Domain.GeocodeProviderException;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Geocoding;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -22,6 +24,7 @@ using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Geocoding;
 
@@ -56,6 +59,59 @@ public sealed class GeocodingEndpointTests
         Assert.Equal("1600 Pennsylvania Ave NW", firstCandidate.GetProperty("address").GetString());
         Assert.True(firstCandidate.TryGetProperty("location", out _));
         Assert.True(firstCandidate.TryGetProperty("attributes", out _));
+    }
+
+    // Regression (#1428): findAddressCandidates must reproject candidate locations to a
+    // requested outSR (e.g. Web Mercator 3857) instead of rejecting it with 400.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
+    public async Task FindAddressCandidates_WithOutSr3857_ReprojectsLocations()
+    {
+        using var factory = CreateDefaultFactory();
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync(
+            "/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=1600+Pennsylvania+Ave+NW&outSR=3857&f=json");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = payload.RootElement;
+
+        Assert.Equal(3857, root.GetProperty("spatialReference").GetProperty("wkid").GetInt32());
+
+        var location = root.GetProperty("candidates")[0].GetProperty("location");
+        var x = location.GetProperty("x").GetDouble();
+        var y = location.GetProperty("y").GetDouble();
+
+        // -77.03655, 38.89768 (WGS84) projected to Web Mercator.
+        Assert.InRange(x, -8576000, -8574000);
+        Assert.InRange(y, 4706000, 4708000);
+    }
+
+    // Regression (#1428): reverseGeocode must accept an outSR, reprojecting both the
+    // input location (from outSR to provider SRID) and the returned match back to outSR.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/reverseGeocode")]
+    public async Task ReverseGeocode_WithOutSr3857_ReprojectsLocation()
+    {
+        using var factory = CreateDefaultFactory();
+        using var client = factory.CreateClient();
+
+        // Web Mercator coordinates for roughly -77.03655, 38.89768.
+        using var response = await client.GetAsync(
+            "/rest/services/World/GeocodeServer/reverseGeocode?location=-8575155,4707030&outSR=3857&f=json");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var location = payload.RootElement.GetProperty("location");
+
+        Assert.Equal(3857, location.GetProperty("spatialReference").GetProperty("wkid").GetInt32());
+        Assert.InRange(location.GetProperty("x").GetDouble(), -8576000, -8574000);
+        Assert.InRange(location.GetProperty("y").GetDouble(), 4706000, 4708000);
     }
 
     [IntegrationTest]
@@ -820,6 +876,11 @@ public sealed class GeocodingEndpointTests
             builder.ConfigureServices(services =>
             {
                 services.AddGeocodeProvider(fakeProvider.Name, _ => fakeProvider, ServiceLifetime.Singleton);
+                // The lightweight geocoding test harness does not wire the provider
+                // infrastructure, so register a WGS84<->Web Mercator transform for the
+                // outSR reprojection path (#1428).
+                services.RemoveAll<ICoordinateTransformService>();
+                services.AddSingleton<ICoordinateTransformService, WebMercatorCoordinateTransformService>();
             });
         });
     }
@@ -967,5 +1028,41 @@ public sealed class GeocodingEndpointTests
 
         public Task<CoreGeocodeProviderHealth> CheckHealthAsync(CancellationToken cancellationToken = default)
             => Task.FromResult(new CoreGeocodeProviderHealth(Name, false));
+    }
+
+    private sealed class WebMercatorCoordinateTransformService : ICoordinateTransformService
+    {
+        public ValueTask<(double MinX, double MinY, double MaxX, double MaxY)?> TransformExtentAsync(
+            double minX, double minY, double maxX, double maxY, int fromSrid, int toSrid, CancellationToken cancellationToken = default)
+        {
+            var (x0, y0) = Transform(minX, minY, fromSrid, toSrid);
+            var (x1, y1) = Transform(maxX, maxY, fromSrid, toSrid);
+            return ValueTask.FromResult<(double MinX, double MinY, double MaxX, double MaxY)?>((x0, y0, x1, y1));
+        }
+
+        public ValueTask<(double X, double Y)?> TransformPointAsync(
+            double x, double y, int fromSrid, int toSrid, CancellationToken cancellationToken = default)
+            => ValueTask.FromResult<(double X, double Y)?>(Transform(x, y, fromSrid, toSrid));
+
+        private static (double X, double Y) Transform(double x, double y, int fromSrid, int toSrid)
+        {
+            if (fromSrid == toSrid)
+            {
+                return (x, y);
+            }
+
+            if (fromSrid == 4326 && toSrid == 3857)
+            {
+                return WebMercatorMath.LonLatToWebMercator(x, y);
+            }
+
+            if (fromSrid == 3857 && toSrid == 4326)
+            {
+                var (lon, lat) = WebMercatorMath.WebMercatorToLonLat(x, y);
+                return (lon, lat);
+            }
+
+            throw new NotSupportedException($"Unsupported transform {fromSrid}->{toSrid}.");
+        }
     }
 }

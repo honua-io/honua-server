@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Geocoding.Abstractions;
 using Honua.Core.Features.Geocoding.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Protocols.GeoServices.FeatureServer;
 using Honua.Infrastructure.Models;
 using Microsoft.Extensions.Options;
@@ -125,13 +126,6 @@ internal sealed class GeocodingHandler(
             return StandardErrorHelpers.CreateBadRequest(context, "Invalid outSR parameter.");
         }
 
-        if (outSrid != _options.DefaultSpatialReferenceWkid)
-        {
-            return StandardErrorHelpers.CreateBadRequest(
-                context,
-                $"Only outSR={_options.DefaultSpatialReferenceWkid} is currently supported.");
-        }
-
         try
         {
             var requestedProviderName = GetValue(values, "provider");
@@ -151,7 +145,7 @@ internal sealed class GeocodingHandler(
             var providerRequest = new Core.Features.Geocoding.Domain.ForwardGeocodeRequest(
                 Query: query,
                 MaxResults: maxLocations,
-                SpatialReferenceWkid: outSrid,
+                SpatialReferenceWkid: _options.DefaultSpatialReferenceWkid,
                 CountryCodes: GetValue(values, "countryCodes") ?? GetValue(values, "countryCode"),
                 SearchBounds: searchBounds);
 
@@ -167,21 +161,23 @@ internal sealed class GeocodingHandler(
             }
 
             var candidates = result.Data ?? [];
-            var response = new FindAddressCandidatesResponse
+            var reprojectedCandidates = new List<GeocodeCandidateResponse>(candidates.Count);
+            foreach (var candidate in candidates)
             {
-                SpatialReference = new GeocodeSpatialReference
+                var projected = await TryReprojectGeocodePointAsync(context, candidate.X, candidate.Y, outSrid, cancellationToken).ConfigureAwait(false);
+                if (projected is null)
                 {
-                    Wkid = outSrid,
-                    LatestWkid = outSrid
-                },
-                Candidates = [.. candidates.Select(candidate => new GeocodeCandidateResponse
+                    return CreateUnsupportedOutSrResult(context, outSrid);
+                }
+
+                reprojectedCandidates.Add(new GeocodeCandidateResponse
                 {
                     Address = candidate.Address,
                     Score = candidate.Score,
                     Location = new GeocodePoint
                     {
-                        X = candidate.X,
-                        Y = candidate.Y,
+                        X = projected.Value.X,
+                        Y = projected.Value.Y,
                         SpatialReference = new GeocodeSpatialReference
                         {
                             Wkid = outSrid,
@@ -189,7 +185,17 @@ internal sealed class GeocodingHandler(
                         }
                     },
                     Attributes = candidate.Attributes
-                })]
+                });
+            }
+
+            var response = new FindAddressCandidatesResponse
+            {
+                SpatialReference = new GeocodeSpatialReference
+                {
+                    Wkid = outSrid,
+                    LatestWkid = outSrid
+                },
+                Candidates = [.. reprojectedCandidates]
             };
 
             GeocodingLog.OperationCompleted(_logger, "findAddressCandidates", result.ProviderName, response.Candidates.Length, stopwatch.Elapsed.TotalMilliseconds);
@@ -237,13 +243,6 @@ internal sealed class GeocodingHandler(
             return StandardErrorHelpers.CreateBadRequest(context, "Invalid outSR parameter.");
         }
 
-        if (outSrid != _options.DefaultSpatialReferenceWkid)
-        {
-            return StandardErrorHelpers.CreateBadRequest(
-                context,
-                $"Only outSR={_options.DefaultSpatialReferenceWkid} is currently supported.");
-        }
-
         try
         {
             var requestedProviderName = GetValue(values, "provider");
@@ -255,8 +254,16 @@ internal sealed class GeocodingHandler(
                 return StandardErrorHelpers.CreateBadRequest(context, $"Geocoding provider '{requestedProviderName}' not found.");
             }
 
+            // The input location is expressed in the requested outSR. Reproject it to the
+            // provider's default reference before querying, then project the match back.
+            var inputPoint = await TryReprojectGeocodePointAsync(context, x, y, outSrid, _options.DefaultSpatialReferenceWkid, cancellationToken).ConfigureAwait(false);
+            if (inputPoint is null)
+            {
+                return CreateUnsupportedOutSrResult(context, outSrid);
+            }
+
             var langCode = GetValue(values, "langCode");
-            var providerRequest = new Core.Features.Geocoding.Domain.ReverseGeocodeRequest(x, y, outSrid)
+            var providerRequest = new Core.Features.Geocoding.Domain.ReverseGeocodeRequest(inputPoint.Value.X, inputPoint.Value.Y, _options.DefaultSpatialReferenceWkid)
             {
                 LanguageCode = string.IsNullOrWhiteSpace(langCode) ? null : langCode.Trim()
             };
@@ -279,6 +286,12 @@ internal sealed class GeocodingHandler(
                 return StandardErrorHelpers.CreateNotFound(context, "No matching address was found for the supplied location.");
             }
 
+            var matchPoint = await TryReprojectGeocodePointAsync(context, match.X, match.Y, outSrid, cancellationToken).ConfigureAwait(false);
+            if (matchPoint is null)
+            {
+                return CreateUnsupportedOutSrResult(context, outSrid);
+            }
+
             var address = new Dictionary<string, string?>(match.Attributes, StringComparer.Ordinal)
             {
                 ["Match_addr"] = match.Address,
@@ -290,8 +303,8 @@ internal sealed class GeocodingHandler(
                 Address = address,
                 Location = new GeocodePoint
                 {
-                    X = match.X,
-                    Y = match.Y,
+                    X = matchPoint.Value.X,
+                    Y = matchPoint.Value.Y,
                     SpatialReference = new GeocodeSpatialReference
                     {
                         Wkid = outSrid,
@@ -506,18 +519,11 @@ internal sealed class GeocodingHandler(
             return StandardErrorHelpers.CreateBadRequest(context, "Invalid outSR parameter.");
         }
 
-        if (outSrid != _options.DefaultSpatialReferenceWkid)
-        {
-            return StandardErrorHelpers.CreateBadRequest(
-                context,
-                $"Only outSR={_options.DefaultSpatialReferenceWkid} is currently supported.");
-        }
-
         try
         {
             var batchRequest = new Core.Features.Geocoding.Domain.BatchGeocodeRequest(
                 Queries: queries,
-                SpatialReferenceWkid: outSrid,
+                SpatialReferenceWkid: _options.DefaultSpatialReferenceWkid,
                 CountryCodes: GetValue(values, "countryCodes") ?? GetValue(values, "countryCode"));
 
             var stopwatch = Stopwatch.StartNew();
@@ -532,21 +538,23 @@ internal sealed class GeocodingHandler(
             }
 
             var candidates = result.Data ?? [];
-            var response = new GeocodeAddressesResponse
+            var reprojectedLocations = new List<GeocodeAddressLocation>(candidates.Count);
+            foreach (var candidate in candidates)
             {
-                SpatialReference = new GeocodeSpatialReference
+                var projected = await TryReprojectGeocodePointAsync(context, candidate.X, candidate.Y, outSrid, cancellationToken).ConfigureAwait(false);
+                if (projected is null)
                 {
-                    Wkid = outSrid,
-                    LatestWkid = outSrid
-                },
-                Locations = [.. candidates.Select(candidate => new GeocodeAddressLocation
+                    return CreateUnsupportedOutSrResult(context, outSrid);
+                }
+
+                reprojectedLocations.Add(new GeocodeAddressLocation
                 {
                     Address = candidate.Address,
                     Score = candidate.Score,
                     Location = new GeocodePoint
                     {
-                        X = candidate.X,
-                        Y = candidate.Y,
+                        X = projected.Value.X,
+                        Y = projected.Value.Y,
                         SpatialReference = new GeocodeSpatialReference
                         {
                             Wkid = outSrid,
@@ -554,7 +562,17 @@ internal sealed class GeocodingHandler(
                         }
                     },
                     Attributes = candidate.Attributes
-                })]
+                });
+            }
+
+            var response = new GeocodeAddressesResponse
+            {
+                SpatialReference = new GeocodeSpatialReference
+                {
+                    Wkid = outSrid,
+                    LatestWkid = outSrid
+                },
+                Locations = [.. reprojectedLocations]
             };
 
             GeocodingLog.OperationCompleted(_logger, "geocodeAddresses", result.ProviderName, response.Locations.Length, stopwatch.Elapsed.TotalMilliseconds);
@@ -879,6 +897,45 @@ internal sealed class GeocodingHandler(
 
         return true;
     }
+
+    /// <summary>
+    /// Reprojects a point from the provider's default reference to the requested output SRID,
+    /// returning <see langword="null"/> when the transform is not supported.
+    /// </summary>
+    private ValueTask<(double X, double Y)?> TryReprojectGeocodePointAsync(
+        HttpContext context,
+        double x,
+        double y,
+        int outSrid,
+        CancellationToken cancellationToken)
+        => TryReprojectGeocodePointAsync(context, x, y, _options.DefaultSpatialReferenceWkid, outSrid, cancellationToken);
+
+    /// <summary>
+    /// Reprojects a point between two SRIDs using the shared coordinate transform service.
+    /// Returns the input unchanged when both SRIDs match, or <see langword="null"/> when the
+    /// transform cannot be performed.
+    /// </summary>
+    private static ValueTask<(double X, double Y)?> TryReprojectGeocodePointAsync(
+        HttpContext context,
+        double x,
+        double y,
+        int fromSrid,
+        int toSrid,
+        CancellationToken cancellationToken)
+    {
+        if (fromSrid == toSrid)
+        {
+            return ValueTask.FromResult<(double X, double Y)?>((x, y));
+        }
+
+        var transformService = context.RequestServices.GetRequiredService<ICoordinateTransformService>();
+        return transformService.TransformPointAsync(x, y, fromSrid, toSrid, cancellationToken);
+    }
+
+    private static IResult CreateUnsupportedOutSrResult(HttpContext context, int outSrid)
+        => StandardErrorHelpers.CreateBadRequest(
+            context,
+            $"outSR={outSrid} is not supported for reprojection.");
 
     private static bool TryParseSpatialReference(string? rawOutSpatialReference, int defaultWkid, out int wkid)
     {

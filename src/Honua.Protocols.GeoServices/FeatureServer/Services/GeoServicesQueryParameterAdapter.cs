@@ -144,6 +144,16 @@ internal sealed class GeoServicesQueryParameterAdapter(
             .Select(static field => field.Trim())
             .Where(static field => field.Length > 0)
             .ToList();
+
+        // returnDistinctValues yields aggregate rows with no stable object identifier;
+        // force-appending the OID would defeat the distinct contract (every row would
+        // carry a unique OID, suppressing de-duplication). Honor the caller's outFields
+        // verbatim in that case.
+        if (queryParams.ReturnDistinctValues)
+        {
+            return fields.ToImmutableArray();
+        }
+
         var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
         if (!fields.Any(field => field.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase)))
         {

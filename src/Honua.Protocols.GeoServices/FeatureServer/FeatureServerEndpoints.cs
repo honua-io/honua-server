@@ -125,6 +125,19 @@ internal static partial class FeatureServerEndpoints
         .Produces(400)
         .Produces(404);
 
+        var generateRendererPost = endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/{layerId:int}/generateRenderer", (Delegate)HandleGenerateRenderer)
+            .WithDisplayName("Generate Renderer (POST)")
+            .WithName("GenerateRendererPost")
+            .WithSummary("Generate a renderer for a FeatureServer layer using POST")
+            .WithDescription("Generates a renderer definition based on classification parameters via POST body")
+            .WithTags("FeatureServer")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            // Read-only Esri renderer POST (mirrors the GET form); access is enforced
+            // by the handler via the layer access policy.
+            .AllowAnonymous()
+        .Produces(400)
+        .Produces(404);
+
         endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/applyEdits", HandleServiceApplyEdits)
             .WithDisplayName("Apply Service-Level Feature Edits")
             .WithName("ServiceApplyEdits")

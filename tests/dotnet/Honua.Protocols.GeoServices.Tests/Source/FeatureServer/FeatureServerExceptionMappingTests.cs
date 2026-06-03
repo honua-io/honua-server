@@ -212,7 +212,8 @@ public sealed class FeatureServerExceptionMappingTests
             bool returnM,
             int? geometryPrecision,
             double? maxAllowableOffset,
-            ImmutableArray<string>? outFields)
+            ImmutableArray<string>? outFields,
+            MetadataV2Resource relatedResource)
         {
             return [];
         }

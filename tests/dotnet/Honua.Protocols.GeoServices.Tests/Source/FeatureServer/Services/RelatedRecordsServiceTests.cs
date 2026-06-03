@@ -1,10 +1,13 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using FluentAssertions;
 using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Shared.Models;
 using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -13,6 +16,67 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Servic
 
 public sealed class RelatedRecordsServiceTests
 {
+    // Regression (#1431): queryRelatedRecords must populate relatedRecords.fields from
+    // the related layer schema so clients can map the returned attributes.
+    [Fact]
+    public void GroupRelatedRecords_PopulatesFieldsFromRelatedLayerSchema()
+    {
+        var sut = CreateSut(Substitute.For<IRelationshipStore>());
+
+        var relationship = new MetadataV2Relationship
+        {
+            Id = "rel-1",
+            RelatedResourceId = "child",
+            OriginField = "objectid",
+            DestinationField = "parent_id"
+        };
+
+        var relatedFeature = Feature.Create(
+            10,
+            geometry: null,
+            new Dictionary<string, object?>
+            {
+                ["objectid"] = 10L,
+                ["parent_id"] = 1L,
+                ["label"] = "child-a"
+            }.ToImmutableDictionary());
+
+        var result = QueryResult<Feature>.Create(1, [relatedFeature]);
+
+        var groups = sut.GroupRelatedRecords(
+            result,
+            objectIds: [1],
+            relationship,
+            objectIdFieldName: "objectid",
+            returnGeometry: false,
+            outputSrid: null,
+            returnZ: false,
+            returnM: false,
+            geometryPrecision: null,
+            maxAllowableOffset: null,
+            outFields: null,
+            relatedResource: CreateRelatedResource());
+
+        var related = groups.Should().ContainSingle().Which.RelatedRecords;
+        related.Should().NotBeNull();
+        related!.Fields.Should().NotBeEmpty();
+        related.Fields.Select(field => field.Name)
+            .Should().Contain("label")
+            .And.Contain("objectid");
+    }
+
+    private static MetadataV2Resource CreateRelatedResource()
+        => new()
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "child", Name = "child" },
+            SchemaFields =
+            [
+                new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false },
+                new MetadataV2Field { Name = "parent_id", Type = MetadataV2FieldType.Integer, Nullable = false },
+                new MetadataV2Field { Name = "label", Type = MetadataV2FieldType.String, Length = 128 }
+            ]
+        };
+
     [Fact]
     public async Task ExecuteRelatedQueryAsync_WhenStoreThrowsArgumentException_ThrowsInvalidOperationException()
     {
