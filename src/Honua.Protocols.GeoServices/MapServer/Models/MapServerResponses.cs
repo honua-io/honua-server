@@ -528,6 +528,126 @@ internal sealed class IdentifyResult
 }
 
 /// <summary>
+/// Response for the MapServer Feature child resource
+/// (<c>.../MapServer/{layerId}/{featureId}</c>). Wraps a single feature with
+/// its attributes and geometry.
+/// </summary>
+internal sealed class FeatureResourceResponse
+{
+    /// <summary>
+    /// The single feature identified by the route's object id, rendered as an
+    /// Esri JSON feature (<c>{attributes, geometry}</c>).
+    /// </summary>
+    [JsonPropertyName("feature")]
+    public System.Text.Json.JsonElement Feature { get; init; }
+}
+
+/// <summary>
+/// Response for the allLayersAndTables operation. Mirrors the Esri MapServer
+/// resource that returns the full metadata for every layer and table in the
+/// service in a single document.
+/// </summary>
+internal sealed class AllLayersAndTablesResponse
+{
+    /// <summary>
+    /// Full metadata for every visible feature layer in the service.
+    /// </summary>
+    [JsonPropertyName("layers")]
+    public MapServerLayerResponse[]? Layers { get; init; }
+
+    /// <summary>
+    /// Full metadata for every visible non-spatial table in the service.
+    /// </summary>
+    [JsonPropertyName("tables")]
+    public MapServerLayerResponse[]? Tables { get; init; }
+}
+
+/// <summary>
+/// Response for the queryDomains operation. Contains the coded-value and range
+/// domains referenced by the requested layers.
+/// </summary>
+internal sealed class MapServerQueryDomainsResponse
+{
+    /// <summary>
+    /// Domains referenced by the requested layers.
+    /// </summary>
+    [JsonPropertyName("domains")]
+    public MapServerDomainInfo[]? Domains { get; init; }
+}
+
+/// <summary>
+/// Single domain entry for the queryDomains operation.
+/// </summary>
+internal sealed class MapServerDomainInfo
+{
+    /// <summary>
+    /// Domain type: <c>codedValue</c> or <c>range</c>.
+    /// </summary>
+    [JsonPropertyName("type")]
+    public string? Type { get; init; }
+
+    /// <summary>
+    /// Stable domain name.
+    /// </summary>
+    [JsonPropertyName("name")]
+    public string? Name { get; init; }
+
+    /// <summary>
+    /// Name of the field the domain is bound to.
+    /// </summary>
+    [JsonPropertyName("fieldName")]
+    public string? FieldName { get; init; }
+
+    /// <summary>
+    /// ArcGIS field type for the bound field.
+    /// </summary>
+    [JsonPropertyName("fieldType")]
+    public string? FieldType { get; init; }
+
+    /// <summary>
+    /// Coded value entries (present only for coded-value domains).
+    /// </summary>
+    [JsonPropertyName("codedValues")]
+    public MapServerDomainCodedValue[]? CodedValues { get; init; }
+
+    /// <summary>
+    /// Range endpoints ordered [min, max] (present only for range domains).
+    /// </summary>
+    [JsonPropertyName("range")]
+    public object[]? Range { get; init; }
+
+    /// <summary>
+    /// Optional merge policy metadata.
+    /// </summary>
+    [JsonPropertyName("mergePolicy")]
+    public string? MergePolicy { get; init; }
+
+    /// <summary>
+    /// Optional split policy metadata.
+    /// </summary>
+    [JsonPropertyName("splitPolicy")]
+    public string? SplitPolicy { get; init; }
+}
+
+/// <summary>
+/// Single coded-value entry for a coded-value domain.
+/// </summary>
+internal sealed class MapServerDomainCodedValue
+{
+    /// <summary>
+    /// Human-readable display name for the code.
+    /// </summary>
+    [JsonPropertyName("name")]
+    public string? Name { get; init; }
+
+    /// <summary>
+    /// Code value, JSON-typed to match the field's value type.
+    /// </summary>
+    [JsonPropertyName("code")]
+    public object? Code { get; init; }
+}
+
+/// <summary>
 /// Response for the legend operation.
 /// </summary>
 internal sealed class LegendResponse

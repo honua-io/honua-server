@@ -27,6 +27,9 @@ Sources:
 | Legend | `.../MapServer/legend` | GET | Implemented | `GET /rest/services/{serviceId}/MapServer/legend` | Swatch images for visible layers. Supports `size` and `dynamicLayers`. |
 | Layer query | `.../MapServer/{layerId}/query` | GET, POST | Implemented | `GET/POST /rest/services/{serviceId}/MapServer/{layerId}/query` | Delegates to the FeatureServer query handler. See [FeatureServer Matrix](feature-server-matrix.md). |
 | Service-level query | `.../MapServer/query` | GET, POST | Implemented | `GET/POST /rest/services/{serviceId}/MapServer/query` | Delegates to the FeatureServer service-query handler using `layerId` or `layers`. |
+| All Layers and Tables | `.../MapServer/allLayersAndTables` | GET | Implemented | `GET /rest/services/{serviceId}/MapServer/allLayersAndTables` | Returns the full layer and table metadata (same shape as the per-layer metadata resource) for every accessible layer/table in a single `{layers,tables}` document. |
+| Query Domains | `.../MapServer/queryDomains` | GET | Implemented | `GET /rest/services/{serviceId}/MapServer/queryDomains` | Returns coded-value and range domains referenced by the requested layers. Supports the `layers` selector; de-duplicates domains across layers. |
+| Feature child resource | `.../MapServer/{layerId}/{featureId}` | GET | Implemented | `GET /rest/services/{serviceId}/MapServer/{layerId}/{featureId}` | Returns a single feature (`{feature:{attributes,geometry}}`) by object id, delegating to the shared FeatureServer query pipeline. Unknown ids return `404 Not Found`. |
 | Tile | `.../MapServer/tile/{z}/{y}/{x}` | GET | Implemented | `GET /rest/services/{serviceId}/MapServer/tile/{z}/{y}/{x}` | Returns rendered PNG map tiles. |
 | WMS | `.../MapServer/WMS` | GET | Implemented | `GET /rest/services/{serviceId}/MapServer/WMS`, `GET /ogc/services/{serviceId}/wms` | Supports WMS 1.3.0 and 1.1.1 `GetCapabilities`, `GetMap`, and `GetFeatureInfo` (KVP). Time-aware feature layers advertise a continuous `<Dimension name="time">` in capabilities and accept the `TIME=` parameter on `GetMap`; see [Temporal Animation API](temporal-animation-api.md). |
 
@@ -44,13 +47,10 @@ Sources:
 | Export Tiles | `.../MapServer/exportTiles` | POST | Not implemented | |
 | Generate Renderer | `.../MapServer/generateRenderer` or `.../MapServer/{layerId}/generateRenderer` | GET, POST | Not implemented | |
 | Query Attachments | `.../MapServer/{layerId}/queryAttachments` | GET, POST | Not implemented | |
-| Query Domains | `.../MapServer/queryDomains` | GET | Not implemented | |
-| Query Legends | `.../MapServer/queryLegends` | GET, POST | Not implemented | |
+| Query Legends | `.../MapServer/queryLegends` | GET, POST | Not implemented | Non-standard alias of the implemented `legend` operation. |
 | Query Related Records | `.../MapServer/{layerId}/queryRelatedRecords` | GET, POST | Not implemented | |
 | Query Analytic | `.../MapServer/{layerId}/queryAnalytic` | GET, POST | Not implemented | |
-| All Layers and Tables | `.../MapServer/allLayersAndTables` | GET | Not implemented | |
 | Dynamic Layer / Table | `.../MapServer/dynamicLayer` | GET | Not implemented | |
-| Feature child resource | `.../MapServer/{layerId}/{featureId}` | GET | Not implemented | |
 | Image child resource | `.../MapServer/image` | GET | Not implemented | |
 | KML Image child resource | `.../MapServer/kml/mapImage.kmz` | GET | Not implemented | |
 | Job child resource | `.../MapServer/jobs/{jobId}` | GET | Not implemented | |
@@ -194,5 +194,6 @@ Sources:
 - Endpoint mapping: [MapServerEndpoints](../../src/Honua.Server/Features/Protocols/GeoServices/MapServer/MapServerEndpoints.cs)
 - Export/identify/find implementation: [MapServerRequestHandlers.Export](../../src/Honua.Server/Features/Protocols/GeoServices/MapServer/MapServerRequestHandlers.Export.cs), [MapServerRequestHandlers.Identify](../../src/Honua.Server/Features/Protocols/GeoServices/MapServer/MapServerRequestHandlers.Identify.cs), [MapServerRequestHandlers.Find](../../src/Honua.Server/Features/Protocols/GeoServices/MapServer/MapServerRequestHandlers.Find.cs)
 - Query, tiles, and legends: [MapServerRequestHandlers.Query](../../src/Honua.Server/Features/Protocols/GeoServices/MapServer/MapServerRequestHandlers.Query.cs), [MapServerRequestHandlers.Tile](../../src/Honua.Server/Features/Protocols/GeoServices/MapServer/MapServerRequestHandlers.Tile.cs), [MapServerRequestHandlers.Legend](../../src/Honua.Server/Features/Protocols/GeoServices/MapServer/MapServerRequestHandlers.Legend.cs)
+- All layers/tables, query domains, and the feature child resource: [MapServerRequestHandlers.Resources](../../src/Honua.Protocols.GeoServices/MapServer/MapServerRequestHandlers.Resources.cs)
 - Standards aliases: [OgcClassicRequestHandlers.Wms](../../src/Honua.Server/Features/Protocols/Ogc/Classic/OgcClassicRequestHandlers.Wms.cs), [OgcClassicRequestHandlers.Wmts](../../src/Honua.Server/Features/Protocols/Ogc/Classic/OgcClassicRequestHandlers.Wmts.cs)
 - Integration tests: [MapServerEndpointTests](../../tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/MapServer/MapServerEndpointTests.cs), [MapServerTileEndpointTests](../../tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/MapServer/MapServerTileEndpointTests.cs), [OgcClassicWmsTests](../../tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Classic/OgcClassicWmsTests.cs), [OgcClassicWmtsTests](../../tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Classic/OgcClassicWmtsTests.cs)

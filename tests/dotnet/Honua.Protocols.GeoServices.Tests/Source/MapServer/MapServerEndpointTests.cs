@@ -1212,6 +1212,104 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/allLayersAndTables")]
+    public async Task MapServer_AllLayersAndTables_ReturnsLayerMetadata()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/allLayersAndTables?f=json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        var result = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.AllLayersAndTablesResponse);
+
+        result.Should().NotBeNull();
+        result!.Layers.Should().NotBeNullOrEmpty();
+        result.Tables.Should().NotBeNull();
+
+        var layer = result.Layers!.First();
+        layer.Id.Should().BeGreaterThanOrEqualTo(0);
+        layer.Name.Should().NotBeNullOrWhiteSpace();
+        layer.Fields.Should().NotBeNullOrEmpty();
+        layer.ObjectIdField.Should().NotBeNullOrWhiteSpace();
+        layer.Capabilities.Should().Contain("Query");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/allLayersAndTables")]
+    public async Task MapServer_AllLayersAndTables_WithInvalidIdentifier_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync("/rest/services/%20/MapServer/allLayersAndTables?f=json");
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryDomains)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/queryDomains")]
+    public async Task MapServer_QueryDomains_ReturnsDomainsArray()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/queryDomains?f=json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+        using var document = JsonDocument.Parse(content);
+        document.RootElement.TryGetProperty("domains", out var domains).Should().BeTrue();
+        domains.ValueKind.Should().Be(JsonValueKind.Array);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryDomains)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/queryDomains")]
+    public async Task MapServer_QueryDomains_WithUnknownLayer_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/queryDomains?layers=987654&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetById)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/{layerId}/{featureId}")]
+    public async Task MapServer_FeatureResource_ReturnsSingleFeature()
+    {
+        // Resolve a real object id from the layer first so the feature lookup is deterministic.
+        var idsResponse = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/{WebAppFixture.TestLayerId}/query?where=1%3D1&returnIdsOnly=true&f=json");
+        idsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var idsContent = await idsResponse.Content.ReadAsStringAsync();
+        var idsResult = JsonSerializer.Deserialize(idsContent, FeatureServerJsonContext.Default.QueryResponse);
+        idsResult.Should().NotBeNull();
+        idsResult!.ObjectIds.Should().NotBeNullOrEmpty();
+        var objectId = idsResult.ObjectIds!.First();
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/{WebAppFixture.TestLayerId}/{objectId}?f=json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+        using var document = JsonDocument.Parse(content);
+        document.RootElement.TryGetProperty("feature", out var feature).Should().BeTrue();
+        feature.TryGetProperty("attributes", out var attributes).Should().BeTrue();
+        attributes.ValueKind.Should().Be(JsonValueKind.Object);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetById)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/{layerId}/{featureId}")]
+    public async Task MapServer_FeatureResource_WithUnknownObjectId_ReturnsNotFound()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/{WebAppFixture.TestLayerId}/2147483646?f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
     private Task<HttpResponseMessage> PostTextPlainJsonAsync(string operationPath)
         => _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer{operationPath}",
