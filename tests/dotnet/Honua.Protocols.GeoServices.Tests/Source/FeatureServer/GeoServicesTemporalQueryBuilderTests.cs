@@ -10,40 +10,43 @@ using Honua.TestKit.Constants;
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
 /// <summary>
-/// Unit tests for <see cref="GeoServicesTemporalQueryBuilder"/>, focused on the #1444
-/// contract: a valid <c>time</c> parameter supplied against a layer that is not
-/// time-enabled is IGNORED (returns null) rather than rejected, matching Esri behavior.
+/// Unit tests for <see cref="GeoServicesTemporalQueryBuilder"/>. Per honua's documented
+/// temporal-animation contract (docs/gis/temporal-animation-api.md), a non-empty
+/// <c>time</c> parameter supplied against a layer that is not time-enabled is REJECTED
+/// with an <see cref="ArgumentException"/> (HTTP 400) — an intentional, documented
+/// divergence from Esri's lenient "ignore time" behavior (issue #1444).
 /// </summary>
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class GeoServicesTemporalQueryBuilderTests
 {
     [UnitTest]
     [Operation(Operations.Query)]
-    public void BuildTemporalExpression_NonTimeEnabledLayer_IgnoresTimeAndReturnsNull()
+    public void BuildTemporalExpression_NonTimeEnabledLayer_RejectsTimeWithArgumentException()
     {
-        // Regression for #1444: a non-time-enabled layer (no temporal configuration) must
-        // ignore a valid time filter instead of throwing (which surfaced as a 400).
+        // Per honua's documented temporal-animation contract (#1444), a non-empty time=
+        // filter against a non-time-enabled layer is rejected with an ArgumentException
+        // (mapped to HTTP 400) rather than silently ignored.
         var resource = BuildNonTemporalResource();
         var time = ((DateTimeOffset)new DateTime(2024, 6, 15, 0, 0, 0, DateTimeKind.Utc))
             .ToUnixTimeMilliseconds()
             .ToString(System.Globalization.CultureInfo.InvariantCulture);
 
-        var expression = GeoServicesTemporalQueryBuilder.BuildTemporalExpression(
+        var act = () => GeoServicesTemporalQueryBuilder.BuildTemporalExpression(
             time, timeRelation: null, resource);
 
-        expression.Should().BeNull();
+        act.Should().Throw<ArgumentException>();
     }
 
     [UnitTest]
     [Operation(Operations.Query)]
-    public void BuildTemporalExpression_NonTimeEnabledLayer_TimeRange_ReturnsNull()
+    public void BuildTemporalExpression_NonTimeEnabledLayer_TimeRange_RejectsWithArgumentException()
     {
         var resource = BuildNonTemporalResource();
 
-        var expression = GeoServicesTemporalQueryBuilder.BuildTemporalExpression(
+        var act = () => GeoServicesTemporalQueryBuilder.BuildTemporalExpression(
             "0,86400000", timeRelation: "esriTimeRelationOverlaps", resource);
 
-        expression.Should().BeNull();
+        act.Should().Throw<ArgumentException>();
     }
 
     [UnitTest]
