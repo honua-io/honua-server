@@ -81,7 +81,8 @@ Use this map when deciding where code, issues, PRs, and cross-repo coordination 
 |---|---|---|
 | `honua-server` | Public | Server runtime, protocol adapters, canonical pipelines, API governance, conformance/test infrastructure. |
 | `Honua.Server` | Private | Archived legacy server/reference implementation only. It is not an active development target; do not open issues or PRs there and do not copy code from it. Use it only to understand historical behavior. |
-| `honua-server-admin` | Public | Web administration UI for Honua Server, built with Blazor WebAssembly and MudBlazor. |
+| `honua-server-admin` | Public | **Archived/dead — not an active target.** Former Blazor WebAssembly + MudBlazor admin UI. All admin/console UI work has moved to `honua-console`. Do not open issues/PRs or route new work here. |
+| `honua-console` | Public | **Active admin/console UI home.** Hosts the Studio map builder and the styleId-keyed style editor (dual-mode: MapLibre/Maputnik + Esri-renderer `drawingInfo` authoring over `/ogc/styles`; ADR-0007/ADR-0048). |
 | `honua-sdk-js` | Public | JavaScript/TypeScript SDKs for Honua, including the MCP server package. |
 | `honua-sdk-dotnet` | Public | .NET SDKs for Honua. |
 | `honua-sdk-python` | Public | Python SDK for Honua. |

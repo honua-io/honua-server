@@ -14,6 +14,14 @@ namespace Honua.Server.Features.Admin;
 /// <summary>
 /// Admin endpoints for layer style metadata management.
 /// </summary>
+/// <remarks>
+/// The <c>…/layers/{layerId}/style</c> GET/PUT routes are <b>deprecated</b>
+/// layerId-keyed aliases. The canonical style identifier is <c>styleId</c> via
+/// the OGC API – Styles surface (<c>GET/PUT /ogc/styles/{styleId}</c>,
+/// ADR-0048). These admin aliases remain working for back-compat and emit
+/// advisory <c>Deprecation</c>/<c>Sunset</c> response headers; per ADR-0048
+/// they are retired only after the cross-repo styleId rollout (Phase 3).
+/// </remarks>
 internal static class AdminLayerStyleEndpoints
 {
     /// <summary>
@@ -29,12 +37,14 @@ internal static class AdminLayerStyleEndpoints
 
         _ = group.MapGet("/{layerId:int}/style", HandleGetLayerStyle)
             .WithName("GetAdminLayerStyle")
-            .WithSummary("Get layer style metadata")
+            .WithSummary("[Deprecated] Get layer style metadata by layerId")
+            .WithDescription("DEPRECATED layerId-keyed alias. Use the canonical styleId surface GET /ogc/styles/{styleId} (ADR-0048). Kept working for back-compat; emits advisory Deprecation/Sunset headers.")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
         _ = group.MapPut("/{layerId:int}/style", HandleUpdateLayerStyle)
             .WithName("UpdateAdminLayerStyle")
-            .WithSummary("Update layer style metadata")
+            .WithSummary("[Deprecated] Update layer style metadata by layerId")
+            .WithDescription("DEPRECATED layerId-keyed alias. Use the canonical styleId surface PUT /ogc/styles/{styleId} (ADR-0048). Kept working for back-compat; emits advisory Deprecation/Sunset headers.")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
     }
 
@@ -44,6 +54,9 @@ internal static class AdminLayerStyleEndpoints
         [FromServices] ILayerStyleService styleService,
         CancellationToken cancellationToken)
     {
+        // Advisory deprecation signaling for the layerId-keyed admin alias.
+        StyleDeprecationHeaders.Apply(context, "/ogc/styles");
+
         if (layerId < 0)
         {
             return ProblemDetailsHelpers.CreateAdminProblem(
@@ -84,6 +97,9 @@ internal static class AdminLayerStyleEndpoints
         [FromServices] OutputCacheInvalidationService cacheInvalidator,
         CancellationToken cancellationToken)
     {
+        // Advisory deprecation signaling for the layerId-keyed admin alias.
+        StyleDeprecationHeaders.Apply(context, "/ogc/styles");
+
         if (layerId < 0)
         {
             return ProblemDetailsHelpers.CreateAdminProblem(
