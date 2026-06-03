@@ -698,6 +698,101 @@ public sealed class GeocodingEndpointTests
             $"Expected error status code but got {response.StatusCode}");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
+    [Endpoint("POST /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
+    public async Task FindAddressCandidates_WithSearchExtent_PassesSearchBoundsToProvider()
+    {
+        var fakeProvider = new FakeGeocodeProvider(DefaultCapabilities);
+        using var factory = CreateFactory(fakeProvider);
+        using var client = factory.CreateClient();
+
+        // GET path accepts the Esri JSON envelope form of searchExtent.
+        var envelope = """{"xmin":-90.0,"ymin":39.0,"xmax":-89.0,"ymax":40.0,"spatialReference":{"wkid":4326}}""";
+        using var getResponse = await client.GetAsync(
+            $"/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=Springfield&searchExtent={Uri.EscapeDataString(envelope)}&f=json");
+
+        Assert.Equal(HttpStatusCode.OK, getResponse.StatusCode);
+        Assert.NotNull(fakeProvider.LastForwardRequest);
+        Assert.NotNull(fakeProvider.LastForwardRequest!.SearchBounds);
+        Assert.Equal(-90.0, fakeProvider.LastForwardRequest.SearchBounds!.XMin, precision: 5);
+        Assert.Equal(39.0, fakeProvider.LastForwardRequest.SearchBounds.YMin, precision: 5);
+        Assert.Equal(-89.0, fakeProvider.LastForwardRequest.SearchBounds.XMax, precision: 5);
+        Assert.Equal(40.0, fakeProvider.LastForwardRequest.SearchBounds.YMax, precision: 5);
+
+        // POST path accepts the comma-delimited "xmin,ymin,xmax,ymax" form.
+        var postContent = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["singleLine"] = "Springfield",
+            ["searchExtent"] = "-100.0,30.0,-99.0,31.0",
+            ["f"] = "json"
+        });
+        using var postResponse = await client.PostAsync("/rest/services/World/GeocodeServer/findAddressCandidates", postContent);
+
+        Assert.Equal(HttpStatusCode.OK, postResponse.StatusCode);
+        Assert.NotNull(fakeProvider.LastForwardRequest!.SearchBounds);
+        Assert.Equal(-100.0, fakeProvider.LastForwardRequest.SearchBounds!.XMin, precision: 5);
+        Assert.Equal(31.0, fakeProvider.LastForwardRequest.SearchBounds.YMax, precision: 5);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
+    public async Task FindAddressCandidates_WithInvalidSearchExtent_Returns400()
+    {
+        using var factory = CreateDefaultFactory();
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync(
+            "/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=test&searchExtent=not-an-extent&f=json");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("searchExtent", body, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/reverseGeocode")]
+    public async Task ReverseGeocode_WithLangCode_PassesLanguageCodeToProvider()
+    {
+        var fakeProvider = new FakeGeocodeProvider(DefaultCapabilities);
+        using var factory = CreateFactory(fakeProvider);
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync(
+            "/rest/services/World/GeocodeServer/reverseGeocode?location=2.3522,48.8566&langCode=fr&f=json");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.NotNull(fakeProvider.LastReverseRequest);
+        Assert.Equal("fr", fakeProvider.LastReverseRequest!.LanguageCode);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/suggest")]
+    [Endpoint("POST /rest/services/{locatorName}/GeocodeServer/suggest")]
+    public async Task Suggest_WithSearchExtentAndLocation_PassesBoundsAndBiasToProvider()
+    {
+        var fakeProvider = new FakeGeocodeProvider(DefaultCapabilities);
+        using var factory = CreateFactory(fakeProvider);
+        using var client = factory.CreateClient();
+
+        var envelope = """{"xmin":-1.0,"ymin":50.0,"xmax":1.0,"ymax":52.0}""";
+        using var response = await client.GetAsync(
+            $"/rest/services/World/GeocodeServer/suggest?text=Vic&location=-0.12,51.5&searchExtent={Uri.EscapeDataString(envelope)}&f=json");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.NotNull(fakeProvider.LastSuggestRequest);
+        Assert.NotNull(fakeProvider.LastSuggestRequest!.SearchBounds);
+        Assert.Equal(-1.0, fakeProvider.LastSuggestRequest.SearchBounds!.XMin, precision: 5);
+        Assert.Equal(52.0, fakeProvider.LastSuggestRequest.SearchBounds.YMax, precision: 5);
+        Assert.NotNull(fakeProvider.LastSuggestRequest.BiasLocation);
+        Assert.Equal(-0.12, fakeProvider.LastSuggestRequest.BiasLocation!.X, precision: 5);
+        Assert.Equal(51.5, fakeProvider.LastSuggestRequest.BiasLocation.Y, precision: 5);
+    }
+
     private static readonly CoreGeocodeProviderCapabilities DefaultCapabilities = new(
         SupportsSuggest: true,
         SupportsBatch: false,
@@ -768,8 +863,18 @@ public sealed class GeocodingEndpointTests
 
         public CoreGeocodeProviderCapabilities Capabilities => capabilities;
 
+        // Captured request inputs so adapter parameter wiring (searchExtent/location/langCode)
+        // can be asserted without depending on a live upstream geocoder.
+        public CoreForwardGeocodeRequest? LastForwardRequest { get; private set; }
+
+        public CoreReverseGeocodeRequest? LastReverseRequest { get; private set; }
+
+        public CoreSuggestGeocodeRequest? LastSuggestRequest { get; private set; }
+
         public Task<IReadOnlyList<CoreGeocodeCandidate>> ForwardGeocodeAsync(CoreForwardGeocodeRequest request, CancellationToken cancellationToken)
         {
+            LastForwardRequest = request;
+
             var candidate = new CoreGeocodeCandidate(
                 Address: "1600 Pennsylvania Ave NW",
                 X: -77.03655,
@@ -787,6 +892,8 @@ public sealed class GeocodingEndpointTests
 
         public Task<CoreReverseGeocodeMatch?> ReverseGeocodeAsync(CoreReverseGeocodeRequest request, CancellationToken cancellationToken)
         {
+            LastReverseRequest = request;
+
             var match = new CoreReverseGeocodeMatch(
                 Address: "1600 Pennsylvania Ave NW",
                 X: request.X,
@@ -803,6 +910,8 @@ public sealed class GeocodingEndpointTests
 
         public Task<IReadOnlyList<CoreGeocodeSuggestion>> SuggestAsync(CoreSuggestGeocodeRequest request, CancellationToken cancellationToken)
         {
+            LastSuggestRequest = request;
+
             var suggestion = new CoreGeocodeSuggestion("Honua HQ", "fake-suggest-1", false);
             return Task.FromResult<IReadOnlyList<CoreGeocodeSuggestion>>([suggestion]);
         }
