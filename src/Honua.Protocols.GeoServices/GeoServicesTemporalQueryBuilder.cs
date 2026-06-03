@@ -38,6 +38,8 @@ internal static class GeoServicesTemporalQueryBuilder
     /// canonical resource. The resource must be configured as opt-in time-aware
     /// (start-time field declared on the temporal extension and resolving to a
     /// date/datetime schema field) before a non-empty time= filter is honored.
+    /// When the resource is not time-enabled the time= filter is IGNORED and null
+    /// is returned (Esri ignores time on non-time-aware layers rather than erroring).
     /// The <c>time=null,null</c> no-op form returns null without throwing.
     /// </summary>
     internal static FilterExpression? BuildTemporalExpression(
@@ -71,8 +73,11 @@ internal static class GeoServicesTemporalQueryBuilder
 
         if (!TemporalExtentHelpers.TryResolveOptInTemporalFieldsV2(resource, out var selection))
         {
-            throw new ArgumentException(
-                $"Resource '{resource.Metadata.Name}' is not configured as time-aware.");
+            // Esri behavior: a time= parameter supplied against a layer that is not
+            // time-enabled (no timeInfo / no opt-in temporal fields) is IGNORED rather
+            // than rejected. Return null so the query proceeds with no temporal predicate
+            // instead of surfacing a 400 "Invalid time parameter".
+            return null;
         }
 
         var startField = FindV2Field(resource, selection.StartFieldName)

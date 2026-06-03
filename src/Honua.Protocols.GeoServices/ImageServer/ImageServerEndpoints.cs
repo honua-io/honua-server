@@ -259,6 +259,24 @@ internal static class ImageServerEndpoints
             .Produces(400)
             .Produces(404);
 
+        // Slices endpoint - enumerates the discrete multidimensional slices
+        group.MapGet("/slices", GetSlices)
+            .WithDisplayName("Get Multidimensional Slices (GET)")
+            .WithName("ImageServerSlicesGet")
+            .WithSummary("Get the discrete multidimensional slices")
+            .WithDescription("Returns the Esri slices document for a multidimensional raster; returns an empty slices array when the layer is not multidimensional or its dimension values are not enumerable")
+            .Produces<SlicesResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+        group.MapPost("/slices", GetSlicesPost)
+            .WithDisplayName("Get Multidimensional Slices (POST)")
+            .WithName("ImageServerSlicesPost")
+            .WithSummary("Get the discrete multidimensional slices via POST")
+            .WithDescription("POST equivalent of the ArcGIS ImageServer slices endpoint")
+            .Produces<SlicesResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+
         // Read-only raster metadata child resources: statistics, histograms,
         // rasterAttributeTable, rasterFunctionInfos. GET + POST mirrors are provided
         // because ArcGIS SDK clients hydrate several of these resources via POST.
@@ -508,6 +526,21 @@ internal static class ImageServerEndpoints
             .Produces(400)
             .Produces(404);
 
+        serviceGroup.MapGet("/slices", GetSlicesByService)
+            .WithDisplayName("Get Multidimensional Slices by Service (GET)")
+            .WithName("ImageServerSlicesGetByService")
+            .WithSummary("Get the discrete multidimensional slices")
+            .Produces<SlicesResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+        serviceGroup.MapPost("/slices", GetSlicesPostByService)
+            .WithDisplayName("Get Multidimensional Slices by Service (POST)")
+            .WithName("ImageServerSlicesPostByService")
+            .WithSummary("Get the discrete multidimensional slices via POST")
+            .Produces<SlicesResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+
         serviceGroup.MapGet("/statistics", GetStatisticsResourceByService)
             .WithDisplayName("Get Raster Statistics by Service")
             .WithName("GetImageServerStatisticsByService")
@@ -668,6 +701,72 @@ internal static class ImageServerEndpoints
         }
 
         return await GetMultidimensionalInfoPost(resolution.LayerId, context, handler, cancellationToken);
+    }
+
+    /// <summary>
+    /// Get the Esri slices document (discrete multidimensional slices) for a layer.
+    /// </summary>
+    private static async Task<IResult> GetSlices(
+        int id,
+        string? f,
+        HttpContext context,
+        ImageServerSlicesHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        if (!IsSupportedJsonResponseFormat(f))
+        {
+            return CreateUnsupportedJsonFormatResult(context);
+        }
+
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        if (layerError is not null)
+        {
+            return layerError;
+        }
+
+        return await handler.GetSlicesAsync(context, id, cancellationToken);
+    }
+
+    private static async Task<IResult> GetSlicesByService(
+        string serviceId,
+        string? f,
+        HttpContext context,
+        ImageServerSlicesHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        return resolution.ErrorResult ?? await GetSlices(resolution.LayerId, f, context, handler, cancellationToken);
+    }
+
+    private static async Task<IResult> GetSlicesPost(
+        int id,
+        HttpContext context,
+        ImageServerSlicesHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var bodyValues = await ReadPostValuesAsync(context, cancellationToken);
+        if (bodyValues.Error != null)
+        {
+            return bodyValues.Error;
+        }
+
+        var merged = MergeQueryAndBodyValues(context, bodyValues.Values!);
+        return await GetSlices(id, GetString(merged, "f"), context, handler, cancellationToken);
+    }
+
+    private static async Task<IResult> GetSlicesPostByService(
+        string serviceId,
+        HttpContext context,
+        ImageServerSlicesHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        if (resolution.ErrorResult is not null)
+        {
+            return resolution.ErrorResult;
+        }
+
+        return await GetSlicesPost(resolution.LayerId, context, handler, cancellationToken);
     }
 
     /// <summary>

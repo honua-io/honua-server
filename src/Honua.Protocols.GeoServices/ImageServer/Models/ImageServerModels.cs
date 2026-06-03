@@ -360,6 +360,68 @@ public sealed class MultidimensionalInfoResponse
 }
 
 /// <summary>
+/// Single dimension constraint within a slice's multidimensional definition,
+/// following the Esri <c>slices</c> contract. Pins a variable's dimension to one or
+/// more coordinate values that identify the slice.
+/// </summary>
+public sealed class ImageServerSliceDimension
+{
+    /// <summary>
+    /// Variable the slice belongs to (e.g. "temperature").
+    /// </summary>
+    [JsonPropertyName("variableName")]
+    public required string VariableName { get; init; }
+
+    /// <summary>
+    /// Dimension being pinned (e.g. "StdTime", "StdZ").
+    /// </summary>
+    [JsonPropertyName("dimensionName")]
+    public required string DimensionName { get; init; }
+
+    /// <summary>
+    /// Coordinate values that identify this slice along the dimension. Time
+    /// dimensions are expressed in milliseconds since the Unix epoch.
+    /// </summary>
+    [JsonPropertyName("values")]
+    public double[] Values { get; init; } = [];
+}
+
+/// <summary>
+/// Single slice of a multidimensional raster: a unique combination of variable and
+/// dimension coordinate values, following the Esri ImageServer <c>slices</c> contract.
+/// </summary>
+public sealed class ImageServerSlice
+{
+    /// <summary>
+    /// Stable, zero-based identifier of the slice within the response.
+    /// </summary>
+    [JsonPropertyName("sliceId")]
+    public long SliceId { get; init; }
+
+    /// <summary>
+    /// The dimension constraints that uniquely identify this slice.
+    /// </summary>
+    [JsonPropertyName("multidimensionalDefinition")]
+    public ImageServerSliceDimension[] MultidimensionalDefinition { get; init; } = [];
+}
+
+/// <summary>
+/// Top-level response for the ImageServer <c>slices</c> operation. Carries the
+/// enumerated multidimensional slices under the <c>slices</c> key, matching the
+/// ArcGIS REST contract. The array is empty when the layer is not multidimensional
+/// or its dimension coordinate values are not enumerable.
+/// </summary>
+public sealed class SlicesResponse
+{
+    /// <summary>
+    /// The enumerated multidimensional slices. Always present; empty when there are
+    /// no enumerable slices for the layer.
+    /// </summary>
+    [JsonPropertyName("slices")]
+    public ImageServerSlice[] Slices { get; init; } = [];
+}
+
+/// <summary>
 /// Spatial reference information.
 /// </summary>
 public sealed class SpatialReference
