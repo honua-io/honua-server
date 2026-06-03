@@ -143,11 +143,17 @@ internal sealed class GeocodingHandler(
                 return StandardErrorHelpers.CreateBadRequest(context, $"Geocoding provider '{requestedProviderName}' not found.");
             }
 
+            if (!TryParseSearchExtent(GetValue(values, "searchExtent"), out var searchBounds, out var searchExtentError))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, searchExtentError ?? "Invalid searchExtent parameter.");
+            }
+
             var providerRequest = new Core.Features.Geocoding.Domain.ForwardGeocodeRequest(
                 Query: query,
                 MaxResults: maxLocations,
                 SpatialReferenceWkid: outSrid,
-                CountryCodes: GetValue(values, "countryCodes") ?? GetValue(values, "countryCode"));
+                CountryCodes: GetValue(values, "countryCodes") ?? GetValue(values, "countryCode"),
+                SearchBounds: searchBounds);
 
             var stopwatch = Stopwatch.StartNew();
             var result = await _coordinatorService.ForwardGeocodeAsync(providerRequest, providerName, cancellationToken).ConfigureAwait(false);
@@ -249,7 +255,11 @@ internal sealed class GeocodingHandler(
                 return StandardErrorHelpers.CreateBadRequest(context, $"Geocoding provider '{requestedProviderName}' not found.");
             }
 
-            var providerRequest = new Core.Features.Geocoding.Domain.ReverseGeocodeRequest(x, y, outSrid);
+            var langCode = GetValue(values, "langCode");
+            var providerRequest = new Core.Features.Geocoding.Domain.ReverseGeocodeRequest(x, y, outSrid)
+            {
+                LanguageCode = string.IsNullOrWhiteSpace(langCode) ? null : langCode.Trim()
+            };
 
             var stopwatch = Stopwatch.StartNew();
             var result = await _coordinatorService.ReverseGeocodeAsync(providerRequest, providerName, cancellationToken).ConfigureAwait(false);
@@ -360,10 +370,33 @@ internal sealed class GeocodingHandler(
                     "Suggest is not supported by the configured geocode provider.");
             }
 
+            if (!TryParseSearchExtent(GetValue(values, "searchExtent"), out var suggestBounds, out var suggestExtentError))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, suggestExtentError ?? "Invalid searchExtent parameter.");
+            }
+
+            Core.Features.Geocoding.Domain.GeocodePoint? biasLocation = null;
+            var rawLocation = GetValue(values, "location");
+            if (!string.IsNullOrWhiteSpace(rawLocation))
+            {
+                if (!TryParseLocation(rawLocation, out var biasX, out var biasY))
+                {
+                    return StandardErrorHelpers.CreateBadRequest(
+                        context,
+                        "location must be either 'x,y' or JSON {\"x\":...,\"y\":...}.");
+                }
+
+                biasLocation = new Core.Features.Geocoding.Domain.GeocodePoint(biasX, biasY, _options.DefaultSpatialReferenceWkid);
+            }
+
             var providerRequest = new Core.Features.Geocoding.Domain.SuggestGeocodeRequest(
                 Text: text.Trim(),
                 MaxResults: maxSuggestions,
-                CountryCodes: GetValue(values, "countryCodes") ?? GetValue(values, "countryCode"));
+                CountryCodes: GetValue(values, "countryCodes") ?? GetValue(values, "countryCode"))
+            {
+                SearchBounds = suggestBounds,
+                BiasLocation = biasLocation
+            };
 
             var stopwatch = Stopwatch.StartNew();
 
@@ -862,6 +895,90 @@ internal sealed class GeocodingHandler(
 
         wkid = 0;
         return false;
+    }
+
+    private bool TryParseSearchExtent(
+        string? rawExtent,
+        out Core.Features.Geocoding.Domain.GeocodeBounds? bounds,
+        out string? error)
+    {
+        bounds = null;
+        error = null;
+
+        if (string.IsNullOrWhiteSpace(rawExtent))
+        {
+            return true;
+        }
+
+        var trimmed = rawExtent.Trim();
+
+        double xmin, ymin, xmax, ymax;
+        var extentWkid = _options.DefaultSpatialReferenceWkid;
+
+        if (trimmed.StartsWith('{'))
+        {
+            try
+            {
+                using var document = JsonDocument.Parse(trimmed);
+                var root = document.RootElement;
+
+                if (!TryReadCoordinate(root, "xmin", out xmin) ||
+                    !TryReadCoordinate(root, "ymin", out ymin) ||
+                    !TryReadCoordinate(root, "xmax", out xmax) ||
+                    !TryReadCoordinate(root, "ymax", out ymax))
+                {
+                    error = "searchExtent must contain numeric xmin, ymin, xmax, and ymax values.";
+                    return false;
+                }
+
+                if (root.TryGetProperty("spatialReference", out var sr) && sr.ValueKind == JsonValueKind.Object)
+                {
+                    if (sr.TryGetProperty("wkid", out var wkidElement) && wkidElement.ValueKind == JsonValueKind.Number &&
+                        wkidElement.TryGetInt32(out var parsedWkid))
+                    {
+                        extentWkid = parsedWkid;
+                    }
+                    else if (sr.TryGetProperty("latestWkid", out var latestElement) && latestElement.ValueKind == JsonValueKind.Number &&
+                             latestElement.TryGetInt32(out var parsedLatest))
+                    {
+                        extentWkid = parsedLatest;
+                    }
+                }
+            }
+            catch (JsonException)
+            {
+                error = "searchExtent contains invalid JSON.";
+                return false;
+            }
+        }
+        else
+        {
+            var parts = trimmed.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (parts.Length != 4 ||
+                !double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out xmin) ||
+                !double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out ymin) ||
+                !double.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out xmax) ||
+                !double.TryParse(parts[3], NumberStyles.Float, CultureInfo.InvariantCulture, out ymax))
+            {
+                error = "searchExtent must be 'xmin,ymin,xmax,ymax' or a JSON envelope.";
+                return false;
+            }
+        }
+
+        if (extentWkid != _options.DefaultSpatialReferenceWkid)
+        {
+            error = $"Only searchExtent in spatial reference {_options.DefaultSpatialReferenceWkid} is currently supported.";
+            return false;
+        }
+
+        if (xmin > xmax || ymin > ymax)
+        {
+            error = "searchExtent is invalid: xmin/ymin must not exceed xmax/ymax.";
+            return false;
+        }
+
+        bounds = new Core.Features.Geocoding.Domain.GeocodeBounds(xmin, ymin, xmax, ymax, extentWkid);
+        return true;
     }
 
     private static bool TryParseLocation(string? rawLocation, out double x, out double y)
