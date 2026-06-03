@@ -651,11 +651,14 @@ BEGIN
                     'publicationIds', '[]'::jsonb,
                     -- Name-based service routing (ServicesByName / FindService) is first-wins on
                     -- the lowest service id 'svc-<part>-feature', so the feature service must carry
-                    -- the full protocol union (including Wcs / OGC API Coverages / ImageServer) the
-                    -- way the production publish path does. Otherwise WCS GetCapabilities 404s with
-                    -- OperationNotSupported. Mirrors MetadataV2CompatSnapshotSql. (honua-server#1412.)
-                    'protocols', to_jsonb(ARRAY['FeatureServer', 'MapServer', 'ImageServer', 'OData', 'Grpc', 'OgcFeatures', 'Wfs20', 'Wms', 'Wmts', 'Wcs', 'OGC-API-Maps', 'OGC-API-Tiles', 'OGC-API-Coverages']::text[]),
-                    'enabledProtocols', to_jsonb(ARRAY['FeatureServer', 'MapServer', 'ImageServer', 'OData', 'Grpc', 'OgcFeatures', 'Wfs20', 'Wms', 'Wmts', 'Wcs', 'OGC-API-Maps', 'OGC-API-Tiles', 'OGC-API-Coverages']::text[]),
+                    -- the full protocol union (including Wcs / OGC API Coverages / ImageServer /
+                    -- GPServer) the way the production publish path does (which sets
+                    -- MetadataV2ServiceProtocols.All). Otherwise WCS GetCapabilities 404s with
+                    -- OperationNotSupported and GPServer service/task routes 404 with
+                    -- "GPServer is not enabled". Mirrors MetadataV2CompatSnapshotSql.
+                    -- (honua-server#1412.)
+                    'protocols', to_jsonb(ARRAY['FeatureServer', 'MapServer', 'ImageServer', 'GPServer', 'OData', 'Grpc', 'OgcFeatures', 'Wfs20', 'Wms', 'Wmts', 'Wcs', 'OGC-API-Maps', 'OGC-API-Tiles', 'OGC-API-Coverages']::text[]),
+                    'enabledProtocols', to_jsonb(ARRAY['FeatureServer', 'MapServer', 'ImageServer', 'GPServer', 'OData', 'Grpc', 'OgcFeatures', 'Wfs20', 'Wms', 'Wmts', 'Wcs', 'OGC-API-Maps', 'OGC-API-Tiles', 'OGC-API-Coverages']::text[]),
                     'options', '{}'::jsonb,
                     'accessPolicy', service_access_policy,
                     'status', (SELECT value FROM status_doc),
