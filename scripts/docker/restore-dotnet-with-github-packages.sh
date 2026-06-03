@@ -38,4 +38,30 @@ fi
 # of this wide graph intermittently raced and left a project without its assets
 # file, surfacing later as NETSDK1004 ("Assets file ... not found") in the
 # --no-restore publish that follows.
-dotnet restore "$project" --configfile "$nuget_config" --disable-parallel "$@"
+#
+# Retry the whole `dotnet restore` invocation on failure. NUGET_ENABLE_ENHANCED_HTTP_RETRY
+# above retries transient network/5xx blips *within* a single restore, but it does NOT
+# retry hard auth/availability failures from GitHub Packages — e.g. NU1301 with
+# "Response status code does not indicate success: 401 (Unauthorized)", which GitHub
+# Packages intermittently returns under load even with a valid token. Those need a
+# fresh restore invocation, so we loop with linear backoff. On a warm cache this
+# succeeds on the first try and the loop is a no-op. Tune via env.
+restore_max_attempts="${HONUA_RESTORE_MAX_ATTEMPTS:-5}"
+restore_retry_delay="${HONUA_RESTORE_RETRY_DELAY_SECONDS:-10}"
+
+attempt=1
+while :; do
+  if dotnet restore "$project" --configfile "$nuget_config" --disable-parallel "$@"; then
+    break
+  fi
+
+  if [ "$attempt" -ge "$restore_max_attempts" ]; then
+    echo "dotnet restore failed after ${attempt} attempt(s); giving up." >&2
+    exit 1
+  fi
+
+  delay=$((restore_retry_delay * attempt))
+  echo "dotnet restore failed (attempt ${attempt}/${restore_max_attempts}); retrying in ${delay}s..." >&2
+  sleep "$delay"
+  attempt=$((attempt + 1))
+done
