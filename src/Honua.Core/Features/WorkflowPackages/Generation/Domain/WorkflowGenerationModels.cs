@@ -1,29 +1,35 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json.Serialization;
 using Honua.Core.Features.WorkflowPackages.Domain;
 
 namespace Honua.Core.Features.WorkflowPackages.Generation.Domain;
 
 /// <summary>
 /// Status of a natural-language workflow generation turn. Serialized as kebab-case
-/// string literals over the wire (see the workflow JSON source-gen context).
+/// string literals over the wire (the console matches "generated", "needs-clarification", etc.).
 /// </summary>
 public enum WorkflowGenerationStatus
 {
     /// <summary>A validated graph was produced.</summary>
+    [JsonStringEnumMemberName("generated")]
     Generated,
 
     /// <summary>The request is ambiguous; structured clarifications are returned.</summary>
+    [JsonStringEnumMemberName("needs-clarification")]
     NeedsClarification,
 
     /// <summary>A requested capability is not available on this server.</summary>
+    [JsonStringEnumMemberName("unsupported")]
     Unsupported,
 
     /// <summary>The provider refused the request (for example, off-topic).</summary>
+    [JsonStringEnumMemberName("refused")]
     Refused,
 
     /// <summary>A transport or provider error occurred; the turn is retryable.</summary>
+    [JsonStringEnumMemberName("error")]
     Error
 }
 

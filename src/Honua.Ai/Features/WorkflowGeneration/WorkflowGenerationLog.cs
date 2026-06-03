@@ -34,4 +34,10 @@ internal static partial class WorkflowGenerationLog
         Level = LogLevel.Information,
         Message = "Workflow generation repair attempt {Attempt} (provider={Provider}, failures={FailureCount})")]
     public static partial void RepairAttempt(ILogger logger, int attempt, string provider, int failureCount);
+
+    [LoggerMessage(
+        EventId = 6654,
+        Level = LogLevel.Warning,
+        Message = "Workflow generation graph rejected by the validation gate (provider={Provider}): {Reason}")]
+    public static partial void GenerationRejected(ILogger logger, string provider, string reason);
 }
