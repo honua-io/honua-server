@@ -322,6 +322,8 @@ jobs:
             --cap-drop ALL \
             --security-opt no-new-privileges:true \
             -e HONUA_SKIP_MIGRATIONS=true \
+            -e HONUA_ADMIN_PASSWORD="Security-Nightly-Admin-Pass1!" \
+            -e Security__ConnectionEncryption__MasterKey="security-nightly-master-key-at-least-32-chars" \
             -e ConnectionStrings__DefaultConnection="Host=localhost;Port=5432;Database=honua;Username=honua;Password=honua_password" \
             -p 8080:8080 \
             ${{ env.IMAGE_NAME }}:security-test
