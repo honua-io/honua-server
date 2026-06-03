@@ -139,6 +139,18 @@ internal static partial class FeatureServerEndpoints
             return false;
         }
 
+        if (!TryParseBoolValue(values, "returnCountOnly", false, out var returnCountOnly, out errorMessage))
+        {
+            return false;
+        }
+
+        var orderByFields = GetValueString(values, "orderByFields");
+        if (HasEmptyCommaSeparatedToken(orderByFields))
+        {
+            errorMessage = "orderByFields parameter contains an empty field name";
+            return false;
+        }
+
         if (!TryParseBoolValue(values, "returnZ", false, out var returnZ, out errorMessage))
         {
             return false;
@@ -223,7 +235,9 @@ internal static partial class FeatureServerEndpoints
             SqlFormat = GetValueString(values, "sqlFormat"),
             HistoricMoment = historicMoment,
             ResultOffset = resultOffset,
-            ResultRecordCount = resultRecordCount
+            ResultRecordCount = resultRecordCount,
+            OrderByFields = orderByFields,
+            ReturnCountOnly = returnCountOnly
         };
 
         return true;
