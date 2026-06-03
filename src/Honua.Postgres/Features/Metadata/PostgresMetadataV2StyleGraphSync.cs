@@ -18,6 +18,12 @@ namespace Honua.Postgres.Features.Metadata;
 internal sealed class PostgresMetadataV2StyleGraphSync : IMetadataV2StyleGraphSync
 {
     private readonly IMetadataV2GraphStore _graphStore;
+
+    // Style reconciliation mutates the current graph and saves it, so it loads the base
+    // from the persisted snapshot only — never the V1-catalog compat synthesis that
+    // GetCurrentAsync performs for serving paths (honua-server#1412). Building on a
+    // synthesized-but-unpersisted base would fail SaveAsync's reconciliation.
+    private readonly IMetadataV2GraphWriteBaseReader? _writeBaseReader;
     private readonly IStyleCatalog _styleCatalog;
     private readonly ILogger<PostgresMetadataV2StyleGraphSync> _logger;
 
@@ -27,6 +33,7 @@ internal sealed class PostgresMetadataV2StyleGraphSync : IMetadataV2StyleGraphSy
         ILogger<PostgresMetadataV2StyleGraphSync> logger)
     {
         _graphStore = graphStore ?? throw new ArgumentNullException(nameof(graphStore));
+        _writeBaseReader = graphStore as IMetadataV2GraphWriteBaseReader;
         _styleCatalog = styleCatalog ?? throw new ArgumentNullException(nameof(styleCatalog));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -35,15 +42,33 @@ internal sealed class PostgresMetadataV2StyleGraphSync : IMetadataV2StyleGraphSy
     public async Task SyncLayerStylesAsync(int layerId, CancellationToken cancellationToken = default)
     {
         MetadataV2GraphSnapshot snapshot;
-        try
+        if (_writeBaseReader is not null)
         {
-            snapshot = await _graphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            var persisted = await _writeBaseReader
+                .TryGetPersistedCurrentAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (persisted is null)
+            {
+                // No activated snapshot yet (fresh DB / V1-only catalog); nothing to
+                // reconcile — styles are served straight from the catalog.
+                PostgresMetadataV2StyleGraphSyncLog.NoSnapshot(_logger, layerId);
+                return;
+            }
+
+            snapshot = persisted;
         }
-        catch (Exception ex) when (ex is InvalidOperationException or KeyNotFoundException)
+        else
         {
-            // No activated snapshot yet (fresh DB); nothing to reconcile.
-            PostgresMetadataV2StyleGraphSyncLog.NoSnapshot(_logger, layerId);
-            return;
+            try
+            {
+                snapshot = await _graphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or KeyNotFoundException)
+            {
+                // No activated snapshot yet (fresh DB); nothing to reconcile.
+                PostgresMetadataV2StyleGraphSyncLog.NoSnapshot(_logger, layerId);
+                return;
+            }
         }
 
         var graph = snapshot.Graph;

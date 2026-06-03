@@ -18,7 +18,7 @@ namespace Honua.Postgres.Features.Metadata;
 /// refreshed in the same transaction. <c>metadata_v2_current</c> tracks the active
 /// revision per environment.
 /// </summary>
-internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore
+internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMetadataV2GraphWriteBaseReader
 {
     private readonly IDatabaseConnectionProvider _connectionProvider;
     private readonly string _environment;
@@ -88,6 +88,12 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore
         _cachedCurrent = current;
         return current;
     }
+
+    /// <inheritdoc />
+    public Task<MetadataV2GraphSnapshot?> TryGetPersistedCurrentAsync(CancellationToken cancellationToken = default)
+        // Write/publish base load: only the genuinely-activated snapshot, never the V1
+        // compat synthesis. See IMetadataV2GraphWriteBaseReader for why. (honua-server#1412.)
+        => TryLoadCurrentAsync(cancellationToken);
 
     /// <summary>
     /// Synthesizes a Metadata v2 graph snapshot from the legacy V1 catalog when no
