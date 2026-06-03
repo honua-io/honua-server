@@ -103,13 +103,24 @@ internal static class Wfs20DispatcherEndpoint
     /// </summary>
     internal static IEndpointRouteBuilder MapWfs20DispatcherEndpoint(this IEndpointRouteBuilder endpoints)
     {
-        // Single WFS endpoint that dispatches based on request parameter
+        // Single WFS endpoint that dispatches based on request parameter.
+        //
+        // Opt the WFS endpoint out of output caching. The global base output-cache policy caches
+        // anonymous GET responses, but every WFS data operation (GetFeature, GetPropertyValue, and
+        // the GetFeatureById stored query) must reflect committed WFS-T Insert/Update/Replace/Delete
+        // immediately: the WFS 2.0 ETS transaction tests delete or replace a feature and then read it
+        // back via GetFeatureById, and a cached pre-mutation response makes the feature still appear
+        // present (DeleteTests) or omit the replaced property (ReplaceTests). GetCapabilities is the
+        // only cacheable operation here and is cheap to regenerate from the already-cached catalog,
+        // so disabling caching for the whole dispatcher keeps reads correct without a measurable cost.
+        // Mirrors the WMTS and WCS classic endpoints, which opt out the same way.
         endpoints.MapMethods("/wfs", SupportedHttpMethods, HandleWfsRequest)
             .WithDisplayName("WFS 2.0 Service")
             .WithName("Wfs20Service")
             .WithSummary("OGC Web Feature Service 2.0")
             .WithDescription("Handles all WFS 2.0 operations: GetCapabilities, DescribeFeatureType, GetFeature, GetPropertyValue, Transaction, ListStoredQueries, DescribeStoredQueries, CreateStoredQuery, DropStoredQuery")
             .WithTags("WFS 2.0", "OGC")
+            .CacheOutput(policy => policy.NoCache())
             .Produces<object>(200, "application/xml")
             .Produces<ExceptionReport>(400, "application/xml")
             .Produces(404)
