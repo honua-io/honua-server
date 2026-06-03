@@ -681,6 +681,142 @@ public class ImageServerExportHandlerTests
         context.Response.Headers["Retry-After"].ToString().Should().Be("42");
     }
 
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExportImageAsync_WithBandIds_MapsZeroBasedIndicesToOneBasedBands()
+    {
+        SetupLayerAndRasters();
+        RasterQuery? capturedQuery = null;
+        _rasterStore.ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                capturedQuery = callInfo.ArgAt<RasterQuery>(2);
+                return CreateTestRasterResult();
+            });
+        _temporaryFileService.StoreTemporaryFileAsync(
+            Arg.Any<byte[]>(),
+            Arg.Any<string>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<ClaimsPrincipal?>(),
+            Arg.Any<CancellationToken>())
+            .Returns("/temp/test.png");
+        _rasterStore.GetExtentAsync(1, 100, Arg.Any<CancellationToken>())
+            .Returns(new RasterExtent { XMin = -180, YMin = -90, XMax = 180, YMax = 90, Srid = 4326 });
+
+        var context = CreateImageServerContext();
+        // Esri sends 0-based indices; the store uses 1-based bands.
+        var request = CreateRequest(bandIds: "2,0,1");
+        var result = await _handler.ExportImageAsync(context, 1, request);
+
+        result.Should().BeOfType<JsonHttpResult<ExportImageResponse>>();
+        capturedQuery.Should().NotBeNull();
+        capturedQuery!.Value.Bands.Should().Equal(3, 1, 2);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExportImageAsync_WithInvalidBandIds_ReturnsBadRequest()
+    {
+        SetupLayerAndRasters();
+
+        var context = CreateImageServerContext();
+        var request = CreateRequest(bandIds: "1,foo");
+        var result = await _handler.ExportImageAsync(context, 1, request);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await _rasterStore.DidNotReceive()
+            .ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExportImageAsync_WithValidNoData_AllowsExport()
+    {
+        SetupSuccessfulExport();
+
+        var context = CreateImageServerContext();
+        var request = CreateRequest(noData: "0,0,0", noDataInterpretation: "esriNoDataMatchAll");
+        var result = await _handler.ExportImageAsync(context, 1, request);
+
+        result.Should().BeOfType<JsonHttpResult<ExportImageResponse>>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExportImageAsync_WithInvalidNoData_ReturnsBadRequest()
+    {
+        SetupLayerAndRasters();
+
+        var context = CreateImageServerContext();
+        var request = CreateRequest(noData: "not-a-number");
+        var result = await _handler.ExportImageAsync(context, 1, request);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExportImageAsync_WithInvalidNoDataInterpretation_ReturnsBadRequest()
+    {
+        SetupLayerAndRasters();
+
+        var context = CreateImageServerContext();
+        var request = CreateRequest(noDataInterpretation: "esriNoDataBogus");
+        var result = await _handler.ExportImageAsync(context, 1, request);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExportImageAsync_WithPng24Format_MapsToPngAndReturnsOk()
+    {
+        SetupLayerAndRasters();
+        RasterQuery? capturedQuery = null;
+        _rasterStore.ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                capturedQuery = callInfo.ArgAt<RasterQuery>(2);
+                return CreateTestRasterResult();
+            });
+        _temporaryFileService.StoreTemporaryFileAsync(
+            Arg.Any<byte[]>(),
+            Arg.Any<string>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<ClaimsPrincipal?>(),
+            Arg.Any<CancellationToken>())
+            .Returns("/temp/test.png");
+        _rasterStore.GetExtentAsync(1, 100, Arg.Any<CancellationToken>())
+            .Returns(new RasterExtent { XMin = -180, YMin = -90, XMax = 180, YMax = 90, Srid = 4326 });
+
+        var context = CreateImageServerContext();
+        var request = CreateRequest(format: "png24");
+        var result = await _handler.ExportImageAsync(context, 1, request);
+
+        result.Should().BeOfType<JsonHttpResult<ExportImageResponse>>();
+        capturedQuery.Should().NotBeNull();
+        capturedQuery!.Value.OutputFormat.Should().Be(RasterFormat.PNG);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExportImageAsync_WithGifFormat_ReturnsBadRequest()
+    {
+        SetupLayerAndRasters();
+
+        var context = CreateImageServerContext();
+        var request = CreateRequest(format: "gif");
+        var result = await _handler.ExportImageAsync(context, 1, request);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await _rasterStore.DidNotReceive()
+            .ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>());
+    }
+
     private static DefaultHttpContext CreateImageServerContext()
     {
         var services = new ServiceCollection();
@@ -728,7 +864,10 @@ public class ImageServerExportHandlerTests
         string? responseFormat = null,
         string? pixelType = null,
         string? renderingRule = null,
-        string? mosaicRule = null) => new()
+        string? mosaicRule = null,
+        string? bandIds = null,
+        string? noData = null,
+        string? noDataInterpretation = null) => new()
         {
             Bbox = bbox,
             Size = rawSize ?? (size.HasValue
@@ -744,6 +883,9 @@ public class ImageServerExportHandlerTests
             PixelType = pixelType,
             RenderingRule = renderingRule,
             MosaicRule = mosaicRule,
+            BandIds = bandIds,
+            NoData = noData,
+            NoDataInterpretation = noDataInterpretation ?? "esriNoDataMatchAny",
         };
 
     private static TestMetadataV2GraphProvider BuildGraphWithLayer(int layerIndex)
