@@ -539,6 +539,37 @@ class PostGISFixture:
                     """
                 )
 
+                # Multidimensional coverage catalog (server migration 025). The ImageServer
+                # metadata builder lists registered coverages for the layer; with migrations
+                # skipped the table is absent and the metadata endpoint 500s on 42P01. The
+                # table can be empty - ListByLayerAsync simply returns no coverages.
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS honua.multidim_coverage_catalog (
+                        id                  BIGSERIAL PRIMARY KEY,
+                        layer_id            INTEGER NOT NULL,
+                        name                VARCHAR(255) NOT NULL,
+                        description         TEXT,
+                        format              VARCHAR(50) NOT NULL,
+                        provider            VARCHAR(50) NOT NULL,
+                        bucket              VARCHAR(255) NOT NULL,
+                        object_key          VARCHAR(1024) NOT NULL,
+                        variables           JSONB NOT NULL DEFAULT '[]'::jsonb,
+                        metadata            JSONB,
+                        metadata_scanned_at TIMESTAMPTZ,
+                        created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                        updated_at          TIMESTAMPTZ,
+                        CONSTRAINT uq_multidim_coverage_object UNIQUE (layer_id, provider, bucket, object_key),
+                        CONSTRAINT ck_multidim_coverage_format
+                            CHECK (format IN ('CloudOptimizedHdf5', 'NetCdf4'))
+                    );
+                    """
+                )
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_multidim_coverage_layer "
+                    "ON honua.multidim_coverage_catalog(layer_id);"
+                )
+
                 conn.execute(
                     """
                     CREATE TABLE IF NOT EXISTS honua.raster_data (

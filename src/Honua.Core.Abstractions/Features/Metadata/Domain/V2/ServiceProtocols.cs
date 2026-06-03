@@ -109,4 +109,71 @@ public static class ServiceProtocols
 
         return false;
     }
+
+    /// <summary>
+    /// Indicates whether a publication of <paramref name="publicationType"/> is the canonical
+    /// surface for <paramref name="protocol"/>. Used to disambiguate collection/layer routing
+    /// when a single local identifier is published through several protocol surfaces (for
+    /// example, the same layer index exposed as both an OGC feature collection and an Esri
+    /// image layer). A protocol whose preferred publication types are unknown returns
+    /// <see langword="false"/> so callers fall back to their generic match order.
+    /// </summary>
+    /// <param name="protocol">The protocol identifier the request targets.</param>
+    /// <param name="publicationType">The candidate publication's type.</param>
+    /// <returns><see langword="true"/> when the publication type is the preferred surface for the protocol.</returns>
+    public static bool IsPreferredPublicationType(string? protocol, MetadataV2PublicationType publicationType)
+    {
+        if (string.IsNullOrWhiteSpace(protocol))
+        {
+            return false;
+        }
+
+        if (string.Equals(protocol, OgcFeatures, StringComparison.OrdinalIgnoreCase))
+        {
+            return publicationType == MetadataV2PublicationType.OgcCollection;
+        }
+
+        if (string.Equals(protocol, Stac, StringComparison.OrdinalIgnoreCase))
+        {
+            return publicationType == MetadataV2PublicationType.StacCollection;
+        }
+
+        if (string.Equals(protocol, Wfs20, StringComparison.OrdinalIgnoreCase))
+        {
+            return publicationType == MetadataV2PublicationType.WfsFeatureType;
+        }
+
+        if (string.Equals(protocol, FeatureServer, StringComparison.OrdinalIgnoreCase))
+        {
+            return publicationType == MetadataV2PublicationType.EsriFeatureLayer;
+        }
+
+        if (string.Equals(protocol, MapServer, StringComparison.OrdinalIgnoreCase))
+        {
+            return publicationType == MetadataV2PublicationType.EsriMapLayer;
+        }
+
+        if (string.Equals(protocol, ImageServer, StringComparison.OrdinalIgnoreCase))
+        {
+            return publicationType == MetadataV2PublicationType.EsriImageLayer;
+        }
+
+        if (string.Equals(protocol, OData, StringComparison.OrdinalIgnoreCase))
+        {
+            return publicationType == MetadataV2PublicationType.ODataEntitySet;
+        }
+
+        if (string.Equals(protocol, Wms, StringComparison.OrdinalIgnoreCase))
+        {
+            return publicationType == MetadataV2PublicationType.WmsLayer;
+        }
+
+        if (string.Equals(protocol, Wmts, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(protocol, OgcApiTiles, StringComparison.OrdinalIgnoreCase))
+        {
+            return publicationType == MetadataV2PublicationType.WmtsLayer;
+        }
+
+        return false;
+    }
 }

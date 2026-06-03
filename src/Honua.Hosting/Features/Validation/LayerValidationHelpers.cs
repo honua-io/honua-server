@@ -250,13 +250,23 @@ internal static class LayerValidationHelpers
         // When a protocol is specified, prefer the matching publication so a STAC
         // collection request that shares a serviceLocalId with another protocol's
         // publication (e.g. an Esri Feature Service publication with the same local id)
-        // doesn't get dispatched to the wrong protocol.
+        // doesn't get dispatched to the wrong protocol. Among protocol-enabled candidates,
+        // prefer the one whose publication type is the canonical surface for the protocol
+        // (e.g. an ogc-collection for OGC API Features); a single layer index is commonly
+        // published through several surfaces (feature, map, image, OGC, STAC) and every
+        // service enables every protocol, so without the publication-type preference the
+        // first publication in document order wins — which routes feature reads to the
+        // raster image binding and 500s.
         if (!string.IsNullOrWhiteSpace(requiredProtocol))
         {
-            publication = snapshot.Graph.Publications.FirstOrDefault(p =>
+            var protocolMatches = snapshot.Graph.Publications.Where(p =>
                 MatchesCollectionId(p) &&
                 snapshot.Index.ServicesById.TryGetValue(p.ServiceId, out var s) &&
                 MetadataV2ServiceProtocols.IsProtocolEnabled(s, requiredProtocol));
+            publication = protocolMatches
+                .OrderByDescending(p => MetadataV2ServiceProtocols.IsPreferredPublicationType(requiredProtocol, p.PublicationType))
+                .ThenByDescending(p => p.IsPrimary)
+                .FirstOrDefault();
         }
         publication ??= snapshot.Graph.Publications.FirstOrDefault(MatchesCollectionId);
 
@@ -416,6 +426,7 @@ internal static class LayerValidationHelpers
         var snapshot = await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
 
         MetadataV2Service? chosen = null;
+        var chosenIsPreferredType = false;
         foreach (var pub in snapshot.Graph.Publications)
         {
             if (pub.LayerIndex != layerId) continue;
@@ -427,10 +438,32 @@ internal static class LayerValidationHelpers
                 continue;
             }
 
-            if (chosen is null ||
+            // Prefer the publication whose type is the canonical surface for the protocol
+            // before falling back to the lexicographically earliest service name. Without
+            // this, a layer published through several protocol surfaces resolves to whichever
+            // service sorts first rather than the one actually serving the requested protocol.
+            var candidateIsPreferredType =
+                MetadataV2ServiceProtocols.IsPreferredPublicationType(requiredProtocol, pub.PublicationType);
+
+            if (chosen is null)
+            {
+                chosen = service;
+                chosenIsPreferredType = candidateIsPreferredType;
+                continue;
+            }
+
+            if (candidateIsPreferredType && !chosenIsPreferredType)
+            {
+                chosen = service;
+                chosenIsPreferredType = true;
+                continue;
+            }
+
+            if (candidateIsPreferredType == chosenIsPreferredType &&
                 string.Compare(service.Metadata.Name, chosen.Metadata.Name, StringComparison.OrdinalIgnoreCase) < 0)
             {
                 chosen = service;
+                chosenIsPreferredType = candidateIsPreferredType;
             }
         }
         return chosen?.Metadata.Name;
@@ -478,7 +511,8 @@ internal static class LayerValidationHelpers
                 .Where(p =>
                     snapshot.Index.ServicesById.TryGetValue(p.ServiceId, out var s) &&
                     MetadataV2ServiceProtocols.IsProtocolEnabled(s, requiredProtocol))
-                .OrderByDescending(p => p.IsPrimary)
+                .OrderByDescending(p => MetadataV2ServiceProtocols.IsPreferredPublicationType(requiredProtocol, p.PublicationType))
+                .ThenByDescending(p => p.IsPrimary)
                 .FirstOrDefault();
             if (preferred is not null)
             {
