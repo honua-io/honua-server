@@ -17,7 +17,9 @@ namespace Honua.Core.Queries.Filters;
 /// <see cref="TryGetFieldType"/> returns the field's canonical <see cref="MetadataV2FieldType"/>;
 /// the implementation handles the
 /// well-known synthetic fields (<c>objectid</c>, <c>layerid</c>, <c>geometry</c>,
-/// <c>shape</c>, <c>created_at</c>, <c>updated_at</c>) before consulting the schema.
+/// <c>shape</c>, the audit-timestamp columns <c>created_at</c>/<c>updated_at</c>, and
+/// their reserved canonical aliases <c>created</c>/<c>updated</c>) before consulting
+/// the schema.
 /// </remarks>
 public readonly struct FilterFieldSchema
 {
@@ -68,8 +70,16 @@ public readonly struct FilterFieldSchema
             fieldType = MetadataV2FieldType.Geometry;
             return true;
         }
+        // Physical audit-timestamp columns plus the reserved canonical aliases
+        // ("created"/"updated") that resolve to them. The aliases are how server-side
+        // callers (e.g. the OData $deltatoken delta predicate) reference the system
+        // updated/created columns without colliding with the #1415 contract that a
+        // user-supplied filter on the literal "created_at"/"updated_at" name resolves
+        // through the layer schema.
         if (fieldName.Equals("created_at", StringComparison.OrdinalIgnoreCase) ||
-            fieldName.Equals("updated_at", StringComparison.OrdinalIgnoreCase))
+            fieldName.Equals("updated_at", StringComparison.OrdinalIgnoreCase) ||
+            fieldName.Equals("created", StringComparison.OrdinalIgnoreCase) ||
+            fieldName.Equals("updated", StringComparison.OrdinalIgnoreCase))
         {
             fieldType = MetadataV2FieldType.DateTime;
             return true;
