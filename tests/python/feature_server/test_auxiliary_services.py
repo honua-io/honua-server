@@ -68,7 +68,7 @@ class TestImageServer:
         assert response.status_code == 400
 
     @pytest.mark.integration
-    def test_compute_statistics_histograms_valid_request_returns_not_implemented(
+    def test_compute_statistics_histograms_valid_request_returns_statistics(
         self, http_client: httpx.Client, test_layer_id: int
     ):
         response = http_client.get(
@@ -87,7 +87,14 @@ class TestImageServer:
             },
         )
 
-        assert response.status_code == 501
+        # computeStatisticsHistograms is implemented and returns per-band statistics and
+        # histograms computed from the registered raster for the requested geometry.
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert "statistics" in data
+        assert "histograms" in data
+        assert isinstance(data["statistics"], list)
+        assert isinstance(data["histograms"], list)
 
     @pytest.mark.integration
     def test_compute_class_statistics_valid_request_returns_not_implemented(

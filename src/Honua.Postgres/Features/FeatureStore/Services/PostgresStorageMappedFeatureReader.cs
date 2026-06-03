@@ -770,7 +770,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             var clauses = new List<string>();
             foreach (var clause in query.OrderBy.Value)
             {
-                var column = ResolveColumnExpression(clause.Field);
+                var column = ResolveSortColumnExpression(clause.Field);
                 clauses.Add($"{column} {(clause.Ascending ? "ASC" : "DESC")}");
             }
 
@@ -912,6 +912,48 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         }
 
         return ValidateAndQuoteIdentifier(field.Name);
+    }
+
+    /// <summary>
+    /// Resolves a field reference used in an ORDER BY clause. Scalar fields persisted inside
+    /// the attributes JSONB column are read with the text accessor (<c>-&gt;&gt;</c>), which
+    /// would otherwise sort numerically- and temporally-typed values lexicographically
+    /// (e.g. "10" before "9"). Cast those fields to their declared SQL type so sorting matches
+    /// the field's semantics; text/uuid fields keep the plain text accessor.
+    /// </summary>
+    private string ResolveSortColumnExpression(string fieldName)
+    {
+        var column = ResolveColumnExpression(fieldName);
+
+        // Only attributes-JSONB scalar accessors need a typed cast. The primary key and
+        // physical (non-JSONB) columns are already correctly typed, and geometry columns
+        // are not orderable here.
+        if (string.IsNullOrWhiteSpace(_mapping.AttributesColumn) ||
+            !column.StartsWith('(') ||
+            !column.Contains("->>", StringComparison.Ordinal))
+        {
+            return column;
+        }
+
+        var field = _resource.SchemaFields.FirstOrDefault(candidate =>
+            candidate.Name.Equals(fieldName, StringComparison.OrdinalIgnoreCase));
+        if (field is null)
+        {
+            return column;
+        }
+
+        var sortCast = field.Type switch
+        {
+            MetadataV2FieldType.Integer or MetadataV2FieldType.BigInteger => "::bigint",
+            MetadataV2FieldType.Double or MetadataV2FieldType.Float => "::double precision",
+            MetadataV2FieldType.Boolean => "::boolean",
+            MetadataV2FieldType.DateTime => "::timestamptz",
+            MetadataV2FieldType.Date => "::date",
+            MetadataV2FieldType.Time => "::time",
+            _ => null,
+        };
+
+        return sortCast is null ? column : $"{column}{sortCast}";
     }
 
     private MetadataV2Field ResolveFieldDefinition(string fieldName)
