@@ -140,9 +140,27 @@ internal sealed partial class PostgreSqlLayerPublishingService
     // but the compat/bootstrap compile has not). In that case we start from an
     // empty graph and force the first write (null expectedEtag) instead of 500ing
     // the admin layer-publish path. (honua-server#1341.)
+    //
+    // This deliberately reads only the persisted snapshot via the write-base reader,
+    // NOT GetCurrentAsync. GetCurrentAsync synthesizes a graph from the V1 catalog when
+    // no snapshot is activated (honua-server#1412); building a publish on top of that
+    // synthesized-but-never-persisted base makes SaveAsync's reconciliation fail, so
+    // every AutoPublish import would report "publishing did not complete".
     private async Task<(MetadataV2Graph Graph, string? ExpectedEtag)> LoadCurrentOrEmptyGraphAsync(
         CancellationToken cancellationToken)
     {
+        if (_metadataWriteBaseReader is not null)
+        {
+            var persisted = await _metadataWriteBaseReader
+                .TryGetPersistedCurrentAsync(cancellationToken)
+                .ConfigureAwait(false);
+            return persisted is null
+                ? (new MetadataV2Graph(), null)
+                : (persisted.Graph, persisted.Etag);
+        }
+
+        // Test doubles that do not implement the write-base seam: preserve the legacy
+        // throw-on-missing behavior (start empty + force first write).
         try
         {
             var snapshot = await _metadataGraphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
@@ -163,7 +181,27 @@ internal sealed partial class PostgreSqlLayerPublishingService
             return;
         }
 
-        var snapshot = await _metadataGraphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        // Extent refresh mutates the current graph and saves it, so it must read the
+        // persisted snapshot only (same rationale as LoadCurrentOrEmptyGraphAsync): a
+        // synthesized V1-compat graph is never persisted and would fail SaveAsync.
+        // When no snapshot is activated there is nothing to update — extents are served
+        // straight from the V1 catalog — so skip. (honua-server#1412.)
+        MetadataV2GraphSnapshot? snapshot;
+        if (_metadataWriteBaseReader is not null)
+        {
+            snapshot = await _metadataWriteBaseReader
+                .TryGetPersistedCurrentAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (snapshot is null)
+            {
+                return;
+            }
+        }
+        else
+        {
+            snapshot = await _metadataGraphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        }
+
         var graph = snapshot.Graph;
 
         // Map layer_id -> resource ids (a layer may be published into multiple services).
