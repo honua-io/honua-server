@@ -27,9 +27,23 @@ public static class ServiceCollectionExtensions
     /// Registers the routing subsystem: binds and validates
     /// <see cref="RoutingConfiguration"/> from the <c>Routing</c> section and
     /// registers the routing provider selected by <c>Routing:Provider</c>.
-    /// Defaults to the pgRouting provider; set <c>Routing:Provider=mock</c> to use
-    /// the database-free mock provider.
     /// </summary>
+    /// <remarks>
+    /// Provider selection:
+    /// <list type="bullet">
+    /// <item><c>Routing:Provider=mock</c> — the database-free mock provider.</item>
+    /// <item><c>Routing:Provider=pgrouting</c> — the pgRouting provider, regardless
+    /// of the data provider (operator opt-in).</item>
+    /// <item><c>Routing:Provider=none</c>/<c>unavailable</c> — no routing engine.</item>
+    /// <item>Unset (default) — pgRouting <em>only</em> when the active
+    /// <c>DataSource:Provider</c> is PostgreSQL (or unset, since Postgres is the
+    /// default). On non-Postgres data providers (DuckDB/MySQL/etc.) the pgRouting
+    /// SQL cannot run, so an <see cref="UnavailableRoutingProvider"/> is registered
+    /// instead; the NAServer adapter then returns a clear "not supported" error
+    /// rather than a 500 from executing pgRouting SQL against an incompatible
+    /// database.</item>
+    /// </list>
+    /// </remarks>
     /// <param name="services">Service collection.</param>
     /// <param name="configuration">Application configuration.</param>
     /// <returns>Service collection for chaining.</returns>
@@ -54,12 +68,40 @@ public static class ServiceCollectionExtensions
         {
             services.AddScoped<IRoutingProvider, MockRoutingProvider>();
         }
+        else if (string.Equals(providerName, UnavailableRoutingProvider.ProviderName, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(providerName, "none", StringComparison.OrdinalIgnoreCase))
+        {
+            services.AddScoped<IRoutingProvider, UnavailableRoutingProvider>();
+        }
+        else if (string.Equals(providerName, PgRoutingProvider.ProviderName, StringComparison.OrdinalIgnoreCase))
+        {
+            // Explicit pgRouting opt-in — honored regardless of the data provider.
+            services.AddScoped<IRoutingProvider, PgRoutingProvider>();
+        }
+        else if (UsesPostgresDataProvider(configuration))
+        {
+            // Default on Postgres deployments: pgRouting over the shared connection
+            // substrate (its SQL targets PostGIS + pgRouting in the same database).
+            services.AddScoped<IRoutingProvider, PgRoutingProvider>();
+        }
         else
         {
-            // Default: pgRouting-backed provider over the shared connection substrate.
-            services.AddScoped<IRoutingProvider, PgRoutingProvider>();
+            // Default on non-Postgres data providers: pgRouting SQL cannot run, so
+            // advertise no routing capability and let the adapter respond clearly.
+            services.AddScoped<IRoutingProvider, UnavailableRoutingProvider>();
         }
 
         return services;
+    }
+
+    private static bool UsesPostgresDataProvider(IConfiguration configuration)
+    {
+        // Mirrors the Postgres-only gating used elsewhere (e.g. AddSceneGeneration):
+        // an unset provider defaults to Postgres/PostGIS.
+        var provider = configuration.GetValue<string>("DataSource:Provider");
+        return string.IsNullOrWhiteSpace(provider)
+            || provider.Equals("postgres", StringComparison.OrdinalIgnoreCase)
+            || provider.Equals("postgresql", StringComparison.OrdinalIgnoreCase)
+            || provider.Equals("postgis", StringComparison.OrdinalIgnoreCase);
     }
 }
