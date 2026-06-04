@@ -426,6 +426,7 @@ public static class EndpointRegistry
         new("GET", "/api/v1/admin/migration/runs"),
         new("GET", "/api/v1/admin/migration/runs/{runId}"),
         new("GET", "/api/v1/admin/migration/runs/{runId}/evidence-pack"),
+        new("GET", "/api/v1/admin/migration/runs/{runId}/scorecard"),
         new("POST", "/api/v1/admin/migration/runs/{runId}/cancel"),
 
         // v1 admin import endpoints (OGC WMTS tile cache export #1016 slice 4)
