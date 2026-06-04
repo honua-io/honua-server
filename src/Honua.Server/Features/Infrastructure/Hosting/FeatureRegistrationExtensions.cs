@@ -50,6 +50,7 @@ using Honua.Server.Features.Protocols.Tiles.PMTilesProxy;
 using Honua.Protocols.Ogc.Classic;
 using Honua.Protocols.Ogc.Classic.Wcs20;
 using Honua.Protocols.Scene;
+using Honua.Protocols.Scene.I3s;
 using Honua.Server.Features.Protocols.SpatialAnalytics;
 using Honua.Server.Features.Protocols.Elevation;
 using Honua.Protocols.Stac;
@@ -170,6 +171,7 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapTerrainEndpoints();
         endpoints.MapSceneDiscoveryEndpoints();
         endpoints.MapSceneEndpoints();
+        endpoints.MapI3sSceneServerEndpoints();
         endpoints.MapSceneDatasetEndpoints();
         endpoints.MapElevationEndpoints();
         endpoints.MapSceneAnalysisEndpoints();

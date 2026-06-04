@@ -205,6 +205,53 @@ internal static partial class MapServerEndpoints
             .WithTags("MapServer")
             .CacheOutput("LayerMetadata");
 
+        // FeatureServer-style layer operations exposed on the MapServer surface.
+        // These forward to the existing FeatureServer handlers as-is (the MapServer
+        // route supplies the same {serviceId}/{layerId} route values). Literal
+        // segments ("generateRenderer", "queryRelatedRecords", "queryAttachments")
+        // are matched ahead of the {featureId:long} child resource below.
+        endpoints.MapGet("/rest/services/{serviceId}/MapServer/{layerId:int}/generateRenderer", HandleMapServerGenerateRenderer)
+            .WithDisplayName("Generate MapServer Renderer (GET)")
+            .WithName("MapServerGenerateRenderer")
+            .WithSummary("Generate a renderer for a MapServer layer using GET")
+            .WithDescription("Generates a renderer definition by reusing the FeatureServer generateRenderer handler")
+            .WithTags("MapServer");
+
+        endpoints.MapPost("/rest/services/{serviceId}/MapServer/{layerId:int}/generateRenderer", HandleMapServerGenerateRenderer)
+            .WithDisplayName("Generate MapServer Renderer (POST)")
+            .WithName("MapServerGenerateRendererPost")
+            .WithSummary("Generate a renderer for a MapServer layer using POST")
+            .WithDescription("Generates a renderer definition by reusing the FeatureServer generateRenderer handler")
+            .WithTags("MapServer")
+            .AllowAnonymous();
+
+        endpoints.MapGet("/rest/services/{serviceId}/MapServer/{layerId:int}/queryRelatedRecords", HandleMapServerQueryRelatedRecordsGet)
+            .WithDisplayName("Query MapServer Related Records (GET)")
+            .WithName("MapServerQueryRelatedRecordsGet")
+            .WithSummary("Query related records for a MapServer layer using GET")
+            .WithDescription("Returns related features by reusing the FeatureServer queryRelatedRecords handler")
+            .WithTags("MapServer");
+
+        endpoints.MapPost("/rest/services/{serviceId}/MapServer/{layerId:int}/queryRelatedRecords", HandleMapServerQueryRelatedRecordsPost)
+            .WithDisplayName("Query MapServer Related Records (POST)")
+            .WithName("MapServerQueryRelatedRecordsPost")
+            .WithSummary("Query related records for a MapServer layer using POST")
+            .WithDescription("Returns related features by reusing the FeatureServer queryRelatedRecords handler")
+            .WithTags("MapServer")
+            .AllowAnonymous();
+
+        endpoints.Map("/rest/services/{serviceId}/MapServer/{layerId:int}/queryAttachments", HandleMapServerQueryAttachments)
+            .WithDisplayName("Query MapServer Feature Attachments")
+            .WithName("MapServerQueryAttachments")
+            .WithSummary("Query attachments for a MapServer feature")
+            .WithDescription("Returns attachments by reusing the FeatureServer queryAttachments handler")
+            .WithTags("MapServer", "Attachments")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get, HttpMethods.Post }))
+            // queryAttachments reflects mutable per-feature attachment state; opt out of
+            // output caching so a cached empty result does not shadow a freshly added
+            // attachment (mirrors the FeatureServer queryAttachments cache policy).
+            .CacheOutput(policy => policy.NoCache());
+
         endpoints.MapGet("/rest/services/{serviceId}/MapServer/{layerId:int}/{featureId:long}", HandleFeatureResource)
             .WithDisplayName("Get MapServer Feature")
             .WithName("MapServerFeatureResource")

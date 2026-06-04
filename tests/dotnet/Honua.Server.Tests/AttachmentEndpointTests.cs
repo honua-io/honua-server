@@ -71,6 +71,33 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.QueryAttachments)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryAttachments")]
+    public async Task QueryAttachments_AlwaysEmitsParentGlobalIdKey()
+    {
+        // Regression: the ArcGIS API for Python AttachmentManager.search() reads
+        // group['parentGlobalId'] unconditionally and raises KeyError when the key
+        // is absent. Esri always emits the key (empty string when there is no
+        // global-id column). Assert the raw JSON carries the key on every group,
+        // including groups with no attachments.
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryAttachments?objectIds={TestFeatureId},999");
+
+        response.BeSuccessful();
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+        var groups = document.RootElement.GetProperty("attachmentGroups");
+        groups.GetArrayLength().Should().Be(2);
+        foreach (var group in groups.EnumerateArray())
+        {
+            group.TryGetProperty("parentGlobalId", out var parentGlobalId).Should().BeTrue(
+                "every attachment group must carry the parentGlobalId key");
+            parentGlobalId.ValueKind.Should().Be(JsonValueKind.String);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryAttachments)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryAttachments")]
     public async Task QueryAttachments_WithPost_ReturnsAttachments()
     {

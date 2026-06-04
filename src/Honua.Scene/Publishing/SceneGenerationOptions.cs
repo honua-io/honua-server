@@ -26,7 +26,36 @@ internal sealed class SceneGenerationServerOptions
     /// Hard upper bound on features per generation job. Layers exceeding
     /// this count are rejected with <c>SCENE_FEATURE_LIMIT_EXCEEDED</c>.
     /// </summary>
-    public int MaxFeatureCount { get; set; } = 50_000;
+    /// <remarks>
+    /// Raised from the v1 single-tile 50 000 cap to 1 000 000 now that the
+    /// quadtree LOD pipeline (#1200) partitions large datasets into a tile
+    /// hierarchy instead of one oversized GLB.
+    /// </remarks>
+    public int MaxFeatureCount { get; set; } = 1_000_000;
+
+    /// <summary>
+    /// Feature-count threshold at or above which the generator switches from
+    /// single-tile output to quadtree LOD partitioning (#1200). Datasets below
+    /// the threshold keep the byte-stable single-tile layout.
+    /// </summary>
+    public int LodFeatureThreshold { get; set; } = 50_000;
+
+    /// <summary>
+    /// Maximum number of features a leaf tile may hold before the quadtree
+    /// partitioner subdivides it.
+    /// </summary>
+    public int MaxFeaturesPerTile { get; set; } = 2_000;
+
+    /// <summary>
+    /// Hard cap on quadtree depth for the LOD partitioner.
+    /// </summary>
+    public int MaxLodDepth { get; set; } = 12;
+
+    /// <summary>
+    /// Number of representative features each interior LOD node carries as its
+    /// coarse level of detail.
+    /// </summary>
+    public int InteriorSampleCount { get; set; } = 256;
 
     /// <summary>
     /// Generator label written into the GLB asset block for traceability.

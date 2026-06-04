@@ -263,6 +263,80 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.QueryRelatedRecords)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
+    public async Task QueryRelatedRecords_WithReturnCountOnly_ReturnsCountsWithoutRecords()
+    {
+        // #1396: returnCountOnly returns a per-source-object count instead of the
+        // related-record attributes/geometry.
+        var response = await GetWithRetryAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1,2&relationshipId={TestRelationshipId}&returnCountOnly=true");
+
+        response.Be200Ok();
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var jsonDoc = JsonDocument.Parse(content);
+        var root = jsonDoc.RootElement;
+
+        var groups = root.GetProperty("relatedRecordGroups");
+        groups.ValueKind.Should().Be(JsonValueKind.Array);
+        groups.GetArrayLength().Should().Be(2);
+
+        foreach (var group in groups.EnumerateArray())
+        {
+            group.TryGetProperty("count", out var count).Should().BeTrue(
+                "returnCountOnly groups carry a count");
+            count.GetInt64().Should().BeGreaterThanOrEqualTo(0);
+            group.TryGetProperty("relatedRecords", out _).Should().BeFalse(
+                "returnCountOnly suppresses the per-record payload");
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryRelatedRecords)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
+    public async Task QueryRelatedRecords_WithOrderByFields_ReturnsSortedRecords()
+    {
+        // #1396: orderByFields sorts the related records of each source object.
+        var response = await GetWithRetryAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1&relationshipId={TestRelationshipId}&orderByFields={Uri.EscapeDataString("name DESC")}");
+
+        response.Be200Ok();
+
+        var content = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize<QueryRelatedRecordsResponse>(
+            content, FeatureServerJsonContext.Default.QueryRelatedRecordsResponse);
+
+        queryResponse.Should().NotBeNull();
+        var relatedRecords = queryResponse!.RelatedRecordGroups[0].RelatedRecords;
+
+        if (relatedRecords is { Length: > 1 })
+        {
+            var names = relatedRecords
+                .Select(r => r.Attributes.TryGetValue("name", out var value) ? value?.ToString() : null)
+                .Where(name => name is not null)
+                .ToArray();
+
+            names.Should().BeInDescendingOrder();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryRelatedRecords)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
+    public async Task QueryRelatedRecords_WithUnknownOrderByField_Returns400()
+    {
+        // #1396: orderByFields is validated against the related layer schema.
+        var response = await GetWithRetryAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1&relationshipId={TestRelationshipId}&orderByFields=does_not_exist");
+
+        response.Be400BadRequest();
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("orderByFields");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryRelatedRecords)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
     public async Task QueryRelatedRecords_WithPostRequest_ReturnsRelatedFeatures()
     {
@@ -684,7 +758,41 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
         queryResponse.Should().NotBeNull();
         queryResponse!.RelatedRecordGroups.Should().HaveCount(1);
         queryResponse.RelatedRecordGroups[0].ObjectId.Should().Be(999L);
-        queryResponse.RelatedRecordGroups[0].RelatedRecords.Should().BeNull();
+        // Even for a source object with no related rows, relatedRecords must be an empty
+        // array rather than null/absent.
+        queryResponse.RelatedRecordGroups[0].RelatedRecords.Should().NotBeNull();
+        queryResponse.RelatedRecordGroups[0].RelatedRecords.Should().BeEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryRelatedRecords)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
+    public async Task QueryRelatedRecords_EmptyGroupAlwaysEmitsRelatedRecordsArray()
+    {
+        // Regression: the @arcgis/core JS SDK reads group.relatedRecords.length
+        // unconditionally and throws "Cannot read properties of undefined (reading
+        // 'length')" when the key is absent. Every group (including objectIds with no
+        // related rows) must carry relatedRecords as an array. Mix an object with
+        // related rows (1) and one without (999) and assert the raw JSON.
+        var response = await GetWithRetryAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1,999&relationshipId={TestRelationshipId}");
+
+        response.Be200Ok();
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var jsonDoc = JsonDocument.Parse(content);
+        var groups = jsonDoc.RootElement.GetProperty("relatedRecordGroups");
+        groups.GetArrayLength().Should().Be(2);
+
+        foreach (var group in groups.EnumerateArray())
+        {
+            group.TryGetProperty("relatedRecords", out var relatedRecords).Should().BeTrue(
+                "every group must carry the relatedRecords key so group.relatedRecords.length is safe");
+            relatedRecords.ValueKind.Should().Be(JsonValueKind.Array);
+        }
+
+        var emptyGroup = groups.EnumerateArray().Single(g => g.GetProperty("objectId").GetInt64() == 999L);
+        emptyGroup.GetProperty("relatedRecords").GetArrayLength().Should().Be(0);
     }
 
     #endregion

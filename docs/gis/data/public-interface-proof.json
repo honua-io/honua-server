@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "updatedUtc": "2026-05-25T00:00:00Z",
+  "updatedUtc": "2026-06-03T00:00:00Z",
   "surfaces": [
     {
       "surfaceId": "capability-manifest",
@@ -2746,6 +2746,65 @@
       ]
     },
     {
+      "surfaceId": "i3s-sceneserver",
+      "displayName": "Esri I3S SceneServer serving",
+      "surfaceKind": "http-route-family",
+      "protocol": "I3S",
+      "canonicalIdentifier": "/scenes/{sceneId}/SceneServer + /scenes/{sceneId}/SceneServer/layers/{layerId}",
+      "parentSurfaceId": "scenes-3dtiles",
+      "endpointPrefixes": [],
+      "endpointExactMatches": [],
+      "endpointContains": [
+        "/SceneServer"
+      ],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus I3S SceneServer endpoint integration tests",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "src/Honua.Protocols.Scene/I3s/I3sSceneServerEndpoints.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Protocols.Scene.Tests/Source/I3sSceneServerEndpointTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1202",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "scenario-depth",
+          "proofMechanism": "Read-only I3S SceneServer service descriptor and 3D Object scene-layer descriptor rooted at the scene extent, Enterprise edition gating (sub-Enterprise -> 403), unknown layer id -> 404, missing scene -> 404, and protected-scene access-policy enforcement exercised by endpoint integration tests; per-node geometry/attribute/texture binary streaming is a tracked follow-up (#1202)",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "tests/dotnet/Honua.Protocols.Scene.Tests/Source/I3sSceneServerEndpointTests.cs",
+            "src/Honua.Protocols.Scene/I3s/I3sSceneServiceBuilder.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "planned",
+          "linkedTicket": "#1202",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "scenario-depth",
+          "proofMechanism": "Parse 3dSceneLayer.json (raw and gzip-compressed) out of an .slpk zip package, map a 3D Object / Integrated Mesh layer extent to a spec-valid 3D Tiles tileset.json via the shared TilesetDocumentWriter, and reject unsupported layer types, missing/degenerate extents, non-WGS84 spatial references, and malformed/invalid archives with stable I3sConversionErrorReason codes; full per-node geometry decode (node pages -> glTF/b3dm) is a tracked follow-up (#1268)",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "src/Honua.Scene/Conversion/I3sToTilesetConverter.cs",
+            "src/Honua.Scene/Conversion/I3sSceneLayerReader.cs",
+            "tests/dotnet/Honua.Core.Tests/Features/Scene/Conversion/I3sToTilesetConverterTests.cs",
+            "tests/dotnet/Honua.Core.Tests/Features/Scene/Conversion/I3sSceneLayerReaderTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "planned",
+          "linkedTicket": "#1268",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
       "surfaceId": "scene-dataset-registry-admin",
       "displayName": "Scene dataset registry admin API",
       "surfaceKind": "http-route-family",
@@ -2810,7 +2869,7 @@
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/Features/Admin/SceneGenerationEndpoints.cs",
-            "src/Honua.Server/Features/Infrastructure/Scene/SceneTilesPublishExecutor.cs",
+            "src/Honua.Scene/Publishing/SceneTilesPublishExecutor.cs",
             "src/Honua.Server/Features/Infrastructure/Hosting/FeatureRegistrationExtensions.cs",
             "src/Honua.Server/EndpointRegistry.cs",
             "tests/dotnet/Honua.Server.Tests/Features/Admin/SceneGenerationEndpointsTests.cs"
@@ -3345,6 +3404,141 @@
           "ownerRepo": "honua-server",
           "status": "implemented",
           "linkedTicket": "#801",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
+      "surfaceId": "grpc-scene-service",
+      "displayName": "gRPC SceneService",
+      "surfaceKind": "operation-surface",
+      "protocol": "gRPC",
+      "canonicalIdentifier": "geospatial.v1.SceneService/*",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [
+        "Grpc::geospatial.v1.SceneService/ListScenes",
+        "Grpc::geospatial.v1.SceneService/GetScene"
+      ],
+      "proofs": [
+        {
+          "proofClass": "operation-coverage",
+          "proofMechanism": "OperationRegistry coverage and deployed-method drift checks",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/OperationRegistry.cs",
+            "tests/dotnet/Honua.Architecture.Tests/OperationCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Grpc/SceneGrpcIntegrationTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "contract-governance",
+          "proofMechanism": "Proto wire compatibility gate against the published schema",
+          "executionLane": "repo:honua-io/geospatial-grpc",
+          "evidenceLocations": [
+            "https://github.com/honua-io/geospatial-grpc",
+            "https://github.com/honua-io/geospatial-grpc/blob/main/geospatial/v1/scene_service.proto"
+          ],
+          "ownerRepo": "geospatial-grpc",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
+      "surfaceId": "grpc-tile-service",
+      "displayName": "gRPC TileService",
+      "surfaceKind": "operation-surface",
+      "protocol": "gRPC",
+      "canonicalIdentifier": "geospatial.v1.TileService/*",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [
+        "Grpc::geospatial.v1.TileService/GetTile",
+        "Grpc::geospatial.v1.TileService/StreamTiles"
+      ],
+      "proofs": [
+        {
+          "proofClass": "operation-coverage",
+          "proofMechanism": "OperationRegistry coverage and deployed-method drift checks",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/OperationRegistry.cs",
+            "tests/dotnet/Honua.Architecture.Tests/OperationCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Grpc/SceneGrpcIntegrationTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "contract-governance",
+          "proofMechanism": "Proto wire compatibility gate against the published schema",
+          "executionLane": "repo:honua-io/geospatial-grpc",
+          "evidenceLocations": [
+            "https://github.com/honua-io/geospatial-grpc",
+            "https://github.com/honua-io/geospatial-grpc/blob/main/geospatial/v1/tile_service.proto"
+          ],
+          "ownerRepo": "geospatial-grpc",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
+      "surfaceId": "grpc-elevation-service",
+      "displayName": "gRPC ElevationService",
+      "surfaceKind": "operation-surface",
+      "protocol": "gRPC",
+      "canonicalIdentifier": "geospatial.v1.ElevationService/*",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [
+        "Grpc::geospatial.v1.ElevationService/GetElevation",
+        "Grpc::geospatial.v1.ElevationService/GetElevationProfile"
+      ],
+      "proofs": [
+        {
+          "proofClass": "operation-coverage",
+          "proofMechanism": "OperationRegistry coverage and deployed-method drift checks",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/OperationRegistry.cs",
+            "tests/dotnet/Honua.Architecture.Tests/OperationCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Grpc/SceneGrpcIntegrationTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "contract-governance",
+          "proofMechanism": "Proto wire compatibility gate against the published schema",
+          "executionLane": "repo:honua-io/geospatial-grpc",
+          "evidenceLocations": [
+            "https://github.com/honua-io/geospatial-grpc",
+            "https://github.com/honua-io/geospatial-grpc/blob/main/geospatial/v1/elevation_service.proto"
+          ],
+          "ownerRepo": "geospatial-grpc",
+          "status": "implemented",
+          "linkedTicket": null,
           "versionCaptureRule": null
         }
       ]

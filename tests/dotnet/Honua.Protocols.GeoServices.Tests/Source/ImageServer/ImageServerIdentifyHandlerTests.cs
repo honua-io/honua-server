@@ -151,11 +151,135 @@ public class ImageServerIdentifyHandlerTests
             .Returns(CreateTestRasterInfo());
 
         var context = CreateImageServerContext();
-        var request = CreateRequest("10,20", geometryType: "esriGeometryPolygon");
+        var request = CreateRequest("10,20", geometryType: "esriGeometryPolyline");
         var result = await _handler.IdentifyAsync(context, 1, request);
         await result.ExecuteAsync(context);
 
         context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Identify)]
+    public async Task IdentifyAsync_EnvelopeGeometry_IdentifiesAtCentroid()
+    {
+        // Envelope geometry identifies at the bounding-box centroid; the store is
+        // queried/identified at that representative location.
+        _rasterStore.QueryRastersAsync(default, default, default)
+            .ReturnsForAnyArgs([CreateTestRasterInfo()]);
+        _rasterStore.IdentifyAsync(1, 100, Arg.Any<double>(), Arg.Any<double>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
+            .Returns(new PixelValueResult
+            {
+                X = 5,
+                Y = 5,
+                Srid = 4326,
+                HasData = true,
+                BandValues = new Dictionary<int, object?> { [1] = 42.0 },
+            });
+
+        var context = CreateImageServerContext();
+        var request = CreateRequest(
+            "{\"xmin\":0,\"ymin\":0,\"xmax\":10,\"ymax\":10}",
+            geometryType: "esriGeometryEnvelope");
+        var result = await _handler.IdentifyAsync(context, 1, request);
+
+        result.Should().BeOfType<JsonHttpResult<IdentifyResponse>>();
+        await _rasterStore.Received().IdentifyAsync(
+            1, 100, 5.0, 5.0, Arg.Any<int?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Identify)]
+    public async Task IdentifyAsync_PolygonGeometry_IdentifiesAtCentroid()
+    {
+        _rasterStore.QueryRastersAsync(default, default, default)
+            .ReturnsForAnyArgs([CreateTestRasterInfo()]);
+        _rasterStore.IdentifyAsync(1, 100, Arg.Any<double>(), Arg.Any<double>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
+            .Returns(new PixelValueResult
+            {
+                X = 1,
+                Y = 1,
+                Srid = 4326,
+                HasData = true,
+                BandValues = new Dictionary<int, object?> { [1] = 7.0 },
+            });
+
+        var context = CreateImageServerContext();
+        var request = CreateRequest(
+            "{\"rings\":[[[0,0],[0,2],[2,2],[2,0],[0,0]]]}",
+            geometryType: "esriGeometryPolygon");
+        var result = await _handler.IdentifyAsync(context, 1, request);
+
+        result.Should().BeOfType<JsonHttpResult<IdentifyResponse>>();
+        await _rasterStore.Received().IdentifyAsync(
+            1, 100, 1.0, 1.0, Arg.Any<int?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Identify)]
+    public async Task IdentifyAsync_ReturnCatalogItemsWithReturnGeometry_IncludesFootprint()
+    {
+        SetupSuccessfulIdentify();
+
+        var context = CreateImageServerContext();
+        var request = new IdentifyRequest
+        {
+            Geometry = "10,20",
+            GeometryType = "esriGeometryPoint",
+            ReturnCatalogItems = true,
+            ReturnGeometry = true,
+            F = "json",
+        };
+        var result = await _handler.IdentifyAsync(context, 1, request);
+
+        var jsonResult = result as JsonHttpResult<IdentifyResponse>;
+        jsonResult.Should().NotBeNull();
+        jsonResult!.Value!.CatalogItems.Should().HaveCount(1);
+        jsonResult.Value.CatalogItems![0].Footprint.Should().NotBeNull();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Identify)]
+    public async Task IdentifyAsync_ReturnGeometryFalse_OmitsCatalogItemFootprint()
+    {
+        SetupSuccessfulIdentify();
+
+        var context = CreateImageServerContext();
+        var request = new IdentifyRequest
+        {
+            Geometry = "10,20",
+            GeometryType = "esriGeometryPoint",
+            ReturnCatalogItems = true,
+            ReturnGeometry = false,
+            F = "json",
+        };
+        var result = await _handler.IdentifyAsync(context, 1, request);
+
+        var jsonResult = result as JsonHttpResult<IdentifyResponse>;
+        jsonResult.Should().NotBeNull();
+        jsonResult!.Value!.CatalogItems.Should().HaveCount(1);
+        jsonResult.Value.CatalogItems![0].Footprint.Should().BeNull();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Identify)]
+    public async Task IdentifyAsync_PixelSize_EchoedInProperties()
+    {
+        SetupSuccessfulIdentify();
+
+        var context = CreateImageServerContext();
+        var request = new IdentifyRequest
+        {
+            Geometry = "10,20",
+            GeometryType = "esriGeometryPoint",
+            PixelSize = 30,
+            F = "json",
+        };
+        var result = await _handler.IdentifyAsync(context, 1, request);
+
+        var jsonResult = result as JsonHttpResult<IdentifyResponse>;
+        jsonResult.Should().NotBeNull();
+        jsonResult!.Value!.Properties.Should().ContainKey("PixelSize");
+        jsonResult.Value.Properties!["PixelSize"].Should().Be(30);
     }
 
     [UnitTest]

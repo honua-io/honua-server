@@ -24,6 +24,7 @@
     <ProjectReference Include="..\Honua.Core\Honua.Core.csproj" />
     <ProjectReference Include="..\Honua.Geometry\Honua.Geometry.csproj" />
     <ProjectReference Include="..\Honua.Hosting\Honua.Hosting.csproj" />
+    <ProjectReference Include="..\Honua.Scene\Honua.Scene.csproj" />
   </ItemGroup>
 
   <ItemGroup>

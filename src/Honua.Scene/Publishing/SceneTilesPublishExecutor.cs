@@ -249,23 +249,10 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
                 // the layer has no symbology (legacy white-material output).
                 var perFeatureSymbology = ResolvePerFeatureSymbology(symbology, collected.Features);
 
-                var glb = GeometryTileBuilder.BuildGlb(
-                    collected.Features,
-                    attributeSchemas,
-                    extrusion,
-                    serverOptions.GeneratorTag,
-                    collected.Warnings,
-                    perFeatureSymbology);
-
-                var tileFileName = "tile_0000.glb";
-                await File.WriteAllBytesAsync(
-                    Path.Combine(stagingDirectory, tileFileName),
-                    glb,
-                    cancellationToken).ConfigureAwait(false);
-
                 // Emit the style-metadata contract sidecar and advertise it from
                 // the tileset's extras so the JS client can apply the
-                // attribute-driven 3D Tiles Styling expressions at runtime.
+                // attribute-driven 3D Tiles Styling expressions at runtime. The
+                // sidecar is shared across all tiles in an LOD hierarchy.
                 TilesetStyleReference? styleReference = null;
                 if (symbology is not null)
                 {
@@ -284,19 +271,58 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
                 }
 
                 var geometricError = ComputeGeometricError(bounds, minHeight, maxHeight);
-                var tileset = TilesetDocumentWriter.Build(
-                    bounds,
-                    minHeight,
-                    maxHeight,
-                    geometricError,
-                    tileContentUris: [tileFileName],
-                    serverOptions.GeneratorTag,
-                    styleReference);
-                var tilesetBytes = TilesetDocumentWriter.Serialize(tileset);
-                await File.WriteAllBytesAsync(
-                    Path.Combine(stagingDirectory, "tileset.json"),
-                    tilesetBytes,
-                    cancellationToken).ConfigureAwait(false);
+
+                // Choose single-tile (byte-stable v1 layout) or quadtree LOD
+                // partitioning (#1200). The LOD path activates once the dataset
+                // crosses the configured threshold so existing small/medium
+                // datasets keep their deterministic single-tile output.
+                int tileCount;
+                if (collected.Features.Count >= serverOptions.LodFeatureThreshold)
+                {
+                    tileCount = await WriteLodTilesetAsync(
+                        collected.Features,
+                        attributeSchemas,
+                        extrusion,
+                        symbology,
+                        bounds,
+                        geometricError,
+                        serverOptions,
+                        styleReference,
+                        stagingDirectory,
+                        collected.Warnings,
+                        cancellationToken).ConfigureAwait(false);
+                }
+                else
+                {
+                    var glb = GeometryTileBuilder.BuildGlb(
+                        collected.Features,
+                        attributeSchemas,
+                        extrusion,
+                        serverOptions.GeneratorTag,
+                        collected.Warnings,
+                        perFeatureSymbology);
+
+                    var tileFileName = "tile_0000.glb";
+                    await File.WriteAllBytesAsync(
+                        Path.Combine(stagingDirectory, tileFileName),
+                        glb,
+                        cancellationToken).ConfigureAwait(false);
+
+                    var tileset = TilesetDocumentWriter.Build(
+                        bounds,
+                        minHeight,
+                        maxHeight,
+                        geometricError,
+                        tileContentUris: [tileFileName],
+                        serverOptions.GeneratorTag,
+                        styleReference);
+                    var tilesetBytes = TilesetDocumentWriter.Serialize(tileset);
+                    await File.WriteAllBytesAsync(
+                        Path.Combine(stagingDirectory, "tileset.json"),
+                        tilesetBytes,
+                        cancellationToken).ConfigureAwait(false);
+                    tileCount = 1;
+                }
 
                 var registeredDatasetId = await TryRegisterSceneAsync(
                     sceneId,
@@ -336,7 +362,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
 
                 stopwatch.Stop();
                 activity?.SetTag(HonuaTelemetry.Tags.FeatureCount, collected.Features.Count);
-                activity?.SetTag("honua.scene.tile_count", 1);
+                activity?.SetTag("honua.scene.tile_count", tileCount);
                 activity?.SetTag("honua.scene.id", sceneId);
                 SceneGenerationLog.Completed(_logger, intent.IntentId, sceneId, collected.Features.Count, stopwatch.ElapsedMilliseconds);
 
@@ -348,7 +374,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
                 var summary = new SceneGenerationSummary
                 {
                     FeatureCount = collected.Features.Count,
-                    TileCount = 1,
+                    TileCount = tileCount,
                     BoundingRegionDegrees = bounds,
                     GeometricError = geometricError,
                     Warnings = collected.Warnings.AsReadOnly()
@@ -399,6 +425,139 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
                 $"{SceneGenerationErrorCodes.OptionsInvalid}: Scene generation failed; see server logs for diagnostic detail.",
                 ex);
         }
+    }
+
+    /// <summary>
+    /// Partitions the collected features into a quadtree LOD hierarchy (#1200),
+    /// writes one GLB per content-bearing node, and emits the multi-level
+    /// <c>tileset.json</c> tree. Node content uris are assigned in a stable
+    /// pre-order walk (<c>tile_0000.glb</c>, <c>tile_0001.glb</c>, ...) so the
+    /// output is byte-identical across runs for identical input. Returns the
+    /// number of GLB tiles written.
+    /// </summary>
+    private static async Task<int> WriteLodTilesetAsync(
+        IReadOnlyList<SceneFeature> features,
+        IReadOnlyList<SceneAttributeSchema> attributeSchemas,
+        MetadataV2ExtrusionInfo? extrusion,
+        Symbology3D? symbology,
+        double[] bounds,
+        double rootGeometricError,
+        SceneGenerationServerOptions serverOptions,
+        TilesetStyleReference? styleReference,
+        string stagingDirectory,
+        List<string> warnings,
+        CancellationToken cancellationToken)
+    {
+        var lodOptions = new SceneLodOptions
+        {
+            MaxFeaturesPerTile = serverOptions.MaxFeaturesPerTile,
+            MaxDepth = serverOptions.MaxLodDepth,
+            InteriorSampleCount = serverOptions.InteriorSampleCount
+        };
+
+        var tree = SceneQuadtreePartitioner.Partition(features, bounds, rootGeometricError, lodOptions);
+
+        // Pre-order walk: collect content-bearing nodes in a stable order so
+        // both the uri assignment and the GLB write order are deterministic.
+        var contentNodes = new List<SceneTileNode>(tree.ContentNodeCount);
+        CollectContentNodes(tree.Root, contentNodes);
+
+        var content = new Dictionary<SceneTileNode, SceneTileContent>(contentNodes.Count);
+        for (var i = 0; i < contentNodes.Count; i++)
+        {
+            var node = contentNodes[i];
+            var perFeatureSymbology = ResolvePerFeatureSymbology(symbology, node.Features);
+            var glb = GeometryTileBuilder.BuildGlb(
+                node.Features,
+                attributeSchemas,
+                extrusion,
+                serverOptions.GeneratorTag,
+                warnings,
+                perFeatureSymbology);
+
+            var uri = string.Create(
+                CultureInfo.InvariantCulture,
+                $"tile_{i:0000}.glb");
+            await File.WriteAllBytesAsync(
+                Path.Combine(stagingDirectory, uri),
+                glb,
+                cancellationToken).ConfigureAwait(false);
+
+            var (nodeMin, nodeMax) = ComputeNodeHeightExtent(node.Features, extrusion);
+            content[node] = new SceneTileContent(uri, nodeMin, nodeMax);
+        }
+
+        var tileset = TilesetDocumentWriter.BuildTree(
+            tree,
+            content,
+            serverOptions.GeneratorTag,
+            styleReference);
+        var tilesetBytes = TilesetDocumentWriter.Serialize(tileset);
+        await File.WriteAllBytesAsync(
+            Path.Combine(stagingDirectory, "tileset.json"),
+            tilesetBytes,
+            cancellationToken).ConfigureAwait(false);
+
+        return contentNodes.Count;
+    }
+
+    private static void CollectContentNodes(SceneTileNode node, List<SceneTileNode> sink)
+    {
+        if (node.Features.Count > 0)
+        {
+            sink.Add(node);
+        }
+        foreach (var child in node.Children)
+        {
+            CollectContentNodes(child, sink);
+        }
+    }
+
+    /// <summary>
+    /// Computes a node's vertical extent (meters) for its bounding region.
+    /// Mirrors the extrusion-aware min/max-Z accounting used for the whole
+    /// dataset so each LOD tile's region encloses both prism faces.
+    /// </summary>
+    private static (double Min, double Max) ComputeNodeHeightExtent(
+        IReadOnlyList<SceneFeature> features,
+        MetadataV2ExtrusionInfo? extrusion)
+    {
+        var min = double.PositiveInfinity;
+        var max = double.NegativeInfinity;
+        var sawAny = false;
+
+        foreach (var feature in features)
+        {
+            if (extrusion is not null && feature.Geometry.Kind == SceneGeometryKind.Polygon)
+            {
+                var baseHeight = ResolveExtrusionBase(feature, extrusion);
+                var topZ = baseHeight + ResolveExtrusionMax(feature, extrusion);
+                var fMin = Math.Min(baseHeight, topZ);
+                var fMax = Math.Max(baseHeight, topZ);
+                if (fMax > max) max = fMax;
+                if (fMin < min) min = fMin;
+                sawAny = true;
+                continue;
+            }
+
+            foreach (var vertex in feature.Geometry.Vertices)
+            {
+                if (vertex.Height is { } z)
+                {
+                    sawAny = true;
+                    if (z < min) min = z;
+                    if (z > max) max = z;
+                }
+            }
+        }
+
+        if (!sawAny)
+        {
+            return (0.0, 0.0);
+        }
+        if (double.IsPositiveInfinity(min)) min = 0.0;
+        if (double.IsNegativeInfinity(max)) max = 0.0;
+        return (min, max);
     }
 
     private async Task<CollectedFeatures> CollectFeaturesAsync(
@@ -634,7 +793,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
     /// </summary>
     private static ResolvedSymbology[]? ResolvePerFeatureSymbology(
         Symbology3D? symbology,
-        List<SceneFeature> features)
+        IReadOnlyList<SceneFeature> features)
     {
         if (symbology is null)
         {

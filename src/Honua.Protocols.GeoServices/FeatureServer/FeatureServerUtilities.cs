@@ -63,7 +63,12 @@ internal static partial class FeatureServerEndpoints
         private static readonly string[] EsriMetadataClientParameters =
         [
             "returnFieldGroups",
-            "returnPbfFeatureEncodings"
+            "returnPbfFeatureEncodings",
+            // The ArcGIS Maps SDK for .NET appends returnAdvancedSymbols to the
+            // layer/service metadata GET during ServiceFeatureTable.LoadAsync. #1455
+            // accepted it on the layer-query endpoint but not here, so LoadAsync
+            // returned 400 and the entire .NET FeatureServer client was blocked.
+            "returnAdvancedSymbols"
         ];
 
         public static readonly FrozenSet<string> ServiceMetadata =
@@ -124,6 +129,8 @@ internal static partial class FeatureServerEndpoints
                 "returnGeometry",
                 "resultOffset",
                 "resultRecordCount",
+                "orderByFields",
+                "returnCountOnly",
                 "outSR",
                 "returnZ",
                 "returnM",
@@ -250,7 +257,8 @@ internal static partial class FeatureServerEndpoints
         bool supportsStatistics,
         bool supportsOrderBy,
         bool supportsDistinct,
-        bool supportsPagination)
+        bool supportsPagination,
+        bool supportsQueryAttachments = false)
     {
         return new AdvancedQueryCapabilities
         {
@@ -268,7 +276,14 @@ internal static partial class FeatureServerEndpoints
             // advertise it whenever the layer supports advanced queries so Esri
             // clients (arcgis query_top_features) discover the operation.
             SupportsTopFeaturesQuery = supportsAdvancedQueries,
-            SupportsBatchEditing = supportsAdvancedQueries
+            SupportsBatchEditing = supportsAdvancedQueries,
+            // Mirror the layer-root supportsQueryAttachments flag into the nested
+            // operations/advanced-query-capabilities block. The @arcgis/core JS SDK
+            // gates queryAttachments({where}) on this nested flag, so it must stay
+            // consistent with the root flag (true when the layer has attachments),
+            // otherwise a layer that advertises attachments at the root is refused the
+            // operation because the nested flag reported false (#1453).
+            SupportsQueryAttachments = supportsQueryAttachments
         };
     }
 

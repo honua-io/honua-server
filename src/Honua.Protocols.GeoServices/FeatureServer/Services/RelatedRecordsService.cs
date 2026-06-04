@@ -67,6 +67,14 @@ internal interface IRelatedRecordsService
     /// <param name="maxAllowableOffset">Output geometry simplification tolerance override</param>
     /// <param name="outFields">Fields to include in response</param>
     /// <param name="relatedResource">Canonical metadata for the related layer used to populate field schema</param>
+    /// <param name="orderBy">
+    /// Optional in-memory ordering applied to each origin object's related records
+    /// (Esri <c>orderByFields</c>); null preserves the storage ordering.
+    /// </param>
+    /// <param name="returnCountOnly">
+    /// When <c>true</c>, each group carries only the related-record count (Esri
+    /// <c>returnCountOnly</c>) and the per-record attributes/geometry are omitted.
+    /// </param>
     /// <returns>
     /// Grouped related record results plus the shared field/geometry metadata that
     /// the Esri queryRelatedRecords contract emits at the response top level.
@@ -83,7 +91,9 @@ internal interface IRelatedRecordsService
         int? geometryPrecision,
         double? maxAllowableOffset,
         ImmutableArray<string>? outFields,
-        MetadataV2Resource relatedResource);
+        MetadataV2Resource relatedResource,
+        ImmutableArray<OrderByClause>? orderBy = null,
+        bool returnCountOnly = false);
 }
 
 /// <summary>
@@ -131,6 +141,9 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
         int relatedStorageLayerId,
         SqlFragment? sqlFilter)
     {
+        // returnCountOnly reports the total number of matching related records per
+        // source object, so pagination (resultRecordCount/resultOffset) must not be
+        // applied — otherwise the count would reflect a single page, not the total.
         var query = RelatedQuery.ForObjects(
             objectIds,
             relatedStorageLayerId,
@@ -139,8 +152,8 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
         {
             Where = queryParams.Where,
             SqlFilter = sqlFilter,
-            Limit = queryParams.ResultRecordCount,
-            Offset = queryParams.ResultOffset
+            Limit = queryParams.ReturnCountOnly ? null : queryParams.ResultRecordCount,
+            Offset = queryParams.ReturnCountOnly ? null : queryParams.ResultOffset
         };
 
         // Parse outFields if specified
@@ -204,7 +217,9 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
         int? geometryPrecision,
         double? maxAllowableOffset,
         ImmutableArray<string>? outFields,
-        MetadataV2Resource relatedResource)
+        MetadataV2Resource relatedResource,
+        ImmutableArray<OrderByClause>? orderBy = null,
+        bool returnCountOnly = false)
     {
         ArgumentNullException.ThrowIfNull(relatedResource);
 
@@ -260,17 +275,45 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
             }
         }
 
+        // Apply the requested in-memory ordering to each origin object's related
+        // records (Esri orderByFields). The storage query returns rows ordered by
+        // objectid; orderByFields re-sorts each bucket so the emitted records honor
+        // the caller's requested ordering.
+        if (orderBy is { Length: > 0 } orderByClauses)
+        {
+            foreach (var bucket in featuresByOriginId.Values)
+            {
+                bucket.Sort((left, right) => CompareByOrderBy(left, right, orderByClauses));
+            }
+        }
+
         // Create a related record group for each requested object ID. Per the Esri
         // queryRelatedRecords contract, relatedRecords is a FLAT array of records
         // (each {attributes, geometry}); the JS SDK reads relatedRecords.length.
+        // With returnCountOnly the group carries only the related-record count.
         var groups = objectIds.Select(objectId =>
         {
             bool hasRelatedFeatures = featuresByOriginId.TryGetValue(objectId, out List<Feature>? relatedFeatures);
+            var relatedCount = hasRelatedFeatures ? relatedFeatures!.Count : 0;
+
+            if (returnCountOnly)
+            {
+                return new RelatedRecordGroup
+                {
+                    ObjectId = objectId,
+                    Count = relatedCount
+                };
+            }
 
             return new RelatedRecordGroup
             {
                 ObjectId = objectId,
-                RelatedRecords = hasRelatedFeatures && relatedFeatures!.Count > 0
+                // Always emit relatedRecords as an array (empty when the source object
+                // has no related rows). The @arcgis/core JS SDK reads
+                // group.relatedRecords.length unconditionally and throws
+                // "Cannot read properties of undefined (reading 'length')" when the key
+                // is absent, so an empty group must still carry relatedRecords: [].
+                RelatedRecords = hasRelatedFeatures && relatedCount > 0
                     ?
                     [
                         ..relatedFeatures!.Select(f => ConvertToGeoServicesFeature(
@@ -282,9 +325,22 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
                             outFieldSet,
                             effectiveGeometryLimits))
                     ]
-                    : null
+                    : []
             };
         }).ToArray();
+
+        // Count-only responses carry no field/geometry schema or per-record payload.
+        if (returnCountOnly)
+        {
+            return new GroupedRelatedRecords(
+                groups,
+                Fields: [],
+                objectIdFieldName,
+                GeometryType: null,
+                SpatialReference: null,
+                HasZ: false,
+                HasM: false);
+        }
 
         var hasZ = false;
         var hasM = false;
@@ -354,5 +410,65 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
                     returnM)
                 : null
         };
+    }
+
+    /// <summary>
+    /// Compares two related features against the requested orderByFields clauses.
+    /// Nulls sort last for ascending order (and first for descending), matching the
+    /// SQL NULLS-LAST convention the storage query uses elsewhere.
+    /// </summary>
+    private static int CompareByOrderBy(
+        Feature left,
+        Feature right,
+        ImmutableArray<OrderByClause> orderBy)
+    {
+        foreach (var clause in orderBy)
+        {
+            left.Attributes.TryGetValue(clause.Field, out var leftValue);
+            right.Attributes.TryGetValue(clause.Field, out var rightValue);
+
+            var comparison = CompareValues(leftValue, rightValue);
+            if (comparison != 0)
+            {
+                return clause.Ascending ? comparison : -comparison;
+            }
+        }
+
+        return 0;
+    }
+
+    private static int CompareValues(object? left, object? right)
+    {
+        if (left is null && right is null)
+        {
+            return 0;
+        }
+
+        // Nulls sort last under ascending order (CompareByOrderBy negates for DESC).
+        if (left is null)
+        {
+            return 1;
+        }
+
+        if (right is null)
+        {
+            return -1;
+        }
+
+        if (left is IComparable comparable && left.GetType() == right.GetType())
+        {
+            return comparable.CompareTo(right);
+        }
+
+        if (FeatureServerValueParser.TryConvertToDouble(left, out var leftNumber) &&
+            FeatureServerValueParser.TryConvertToDouble(right, out var rightNumber))
+        {
+            return leftNumber.CompareTo(rightNumber);
+        }
+
+        return string.Compare(
+            left.ToString(),
+            right.ToString(),
+            StringComparison.OrdinalIgnoreCase);
     }
 }

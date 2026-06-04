@@ -9,6 +9,12 @@
 // "does not exist or is not supported" (MakeFeatureLayer / Add Data failed). These
 // tests assert the metadata endpoints accept and ignore those standard client
 // parameters, returning the same payload as a plain f=json request.
+//
+// returnAdvancedSymbols is the same class of bug for a different client: the ArcGIS
+// Maps SDK for .NET appends it to the layer/service metadata GET during
+// ServiceFeatureTable.LoadAsync. #1455 accepted it on the layer-query endpoint but
+// not the metadata endpoints, so LoadAsync returned 400 and the entire .NET
+// FeatureServer client was blocked. It is folded into the parameter set below.
 
 using System.Net;
 using FluentAssertions;
@@ -28,7 +34,7 @@ public sealed class MetadataClientParameterTests : IAsyncLifetime
 {
     private const string TestServiceId = "test";
     private const int TestLayerId = 0;
-    private const string ArcGisProMetadataParameters = "returnFieldGroups=true&returnPbfFeatureEncodings=true";
+    private const string ArcGisProMetadataParameters = "returnFieldGroups=true&returnPbfFeatureEncodings=true&returnAdvancedSymbols=true";
 
     private readonly WebAppFixture _fixture = new();
 

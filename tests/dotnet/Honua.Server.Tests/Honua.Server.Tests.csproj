@@ -41,6 +41,7 @@
          extracted Honua.Protocols.GeoServices.Tests project. xUnit does not run
          a referenced assembly's tests, so this does not duplicate execution. -->
     <ProjectReference Include="..\Honua.Protocols.GeoServices.Tests\Honua.Protocols.GeoServices.Tests.csproj" />
+    <ProjectReference Include="..\..\..\src\Honua.Scene\Honua.Scene.csproj" />
   </ItemGroup>
 
   <ItemGroup>

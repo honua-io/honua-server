@@ -125,12 +125,19 @@ internal static partial class FeatureServerEndpoints
         var supportsDistinct = supportsAdvancedQueries;
         var supportsPagination = supportsAdvancedQueries;
         var supportsEditing = ServiceSupportsEditingV2(service);
+        var supportsAttachments = ResourceSupportsAttachmentsV2(resource);
+        // The layer advertises queryAttachments only when it declares attachment
+        // support AND the runtime has attachment uploads wired up. This single value
+        // feeds both the layer-root flag and the nested operations block so they stay
+        // consistent (the @arcgis/core JS SDK reads the nested flag).
+        var supportsQueryAttachments = supportsAttachments && supportsAttachmentUploads;
         var advancedQueryCapabilities = BuildAdvancedQueryCapabilities(
             supportsAdvancedQueries,
             supportsStatistics,
             supportsOrderBy,
             supportsDistinct,
-            supportsPagination);
+            supportsPagination,
+            supportsQueryAttachments);
 
         var srid = resource.ReadSrid();
         var spatialReference = srid.HasValue
@@ -138,7 +145,6 @@ internal static partial class FeatureServerEndpoints
             : SpatialReference.WGS84.ToSpatialReferenceInfo();
 
         var supportedFormats = ReadServiceSupportedFormatsV2(service);
-        var supportsAttachments = ResourceSupportsAttachmentsV2(resource);
         var extent = ResolveLayerExtentV2(resource, srid ?? SpatialReference.WGS84.Wkid);
 
         return new LayerResponse
@@ -169,14 +175,15 @@ internal static partial class FeatureServerEndpoints
             SupportsReturningQueryExtent = supportsAdvancedQueries,
             SupportsRollbackOnFailureParameter = supportsEditing,
             SupportsApplyEditsWithGlobalIds = false,
-            HasAttachments = supportsAttachments && supportsAttachmentUploads,
+            HasAttachments = supportsQueryAttachments,
             // When the layer exposes attachments, advertise the attachment-capability
             // flags Esri clients inspect. The JS SDK gates queryAttachments(where) on
             // supportsQueryAttachments, and the attachment query surface honors the
-            // documented keywords/uploadId parameters (#1453).
-            SupportsQueryAttachments = supportsAttachments && supportsAttachmentUploads,
-            SupportsAttachmentKeywords = supportsAttachments && supportsAttachmentUploads,
-            SupportsAttachmentsByUploadId = supportsAttachments && supportsAttachmentUploads,
+            // documented keywords/uploadId parameters (#1453). The same value is mirrored
+            // into advancedQueryCapabilities so the nested operations block stays consistent.
+            SupportsQueryAttachments = supportsQueryAttachments,
+            SupportsAttachmentKeywords = supportsQueryAttachments,
+            SupportsAttachmentsByUploadId = supportsQueryAttachments,
             SupportsQueryRelated = supportsRelated,
             SupportedQueryFormats = NormalizeSupportedQueryFormats(supportedFormats, supportsGeobufOutput),
             SupportsCoordinatesQuantization = false,
@@ -244,9 +251,13 @@ internal static partial class FeatureServerEndpoints
             Type = geoServicesType,
             SqlType = sqlType,
             Alias = field.Alias ?? field.Title ?? field.Name,
-            // V2 has no length slot on the canonical field model (length lives in the
-            // storage binding when needed). Pass null so the response omits the key.
-            Length = null,
+            // Esri clients require a positive length on string fields (a null length is
+            // mapped to 0 and breaks inserts/updates). String fields source their length
+            // from the canonical field's declared varchar length, falling back to the
+            // Esri-conventional default; non-string fields report their declared length.
+            Length = !isObjectId && field.Type == MetadataV2FieldType.String
+                ? GeoServicesFieldConventions.ResolveStringFieldLength(field.Length)
+                : field.Length,
             Nullable = field.Nullable && !isObjectId,
             Editable = !isGeometry && !isObjectId,
             // V2 has no default-value slot on the canonical field; the catalog/admin layer

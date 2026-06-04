@@ -69,6 +69,7 @@ public sealed class ModuleDependencyPolicyTests
         Jobs,
         Ai,
         Geoprocessing,
+        Scene,
         Io,
         Import,
         Postgres,
@@ -175,6 +176,7 @@ public sealed class ModuleDependencyPolicyTests
         (ModuleRole.Protocols, ModuleRole.Jobs),
         (ModuleRole.Protocols, ModuleRole.Geoprocessing),
         (ModuleRole.Protocols, ModuleRole.Routing),
+        (ModuleRole.Protocols, ModuleRole.Scene),
         (ModuleRole.Protocols, ModuleRole.ServiceDefaults),
         (ModuleRole.Protocols, ModuleRole.Protocols),
 
@@ -222,6 +224,18 @@ public sealed class ModuleDependencyPolicyTests
         (ModuleRole.Geoprocessing, ModuleRole.Jobs),
         (ModuleRole.Geoprocessing, ModuleRole.ServiceDefaults),
 
+        // Scene: the carved-out 3D scene capability (3D Tiles generation,
+        // scene registry, publishing executor, and the gRPC scene/tile/
+        // elevation service implementations). Referenced by Protocols.Scene
+        // and Server; depends on Abstractions + Core + Geometry (NTS, for
+        // elevation profile WKB) + ServiceDefaults. Scene *domain* records
+        // stay in Abstractions (MetadataV2 references them). It must NEVER
+        // back-reference Server (enforced by SceneIsolationTests).
+        (ModuleRole.Scene, ModuleRole.Abstractions),
+        (ModuleRole.Scene, ModuleRole.Core),
+        (ModuleRole.Scene, ModuleRole.Geometry),
+        (ModuleRole.Scene, ModuleRole.ServiceDefaults),
+
         // Io: the file input/output module (file storage + export writers
         // today; upload primitives planned). ASP.NET-coupled like Hosting;
         // depends on Abstractions + Core + Geometry (NTS, for the export
@@ -257,6 +271,7 @@ public sealed class ModuleDependencyPolicyTests
         (ModuleRole.Server, ModuleRole.Azure),
         (ModuleRole.Server, ModuleRole.Ai),
         (ModuleRole.Server, ModuleRole.Geoprocessing),
+        (ModuleRole.Server, ModuleRole.Scene),
         (ModuleRole.Server, ModuleRole.Io),
         (ModuleRole.Server, ModuleRole.Import),
         (ModuleRole.Server, ModuleRole.Hosting),
@@ -598,6 +613,16 @@ public sealed class ModuleDependencyPolicyTests
             projectName.StartsWith("Honua.Geoprocessing.", StringComparison.Ordinal))
         {
             return ModuleRole.Geoprocessing;
+        }
+
+        // 3D scene capability (3D Tiles generation, scene registry, publishing,
+        // and the gRPC scene/tile/elevation services) carved out of Core/Server
+        // in the scene-module refactor. Sits alongside Geoprocessing in the
+        // upper tier; referenced by Server and the Protocols.Scene adapter.
+        if (projectName.Equals("Honua.Scene", StringComparison.Ordinal) ||
+            projectName.StartsWith("Honua.Scene.", StringComparison.Ordinal))
+        {
+            return ModuleRole.Scene;
         }
 
         // File input/output module (file storage; export + upload to follow)

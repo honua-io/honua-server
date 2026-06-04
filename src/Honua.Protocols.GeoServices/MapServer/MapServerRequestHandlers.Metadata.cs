@@ -13,6 +13,7 @@ using Honua.Core.Features.Validation.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
+using Honua.Protocols.GeoServices.FeatureServer;
 using Honua.Protocols.GeoServices.MapServer.Models;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Options;
@@ -548,7 +549,12 @@ internal static partial class MapServerEndpoints
             Name = field.Name,
             Type = isObjectId ? "esriFieldTypeOID" : MapFieldTypeToGeoServicesV2(field.Type),
             Alias = field.Alias ?? field.Title ?? field.Name,
-            Length = field.Length,
+            // Esri clients require a positive length on string fields (a null length is
+            // mapped to 0 and breaks inserts/updates). Fall back to the Esri-conventional
+            // default when the column declares none.
+            Length = !isObjectId && field.Type == MetadataV2FieldType.String
+                ? GeoServicesFieldConventions.ResolveStringFieldLength(field.Length)
+                : field.Length,
             Nullable = field.Nullable && !isObjectId,
             Editable = field.Editable && !isObjectId
                 && field.Type is not MetadataV2FieldType.Geometry and not MetadataV2FieldType.Geography,

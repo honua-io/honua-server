@@ -152,6 +152,11 @@ internal sealed class ImageServerCatalogQueryHandler
             return false;
         }
 
+        if (!TryParseSpatialFilter(values, out var spatialFilter, out error))
+        {
+            return false;
+        }
+
         if (!TryParseInt(GetString(values, "resultOffset"), out var offset, defaultValue: 0))
         {
             error = "resultOffset must be a non-negative integer.";
@@ -199,6 +204,7 @@ internal sealed class ImageServerCatalogQueryHandler
             Where = where,
             ObjectIds = objectIds,
             OutputSrid = outputSrid,
+            SpatialFilter = spatialFilter,
             Time = time,
             Offset = offset,
             Limit = limit,
@@ -210,6 +216,133 @@ internal sealed class ImageServerCatalogQueryHandler
             ReturnExtentOnly = returnExtentOnly,
         };
         return true;
+    }
+
+    /// <summary>
+    /// Parses the Esri spatial query parameters (<c>geometry</c>, <c>geometryType</c>,
+    /// <c>inSR</c>, <c>spatialRel</c>) into an axis-aligned filter box. The catalog reader
+    /// filters footprints by envelope intersection, so only the envelope of the supplied
+    /// geometry is retained; <c>spatialRel</c> is validated against the supported relationships
+    /// (intersects / envelope-intersects / contains / within / overlaps), which all reduce to
+    /// envelope overlap at the footprint-extent granularity. <c>inSR</c> sets the filter SRID;
+    /// when omitted, the geometry's embedded spatial reference (or the catalog's native SRID)
+    /// is assumed.
+    /// </summary>
+    private static bool TryParseSpatialFilter(
+        IReadOnlyDictionary<string, StringValues> values,
+        out ImageServerCatalogSpatialFilter? spatialFilter,
+        out string? error)
+    {
+        spatialFilter = null;
+        error = null;
+
+        var geometry = GetString(values, "geometry");
+        if (string.IsNullOrWhiteSpace(geometry))
+        {
+            // geometryType/inSR/spatialRel without a geometry are no-ops, mirroring ArcGIS.
+            return true;
+        }
+
+        var geometryType = GetString(values, "geometryType");
+        if (!string.IsNullOrWhiteSpace(geometryType) && !IsSupportedSpatialFilterGeometryType(geometryType))
+        {
+            error = $"Unsupported geometryType '{geometryType}'. Supported: esriGeometryEnvelope, esriGeometryPolygon, esriGeometryPoint, esriGeometryMultipoint, esriGeometryPolyline.";
+            return false;
+        }
+
+        if (!IsSupportedSpatialRelationship(GetString(values, "spatialRel"), out var spatialRelError))
+        {
+            error = spatialRelError;
+            return false;
+        }
+
+        var normalizedGeometry = NormalizeGeometryInput(geometry, geometryType);
+        if (!ImageServerGeometryHelpers.TryGetEnvelope(normalizedGeometry, out var envelope, out var geometryError))
+        {
+            error = geometryError ?? "Invalid geometry.";
+            return false;
+        }
+
+        var inSrRaw = GetString(values, "inSR");
+        int? inSrid = null;
+        if (!string.IsNullOrWhiteSpace(inSrRaw))
+        {
+            inSrid = SpatialReferenceHelpers.TryParseSrid(inSrRaw);
+            if (!inSrid.HasValue)
+            {
+                error = $"Invalid inSR '{inSrRaw}'.";
+                return false;
+            }
+        }
+
+        // Precedence: explicit inSR, then the geometry's embedded spatialReference.
+        var filterSrid = inSrid ?? envelope.Srid;
+
+        spatialFilter = new ImageServerCatalogSpatialFilter(
+            envelope.XMin, envelope.YMin, envelope.XMax, envelope.YMax, filterSrid);
+        return true;
+    }
+
+    /// <summary>
+    /// Accepts a bare <c>x,y</c>/<c>xmin,ymin,xmax,ymax</c> string for point/envelope
+    /// geometryTypes (the ArcGIS bbox shorthand) and otherwise passes the JSON through.
+    /// </summary>
+    private static string NormalizeGeometryInput(string geometry, string? geometryType)
+    {
+        var trimmed = geometry.Trim();
+        if (trimmed.StartsWith('{'))
+        {
+            return trimmed;
+        }
+
+        var parts = trimmed.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length == 4 &&
+            parts.All(p => double.TryParse(p, NumberStyles.Float, CultureInfo.InvariantCulture, out _)))
+        {
+            return $"{{\"xmin\":{parts[0]},\"ymin\":{parts[1]},\"xmax\":{parts[2]},\"ymax\":{parts[3]}}}";
+        }
+
+        if (parts.Length == 2 &&
+            parts.All(p => double.TryParse(p, NumberStyles.Float, CultureInfo.InvariantCulture, out _)))
+        {
+            return $"{{\"x\":{parts[0]},\"y\":{parts[1]}}}";
+        }
+
+        return trimmed;
+    }
+
+    private static bool IsSupportedSpatialFilterGeometryType(string geometryType)
+        => geometryType.Equals("esriGeometryEnvelope", StringComparison.OrdinalIgnoreCase) ||
+           geometryType.Equals("esriGeometryPolygon", StringComparison.OrdinalIgnoreCase) ||
+           geometryType.Equals("esriGeometryPoint", StringComparison.OrdinalIgnoreCase) ||
+           geometryType.Equals("esriGeometryMultipoint", StringComparison.OrdinalIgnoreCase) ||
+           geometryType.Equals("esriGeometryPolyline", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Validates <c>spatialRel</c>. At footprint-extent granularity the supported
+    /// relationships all reduce to an envelope-overlap test, so this guards against
+    /// callers expecting an unsupported exact predicate rather than silently mis-filtering.
+    /// </summary>
+    private static bool IsSupportedSpatialRelationship(string? spatialRel, out string? error)
+    {
+        error = null;
+        if (string.IsNullOrWhiteSpace(spatialRel))
+        {
+            return true;
+        }
+
+        switch (spatialRel.ToLowerInvariant())
+        {
+            case "esrispatialrelintersects":
+            case "esrispatialrelenvelopeintersects":
+            case "esrispatialrelcontains":
+            case "esrispatialrelwithin":
+            case "esrispatialreloverlaps":
+                return true;
+            default:
+                error = $"Unsupported spatialRel '{spatialRel}'. Supported: esriSpatialRelIntersects, esriSpatialRelEnvelopeIntersects, esriSpatialRelContains, esriSpatialRelWithin, esriSpatialRelOverlaps.";
+                return false;
+        }
     }
 
     /// <summary>
@@ -341,10 +474,10 @@ internal sealed class ImageServerCatalogQueryHandler
             return Results.Json(extentResponse, ImageServerJsonContext.Default.CatalogExtentResponse);
         }
 
-        // Keep the response envelope in the native SRID because the MVP does not
-        // reproject footprints. Stamping the envelope with the requested outSR while
-        // leaving geometries in the native SRID would mislead clients that project
-        // by the envelope's declared spatial reference.
+        // The aggregate extent is already reprojected into outSR by the catalog reader
+        // when a transform is available, so its SRID is authoritative for the response
+        // envelope. Falling back to the native SRID keeps the envelope honest when no
+        // reprojection occurred (transform unavailable or outSR omitted).
         var responseSrid = page.AggregateExtent?.Srid
             ?? page.NativeSrid
             ?? 4326;
@@ -401,9 +534,9 @@ internal sealed class ImageServerCatalogQueryHandler
         CatalogQueryGeometry? geometry = null;
         if (query.ReturnGeometry && item.FootprintRings is { Length: > 0 })
         {
-            // Stamp the geometry with the actual coordinate SRID. The MVP does not
-            // reproject footprints, so the rings are still in the raster's native SRID
-            // even when the caller passes outSR.
+            // Stamp the geometry with the actual coordinate SRID. The catalog reader
+            // reprojects footprint rings into outSR when a transform is available and
+            // updates FootprintSrid accordingly, so this SR always matches the rings.
             var geometrySrid = item.FootprintSrid ?? 4326;
             geometry = new CatalogQueryGeometry
             {

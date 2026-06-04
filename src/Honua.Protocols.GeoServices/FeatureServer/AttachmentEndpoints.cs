@@ -32,7 +32,7 @@ internal sealed class AttachmentOperations
 /// <summary>
 /// Extension methods to register FeatureServer attachment endpoints
 /// </summary>
-internal static class AttachmentEndpoints
+internal static partial class AttachmentEndpoints
 {
     private static readonly ISet<string> SupportedAttachmentContentTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {

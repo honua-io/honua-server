@@ -92,4 +92,19 @@ public sealed class QueryRelatedRecordsParameters
     /// Maximum number of related records to return
     /// </summary>
     public int? ResultRecordCount { get; init; }
+
+    /// <summary>
+    /// Comma-separated list of related-record fields to sort by, each optionally
+    /// suffixed with <c>ASC</c>/<c>DESC</c> (Esri <c>orderByFields</c>). Validated
+    /// against the related layer schema; applied as an in-memory ordering over the
+    /// returned related records.
+    /// </summary>
+    public string? OrderByFields { get; init; }
+
+    /// <summary>
+    /// When <c>true</c>, returns only the count of related records per source
+    /// object (Esri <c>returnCountOnly</c>) instead of the related-record
+    /// attributes/geometry.
+    /// </summary>
+    public bool ReturnCountOnly { get; init; }
 }

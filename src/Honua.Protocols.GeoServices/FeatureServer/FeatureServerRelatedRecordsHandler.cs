@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -12,6 +13,7 @@ using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Validation;
 
 namespace Honua.Protocols.GeoServices.FeatureServer;
 
@@ -160,6 +162,24 @@ internal sealed class FeatureServerRelatedRecordsHandler(
                     $"Related layer {relatedLayerId} is not bound to a storage layer.");
             }
 
+            // Parse and validate orderByFields against the RELATED layer schema (the
+            // ordering applies to the related records, not the source layer). Invalid
+            // or unknown fields surface as a 400, matching the layer /query contract.
+            ImmutableArray<OrderByClause>? relatedOrderBy;
+            try
+            {
+                relatedOrderBy = OrderByParsing.ParseFeatureServerOrderBy(
+                    validatedParams.OrderByFields,
+                    resolvedRelatedResource,
+                    FeatureServerOrderByFields.AllowedCoreOrderByFields);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return StandardErrorHelpers.CreateBadRequest(httpContext,
+                    "Invalid query parameters",
+                    [ex.Message]);
+            }
+
             var objectIds = queryParams.ObjectIds;
             var outputSrid = await _queryServices.ResolveSridAsync(validatedParams.OutSr, null, cancellationToken);
             if (!string.IsNullOrWhiteSpace(validatedParams.OutSr) && !outputSrid.HasValue)
@@ -221,7 +241,9 @@ internal sealed class FeatureServerRelatedRecordsHandler(
                 validatedParams.GeometryPrecision,
                 validatedParams.MaxAllowableOffset,
                 relatedQuery.OutFields,
-                resolvedRelatedResource);
+                resolvedRelatedResource,
+                relatedOrderBy,
+                validatedParams.ReturnCountOnly);
 
             var relatedRecordGroups = grouped.Groups;
 

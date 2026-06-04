@@ -17,6 +17,30 @@
     <NoWarn>$(NoWarn);CS1591;IL2104;IL2026;IL3002;IL3050;CA1041;CA1000;CA1862;IDE0051;IDE0052;IDE0005;CA1844;IL2075</NoWarn>
   </PropertyGroup>
 
+  <!--
+    Native AOT publish cannot include the Oracle.ManagedDataAccess.Core driver:
+    it calls System.Reflection.Assembly.Location, which ILC reports as IL3000
+    (always empty under single-file / Native AOT) and treats as a hard error.
+    Oracle is an OPTIONAL read-only feature provider, so the AOT-verification
+    publish drops the Honua.Oracle ProjectReference entirely and compiles out
+    its registration via the HONUA_SKIP_ORACLE constant. This excludes the
+    non-single-file-safe driver from the AOT image WITHOUT weakening IL3000
+    diagnostics for first-party code. The default (non-AOT) build is unchanged
+    and continues to ship Oracle. Mirrors HonuaSkipAdminClientForAotVerification
+    / HonuaIncludeStacOpsDemo. ILC IL3000 docs: third-party Assembly.Location use.
+  -->
+  <PropertyGroup>
+    <!--
+      Opt-in ONLY: set explicitly by the AOT-verification publish command in
+      .github/workflows/ci.yml (alongside HonuaSkipAdminClientForAotVerification).
+      It is deliberately NOT auto-inferred from PublishAot/RuntimeIdentifier:
+      the multi-stage Docker publish restores without -p:PublishAot=false and
+      then builds with it, so an inferred condition would evaluate differently
+      between restore and build and drop Honua.Oracle's assets file (NETSDK1004).
+    -->
+    <DefineConstants Condition="'$(HonuaSkipOracleForAotVerification)' == 'true'">$(DefineConstants);HONUA_SKIP_ORACLE</DefineConstants>
+  </PropertyGroup>
+
   <ItemGroup>
     <InternalsVisibleTo Include="Honua.Server.Tests" />
     <InternalsVisibleTo Include="Honua.TestKit" />
@@ -50,7 +74,7 @@
     <ProjectReference Include="..\Honua.SqlServer\Honua.SqlServer.csproj" />
     <ProjectReference Include="..\Honua.MySql\Honua.MySql.csproj" />
     <ProjectReference Include="..\Honua.ArcGisRest\Honua.ArcGisRest.csproj" />
-    <ProjectReference Include="..\Honua.Oracle\Honua.Oracle.csproj" />
+    <ProjectReference Include="..\Honua.Oracle\Honua.Oracle.csproj" Condition="'$(HonuaSkipOracleForAotVerification)' != 'true'" />
     <ProjectReference Include="..\Honua.ServiceDefaults\Honua.ServiceDefaults.csproj" />
     <ProjectReference Include="..\Honua.Hosting\Honua.Hosting.csproj" />
     <ProjectReference Include="..\Honua.Jobs\Honua.Jobs.csproj" />
@@ -80,6 +104,8 @@
     <ProjectReference Include="..\Honua.Protocols.Stac\Honua.Protocols.Stac.csproj" />
 
     <ProjectReference Include="..\Honua.Protocols.GeoServices\Honua.Protocols.GeoServices.csproj" />
+
+    <ProjectReference Include="..\Honua.Scene\Honua.Scene.csproj" />
   </ItemGroup>
 
 

@@ -151,6 +151,17 @@ public sealed class AdvancedQueryCapabilities
     /// Whether the layer supports query analytics
     /// </summary>
     public bool SupportsQueryAnalytic { get; init; }
+
+    /// <summary>
+    /// Whether the layer supports the <c>queryAttachments</c> operation. Mirrors the
+    /// layer-root <c>supportsQueryAttachments</c> flag. The ArcGIS Maps SDK for
+    /// JavaScript reads this off the nested operations/advanced-query-capabilities
+    /// block when deciding whether <c>queryAttachments({where})</c> is permitted, and
+    /// it must stay consistent with the root flag (true when the layer has
+    /// attachments) so a layer that advertises attachments at the root is not refused
+    /// the operation because the nested flag reported false.
+    /// </summary>
+    public bool SupportsQueryAttachments { get; init; }
 }
 
 /// <summary>

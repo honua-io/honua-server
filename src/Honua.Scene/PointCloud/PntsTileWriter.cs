@@ -1,0 +1,257 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using System.Buffers.Binary;
+using System.Text;
+using System.Text.Json;
+
+namespace Honua.Core.Features.Scene.PointCloud;
+
+/// <summary>
+/// Deterministic writer for the Cesium 3D Tiles Point Cloud (<c>.pnts</c>) tile
+/// format (#1201). Emits POSITION and RGB feature-table semantics plus a batch
+/// table carrying the preserved INTENSITY and CLASSIFICATION attributes.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Positions are encoded as <c>Float32</c> XYZ relative to an
+/// <c>RTC_CENTER</c> (the tile's ECEF centroid) so the 32-bit mantissa retains
+/// centimetre precision regardless of the cloud's global ECEF magnitude. RGB is
+/// emitted as <c>UNSIGNED_BYTE</c> per channel (LAS 16-bit colour is scaled to
+/// 8-bit). When the source has no colour the writer omits the RGB semantic and
+/// the client falls back to a uniform point colour.
+/// </para>
+/// <para>
+/// The byte layout — header, padded feature-table JSON, feature-table binary,
+/// batch-table JSON, batch-table binary — follows the PNTS spec exactly and is
+/// produced in a fixed property order, so identical input yields byte-identical
+/// output.
+/// </para>
+/// </remarks>
+public static class PntsTileWriter
+{
+    private const uint Magic = 0x73746E70; // "pnts" little-endian.
+    private const uint Version = 1;
+    private const int HeaderLength = 28;
+
+    /// <summary>
+    /// Builds a <c>.pnts</c> tile from the supplied projected points.
+    /// </summary>
+    /// <param name="points">
+    /// Points to write, each carrying an ECEF position and preserved attributes.
+    /// Must be non-empty.
+    /// </param>
+    /// <returns>A deterministic PNTS byte sequence.</returns>
+    public static byte[] Build(IReadOnlyList<PntsPoint> points)
+    {
+        ArgumentNullException.ThrowIfNull(points);
+        if (points.Count == 0)
+        {
+            throw new ArgumentException("At least one point is required to build a .pnts tile.", nameof(points));
+        }
+
+        var count = points.Count;
+        var hasColor = points[0].HasColor;
+
+        // RTC center = arithmetic mean of ECEF positions. Subtracting it keeps
+        // the Float32 positions small and precise.
+        double cx = 0, cy = 0, cz = 0;
+        for (var i = 0; i < count; i++)
+        {
+            cx += points[i].EcefX;
+            cy += points[i].EcefY;
+            cz += points[i].EcefZ;
+        }
+        cx /= count;
+        cy /= count;
+        cz /= count;
+
+        // Feature-table binary: POSITION (VEC3 float32) then optional RGB (3 x uint8).
+        var positionBytes = new byte[count * 12];
+        for (var i = 0; i < count; i++)
+        {
+            var p = points[i];
+            BinaryPrimitives.WriteSingleLittleEndian(positionBytes.AsSpan(i * 12, 4), (float)(p.EcefX - cx));
+            BinaryPrimitives.WriteSingleLittleEndian(positionBytes.AsSpan(i * 12 + 4, 4), (float)(p.EcefY - cy));
+            BinaryPrimitives.WriteSingleLittleEndian(positionBytes.AsSpan(i * 12 + 8, 4), (float)(p.EcefZ - cz));
+        }
+
+        byte[]? rgbBytes = null;
+        if (hasColor)
+        {
+            rgbBytes = new byte[count * 3];
+            for (var i = 0; i < count; i++)
+            {
+                var p = points[i];
+                // LAS stores 16-bit colour; >>8 maps to 8-bit deterministically.
+                rgbBytes[i * 3] = (byte)(p.Red >> 8);
+                rgbBytes[i * 3 + 1] = (byte)(p.Green >> 8);
+                rgbBytes[i * 3 + 2] = (byte)(p.Blue >> 8);
+            }
+        }
+
+        var featureBinary = new List<byte>(positionBytes.Length + (rgbBytes?.Length ?? 0));
+        featureBinary.AddRange(positionBytes);
+        var rgbByteOffset = -1;
+        if (rgbBytes is not null)
+        {
+            rgbByteOffset = featureBinary.Count;
+            featureBinary.AddRange(rgbBytes);
+        }
+
+        // Batch-table binary: INTENSITY (uint16) and CLASSIFICATION (uint8).
+        var intensityBytes = new byte[count * 2];
+        var classificationBytes = new byte[count];
+        for (var i = 0; i < count; i++)
+        {
+            BinaryPrimitives.WriteUInt16LittleEndian(intensityBytes.AsSpan(i * 2, 2), points[i].Intensity);
+            classificationBytes[i] = points[i].Classification;
+        }
+
+        var batchBinary = new List<byte>(intensityBytes.Length + classificationBytes.Length);
+        var intensityOffset = 0;
+        batchBinary.AddRange(intensityBytes);
+        var classificationOffset = batchBinary.Count;
+        batchBinary.AddRange(classificationBytes);
+
+        var featureTableJson = BuildFeatureTableJson(count, cx, cy, cz, hasColor, rgbByteOffset);
+        var batchTableJson = BuildBatchTableJson(intensityOffset, classificationOffset);
+
+        // Pad each JSON section to an 8-byte boundary (PNTS spec) with spaces.
+        var featureJsonPadded = PadJson(featureTableJson, HeaderLength);
+        var featureBinaryArray = featureBinary.ToArray();
+        // The feature-table binary must start 8-byte aligned within the tile.
+        var batchJsonPadded = PadJson(batchTableJson, HeaderLength + featureJsonPadded.Length + featureBinaryArray.Length);
+        var batchBinaryArray = batchBinary.ToArray();
+
+        var totalLength = HeaderLength
+            + featureJsonPadded.Length + featureBinaryArray.Length
+            + batchJsonPadded.Length + batchBinaryArray.Length;
+
+        var tile = new byte[totalLength];
+        BinaryPrimitives.WriteUInt32LittleEndian(tile.AsSpan(0, 4), Magic);
+        BinaryPrimitives.WriteUInt32LittleEndian(tile.AsSpan(4, 4), Version);
+        BinaryPrimitives.WriteUInt32LittleEndian(tile.AsSpan(8, 4), (uint)totalLength);
+        BinaryPrimitives.WriteUInt32LittleEndian(tile.AsSpan(12, 4), (uint)featureJsonPadded.Length);
+        BinaryPrimitives.WriteUInt32LittleEndian(tile.AsSpan(16, 4), (uint)featureBinaryArray.Length);
+        BinaryPrimitives.WriteUInt32LittleEndian(tile.AsSpan(20, 4), (uint)batchJsonPadded.Length);
+        BinaryPrimitives.WriteUInt32LittleEndian(tile.AsSpan(24, 4), (uint)batchBinaryArray.Length);
+
+        var offset = HeaderLength;
+        featureJsonPadded.CopyTo(tile.AsSpan(offset));
+        offset += featureJsonPadded.Length;
+        featureBinaryArray.CopyTo(tile.AsSpan(offset));
+        offset += featureBinaryArray.Length;
+        batchJsonPadded.CopyTo(tile.AsSpan(offset));
+        offset += batchJsonPadded.Length;
+        batchBinaryArray.CopyTo(tile.AsSpan(offset));
+
+        return tile;
+    }
+
+    private static byte[] BuildFeatureTableJson(
+        int count,
+        double cx,
+        double cy,
+        double cz,
+        bool hasColor,
+        int rgbByteOffset)
+    {
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = false, SkipValidation = true }))
+        {
+            writer.WriteStartObject();
+            writer.WriteNumber("POINTS_LENGTH", count);
+
+            writer.WriteStartArray("RTC_CENTER");
+            writer.WriteNumberValue(cx);
+            writer.WriteNumberValue(cy);
+            writer.WriteNumberValue(cz);
+            writer.WriteEndArray();
+
+            writer.WriteStartObject("POSITION");
+            writer.WriteNumber("byteOffset", 0);
+            writer.WriteEndObject();
+
+            if (hasColor)
+            {
+                writer.WriteStartObject("RGB");
+                writer.WriteNumber("byteOffset", rgbByteOffset);
+                writer.WriteEndObject();
+            }
+
+            writer.WriteEndObject();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] BuildBatchTableJson(int intensityOffset, int classificationOffset)
+    {
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = false, SkipValidation = true }))
+        {
+            writer.WriteStartObject();
+
+            writer.WriteStartObject("INTENSITY");
+            writer.WriteNumber("byteOffset", intensityOffset);
+            writer.WriteString("componentType", "UNSIGNED_SHORT");
+            writer.WriteString("type", "SCALAR");
+            writer.WriteEndObject();
+
+            writer.WriteStartObject("CLASSIFICATION");
+            writer.WriteNumber("byteOffset", classificationOffset);
+            writer.WriteString("componentType", "UNSIGNED_BYTE");
+            writer.WriteString("type", "SCALAR");
+            writer.WriteEndObject();
+
+            writer.WriteEndObject();
+        }
+        return stream.ToArray();
+    }
+
+    /// <summary>
+    /// Pads a JSON section with trailing spaces so the byte that follows it
+    /// (<paramref name="precedingLength"/> bytes into the tile) lands on an
+    /// 8-byte boundary, per the PNTS spec.
+    /// </summary>
+    private static byte[] PadJson(byte[] json, int precedingLength)
+    {
+        var end = precedingLength + json.Length;
+        var pad = (8 - (end & 7)) & 7;
+        if (pad == 0)
+        {
+            return json;
+        }
+        var padded = new byte[json.Length + pad];
+        json.CopyTo(padded, 0);
+        for (var i = 0; i < pad; i++)
+        {
+            padded[json.Length + i] = (byte)' ';
+        }
+        return padded;
+    }
+}
+
+/// <summary>
+/// A single point ready for PNTS encoding: ECEF position plus preserved
+/// attributes (#1201).
+/// </summary>
+/// <param name="EcefX">ECEF X in meters.</param>
+/// <param name="EcefY">ECEF Y in meters.</param>
+/// <param name="EcefZ">ECEF Z in meters.</param>
+/// <param name="Intensity">Preserved pulse intensity.</param>
+/// <param name="Classification">Preserved ASPRS classification.</param>
+/// <param name="HasColor">True when RGB channels are meaningful.</param>
+/// <param name="Red">16-bit red channel.</param>
+/// <param name="Green">16-bit green channel.</param>
+/// <param name="Blue">16-bit blue channel.</param>
+public readonly record struct PntsPoint(
+    double EcefX,
+    double EcefY,
+    double EcefZ,
+    ushort Intensity,
+    byte Classification,
+    bool HasColor,
+    ushort Red,
+    ushort Green,
+    ushort Blue);

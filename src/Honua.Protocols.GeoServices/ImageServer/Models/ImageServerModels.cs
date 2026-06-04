@@ -147,6 +147,25 @@ public sealed class ImageServerServiceInfo
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public ImageServerStorageInfo? StorageInfo { get; init; }
 
+    /// <summary>
+    /// Pixel-block width at the ImageServer metadata root. Esri's ImageServer root
+    /// surfaces <c>blockWidth</c> both at the top level AND inside <c>storageInfo</c>.
+    /// The ArcGIS Maps SDK for .NET <c>ImageServiceRaster</c> reads it from the root,
+    /// so it must be emitted there too, not only nested under <c>storageInfo</c> (#1456).
+    /// </summary>
+    [JsonPropertyName("blockWidth")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? BlockWidth { get; init; }
+
+    /// <summary>
+    /// Pixel-block height at the ImageServer metadata root. Mirrors the value inside
+    /// <c>storageInfo</c> for the ArcGIS Maps SDK for .NET <c>ImageServiceRaster</c>,
+    /// which reads it from the root (#1456).
+    /// </summary>
+    [JsonPropertyName("blockHeight")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? BlockHeight { get; init; }
+
     [JsonPropertyName("cacheType")]
     public string? CacheType { get; init; }
 
@@ -720,8 +739,12 @@ public sealed class ExportImageRequest
     [StringLength(512, ErrorMessage = "BboxSr is too long")]
     public string? BboxSr { get; init; }
 
-    [RegularExpression(@"^(png|jpg|jpeg|tiff|tif)$",
-        ErrorMessage = "Format must be png, jpg, jpeg, tiff, or tif")]
+    // Accepts the Esri ImageServer format tokens the ArcGIS SDKs send. png8/png24/png32
+    // and jpgpng are normalised to a concrete encoding by the handler; bmp and gif are
+    // accepted for shape but rejected with a clear 400 because the shared raster export
+    // pipeline only emits png/jpeg/tiff containers.
+    [RegularExpression(@"(?i)^(png|png8|png24|png32|jpgpng|jpg|jpeg|tiff|tif|bmp|gif)$",
+        ErrorMessage = "Format must be one of png, png8, png24, png32, jpgpng, jpg, jpeg, tiff, tif, bmp, or gif")]
     public string? Format { get; init; } = "png";
 
     [RegularExpression(@"(?i)^(C128|C64|F32|F64|S16|S32|S8|U1|U16|U2|U32|U4|U8|UNKNOWN)$",

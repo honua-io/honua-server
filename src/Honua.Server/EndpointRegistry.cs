@@ -613,6 +613,8 @@ public static class EndpointRegistry
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/calculate"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/queryDomains"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/relationships"),
+        new("GET", "/rest/services/{serviceId}/FeatureServer/validateSQL"),
+        new("POST", "/rest/services/{serviceId}/FeatureServer/validateSQL"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/validateSQL"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/validateSQL"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/getEstimates"),
@@ -672,6 +674,11 @@ public static class EndpointRegistry
         new("GET", "/scenes/{sceneId}/exports/openusd/stage.usda"),
         new("GET", "/scenes/{sceneId}/tileset.json"),
         new("HEAD", "/scenes/{sceneId}/tileset.json"),
+
+        // Esri I3S SceneServer serving (#1202; Enterprise-gated).
+        new("GET", "/scenes/{sceneId}/SceneServer"),
+        new("GET", "/scenes/{sceneId}/SceneServer/layers/{layerId:int}"),
+
         new("GET", "/scenes/{sceneId}/{*assetPath}"),
         new("HEAD", "/scenes/{sceneId}/{*assetPath}"),
 
@@ -733,6 +740,12 @@ public static class EndpointRegistry
         new("GET", "/rest/services/{serviceId}/MapServer/allLayersAndTables"),
         new("GET", "/rest/services/{serviceId}/MapServer/layers"),
         new("GET", "/rest/services/{serviceId}/MapServer/queryDomains"),
+        new("GET", "/rest/services/{serviceId}/MapServer/{layerId}/generateRenderer"),
+        new("POST", "/rest/services/{serviceId}/MapServer/{layerId}/generateRenderer"),
+        new("GET", "/rest/services/{serviceId}/MapServer/{layerId}/queryRelatedRecords"),
+        new("POST", "/rest/services/{serviceId}/MapServer/{layerId}/queryRelatedRecords"),
+        new("GET", "/rest/services/{serviceId}/MapServer/{layerId}/queryAttachments"),
+        new("POST", "/rest/services/{serviceId}/MapServer/{layerId}/queryAttachments"),
         new("GET", "/rest/services/{serviceId}/MapServer/{layerId}/{featureId}"),
         new("GET", "/rest/services/{serviceId}/MapServer/tile/{z}/{y}/{x}"),
         new("GET", "/rest/services/{serviceId}/MapServer/WMTS"),

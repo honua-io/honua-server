@@ -443,6 +443,28 @@ internal static partial class FeatureServerEndpoints
             .Produces(400)
             .Produces(404);
 
+        // Service-level validateSQL (#1446): Esri's canonical validateSQL is at the
+        // FeatureServer service root and takes sql + sqlType (where|orderBy|expression),
+        // reusing the shared SQL validation against a representative service layer. The
+        // layer-level route below is retained.
+        endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/validateSQL", HandleServiceValidateSql)
+            .WithDisplayName("Validate SQL (Service)")
+            .WithName("ServiceValidateSQL")
+            .WithSummary("Validate a SQL expression at the service level")
+            .WithDescription("Validates a SQL string (sql parameter) of the given sqlType (where, orderBy, or expression) against the service schema and returns whether it is valid")
+            .WithTags("FeatureServer")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+
+        endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/validateSQL", HandleServiceValidateSql)
+            .WithDisplayName("Validate SQL (Service, POST)")
+            .WithName("ServiceValidateSQLPost")
+            .WithSummary("Validate a SQL expression at the service level using POST")
+            .WithDescription("Validates a SQL string (sql parameter) of the given sqlType (where, orderBy, or expression) against the service schema and returns whether it is valid")
+            .WithTags("FeatureServer")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            // Read-only Esri validation POST; access is enforced by the handler.
+            .AllowAnonymous();
+
         endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/{layerId:int}/validateSQL", HandleValidateSql)
             .WithDisplayName("Validate SQL")
             .WithName("ValidateSQL")
