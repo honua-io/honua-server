@@ -696,6 +696,41 @@ public sealed class MigrationManifestTranslatorTests
     }
 
     [Fact]
+    public void Translate_WithArcGisRelationshipKeyFields_PropagatesOriginAndDestinationFields()
+    {
+        // Issue #1256: simple ArcGIS relationships use the same keyField on
+        // both sides; the fidelity scanner now records originKeyField and
+        // destinationKeyField metadata. The translator surfaces them on the
+        // emitted MigrationManifestRelationshipRecord so the apply pass can
+        // build foreign-key references without re-fetching the source JSON.
+        var inventory = CreateArcGisRelationshipInventory(
+            classifications:
+            [
+                CreateRelationshipClassification(
+                    sourceId: "resource:Inspections:layer:0",
+                    name: "InspectionToPhotos",
+                    metadata: new Dictionary<string, string>(StringComparer.Ordinal)
+                    {
+                        ["relationshipId"] = "3",
+                        ["cardinality"] = "1:N",
+                        ["relationshipType"] = "simple",
+                        ["relatedLayerIds"] = "layer:1",
+                        ["originKeyField"] = "INSPECTION_ID",
+                        ["destinationKeyField"] = "INSPECTION_ID",
+                        ["role"] = "esriRelRoleOrigin"
+                    })
+            ]);
+
+        var record = MigrationManifestTranslator.Translate(inventory)
+            .TargetResources.Should().ContainSingle().Subject
+            .Relationships.Should().ContainSingle().Subject;
+        record.OriginKeyField.Should().Be("INSPECTION_ID");
+        record.DestinationKeyField.Should().Be("INSPECTION_ID");
+        record.Role.Should().Be("esriRelRoleOrigin");
+        record.EsriRelationshipId.Should().Be(3);
+    }
+
+    [Fact]
     public void Translate_WithArcGisOneToManyRelationship_ClassifiesAsAssisted()
     {
         var inventory = CreateArcGisRelationshipInventory(

@@ -690,6 +690,24 @@ public static partial class MigrationManifestTranslator
                                    !string.IsNullOrWhiteSpace(rt)
                 ? rt
                 : null;
+            var role = classification.Metadata.TryGetValue("role", out var roleValue) &&
+                       !string.IsNullOrWhiteSpace(roleValue)
+                ? roleValue
+                : null;
+            var originKeyField = classification.Metadata.TryGetValue("originKeyField", out var okf) &&
+                                 !string.IsNullOrWhiteSpace(okf)
+                ? okf
+                : null;
+            var destinationKeyField = classification.Metadata.TryGetValue("destinationKeyField", out var dkf) &&
+                                      !string.IsNullOrWhiteSpace(dkf)
+                ? dkf
+                : null;
+            int? esriRelationshipId = null;
+            if (classification.Metadata.TryGetValue("relationshipId", out var esriIdText) &&
+                int.TryParse(esriIdText, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var parsedEsriId))
+            {
+                esriRelationshipId = parsedEsriId;
+            }
             var relatedLayerIds = ExtractRelatedLayerIds(classification);
 
             var (cls, reason) = ClassifyRelationship(cardinality, relationshipType, relatedLayerIds);
@@ -709,6 +727,10 @@ public static partial class MigrationManifestTranslator
                 Cardinality = cardinality,
                 RelationshipType = relationshipType,
                 RelatedLayerIds = relatedLayerIds,
+                Role = role,
+                OriginKeyField = originKeyField,
+                DestinationKeyField = destinationKeyField,
+                EsriRelationshipId = esriRelationshipId,
                 Classification = cls,
                 TargetRelationshipRef = targetRef,
                 Reason = reason
