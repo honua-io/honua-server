@@ -234,6 +234,7 @@ public sealed class ModuleDependencyPolicyTests
         (ModuleRole.Scene, ModuleRole.Abstractions),
         (ModuleRole.Scene, ModuleRole.Core),
         (ModuleRole.Scene, ModuleRole.Geometry),
+        (ModuleRole.Scene, ModuleRole.Hosting),
         (ModuleRole.Scene, ModuleRole.ServiceDefaults),
 
         // Io: the file input/output module (file storage + export writers

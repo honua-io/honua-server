@@ -125,6 +125,12 @@ public static class TilesetDocumentWriter
                 Version = "1.1",
                 Generator = string.IsNullOrEmpty(generatorTag) ? null : generatorTag
             },
+            // The tileset-level geometricError and the root tile's geometricError
+            // describe the same root LOD budget and clients may use either, so they
+            // must agree. The partitioner always assigns the floored, positive root
+            // geometric error to the root node — even when the root is also a leaf
+            // (SceneQuadtreePartitioner.LeafGeometricError) — so root.GeometricError
+            // equals tree.RootGeometricError here and the two stay consistent.
             GeometricError = tree.RootGeometricError,
             Root = root,
             Extras = styleReference is null

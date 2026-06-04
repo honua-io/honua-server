@@ -38,6 +38,42 @@ public sealed class I3sSceneServiceBuilderTests
         layer.FullExtent.Ymax.Should().Be(37.8);
         layer.FullExtent.Zmax.Should().Be(100.0);
         layer.Store!.Id.Should().Be("downtown");
+        layer.Store.Profile.Should().Be("meshpyramids");
+
+        // The descriptor carries the spec-required heightModelInfo block that is
+        // honestly knowable for a hosted WGS-84 scene.
+        layer.HeightModelInfo.Should().NotBeNull();
+        layer.HeightModelInfo!.HeightModel.Should().Be("ellipsoidal");
+        layer.HeightModelInfo.HeightUnit.Should().Be("meter");
+    }
+
+    [UnitTest]
+    public void BuildLayer_DoesNotAdvertiseUnservableRootNode()
+    {
+        // This slice is a descriptor preview: per-node geometry (the nodes/*
+        // store) is a tracked follow-up (#1202) and no node routes are mapped, so
+        // the descriptor must NOT advertise a fetchable rootNode that would 404
+        // for a conformant I3S/ArcGIS client.
+        var layer = I3sSceneServiceBuilder.BuildLayer(Scene, Extent);
+
+        layer.Store!.RootNode.Should().BeNull();
+    }
+
+    [UnitTest]
+    public void BuildLayer_WithExtentButNoHeights_LeavesVerticalExtentNull()
+    {
+        // The served descriptor path (I3sSceneServerEndpoints.ResolveExtentAsync)
+        // has no height source — the persisted SceneDatasetRecord carries only a 2D
+        // SceneExtent — so it passes null heights. The fullExtent must then advertise
+        // a horizontal-only extent (zmin/zmax omitted) rather than a fabricated 0..0
+        // vertical range; authoritative vertical bounds live on the gRPC TileService
+        // bounding volumes.
+        var layer = I3sSceneServiceBuilder.BuildLayer(Scene, Extent);
+
+        layer.FullExtent.Should().NotBeNull();
+        layer.FullExtent!.Xmin.Should().Be(-122.5);
+        layer.FullExtent.Zmin.Should().BeNull();
+        layer.FullExtent.Zmax.Should().BeNull();
     }
 
     [UnitTest]

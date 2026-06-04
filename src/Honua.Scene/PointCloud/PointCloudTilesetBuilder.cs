@@ -52,6 +52,16 @@ public static class PointCloudTilesetBuilder
             throw new ArgumentException("At least one point is required to build a point-cloud tileset.", nameof(points));
         }
 
+        // Perf follow-up: the builder buffers the whole cloud into a
+        // ProjectedPoint[] and the quadtree recursion allocates a fresh
+        // List<int> per node plus members.ToArray() per child, so index storage
+        // is duplicated at each depth. A bounded improvement would partition a
+        // single reusable index buffer in place (range-based (begin,end) splits
+        // with an in-array swap) and stream/spool the source points, capping the
+        // point count to avoid a malformed LAS exhausting memory. Deferred to
+        // avoid destabilizing the current deterministic layout; this method's
+        // IReadOnlyList contract already requires random access.
+
         // 1. Project every point once; track the geographic envelope.
         var projected = new ProjectedPoint[points.Count];
         var west = double.PositiveInfinity;
@@ -61,12 +71,27 @@ public static class PointCloudTilesetBuilder
         var minHeight = double.PositiveInfinity;
         var maxHeight = double.NegativeInfinity;
 
+        // Decide the colour depth ONCE for the whole cloud. LAS stores colour in
+        // 16-bit fields, but many producers stuff unscaled 8-bit values there; a
+        // blind >>8 would map those to black. Scan every coloured point: if EVERY
+        // channel across the dataset is <= 255 the cloud is 8-bit-in-16-bit and
+        // each tile copies the low byte verbatim, otherwise it is genuine 16-bit
+        // and every tile >>8-scales. Deciding per-cloud (not per-tile) keeps the
+        // encoding identical across leaves and interior coarse-LOD samples, so no
+        // colour seam appears at tile boundaries.
+        var eightBitColor = true;
+
         for (var i = 0; i < points.Count; i++)
         {
             var p = points[i];
             var (lon, lat, height) = transform(p.X, p.Y, p.Z);
             var (ex, ey, ez) = EcefCoordinateTransform.ToEcef(lon, lat, height);
             projected[i] = new ProjectedPoint(lon, lat, height, ex, ey, ez, p);
+
+            if (p.HasColor && (p.Red > 255 || p.Green > 255 || p.Blue > 255))
+            {
+                eightBitColor = false;
+            }
 
             if (lon < west) west = lon;
             if (lat < south) south = lat;
@@ -105,7 +130,7 @@ public static class PointCloudTilesetBuilder
         {
             var node = contentNodes[i];
             var uri = $"points_{i:0000}.pnts";
-            var pnts = PntsTileWriter.Build(node.Points);
+            var pnts = PntsTileWriter.Build(node.Points, eightBitColor);
             tiles[uri] = pnts;
             content[node.SceneNode] = new SceneTileContent(uri, node.MinHeight, node.MaxHeight);
         }
@@ -128,13 +153,11 @@ public static class PointCloudTilesetBuilder
         double geometricError,
         PointCloudTilingOptions options)
     {
-        var sceneNode = new SceneTileNode(west, south, east, north, geometricError, depth, Array.Empty<SceneFeature>(), Array.Empty<SceneTileNode>());
-
         var leafReached = memberIndices.Length <= options.MaxPointsPerTile;
         var depthReached = depth >= options.MaxDepth;
         if (leafReached || depthReached)
         {
-            return MakeLeaf(projected, memberIndices, west, south, east, north, depth, sceneNode);
+            return MakeLeaf(projected, memberIndices, west, south, east, north, depth, geometricError);
         }
 
         var midLon = (west + east) * 0.5;
@@ -163,7 +186,7 @@ public static class PointCloudTilesetBuilder
             (nw.Count > 0 ? 1 : 0) + (ne.Count > 0 ? 1 : 0);
         if (nonEmpty <= 1)
         {
-            return MakeLeaf(projected, memberIndices, west, south, east, north, depth, sceneNode);
+            return MakeLeaf(projected, memberIndices, west, south, east, north, depth, geometricError);
         }
 
         var childError = geometricError * 0.5;
@@ -221,8 +244,21 @@ public static class PointCloudTilesetBuilder
         double east,
         double north,
         int depth,
-        SceneTileNode sceneNode)
+        double inheritedGeometricError)
     {
+        // A leaf has no children, so its geometric error must be 0.0: in 3D
+        // Tiles a tile's geometricError is the error introduced when its
+        // children are not rendered, so a positive value on a childless tile
+        // tells the client finer detail still exists and screen-space-error
+        // refinement never converges at the deepest LOD. Mirrors the feature
+        // pipeline (SceneQuadtreePartitioner.BuildNode leaf).
+        //
+        // Exception: the root tile (depth 0) keeps its (floored, positive) root
+        // geometric error even when it is also a leaf — a zero root error defeats
+        // screen-space-error refinement of the root itself and can leave a client
+        // never scheduling the root tile (see ComputeRootGeometricError).
+        var leafError = depth == 0 ? inheritedGeometricError : 0.0;
+        var sceneNode = new SceneTileNode(west, south, east, north, leafError, depth, Array.Empty<SceneFeature>(), Array.Empty<SceneTileNode>());
         var pts = MaterializePoints(projected, memberIndices);
         var (min, max) = HeightExtent(projected, memberIndices);
         return new PointTileNode
@@ -247,7 +283,15 @@ public static class PointCloudTilesetBuilder
 
     private static PntsPoint[] SamplePoints(ProjectedPoint[] projected, int[] memberIndices, int sampleCount)
     {
-        if (sampleCount <= 0 || memberIndices.Length <= sampleCount)
+        // A non-positive sample count disables interior content entirely so the
+        // interior node carries no points (skipped by content emission), keeping
+        // the tileset to leaf geometry. Distinct from the member-set-at-or-below-
+        // cap case where the full set IS the representative sample.
+        if (sampleCount <= 0)
+        {
+            return Array.Empty<PntsPoint>();
+        }
+        if (memberIndices.Length <= sampleCount)
         {
             return MaterializePoints(projected, memberIndices);
         }
@@ -292,16 +336,10 @@ public static class PointCloudTilesetBuilder
     }
 
     private static double ComputeRootGeometricError(double[] boundsDegrees, double minHeight, double maxHeight)
-    {
-        var lonSpanRad = (boundsDegrees[2] - boundsDegrees[0]) * Math.PI / 180.0;
-        var latSpanRad = (boundsDegrees[3] - boundsDegrees[1]) * Math.PI / 180.0;
-        var lonMeters = Math.Abs(lonSpanRad) * EcefCoordinateTransform.WgsSemiMajorAxis
-            * Math.Cos((boundsDegrees[1] + boundsDegrees[3]) * 0.5 * Math.PI / 180.0);
-        var latMeters = Math.Abs(latSpanRad) * EcefCoordinateTransform.WgsSemiMajorAxis;
-        var heightMeters = Math.Max(0.0, maxHeight - minHeight);
-        var diagonal = Math.Sqrt(lonMeters * lonMeters + latMeters * latMeters + heightMeters * heightMeters);
-        return Math.Round(diagonal, 6, MidpointRounding.AwayFromZero);
-    }
+        // Shared cos-lat-corrected diagonal geodesy (see GeodesicError); the floor,
+        // 6-decimal rounding, and height term all live in the one helper so the
+        // point-cloud, BSL, and I3S builders stay numerically identical.
+        => GeodesicError.RootGeometricError(boundsDegrees, minHeight, maxHeight);
 
     private readonly record struct ProjectedPoint(
         double Lon,

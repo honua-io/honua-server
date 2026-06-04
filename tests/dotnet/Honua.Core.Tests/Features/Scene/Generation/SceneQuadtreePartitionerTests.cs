@@ -59,13 +59,82 @@ public sealed class SceneQuadtreePartitionerTests
 
         var tree = SceneQuadtreePartitioner.Partition(features, Bounds, 1000.0, options);
 
-        // With InteriorSampleCount = 0 interior nodes still sample (0 disables
-        // thinning => full membership), so leaves alone cover the dataset.
+        // With InteriorSampleCount = 0 interior nodes carry NO content (0 disables
+        // interior content per SceneLodOptions.InteriorSampleCount), so the leaves
+        // alone cover the dataset exactly once.
         var leafIds = new List<long>();
         CollectLeafFeatureIds(tree.Root, leafIds);
 
         leafIds.Should().HaveCount(900);
         leafIds.Distinct().Should().HaveCount(900);
+    }
+
+    [UnitTest]
+    public void Partition_InteriorSampleCountZero_InteriorNodesCarryNoContent()
+    {
+        // Regression: InteriorSampleCount = 0 is documented to DISABLE interior
+        // content (the tileset then carries only leaf geometry). Previously the
+        // sampleCount<=0 case fell through to "return the full member set", so
+        // every interior node carried the entire dataset beneath it — O(features x
+        // depth) total emitted geometry and a root tile equal to the whole layer.
+        // The grid is large enough to force subdivision so interior nodes exist.
+        var features = MakePointGrid(40, 40); // 1600 features.
+        var options = new SceneLodOptions { MaxFeaturesPerTile = 100, MaxDepth = 8, InteriorSampleCount = 0 };
+
+        var tree = SceneQuadtreePartitioner.Partition(features, Bounds, 1000.0, options);
+
+        tree.Root.IsLeaf.Should().BeFalse("the large grid must subdivide so interior nodes exist.");
+
+        // Every interior (non-leaf) node must carry zero content.
+        AssertInteriorNodesEmpty(tree.Root);
+
+        // Total emitted feature count across ALL content-bearing nodes equals the
+        // input count exactly once: interior nodes contribute nothing, leaves
+        // partition the dataset. (If interior nodes still carried the full set the
+        // total would be a large multiple of 1600.)
+        var totalEmitted = 0;
+        SumEmittedFeatureCount(tree.Root, ref totalEmitted);
+        totalEmitted.Should().Be(1600);
+
+        // ContentNodeCount counts only nodes with content; with empty interiors it
+        // equals the number of leaves, never the full node count.
+        tree.ContentNodeCount.Should().Be(CountLeaves(tree.Root));
+    }
+
+    private static void AssertInteriorNodesEmpty(SceneTileNode node)
+    {
+        if (!node.IsLeaf)
+        {
+            node.Features.Should().BeEmpty(
+                "InteriorSampleCount = 0 disables interior content, so an interior node carries no features.");
+        }
+        foreach (var child in node.Children)
+        {
+            AssertInteriorNodesEmpty(child);
+        }
+    }
+
+    private static void SumEmittedFeatureCount(SceneTileNode node, ref int total)
+    {
+        total += node.Features.Count;
+        foreach (var child in node.Children)
+        {
+            SumEmittedFeatureCount(child, ref total);
+        }
+    }
+
+    private static int CountLeaves(SceneTileNode node)
+    {
+        if (node.IsLeaf)
+        {
+            return 1;
+        }
+        var count = 0;
+        foreach (var child in node.Children)
+        {
+            count += CountLeaves(child);
+        }
+        return count;
     }
 
     [UnitTest]
@@ -110,6 +179,71 @@ public sealed class SceneQuadtreePartitionerTests
         // Degenerate split collapses to a single leaf at the root.
         tree.Root.IsLeaf.Should().BeTrue();
         tree.Root.Features.Should().HaveCount(500);
+    }
+
+    [UnitTest]
+    public void Partition_RootIsLeaf_RootKeepsPositiveGeometricError()
+    {
+        // When the whole dataset fits one leaf, the root tile is also a leaf. It
+        // must still carry its (positive) root geometric error rather than 0.0: a
+        // zero root error gives the root a zero screen-space error and can leave a
+        // client never scheduling the root tile, defeating root SSE refinement.
+        var features = MakePointGrid(2, 2); // 4 features, well under the threshold.
+        var options = new SceneLodOptions { MaxFeaturesPerTile = 100, MaxDepth = 8, InteriorSampleCount = 8 };
+
+        var tree = SceneQuadtreePartitioner.Partition(features, Bounds, 1234.0, options);
+
+        tree.Root.IsLeaf.Should().BeTrue();
+        tree.Root.GeometricError.Should().Be(1234.0,
+            "a root-leaf must retain the floored, positive root geometric error.");
+    }
+
+    [UnitTest]
+    public void Partition_DegenerateRootLeaf_RootKeepsPositiveGeometricError()
+    {
+        // All features at the same coordinate collapse the split into a single
+        // root-leaf via the degenerate-quadrant path; that path must also preserve
+        // the positive root geometric error.
+        var features = new List<SceneFeature>();
+        for (var i = 0; i < 50; i++)
+        {
+            features.Add(MakePoint(i, -122.45, 37.75));
+        }
+        var options = new SceneLodOptions { MaxFeaturesPerTile = 10, MaxDepth = 12, InteriorSampleCount = 8 };
+
+        var tree = SceneQuadtreePartitioner.Partition(features, Bounds, 777.0, options);
+
+        tree.Root.IsLeaf.Should().BeTrue();
+        tree.Root.GeometricError.Should().Be(777.0);
+    }
+
+    [UnitTest]
+    public void Partition_NonRootLeaves_HaveZeroGeometricError()
+    {
+        // Every non-root leaf (a childless tile below the root) must report
+        // geometric error 0.0, so a 3D Tiles client's SSE refinement converges at
+        // the deepest LOD instead of believing finer detail still exists.
+        var features = MakePointGrid(40, 40);
+        var options = new SceneLodOptions { MaxFeaturesPerTile = 50, MaxDepth = 10, InteriorSampleCount = 16 };
+
+        var tree = SceneQuadtreePartitioner.Partition(features, Bounds, 2048.0, options);
+
+        tree.Root.IsLeaf.Should().BeFalse("the large grid must subdivide so non-root leaves exist.");
+        AssertNonRootLeavesAreZero(tree.Root, isRoot: true);
+    }
+
+    private static void AssertNonRootLeavesAreZero(SceneTileNode node, bool isRoot)
+    {
+        if (node.IsLeaf && !isRoot)
+        {
+            node.GeometricError.Should().Be(0.0,
+                "a non-root leaf must have zero geometric error so SSE refinement converges.");
+            return;
+        }
+        foreach (var child in node.Children)
+        {
+            AssertNonRootLeavesAreZero(child, isRoot: false);
+        }
     }
 
     private static void AssertErrorDecreases(SceneTileNode node)

@@ -164,6 +164,22 @@ internal static partial class I3sSceneServerEndpoints
         return Results.Bytes(bytes, I3sContentType);
     }
 
+    /// <summary>
+    /// Resolves the served layer's horizontal extent (and, when available, its
+    /// vertical extent) for the I3S <c>fullExtent</c>.
+    /// </summary>
+    /// <remarks>
+    /// The vertical extent (zmin/zmax) is intentionally <see langword="null"/>:
+    /// the persisted <c>SceneDatasetRecord</c> only carries a 2D
+    /// <see cref="SceneExtent"/> (XMin/YMin/XMax/YMax) and no min/max height, and
+    /// the config-registry path carries no extent at all. The authoritative
+    /// vertical bounds live on the per-tile bounding volumes served by the gRPC
+    /// <c>TileService</c> (region[4]/region[5]); the I3S descriptor does not have a
+    /// height source at this layer, so per OGC 19-008 it advertises a
+    /// horizontal-only <c>fullExtent</c> (zmin/zmax omitted) rather than fabricating
+    /// a vertical range. If the registration model gains persisted height bounds,
+    /// thread them through the trailing tuple slots here.
+    /// </remarks>
     private static async Task<(SceneExtent? Extent, double? MinHeight, double? MaxHeight)> ResolveExtentAsync(
         HttpContext context,
         string sceneId,

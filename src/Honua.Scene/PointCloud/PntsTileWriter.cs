@@ -17,15 +17,26 @@ namespace Honua.Core.Features.Scene.PointCloud;
 /// Positions are encoded as <c>Float32</c> XYZ relative to an
 /// <c>RTC_CENTER</c> (the tile's ECEF centroid) so the 32-bit mantissa retains
 /// centimetre precision regardless of the cloud's global ECEF magnitude. RGB is
-/// emitted as <c>UNSIGNED_BYTE</c> per channel (LAS 16-bit colour is scaled to
-/// 8-bit). When the source has no colour the writer omits the RGB semantic and
-/// the client falls back to a uniform point colour.
+/// emitted as <c>UNSIGNED_BYTE</c> per channel. LAS colour lives in 16-bit
+/// fields, but many producers store unscaled 8-bit (0-255) values there. The
+/// 8-bit-vs-16-bit interpretation is decided ONCE per cloud by the caller
+/// (<see cref="PointCloudTilesetBuilder"/> scans every point's channels) and
+/// passed in to every tile via <c>eightBitColor</c>: when true the writer copies
+/// the low byte verbatim (treating the cloud as 8-bit) instead of
+/// <c>&gt;&gt;8</c>'ing genuine-255 values down to black; otherwise it scales true
+/// 16-bit colour to 8-bit via <c>&gt;&gt;8</c>. Deciding dataset-wide (rather than
+/// per tile) means neighbouring tiles, and an interior coarse-LOD tile and its
+/// leaves, always agree on the encoding so no colour seam appears. When the
+/// source has no colour the writer omits the RGB semantic and the client falls
+/// back to a uniform point colour.
 /// </para>
 /// <para>
-/// The byte layout — header, padded feature-table JSON, feature-table binary,
-/// batch-table JSON, batch-table binary — follows the PNTS spec exactly and is
-/// produced in a fixed property order, so identical input yields byte-identical
-/// output.
+/// The byte layout — header, padded feature-table JSON, padded feature-table
+/// binary, padded batch-table JSON, padded batch-table binary — follows the
+/// PNTS spec exactly: every section header and binary body starts AND ends on an
+/// 8-byte boundary, and the whole tile byteLength is 8-aligned. Output is
+/// produced in a fixed property order with deterministic zero padding, so
+/// identical input yields byte-identical output.
 /// </para>
 /// </remarks>
 public static class PntsTileWriter
@@ -41,8 +52,18 @@ public static class PntsTileWriter
     /// Points to write, each carrying an ECEF position and preserved attributes.
     /// Must be non-empty.
     /// </param>
+    /// <param name="eightBitColor">
+    /// The dataset-wide colour-depth decision: <see langword="true"/> copies each
+    /// channel's low byte verbatim (8-bit-in-16-bit producers), <see langword="false"/>
+    /// scales true 16-bit colour to 8-bit via <c>&gt;&gt;8</c>. The decision MUST be
+    /// made once for the whole cloud (see
+    /// <see cref="PointCloudTilesetBuilder"/>) and passed identically to every
+    /// tile, otherwise neighbouring tiles — or an interior coarse-LOD tile and
+    /// its leaves — can pick different interpretations and render the same raw
+    /// colour differently, producing a visible seam.
+    /// </param>
     /// <returns>A deterministic PNTS byte sequence.</returns>
-    public static byte[] Build(IReadOnlyList<PntsPoint> points)
+    public static byte[] Build(IReadOnlyList<PntsPoint> points, bool eightBitColor)
     {
         ArgumentNullException.ThrowIfNull(points);
         if (points.Count == 0)
@@ -66,82 +87,107 @@ public static class PntsTileWriter
         cy /= count;
         cz /= count;
 
-        // Feature-table binary: POSITION (VEC3 float32) then optional RGB (3 x uint8).
-        var positionBytes = new byte[count * 12];
+        // Feature-table binary: POSITION (VEC3 float32) then optional RGB
+        // (3 x uint8). Sizes are known up front, so allocate the final buffer
+        // once and write each semantic into its slice — no intermediate copies.
+        var positionLength = count * 12;
+        var rgbByteOffset = hasColor ? positionLength : -1;
+        var featureBinaryArray = new byte[positionLength + (hasColor ? count * 3 : 0)];
         for (var i = 0; i < count; i++)
         {
             var p = points[i];
-            BinaryPrimitives.WriteSingleLittleEndian(positionBytes.AsSpan(i * 12, 4), (float)(p.EcefX - cx));
-            BinaryPrimitives.WriteSingleLittleEndian(positionBytes.AsSpan(i * 12 + 4, 4), (float)(p.EcefY - cy));
-            BinaryPrimitives.WriteSingleLittleEndian(positionBytes.AsSpan(i * 12 + 8, 4), (float)(p.EcefZ - cz));
+            BinaryPrimitives.WriteSingleLittleEndian(featureBinaryArray.AsSpan(i * 12, 4), (float)(p.EcefX - cx));
+            BinaryPrimitives.WriteSingleLittleEndian(featureBinaryArray.AsSpan(i * 12 + 4, 4), (float)(p.EcefY - cy));
+            BinaryPrimitives.WriteSingleLittleEndian(featureBinaryArray.AsSpan(i * 12 + 8, 4), (float)(p.EcefZ - cz));
         }
 
-        byte[]? rgbBytes = null;
         if (hasColor)
         {
-            rgbBytes = new byte[count * 3];
+            // LAS stores colour in 16-bit fields, but many producers stuff 8-bit
+            // (0-255) values into those fields unscaled. A blind >>8 would map
+            // those to 0 (black). The 8-bit-vs-16-bit interpretation is decided
+            // ONCE for the whole cloud by the caller (PointCloudTilesetBuilder)
+            // and passed in via eightBitColor, so every tile — leaves and
+            // interior coarse-LOD samples alike — uses the same encoding and no
+            // seam appears at tile boundaries.
             for (var i = 0; i < count; i++)
             {
                 var p = points[i];
-                // LAS stores 16-bit colour; >>8 maps to 8-bit deterministically.
-                rgbBytes[i * 3] = (byte)(p.Red >> 8);
-                rgbBytes[i * 3 + 1] = (byte)(p.Green >> 8);
-                rgbBytes[i * 3 + 2] = (byte)(p.Blue >> 8);
+                var rgbStart = rgbByteOffset + (i * 3);
+                if (eightBitColor)
+                {
+                    featureBinaryArray[rgbStart] = (byte)p.Red;
+                    featureBinaryArray[rgbStart + 1] = (byte)p.Green;
+                    featureBinaryArray[rgbStart + 2] = (byte)p.Blue;
+                }
+                else
+                {
+                    featureBinaryArray[rgbStart] = (byte)(p.Red >> 8);
+                    featureBinaryArray[rgbStart + 1] = (byte)(p.Green >> 8);
+                    featureBinaryArray[rgbStart + 2] = (byte)(p.Blue >> 8);
+                }
             }
         }
 
-        var featureBinary = new List<byte>(positionBytes.Length + (rgbBytes?.Length ?? 0));
-        featureBinary.AddRange(positionBytes);
-        var rgbByteOffset = -1;
-        if (rgbBytes is not null)
-        {
-            rgbByteOffset = featureBinary.Count;
-            featureBinary.AddRange(rgbBytes);
-        }
-
-        // Batch-table binary: INTENSITY (uint16) and CLASSIFICATION (uint8).
-        var intensityBytes = new byte[count * 2];
-        var classificationBytes = new byte[count];
+        // Batch-table binary: INTENSITY (uint16) then CLASSIFICATION (uint8).
+        var intensityOffset = 0;
+        var classificationOffset = count * 2;
+        var batchBinaryArray = new byte[(count * 2) + count];
         for (var i = 0; i < count; i++)
         {
-            BinaryPrimitives.WriteUInt16LittleEndian(intensityBytes.AsSpan(i * 2, 2), points[i].Intensity);
-            classificationBytes[i] = points[i].Classification;
+            BinaryPrimitives.WriteUInt16LittleEndian(batchBinaryArray.AsSpan(i * 2, 2), points[i].Intensity);
+            batchBinaryArray[classificationOffset + i] = points[i].Classification;
         }
-
-        var batchBinary = new List<byte>(intensityBytes.Length + classificationBytes.Length);
-        var intensityOffset = 0;
-        batchBinary.AddRange(intensityBytes);
-        var classificationOffset = batchBinary.Count;
-        batchBinary.AddRange(classificationBytes);
 
         var featureTableJson = BuildFeatureTableJson(count, cx, cy, cz, hasColor, rgbByteOffset);
         var batchTableJson = BuildBatchTableJson(intensityOffset, classificationOffset);
 
         // Pad each JSON section to an 8-byte boundary (PNTS spec) with spaces.
         var featureJsonPadded = PadJson(featureTableJson, HeaderLength);
-        var featureBinaryArray = featureBinary.ToArray();
-        // The feature-table binary must start 8-byte aligned within the tile.
-        var batchJsonPadded = PadJson(batchTableJson, HeaderLength + featureJsonPadded.Length + featureBinaryArray.Length);
-        var batchBinaryArray = batchBinary.ToArray();
 
-        var totalLength = HeaderLength
-            + featureJsonPadded.Length + featureBinaryArray.Length
+        // The 3D Tiles PNTS spec requires every binary body to START AND END on
+        // an 8-byte boundary. The feature-table JSON above guarantees the
+        // feature BINARY starts aligned, but the feature binary itself is
+        // count*12 (uncoloured) or count*15 (coloured) bytes — only a multiple
+        // of 8 for even uncoloured counts / coloured counts divisible by 8. Pad
+        // it with deterministic zero bytes up to the next multiple of 8 so the
+        // following batch-table JSON header also starts 8-aligned. The
+        // featureTableBinaryByteLength written at offset 16 reflects this padded
+        // length so a strict reader sees an aligned layout.
+        var featureBinaryPad = (8 - (featureBinaryArray.Length & 7)) & 7;
+        var featureBinaryLength = featureBinaryArray.Length + featureBinaryPad;
+
+        var batchJsonPadded = PadJson(batchTableJson, HeaderLength + featureJsonPadded.Length + featureBinaryLength);
+
+        var unpaddedLength = HeaderLength
+            + featureJsonPadded.Length + featureBinaryLength
             + batchJsonPadded.Length + batchBinaryArray.Length;
+
+        // The whole tile's byteLength must be 8-byte aligned (3D Tiles PNTS
+        // spec). Only the trailing batch-table binary (INTENSITY uint16 +
+        // CLASSIFICATION uint8 = count*3 bytes) can leave the total unaligned;
+        // pad it with deterministic zero bytes up to the next multiple of 8.
+        var trailingPad = (8 - (unpaddedLength & 7)) & 7;
+        var batchBinaryLength = batchBinaryArray.Length + trailingPad;
+
+        var totalLength = unpaddedLength + trailingPad;
 
         var tile = new byte[totalLength];
         BinaryPrimitives.WriteUInt32LittleEndian(tile.AsSpan(0, 4), Magic);
         BinaryPrimitives.WriteUInt32LittleEndian(tile.AsSpan(4, 4), Version);
         BinaryPrimitives.WriteUInt32LittleEndian(tile.AsSpan(8, 4), (uint)totalLength);
         BinaryPrimitives.WriteUInt32LittleEndian(tile.AsSpan(12, 4), (uint)featureJsonPadded.Length);
-        BinaryPrimitives.WriteUInt32LittleEndian(tile.AsSpan(16, 4), (uint)featureBinaryArray.Length);
+        BinaryPrimitives.WriteUInt32LittleEndian(tile.AsSpan(16, 4), (uint)featureBinaryLength);
         BinaryPrimitives.WriteUInt32LittleEndian(tile.AsSpan(20, 4), (uint)batchJsonPadded.Length);
-        BinaryPrimitives.WriteUInt32LittleEndian(tile.AsSpan(24, 4), (uint)batchBinaryArray.Length);
+        BinaryPrimitives.WriteUInt32LittleEndian(tile.AsSpan(24, 4), (uint)batchBinaryLength);
 
         var offset = HeaderLength;
         featureJsonPadded.CopyTo(tile.AsSpan(offset));
         offset += featureJsonPadded.Length;
         featureBinaryArray.CopyTo(tile.AsSpan(offset));
-        offset += featureBinaryArray.Length;
+        // Skip the zero-padding bytes already present in the zero-initialised
+        // tile buffer so the batch-table JSON lands on its 8-aligned offset.
+        offset += featureBinaryLength;
         batchJsonPadded.CopyTo(tile.AsSpan(offset));
         offset += batchJsonPadded.Length;
         batchBinaryArray.CopyTo(tile.AsSpan(offset));

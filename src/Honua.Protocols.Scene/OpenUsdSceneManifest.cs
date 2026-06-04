@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Scene.Domain;
+using Honua.Scene.Assets;
 
 namespace Honua.Protocols.Scene;
 

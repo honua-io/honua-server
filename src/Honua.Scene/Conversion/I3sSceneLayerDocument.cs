@@ -47,9 +47,36 @@ public sealed class I3sSceneLayerDocument
     [JsonPropertyName("fullExtent")]
     public I3sFullExtent? FullExtent { get; set; }
 
+    /// <summary>
+    /// Vertical coordinate model for the layer's heights (ellipsoidal or
+    /// gravity-related). Required by the I3S spec for 3DObject/IntegratedMesh
+    /// layers so clients position geometry vertically.
+    /// </summary>
+    [JsonPropertyName("heightModelInfo")]
+    public I3sHeightModelInfo? HeightModelInfo { get; set; }
+
     /// <summary>Store block describing geometry/node-page layout.</summary>
     [JsonPropertyName("store")]
     public I3sStore? Store { get; set; }
+}
+
+/// <summary>
+/// I3S height-model block describing how layer heights are interpreted
+/// vertically (OGC 19-008 <c>heightModelInfo</c>).
+/// </summary>
+public sealed class I3sHeightModelInfo
+{
+    /// <summary>Height model: <c>ellipsoidal</c> or <c>gravity_related_height</c>.</summary>
+    [JsonPropertyName("heightModel")]
+    public string? HeightModel { get; set; }
+
+    /// <summary>Vertical coordinate system unit, e.g. <c>meter</c>.</summary>
+    [JsonPropertyName("vertCRS")]
+    public string? VertCrs { get; set; }
+
+    /// <summary>Height unit, e.g. <c>meter</c>.</summary>
+    [JsonPropertyName("heightUnit")]
+    public string? HeightUnit { get; set; }
 }
 
 /// <summary>I3S spatial-reference block (WKID-based).</summary>
@@ -133,6 +160,7 @@ public sealed class I3sStore
 [JsonSerializable(typeof(I3sSceneLayerDocument))]
 [JsonSerializable(typeof(I3sSpatialReference))]
 [JsonSerializable(typeof(I3sFullExtent))]
+[JsonSerializable(typeof(I3sHeightModelInfo))]
 [JsonSerializable(typeof(I3sStore))]
 public sealed partial class I3sSceneLayerJsonContext : System.Text.Json.Serialization.JsonSerializerContext
 {
