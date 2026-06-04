@@ -124,9 +124,18 @@ public static class PntsTileWriter
         var batchJsonPadded = PadJson(batchTableJson, HeaderLength + featureJsonPadded.Length + featureBinaryArray.Length);
         var batchBinaryArray = batchBinary.ToArray();
 
-        var totalLength = HeaderLength
+        var unpaddedLength = HeaderLength
             + featureJsonPadded.Length + featureBinaryArray.Length
             + batchJsonPadded.Length + batchBinaryArray.Length;
+
+        // The whole tile's byteLength must be 8-byte aligned (3D Tiles PNTS
+        // spec). Only the trailing batch-table binary (INTENSITY uint16 +
+        // CLASSIFICATION uint8 = count*3 bytes) can leave the total unaligned;
+        // pad it with deterministic zero bytes up to the next multiple of 8.
+        var trailingPad = (8 - (unpaddedLength & 7)) & 7;
+        var batchBinaryLength = batchBinaryArray.Length + trailingPad;
+
+        var totalLength = unpaddedLength + trailingPad;
 
         var tile = new byte[totalLength];
         BinaryPrimitives.WriteUInt32LittleEndian(tile.AsSpan(0, 4), Magic);
@@ -135,7 +144,7 @@ public static class PntsTileWriter
         BinaryPrimitives.WriteUInt32LittleEndian(tile.AsSpan(12, 4), (uint)featureJsonPadded.Length);
         BinaryPrimitives.WriteUInt32LittleEndian(tile.AsSpan(16, 4), (uint)featureBinaryArray.Length);
         BinaryPrimitives.WriteUInt32LittleEndian(tile.AsSpan(20, 4), (uint)batchJsonPadded.Length);
-        BinaryPrimitives.WriteUInt32LittleEndian(tile.AsSpan(24, 4), (uint)batchBinaryArray.Length);
+        BinaryPrimitives.WriteUInt32LittleEndian(tile.AsSpan(24, 4), (uint)batchBinaryLength);
 
         var offset = HeaderLength;
         featureJsonPadded.CopyTo(tile.AsSpan(offset));

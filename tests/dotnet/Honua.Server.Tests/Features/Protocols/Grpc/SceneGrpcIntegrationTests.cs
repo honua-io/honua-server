@@ -27,8 +27,10 @@ namespace Honua.Server.Tests.Features.Protocols.Grpc;
 public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
 {
     private const string FixtureSceneId = "fixture-tileset";
+    private const string MissingContentSceneId = "missing-content-tileset";
 
     private readonly WebAppFixture _fixture;
+    private readonly string _missingContentRoot;
     private GrpcChannel? _channel;
     private Proto.SceneService.SceneServiceClient? _sceneClient;
     private Proto.TileService.TileServiceClient? _tileClient;
@@ -38,6 +40,7 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
     public SceneGrpcIntegrationTests()
     {
         var fixtureRoot = ResolveFixtureRoot();
+        _missingContentRoot = CreateMissingContentTilesetRoot();
         _fixture = new WebAppFixture()
             .ConfigureWebHost(builder =>
             {
@@ -49,6 +52,13 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
                         ["Scenes:Datasets:0:Name"] = "Honua Fixture Tileset",
                         ["Scenes:Datasets:0:Description"] = "Static 3D Tiles fixture used by gRPC tests",
                         ["Scenes:Datasets:0:AssetRoot"] = fixtureRoot,
+
+                        // A scene whose root node references a content uri that
+                        // does not exist on disk, to exercise the GetTile
+                        // content-resolution NotFound path.
+                        ["Scenes:Datasets:1:Id"] = MissingContentSceneId,
+                        ["Scenes:Datasets:1:Name"] = "Missing Content Tileset",
+                        ["Scenes:Datasets:1:AssetRoot"] = _missingContentRoot,
                     });
                 });
             });
@@ -75,6 +85,18 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
     {
         _channel?.Dispose();
         await _fixture.DisposeAsync();
+
+        try
+        {
+            if (Directory.Exists(_missingContentRoot))
+            {
+                Directory.Delete(_missingContentRoot, recursive: true);
+            }
+        }
+        catch (IOException)
+        {
+            // Best-effort cleanup of the temp fixture root.
+        }
     }
 
     [IntegrationTest]
@@ -171,6 +193,124 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.Streaming)]
+    [Endpoint("POST /geospatial.v1.TileService/StreamTiles")]
+    public async Task StreamTiles_WithMinLod_ExcludesRootNode()
+    {
+        // The fixture root is LOD 0 and its child (nested sub-tileset) is LOD 1;
+        // min_lod=1 must drop the root and keep the LOD-1 node.
+        var tiles = await StreamAsync(new Proto.StreamTilesRequest { SceneId = FixtureSceneId, MinLod = 1 });
+
+        tiles.Should().NotBeEmpty();
+        tiles.Should().NotContain(tile => tile.Node.NodeId == "0");
+        tiles.Should().OnlyContain(tile => tile.Node.Lod >= 1);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Streaming)]
+    [Endpoint("POST /geospatial.v1.TileService/StreamTiles")]
+    public async Task StreamTiles_WithMaxLodZero_ReturnsAllLods()
+    {
+        // Per the proto contract, max_lod=0 means "all available LODs" rather
+        // than a cap at the root — both the LOD-0 root and the LOD-1 child are
+        // returned. This guards against inverting the "0 == unlimited" rule.
+        var tiles = await StreamAsync(new Proto.StreamTilesRequest { SceneId = FixtureSceneId, MaxLod = 0 });
+
+        tiles.Should().NotBeEmpty();
+        tiles.Should().Contain(tile => tile.Node.Lod == 0);
+        tiles.Should().Contain(tile => tile.Node.Lod == 1);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Streaming)]
+    [Endpoint("POST /geospatial.v1.TileService/StreamTiles")]
+    public async Task StreamTiles_WithMaxLodOne_IncludesDepthOneNodes()
+    {
+        // max_lod=1 keeps nodes at LOD 0 and 1 (the fixture's full depth) and
+        // never streams a node above the cap.
+        var tiles = await StreamAsync(new Proto.StreamTilesRequest { SceneId = FixtureSceneId, MaxLod = 1 });
+
+        tiles.Should().NotBeEmpty();
+        tiles.Should().OnlyContain(tile => tile.Node.Lod <= 1);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Streaming)]
+    [Endpoint("POST /geospatial.v1.TileService/StreamTiles")]
+    public async Task StreamTiles_WithMaxGeometricErrorBelowRoot_ExcludesCoarseNodes()
+    {
+        // The root's geometric error is 100; a cap below that must drop the root
+        // (coarse) node while keeping finer nodes (the LOD-1 child has error 0).
+        var tiles = await StreamAsync(new Proto.StreamTilesRequest
+        {
+            SceneId = FixtureSceneId,
+            MaxGeometricError = 50.0,
+        });
+
+        tiles.Should().NotBeEmpty();
+        tiles.Should().NotContain(tile => tile.Node.NodeId == "0");
+        tiles.Should().OnlyContain(tile => tile.Node.GeometricError <= 50.0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Streaming)]
+    [Endpoint("POST /geospatial.v1.TileService/StreamTiles")]
+    public async Task StreamTiles_WithDisjointExtent_YieldsNoTiles()
+    {
+        // An extent on the opposite side of the globe from the fixture region
+        // intersects nothing, so the stream must be empty.
+        var request = new Proto.StreamTilesRequest { SceneId = FixtureSceneId };
+        request.Extent = new Proto.Extent3D
+        {
+            Extent = new Proto.Extent
+            {
+                Xmin = 100.0,
+                Ymin = 60.0,
+                Xmax = 101.0,
+                Ymax = 61.0,
+                SpatialReference = new Proto.SpatialReference { Wkid = 4326, LatestWkid = 4326 },
+            },
+        };
+
+        var tiles = await StreamAsync(request);
+
+        tiles.Should().BeEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Streaming)]
+    [Endpoint("POST /geospatial.v1.TileService/StreamTiles")]
+    public async Task StreamTiles_ForUnknownScene_ThrowsNotFound()
+    {
+        using var call = _tileClient!.StreamTiles(
+            new Proto.StreamTilesRequest { SceneId = "does-not-exist" },
+            _headers);
+
+        var act = async () =>
+        {
+            await foreach (var _ in call.ResponseStream.ReadAllAsync())
+            {
+            }
+        };
+
+        (await act.Should().ThrowAsync<RpcException>())
+            .Which.StatusCode.Should().Be(StatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTile)]
+    [Endpoint("POST /geospatial.v1.TileService/GetTile")]
+    public async Task GetTile_ForNodeWithMissingContentFile_ThrowsNotFound()
+    {
+        var act = async () => await _tileClient!.GetTileAsync(
+            new Proto.GetTileRequest { SceneId = MissingContentSceneId, NodeId = "0" },
+            _headers);
+
+        (await act.Should().ThrowAsync<RpcException>())
+            .Which.StatusCode.Should().Be(StatusCode.NotFound);
+    }
+
+    [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.ElevationService/GetElevation")]
     [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.ElevationService/GetElevation")]
@@ -204,6 +344,52 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ElevationService/GetElevation")]
+    public async Task GetElevation_WithNullPoint_ThrowsInvalidArgument()
+    {
+        var request = new Proto.GetElevationRequest
+        {
+            DatasetId = "missing-dataset",
+            LayerId = 0,
+            // Point intentionally left unset (null) — the adapter must reject it
+            // before reaching the canonical elevation service.
+        };
+
+        var act = async () => await _elevationClient!.GetElevationAsync(request, _headers);
+
+        (await act.Should().ThrowAsync<RpcException>())
+            .Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ElevationService/GetElevationProfile")]
+    public async Task GetElevationProfile_WithSampleCountOne_ThrowsInvalidArgument()
+    {
+        // Two distinct coordinates so BuildLineString's <2-coord guard is NOT
+        // what trips; the rejection must come from the sample_count==1 branch.
+        var line = new Proto.PolylineGeometry();
+        var path = new Proto.CoordinateSequence();
+        path.Coords.Add(new Proto.Coordinate { X = 0, Y = 0 });
+        path.Coords.Add(new Proto.Coordinate { X = 0.001, Y = 0.001 });
+        line.Paths.Add(path);
+
+        var request = new Proto.GetElevationProfileRequest
+        {
+            DatasetId = "missing-dataset",
+            LayerId = 0,
+            Line = line,
+            SampleCount = 1,
+        };
+
+        var act = async () => await _elevationClient!.GetElevationProfileAsync(request, _headers);
+
+        (await act.Should().ThrowAsync<RpcException>())
+            .Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.ElevationService/GetElevationProfile")]
     [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.ElevationService/GetElevationProfile")]
     public async Task GetElevationProfile_WithSingleCoordinate_ThrowsInvalidArgument()
@@ -224,6 +410,198 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
 
         (await act.Should().ThrowAsync<RpcException>())
             .Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+    }
+
+    private async Task<List<Proto.Tile>> StreamAsync(Proto.StreamTilesRequest request)
+    {
+        using var call = _tileClient!.StreamTiles(request, _headers);
+        var tiles = new List<Proto.Tile>();
+        await foreach (var tile in call.ResponseStream.ReadAllAsync())
+        {
+            tiles.Add(tile);
+        }
+
+        return tiles;
+    }
+
+    /// <summary>
+    /// Creates a temporary scene asset root containing a valid
+    /// <c>tileset.json</c> whose root content uri points at a b3dm file that
+    /// does not exist, so GetTile resolves the node but cannot read its bytes.
+    /// </summary>
+    private static string CreateMissingContentTilesetRoot()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "honua-grpc-missing-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+
+        const string tilesetJson = """
+        {
+          "asset": { "version": "1.1" },
+          "geometricError": 100.0,
+          "root": {
+            "boundingVolume": { "region": [-1.31970, 0.69886, -1.31965, 0.69890, 0.0, 20.0] },
+            "geometricError": 100.0,
+            "refine": "REPLACE",
+            "content": { "uri": "tiles/does-not-exist.b3dm" }
+          }
+        }
+        """;
+        File.WriteAllText(Path.Combine(root, "tileset.json"), tilesetJson);
+        return root;
+    }
+
+    private static string ResolveFixtureRoot()
+    {
+        var directory = AppContext.BaseDirectory;
+        while (directory is not null)
+        {
+            var candidate = Path.Combine(directory, "tests", "fixtures", "scenes", "fixture-tileset");
+            if (Directory.Exists(candidate))
+            {
+                return candidate;
+            }
+
+            directory = Path.GetDirectoryName(directory);
+        }
+
+        throw new DirectoryNotFoundException(
+            "Could not locate tests/fixtures/scenes/fixture-tileset from the test base directory.");
+    }
+}
+
+/// <summary>
+/// Authorization tests proving the gRPC scene/tile services enforce the same
+/// per-scene <c>AccessPolicy</c> the HTTP/I3S surfaces enforce
+/// (honua-server#1194 / #1195). A protected (non-public) scene must not be
+/// served — metadata or tiles — to an unauthenticated gRPC caller; it returns
+/// <see cref="StatusCode.Unauthenticated"/> (or
+/// <see cref="StatusCode.PermissionDenied"/> for an authenticated-but-unauthorized
+/// caller). Dev-auth is disabled so the anonymous caller is genuinely
+/// unauthenticated, mirroring <c>SceneAuthorizationTests</c> on the HTTP side.
+/// </summary>
+[Collection("Database")]
+[Protocol(TestProtocols.Grpc)]
+public sealed class SceneGrpcAuthorizationTests : IAsyncLifetime
+{
+    private const string AdminPassword = "scene-grpc-auth-test-key";
+    private const string PublicSceneId = "public-fixture-tileset";
+    private const string ProtectedSceneId = "protected-grpc-tileset";
+
+    private readonly WebAppFixture _fixture;
+    private GrpcChannel? _channel;
+    private Proto.SceneService.SceneServiceClient? _sceneClient;
+    private Proto.TileService.TileServiceClient? _tileClient;
+    private Metadata? _headers;
+
+    public SceneGrpcAuthorizationTests()
+    {
+        var fixtureRoot = ResolveFixtureRoot();
+        _fixture = new WebAppFixture()
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+                builder.ConfigureAppConfiguration((_, configBuilder) =>
+                {
+                    configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        // Public scene — no access policy.
+                        ["Scenes:Datasets:0:Id"] = PublicSceneId,
+                        ["Scenes:Datasets:0:Name"] = "Public Fixture",
+                        ["Scenes:Datasets:0:AssetRoot"] = fixtureRoot,
+
+                        // Protected scene — anonymous denied, role-restricted.
+                        ["Scenes:Datasets:1:Id"] = ProtectedSceneId,
+                        ["Scenes:Datasets:1:Name"] = "Protected Fixture",
+                        ["Scenes:Datasets:1:AssetRoot"] = fixtureRoot,
+                        ["Scenes:Datasets:1:AccessPolicy:AllowAnonymous"] = "false",
+                        ["Scenes:Datasets:1:AccessPolicy:AllowedRoles:0"] = "scene-admin",
+                    });
+                });
+            });
+    }
+
+    public async Task InitializeAsync()
+    {
+        await _fixture.InitializeAsync();
+
+        var grpcWebHandler = new GrpcWebHandler(GrpcWebMode.GrpcWeb, _fixture.CreateHandler());
+        _channel = GrpcChannel.ForAddress("http://localhost", new GrpcChannelOptions { HttpHandler = grpcWebHandler });
+        _sceneClient = new Proto.SceneService.SceneServiceClient(_channel);
+        _tileClient = new Proto.TileService.TileServiceClient(_channel);
+
+        _headers = new Metadata();
+        if (_fixture.CurrentSchema is not null)
+        {
+            _headers.Add("X-Honua-Test-Schema", _fixture.CurrentSchema);
+        }
+    }
+
+    public async Task DisposeAsync()
+    {
+        _channel?.Dispose();
+        await _fixture.DisposeAsync();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTile)]
+    [Endpoint("POST /geospatial.v1.TileService/GetTile")]
+    public async Task GetTile_ProtectedScene_WithoutAuth_IsDenied()
+    {
+        var act = async () => await _tileClient!.GetTileAsync(
+            new Proto.GetTileRequest { SceneId = ProtectedSceneId, NodeId = "0" },
+            _headers);
+
+        (await act.Should().ThrowAsync<RpcException>())
+            .Which.StatusCode.Should().BeOneOf(StatusCode.Unauthenticated, StatusCode.PermissionDenied);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Streaming)]
+    [Endpoint("POST /geospatial.v1.TileService/StreamTiles")]
+    public async Task StreamTiles_ProtectedScene_WithoutAuth_IsDenied()
+    {
+        using var call = _tileClient!.StreamTiles(
+            new Proto.StreamTilesRequest { SceneId = ProtectedSceneId },
+            _headers);
+
+        var act = async () =>
+        {
+            await foreach (var _ in call.ResponseStream.ReadAllAsync())
+            {
+            }
+        };
+
+        (await act.Should().ThrowAsync<RpcException>())
+            .Which.StatusCode.Should().BeOneOf(StatusCode.Unauthenticated, StatusCode.PermissionDenied);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /geospatial.v1.SceneService/GetScene")]
+    public async Task GetScene_ProtectedScene_WithoutAuth_IsDenied()
+    {
+        var act = async () => await _sceneClient!.GetSceneAsync(
+            new Proto.GetSceneRequest { SceneId = ProtectedSceneId },
+            _headers);
+
+        (await act.Should().ThrowAsync<RpcException>())
+            .Which.StatusCode.Should().BeOneOf(StatusCode.Unauthenticated, StatusCode.PermissionDenied);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTile)]
+    [Endpoint("POST /geospatial.v1.TileService/GetTile")]
+    public async Task GetTile_PublicScene_WithoutAuth_Succeeds()
+    {
+        // The public sibling stays anonymously readable so the guard only gates
+        // the protected scene, not all gRPC tile traffic.
+        var response = await _tileClient!.GetTileAsync(
+            new Proto.GetTileRequest { SceneId = PublicSceneId, NodeId = "0" },
+            _headers);
+
+        response.Tile.Should().NotBeNull();
+        response.Tile.Content.Length.Should().BeGreaterThan(0);
     }
 
     private static string ResolveFixtureRoot()

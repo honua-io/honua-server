@@ -19,6 +19,18 @@ namespace Honua.Scene.Grpc;
 /// sampling against a registered raster layer, honoring a mosaic rule and
 /// reporting no-data / out-of-bounds conditions explicitly.
 /// </summary>
+/// <remarks>
+/// Intentional divergence: the canonical elevation service
+/// (<see cref="IElevationService"/>) is keyed exclusively by the integer
+/// publication layer index, so <c>layer_id</c> is the authoritative resolution
+/// key for this adapter. The proto <c>dataset_id</c> field is advisory/echo-only
+/// here — it carries the caller's human-readable dataset reference but does not
+/// participate in resolution and is not used to scope the query. Callers that
+/// only know a dataset string must resolve it to a layer index out-of-band
+/// (the HTTP surface performs that name-to-index resolution itself). This
+/// matches CLAUDE.md's requirement to document intentional protocol divergence
+/// in code; the divergence is covered by the elevation gRPC tests.
+/// </remarks>
 internal sealed class HonuaElevationGrpcService : Proto.ElevationService.ElevationServiceBase
 {
     private const int Wgs84 = 4326;
@@ -65,6 +77,8 @@ internal sealed class HonuaElevationGrpcService : Proto.ElevationService.Elevati
 
         try
         {
+            // layer_id is authoritative; request.DatasetId is advisory/echo-only
+            // (see the class remarks) and is deliberately not used to resolve.
             var result = await _elevationService
                 .QueryPointAsync(request.LayerId, x, y, srid, mergeStrategy, context.CancellationToken)
                 .ConfigureAwait(false);
@@ -110,6 +124,8 @@ internal sealed class HonuaElevationGrpcService : Proto.ElevationService.Elevati
 
         try
         {
+            // layer_id is authoritative; request.DatasetId is advisory/echo-only
+            // (see the class remarks) and is deliberately not used to resolve.
             var result = await _elevationService
                 .QueryProfileAsync(request.LayerId, WriteLineWkb(lineString), srid, samplingOptions, mergeStrategy, context.CancellationToken)
                 .ConfigureAwait(false);

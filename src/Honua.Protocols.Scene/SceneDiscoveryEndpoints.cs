@@ -7,6 +7,7 @@ using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Scene;
 using Honua.Protocols.Scene.Models;
+using Honua.Scene.Assets;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 

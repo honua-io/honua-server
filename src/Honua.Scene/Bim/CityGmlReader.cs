@@ -92,6 +92,12 @@ public static class CityGmlReader
         var latitudeFirst = IsLatitudeFirst(sourceCrs);
 
         var buildings = new List<CityGmlBuilding>();
+        // Document-order ordinal for the synthetic fallback id; incremented for
+        // every Building/BuildingPart element in document order so a missing
+        // gml:id yields a deterministic id ("building-{ordinal}") that is stable
+        // across reads, preserving the documented byte-stability guarantee
+        // (a random Guid would break content-addressed caching / ETags).
+        var buildingOrdinal = 0;
         foreach (var element in root.Descendants())
         {
             if (element.Name.LocalName is not ("Building" or "BuildingPart"))
@@ -99,7 +105,8 @@ public static class CityGmlReader
                 continue;
             }
 
-            var building = ReadBuilding(element);
+            var building = ReadBuilding(element, buildingOrdinal);
+            buildingOrdinal++;
             if (building is not null)
             {
                 buildings.Add(building);
@@ -121,9 +128,9 @@ public static class CityGmlReader
         };
     }
 
-    private static CityGmlBuilding? ReadBuilding(XElement element)
+    private static CityGmlBuilding? ReadBuilding(XElement element, int ordinal)
     {
-        var id = GmlId(element) ?? $"building-{Guid.NewGuid():N}";
+        var id = GmlId(element) ?? $"building-{ordinal.ToString(CultureInfo.InvariantCulture)}";
 
         string? name = null;
         int? storeysAbove = null;

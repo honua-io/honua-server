@@ -5,11 +5,13 @@ using System.Text.Json;
 using Google.Protobuf;
 using Grpc.Core;
 using Honua.Core.Features.Scene.Abstractions;
+using Honua.Scene.Assets;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Domain = Honua.Core.Features.Scene.Domain;
 using Proto = Geospatial.V1;
+using AccessPolicy = Honua.Core.Features.Security.Domain.AccessPolicy;
 
 namespace Honua.Scene.Grpc;
 
@@ -50,6 +52,7 @@ internal sealed class HonuaTileGrpcService : Proto.TileService.TileServiceBase
         }
 
         var location = await ResolveSceneAsync(request.SceneId, context).ConfigureAwait(false);
+        SceneAccessGuard.EnforceReadAccess(context, location.AccessPolicy);
         var document = await LoadTilesetAsync(location, context.CancellationToken).ConfigureAwait(false);
         var entries = SceneTileCatalog.Build(document);
 
@@ -73,6 +76,7 @@ internal sealed class HonuaTileGrpcService : Proto.TileService.TileServiceBase
         ArgumentNullException.ThrowIfNull(context);
 
         var location = await ResolveSceneAsync(request.SceneId, context).ConfigureAwait(false);
+        SceneAccessGuard.EnforceReadAccess(context, location.AccessPolicy);
         var document = await LoadTilesetAsync(location, context.CancellationToken).ConfigureAwait(false);
         var entries = SceneTileCatalog.Build(document);
 
@@ -157,7 +161,19 @@ internal sealed class HonuaTileGrpcService : Proto.TileService.TileServiceBase
                     throw new RpcException(new Status(StatusCode.NotFound, $"Scene '{sceneId}' was not found."));
                 }
 
-                return new SceneLocation(record.AssetRoot, record.TilesetFileName);
+                // Mirror PostgresSceneDatasetRegistry.ProjectToServing: a public
+                // record carries no policy; a non-public record maps RequiresAuth
+                // (AllowAnonymous=false) plus its allowed roles into an
+                // AccessPolicy the shared evaluator understands.
+                var recordPolicy = record.IsPublic
+                    ? null
+                    : new AccessPolicy
+                    {
+                        AllowAnonymous = false,
+                        AllowedRoles = record.AllowedRoles?.ToArray(),
+                    };
+
+                return new SceneLocation(record.AssetRoot, record.TilesetFileName, recordPolicy);
             }
         }
 
@@ -167,7 +183,7 @@ internal sealed class HonuaTileGrpcService : Proto.TileService.TileServiceBase
             throw new RpcException(new Status(StatusCode.NotFound, $"Scene '{sceneId}' was not found."));
         }
 
-        return new SceneLocation(scene.AssetRoot, scene.TilesetFileName);
+        return new SceneLocation(scene.AssetRoot, scene.TilesetFileName, scene.AccessPolicy);
     }
 
     private static async Task<Domain.TilesetDocument> LoadTilesetAsync(SceneLocation location, CancellationToken cancellationToken)
@@ -192,41 +208,37 @@ internal sealed class HonuaTileGrpcService : Proto.TileService.TileServiceBase
 
     /// <summary>
     /// Canonicalizes an asset-relative path under the scene's asset root and
-    /// rejects anything that escapes the root or hints at traversal. Mirrors
-    /// the path-safety contract enforced by the HTTP scene asset endpoints.
+    /// rejects anything that escapes the root or hints at traversal. Delegates
+    /// to the shared <see cref="SceneAssetResolver"/> so the gRPC path enforces
+    /// the exact same path-safety contract (percent-encoded traversal, null
+    /// bytes, drive-letter/UNC prefixes, collapsed segments, and symlink /
+    /// reparse-point redirection) as the HTTP/I3S scene asset endpoints.
     /// </summary>
     private static bool TryResolveAssetFile(string assetRoot, string relativePath, out string fullPath)
     {
+        // Canonicalize + trim the asset root the same way the dataset registries
+        // do so the resolver's lexical under-root check sees a normalized root
+        // for record-backed scenes whose stored root may be relative.
+        string canonicalRoot;
+        try
+        {
+            canonicalRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(assetRoot));
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            fullPath = string.Empty;
+            return false;
+        }
+
+        if (SceneAssetResolver.TryResolve(canonicalRoot, relativePath, out var resolved, out _))
+        {
+            fullPath = resolved.File.FullName;
+            return true;
+        }
+
         fullPath = string.Empty;
-
-        if (string.IsNullOrEmpty(relativePath)
-            || Path.IsPathRooted(relativePath)
-            || relativePath.Contains("..", StringComparison.Ordinal)
-            || relativePath.Contains('\\', StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        var rootFull = Path.GetFullPath(assetRoot);
-        var combined = Path.GetFullPath(Path.Combine(rootFull, relativePath));
-
-        var rootPrefix = rootFull.EndsWith(Path.DirectorySeparatorChar)
-            ? rootFull
-            : rootFull + Path.DirectorySeparatorChar;
-
-        if (!combined.StartsWith(rootPrefix, StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        if (!File.Exists(combined))
-        {
-            return false;
-        }
-
-        fullPath = combined;
-        return true;
+        return false;
     }
 
-    private readonly record struct SceneLocation(string AssetRoot, string TilesetFileName);
+    private readonly record struct SceneLocation(string AssetRoot, string TilesetFileName, AccessPolicy? AccessPolicy);
 }

@@ -92,12 +92,21 @@ public static class I3sToTilesetConverter
         var maxHeight = extent.Zmax ?? 0.0;
 
         // Geometric error sized to the geographic diagonal of the extent so a
-        // 3D Tiles client refines at a sensible scale. The diagonal is in
-        // degrees; convert to an approximate meter span (1 deg ~= 111_320 m).
-        var spanDegrees = Math.Max(
-            extent.Xmax - extent.Xmin,
-            extent.Ymax - extent.Ymin);
-        var geometricError = Math.Max(1.0, spanDegrees * 111_320.0);
+        // 3D Tiles client refines at a sensible scale. Convert the degree spans
+        // to meters the same way the other scene builders do
+        // (PointCloudTilesetBuilder.ComputeRootGeometricError /
+        // BuildingSceneLayerBuilder.ComputeGeometricError): apply the
+        // cos(midLatitude) correction to the longitude span so an east-west-wide
+        // extent at high latitude is not overstated by ~1/cos(lat), and take the
+        // true diagonal rather than max(span). Determinism is preserved (pure
+        // arithmetic on the extent bounds).
+        var midLatRad = (extent.Ymin + extent.Ymax) * 0.5 * Math.PI / 180.0;
+        var lonMeters = Math.Abs(extent.Xmax - extent.Xmin) * Math.PI / 180.0
+            * EcefCoordinateTransform.WgsSemiMajorAxis
+            * Math.Cos(midLatRad);
+        var latMeters = Math.Abs(extent.Ymax - extent.Ymin) * Math.PI / 180.0
+            * EcefCoordinateTransform.WgsSemiMajorAxis;
+        var geometricError = Math.Max(1.0, Math.Sqrt(lonMeters * lonMeters + latMeters * latMeters));
 
         var contentUris = string.IsNullOrWhiteSpace(rootContentUri)
             ? Array.Empty<string>()

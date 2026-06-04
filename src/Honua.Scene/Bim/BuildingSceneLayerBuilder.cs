@@ -140,8 +140,13 @@ public static class BuildingSceneLayerBuilder
         }
 
         // 2. Build the metadata schema: fixed BSL columns first (stable order),
-        //    then a STRING column per discovered generic attribute in first-seen
-        //    order so the layout is byte-identical across runs.
+        //    then a STRING column per discovered generic attribute. The keys are
+        //    discovered by enumerating Dictionary<string,string>, whose
+        //    enumeration order is unspecified by the BCL, so sort them with an
+        //    explicit ordinal comparison to make the column layout (and thus the
+        //    GLB buffer bytes) byte-identical across runs independent of
+        //    dictionary internals.
+        genericKeys.Sort(StringComparer.Ordinal);
         var schemas = BuildSchemas(genericKeys);
 
         // 3. Hand off to the shared GLB writer (geometry -> ECEF, triangulation,

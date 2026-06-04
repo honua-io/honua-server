@@ -77,6 +77,22 @@ public sealed class CityGmlReaderTests
     }
 
     [UnitTest]
+    public void Read_BuildingWithoutGmlId_ProducesDeterministicIdAcrossReads()
+    {
+        var first = CityGmlReader.Read(CityGmlFixtures.BuildingWithoutId());
+        var second = CityGmlReader.Read(CityGmlFixtures.BuildingWithoutId());
+
+        // The synthetic fallback id must be document-order deterministic (not a
+        // random Guid), so two independent reads of the same input yield the
+        // same building id and the same synthesised storey id.
+        first.Buildings.Should().HaveCount(1);
+        first.Buildings[0].Id.Should().Be("building-0");
+        first.Buildings[0].Id.Should().Be(second.Buildings[0].Id);
+        first.Buildings[0].Storeys[0].Id.Should().Be(second.Buildings[0].Storeys[0].Id);
+        first.Buildings[0].Storeys[0].Id.Should().Be("building-0-storey-1");
+    }
+
+    [UnitTest]
     public void Read_NoBuildings_Throws()
     {
         var act = () => CityGmlReader.Read(CityGmlFixtures.NoBuildings());

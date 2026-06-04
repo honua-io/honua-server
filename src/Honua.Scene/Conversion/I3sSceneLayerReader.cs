@@ -28,6 +28,14 @@ public static class I3sSceneLayerReader
     public const string SceneLayerGzipEntryName = "3dSceneLayer.json.gz";
 
     /// <summary>
+    /// Upper bound on the decompressed descriptor size. The
+    /// <c>3dSceneLayer.json</c> document is small by spec (layer-level metadata
+    /// only); capping the decompression of an attacker-controlled <c>.slpk</c>
+    /// entry prevents a gzip/zip-bomb from exhausting memory.
+    /// </summary>
+    public const int MaxDescriptorBytes = 32 * 1024 * 1024;
+
+    /// <summary>
     /// Parses a raw <c>3dSceneLayer.json</c> byte payload into the descriptor
     /// model. Throws <see cref="I3sConversionException"/> with
     /// <see cref="I3sConversionErrorReason.MalformedSceneLayer"/> when the bytes
@@ -94,8 +102,7 @@ public static class I3sSceneLayerReader
             {
                 using var raw = gzipEntry.Open();
                 using var gzip = new GZipStream(raw, CompressionMode.Decompress);
-                using var buffer = new MemoryStream();
-                gzip.CopyTo(buffer);
+                using var buffer = CopyWithLimit(gzip, MaxDescriptorBytes);
                 return Parse(buffer.GetBuffer().AsSpan(0, (int)buffer.Length));
             }
 
@@ -103,8 +110,7 @@ public static class I3sSceneLayerReader
             if (plainEntry is not null)
             {
                 using var raw = plainEntry.Open();
-                using var buffer = new MemoryStream();
-                raw.CopyTo(buffer);
+                using var buffer = CopyWithLimit(raw, MaxDescriptorBytes);
                 return Parse(buffer.GetBuffer().AsSpan(0, (int)buffer.Length));
             }
         }
@@ -112,6 +118,45 @@ public static class I3sSceneLayerReader
         throw new I3sConversionException(
             I3sConversionErrorReason.MissingSceneLayer,
             "The .slpk package does not contain a 3dSceneLayer.json descriptor.");
+    }
+
+    /// <summary>
+    /// Copies <paramref name="source"/> into a <see cref="MemoryStream"/> in
+    /// bounded chunks, throwing <see cref="I3sConversionException"/> with
+    /// <see cref="I3sConversionErrorReason.InvalidArchive"/> once the total read
+    /// exceeds <paramref name="maxBytes"/>. This guards against gzip/zip-bomb
+    /// decompression of attacker-controlled <c>.slpk</c> entries and keeps the
+    /// buffer length well below <see cref="int.MaxValue"/> so the later
+    /// <c>(int)buffer.Length</c> span cast is safe.
+    /// </summary>
+    private static MemoryStream CopyWithLimit(Stream source, int maxBytes)
+    {
+        var buffer = new MemoryStream();
+        try
+        {
+            var chunk = new byte[81920];
+            long total = 0;
+            int read;
+            while ((read = source.Read(chunk, 0, chunk.Length)) > 0)
+            {
+                total += read;
+                if (total > maxBytes)
+                {
+                    throw new I3sConversionException(
+                        I3sConversionErrorReason.InvalidArchive,
+                        $"The .slpk 3dSceneLayer.json descriptor exceeds the {maxBytes}-byte decompression limit.");
+                }
+
+                buffer.Write(chunk, 0, read);
+            }
+        }
+        catch
+        {
+            buffer.Dispose();
+            throw;
+        }
+
+        return buffer;
     }
 
     private static ZipArchiveEntry? FindEntry(ZipArchive archive, string entryName)

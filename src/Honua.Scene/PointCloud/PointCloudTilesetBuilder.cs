@@ -52,6 +52,16 @@ public static class PointCloudTilesetBuilder
             throw new ArgumentException("At least one point is required to build a point-cloud tileset.", nameof(points));
         }
 
+        // Perf follow-up: the builder buffers the whole cloud into a
+        // ProjectedPoint[] and the quadtree recursion allocates a fresh
+        // List<int> per node plus members.ToArray() per child, so index storage
+        // is duplicated at each depth. A bounded improvement would partition a
+        // single reusable index buffer in place (range-based (begin,end) splits
+        // with an in-array swap) and stream/spool the source points, capping the
+        // point count to avoid a malformed LAS exhausting memory. Deferred to
+        // avoid destabilizing the current deterministic layout; this method's
+        // IReadOnlyList contract already requires random access.
+
         // 1. Project every point once; track the geographic envelope.
         var projected = new ProjectedPoint[points.Count];
         var west = double.PositiveInfinity;

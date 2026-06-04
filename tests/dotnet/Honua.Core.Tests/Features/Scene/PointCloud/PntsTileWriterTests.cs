@@ -34,6 +34,20 @@ public sealed class PntsTileWriterTests
     }
 
     [UnitTest]
+    public void Build_TotalByteLengthIsEightByteAligned()
+    {
+        // 3 colored points => batch binary is 3*2 (INTENSITY) + 3*1
+        // (CLASSIFICATION) = 9 bytes, which alone would leave the tile
+        // unaligned; the writer must pad the trailing binary so the whole tile
+        // byteLength is a multiple of 8 (3D Tiles PNTS spec).
+        var tile = PntsTileWriter.Build(SamplePoints());
+
+        (tile.Length % 8).Should().Be(0, "the PNTS tile byteLength must be 8-byte aligned");
+        BinaryPrimitives.ReadUInt32LittleEndian(tile.AsSpan(8, 4))
+            .Should().Be((uint)tile.Length, "the header byteLength must equal the padded tile length");
+    }
+
+    [UnitTest]
     public void Build_FeatureTableAdvertisesPositionRgbAndRtcCenter()
     {
         var tile = PntsTileWriter.Build(SamplePoints());

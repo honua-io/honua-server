@@ -99,6 +99,34 @@ public sealed class I3sSceneLayerReaderTests
             .Which.Reason.Should().Be(I3sConversionErrorReason.InvalidArchive);
     }
 
+    [UnitTest]
+    public void ReadFromSlpk_OversizedGzipDescriptor_ThrowsInvalidArchive()
+    {
+        // A small, highly-compressible gzip entry that inflates past the
+        // decompression cap (a gzip-bomb) must be rejected rather than buffered.
+        var oversized = I3sSceneLayerReader.MaxDescriptorBytes + (1024 * 1024);
+        using var slpk = new MemoryStream();
+        using (var archive = new ZipArchive(slpk, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            var entry = archive.CreateEntry(I3sSceneLayerReader.SceneLayerGzipEntryName);
+            using var entryStream = entry.Open();
+            using var gzipStream = new GZipStream(entryStream, CompressionLevel.Optimal, leaveOpen: true);
+            var chunk = new byte[64 * 1024];
+            long written = 0;
+            while (written < oversized)
+            {
+                gzipStream.Write(chunk, 0, chunk.Length);
+                written += chunk.Length;
+            }
+        }
+
+        slpk.Position = 0;
+        var act = () => I3sSceneLayerReader.ReadFromSlpk(slpk);
+
+        act.Should().Throw<I3sConversionException>()
+            .Which.Reason.Should().Be(I3sConversionErrorReason.InvalidArchive);
+    }
+
     private static MemoryStream BuildSlpk(string entryName, bool gzip)
     {
         var buffer = new MemoryStream();
