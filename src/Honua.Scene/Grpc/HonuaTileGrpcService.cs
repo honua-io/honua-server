@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Concurrent;
 using System.Text.Json;
 using Google.Protobuf;
 using Grpc.Core;
@@ -24,6 +25,21 @@ namespace Honua.Scene.Grpc;
 /// </summary>
 internal sealed partial class HonuaTileGrpcService : Proto.TileService.TileServiceBase
 {
+    /// <summary>
+    /// Maximum number of distinct tileset catalogs held in-process. A modest cap
+    /// keeps the footprint flat across many scenes; on overflow the cache is
+    /// cleared and repopulated lazily.
+    /// </summary>
+    private const int CatalogCacheCapacity = 64;
+
+    /// <summary>
+    /// In-process catalog cache keyed by resolved tileset path. Each value pins
+    /// the last-write-time it was built from so a tileset rewrite invalidates the
+    /// entry (see <see cref="LoadCatalogAsync"/>). Static so it is shared across
+    /// the transient gRPC service instances the DI container creates per call.
+    /// </summary>
+    private static readonly ConcurrentDictionary<string, SceneTileCatalogCacheEntry> CatalogCache = new(StringComparer.Ordinal);
+
     private readonly ISceneDatasetRegistry _registry;
     private readonly ILogger<HonuaTileGrpcService> _logger;
 
@@ -59,11 +75,9 @@ internal sealed partial class HonuaTileGrpcService : Proto.TileService.TileServi
 
         var location = await ResolveSceneAsync(request.SceneId, context).ConfigureAwait(false);
         SceneAccessGuard.EnforceReadAccess(context, location.AccessPolicy);
-        var document = await LoadTilesetAsync(location, context.CancellationToken).ConfigureAwait(false);
-        var entries = SceneTileCatalog.Build(document);
+        var catalog = await LoadCatalogAsync(location, context.CancellationToken).ConfigureAwait(false);
 
-        var entry = entries.FirstOrDefault(candidate => string.Equals(candidate.NodeId, request.NodeId, StringComparison.Ordinal));
-        if (entry is null)
+        if (!catalog.ById.TryGetValue(request.NodeId, out var entry))
         {
             Log.TileNodeNotFound(_logger, SceneGrpcTelemetry.GetTileOperation, request.SceneId, request.NodeId);
             throw new RpcException(new Status(StatusCode.NotFound, $"Tile node '{request.NodeId}' was not found in scene '{request.SceneId}'."));
@@ -102,12 +116,11 @@ internal sealed partial class HonuaTileGrpcService : Proto.TileService.TileServi
 
         var location = await ResolveSceneAsync(request.SceneId, context).ConfigureAwait(false);
         SceneAccessGuard.EnforceReadAccess(context, location.AccessPolicy);
-        var document = await LoadTilesetAsync(location, context.CancellationToken).ConfigureAwait(false);
-        var entries = SceneTileCatalog.Build(document);
+        var catalog = await LoadCatalogAsync(location, context.CancellationToken).ConfigureAwait(false);
 
         var streamedTiles = 0;
         var streamedBytes = 0L;
-        foreach (var entry in entries)
+        foreach (var entry in catalog.Entries)
         {
             context.CancellationToken.ThrowIfCancellationRequested();
 
@@ -216,13 +229,70 @@ internal sealed partial class HonuaTileGrpcService : Proto.TileService.TileServi
         return new SceneLocation(scene.AssetRoot, scene.TilesetFileName, scene.AccessPolicy);
     }
 
-    private static async Task<Domain.TilesetDocument> LoadTilesetAsync(SceneLocation location, CancellationToken cancellationToken)
+    /// <summary>
+    /// Returns the flattened, addressable node catalog for a scene's tileset.
+    /// </summary>
+    /// <remarks>
+    /// The parsed catalog is cached in-process keyed by (resolved tileset path +
+    /// last-write-time) so a client fetching N nodes does not re-read, re-parse,
+    /// and re-walk the whole tileset N times — GetTile previously paid that full
+    /// cost per node. The catalog is a pure, deterministic projection of an
+    /// immutable on-disk document (<see cref="SceneTileCatalog.Build"/>), so it is
+    /// safe to share across calls; a write to <c>tileset.json</c> bumps the
+    /// last-write-time and invalidates the entry. The cache is bounded
+    /// (<see cref="CatalogCacheCapacity"/>) and falls back to a fresh build on
+    /// eviction, so it never grows unbounded across many scenes.
+    /// </remarks>
+    private static async Task<SceneTileCatalogCacheEntry> LoadCatalogAsync(SceneLocation location, CancellationToken cancellationToken)
     {
         if (!TryResolveAssetFile(location.AssetRoot, location.TilesetFileName, out var tilesetPath))
         {
             throw new RpcException(new Status(StatusCode.NotFound, "Scene tileset was not found."));
         }
 
+        DateTime lastWriteUtc;
+        try
+        {
+            lastWriteUtc = File.GetLastWriteTimeUtc(tilesetPath);
+        }
+        catch (IOException)
+        {
+            throw new RpcException(new Status(StatusCode.NotFound, "Scene tileset was not found."));
+        }
+
+        if (CatalogCache.TryGetValue(tilesetPath, out var cached)
+            && cached.LastWriteUtc == lastWriteUtc)
+        {
+            return cached;
+        }
+
+        var document = await LoadTilesetAsync(tilesetPath, cancellationToken).ConfigureAwait(false);
+        var entries = SceneTileCatalog.Build(document);
+        var byId = new Dictionary<string, SceneTileEntry>(entries.Count, StringComparer.Ordinal);
+        foreach (var entry in entries)
+        {
+            // Node ids are deterministic and unique by tree position, so the first
+            // (and only) writer wins; the indexer keeps the dictionary build O(n).
+            byId[entry.NodeId] = entry;
+        }
+
+        var built = new SceneTileCatalogCacheEntry(entries, byId, lastWriteUtc);
+
+        // Bound the cache: when over capacity, clear it rather than implementing a
+        // full LRU — scenes are few and a cold rebuild is cheap relative to the
+        // per-node savings, so a simple bounded-clear keeps the footprint flat
+        // without risking stale/incorrect entries.
+        if (CatalogCache.Count >= CatalogCacheCapacity)
+        {
+            CatalogCache.Clear();
+        }
+
+        CatalogCache[tilesetPath] = built;
+        return built;
+    }
+
+    private static async Task<Domain.TilesetDocument> LoadTilesetAsync(string tilesetPath, CancellationToken cancellationToken)
+    {
         await using var stream = File.OpenRead(tilesetPath);
         var document = await JsonSerializer
             .DeserializeAsync(stream, Domain.TilesetJsonContext.Default.TilesetDocument, cancellationToken)
@@ -264,6 +334,17 @@ internal sealed partial class HonuaTileGrpcService : Proto.TileService.TileServi
     }
 
     private readonly record struct SceneLocation(string AssetRoot, string TilesetFileName, AccessPolicy? AccessPolicy);
+
+    /// <summary>
+    /// Cached projection of a single tileset document: the ordered (root-first)
+    /// entry list used by <see cref="StreamTiles"/> plus a node-id index used by
+    /// <see cref="GetTile"/>, pinned to the <paramref name="LastWriteUtc"/> the
+    /// source <c>tileset.json</c> carried when it was built.
+    /// </summary>
+    private sealed record SceneTileCatalogCacheEntry(
+        IReadOnlyList<SceneTileEntry> Entries,
+        IReadOnlyDictionary<string, SceneTileEntry> ById,
+        DateTime LastWriteUtc);
 
     private static partial class Log
     {

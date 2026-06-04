@@ -44,6 +44,19 @@ public static class CityGmlReader
     private const long MaxDocumentCharacters = 256L * 1024 * 1024;
 
     /// <summary>
+    /// Upper bound on the number of bytes buffered from a CityGML
+    /// <see cref="Stream"/> before parsing. The stream overload must materialize
+    /// the bytes once (the depth pre-scan and the load both re-read them), but the
+    /// copy is bounded so an oversized stream is rejected as a
+    /// <see cref="CityGmlFormatException"/> DURING buffering rather than
+    /// exhausting process memory before the parser-level
+    /// <see cref="MaxDocumentCharacters"/> cap can ever apply. Matches the char
+    /// cap (256 MiB) so a document that would survive the char cap is not rejected
+    /// by the byte cap.
+    /// </summary>
+    private const long MaxDocumentBytes = 256L * 1024 * 1024;
+
+    /// <summary>
     /// Upper bound on XML element nesting depth. A deeply-nested but otherwise
     /// well-formed document would make <see cref="XDocument.Load(System.Xml.XmlReader)"/>
     /// recurse until it StackOverflows — an uncatchable failure that kills the
@@ -95,10 +108,49 @@ public static class CityGmlReader
         ArgumentNullException.ThrowIfNull(source);
 
         // Buffer the document once so the depth pre-scan and the materializing
-        // load both read from the same bytes (a stream may be forward-only).
-        using var buffer = new MemoryStream();
-        source.CopyTo(buffer);
+        // load both read from the same bytes (a stream may be forward-only). The
+        // copy is BOUNDED: an oversized stream is rejected mid-copy instead of
+        // being fully materialized before the parser-level character cap applies,
+        // so a multi-gigabyte body cannot exhaust process memory here.
+        using var buffer = CopyWithLimit(source, MaxDocumentBytes);
         return ReadFromBuffer(buffer.GetBuffer(), (int)buffer.Length);
+    }
+
+    /// <summary>
+    /// Copies <paramref name="source"/> into a growable buffer, throwing a
+    /// <see cref="CityGmlFormatException"/> the moment the running byte total
+    /// exceeds <paramref name="maxBytes"/>. This bounds memory amplification on
+    /// the public stream entry point BEFORE the document is fully materialized,
+    /// mirroring the bounded-copy guard used by the I3S reader.
+    /// </summary>
+    private static MemoryStream CopyWithLimit(Stream source, long maxBytes)
+    {
+        var buffer = new MemoryStream();
+        try
+        {
+            var chunk = new byte[81920];
+            long total = 0;
+            int read;
+            while ((read = source.Read(chunk, 0, chunk.Length)) > 0)
+            {
+                total += read;
+                if (total > maxBytes)
+                {
+                    throw new CityGmlFormatException(
+                        SceneGenerationErrorCodes.ModelAssetInvalid,
+                        $"CityGML document exceeds the {maxBytes}-byte input limit.");
+                }
+
+                buffer.Write(chunk, 0, read);
+            }
+        }
+        catch
+        {
+            buffer.Dispose();
+            throw;
+        }
+
+        return buffer;
     }
 
     private static CityGmlModel ReadFromBuffer(byte[] source, int length)

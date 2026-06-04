@@ -142,7 +142,11 @@ public static class GeometryTileBuilder
         var vertexCount = positions.Count / 3;
         if (vertexCount == 0)
         {
-            throw new InvalidOperationException("No vertices produced for tile.");
+            throw new InvalidOperationException(
+                $"No renderable vertices produced for tile: all {features.Count} feature(s) of kind " +
+                $"'{kind}' are degenerate (e.g. LineString with <2 vertices, empty Point, or Polygon ring " +
+                "with <3 distinct vertices). Callers should drop such tiles before BuildGlb rather than " +
+                "routing a vertex-less feature set into it.");
         }
 
         // 1b. Recenter positions about the tile's ECEF centroid (RTC). Vertex
@@ -1022,24 +1026,44 @@ internal sealed class SceneMetadataColumn
 
     private static SceneMetadataColumn BuildString(SceneAttributeSchema schema, IReadOnlyList<SceneFeature> features)
     {
-        var stringBytes = new List<byte>(features.Count * 16);
+        // Two-pass build: encode each value once into a reusable per-feature byte
+        // buffer to compute offsets/total length, then allocate the values array
+        // exactly once and write each segment into its slice. This avoids the
+        // List<byte> grow-by-doubling churn AND the final ToArray copy the prior
+        // AddRange+ToArray approach paid, mirroring the single-allocation pattern
+        // BuildGlb already uses for its binary buffers. Output bytes are identical.
+        var encoded = new byte[features.Count][];
         var offsets = new uint[features.Count + 1];
         offsets[0] = 0;
+        var total = 0;
         for (var i = 0; i < features.Count; i++)
         {
             features[i].Attributes.TryGetValue(schema.FieldName, out var raw);
-            var encoded = Encoding.UTF8.GetBytes(raw?.ToString() ?? string.Empty);
-            stringBytes.AddRange(encoded);
-            offsets[i + 1] = (uint)stringBytes.Count;
+            encoded[i] = Encoding.UTF8.GetBytes(raw?.ToString() ?? string.Empty);
+            total += encoded[i].Length;
+            offsets[i + 1] = (uint)total;
         }
 
         // glTF 2.0 requires bufferView.byteLength >= 1, so a column whose
         // values are all null/empty would otherwise emit an invalid zero-byte
         // values view. Pad with a single 0x00 byte; every offset stays at 0
         // and every string therefore decodes as empty (length = next - prev).
-        var values = stringBytes.Count == 0
-            ? new byte[] { 0 }
-            : stringBytes.ToArray();
+        byte[] values;
+        if (total == 0)
+        {
+            values = new byte[] { 0 };
+        }
+        else
+        {
+            values = new byte[total];
+            var written = 0;
+            for (var i = 0; i < encoded.Length; i++)
+            {
+                var segment = encoded[i];
+                Buffer.BlockCopy(segment, 0, values, written, segment.Length);
+                written += segment.Length;
+            }
+        }
 
         var offsetBytes = new byte[offsets.Length * 4];
         for (var i = 0; i < offsets.Length; i++)

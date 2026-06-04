@@ -211,9 +211,22 @@ internal static class SceneTileCatalog
             return true;
         }
 
-        return decoded.XMin <= filter.Xmax
-            && decoded.XMax >= filter.Xmin
-            && decoded.YMin <= filter.Ymax
-            && decoded.YMax >= filter.Ymin;
+        return EnvelopesIntersect(
+            decoded.XMin, decoded.YMin, decoded.XMax, decoded.YMax,
+            filter.Xmin, filter.Ymin, filter.Xmax, filter.Ymax);
     }
+
+    /// <summary>
+    /// Tests whether two axis-aligned 2D envelopes overlap (touching edges count
+    /// as an overlap). Single shared predicate used by every scene gRPC extent
+    /// filter (tile-node region intersection and scene-footprint filtering) so the
+    /// envelope semantics cannot drift across call sites.
+    /// </summary>
+    public static bool EnvelopesIntersect(
+        double aXmin, double aYmin, double aXmax, double aYmax,
+        double bXmin, double bYmin, double bXmax, double bYmax)
+        => aXmin <= bXmax
+            && aXmax >= bXmin
+            && aYmin <= bYmax
+            && aYmax >= bYmin;
 }

@@ -268,7 +268,15 @@ public static class PointCloudTilesetBuilder
 
     private static PntsPoint[] SamplePoints(ProjectedPoint[] projected, int[] memberIndices, int sampleCount)
     {
-        if (sampleCount <= 0 || memberIndices.Length <= sampleCount)
+        // A non-positive sample count disables interior content entirely so the
+        // interior node carries no points (skipped by content emission), keeping
+        // the tileset to leaf geometry. Distinct from the member-set-at-or-below-
+        // cap case where the full set IS the representative sample.
+        if (sampleCount <= 0)
+        {
+            return Array.Empty<PntsPoint>();
+        }
+        if (memberIndices.Length <= sampleCount)
         {
             return MaterializePoints(projected, memberIndices);
         }

@@ -503,7 +503,16 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
 
     private static void CollectContentNodes(SceneTileNode node, List<SceneTileNode> sink)
     {
-        if (node.Features.Count > 0)
+        // Only emit content for nodes that will actually produce renderable
+        // vertices. A quadtree leaf can hold a spatial cluster of features that
+        // are ALL degenerate (e.g. single-vertex linestrings or empty points)
+        // even when the layer as a whole has valid geometry elsewhere; the
+        // layer-level guard in CollectFeaturesAsync only proves >=1 non-degenerate
+        // feature in the whole layer, not per-leaf. Routing such a leaf into
+        // GeometryTileBuilder.BuildGlb would throw "No vertices produced for tile"
+        // and abort the entire generation run, so drop the node here using the
+        // same per-kind threshold the builder applies internally.
+        if (NodeWillProduceVertices(node.Features))
         {
             sink.Add(node);
         }
@@ -511,6 +520,25 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         {
             CollectContentNodes(child, sink);
         }
+    }
+
+    /// <summary>
+    /// Returns true when at least one feature in the node will contribute
+    /// renderable vertices, mirroring <see cref="GeometryTileBuilder"/>'s per-kind
+    /// emission thresholds via <see cref="WillProduceVertices"/>. Used to drop
+    /// all-degenerate leaves from LOD content emission instead of letting
+    /// <see cref="GeometryTileBuilder.BuildGlb"/> throw.
+    /// </summary>
+    private static bool NodeWillProduceVertices(IReadOnlyList<SceneFeature> features)
+    {
+        for (var i = 0; i < features.Count; i++)
+        {
+            if (WillProduceVertices(features[i]))
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     /// <summary>

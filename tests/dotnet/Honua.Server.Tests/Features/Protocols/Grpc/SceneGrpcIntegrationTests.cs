@@ -232,6 +232,45 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetServiceInfo)]
     [Endpoint("POST /geospatial.v1.SceneService/ListScenes")]
+    public async Task ListScenes_WithNegativeResultRecordCount_ReturnsEntireCatalog()
+    {
+        // A negative result_record_count is a reachable proto int32 input. The
+        // adapter's `if (count > 0)` guard means a negative count falls through
+        // and imposes NO cap (same as zero/unset), returning the entire catalog
+        // without flagging ExceededTransferLimit. Pin that clamp-to-no-cap
+        // behavior so a regression that threw or returned an empty page is caught.
+        var total = (await _sceneClient!.ListScenesAsync(new Proto.ListScenesRequest(), _headers)).Scenes.Count;
+        total.Should().BeGreaterThan(0);
+
+        var response = await _sceneClient!.ListScenesAsync(
+            new Proto.ListScenesRequest { ResultRecordCount = -1 },
+            _headers);
+
+        response.Scenes.Count.Should().Be(total);
+        response.ExceededTransferLimit.Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetServiceInfo)]
+    [Endpoint("POST /geospatial.v1.SceneService/ListScenes")]
+    public async Task ListScenes_WithNegativeResultOffset_ClampsToZeroAndReturnsEntireCatalog()
+    {
+        // A negative result_offset is clamped to 0 via Math.Max(0, ...), so it
+        // behaves like no offset and returns the full catalog from the start.
+        var total = (await _sceneClient!.ListScenesAsync(new Proto.ListScenesRequest(), _headers)).Scenes.Count;
+        total.Should().BeGreaterThan(0);
+
+        var response = await _sceneClient!.ListScenesAsync(
+            new Proto.ListScenesRequest { ResultOffset = -1 },
+            _headers);
+
+        response.Scenes.Count.Should().Be(total);
+        response.ExceededTransferLimit.Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetServiceInfo)]
+    [Endpoint("POST /geospatial.v1.SceneService/ListScenes")]
     public async Task ListScenes_WithOverlappingExtent_IncludesScene()
     {
         var request = new Proto.ListScenesRequest
@@ -1118,6 +1157,26 @@ public sealed class SceneGrpcAuthorizationTests : IAsyncLifetime
         response.Tile.Content.Length.Should().BeGreaterThan(0);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.GetServiceInfo)]
+    [Endpoint("POST /geospatial.v1.SceneService/ListScenes")]
+    public async Task ListScenes_ProtectedScene_WithoutAuth_StillListsScene()
+    {
+        // Documented intentional divergence (HonuaSceneGrpcService.ListScenes):
+        // ListScenes is ungated and mirrors the public HTTP scene-discovery
+        // catalog, so it lists EVERY active scene — including protected ones —
+        // while per-scene authorization is enforced only when metadata or tiles are
+        // actually fetched (GetScene / GetTile / StreamTiles, covered above). This
+        // pins that discovery parity so a future change that filters protected
+        // scenes from the anonymous listing fails here instead of silently
+        // diverging from the HTTP surface.
+        var response = await _sceneClient!.ListScenesAsync(new Proto.ListScenesRequest(), _headers);
+
+        response.Scenes.Should().Contain(scene => scene.SceneId == ProtectedSceneId,
+            "ListScenes is intentionally ungated and lists protected scenes for discovery parity.");
+        response.Scenes.Should().Contain(scene => scene.SceneId == PublicSceneId);
+    }
+
     private static string ResolveFixtureRoot()
     {
         var directory = AppContext.BaseDirectory;
@@ -1309,6 +1368,73 @@ public sealed class ElevationGrpcAuthorizationTests : IAsyncLifetime
         response.Source.Should().NotBeNull();
         response.Source.RasterIds.Should().NotBeEmpty("the source raster ids identify the contributing rasters");
         response.Source.SourceSpatialReference.Wkid.Should().Be(3857);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ElevationService/GetElevation")]
+    [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.ElevationService/GetElevation")]
+    public async Task GetElevation_PublicLayer_EchoesPointAndReturnsSourceMetadata()
+    {
+        // #7: pin the POINT happy-path contract. The proto GetElevationResponse
+        // echoes x/y and carries mosaic_rule + source metadata, but the existing
+        // point happy-path only asserted HasElevation. Mirror the profile
+        // assertion so the point mapping (SceneGrpcMapping.ToElevationResponse) is
+        // covered for the echoed coordinates and populated source.
+        _fixture.UpdateV2ServiceMetadata(
+            WebAppFixture.TestServiceId,
+            accessPolicy: new AccessPolicy { AllowAnonymous = true });
+
+        const double x = 1234.5;
+        const double y = -678.25;
+        var request = new Proto.GetElevationRequest
+        {
+            LayerId = WebAppFixture.TestLayerId,
+            Point = new Proto.PointGeometry { X = x, Y = y },
+            SpatialReference = new Proto.SpatialReference { Wkid = 3857, LatestWkid = 3857 },
+        };
+
+        var response = await _elevationClient!.GetElevationAsync(request, _headers);
+
+        response.HasElevation.Should().BeTrue("the seeded full-world raster covers the queried point.");
+        response.X.Should().Be(x, "the response echoes the requested x coordinate.");
+        response.Y.Should().Be(y, "the response echoes the requested y coordinate.");
+        response.MosaicRule.Should().NotBeNullOrEmpty("the resolved mosaic rule is echoed back.");
+        response.Source.Should().NotBeNull();
+        response.Source.RasterIds.Should().NotBeEmpty("the source raster ids identify the contributing rasters.");
+        response.Source.SourceSpatialReference.Wkid.Should().Be(3857);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ElevationService/GetElevation")]
+    public async Task GetElevation_LayerWithNoRasterSource_ThrowsNotFound()
+    {
+        // #4: the gRPC adapter must mirror the HTTP elevation status mapping
+        // (ElevationEndpoints.MapElevationException), where ElevationFailureKind
+        // .SourceUnavailable maps to NotFound (HTTP 404). Previously every
+        // ElevationQueryException collapsed to FailedPrecondition. Clearing the
+        // layer's rasters makes the query raise SourceUnavailable, which must now
+        // surface as gRPC NotFound rather than FailedPrecondition.
+        _fixture.UpdateV2ServiceMetadata(
+            WebAppFixture.TestServiceId,
+            accessPolicy: new AccessPolicy { AllowAnonymous = true });
+
+        // Remove every raster for the layer so source resolution fails.
+        await RasterIntegrationTestData.ReplaceLayerRastersAsync(_fixture, WebAppFixture.TestLayerId);
+
+        var request = new Proto.GetElevationRequest
+        {
+            LayerId = WebAppFixture.TestLayerId,
+            Point = new Proto.PointGeometry { X = 0, Y = 0 },
+            SpatialReference = new Proto.SpatialReference { Wkid = 3857, LatestWkid = 3857 },
+        };
+
+        var act = async () => await _elevationClient!.GetElevationAsync(request, _headers);
+
+        (await act.Should().ThrowAsync<RpcException>())
+            .Which.StatusCode.Should().Be(StatusCode.NotFound,
+                "a missing raster source maps to NotFound, mirroring the HTTP 404 mapping.");
     }
 
     private Task SeedFullWorldRasterAsync(double elevationMeters)

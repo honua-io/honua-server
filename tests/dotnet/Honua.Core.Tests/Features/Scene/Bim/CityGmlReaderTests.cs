@@ -155,4 +155,62 @@ public sealed class CityGmlReaderTests
         act.Should().Throw<CityGmlFormatException>()
             .Which.Code.Should().Be("SCENE_MODEL_ASSET_INVALID");
     }
+
+    [UnitTest]
+    public void Read_OversizedStream_RejectedBeforeFullMaterialization()
+    {
+        // The stream overload must bound how much it buffers: an oversized stream
+        // is rejected with the stable CityGmlFormatException DURING the copy,
+        // instead of being fully materialized into managed memory before the
+        // parser-level character cap could ever apply. The stream lazily produces
+        // bytes (it never allocates its full length), and it records how many bytes
+        // the reader pulled so we can assert the copy stopped near the 256 MiB cap
+        // rather than running away unbounded.
+        var stream = new EndlessByteStream();
+
+        var act = () => CityGmlReader.Read(stream);
+
+        act.Should().Throw<CityGmlFormatException>()
+            .Which.Code.Should().Be("SCENE_MODEL_ASSET_INVALID");
+
+        // The reader stopped within one chunk of the 256 MiB byte cap; it did not
+        // keep pulling bytes forever from the endless stream.
+        const long cap = 256L * 1024 * 1024;
+        stream.BytesServed.Should().BeLessThanOrEqualTo(cap + (256 * 1024),
+            "the bounded copy must stop just past the byte cap, not buffer the whole stream.");
+    }
+
+    /// <summary>
+    /// A forward-only, read-only stream that yields an unbounded run of a single
+    /// byte without ever allocating its full length, recording how many bytes were
+    /// served so a test can prove the consumer stopped reading at a bound.
+    /// </summary>
+    private sealed class EndlessByteStream : Stream
+    {
+        public long BytesServed { get; private set; }
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position
+        {
+            get => BytesServed;
+            set => throw new NotSupportedException();
+        }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            // Serve a full chunk of 'a' (0x61) every call; never returns 0 so the
+            // consumer must rely on its own bound to stop.
+            Array.Fill(buffer, (byte)'a', offset, count);
+            BytesServed += count;
+            return count;
+        }
+
+        public override void Flush() => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
 }

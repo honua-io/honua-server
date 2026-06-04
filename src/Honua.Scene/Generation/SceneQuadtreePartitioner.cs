@@ -267,7 +267,19 @@ public static class SceneQuadtreePartitioner
         int[] memberIndices,
         int sampleCount)
     {
-        if (sampleCount <= 0 || memberIndices.Length <= sampleCount)
+        // A non-positive sample count disables interior content entirely: the
+        // interior node carries no features (and is therefore skipped by content
+        // emission), so the tileset only carries leaf geometry. This honours the
+        // documented SceneLodOptions.InteriorSampleCount contract ("Zero disables
+        // interior content"). It is distinct from the case where the member set is
+        // already at-or-below the cap, where the full set IS the representative
+        // sample.
+        if (sampleCount <= 0)
+        {
+            return Array.Empty<SceneFeature>();
+        }
+
+        if (memberIndices.Length <= sampleCount)
         {
             return MaterializeFeatures(features, memberIndices);
         }

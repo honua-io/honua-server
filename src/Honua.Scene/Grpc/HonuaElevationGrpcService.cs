@@ -285,7 +285,27 @@ internal sealed partial class HonuaElevationGrpcService : Proto.ElevationService
     }
 
     private static RpcException ToRpcException(ElevationQueryException exception)
-        => new(new Status(StatusCode.FailedPrecondition, exception.Message));
+        => new(new Status(MapFailureKind(exception.FailureKind), exception.Message));
+
+    /// <summary>
+    /// Maps an <see cref="ElevationFailureKind"/> to the gRPC status that mirrors
+    /// the canonical HTTP mapping (ElevationEndpoints.MapElevationException), so a
+    /// failure surfaces with consistent semantics across protocols. gRPC has no
+    /// 422 equivalent, so the HTTP UnprocessableEntity cases (UnsupportedCrs /
+    /// InvalidGeometry) collapse to <see cref="StatusCode.InvalidArgument"/>, which
+    /// carries the same "client supplied an unacceptable request" meaning. A
+    /// missing source maps to <see cref="StatusCode.NotFound"/> (HTTP 404) and any
+    /// future/unknown kind maps to the safe default
+    /// <see cref="StatusCode.InvalidArgument"/> (HTTP 400 BadRequest).
+    /// </summary>
+    private static StatusCode MapFailureKind(ElevationFailureKind failureKind)
+        => failureKind switch
+        {
+            ElevationFailureKind.SourceUnavailable => StatusCode.NotFound,
+            ElevationFailureKind.UnsupportedCrs => StatusCode.InvalidArgument,
+            ElevationFailureKind.InvalidGeometry => StatusCode.InvalidArgument,
+            _ => StatusCode.InvalidArgument
+        };
 
     private static partial class Log
     {

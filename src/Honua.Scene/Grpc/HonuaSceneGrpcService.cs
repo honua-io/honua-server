@@ -182,10 +182,9 @@ internal sealed partial class HonuaSceneGrpcService : Proto.SceneService.SceneSe
             return true;
         }
 
-        return sceneExtent.Xmin <= filter.Xmax
-            && sceneExtent.Xmax >= filter.Xmin
-            && sceneExtent.Ymin <= filter.Ymax
-            && sceneExtent.Ymax >= filter.Ymin;
+        return SceneTileCatalog.EnvelopesIntersect(
+            sceneExtent.Xmin, sceneExtent.Ymin, sceneExtent.Xmax, sceneExtent.Ymax,
+            filter.Xmin, filter.Ymin, filter.Xmax, filter.Ymax);
     }
 
     /// <summary>
