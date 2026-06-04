@@ -208,6 +208,59 @@ public sealed class RelatedRecordsServiceTests
         withoutRecords.RelatedRecords.Should().BeNull();
     }
 
+    // Regression: in the standard (non-count) queryRelatedRecords flow, a source object
+    // with no related rows must still carry relatedRecords as an empty array rather than
+    // null/omitted. The @arcgis/core JS SDK reads group.relatedRecords.length and throws
+    // "Cannot read properties of undefined (reading 'length')" otherwise.
+    [Fact]
+    public void GroupRelatedRecords_WithNoRelatedRows_EmitsEmptyRelatedRecordsArray()
+    {
+        var sut = CreateSut(Substitute.For<IRelationshipStore>());
+
+        var relationship = new MetadataV2Relationship
+        {
+            Id = "rel-1",
+            RelatedResourceId = "child",
+            OriginField = "objectid",
+            DestinationField = "parent_id"
+        };
+
+        // One related row belongs to object 1; object 2 has none.
+        var relatedFeature = Feature.Create(
+            10,
+            geometry: null,
+            new Dictionary<string, object?>
+            {
+                ["objectid"] = 10L,
+                ["parent_id"] = 1L,
+                ["label"] = "child-a"
+            }.ToImmutableDictionary());
+
+        var result = QueryResult<Feature>.Create(1, [relatedFeature]);
+
+        var grouped = sut.GroupRelatedRecords(
+            result,
+            objectIds: [1, 2],
+            relationship,
+            objectIdFieldName: "objectid",
+            returnGeometry: false,
+            outputSrid: null,
+            returnZ: false,
+            returnM: false,
+            geometryPrecision: null,
+            maxAllowableOffset: null,
+            outFields: null,
+            relatedResource: CreateRelatedResource());
+
+        var withRecords = grouped.Groups.Single(g => g.ObjectId == 1L);
+        withRecords.RelatedRecords.Should().NotBeNull();
+        withRecords.RelatedRecords!.Should().ContainSingle();
+
+        var withoutRecords = grouped.Groups.Single(g => g.ObjectId == 2L);
+        withoutRecords.RelatedRecords.Should().NotBeNull();
+        withoutRecords.RelatedRecords!.Should().BeEmpty();
+    }
+
     private static MetadataV2Resource CreateRelatedResource()
         => new()
         {

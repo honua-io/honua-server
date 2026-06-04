@@ -758,7 +758,41 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
         queryResponse.Should().NotBeNull();
         queryResponse!.RelatedRecordGroups.Should().HaveCount(1);
         queryResponse.RelatedRecordGroups[0].ObjectId.Should().Be(999L);
-        queryResponse.RelatedRecordGroups[0].RelatedRecords.Should().BeNull();
+        // Even for a source object with no related rows, relatedRecords must be an empty
+        // array rather than null/absent.
+        queryResponse.RelatedRecordGroups[0].RelatedRecords.Should().NotBeNull();
+        queryResponse.RelatedRecordGroups[0].RelatedRecords.Should().BeEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryRelatedRecords)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
+    public async Task QueryRelatedRecords_EmptyGroupAlwaysEmitsRelatedRecordsArray()
+    {
+        // Regression: the @arcgis/core JS SDK reads group.relatedRecords.length
+        // unconditionally and throws "Cannot read properties of undefined (reading
+        // 'length')" when the key is absent. Every group (including objectIds with no
+        // related rows) must carry relatedRecords as an array. Mix an object with
+        // related rows (1) and one without (999) and assert the raw JSON.
+        var response = await GetWithRetryAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1,999&relationshipId={TestRelationshipId}");
+
+        response.Be200Ok();
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var jsonDoc = JsonDocument.Parse(content);
+        var groups = jsonDoc.RootElement.GetProperty("relatedRecordGroups");
+        groups.GetArrayLength().Should().Be(2);
+
+        foreach (var group in groups.EnumerateArray())
+        {
+            group.TryGetProperty("relatedRecords", out var relatedRecords).Should().BeTrue(
+                "every group must carry the relatedRecords key so group.relatedRecords.length is safe");
+            relatedRecords.ValueKind.Should().Be(JsonValueKind.Array);
+        }
+
+        var emptyGroup = groups.EnumerateArray().Single(g => g.GetProperty("objectId").GetInt64() == 999L);
+        emptyGroup.GetProperty("relatedRecords").GetArrayLength().Should().Be(0);
     }
 
     #endregion

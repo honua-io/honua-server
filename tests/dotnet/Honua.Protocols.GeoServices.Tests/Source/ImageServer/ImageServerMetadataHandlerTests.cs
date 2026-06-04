@@ -269,6 +269,12 @@ public class ImageServerMetadataHandlerTests
         info.StorageInfo!.BlockWidth.Should().BeGreaterThan(0);
         info.StorageInfo.BlockHeight.Should().BeGreaterThan(0);
 
+        // #1456: blockWidth/blockHeight must ALSO be surfaced at the metadata root, not
+        // only nested under storageInfo. The ArcGIS Maps SDK for .NET ImageServiceRaster
+        // reads them from the root, and the root values must match the storageInfo values.
+        info.BlockWidth.Should().Be(info.StorageInfo.BlockWidth);
+        info.BlockHeight.Should().Be(info.StorageInfo.BlockHeight);
+
         // Non-tiled service: no fused cache, so the SDK never requests conf.json.
         info.SingleFusedMapCache.Should().BeFalse();
         info.TileInfo.Should().BeNull();

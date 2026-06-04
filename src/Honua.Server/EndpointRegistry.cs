@@ -613,6 +613,8 @@ public static class EndpointRegistry
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/calculate"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/queryDomains"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/relationships"),
+        new("GET", "/rest/services/{serviceId}/FeatureServer/validateSQL"),
+        new("POST", "/rest/services/{serviceId}/FeatureServer/validateSQL"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/validateSQL"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/validateSQL"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/getEstimates"),
