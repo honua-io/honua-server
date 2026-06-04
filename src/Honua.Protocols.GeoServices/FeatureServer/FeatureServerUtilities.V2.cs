@@ -251,9 +251,13 @@ internal static partial class FeatureServerEndpoints
             Type = geoServicesType,
             SqlType = sqlType,
             Alias = field.Alias ?? field.Title ?? field.Name,
-            // V2 has no length slot on the canonical field model (length lives in the
-            // storage binding when needed). Pass null so the response omits the key.
-            Length = null,
+            // Esri clients require a positive length on string fields (a null length is
+            // mapped to 0 and breaks inserts/updates). String fields source their length
+            // from the canonical field's declared varchar length, falling back to the
+            // Esri-conventional default; non-string fields report their declared length.
+            Length = !isObjectId && field.Type == MetadataV2FieldType.String
+                ? GeoServicesFieldConventions.ResolveStringFieldLength(field.Length)
+                : field.Length,
             Nullable = field.Nullable && !isObjectId,
             Editable = !isGeometry && !isObjectId,
             // V2 has no default-value slot on the canonical field; the catalog/admin layer
