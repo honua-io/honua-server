@@ -757,6 +757,7 @@ public static class EndpointRegistry
 
         new("GET", "/rest/services/{id}/ImageServer"),
         new("POST", "/rest/services/{id}/ImageServer"),
+        new("GET", "/rest/services/{id}/ImageServer/conf.json"),
         new("GET", "/rest/services/{id}/ImageServer/WCS"),
         new("GET", "/rest/services/{id}/ImageServer/exportImage"),
         new("POST", "/rest/services/{id}/ImageServer/exportImage"),
@@ -791,6 +792,7 @@ public static class EndpointRegistry
 
         new("GET", "/rest/services/{serviceId}/ImageServer"),
         new("POST", "/rest/services/{serviceId}/ImageServer"),
+        new("GET", "/rest/services/{serviceId}/ImageServer/conf.json"),
         new("GET", "/rest/services/{serviceId}/ImageServer/exportImage"),
         new("POST", "/rest/services/{serviceId}/ImageServer/exportImage"),
         new("GET", "/rest/services/{serviceId}/ImageServer/identify"),
