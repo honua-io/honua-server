@@ -672,6 +672,11 @@ public static class EndpointRegistry
         new("GET", "/scenes/{sceneId}/exports/openusd/stage.usda"),
         new("GET", "/scenes/{sceneId}/tileset.json"),
         new("HEAD", "/scenes/{sceneId}/tileset.json"),
+
+        // Esri I3S SceneServer serving (#1202; Enterprise-gated).
+        new("GET", "/scenes/{sceneId}/SceneServer"),
+        new("GET", "/scenes/{sceneId}/SceneServer/layers/{layerId:int}"),
+
         new("GET", "/scenes/{sceneId}/{*assetPath}"),
         new("HEAD", "/scenes/{sceneId}/{*assetPath}"),
 
