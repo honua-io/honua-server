@@ -1,7 +1,7 @@
 services:
   # PostgreSQL with PostGIS for development
   postgres:
-    image: postgis/postgis:17-3.5-alpine
+    image: pgrouting/pgrouting:17-3.5-3.7.3
     environment:
       POSTGRES_DB: honua_dev
       POSTGRES_USER: honua_user

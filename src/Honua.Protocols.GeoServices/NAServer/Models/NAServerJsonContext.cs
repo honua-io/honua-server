@@ -6,7 +6,7 @@ using System.Text.Json.Serialization;
 namespace Honua.Protocols.GeoServices.NAServer.Models;
 
 /// <summary>
-/// AOT-compatible JSON serialization context for minimal NAServer wire-format models.
+/// AOT-compatible JSON serialization context for the NAServer wire-format models.
 /// </summary>
 [JsonSerializable(typeof(NAServerRouteSolveResponse))]
 [JsonSerializable(typeof(NAServerClosestFacilityResponse))]
@@ -21,6 +21,15 @@ namespace Honua.Protocols.GeoServices.NAServer.Models;
 [JsonSerializable(typeof(NAServerDirectionFeature[]))]
 [JsonSerializable(typeof(NAServerDirectionAttributes))]
 [JsonSerializable(typeof(NAServerDirectionSummary))]
+[JsonSerializable(typeof(NAServerSaPolygonsFeatureSet))]
+[JsonSerializable(typeof(NAServerSaPolygonFeature))]
+[JsonSerializable(typeof(NAServerSaPolygonFeature[]))]
+[JsonSerializable(typeof(NAServerSaPolygonAttributes))]
+[JsonSerializable(typeof(NAServerPolylineGeometry))]
+[JsonSerializable(typeof(NAServerPolygonGeometry))]
+[JsonSerializable(typeof(NAServerSpatialReference))]
+[JsonSerializable(typeof(NAServerMessage))]
+[JsonSerializable(typeof(NAServerMessage[]))]
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
