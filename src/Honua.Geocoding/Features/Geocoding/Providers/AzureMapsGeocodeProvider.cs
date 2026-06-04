@@ -4,16 +4,16 @@
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Honua.Core.Features.Geocoding.Abstractions;
-using Honua.Core.Features.Geocoding.Domain;
+using Honua.Geocoding.Features.Geocoding.Abstractions;
+using Honua.Geocoding.Features.Geocoding.Domain;
 using Honua.Core.Features.Infrastructure.Validation;
 
-namespace Honua.Core.Features.Geocoding.Providers;
+namespace Honua.Geocoding.Features.Geocoding.Providers;
 
 /// <summary>
 /// Azure Maps geocoding provider
 /// </summary>
-public sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
+internal sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
 {
     /// <summary>
     /// Azure Maps provider name constant

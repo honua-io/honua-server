@@ -2,8 +2,8 @@
 
 using System.Net;
 using System.Text;
-using Honua.Core.Features.Geocoding.Domain;
-using Honua.Core.Features.Geocoding.Providers;
+using Honua.Geocoding.Features.Geocoding.Domain;
+using Honua.Geocoding.Features.Geocoding.Providers;
 
 namespace Honua.Core.Tests.Features.Geocoding.Providers;
 

@@ -6,15 +6,15 @@ using Amazon;
 using Amazon.LocationService;
 using Amazon.LocationService.Model;
 using Amazon.Runtime;
-using Honua.Core.Features.Geocoding.Abstractions;
-using Honua.Core.Features.Geocoding.Domain;
+using Honua.Geocoding.Features.Geocoding.Abstractions;
+using Honua.Geocoding.Features.Geocoding.Domain;
 
-namespace Honua.Core.Features.Geocoding.Providers;
+namespace Honua.Geocoding.Features.Geocoding.Providers;
 
 /// <summary>
 /// Amazon Location Service geocoding provider
 /// </summary>
-public sealed class AmazonLocationGeocodeProvider : BaseGeocodeProvider, IDisposable
+internal sealed class AmazonLocationGeocodeProvider : BaseGeocodeProvider, IDisposable
 {
     /// <summary>
     /// Amazon Location Service provider name constant

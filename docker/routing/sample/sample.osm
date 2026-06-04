@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Honua routing — synthetic OSM sample (issue #1266).
+
+  This is a FULLY SYNTHETIC, tiny OSM 0.6 extract used to smoke-test the
+  osm2pgrouting import path (docker/routing/import-osm.sh +
+  docker/routing/mapconfig.xml). It is NOT lifted from openstreetmap.org,
+  Geofabrik, Esri, or any other source: the coordinates are hand-authored
+  near a generic location and the node/way IDs are invented. This satisfies
+  the open-data / no-proprietary-data constraint in ADR-0050.
+
+  Geometry: 8 nodes forming a small connected street network of 4 ways
+  (one secondary "Main Street" spine and three residential cross streets).
+
+      n3 == n4 == n5        (Main Street, secondary, west to east)
+      |            |
+      n6           n7       (residential cross streets)
+      |            |
+      n1 == n2 ==== n8      (Market Lane / Oak Court, residential)
+
+  Bring your own real extract (Geofabrik / OSM) for non-trivial networks;
+  see docker/routing/README.md.
+-->
+<osm version="0.6" generator="honua-synthetic-sample">
+  <bounds minlat="40.7480" minlon="-73.9870" maxlat="40.7520" maxlon="-73.9810"/>
+
+  <node id="1" visible="true" version="1" lat="40.7480" lon="-73.9860"/>
+  <node id="2" visible="true" version="1" lat="40.7480" lon="-73.9840"/>
+  <node id="3" visible="true" version="1" lat="40.7510" lon="-73.9860"/>
+  <node id="4" visible="true" version="1" lat="40.7510" lon="-73.9840"/>
+  <node id="5" visible="true" version="1" lat="40.7510" lon="-73.9820"/>
+  <node id="6" visible="true" version="1" lat="40.7495" lon="-73.9860"/>
+  <node id="7" visible="true" version="1" lat="40.7495" lon="-73.9820"/>
+  <node id="8" visible="true" version="1" lat="40.7480" lon="-73.9820"/>
+
+  <!-- Main Street: secondary spine running west to east across the top. -->
+  <way id="100" visible="true" version="1">
+    <nd ref="3"/>
+    <nd ref="4"/>
+    <nd ref="5"/>
+    <tag k="highway" v="secondary"/>
+    <tag k="name" v="Main Street"/>
+    <tag k="oneway" v="no"/>
+  </way>
+
+  <!-- Market Lane: residential street along the bottom. -->
+  <way id="101" visible="true" version="1">
+    <nd ref="1"/>
+    <nd ref="2"/>
+    <nd ref="8"/>
+    <tag k="highway" v="residential"/>
+    <tag k="name" v="Market Lane"/>
+    <tag k="oneway" v="no"/>
+  </way>
+
+  <!-- West cross street linking Market Lane to Main Street. -->
+  <way id="102" visible="true" version="1">
+    <nd ref="1"/>
+    <nd ref="6"/>
+    <nd ref="3"/>
+    <tag k="highway" v="residential"/>
+    <tag k="name" v="West Connector"/>
+    <tag k="oneway" v="no"/>
+  </way>
+
+  <!-- East cross street linking Oak Court to Main Street. -->
+  <way id="103" visible="true" version="1">
+    <nd ref="8"/>
+    <nd ref="7"/>
+    <nd ref="5"/>
+    <tag k="highway" v="residential"/>
+    <tag k="name" v="East Connector"/>
+    <tag k="oneway" v="no"/>
+  </way>
+</osm>

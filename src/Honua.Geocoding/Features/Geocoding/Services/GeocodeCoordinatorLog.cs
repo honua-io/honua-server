@@ -3,7 +3,7 @@
 
 using Microsoft.Extensions.Logging;
 
-namespace Honua.Core.Features.Geocoding.Services;
+namespace Honua.Geocoding.Features.Geocoding.Services;
 
 internal static partial class GeocodeCoordinatorLog
 {

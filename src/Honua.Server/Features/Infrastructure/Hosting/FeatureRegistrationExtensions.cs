@@ -107,6 +107,9 @@ internal static class FeatureRegistrationExtensions
         services.AddSceneGeneration(configuration);
         services.AddPrintingTools();
         services.AddGeoprocessing(configuration);
+        // Routing subsystem (#1266): selects pgRouting or the mock provider via
+        // Routing:Provider. The GeoServices NAServer adapter consumes IRoutingProvider.
+        Honua.Routing.Features.Routing.ServiceCollectionExtensions.AddRouting(services, configuration);
         // Job-orchestration substrate (queue + log store) used by AddGeoprocessing.
         // Lives in Honua.Server because it composes a Share-export terminal callback
         // that depends on Honua.Server.Features.Admin.Share — out of reach for the
