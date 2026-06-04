@@ -54,7 +54,14 @@ services:
   # OSM_FILE at it) to import a real Geofabrik/OSM network. See README.md and
   # ADR-0050 for the open-data constraint.
   osm-import:
-    image: iboates/osm2pgrouting:2.3.7
+    # THIRD-PARTY image: iboates/osm2pgrouting is a personal Docker Hub image (not
+    # an official/verified publisher), so it is pinned by digest to lock the exact
+    # bytes and prevent tag-mutation supply-chain drift. It is gated behind the
+    # non-default "osm-import" profile and is never started by `up -d`. To re-pin
+    # after an intentional upgrade:
+    #   docker pull iboates/osm2pgrouting:<tag>
+    #   docker inspect --format '{{index .RepoDigests 0}}' iboates/osm2pgrouting:<tag>
+    image: iboates/osm2pgrouting:2.3.7@sha256:0438aa938dd41c3df928bfdb70d563e7c6f1ce7d2106ea88bf5a750bc5418e6b
     profiles: ["osm-import"]
     depends_on:
       pgrouting:

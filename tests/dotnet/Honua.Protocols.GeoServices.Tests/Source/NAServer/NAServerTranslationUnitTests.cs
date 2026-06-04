@@ -108,6 +108,130 @@ public sealed class NAServerTranslationUnitTests
     }
 
     [UnitTest]
+    [Operation(Operations.Directions)]
+    public void MapRoute_UnsolvedResult_EmitsNoSolveMessageAndEmptyRoutes()
+    {
+        // An empty geometry => Solved=false. The mapper must surface the no-solve
+        // path: empty route features plus an informational message (not a route).
+        var unsolved = new RouteSolveResult(string.Empty, 0, 0, []);
+
+        var response = NAServerResultMapping.MapRoute(
+            unsolved, outSrid: 4326, includeRoutes: true, includeDirections: true);
+
+        response.Routes.Features.Should().BeEmpty();
+        response.Messages.Should().NotBeNull();
+        response.Messages.Should().ContainSingle();
+        response.Messages![0].Description.Should().Contain("No route");
+        response.Directions.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Directions)]
+    public void BuildRouteSolveRequest_TooManyStops_Throws()
+    {
+        // Two stops over a cap of 1 must be rejected (DoS guard).
+        var caps = new NAServerInputCaps(MaxStops: 1, MaxFacilities: 10, MaxBreaks: 10);
+        var parameters = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["stops"] = "-157.85,21.30;-157.86,21.31;-157.87,21.32",
+        };
+
+        var act = () => NAServerParameterTranslation.BuildRouteSolveRequest(parameters, caps);
+
+        act.Should().Throw<NAServerParameterTranslation.NAServerParameterException>()
+            .WithMessage("*exceeds the maximum*");
+    }
+
+    [UnitTest]
+    [Operation(Operations.ServiceArea)]
+    public void BuildServiceAreaSolveRequest_TooManyBreaks_Throws()
+    {
+        var caps = new NAServerInputCaps(MaxStops: 10, MaxFacilities: 10, MaxBreaks: 2);
+        var parameters = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["facilities"] = "-157.85,21.30",
+            ["defaultBreaks"] = "5,10,15",
+        };
+
+        var act = () => NAServerParameterTranslation.BuildServiceAreaSolveRequest(parameters, caps);
+
+        act.Should().Throw<NAServerParameterTranslation.NAServerParameterException>()
+            .WithMessage("*exceeds the maximum*");
+    }
+
+    [UnitTest]
+    [Operation(Operations.ServiceArea)]
+    public void BuildServiceAreaSolveRequest_TooManyFacilities_Throws()
+    {
+        var caps = new NAServerInputCaps(MaxStops: 10, MaxFacilities: 1, MaxBreaks: 10);
+        var parameters = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["facilities"] = "-157.85,21.30;-157.86,21.31",
+            ["defaultBreaks"] = "5",
+        };
+
+        var act = () => NAServerParameterTranslation.BuildServiceAreaSolveRequest(parameters, caps);
+
+        act.Should().Throw<NAServerParameterTranslation.NAServerParameterException>()
+            .WithMessage("*exceeds the maximum*");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Directions)]
+    public void BuildRouteSolveRequest_InSrFallsBackToOutSr()
+    {
+        // outSR=3857, no inSR => InSrid mirrors OutSrid (3857).
+        var parametersNoInSr = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["stops"] = "0,0;100,100",
+            ["outSR"] = "3857",
+        };
+        var requestNoInSr = NAServerParameterTranslation.BuildRouteSolveRequest(parametersNoInSr);
+        requestNoInSr.OutSrid.Should().Be(3857);
+        requestNoInSr.InSrid.Should().Be(3857);
+
+        // Explicit inSR overrides the fallback.
+        var parametersWithInSr = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["stops"] = "0,0;1,1",
+            ["outSR"] = "3857",
+            ["inSR"] = "4326",
+        };
+        var requestWithInSr = NAServerParameterTranslation.BuildRouteSolveRequest(parametersWithInSr);
+        requestWithInSr.OutSrid.Should().Be(3857);
+        requestWithInSr.InSrid.Should().Be(4326);
+    }
+
+    [UnitTest]
+    [Operation(Operations.ServiceArea)]
+    public void MapServiceArea_GeoJsonCcwOuterRing_IsNormalizedToClockwiseForEsri()
+    {
+        // GeoJSON outer rings are CCW (RFC 7946). Esri expects CW outer rings, so
+        // the mapper must reverse this ring's winding. The unit square below is
+        // wound counter-clockwise (positive signed area).
+        const string ccwPolygon =
+            "{\"type\":\"Polygon\",\"coordinates\":[[[0,0],[1,0],[1,1],[0,1],[0,0]]]}";
+        var result = new ServiceAreaSolveResult(
+        [
+            new ServiceAreaPolygon(FacilityId: 0, FromBreak: 0, ToBreak: 5, ccwPolygon),
+        ]);
+
+        var response = NAServerResultMapping.MapServiceArea(result, outSrid: 4326);
+
+        var ring = response.SaPolygons.Features[0].Geometry!.Rings[0];
+        ring.Should().HaveCount(5);
+
+        // Signed shoelace area must be negative (clockwise) after normalization.
+        var area = 0.0;
+        for (var i = 0; i < ring.Length - 1; i++)
+        {
+            area += (ring[i][0] * ring[i + 1][1]) - (ring[i + 1][0] * ring[i][1]);
+        }
+
+        area.Should().BeLessThan(0, "Esri outer rings must be clockwise");
+    }
+
+    [UnitTest]
     [Operation(Operations.ServiceArea)]
     public void MapServiceArea_PolygonResult_AssignsFromToBreakAndRings()
     {

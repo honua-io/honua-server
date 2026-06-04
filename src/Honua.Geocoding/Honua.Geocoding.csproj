@@ -5,11 +5,11 @@
     <DisableMicrosoftExtensionsLoggingSourceGenerator>false</DisableMicrosoftExtensionsLoggingSourceGenerator>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <NoWarn>$(NoWarn);CS1591;CA1716</NoWarn>
+    <NoWarn>$(NoWarn);CA1716</NoWarn>
     <WarningsNotAsErrors>CA2009;IDE0073</WarningsNotAsErrors>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageLicenseExpression>Elastic-2.0</PackageLicenseExpression>
-    <RootNamespace>Honua.Core</RootNamespace>
+    <RootNamespace>Honua.Geocoding</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>

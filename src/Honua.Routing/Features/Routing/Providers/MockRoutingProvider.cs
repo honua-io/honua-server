@@ -34,6 +34,16 @@ internal sealed class MockRoutingProvider : IRoutingProvider
     public string Name => ProviderName;
 
     /// <inheritdoc />
+    public RoutingProviderCapabilities Capabilities { get; } = new(
+        SupportsRoute: true,
+        SupportsServiceArea: true)
+    {
+        // The mock buffers a symmetric circle, so travel direction does not change
+        // the geometry; only FromFacility is meaningfully distinct.
+        SupportedTravelDirections = [ServiceAreaTravelDirection.FromFacility],
+    };
+
+    /// <inheritdoc />
     public Task<RouteSolveResult> SolveRouteAsync(
         RouteSolveRequest request,
         CancellationToken cancellationToken = default)

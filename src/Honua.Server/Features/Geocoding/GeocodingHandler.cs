@@ -4,8 +4,8 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
-using Honua.Core.Features.Geocoding.Abstractions;
-using Honua.Core.Features.Geocoding.Domain;
+using Honua.Geocoding.Features.Geocoding.Abstractions;
+using Honua.Geocoding.Features.Geocoding.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Protocols.GeoServices.FeatureServer;
 using Honua.Infrastructure.Models;
@@ -149,7 +149,7 @@ internal sealed class GeocodingHandler(
                 return StandardErrorHelpers.CreateBadRequest(context, searchExtentError ?? "Invalid searchExtent parameter.");
             }
 
-            var providerRequest = new Core.Features.Geocoding.Domain.ForwardGeocodeRequest(
+            var providerRequest = new Honua.Geocoding.Features.Geocoding.Domain.ForwardGeocodeRequest(
                 Query: query,
                 MaxResults: maxLocations,
                 SpatialReferenceWkid: _options.DefaultSpatialReferenceWkid,
@@ -278,7 +278,7 @@ internal sealed class GeocodingHandler(
             }
 
             var langCode = GetValue(values, "langCode");
-            var providerRequest = new Core.Features.Geocoding.Domain.ReverseGeocodeRequest(inputPoint.Value.X, inputPoint.Value.Y, _options.DefaultSpatialReferenceWkid)
+            var providerRequest = new Honua.Geocoding.Features.Geocoding.Domain.ReverseGeocodeRequest(inputPoint.Value.X, inputPoint.Value.Y, _options.DefaultSpatialReferenceWkid)
             {
                 LanguageCode = string.IsNullOrWhiteSpace(langCode) ? null : langCode.Trim()
             };
@@ -403,7 +403,7 @@ internal sealed class GeocodingHandler(
                 return StandardErrorHelpers.CreateBadRequest(context, suggestExtentError ?? "Invalid searchExtent parameter.");
             }
 
-            Core.Features.Geocoding.Domain.GeocodePoint? biasLocation = null;
+            Honua.Geocoding.Features.Geocoding.Domain.GeocodePoint? biasLocation = null;
             var rawLocation = GetValue(values, "location");
             if (!string.IsNullOrWhiteSpace(rawLocation))
             {
@@ -414,10 +414,10 @@ internal sealed class GeocodingHandler(
                         "location must be either 'x,y' or JSON {\"x\":...,\"y\":...}.");
                 }
 
-                biasLocation = new Core.Features.Geocoding.Domain.GeocodePoint(biasX, biasY, _options.DefaultSpatialReferenceWkid);
+                biasLocation = new Honua.Geocoding.Features.Geocoding.Domain.GeocodePoint(biasX, biasY, _options.DefaultSpatialReferenceWkid);
             }
 
-            var providerRequest = new Core.Features.Geocoding.Domain.SuggestGeocodeRequest(
+            var providerRequest = new Honua.Geocoding.Features.Geocoding.Domain.SuggestGeocodeRequest(
                 Text: text.Trim(),
                 MaxResults: maxSuggestions,
                 CountryCodes: GetValue(values, "countryCodes") ?? GetValue(values, "countryCode"))
@@ -536,7 +536,7 @@ internal sealed class GeocodingHandler(
 
         try
         {
-            var batchRequest = new Core.Features.Geocoding.Domain.BatchGeocodeRequest(
+            var batchRequest = new Honua.Geocoding.Features.Geocoding.Domain.BatchGeocodeRequest(
                 Queries: queries,
                 SpatialReferenceWkid: _options.DefaultSpatialReferenceWkid,
                 CountryCodes: GetValue(values, "countryCodes") ?? GetValue(values, "countryCode"));
@@ -834,7 +834,7 @@ internal sealed class GeocodingHandler(
         return string.IsNullOrWhiteSpace(joined) ? null : joined;
     }
 
-    private static string BuildCapabilitiesString(Core.Features.Geocoding.Domain.GeocodeProviderCapabilities capabilities)
+    private static string BuildCapabilitiesString(Honua.Geocoding.Features.Geocoding.Domain.GeocodeProviderCapabilities capabilities)
     {
         var availableCapabilities = new List<string>(capacity: 4)
         {
@@ -971,7 +971,7 @@ internal sealed class GeocodingHandler(
 
     private bool TryParseSearchExtent(
         string? rawExtent,
-        out Core.Features.Geocoding.Domain.GeocodeBounds? bounds,
+        out Honua.Geocoding.Features.Geocoding.Domain.GeocodeBounds? bounds,
         out string? error)
     {
         bounds = null;
@@ -1049,7 +1049,7 @@ internal sealed class GeocodingHandler(
             return false;
         }
 
-        bounds = new Core.Features.Geocoding.Domain.GeocodeBounds(xmin, ymin, xmax, ymax, extentWkid);
+        bounds = new Honua.Geocoding.Features.Geocoding.Domain.GeocodeBounds(xmin, ymin, xmax, ymax, extentWkid);
         return true;
     }
 

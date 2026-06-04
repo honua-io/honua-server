@@ -8,6 +8,33 @@ using Honua.Routing.Features.Routing.Domain;
 namespace Honua.Protocols.GeoServices.NAServer;
 
 /// <summary>
+/// Caps on input counts enforced by the NAServer adapter to bound serial DB
+/// fan-out (DoS guard). Sourced from <see cref="RoutingConfiguration"/>.
+/// </summary>
+/// <param name="MaxStops">Maximum number of stops on a route solve.</param>
+/// <param name="MaxFacilities">Maximum number of facilities on a service-area solve.</param>
+/// <param name="MaxBreaks">Maximum number of distinct breaks on a service-area solve.</param>
+internal readonly record struct NAServerInputCaps(int MaxStops, int MaxFacilities, int MaxBreaks)
+{
+    /// <summary>
+    /// Conservative defaults used when no <see cref="RoutingConfiguration"/> is
+    /// supplied (e.g. focused unit tests that do not exercise the cap path).
+    /// </summary>
+    public static NAServerInputCaps Default => new(1000, 1000, 50);
+
+    /// <summary>
+    /// Builds caps from the bound routing configuration.
+    /// </summary>
+    /// <param name="configuration">Routing configuration.</param>
+    /// <returns>Input caps mirroring the configuration's Max* values.</returns>
+    public static NAServerInputCaps FromConfiguration(RoutingConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+        return new NAServerInputCaps(configuration.MaxStops, configuration.MaxFacilities, configuration.MaxBreaks);
+    }
+}
+
+/// <summary>
 /// Translates Esri NAServer request parameters into the canonical, protocol-neutral
 /// <see cref="Honua.Routing"/> request contracts. Per ADR-0029, parameter parsing
 /// and validation are the adapter's responsibility; routing itself stays in the
@@ -26,13 +53,23 @@ internal static class NAServerParameterTranslation
 
     /// <summary>
     /// Builds a canonical <see cref="RouteSolveRequest"/> from raw NAServer
-    /// parameters. Requires at least two stops.
+    /// parameters using default input caps. Requires at least two stops.
     /// </summary>
     public static RouteSolveRequest BuildRouteSolveRequest(IReadOnlyDictionary<string, string> parameters)
+        => BuildRouteSolveRequest(parameters, NAServerInputCaps.Default);
+
+    /// <summary>
+    /// Builds a canonical <see cref="RouteSolveRequest"/> from raw NAServer
+    /// parameters. Requires at least two stops and enforces the supplied stop cap.
+    /// </summary>
+    public static RouteSolveRequest BuildRouteSolveRequest(
+        IReadOnlyDictionary<string, string> parameters,
+        NAServerInputCaps caps)
     {
         ArgumentNullException.ThrowIfNull(parameters);
 
         var outSrid = ParseOutSr(parameters);
+        var inSrid = ParseInSr(parameters, outSrid);
         var stops = ParsePoints(GetValue(parameters, "stops"), "stops");
         if (stops.Count < 2)
         {
@@ -40,23 +77,47 @@ internal static class NAServerParameterTranslation
                 "At least two 'stops' are required to solve a route.");
         }
 
-        return new RouteSolveRequest(stops, OutSrid: outSrid);
+        if (stops.Count > caps.MaxStops)
+        {
+            throw new NAServerParameterException(
+                $"'stops' count {stops.Count} exceeds the maximum of {caps.MaxStops}.");
+        }
+
+        return new RouteSolveRequest(stops, OutSrid: outSrid) { InSrid = inSrid };
     }
 
     /// <summary>
     /// Builds a canonical <see cref="ServiceAreaSolveRequest"/> from raw NAServer
-    /// parameters. Requires at least one facility and one positive break.
+    /// parameters using default input caps. Requires at least one facility and one
+    /// positive break.
     /// </summary>
     public static ServiceAreaSolveRequest BuildServiceAreaSolveRequest(IReadOnlyDictionary<string, string> parameters)
+        => BuildServiceAreaSolveRequest(parameters, NAServerInputCaps.Default);
+
+    /// <summary>
+    /// Builds a canonical <see cref="ServiceAreaSolveRequest"/> from raw NAServer
+    /// parameters. Requires at least one facility and one positive break, and
+    /// enforces the supplied facility/break caps.
+    /// </summary>
+    public static ServiceAreaSolveRequest BuildServiceAreaSolveRequest(
+        IReadOnlyDictionary<string, string> parameters,
+        NAServerInputCaps caps)
     {
         ArgumentNullException.ThrowIfNull(parameters);
 
         var outSrid = ParseOutSr(parameters);
+        var inSrid = ParseInSr(parameters, outSrid);
         var facilities = ParsePoints(GetValue(parameters, "facilities"), "facilities");
         if (facilities.Count == 0)
         {
             throw new NAServerParameterException(
                 "At least one 'facilities' point is required to solve a service area.");
+        }
+
+        if (facilities.Count > caps.MaxFacilities)
+        {
+            throw new NAServerParameterException(
+                $"'facilities' count {facilities.Count} exceeds the maximum of {caps.MaxFacilities}.");
         }
 
         var breaks = ParseBreaks(GetValue(parameters, "defaultBreaks"));
@@ -66,8 +127,14 @@ internal static class NAServerParameterTranslation
                 "At least one positive value in 'defaultBreaks' is required to solve a service area.");
         }
 
+        if (breaks.Count > caps.MaxBreaks)
+        {
+            throw new NAServerParameterException(
+                $"'defaultBreaks' count {breaks.Count} exceeds the maximum of {caps.MaxBreaks}.");
+        }
+
         var travelDirection = ParseTravelDirection(GetValue(parameters, "travelDirection"));
-        return new ServiceAreaSolveRequest(facilities, breaks, travelDirection, outSrid);
+        return new ServiceAreaSolveRequest(facilities, breaks, travelDirection, outSrid) { InSrid = inSrid };
     }
 
     private static string? GetValue(IReadOnlyDictionary<string, string> parameters, string key)
@@ -78,11 +145,28 @@ internal static class NAServerParameterTranslation
     /// spatial-reference JSON object (<c>{ "wkid": 3857 }</c>). Defaults to 4326.
     /// </summary>
     private static int ParseOutSr(IReadOnlyDictionary<string, string> parameters)
+        => ParseSpatialReference(parameters, "outSR") ?? DefaultSrid;
+
+    /// <summary>
+    /// Reads the input spatial reference from <c>inSR</c>, falling back to the
+    /// resolved output SRID when <c>inSR</c> is absent. Input ordinates are
+    /// interpreted in this SRID and transformed to the graph SRID before snapping.
+    /// </summary>
+    private static int ParseInSr(IReadOnlyDictionary<string, string> parameters, int outSrid)
+        => ParseSpatialReference(parameters, "inSR") ?? outSrid;
+
+    /// <summary>
+    /// Reads a spatial-reference parameter. Accepts a bare WKID or a
+    /// spatial-reference JSON object (<c>{ "wkid": 3857 }</c> / <c>latestWkid</c>).
+    /// Returns <c>null</c> when the parameter is absent/empty; throws on a malformed
+    /// value.
+    /// </summary>
+    private static int? ParseSpatialReference(IReadOnlyDictionary<string, string> parameters, string key)
     {
-        var value = GetValue(parameters, "outSR");
+        var value = GetValue(parameters, key);
         if (string.IsNullOrWhiteSpace(value))
         {
-            return DefaultSrid;
+            return null;
         }
 
         var trimmed = value.Trim();
@@ -113,12 +197,12 @@ internal static class NAServerParameterTranslation
             catch (JsonException)
             {
                 throw new NAServerParameterException(
-                    $"'outSR' value '{value}' is not a valid WKID or spatial-reference object.");
+                    $"'{key}' value '{value}' is not a valid WKID or spatial-reference object.");
             }
         }
 
         throw new NAServerParameterException(
-            $"'outSR' value '{value}' is not a valid WKID or spatial-reference object.");
+            $"'{key}' value '{value}' is not a valid WKID or spatial-reference object.");
     }
 
     /// <summary>

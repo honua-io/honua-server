@@ -44,7 +44,9 @@ public static partial class Extensions
         "Honua.Core.Metadata",
         "Honua.MySql.FeatureDataAccess",
         StudioPackageLifecycleService.ActivitySourceName,
-        "Honua.PackageReview"
+        "Honua.PackageReview",
+        "Honua.Routing",
+        "Honua.Geocoding"
     ];
 
     /// <summary>

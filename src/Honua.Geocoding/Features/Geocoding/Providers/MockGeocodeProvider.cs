@@ -2,15 +2,15 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
-using Honua.Core.Features.Geocoding.Abstractions;
-using Honua.Core.Features.Geocoding.Domain;
+using Honua.Geocoding.Features.Geocoding.Abstractions;
+using Honua.Geocoding.Features.Geocoding.Domain;
 
-namespace Honua.Core.Features.Geocoding.Providers;
+namespace Honua.Geocoding.Features.Geocoding.Providers;
 
 /// <summary>
 /// Mock geocoding provider for testing and demonstration purposes
 /// </summary>
-public sealed class MockGeocodeProvider : BaseGeocodeProvider
+internal sealed class MockGeocodeProvider : BaseGeocodeProvider
 {
     /// <summary>
     /// Mock provider name constant

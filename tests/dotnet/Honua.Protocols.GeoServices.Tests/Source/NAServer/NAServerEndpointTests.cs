@@ -5,6 +5,7 @@ using System.Net;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Routing.Features.Routing.Abstractions;
+using Honua.Routing.Features.Routing.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.DependencyInjection;
@@ -102,6 +103,32 @@ public sealed class NAServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Directions)]
     [Endpoint("POST /rest/services/{serviceId}/NAServer/Route/solve")]
+    public async Task RouteSolve_PJsonFormat_ReturnsIndentedJson()
+    {
+        var payload = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("f", "pjson"),
+            new KeyValuePair<string, string>("stops", "-157.858333,21.306944;-157.862,21.31"),
+        ]);
+
+        var response = await _fixture.Client.PostAsync("/rest/services/Routing/NAServer/Route/solve", payload);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadAsStringAsync();
+
+        // Indented output contains newlines and leading-space indentation; the
+        // compact json path would not.
+        body.Should().Contain("\n");
+        body.Should().Contain("  ");
+
+        // Still valid, parseable JSON.
+        using var document = JsonDocument.Parse(body);
+        document.RootElement.GetProperty("routes").GetProperty("features").GetArrayLength().Should().BeGreaterThan(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Directions)]
+    [Endpoint("POST /rest/services/{serviceId}/NAServer/Route/solve")]
     public async Task RouteSolve_MissingStops_Returns400()
     {
         var payload = new FormUrlEncodedContent(
@@ -114,6 +141,125 @@ public sealed class NAServerEndpointTests : IAsyncLifetime
 
         // Invalid input maps to the GeoServices error envelope, not a 500.
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ServiceArea)]
+    [Endpoint("POST /rest/services/{serviceId}/NAServer/ServiceArea/solveServiceArea")]
+    public async Task ServiceArea_ProviderWithoutServiceAreaSupport_ReturnsError()
+    {
+        var capabilities = new RoutingProviderCapabilities(SupportsRoute: true, SupportsServiceArea: false);
+        var fixture = await CreateFixtureWithCapabilitiesAsync(capabilities);
+        try
+        {
+            var payload = new FormUrlEncodedContent(
+            [
+                new KeyValuePair<string, string>("f", "json"),
+                new KeyValuePair<string, string>("facilities", "-157.858333,21.306944"),
+                new KeyValuePair<string, string>("defaultBreaks", "5,10"),
+            ]);
+
+            var response = await fixture.Client.PostAsync(
+                "/rest/services/Routing/NAServer/ServiceArea/solveServiceArea",
+                payload);
+
+            // Capability gate fires before solving: standard Esri error, not a solved result.
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var error = document.RootElement.GetProperty("error");
+            error.GetProperty("code").GetInt32().Should().Be(400);
+            error.GetProperty("details").EnumerateArray().Select(d => d.GetString())
+                .Should().Contain(d => d!.Contains("Service-area solves are not supported"));
+            document.RootElement.TryGetProperty("saPolygons", out _).Should().BeFalse();
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Directions)]
+    [Endpoint("POST /rest/services/{serviceId}/NAServer/Route/solve")]
+    public async Task RouteSolve_ProviderWithoutRouteSupport_ReturnsError()
+    {
+        var capabilities = new RoutingProviderCapabilities(SupportsRoute: false, SupportsServiceArea: true);
+        var fixture = await CreateFixtureWithCapabilitiesAsync(capabilities);
+        try
+        {
+            var payload = new FormUrlEncodedContent(
+            [
+                new KeyValuePair<string, string>("f", "json"),
+                new KeyValuePair<string, string>("stops", "-157.858333,21.306944;-157.862,21.31"),
+            ]);
+
+            var response = await fixture.Client.PostAsync("/rest/services/Routing/NAServer/Route/solve", payload);
+
+            // Capability gate fires before solving: standard Esri error, not a solved route.
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var error = document.RootElement.GetProperty("error");
+            error.GetProperty("code").GetInt32().Should().Be(400);
+            error.GetProperty("details").EnumerateArray().Select(d => d.GetString())
+                .Should().Contain(d => d!.Contains("Route solves are not supported"));
+            document.RootElement.TryGetProperty("routes", out _).Should().BeFalse();
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ServiceArea)]
+    [Endpoint("POST /rest/services/{serviceId}/NAServer/ServiceArea/solveServiceArea")]
+    public async Task ServiceArea_UnsupportedTravelDirection_Returns400()
+    {
+        // Provider advertises only FromFacility; a ToFacility request must be rejected.
+        var capabilities = new RoutingProviderCapabilities
+        {
+            SupportedTravelDirections = [ServiceAreaTravelDirection.FromFacility],
+        };
+        var fixture = await CreateFixtureWithCapabilitiesAsync(capabilities);
+        try
+        {
+            var payload = new FormUrlEncodedContent(
+            [
+                new KeyValuePair<string, string>("f", "json"),
+                new KeyValuePair<string, string>("facilities", "-157.858333,21.306944"),
+                new KeyValuePair<string, string>("defaultBreaks", "5,10"),
+                new KeyValuePair<string, string>("travelDirection", "esriNATravelDirectionToFacility"),
+            ]);
+
+            var response = await fixture.Client.PostAsync(
+                "/rest/services/Routing/NAServer/ServiceArea/solveServiceArea",
+                payload);
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var error = document.RootElement.GetProperty("error");
+            error.GetProperty("code").GetInt32().Should().Be(400);
+            error.GetProperty("details").EnumerateArray().Select(d => d.GetString())
+                .Should().Contain(d => d!.Contains("travelDirection"));
+            document.RootElement.TryGetProperty("saPolygons", out _).Should().BeFalse();
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    private static async Task<WebAppFixture> CreateFixtureWithCapabilitiesAsync(RoutingProviderCapabilities capabilities)
+    {
+        var fixture = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IRoutingProvider>();
+                services.AddScoped<IRoutingProvider>(_ => new TestRoutingProvider(capabilities));
+            });
+
+        await fixture.InitializeAsync();
+        return fixture;
     }
 
     [IntegrationTest]

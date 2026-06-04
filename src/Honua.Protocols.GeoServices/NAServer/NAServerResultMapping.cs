@@ -238,8 +238,8 @@ internal static class NAServerResultMapping
             var type = typeElement.GetString();
             return type switch
             {
-                // Polygon coordinates: [ ring, ring, ... ]
-                "Polygon" => ReadLines(coordinates),
+                // Polygon coordinates: [ outerRing, hole, hole, ... ]
+                "Polygon" => ReadPolygonRings(coordinates),
                 // MultiPolygon coordinates: [ polygon, polygon, ... ] → flatten rings.
                 "MultiPolygon" => ReadMultiPolygonRings(coordinates),
                 _ => [],
@@ -289,13 +289,85 @@ internal static class NAServerResultMapping
                     continue;
                 }
 
-                foreach (var ring in polygon.EnumerateArray())
-                {
-                    rings.Add(ReadLine(ring));
-                }
+                rings.AddRange(ReadPolygonRings(polygon));
             }
 
             return [.. rings];
+        }
+
+        /// <summary>
+        /// Reads a GeoJSON polygon ring array ([ outerRing, hole, ... ]) and
+        /// normalizes winding for Esri: outer ring clockwise, holes
+        /// counter-clockwise. GeoJSON (RFC 7946) mandates the opposite convention
+        /// (CCW outer, CW holes), so each ring is reversed when its signed area does
+        /// not match the Esri orientation.
+        /// </summary>
+        private static double[][][] ReadPolygonRings(JsonElement polygon)
+        {
+            if (polygon.ValueKind != JsonValueKind.Array)
+            {
+                return [];
+            }
+
+            var rings = new List<double[][]>(polygon.GetArrayLength());
+            var ringIndex = 0;
+            foreach (var ring in polygon.EnumerateArray())
+            {
+                // First ring is the exterior (clockwise for Esri); the rest are
+                // holes (counter-clockwise for Esri).
+                var wantClockwise = ringIndex == 0;
+                rings.Add(NormalizeRingWinding(ReadLine(ring), wantClockwise));
+                ringIndex++;
+            }
+
+            return [.. rings];
+        }
+
+        /// <summary>
+        /// Ensures a ring's vertex order matches the requested winding (clockwise
+        /// when <paramref name="wantClockwise"/> is true) using a signed-area test.
+        /// In the standard math/GeoJSON convention a positive signed area is
+        /// counter-clockwise, so a clockwise target wants a negative area.
+        /// </summary>
+        private static double[][] NormalizeRingWinding(double[][] ring, bool wantClockwise)
+        {
+            if (ring.Length < 4)
+            {
+                // Fewer than 4 positions cannot form a closed, oriented ring; leave
+                // it untouched rather than guessing an orientation.
+                return ring;
+            }
+
+            var signedArea = SignedArea(ring);
+            var isClockwise = signedArea < 0;
+            if (isClockwise == wantClockwise)
+            {
+                return ring;
+            }
+
+            Array.Reverse(ring);
+            return ring;
+        }
+
+        /// <summary>
+        /// Shoelace signed area of a ring (positive = counter-clockwise).
+        /// </summary>
+        private static double SignedArea(double[][] ring)
+        {
+            var area = 0.0;
+            for (var i = 0; i < ring.Length - 1; i++)
+            {
+                var current = ring[i];
+                var next = ring[i + 1];
+                if (current.Length < 2 || next.Length < 2)
+                {
+                    continue;
+                }
+
+                area += (current[0] * next[1]) - (next[0] * current[1]);
+            }
+
+            return area / 2.0;
         }
 
         private static double[][] ReadLine(JsonElement line)

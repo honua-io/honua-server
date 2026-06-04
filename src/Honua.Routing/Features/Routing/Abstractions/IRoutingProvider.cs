@@ -19,6 +19,12 @@ public interface IRoutingProvider
     string Name { get; }
 
     /// <summary>
+    /// Capabilities and limitations of this provider (supported solves and
+    /// service-area travel directions). Lets callers introspect the active engine.
+    /// </summary>
+    RoutingProviderCapabilities Capabilities { get; }
+
+    /// <summary>
     /// Solve a multi-stop route through the requested stops in order.
     /// </summary>
     /// <param name="request">The route solve request.</param>

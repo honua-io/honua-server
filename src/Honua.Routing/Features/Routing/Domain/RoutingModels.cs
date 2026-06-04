@@ -50,6 +50,21 @@ public sealed record RouteSolveRequest(
     string TravelProfile = "driving",
     int OutSrid = 4326)
 {
+    private readonly int? _inSrid;
+
+    /// <summary>
+    /// Spatial reference (SRID/WKID) the input <see cref="RoutePoint"/> ordinates
+    /// are expressed in. Defaults to <see cref="OutSrid"/> so callers that send a
+    /// single <c>outSR</c> (the common case) have their stops interpreted in that
+    /// same SRID. Set explicitly (e.g. from <c>inSR</c>) when input and output
+    /// references differ. Used to transform stops to the graph SRID before snapping.
+    /// </summary>
+    public int InSrid
+    {
+        get => _inSrid ?? OutSrid;
+        init => _inSrid = value;
+    }
+
     /// <summary>
     /// Point/line barriers to avoid. MVP-stubbed: accepted but ignored by the
     /// current providers. Reserved so the NAServer adapter can pass barriers
@@ -121,7 +136,22 @@ public sealed record ServiceAreaSolveRequest(
     IReadOnlyList<RoutePoint> Facilities,
     IReadOnlyList<double> Breaks,
     ServiceAreaTravelDirection TravelDirection = ServiceAreaTravelDirection.FromFacility,
-    int OutSrid = 4326);
+    int OutSrid = 4326)
+{
+    private readonly int? _inSrid;
+
+    /// <summary>
+    /// Spatial reference (SRID/WKID) the input facility ordinates are expressed in.
+    /// Defaults to <see cref="OutSrid"/> so a single <c>outSR</c> interprets
+    /// facilities in that SRID. Used to transform facilities to the graph SRID
+    /// before snapping.
+    /// </summary>
+    public int InSrid
+    {
+        get => _inSrid ?? OutSrid;
+        init => _inSrid = value;
+    }
+}
 
 /// <summary>
 /// A single service-area polygon ring for one facility and one break interval.

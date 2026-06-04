@@ -1,13 +1,17 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-namespace Honua.Core.Features.Geocoding.Domain;
+namespace Honua.Geocoding.Features.Geocoding.Domain;
 
 /// <summary>
 /// Configuration for Nominatim geocoding provider
 /// </summary>
 public sealed record NominatimProviderConfiguration : GeocodeProviderConfiguration
 {
+    /// <summary>
+    /// Initializes a new instance of the <see cref="NominatimProviderConfiguration"/> record,
+    /// enabling the provider by default.
+    /// </summary>
     public NominatimProviderConfiguration()
     {
         Enabled = true;

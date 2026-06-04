@@ -2,12 +2,12 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
-using Honua.Core.Features.Geocoding.Abstractions;
-using Honua.Core.Features.Geocoding.Domain;
+using Honua.Geocoding.Features.Geocoding.Abstractions;
+using Honua.Geocoding.Features.Geocoding.Domain;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Core.Features.Geocoding.Services;
+namespace Honua.Geocoding.Features.Geocoding.Services;
 
 /// <summary>
 /// Default implementation of the geocoding coordinator service
@@ -35,6 +35,10 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        using var activity = GeocodingTelemetry.Source.StartActivity("geocoding.forwardGeocode");
+        activity?.SetTag("honua.geocoding.operation", "forward");
+        activity?.SetTag("honua.geocoding.preferred_provider", providerName);
+
         var providers = GetProvidersToTry(providerName);
         var attemptedProviders = new List<string>();
         Exception? lastException = null;
@@ -61,6 +65,9 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
                     provider.Name,
                     stopwatch.Elapsed.TotalMilliseconds,
                     results.Count);
+
+                activity?.SetTag("honua.geocoding.provider", provider.Name);
+                activity?.SetTag("honua.geocoding.result_count", results.Count);
 
                 return GeocodeResults.Success<IReadOnlyList<GeocodeCandidate>>(
                     results, provider.Name, stopwatch.Elapsed.TotalMilliseconds);
@@ -93,6 +100,10 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
             string.Join(", ", attemptedProviders),
             lastException);
 
+        activity?.SetTag("honua.geocoding.provider", failedProviderName);
+        activity?.SetTag("honua.geocoding.result_count", 0);
+        activity?.SetStatus(ActivityStatusCode.Error, errorMessage);
+
         return GeocodeResults.Failure<IReadOnlyList<GeocodeCandidate>>(
             errorMessage, failedProviderName, attemptedProviders: attemptedProviders);
     }
@@ -103,6 +114,10 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+
+        using var activity = GeocodingTelemetry.Source.StartActivity("geocoding.reverseGeocode");
+        activity?.SetTag("honua.geocoding.operation", "reverse");
+        activity?.SetTag("honua.geocoding.preferred_provider", providerName);
 
         var providers = GetProvidersToTry(providerName);
         var attemptedProviders = new List<string>();
@@ -130,6 +145,9 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
                     provider.Name,
                     stopwatch.Elapsed.TotalMilliseconds,
                     result != null);
+
+                activity?.SetTag("honua.geocoding.provider", provider.Name);
+                activity?.SetTag("honua.geocoding.result_count", result != null ? 1 : 0);
 
                 return GeocodeResults.Success<ReverseGeocodeMatch?>(
                     result, provider.Name, stopwatch.Elapsed.TotalMilliseconds);
@@ -161,6 +179,10 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
             "reverse geocoding",
             string.Join(", ", attemptedProviders),
             lastException);
+
+        activity?.SetTag("honua.geocoding.provider", failedProviderName);
+        activity?.SetTag("honua.geocoding.result_count", 0);
+        activity?.SetStatus(ActivityStatusCode.Error, errorMessage);
 
         return GeocodeResults.Failure<ReverseGeocodeMatch?>(
             errorMessage, failedProviderName, attemptedProviders: attemptedProviders);

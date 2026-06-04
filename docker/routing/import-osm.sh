@@ -112,5 +112,7 @@ osm2pgrouting \
     --clean
 
 echo "Done. Inspect the imported topology, e.g.:"
-echo "  psql \"host=$PGHOST port=$PGPORT dbname=$PGDATABASE user=$PGUSER password=$PGPASSWORD\" \\"
+# Redact the password in the printed hint so it never leaks to stdout/CI logs.
+# The real value is supplied at runtime via the PGPASSWORD environment variable.
+echo "  PGPASSWORD=*** psql \"host=$PGHOST port=$PGPORT dbname=$PGDATABASE user=$PGUSER\" \\"
 echo "    -c 'SELECT count(*) AS ways FROM ways; SELECT count(*) AS vertices FROM ways_vertices_pgr;'"

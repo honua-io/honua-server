@@ -46,6 +46,11 @@ service-area solves.
 - **Service-area solves** map to `pgr_drivingDistance` to compute the reachable
   edge/node set, then an alpha-shape / concave-hull polygonization of the
   reachable vertices to produce the Esri `saPolygons` output.
+- **`travelDirection`** (`esriNATravelDirectionFromFacility` /
+  `esriNATravelDirectionToFacility`) is honored: `FromFacility` runs
+  driving-distance over the outbound graph (outbound coverage); `ToFacility` runs
+  it over the reversed graph (source/target swapped) so it computes who can reach
+  the facility within the cost cutoff.
 
 ### Rationale
 
@@ -149,7 +154,9 @@ provider without changing the NAServer adapter contract.
 ### MVP scope and deferrals
 
 The MVP delivers **route (`Route/solve`)** and **service-area
-(`ServiceArea/solveServiceArea`)** solves only. Explicitly deferred:
+(`ServiceArea/solveServiceArea`)** solves, including **`travelDirection`**
+(From/ToFacility) on service areas — `ToFacility` solves over the reversed graph.
+Explicitly deferred:
 
 - Origin-destination cost matrix (`NAServer/...solveODCostMatrix`)
 - Location-allocation
@@ -160,6 +167,12 @@ The MVP delivers **route (`Route/solve`)** and **service-area
 
 These are recorded as out of scope for the first slice so the routing capability
 ships against a bounded, reviewable contract.
+
+**Input bounds (DoS guard).** The NAServer adapter caps input counts to bound
+serial DB fan-out (each stop is a Dijkstra leg; each facility×break is a
+driving-distance query). The caps are configurable via the `Routing` section
+(`Routing:MaxStops`, `Routing:MaxFacilities`, `Routing:MaxBreaks`; defaults
+1000 / 1000 / 50) and over-cap requests return a GeoServices `400` envelope.
 
 ## References
 

@@ -2,10 +2,13 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
+using System.Text.Json;
 using Honua.Infrastructure.Models;
 using Honua.Protocols.GeoServices.GPServer;
 using Honua.Protocols.GeoServices.NAServer.Models;
 using Honua.Routing.Features.Routing.Abstractions;
+using Honua.Routing.Features.Routing.Domain;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Protocols.GeoServices.NAServer;
 
@@ -20,6 +23,13 @@ internal static class NAServerEndpoints
 {
     private const string RouteBase = "/rest/services/{serviceId}/NAServer";
     private const string JsonContentType = "application/json";
+
+    // Indented serializer options for f=pjson. Copies the source-generated context's
+    // resolver so the AOT-safe metadata is reused, layering WriteIndented on top.
+    private static readonly JsonSerializerOptions PrettyJsonOptions = new(NAServerJsonContext.Default.Options)
+    {
+        WriteIndented = true,
+    };
 
     private static readonly NAServerClosestFacilityResponse ClosestFacilityResponse = new()
     {
@@ -66,8 +76,8 @@ internal static class NAServerEndpoints
         // compute endpoints, which are AllowAnonymous for the same reason. Marked
         // AllowAnonymous so the audit guard records the intentional decision.
         endpoints.MapPost($"{RouteBase}/Route/solve",
-                static (HttpContext context, IRoutingProvider routing, CancellationToken ct)
-                    => HandleRouteSolve(context, routing, ct))
+                static (HttpContext context, IRoutingProvider routing, IOptions<RoutingConfiguration> options, CancellationToken ct)
+                    => HandleRouteSolve(context, routing, options.Value, ct))
             .WithDisplayName("NAServer Route Solve")
             .WithName("NAServerRouteSolve")
             .WithSummary("Solve a NAServer route")
@@ -77,8 +87,8 @@ internal static class NAServerEndpoints
             .AllowAnonymous();
 
         endpoints.MapPost($"{RouteBase}/ServiceArea/solveServiceArea",
-                static (HttpContext context, IRoutingProvider routing, CancellationToken ct)
-                    => HandleServiceArea(context, routing, ct))
+                static (HttpContext context, IRoutingProvider routing, IOptions<RoutingConfiguration> options, CancellationToken ct)
+                    => HandleServiceArea(context, routing, options.Value, ct))
             .WithDisplayName("NAServer Service Area Solve")
             .WithName("NAServerServiceAreaSolve")
             .WithSummary("Solve a NAServer service area")
@@ -105,6 +115,7 @@ internal static class NAServerEndpoints
     private static async Task<IResult> HandleRouteSolve(
         HttpContext context,
         IRoutingProvider routing,
+        RoutingConfiguration configuration,
         CancellationToken ct)
     {
         EnrichActivity("RouteSolve");
@@ -116,9 +127,22 @@ internal static class NAServerEndpoints
             return formatError;
         }
 
+        // Capability gate: read from the SAME provider instance we solve with so the
+        // guard reflects the engine that would run. If route solves are not advertised,
+        // emit the standard Esri 400 error rather than attempting the solve.
+        if (!routing.Capabilities.SupportsRoute)
+        {
+            return SetSpanErrorAndReturn(
+                StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    "Route solves are not supported by the configured routing provider."),
+                "NAServer route solves unsupported by provider");
+        }
+
         try
         {
-            var request = NAServerParameterTranslation.BuildRouteSolveRequest(parameters);
+            var caps = NAServerInputCaps.FromConfiguration(configuration);
+            var request = NAServerParameterTranslation.BuildRouteSolveRequest(parameters, caps);
             var includeRoutes = ReadBool(parameters, "returnRoutes", defaultValue: true);
             var includeDirections = ReadBool(parameters, "returnDirections", defaultValue: false);
 
@@ -126,10 +150,11 @@ internal static class NAServerEndpoints
             var response = NAServerResultMapping.MapRoute(
                 result, request.OutSrid, includeRoutes, includeDirections);
 
-            return Results.Json(
+            return WriteResponse(
+                context,
+                parameters,
                 response,
-                NAServerJsonContext.Default.NAServerRouteSolveResponse,
-                contentType: JsonContentType);
+                NAServerJsonContext.Default.NAServerRouteSolveResponse);
         }
         catch (NAServerParameterTranslation.NAServerParameterException ex)
         {
@@ -142,6 +167,7 @@ internal static class NAServerEndpoints
     private static async Task<IResult> HandleServiceArea(
         HttpContext context,
         IRoutingProvider routing,
+        RoutingConfiguration configuration,
         CancellationToken ct)
     {
         EnrichActivity("ServiceAreaSolve");
@@ -153,16 +179,42 @@ internal static class NAServerEndpoints
             return formatError;
         }
 
+        // Capability gate: read from the SAME provider instance we solve with. If
+        // service-area solves are not advertised, emit the standard Esri 400 error.
+        if (!routing.Capabilities.SupportsServiceArea)
+        {
+            return SetSpanErrorAndReturn(
+                StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    "Service-area solves are not supported by the configured routing provider."),
+                "NAServer service-area solves unsupported by provider");
+        }
+
         try
         {
-            var request = NAServerParameterTranslation.BuildServiceAreaSolveRequest(parameters);
+            var caps = NAServerInputCaps.FromConfiguration(configuration);
+            var request = NAServerParameterTranslation.BuildServiceAreaSolveRequest(parameters, caps);
+
+            // Validate the requested travel direction against the provider's advertised
+            // directions. The direction was parsed by BuildServiceAreaSolveRequest above,
+            // so this gates the same value the provider would solve with.
+            if (!routing.Capabilities.SupportedTravelDirections.Contains(request.TravelDirection))
+            {
+                return SetSpanErrorAndReturn(
+                    StandardErrorHelpers.CreateBadRequest(
+                        context,
+                        $"travelDirection '{request.TravelDirection}' is not supported by the configured routing provider."),
+                    "NAServer travelDirection unsupported by provider");
+            }
+
             var result = await routing.SolveServiceAreaAsync(request, ct);
             var response = NAServerResultMapping.MapServiceArea(result, request.OutSrid);
 
-            return Results.Json(
+            return WriteResponse(
+                context,
+                parameters,
                 response,
-                NAServerJsonContext.Default.NAServerServiceAreaResponse,
-                contentType: JsonContentType);
+                NAServerJsonContext.Default.NAServerServiceAreaResponse);
         }
         catch (NAServerParameterTranslation.NAServerParameterException ex)
         {
@@ -170,6 +222,40 @@ internal static class NAServerEndpoints
                 StandardErrorHelpers.CreateBadRequest(context, ex.Message),
                 "Invalid NAServer service-area parameters");
         }
+    }
+
+    /// <summary>
+    /// Serializes the response, emitting indented JSON for <c>f=pjson</c> and compact
+    /// JSON otherwise. The pjson path reuses the source-generated resolver so AOT
+    /// metadata is preserved.
+    /// </summary>
+    private static IResult WriteResponse<T>(
+        HttpContext context,
+        IReadOnlyDictionary<string, string> parameters,
+        T response,
+        System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> typeInfo)
+    {
+        if (IsPrettyJson(context, parameters))
+        {
+            return Results.Json(response, PrettyJsonOptions, contentType: JsonContentType);
+        }
+
+        return Results.Json(response, typeInfo, contentType: JsonContentType);
+    }
+
+    private static bool IsPrettyJson(HttpContext context, IReadOnlyDictionary<string, string> parameters)
+    {
+        string? format = null;
+        if (parameters.TryGetValue("f", out var parameterFormat))
+        {
+            format = parameterFormat;
+        }
+        else if (context.Request.Query.TryGetValue("f", out var queryFormat))
+        {
+            format = queryFormat.ToString();
+        }
+
+        return format is not null && format.Trim().Equals("pjson", StringComparison.OrdinalIgnoreCase);
     }
 
     private static IResult HandleClosestFacility()

@@ -20,7 +20,30 @@ internal sealed class TestRoutingProvider : IRoutingProvider
     private const double MetersPerDegree = 111_320.0;
     private const double MetersPerMinute = 50_000.0 / 60.0;
 
+    /// <summary>
+    /// Creates a provider advertising full capabilities (route + service area, both
+    /// travel directions). Used by the happy-path NAServer integration tests.
+    /// </summary>
+    public TestRoutingProvider()
+        : this(new RoutingProviderCapabilities())
+    {
+    }
+
+    /// <summary>
+    /// Creates a provider with the supplied capabilities so the capability-gate tests
+    /// can exercise restricted-provider behavior (e.g. service area disabled, or a
+    /// travel direction not advertised).
+    /// </summary>
+    /// <param name="capabilities">Capabilities the provider should advertise.</param>
+    public TestRoutingProvider(RoutingProviderCapabilities capabilities)
+    {
+        ArgumentNullException.ThrowIfNull(capabilities);
+        Capabilities = capabilities;
+    }
+
     public string Name => "test";
+
+    public RoutingProviderCapabilities Capabilities { get; }
 
     public Task<RouteSolveResult> SolveRouteAsync(
         RouteSolveRequest request,
