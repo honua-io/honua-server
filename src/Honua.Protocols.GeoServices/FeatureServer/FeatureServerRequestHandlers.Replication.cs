@@ -1061,8 +1061,12 @@ internal static partial class FeatureServerEndpoints
 
         var layerById = ResolveServiceReplicaLayersV2(service, snapshot)
             .ToDictionary(layer => layer.PublicLayerId);
-        var tokens = layersParam.Split(',', StringSplitOptions.TrimEntries);
-        if (tokens.Any(token => token.Length == 0))
+
+        // Accept both the comma-separated form (layers=0 / layers=0,1) and the Esri
+        // JSON-array form (layers=[0] / layers=[0,1]) that the ArcGIS API for Python
+        // (FeatureLayerCollection.extract_changes / create_replica) sends.
+        var tokens = StripLayerListBrackets(layersParam).Split(',', StringSplitOptions.TrimEntries);
+        if (tokens.Length == 0 || tokens.Any(token => token.Length == 0))
         {
             error = StandardErrorHelpers.CreateBadRequest(
                 context,

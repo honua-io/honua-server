@@ -367,6 +367,24 @@ internal static partial class FeatureServerEndpoints
         };
     }
 
+    /// <summary>
+    /// Normalizes the GeoServices <c>layers</c> parameter to its inner token list,
+    /// accepting both the comma-separated form (<c>0</c> / <c>0,1</c>) and the Esri
+    /// JSON-array form (<c>[0]</c> / <c>[0,1]</c>) the ArcGIS API for Python sends.
+    /// </summary>
+    internal static string StripLayerListBrackets(string rawValue)
+    {
+        var normalized = rawValue.Trim();
+        if (normalized.Length >= 2 &&
+            normalized.StartsWith('[') &&
+            normalized.EndsWith(']'))
+        {
+            normalized = normalized[1..^1];
+        }
+
+        return normalized;
+    }
+
     internal static bool TryParseLayerIdList(string rawValue, out int[] layerIds, out string? error)
     {
         layerIds = [];
@@ -378,15 +396,7 @@ internal static partial class FeatureServerEndpoints
             return false;
         }
 
-        var normalized = rawValue.Trim();
-        if (normalized.StartsWith('[') &&
-            normalized.EndsWith(']') &&
-            normalized.Length >= 2)
-        {
-            normalized = normalized[1..^1];
-        }
-
-        var tokens = normalized.Split(',', StringSplitOptions.TrimEntries);
+        var tokens = StripLayerListBrackets(rawValue).Split(',', StringSplitOptions.TrimEntries);
         if (tokens.Length == 0 || tokens.Any(static token => token.Length == 0))
         {
             error = "layers parameter must contain only numeric layer IDs.";
