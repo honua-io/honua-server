@@ -27,6 +27,17 @@
 -- NOTICE and completes successfully WITHOUT creating any routing objects.
 -- Operators that want routing must run an image that ships pgRouting (e.g.
 -- pgrouting/pgrouting) or install the pgrouting package into the PostGIS image.
+--
+-- MIGRATION-RUNNER NOTE (important): this script is executed by DbUp, whose
+-- PostgreSQL variable substitution treats a dollar-delimited token that has an
+-- inner word (a NAMED dollar-quote tag) as a variable reference, and fails with
+-- "Variable <name> has no value defined" before the SQL ever runs. That
+-- substitution scans the whole script text, INCLUDING comments, so this note
+-- deliberately avoids writing any such literal token. This script uses ONLY the
+-- anonymous double-dollar guard block (which DbUp ignores, since it has no inner
+-- word characters) and writes the inner DDL as direct plpgsql statements /
+-- single-quoted EXECUTE strings. Do NOT introduce a named dollar-quote tag here,
+-- in code OR in comments.
 
 -- Routing requires PostGIS (geometry types + KNN <-> operator). PostGIS is
 -- already provisioned by earlier migrations / the base image; this guard is
@@ -43,15 +54,16 @@ CREATE EXTENSION IF NOT EXISTS postgis;
 -- (CREATE EXTENSION/TABLE/INDEX IF NOT EXISTS), so re-runs stay safe.
 --
 -- Note: CREATE EXTENSION cannot run as a bare statement inside a plpgsql DO
--- block, so it is invoked via EXECUTE. The CREATE TABLE / CREATE INDEX DDL is
--- likewise run via EXECUTE for uniformity within the guard.
+-- block, so it is invoked via a single-quoted EXECUTE. CREATE TABLE / CREATE
+-- INDEX / ALTER TABLE / COMMENT are valid as direct plpgsql statements and are
+-- written directly to avoid any named dollar-quote tags (see runner note above).
 -- ---------------------------------------------------------------------------
 DO $$
 BEGIN
     IF EXISTS (
         SELECT 1 FROM pg_available_extensions WHERE name = 'pgrouting'
     ) THEN
-        -- Enable pgRouting.
+        -- Enable pgRouting (utility command — must go through EXECUTE in plpgsql).
         EXECUTE 'CREATE EXTENSION IF NOT EXISTS pgrouting';
 
         -- -------------------------------------------------------------------
@@ -59,16 +71,14 @@ BEGIN
         -- Matches the osm2pgrouting vertex schema (id bigint PK, the_geom
         -- point/4326).
         -- -------------------------------------------------------------------
-        EXECUTE $ddl$
-            CREATE TABLE IF NOT EXISTS public.ways_vertices_pgr (
-                id        BIGINT PRIMARY KEY,
-                cnt       INTEGER,
-                chk       INTEGER,
-                ein       INTEGER,
-                eout      INTEGER,
-                the_geom  geometry(Point, 4326)
-            )
-        $ddl$;
+        CREATE TABLE IF NOT EXISTS public.ways_vertices_pgr (
+            id        BIGINT PRIMARY KEY,
+            cnt       INTEGER,
+            chk       INTEGER,
+            ein       INTEGER,
+            eout      INTEGER,
+            the_geom  geometry(Point, 4326)
+        );
 
         -- -------------------------------------------------------------------
         -- ways: the edge table for the routing graph.
@@ -79,17 +89,15 @@ BEGIN
         -- travel-time weights for the MVP and documents the unit mapping in the
         -- canonical model XML docs.
         -- -------------------------------------------------------------------
-        EXECUTE $ddl$
-            CREATE TABLE IF NOT EXISTS public.ways (
-                gid           BIGINT PRIMARY KEY,
-                source        BIGINT,
-                target        BIGINT,
-                name          TEXT,
-                cost          DOUBLE PRECISION,
-                reverse_cost  DOUBLE PRECISION,
-                the_geom      geometry(LineString, 4326)
-            )
-        $ddl$;
+        CREATE TABLE IF NOT EXISTS public.ways (
+            gid           BIGINT PRIMARY KEY,
+            source        BIGINT,
+            target        BIGINT,
+            name          TEXT,
+            cost          DOUBLE PRECISION,
+            reverse_cost  DOUBLE PRECISION,
+            the_geom      geometry(LineString, 4326)
+        );
 
         -- Foreign keys from edge endpoints to vertices. Added defensively only
         -- when the constraint is not already present, so re-runs and
@@ -97,19 +105,19 @@ BEGIN
         IF NOT EXISTS (
             SELECT 1 FROM pg_constraint WHERE conname = 'ways_source_fk'
         ) THEN
-            EXECUTE 'ALTER TABLE public.ways
+            ALTER TABLE public.ways
                 ADD CONSTRAINT ways_source_fk
                 FOREIGN KEY (source) REFERENCES public.ways_vertices_pgr (id)
-                ON DELETE SET NULL';
+                ON DELETE SET NULL;
         END IF;
 
         IF NOT EXISTS (
             SELECT 1 FROM pg_constraint WHERE conname = 'ways_target_fk'
         ) THEN
-            EXECUTE 'ALTER TABLE public.ways
+            ALTER TABLE public.ways
                 ADD CONSTRAINT ways_target_fk
                 FOREIGN KEY (target) REFERENCES public.ways_vertices_pgr (id)
-                ON DELETE SET NULL';
+                ON DELETE SET NULL;
         END IF;
 
         -- -------------------------------------------------------------------
@@ -118,26 +126,28 @@ BEGIN
         -- (the_geom <-> point) and spatial joins; btree on source/target for
         -- the routing function joins.
         -- -------------------------------------------------------------------
-        EXECUTE 'CREATE INDEX IF NOT EXISTS idx_ways_the_geom_gist
-            ON public.ways USING GIST (the_geom)';
-        EXECUTE 'CREATE INDEX IF NOT EXISTS idx_ways_source
-            ON public.ways (source)';
-        EXECUTE 'CREATE INDEX IF NOT EXISTS idx_ways_target
-            ON public.ways (target)';
-        EXECUTE 'CREATE INDEX IF NOT EXISTS idx_ways_vertices_pgr_the_geom_gist
-            ON public.ways_vertices_pgr USING GIST (the_geom)';
+        CREATE INDEX IF NOT EXISTS idx_ways_the_geom_gist
+            ON public.ways USING GIST (the_geom);
+        CREATE INDEX IF NOT EXISTS idx_ways_source
+            ON public.ways (source);
+        CREATE INDEX IF NOT EXISTS idx_ways_target
+            ON public.ways (target);
+        CREATE INDEX IF NOT EXISTS idx_ways_vertices_pgr_the_geom_gist
+            ON public.ways_vertices_pgr USING GIST (the_geom);
 
         -- -------------------------------------------------------------------
-        -- Documentation.
+        -- Documentation. COMMENT is valid as a direct plpgsql statement; the
+        -- comment text contains no single quotes, so plain '...' literals are
+        -- safe and no dollar quoting is needed.
         -- -------------------------------------------------------------------
-        EXECUTE $cmt$COMMENT ON TABLE public.ways IS
-            'pgRouting edge table (osm2pgrouting-compatible) used by Honua.Routing PgRoutingProvider for pgr_dijkstra / pgr_drivingDistance.'$cmt$;
-        EXECUTE $cmt$COMMENT ON TABLE public.ways_vertices_pgr IS
-            'pgRouting vertex table (osm2pgrouting-compatible) used for nearest-vertex snapping and as routing graph nodes.'$cmt$;
-        EXECUTE $cmt$COMMENT ON COLUMN public.ways.cost IS
-            'Forward traversal weight (generic graph cost; mapped to both length-meters and travel-time by the routing provider for the MVP).'$cmt$;
-        EXECUTE $cmt$COMMENT ON COLUMN public.ways.reverse_cost IS
-            'Reverse traversal weight; negative or NULL marks the edge as one-way in the forward direction.'$cmt$;
+        COMMENT ON TABLE public.ways IS
+            'pgRouting edge table (osm2pgrouting-compatible) used by Honua.Routing PgRoutingProvider for pgr_dijkstra / pgr_drivingDistance.';
+        COMMENT ON TABLE public.ways_vertices_pgr IS
+            'pgRouting vertex table (osm2pgrouting-compatible) used for nearest-vertex snapping and as routing graph nodes.';
+        COMMENT ON COLUMN public.ways.cost IS
+            'Forward traversal weight (generic graph cost; mapped to both length-meters and travel-time by the routing provider for the MVP).';
+        COMMENT ON COLUMN public.ways.reverse_cost IS
+            'Reverse traversal weight; negative or NULL marks the edge as one-way in the forward direction.';
 
         RAISE NOTICE 'pgRouting extension available: routing topology (ways / ways_vertices_pgr) provisioned.';
     ELSE
