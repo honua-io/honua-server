@@ -40,6 +40,56 @@ public sealed class SceneGrpcMappingTests
     }
 
     [UnitTest]
+    public void ToSceneMetadata_FromRecordWithoutExtent_LeavesExtentAndCameraUnset()
+    {
+        // A record with no persisted extent must leave both the Extent and the
+        // InitialCamera proto fields unset (#8) — fabricating a degenerate
+        // all-zero extent/camera would break client camera framing.
+        var record = new SceneDatasetRecord
+        {
+            Id = "no-extent",
+            Name = "No Extent",
+            Description = "A scene without a persisted extent",
+            AssetRoot = "/data/no-extent",
+            CreatedBy = "tester",
+            Extent = null,
+        };
+
+        var metadata = SceneGrpcMapping.ToSceneMetadata(record);
+
+        metadata.SceneId.Should().Be("no-extent");
+        metadata.TilesetUrl.Should().Be("/scenes/no-extent/tileset.json");
+        metadata.Capabilities.Should().Contain("3d-tiles");
+        metadata.Extent.Should().BeNull("an extent-less record must not fabricate a degenerate extent.");
+        metadata.InitialCamera.Should().BeNull("no extent means no derivable initial camera.");
+    }
+
+    [UnitTest]
+    public void ToSceneMetadata_FromConfigScene_MapsCoreFieldsWithEmptyEditionAndNoExtent()
+    {
+        // The config-backed SceneDataset overload (#8) always emits an empty
+        // edition gate and never sets Extent/InitialCamera (no persisted extent).
+        var scene = new SceneDataset
+        {
+            Id = "config-scene",
+            Name = "Config Scene",
+            Description = "A configuration-backed scene",
+            AssetRoot = "/data/config-scene",
+        };
+
+        var metadata = SceneGrpcMapping.ToSceneMetadata(scene);
+
+        metadata.SceneId.Should().Be("config-scene");
+        metadata.Title.Should().Be("Config Scene");
+        metadata.Description.Should().Be("A configuration-backed scene");
+        metadata.TilesetUrl.Should().Be("/scenes/config-scene/tileset.json");
+        metadata.Capabilities.Should().Contain("3d-tiles");
+        metadata.Edition.Should().BeEmpty("config-backed scenes carry no edition gate.");
+        metadata.Extent.Should().BeNull();
+        metadata.InitialCamera.Should().BeNull();
+    }
+
+    [UnitTest]
     public void ToExtent3D_MapsEnvelopeAndDefaultsToWgs84()
     {
         var extent3d = SceneGrpcMapping.ToExtent3D(new SceneExtent(-10, -20, 30, 40));

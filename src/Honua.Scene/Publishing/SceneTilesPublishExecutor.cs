@@ -208,8 +208,8 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
                 var extrusionMinZ = double.PositiveInfinity;
                 foreach (var feature in collected.Features)
                 {
-                    var baseHeight = ResolveExtrusionBase(feature, extrusion!);
-                    var topZ = baseHeight + ResolveExtrusionMax(feature, extrusion!);
+                    var baseHeight = SceneExtrusionResolver.ResolveBaseHeightMeters(feature, extrusion!);
+                    var topZ = baseHeight + SceneExtrusionResolver.ResolveTopHeightMeters(feature, extrusion!);
                     var featureMin = Math.Min(baseHeight, topZ);
                     var featureMax = Math.Max(baseHeight, topZ);
                     if (featureMax > extrusionMaxZ) extrusionMaxZ = featureMax;
@@ -558,8 +558,8 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         {
             if (extrusion is not null && feature.Geometry.Kind == SceneGeometryKind.Polygon)
             {
-                var baseHeight = ResolveExtrusionBase(feature, extrusion);
-                var topZ = baseHeight + ResolveExtrusionMax(feature, extrusion);
+                var baseHeight = SceneExtrusionResolver.ResolveBaseHeightMeters(feature, extrusion);
+                var topZ = baseHeight + SceneExtrusionResolver.ResolveTopHeightMeters(feature, extrusion);
                 var fMin = Math.Min(baseHeight, topZ);
                 var fMax = Math.Max(baseHeight, topZ);
                 if (fMax > max) max = fMax;
@@ -934,63 +934,6 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
 
     private static bool IsSupportedKind(SceneGeometryKind kind)
         => kind is SceneGeometryKind.Point or SceneGeometryKind.LineString or SceneGeometryKind.Polygon;
-
-    private static double ResolveExtrusionMax(SceneFeature feature, MetadataV2ExtrusionInfo extrusion)
-    {
-        if (!feature.Attributes.TryGetValue(extrusion.HeightField, out var raw) || raw is null)
-        {
-            return extrusion.DefaultHeight ?? 0.0;
-        }
-
-        var value = raw switch
-        {
-            double d => d,
-            float f => f,
-            int i => i,
-            long l => l,
-            short s => s,
-            decimal m => (double)m,
-            string s when double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var v) => v,
-            _ => extrusion.DefaultHeight ?? 0.0
-        };
-
-        return ConvertVerticalToMeters(value, extrusion.Unit);
-    }
-
-    private static double ResolveExtrusionBase(SceneFeature feature, MetadataV2ExtrusionInfo extrusion)
-    {
-        if (string.IsNullOrEmpty(extrusion.BaseHeightField))
-        {
-            return 0.0;
-        }
-        if (!feature.Attributes.TryGetValue(extrusion.BaseHeightField, out var raw) || raw is null)
-        {
-            return 0.0;
-        }
-        var value = raw switch
-        {
-            double d => d,
-            float f => f,
-            int i => i,
-            long l => l,
-            short s => s,
-            decimal m => (double)m,
-            string s when double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var v) => v,
-            _ => 0.0
-        };
-        return ConvertVerticalToMeters(value, extrusion.Unit);
-    }
-
-    private static double ConvertVerticalToMeters(double value, string? unit)
-    {
-        MetadataV2VerticalUnits.TryNormalize(unit, out var normalized);
-        return normalized switch
-        {
-            MetadataV2VerticalUnits.Feet => value * 0.3048,
-            MetadataV2VerticalUnits.UsSurveyFeet => value * (1200.0 / 3937.0),
-            _ => value
-        };
-    }
 
     private static string ResolveSceneId(PublishIntent intent, MetadataV2Resource resource)
     {

@@ -33,6 +33,20 @@ internal sealed partial class HonuaTileGrpcService : Proto.TileService.TileServi
     private const int CatalogCacheCapacity = 64;
 
     /// <summary>
+    /// Hard ceiling on a single tile content payload (256 MiB). A unary
+    /// <see cref="GetTile"/> response — and each <see cref="StreamTiles"/> tile —
+    /// is fully materialized in memory (read into a managed array, then copied
+    /// again by <see cref="ByteString.CopyFrom(byte[])"/>), so an oversized or
+    /// corrupted on-disk tile would otherwise drive an unbounded ~2x allocation
+    /// spike. The file size is checked cheaply via <see cref="FileInfo"/> before
+    /// reading and a payload above this ceiling is rejected with
+    /// <see cref="StatusCode.ResourceExhausted"/> rather than buffered. The cap is
+    /// also comfortably above the typical few-MiB b3dm/pnts tile while staying
+    /// within a sane gRPC send-message budget for legitimate large tiles.
+    /// </summary>
+    private const long MaxTileContentBytes = 256L * 1024 * 1024;
+
+    /// <summary>
     /// In-process catalog cache keyed by resolved tileset path. Each value pins
     /// the last-write-time it was built from so a tileset rewrite invalidates the
     /// entry (see <see cref="LoadCatalogAsync"/>). Static so it is shared across
@@ -197,6 +211,17 @@ internal sealed partial class HonuaTileGrpcService : Proto.TileService.TileServi
             throw new RpcException(new Status(
                 StatusCode.NotFound,
                 $"Tile content '{uri}' for node '{entry.NodeId}' was not found."));
+        }
+
+        // Stat the file before reading: the whole payload is buffered (and copied
+        // again by ByteString.CopyFrom), so cap it to avoid an unbounded ~2x
+        // allocation from an oversized/corrupted on-disk tile.
+        var info = new FileInfo(fullPath);
+        if (info.Exists && info.Length > MaxTileContentBytes)
+        {
+            throw new RpcException(new Status(
+                StatusCode.ResourceExhausted,
+                $"Tile content '{uri}' for node '{entry.NodeId}' exceeds the maximum tile size of {MaxTileContentBytes} bytes."));
         }
 
         var bytes = await File.ReadAllBytesAsync(fullPath, cancellationToken).ConfigureAwait(false);

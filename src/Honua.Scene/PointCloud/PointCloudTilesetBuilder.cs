@@ -71,12 +71,27 @@ public static class PointCloudTilesetBuilder
         var minHeight = double.PositiveInfinity;
         var maxHeight = double.NegativeInfinity;
 
+        // Decide the colour depth ONCE for the whole cloud. LAS stores colour in
+        // 16-bit fields, but many producers stuff unscaled 8-bit values there; a
+        // blind >>8 would map those to black. Scan every coloured point: if EVERY
+        // channel across the dataset is <= 255 the cloud is 8-bit-in-16-bit and
+        // each tile copies the low byte verbatim, otherwise it is genuine 16-bit
+        // and every tile >>8-scales. Deciding per-cloud (not per-tile) keeps the
+        // encoding identical across leaves and interior coarse-LOD samples, so no
+        // colour seam appears at tile boundaries.
+        var eightBitColor = true;
+
         for (var i = 0; i < points.Count; i++)
         {
             var p = points[i];
             var (lon, lat, height) = transform(p.X, p.Y, p.Z);
             var (ex, ey, ez) = EcefCoordinateTransform.ToEcef(lon, lat, height);
             projected[i] = new ProjectedPoint(lon, lat, height, ex, ey, ez, p);
+
+            if (p.HasColor && (p.Red > 255 || p.Green > 255 || p.Blue > 255))
+            {
+                eightBitColor = false;
+            }
 
             if (lon < west) west = lon;
             if (lat < south) south = lat;
@@ -115,7 +130,7 @@ public static class PointCloudTilesetBuilder
         {
             var node = contentNodes[i];
             var uri = $"points_{i:0000}.pnts";
-            var pnts = PntsTileWriter.Build(node.Points);
+            var pnts = PntsTileWriter.Build(node.Points, eightBitColor);
             tiles[uri] = pnts;
             content[node.SceneNode] = new SceneTileContent(uri, node.MinHeight, node.MaxHeight);
         }

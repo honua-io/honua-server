@@ -17,7 +17,7 @@ public sealed class PntsTileWriterTests
     [UnitTest]
     public void Build_EmitsValidPntsHeaderWithAlignedSections()
     {
-        var tile = PntsTileWriter.Build(SamplePoints());
+        var tile = PntsTileWriter.Build(SamplePoints(), eightBitColor: false);
 
         Encoding.ASCII.GetString(tile, 0, 4).Should().Be("pnts");
         BinaryPrimitives.ReadUInt32LittleEndian(tile.AsSpan(4, 4)).Should().Be(1u);
@@ -40,7 +40,7 @@ public sealed class PntsTileWriterTests
         // (CLASSIFICATION) = 9 bytes, which alone would leave the tile
         // unaligned; the writer must pad the trailing binary so the whole tile
         // byteLength is a multiple of 8 (3D Tiles PNTS spec).
-        var tile = PntsTileWriter.Build(SamplePoints());
+        var tile = PntsTileWriter.Build(SamplePoints(), eightBitColor: false);
 
         (tile.Length % 8).Should().Be(0, "the PNTS tile byteLength must be 8-byte aligned");
         BinaryPrimitives.ReadUInt32LittleEndian(tile.AsSpan(8, 4))
@@ -50,7 +50,7 @@ public sealed class PntsTileWriterTests
     [UnitTest]
     public void Build_FeatureTableAdvertisesPositionRgbAndRtcCenter()
     {
-        var tile = PntsTileWriter.Build(SamplePoints());
+        var tile = PntsTileWriter.Build(SamplePoints(), eightBitColor: false);
         var featureJsonLen = (int)BinaryPrimitives.ReadUInt32LittleEndian(tile.AsSpan(12, 4));
         var json = Encoding.UTF8.GetString(tile, 28, featureJsonLen);
 
@@ -64,7 +64,7 @@ public sealed class PntsTileWriterTests
     [UnitTest]
     public void Build_BatchTablePreservesIntensityAndClassification()
     {
-        var tile = PntsTileWriter.Build(SamplePoints());
+        var tile = PntsTileWriter.Build(SamplePoints(), eightBitColor: false);
         var featureJsonLen = (int)BinaryPrimitives.ReadUInt32LittleEndian(tile.AsSpan(12, 4));
         var featureBinLen = (int)BinaryPrimitives.ReadUInt32LittleEndian(tile.AsSpan(16, 4));
         var batchJsonLen = (int)BinaryPrimitives.ReadUInt32LittleEndian(tile.AsSpan(20, 4));
@@ -80,8 +80,8 @@ public sealed class PntsTileWriterTests
     [UnitTest]
     public void Build_IsByteIdenticalAcrossRuns()
     {
-        var a = PntsTileWriter.Build(SamplePoints());
-        var b = PntsTileWriter.Build(SamplePoints());
+        var a = PntsTileWriter.Build(SamplePoints(), eightBitColor: false);
+        var b = PntsTileWriter.Build(SamplePoints(), eightBitColor: false);
 
         a.Should().Equal(b);
     }
@@ -93,7 +93,7 @@ public sealed class PntsTileWriterTests
         // bytes, which is NOT a multiple of 8. Without padding the feature binary
         // the batch-table JSON header would start misaligned. Assert the writer
         // pads the feature binary so the batch JSON offset is 8-aligned.
-        var tile = PntsTileWriter.Build(SamplePoints());
+        var tile = PntsTileWriter.Build(SamplePoints(), eightBitColor: false);
 
         var featureJsonLen = BinaryPrimitives.ReadUInt32LittleEndian(tile.AsSpan(12, 4));
         var featureBinLen = BinaryPrimitives.ReadUInt32LittleEndian(tile.AsSpan(16, 4));
@@ -115,7 +115,7 @@ public sealed class PntsTileWriterTests
             new(6_378_139.0, 2.0, 2.0, 300, 6, HasColor: false, 0, 0, 0),
         };
 
-        var tile = PntsTileWriter.Build(points);
+        var tile = PntsTileWriter.Build(points, eightBitColor: false);
 
         var featureJsonLen = BinaryPrimitives.ReadUInt32LittleEndian(tile.AsSpan(12, 4));
         var featureBinLen = BinaryPrimitives.ReadUInt32LittleEndian(tile.AsSpan(16, 4));
@@ -129,15 +129,15 @@ public sealed class PntsTileWriterTests
     public void Build_EightBitColorInSixteenBitField_RendersNonBlackRgb()
     {
         // Some LAS producers store 8-bit (0-255) colour unscaled in the 16-bit
-        // RGB fields. A blind >>8 would map these to 0 (black). The heuristic
-        // detects all-<=255 components and copies the low byte verbatim.
+        // RGB fields. A blind >>8 would map these to 0 (black). When the
+        // dataset-wide decision is 8-bit, the writer copies the low byte verbatim.
         var points = new List<PntsPoint>
         {
             new(6_378_137.0, 0.0, 0.0, 100, 2, HasColor: true, 200, 150, 50),
             new(6_378_138.0, 1.0, 1.0, 200, 5, HasColor: true, 10, 255, 128),
         };
 
-        var tile = PntsTileWriter.Build(points);
+        var tile = PntsTileWriter.Build(points, eightBitColor: true);
 
         var featureJsonLen = (int)BinaryPrimitives.ReadUInt32LittleEndian(tile.AsSpan(12, 4));
         var json = Encoding.UTF8.GetString(tile, 28, featureJsonLen);
@@ -162,7 +162,7 @@ public sealed class PntsTileWriterTests
             new(6_378_138.0, 1.0, 1.0, 200, 5, HasColor: true, 256, 256, 256),
         };
 
-        var tile = PntsTileWriter.Build(points);
+        var tile = PntsTileWriter.Build(points, eightBitColor: false);
 
         var featureJsonLen = (int)BinaryPrimitives.ReadUInt32LittleEndian(tile.AsSpan(12, 4));
         var json = Encoding.UTF8.GetString(tile, 28, featureJsonLen);
@@ -184,7 +184,7 @@ public sealed class PntsTileWriterTests
             new(6_378_138.0, 1.0, 1.0, 200, 5, HasColor: false, 0, 0, 0),
         };
 
-        var tile = PntsTileWriter.Build(points);
+        var tile = PntsTileWriter.Build(points, eightBitColor: false);
         var featureJsonLen = (int)BinaryPrimitives.ReadUInt32LittleEndian(tile.AsSpan(12, 4));
         var json = Encoding.UTF8.GetString(tile, 28, featureJsonLen);
 
@@ -195,7 +195,7 @@ public sealed class PntsTileWriterTests
     [UnitTest]
     public void Build_EmptyPoints_Throws()
     {
-        var act = () => PntsTileWriter.Build(Array.Empty<PntsPoint>());
+        var act = () => PntsTileWriter.Build(Array.Empty<PntsPoint>(), eightBitColor: false);
 
         act.Should().Throw<ArgumentException>();
     }

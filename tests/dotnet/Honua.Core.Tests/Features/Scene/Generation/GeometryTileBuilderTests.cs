@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Buffers.Binary;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -310,6 +311,73 @@ public sealed class GeometryTileBuilderTests
             offset.Should().Be(0u,
                 "all-null/all-empty string offsets stay at 0 so every value decodes as empty string.");
         }
+    }
+
+    [UnitTest]
+    public void BuildGlb_StringMetadataFromNumericValue_IsCultureInvariant()
+    {
+        // Regression for the culture-dependent STRING formatting (#5): a numeric
+        // value routed to a STRING column must be formatted with the invariant
+        // culture so the GLB stays byte-identical across locales. Under de-DE a
+        // naive double.ToString() would emit "1234,5"; the builder must emit
+        // "1234.5".
+        var features = new[]
+        {
+            new SceneFeature
+            {
+                Id = 1,
+                Geometry = new SceneFeatureGeometry
+                {
+                    Kind = SceneGeometryKind.Polygon,
+                    Vertices = SquareRing()
+                },
+                Attributes = new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["label"] = 1234.5d
+                }
+            }
+        };
+
+        var schemas = new[]
+        {
+            new SceneAttributeSchema { PropertyId = "label", FieldName = "label", SchemaType = "STRING", SchemaComponentType = string.Empty }
+        };
+
+        var originalCulture = CultureInfo.CurrentCulture;
+        byte[] germanGlb;
+        byte[] invariantGlb;
+        try
+        {
+            CultureInfo.CurrentCulture = new CultureInfo("de-DE");
+            germanGlb = GeometryTileBuilder.BuildGlb(features, schemas, extrusion: null);
+
+            CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
+            invariantGlb = GeometryTileBuilder.BuildGlb(features, schemas, extrusion: null);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+        }
+
+        // Byte-identical regardless of the thread culture.
+        germanGlb.Should().Equal(invariantGlb,
+            "STRING metadata must format with the invariant culture so the GLB is byte-stable across locales.");
+
+        // And the encoded string is the invariant "1234.5", not the de-DE "1234,5".
+        var json = ExtractJsonChunk(germanGlb);
+        using var doc = JsonDocument.Parse(json);
+        var labelProperty = doc.RootElement.GetProperty("extensions").GetProperty("EXT_structural_metadata")
+            .GetProperty("propertyTables")[0]
+            .GetProperty("properties").GetProperty("label");
+        var valuesView = labelProperty.GetProperty("values").GetInt32();
+        var bufferViews = doc.RootElement.GetProperty("bufferViews");
+        var valuesByteOffset = bufferViews[valuesView].GetProperty("byteOffset").GetInt32();
+        var valuesByteLength = bufferViews[valuesView].GetProperty("byteLength").GetInt32();
+
+        var bin = ExtractBinChunk(germanGlb);
+        var encoded = Encoding.UTF8.GetString(bin, valuesByteOffset, valuesByteLength);
+        encoded.Should().Be("1234.5",
+            "the numeric STRING value must be invariant-formatted, not locale-formatted (\"1234,5\").");
     }
 
     [UnitTest]

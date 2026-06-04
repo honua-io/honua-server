@@ -6,12 +6,12 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Core.Features.Raster.Geometry;
 using Honua.Infrastructure.Raster;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Geometries;
-using NetTopologySuite.IO;
 using Proto = Geospatial.V1;
 
 namespace Honua.Scene.Grpc;
@@ -183,7 +183,7 @@ internal sealed partial class HonuaElevationGrpcService : Proto.ElevationService
             // layer_id is authoritative; request.DatasetId is advisory/echo-only
             // (see the class remarks) and is deliberately not used to resolve.
             var result = await _elevationService
-                .QueryProfileAsync(request.LayerId, WriteLineWkb(lineString), srid, samplingOptions, mergeStrategy, context.CancellationToken)
+                .QueryProfileAsync(request.LayerId, ElevationProfileWkb.Write(lineString), srid, samplingOptions, mergeStrategy, context.CancellationToken)
                 .ConfigureAwait(false);
             activity?.SetTag(SceneGrpcTelemetry.SampleCountTag, result.SampleCount);
             return SceneGrpcMapping.ToElevationProfileResponse(result, mergeStrategy);
@@ -276,12 +276,6 @@ internal sealed partial class HonuaElevationGrpcService : Proto.ElevationService
         }
 
         return new LineString(coordinates);
-    }
-
-    private static byte[] WriteLineWkb(LineString lineString)
-    {
-        var writer = new WKBWriter(ByteOrder.LittleEndian, handleSRID: false, emitZ: false, emitM: false);
-        return writer.Write(lineString);
     }
 
     private static RpcException ToRpcException(ElevationQueryException exception)

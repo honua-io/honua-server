@@ -18,12 +18,17 @@ namespace Honua.Core.Features.Scene.PointCloud;
 /// <c>RTC_CENTER</c> (the tile's ECEF centroid) so the 32-bit mantissa retains
 /// centimetre precision regardless of the cloud's global ECEF magnitude. RGB is
 /// emitted as <c>UNSIGNED_BYTE</c> per channel. LAS colour lives in 16-bit
-/// fields, but many producers store unscaled 8-bit (0-255) values there; the
-/// writer samples every channel and, when all components are &lt;= 255, copies
-/// the low byte verbatim (treating the cloud as 8-bit) instead of <c>&gt;&gt;8</c>'ing
-/// genuine-255 values down to black. Otherwise it scales true 16-bit colour to
-/// 8-bit via <c>&gt;&gt;8</c>. When the source has no colour the writer omits the RGB
-/// semantic and the client falls back to a uniform point colour.
+/// fields, but many producers store unscaled 8-bit (0-255) values there. The
+/// 8-bit-vs-16-bit interpretation is decided ONCE per cloud by the caller
+/// (<see cref="PointCloudTilesetBuilder"/> scans every point's channels) and
+/// passed in to every tile via <c>eightBitColor</c>: when true the writer copies
+/// the low byte verbatim (treating the cloud as 8-bit) instead of
+/// <c>&gt;&gt;8</c>'ing genuine-255 values down to black; otherwise it scales true
+/// 16-bit colour to 8-bit via <c>&gt;&gt;8</c>. Deciding dataset-wide (rather than
+/// per tile) means neighbouring tiles, and an interior coarse-LOD tile and its
+/// leaves, always agree on the encoding so no colour seam appears. When the
+/// source has no colour the writer omits the RGB semantic and the client falls
+/// back to a uniform point colour.
 /// </para>
 /// <para>
 /// The byte layout — header, padded feature-table JSON, padded feature-table
@@ -47,8 +52,18 @@ public static class PntsTileWriter
     /// Points to write, each carrying an ECEF position and preserved attributes.
     /// Must be non-empty.
     /// </param>
+    /// <param name="eightBitColor">
+    /// The dataset-wide colour-depth decision: <see langword="true"/> copies each
+    /// channel's low byte verbatim (8-bit-in-16-bit producers), <see langword="false"/>
+    /// scales true 16-bit colour to 8-bit via <c>&gt;&gt;8</c>. The decision MUST be
+    /// made once for the whole cloud (see
+    /// <see cref="PointCloudTilesetBuilder"/>) and passed identically to every
+    /// tile, otherwise neighbouring tiles — or an interior coarse-LOD tile and
+    /// its leaves — can pick different interpretations and render the same raw
+    /// colour differently, producing a visible seam.
+    /// </param>
     /// <returns>A deterministic PNTS byte sequence.</returns>
-    public static byte[] Build(IReadOnlyList<PntsPoint> points)
+    public static byte[] Build(IReadOnlyList<PntsPoint> points, bool eightBitColor)
     {
         ArgumentNullException.ThrowIfNull(points);
         if (points.Count == 0)
@@ -90,25 +105,16 @@ public static class PntsTileWriter
         {
             // LAS stores colour in 16-bit fields, but many producers stuff 8-bit
             // (0-255) values into those fields unscaled. A blind >>8 would map
-            // those to 0 (black). Sample every channel: if EVERY component is
-            // <= 255 the cloud is 8-bit-in-16-bit and we copy the low byte
-            // verbatim; otherwise it is genuine 16-bit colour and we >>8 to 8-bit.
-            // The choice is deterministic for a given point set.
-            var eightBit = true;
-            for (var i = 0; i < count && eightBit; i++)
-            {
-                var p = points[i];
-                if (p.Red > 255 || p.Green > 255 || p.Blue > 255)
-                {
-                    eightBit = false;
-                }
-            }
-
+            // those to 0 (black). The 8-bit-vs-16-bit interpretation is decided
+            // ONCE for the whole cloud by the caller (PointCloudTilesetBuilder)
+            // and passed in via eightBitColor, so every tile — leaves and
+            // interior coarse-LOD samples alike — uses the same encoding and no
+            // seam appears at tile boundaries.
             for (var i = 0; i < count; i++)
             {
                 var p = points[i];
                 var rgbStart = rgbByteOffset + (i * 3);
-                if (eightBit)
+                if (eightBitColor)
                 {
                     featureBinaryArray[rgbStart] = (byte)p.Red;
                     featureBinaryArray[rgbStart + 1] = (byte)p.Green;

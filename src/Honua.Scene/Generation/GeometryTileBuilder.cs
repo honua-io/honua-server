@@ -363,7 +363,7 @@ public static class GeometryTileBuilder
 
         var hasExtrusion = extrusion is not null;
         var topHeight = hasExtrusion
-            ? ResolveExtrusionHeight(feature, extrusion!)
+            ? SceneExtrusionResolver.ResolveTopHeightMeters(feature, extrusion!)
             : 0.0;
 
         if (!hasExtrusion)
@@ -379,7 +379,7 @@ public static class GeometryTileBuilder
         }
 
         // Extruded prism: top face, bottom face (reversed winding), and walls.
-        var baseHeight = ResolveBaseHeight(feature, extrusion!);
+        var baseHeight = SceneExtrusionResolver.ResolveBaseHeightMeters(feature, extrusion!);
         var topZ = baseHeight + topHeight;
 
         for (var i = 1; i < ringCount - 1; i++)
@@ -406,54 +406,6 @@ public static class GeometryTileBuilder
             AppendVertex(next, topZ, positions, featureIds, featureIndex);
             AppendVertex(current, topZ, positions, featureIds, featureIndex);
         }
-    }
-
-    private static double ResolveExtrusionHeight(SceneFeature feature, MetadataV2ExtrusionInfo extrusion)
-    {
-        var raw = LookupNumericAttribute(feature, extrusion.HeightField) ?? extrusion.DefaultHeight ?? 0.0;
-        return ConvertVerticalToMeters(raw, extrusion.Unit);
-    }
-
-    private static double ResolveBaseHeight(SceneFeature feature, MetadataV2ExtrusionInfo extrusion)
-    {
-        if (string.IsNullOrEmpty(extrusion.BaseHeightField))
-        {
-            return 0.0;
-        }
-
-        var raw = LookupNumericAttribute(feature, extrusion.BaseHeightField) ?? 0.0;
-        return ConvertVerticalToMeters(raw, extrusion.Unit);
-    }
-
-    private static double? LookupNumericAttribute(SceneFeature feature, string fieldName)
-    {
-        if (!feature.Attributes.TryGetValue(fieldName, out var raw) || raw is null)
-        {
-            return null;
-        }
-
-        return raw switch
-        {
-            double d => d,
-            float f => f,
-            int i => i,
-            long l => l,
-            short s => s,
-            decimal m => (double)m,
-            string s when double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var v) => v,
-            _ => null
-        };
-    }
-
-    private static double ConvertVerticalToMeters(double value, string? unit)
-    {
-        MetadataV2VerticalUnits.TryNormalize(unit, out var normalized);
-        return normalized switch
-        {
-            MetadataV2VerticalUnits.Feet => value * 0.3048,
-            MetadataV2VerticalUnits.UsSurveyFeet => value * (1200.0 / 3937.0),
-            _ => value
-        };
     }
 
     private static byte[] AsByteSpan(List<float> values)
@@ -1039,7 +991,12 @@ internal sealed class SceneMetadataColumn
         for (var i = 0; i < features.Count; i++)
         {
             features[i].Attributes.TryGetValue(schema.FieldName, out var raw);
-            encoded[i] = Encoding.UTF8.GetBytes(raw?.ToString() ?? string.Empty);
+            // Format with the invariant culture so byte output is locale-stable
+            // (the class-level byte-identical guarantee). For plain strings this
+            // is a no-op; for an IFormattable (numeric/date/decimal value routed
+            // to a STRING column) it pins invariant formatting instead of the
+            // thread culture's (e.g. "1234.5" not "1234,5").
+            encoded[i] = Encoding.UTF8.GetBytes(FormatStringValue(raw));
             total += encoded[i].Length;
             offsets[i + 1] = (uint)total;
         }
@@ -1080,6 +1037,14 @@ internal sealed class SceneMetadataColumn
             StringOffsetBytes = offsetBytes
         };
     }
+
+    private static string FormatStringValue(object? value) => value switch
+    {
+        null => string.Empty,
+        string s => s,
+        IFormattable f => f.ToString(null, CultureInfo.InvariantCulture),
+        _ => value.ToString() ?? string.Empty
+    };
 
     private static float ToFloat(object? value) => value switch
     {

@@ -33,6 +33,12 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
     private const string FixtureSceneId = "fixture-tileset";
     private const string MissingContentSceneId = "missing-content-tileset";
 
+    // A scene whose asset root has NO tileset.json at all (the LoadCatalogAsync
+    // missing-tileset NotFound branch) and one whose tileset.json is malformed /
+    // deserializes to null (the LoadTilesetAsync Internal branch).
+    private const string MissingTilesetSceneId = "missing-tileset-scene";
+    private const string MalformedTilesetSceneId = "malformed-tileset-scene";
+
     // A database-backed scene carrying a small WGS-84 extent near the prime
     // meridian, used to exercise the ListScenes spatial extent filter (config
     // scenes have no persisted extent and so cannot be excluded by it).
@@ -44,6 +50,8 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
 
     private readonly WebAppFixture _fixture;
     private readonly string _missingContentRoot;
+    private readonly string _missingTilesetRoot;
+    private readonly string _malformedTilesetRoot;
     private GrpcChannel? _channel;
     private Proto.SceneService.SceneServiceClient? _sceneClient;
     private Proto.TileService.TileServiceClient? _tileClient;
@@ -54,6 +62,8 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
     {
         var fixtureRoot = ResolveFixtureRoot();
         _missingContentRoot = CreateMissingContentTilesetRoot();
+        _missingTilesetRoot = CreateMissingTilesetRoot();
+        _malformedTilesetRoot = CreateMalformedTilesetRoot();
         _fixture = new WebAppFixture()
             .ConfigureWebHost(builder =>
             {
@@ -72,6 +82,18 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
                         ["Scenes:Datasets:1:Id"] = MissingContentSceneId,
                         ["Scenes:Datasets:1:Name"] = "Missing Content Tileset",
                         ["Scenes:Datasets:1:AssetRoot"] = _missingContentRoot,
+
+                        // A scene whose asset root has NO tileset.json, exercising
+                        // the LoadCatalogAsync missing-tileset NotFound branch.
+                        ["Scenes:Datasets:2:Id"] = MissingTilesetSceneId,
+                        ["Scenes:Datasets:2:Name"] = "Missing Tileset",
+                        ["Scenes:Datasets:2:AssetRoot"] = _missingTilesetRoot,
+
+                        // A scene whose tileset.json deserializes to null (root:
+                        // null), exercising the LoadTilesetAsync Internal branch.
+                        ["Scenes:Datasets:3:Id"] = MalformedTilesetSceneId,
+                        ["Scenes:Datasets:3:Name"] = "Malformed Tileset",
+                        ["Scenes:Datasets:3:AssetRoot"] = _malformedTilesetRoot,
                     });
                 });
             });
@@ -127,16 +149,19 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
         _channel?.Dispose();
         await _fixture.DisposeAsync();
 
-        try
+        foreach (var root in new[] { _missingContentRoot, _missingTilesetRoot, _malformedTilesetRoot })
         {
-            if (Directory.Exists(_missingContentRoot))
+            try
             {
-                Directory.Delete(_missingContentRoot, recursive: true);
+                if (Directory.Exists(root))
+                {
+                    Directory.Delete(root, recursive: true);
+                }
             }
-        }
-        catch (IOException)
-        {
-            // Best-effort cleanup of the temp fixture root.
+            catch (IOException)
+            {
+                // Best-effort cleanup of the temp fixture root.
+            }
         }
     }
 
@@ -589,6 +614,102 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.GetTile)]
+    [Endpoint("POST /geospatial.v1.TileService/GetTile")]
+    public async Task GetTile_ForSceneWithMissingTilesetJson_ThrowsNotFound()
+    {
+        // The scene resolves in the registry but its asset root has no
+        // tileset.json, so the catalog loader returns NotFound.
+        var act = async () => await _tileClient!.GetTileAsync(
+            new Proto.GetTileRequest { SceneId = MissingTilesetSceneId, NodeId = "0" },
+            _headers);
+
+        (await act.Should().ThrowAsync<RpcException>())
+            .Which.StatusCode.Should().Be(StatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Streaming)]
+    [Endpoint("POST /geospatial.v1.TileService/StreamTiles")]
+    public async Task StreamTiles_ForSceneWithMissingTilesetJson_ThrowsNotFound()
+    {
+        using var call = _tileClient!.StreamTiles(
+            new Proto.StreamTilesRequest { SceneId = MissingTilesetSceneId },
+            _headers);
+
+        var act = async () =>
+        {
+            await foreach (var _ in call.ResponseStream.ReadAllAsync())
+            {
+            }
+        };
+
+        (await act.Should().ThrowAsync<RpcException>())
+            .Which.StatusCode.Should().Be(StatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTile)]
+    [Endpoint("POST /geospatial.v1.TileService/GetTile")]
+    public async Task GetTile_ForSceneWithMalformedTilesetJson_ThrowsInternal()
+    {
+        // tileset.json deserializes to null, so the loader cannot parse it.
+        var act = async () => await _tileClient!.GetTileAsync(
+            new Proto.GetTileRequest { SceneId = MalformedTilesetSceneId, NodeId = "0" },
+            _headers);
+
+        (await act.Should().ThrowAsync<RpcException>())
+            .Which.StatusCode.Should().Be(StatusCode.Internal);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Streaming)]
+    [Endpoint("POST /geospatial.v1.TileService/StreamTiles")]
+    public async Task StreamTiles_ForSceneWithMalformedTilesetJson_ThrowsInternal()
+    {
+        using var call = _tileClient!.StreamTiles(
+            new Proto.StreamTilesRequest { SceneId = MalformedTilesetSceneId },
+            _headers);
+
+        var act = async () =>
+        {
+            await foreach (var _ in call.ResponseStream.ReadAllAsync())
+            {
+            }
+        };
+
+        (await act.Should().ThrowAsync<RpcException>())
+            .Which.StatusCode.Should().Be(StatusCode.Internal);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Streaming)]
+    [Endpoint("POST /geospatial.v1.TileService/StreamTiles")]
+    public async Task StreamTiles_WithOverlappingExtent_StreamsMatchingTiles()
+    {
+        // The fixture region is ~(-75.6 lon, 40.04 lat) in degrees. An extent that
+        // overlaps that footprint must still stream the matching tiles (positive
+        // filter outcome, #10), complementing the disjoint-yields-empty case.
+        var request = new Proto.StreamTilesRequest { SceneId = FixtureSceneId };
+        request.Extent = new Proto.Extent3D
+        {
+            Extent = new Proto.Extent
+            {
+                Xmin = -76.0,
+                Ymin = 39.0,
+                Xmax = -75.0,
+                Ymax = 41.0,
+                SpatialReference = new Proto.SpatialReference { Wkid = 4326, LatestWkid = 4326 },
+            },
+        };
+
+        var tiles = await StreamAsync(request);
+
+        tiles.Should().NotBeEmpty("an overlapping extent must still stream the matching tiles.");
+        tiles.Should().Contain(tile => tile.Node.NodeId == "0");
+    }
+
+    [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.ElevationService/GetElevation")]
     [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.ElevationService/GetElevation")]
@@ -1003,6 +1124,31 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
         return root;
     }
 
+    /// <summary>
+    /// Creates a temporary scene asset root that exists but contains NO
+    /// <c>tileset.json</c>, so the catalog loader cannot resolve the tileset
+    /// document (LoadCatalogAsync NotFound branch).
+    /// </summary>
+    private static string CreateMissingTilesetRoot()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "honua-grpc-no-tileset-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        return root;
+    }
+
+    /// <summary>
+    /// Creates a temporary scene asset root whose <c>tileset.json</c> is the JSON
+    /// literal <c>null</c>, so deserialization yields a null document (the
+    /// LoadTilesetAsync "could not be parsed" Internal branch).
+    /// </summary>
+    private static string CreateMalformedTilesetRoot()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "honua-grpc-malformed-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        File.WriteAllText(Path.Combine(root, "tileset.json"), "null");
+        return root;
+    }
+
     private static string ResolveFixtureRoot()
     {
         var directory = AppContext.BaseDirectory;
@@ -1045,6 +1191,7 @@ public sealed class SceneGrpcAuthorizationTests : IAsyncLifetime
     private Proto.SceneService.SceneServiceClient? _sceneClient;
     private Proto.TileService.TileServiceClient? _tileClient;
     private Metadata? _headers;
+    private Metadata? _authHeaders;
 
     public SceneGrpcAuthorizationTests()
     {
@@ -1088,12 +1235,67 @@ public sealed class SceneGrpcAuthorizationTests : IAsyncLifetime
         {
             _headers.Add("X-Honua-Test-Schema", _fixture.CurrentSchema);
         }
+
+        // An authorized caller carries the admin API key, which satisfies the
+        // protected scene's role gate (mirrors the HTTP/I3S _authenticatedClient).
+        _authHeaders = new Metadata { { "X-API-Key", AdminPassword } };
+        if (_fixture.CurrentSchema is not null)
+        {
+            _authHeaders.Add("X-Honua-Test-Schema", _fixture.CurrentSchema);
+        }
     }
 
     public async Task DisposeAsync()
     {
         _channel?.Dispose();
         await _fixture.DisposeAsync();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTile)]
+    [Endpoint("POST /geospatial.v1.TileService/GetTile")]
+    public async Task GetTile_ProtectedScene_WithAuthorizedRole_Succeeds()
+    {
+        // The positive counterpart to the deny test: an authorized caller must be
+        // GRANTED the protected scene's tiles, pinning the SceneAccessGuard allow
+        // branch on the gRPC adapter (#9).
+        var response = await _tileClient!.GetTileAsync(
+            new Proto.GetTileRequest { SceneId = ProtectedSceneId, NodeId = "0" },
+            _authHeaders);
+
+        response.Tile.Should().NotBeNull();
+        response.Tile.Content.Length.Should().BeGreaterThan(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Streaming)]
+    [Endpoint("POST /geospatial.v1.TileService/StreamTiles")]
+    public async Task StreamTiles_ProtectedScene_WithAuthorizedRole_Succeeds()
+    {
+        using var call = _tileClient!.StreamTiles(
+            new Proto.StreamTilesRequest { SceneId = ProtectedSceneId },
+            _authHeaders);
+
+        var tiles = new List<Proto.Tile>();
+        await foreach (var tile in call.ResponseStream.ReadAllAsync())
+        {
+            tiles.Add(tile);
+        }
+
+        tiles.Should().NotBeEmpty("an authorized caller must receive the protected scene's tiles.");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /geospatial.v1.SceneService/GetScene")]
+    public async Task GetScene_ProtectedScene_WithAuthorizedRole_Succeeds()
+    {
+        var response = await _sceneClient!.GetSceneAsync(
+            new Proto.GetSceneRequest { SceneId = ProtectedSceneId },
+            _authHeaders);
+
+        response.Scene.Should().NotBeNull();
+        response.Scene.SceneId.Should().Be(ProtectedSceneId);
     }
 
     [IntegrationTest]
