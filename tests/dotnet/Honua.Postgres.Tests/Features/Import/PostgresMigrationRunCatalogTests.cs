@@ -87,6 +87,41 @@ public sealed class PostgresMigrationRunCatalogTests(PostgresFixture fixture)
     }
 
     [IntegrationTest]
+    public async Task RecordScorecardAsync_PersistsFingerprintAndBody_AndRoundTrips()
+    {
+        await EnsureMigrationRunsTableAsync();
+        var catalog = CreateCatalog();
+        var runId = $"run-scorecard-{Guid.NewGuid():N}";
+        await catalog.RecordStartedAsync(NewRecord(runId, MigrationRunStatus.Running));
+
+        var updated = await catalog.RecordScorecardAsync(
+            runId,
+            "sha256:scorecard-fingerprint",
+            "{\"artifactKind\":\"honua.migration.reconciliation-scorecard\"}");
+
+        updated.Should().NotBeNull();
+        updated!.ReconciliationScorecardFingerprint.Should().Be("sha256:scorecard-fingerprint");
+
+        var fetched = await catalog.GetAsync(runId);
+        fetched!.ReconciliationScorecardFingerprint.Should().Be("sha256:scorecard-fingerprint");
+
+        var body = await catalog.GetScorecardAsync(runId);
+        body.Should().Contain("honua.migration.reconciliation-scorecard");
+    }
+
+    [IntegrationTest]
+    public async Task GetScorecardAsync_WhenNoScorecardRecorded_ReturnsNull()
+    {
+        await EnsureMigrationRunsTableAsync();
+        var catalog = CreateCatalog();
+        var runId = $"run-noscorecard-{Guid.NewGuid():N}";
+        await catalog.RecordStartedAsync(NewRecord(runId, MigrationRunStatus.Running));
+
+        var body = await catalog.GetScorecardAsync(runId);
+        body.Should().BeNull();
+    }
+
+    [IntegrationTest]
     public async Task CancelAsync_OnlyAffectsRunningRows()
     {
         await EnsureMigrationRunsTableAsync();
@@ -166,9 +201,14 @@ public sealed class PostgresMigrationRunCatalogTests(PostgresFixture fixture)
                 evidence_pack_fingerprint   VARCHAR(128),
                 evidence_pack_body          JSONB,
                 status_note                 TEXT,
+                reconciliation_scorecard_fingerprint VARCHAR(128),
+                reconciliation_scorecard_body        JSONB,
                 CONSTRAINT chk_migration_runs_status
                     CHECK (status IN ('running','succeeded','failed','cancelled'))
             );
+            ALTER TABLE honua.migration_runs
+                ADD COLUMN IF NOT EXISTS reconciliation_scorecard_fingerprint VARCHAR(128),
+                ADD COLUMN IF NOT EXISTS reconciliation_scorecard_body        JSONB;
             CREATE INDEX IF NOT EXISTS idx_migration_runs_started_at
                 ON honua.migration_runs (started_at DESC);
             CREATE INDEX IF NOT EXISTS idx_migration_runs_status

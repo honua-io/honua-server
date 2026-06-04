@@ -146,6 +146,19 @@ public sealed record GeoservicesImportProgress : IOperationProgress, ICancellabl
     /// </summary>
     public string? CurrentPhase { get; init; }
 
+    /// <summary>
+    /// Per-layer data-reconciliation artifact produced by the <see cref="GeoservicesImportStatus.Validating"/>
+    /// phase, when reconciliation ran. <c>null</c> until the Validating phase completes (or when the
+    /// import did not publish a queryable layer to reconcile against).
+    /// </summary>
+    public MigrationReconciliationArtifact? ReconciliationArtifact { get; init; }
+
+    /// <summary>
+    /// Catalog parity report produced by the <see cref="GeoservicesImportStatus.Validating"/> phase,
+    /// when a published Metadata v2 entry was available to reconcile against. <c>null</c> otherwise.
+    /// </summary>
+    public MigrationCatalogReconciliationReport? CatalogReconciliationReport { get; init; }
+
     // IOperationProgress implementation
     string IOperationProgress.OperationId => JobId;
     OperationType IOperationProgress.Type => OperationType.ExternalImport;
@@ -158,7 +171,13 @@ public sealed record GeoservicesImportProgress : IOperationProgress, ICancellabl
         GeoservicesImportStatus.InsertingFeatures => OperationStatus.Processing,
         GeoservicesImportStatus.Publishing => OperationStatus.Processing,
         GeoservicesImportStatus.CopyingAttachments => OperationStatus.Processing,
+        GeoservicesImportStatus.Validating => OperationStatus.Processing,
         GeoservicesImportStatus.Completed => OperationStatus.Completed,
+        // NeedsReview is a terminal, non-success outcome: the run published data but a hard
+        // reconciliation finding blocked completion. The generic operation surface has no
+        // dedicated "needs review" state, so it projects as Failed (did not succeed); migration
+        // -aware clients read the precise GeoservicesImportStatus.NeedsReview instead.
+        GeoservicesImportStatus.NeedsReview => OperationStatus.Failed,
         GeoservicesImportStatus.Failed => OperationStatus.Failed,
         GeoservicesImportStatus.Cancelled => OperationStatus.Cancelled,
         _ => OperationStatus.Queued
@@ -238,9 +257,22 @@ public enum GeoservicesImportStatus
     CopyingAttachments,
 
     /// <summary>
+    /// Post-publish reconciliation is comparing the published layer against the source snapshot.
+    /// </summary>
+    Validating,
+
+    /// <summary>
     /// Import completed successfully.
     /// </summary>
     Completed,
+
+    /// <summary>
+    /// The import published data but a hard reconciliation finding (count/geometry/content/extent
+    /// or catalog parity) routed the run to operator review before it can be declared complete. The
+    /// imported data and layer are left in place; an operator audits the discrepancy and decides
+    /// whether to accept, re-import, or roll back.
+    /// </summary>
+    NeedsReview,
 
     /// <summary>
     /// Import failed with errors.

@@ -91,6 +91,15 @@ public sealed record MigrationRunRecord
     /// secrets expected.
     /// </summary>
     public string? StatusNote { get; init; }
+
+    /// <summary>
+    /// Fingerprint of the signed reconciliation scorecard recorded for this run
+    /// (<see cref="MigrationReconciliationScorecard.Fingerprint"/>, issue #1381),
+    /// when one has been persisted. Returned to API callers so they can prove
+    /// they received the same scorecard later. <c>null</c> until a scorecard is
+    /// recorded.
+    /// </summary>
+    public string? ReconciliationScorecardFingerprint { get; init; }
 }
 
 /// <summary>

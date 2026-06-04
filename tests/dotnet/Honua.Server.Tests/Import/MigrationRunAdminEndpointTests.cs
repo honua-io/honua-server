@@ -221,6 +221,7 @@ public sealed class MigrationRunAdminEndpointTests : IAsyncLifetime
     private sealed class InMemoryMigrationRunCatalog : IMigrationRunCatalog
     {
         private readonly ConcurrentDictionary<string, (MigrationRunRecord Record, string? Body)> _rows = new();
+        private readonly ConcurrentDictionary<string, string> _scorecards = new();
 
         public void Seed(MigrationRunRecord record, string? evidencePackBody = null)
         {
@@ -313,6 +314,27 @@ public sealed class MigrationRunAdminEndpointTests : IAsyncLifetime
         public Task<string?> GetEvidencePackAsync(string runId, CancellationToken cancellationToken = default)
         {
             return Task.FromResult(_rows.TryGetValue(runId, out var existing) ? existing.Body : null);
+        }
+
+        public Task<MigrationRunRecord?> RecordScorecardAsync(
+            string runId,
+            string scorecardFingerprint,
+            string scorecardBody,
+            CancellationToken cancellationToken = default)
+        {
+            if (!_rows.TryGetValue(runId, out var existing))
+            {
+                return Task.FromResult<MigrationRunRecord?>(null);
+            }
+            var updated = existing.Record with { ReconciliationScorecardFingerprint = scorecardFingerprint };
+            _rows[runId] = (updated, existing.Body);
+            _scorecards[runId] = scorecardBody;
+            return Task.FromResult<MigrationRunRecord?>(updated);
+        }
+
+        public Task<string?> GetScorecardAsync(string runId, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(_scorecards.TryGetValue(runId, out var body) ? body : null);
         }
     }
 }

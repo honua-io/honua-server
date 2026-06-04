@@ -42,6 +42,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
     private readonly ILayerStyleCatalog? _styleCatalog;
     private readonly IAttachmentStore? _attachmentStore;
     private readonly IMigrationCatalogWriter? _catalogWriter;
+    private readonly ILayerReconciliationService? _reconciliationService;
     private readonly ILogger<GeoservicesImportService> _logger;
     private readonly PostgresSchemaConfiguration _schemaConfiguration;
 
@@ -56,6 +57,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         ILayerStyleCatalog? styleCatalog = null,
         IAttachmentStore? attachmentStore = null,
         IMigrationCatalogWriter? catalogWriter = null,
+        ILayerReconciliationService? reconciliationService = null,
         PostgresSchemaConfiguration? schemaConfiguration = null)
     {
         _restClient = restClient ?? throw new ArgumentNullException(nameof(restClient));
@@ -67,6 +69,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         _styleCatalog = styleCatalog;
         _attachmentStore = attachmentStore;
         _catalogWriter = catalogWriter;
+        _reconciliationService = reconciliationService;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _schemaConfiguration = schemaConfiguration ?? new PostgresSchemaConfiguration(
             PostgresSchemaConfiguration.DefaultMetadataSchema,
@@ -359,7 +362,9 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         string? layerName = null,
         int? publishedLayerId = null,
         int attachmentsProcessed = 0,
-        int failedAttachments = 0)
+        int failedAttachments = 0,
+        MigrationReconciliationArtifact? reconciliationArtifact = null,
+        MigrationCatalogReconciliationReport? catalogReconciliationReport = null)
     {
         progress?.Report(new GeoservicesImportProgress
         {
@@ -376,7 +381,9 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
             StartedAt = startedAt,
             CurrentPhase = phase,
             AttachmentsProcessed = attachmentsProcessed,
-            FailedAttachments = failedAttachments
+            FailedAttachments = failedAttachments,
+            ReconciliationArtifact = reconciliationArtifact,
+            CatalogReconciliationReport = catalogReconciliationReport
         });
     }
 
@@ -511,5 +518,13 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
 
         [LoggerMessage(7839, LogLevel.Debug, "Relationship apply skipped: {Reason}")]
         public static partial void RelationshipApplySkipped(ILogger logger, string reason);
+
+        [LoggerMessage(7840, LogLevel.Warning,
+            "Reconciliation gate routed import of table {TableName} to NeedsReview: {Reason}")]
+        public static partial void ReconciliationGateBlocked(ILogger logger, string tableName, string reason);
+
+        [LoggerMessage(7841, LogLevel.Warning,
+            "Reconciliation gate could not run for table {TableName}; import completed without a reconciliation verdict")]
+        public static partial void ReconciliationGateUnavailable(ILogger logger, string tableName, Exception exception);
     }
 }

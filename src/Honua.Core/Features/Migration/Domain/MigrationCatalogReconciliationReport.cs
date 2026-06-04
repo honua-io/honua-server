@@ -177,6 +177,14 @@ public sealed record MigrationCatalogReconciliationInput
     /// alongside each outcome so reports can cross-reference the catalog entry.
     /// </summary>
     public string? TargetResourceId { get; init; }
+
+    /// <summary>
+    /// Optional source-side subtype set captured for this resource (for ArcGIS GeoServices imports
+    /// this is the layer's canonical <c>subtypes</c> block). The inventory resource itself does not
+    /// carry subtype metadata, so callers that captured subtypes supply them here to drive the
+    /// subtype reconciliation collector. <c>null</c> skips subtype reconciliation.
+    /// </summary>
+    public Honua.Core.Features.Metadata.Domain.V2.MetadataV2Subtypes? ExpectedSubtypes { get; init; }
 }
 
 /// <summary>
@@ -225,6 +233,29 @@ public static class MigrationCatalogReconciliationCodes
 
     /// <summary>A relationship captured at manifest time is missing from the published resource.</summary>
     public const string RelationshipMissing = "catalog.relationship.missing";
+
+    /// <summary>
+    /// The source resource advertised attachments but the published resource does not declare
+    /// attachment support (<c>Editing.SupportsAttachments</c> is <c>false</c>).
+    /// </summary>
+    public const string AttachmentMissing = "catalog.attachment.missing";
+
+    /// <summary>
+    /// The source resource advertised a subtype set but the published resource declares no
+    /// subtypes (<see cref="Honua.Core.Features.Metadata.Domain.V2.MetadataV2Resource.Subtypes"/>
+    /// is <c>null</c> or empty).
+    /// </summary>
+    public const string SubtypeMissing = "catalog.subtype.missing";
+
+    /// <summary>
+    /// The published subtype set is keyed on a different subtype field than the source advertised.
+    /// </summary>
+    public const string SubtypeFieldMismatch = "catalog.subtype.field-mismatch";
+
+    /// <summary>
+    /// One or more source subtype codes are missing from the published subtype set.
+    /// </summary>
+    public const string SubtypeCodeMissing = "catalog.subtype.code-missing";
 }
 
 /// <summary>

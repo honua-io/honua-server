@@ -373,6 +373,27 @@ public sealed record GeoservicesImportResult
     public int FailedAttachments { get; init; }
 
     /// <summary>
+    /// True when the import published data but a hard post-publish reconciliation finding routed
+    /// the run to operator review instead of completion (parity gate, issue #1380). When set,
+    /// <see cref="Success"/> is <c>false</c> even though data was published, and
+    /// <see cref="ReconciliationArtifact"/> / <see cref="CatalogReconciliationReport"/> carry the
+    /// blocking findings.
+    /// </summary>
+    public bool NeedsReview { get; init; }
+
+    /// <summary>
+    /// Per-layer data-reconciliation artifact produced by the Validating phase, when reconciliation
+    /// ran. <c>null</c> when the import did not publish a queryable layer to reconcile against.
+    /// </summary>
+    public MigrationReconciliationArtifact? ReconciliationArtifact { get; init; }
+
+    /// <summary>
+    /// Catalog parity report produced by the Validating phase, when a published Metadata v2 entry
+    /// was available to reconcile against. <c>null</c> otherwise.
+    /// </summary>
+    public MigrationCatalogReconciliationReport? CatalogReconciliationReport { get; init; }
+
+    /// <summary>
     /// Create successful import result.
     /// </summary>
     public static GeoservicesImportResult CreateSuccess(
@@ -387,7 +408,9 @@ public sealed record GeoservicesImportResult
         TimeSpan duration = default,
         IReadOnlyList<string>? warnings = null,
         int attachmentCount = 0,
-        int failedAttachments = 0) =>
+        int failedAttachments = 0,
+        MigrationReconciliationArtifact? reconciliationArtifact = null,
+        MigrationCatalogReconciliationReport? catalogReconciliationReport = null) =>
         new()
         {
             Success = true,
@@ -402,7 +425,50 @@ public sealed record GeoservicesImportResult
             Duration = duration,
             Warnings = warnings ?? [],
             AttachmentCount = attachmentCount,
-            FailedAttachments = failedAttachments
+            FailedAttachments = failedAttachments,
+            ReconciliationArtifact = reconciliationArtifact,
+            CatalogReconciliationReport = catalogReconciliationReport
+        };
+
+    /// <summary>
+    /// Create a result for an import that published data but was routed to operator review by the
+    /// post-publish parity gate (issue #1380). Data and the published layer are left in place.
+    /// </summary>
+    public static GeoservicesImportResult CreateNeedsReview(
+        string tableName,
+        string sourceServiceUrl,
+        int sourceLayerId,
+        int featureCount,
+        int failedFeatures,
+        int? publishedLayerId,
+        string? serviceName,
+        string? sourceLayerName,
+        TimeSpan duration,
+        IReadOnlyList<string>? warnings,
+        int attachmentCount,
+        int failedAttachments,
+        MigrationReconciliationArtifact? reconciliationArtifact,
+        MigrationCatalogReconciliationReport? catalogReconciliationReport,
+        string reviewReason) =>
+        new()
+        {
+            Success = false,
+            NeedsReview = true,
+            TableName = tableName,
+            SourceServiceUrl = sourceServiceUrl,
+            SourceLayerId = sourceLayerId,
+            SourceLayerName = sourceLayerName,
+            FeatureCount = featureCount,
+            FailedFeatures = failedFeatures,
+            PublishedLayerId = publishedLayerId,
+            ServiceName = serviceName,
+            Duration = duration,
+            Warnings = warnings ?? [],
+            AttachmentCount = attachmentCount,
+            FailedAttachments = failedAttachments,
+            ReconciliationArtifact = reconciliationArtifact,
+            CatalogReconciliationReport = catalogReconciliationReport,
+            ErrorMessage = reviewReason
         };
 
     /// <summary>
