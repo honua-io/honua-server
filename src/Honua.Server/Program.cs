@@ -1114,6 +1114,9 @@ app.MapServerFeatureEndpoints();
 app.MapGrpcService<Honua.Server.Features.Protocols.Grpc.HonuaFeatureService>();
 app.MapGrpcService<Honua.Geoprocessing.HonuaProcessService>();
 app.MapGrpcService<Honua.Server.Features.Spec.HonuaSpecService>();
+app.MapGrpcService<Honua.Scene.Grpc.HonuaSceneGrpcService>();
+app.MapGrpcService<Honua.Scene.Grpc.HonuaTileGrpcService>();
+app.MapGrpcService<Honua.Scene.Grpc.HonuaElevationGrpcService>();
 app.MapGrpcHealthChecksService();
 
 // Enable gRPC reflection for dev tooling (grpcurl, grpcui, Postman)

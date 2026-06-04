@@ -1,0 +1,163 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using Grpc.Core;
+using Honua.Core.Configuration;
+using Honua.Core.Features.Raster.Abstractions;
+using Honua.Core.Features.Raster.Domain;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using NetTopologySuite.Geometries;
+using NetTopologySuite.IO;
+using Proto = Geospatial.V1;
+
+namespace Honua.Scene.Grpc;
+
+/// <summary>
+/// gRPC <c>ElevationService</c> implementation (honua-server#1194 / #1195).
+/// Mirrors the HTTP elevation API: point sampling and geodesic profile
+/// sampling against a registered raster layer, honoring a mosaic rule and
+/// reporting no-data / out-of-bounds conditions explicitly.
+/// </summary>
+internal sealed class HonuaElevationGrpcService : Proto.ElevationService.ElevationServiceBase
+{
+    private const int Wgs84 = 4326;
+
+    private readonly IElevationService _elevationService;
+    private readonly LimitsOptions _limits;
+    private readonly ILogger<HonuaElevationGrpcService> _logger;
+
+    public HonuaElevationGrpcService(
+        IElevationService elevationService,
+        IOptions<LimitsOptions> limits,
+        ILogger<HonuaElevationGrpcService> logger)
+    {
+        ArgumentNullException.ThrowIfNull(elevationService);
+        ArgumentNullException.ThrowIfNull(limits);
+        ArgumentNullException.ThrowIfNull(logger);
+
+        _elevationService = elevationService;
+        _limits = limits.Value;
+        _logger = logger;
+    }
+
+    public override async Task<Proto.GetElevationResponse> GetElevation(
+        Proto.GetElevationRequest request,
+        ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        if (request.Point is null)
+        {
+            throw new RpcException(new Status(StatusCode.InvalidArgument, "point is required."));
+        }
+
+        var x = request.Point.X;
+        var y = request.Point.Y;
+        if (!double.IsFinite(x) || !double.IsFinite(y))
+        {
+            throw new RpcException(new Status(StatusCode.InvalidArgument, "point x and y must be finite values."));
+        }
+
+        var srid = ResolveSrid(request.SpatialReference);
+        var mergeStrategy = SceneGrpcMapping.ParseMergeStrategy(request.MosaicRule);
+
+        try
+        {
+            var result = await _elevationService
+                .QueryPointAsync(request.LayerId, x, y, srid, mergeStrategy, context.CancellationToken)
+                .ConfigureAwait(false);
+            return SceneGrpcMapping.ToElevationResponse(result, mergeStrategy);
+        }
+        catch (ElevationQueryException ex)
+        {
+            throw ToRpcException(ex);
+        }
+    }
+
+    public override async Task<Proto.GetElevationProfileResponse> GetElevationProfile(
+        Proto.GetElevationProfileRequest request,
+        ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var lineString = BuildLineString(request.Line);
+        var srid = ResolveSrid(request.SpatialReference) ?? Wgs84;
+        var mergeStrategy = SceneGrpcMapping.ParseMergeStrategy(request.MosaicRule);
+
+        var requestedSampleCount = request.SampleCount;
+        if (requestedSampleCount == 1)
+        {
+            throw new RpcException(new Status(StatusCode.InvalidArgument, "sample_count must be at least 2."));
+        }
+
+        if (requestedSampleCount > _limits.Elevation.MaxSampleCount)
+        {
+            throw new RpcException(new Status(
+                StatusCode.InvalidArgument,
+                $"sample_count ({requestedSampleCount}) exceeds the configured maximum of {_limits.Elevation.MaxSampleCount}."));
+        }
+
+        var samplingOptions = new ProfileSamplingOptions
+        {
+            SampleCount = requestedSampleCount > 0 ? requestedSampleCount : null,
+            IntervalMeters = null,
+            DefaultSampleCount = _limits.Elevation.DefaultSampleCount,
+            MaxSampleCount = _limits.Elevation.MaxSampleCount,
+        };
+
+        try
+        {
+            var result = await _elevationService
+                .QueryProfileAsync(request.LayerId, WriteLineWkb(lineString), srid, samplingOptions, mergeStrategy, context.CancellationToken)
+                .ConfigureAwait(false);
+            return SceneGrpcMapping.ToElevationProfileResponse(result, mergeStrategy);
+        }
+        catch (ElevationQueryException ex)
+        {
+            throw ToRpcException(ex);
+        }
+    }
+
+    private static int? ResolveSrid(Proto.SpatialReference? spatialReference)
+        => spatialReference is { Wkid: > 0 } reference ? reference.Wkid : null;
+
+    private static LineString BuildLineString(Proto.PolylineGeometry? line)
+    {
+        if (line is null || line.Paths.Count == 0)
+        {
+            throw new RpcException(new Status(StatusCode.InvalidArgument, "line with at least one path is required."));
+        }
+
+        var path = line.Paths[0];
+        if (path.Coords.Count < 2)
+        {
+            throw new RpcException(new Status(StatusCode.InvalidArgument, "line must contain at least 2 coordinates."));
+        }
+
+        var coordinates = new Coordinate[path.Coords.Count];
+        for (var i = 0; i < path.Coords.Count; i++)
+        {
+            var coord = path.Coords[i];
+            if (!double.IsFinite(coord.X) || !double.IsFinite(coord.Y))
+            {
+                throw new RpcException(new Status(StatusCode.InvalidArgument, "line coordinates must be finite values."));
+            }
+
+            coordinates[i] = new Coordinate(coord.X, coord.Y);
+        }
+
+        return new LineString(coordinates);
+    }
+
+    private static byte[] WriteLineWkb(LineString lineString)
+    {
+        var writer = new WKBWriter(ByteOrder.LittleEndian, handleSRID: false, emitZ: false, emitM: false);
+        return writer.Write(lineString);
+    }
+
+    private static RpcException ToRpcException(ElevationQueryException exception)
+        => new(new Status(StatusCode.FailedPrecondition, exception.Message));
+}

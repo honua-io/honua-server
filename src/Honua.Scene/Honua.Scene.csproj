@@ -1,0 +1,57 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!--
+      Honua.Scene is the carved-out 3D scene capability extracted from
+      Honua.Core.Features.Scene and Honua.Server.Features.Infrastructure.Scene.
+      It owns 3D Tiles generation, the scene dataset registry/abstractions, the
+      publishing executor, and the gRPC scene/tile/elevation service
+      implementations (honua-server#1195). Carving the surface into its own
+      assembly lets the protocol adapters (Honua.Protocols.Scene) and the
+      Server host consume the scene surface without it living inside the Core
+      or Server graphs, mirroring the Honua.Geoprocessing carve (ADR-0047).
+
+      Scene *domain* records intentionally stay in Honua.Core.Abstractions
+      (Honua.Core.Features.Scene.Domain): the MetadataV2 graph references them,
+      so moving them here would invert the Core.Abstractions -> Scene edge.
+
+      Namespaces preserved (Honua.Core.Features.Scene.* and the publishing
+      Honua.Infrastructure.Scene options) so existing consumers keep their
+      using clauses unchanged.
+    -->
+    <NoWarn>$(NoWarn);CS1591;IL2104;IL2026;IL3002;IL3050;CA1041;CA1000;CA1862;IDE0051;IDE0052;IDE0005;CA1844;IL2075</NoWarn>
+    <RootNamespace>Honua.Scene</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Honua.Core.Abstractions\Honua.Core.Abstractions.csproj" />
+    <ProjectReference Include="..\Honua.Core\Honua.Core.csproj" />
+    <ProjectReference Include="..\Honua.Geometry\Honua.Geometry.csproj" />
+    <ProjectReference Include="..\Honua.ServiceDefaults\Honua.ServiceDefaults.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Geospatial.Grpc" />
+    <PackageReference Include="Google.Protobuf" />
+    <PackageReference Include="Grpc.AspNetCore" />
+    <PackageReference Include="Grpc.Core.Api" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Honua.Server" />
+    <InternalsVisibleTo Include="Honua.Server.Tests" />
+    <InternalsVisibleTo Include="Honua.Core.Tests" />
+    <InternalsVisibleTo Include="Honua.Protocols.Scene" />
+    <InternalsVisibleTo Include="Honua.Protocols.Scene.Tests" />
+    <InternalsVisibleTo Include="Honua.Postgres" />
+    <InternalsVisibleTo Include="Honua.Postgres.Tests" />
+    <InternalsVisibleTo Include="Honua.Architecture.Tests" />
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
+  </ItemGroup>
+
+</Project>

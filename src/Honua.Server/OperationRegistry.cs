@@ -113,6 +113,18 @@ public static class OperationRegistry
         new(Grpc, "geospatial.v1.SpecService/PlanSpec"),
         new(Grpc, "geospatial.v1.SpecService/ApplySpec"),
         new(Grpc, "geospatial.v1.SpecService/CancelApply"),
+
+        // gRPC SceneService methods (geospatial.v1.SceneService)
+        new(Grpc, "geospatial.v1.SceneService/ListScenes"),
+        new(Grpc, "geospatial.v1.SceneService/GetScene"),
+
+        // gRPC TileService methods (geospatial.v1.TileService)
+        new(Grpc, "geospatial.v1.TileService/GetTile"),
+        new(Grpc, "geospatial.v1.TileService/StreamTiles"),
+
+        // gRPC ElevationService methods (geospatial.v1.ElevationService)
+        new(Grpc, "geospatial.v1.ElevationService/GetElevation"),
+        new(Grpc, "geospatial.v1.ElevationService/GetElevationProfile"),
     ];
 }
 
