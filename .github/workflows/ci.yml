@@ -1571,6 +1571,7 @@ jobs:
             --self-contained \
             -p:PublishAot=true \
             -p:HonuaSkipAdminClientForAotVerification=true \
+            -p:HonuaSkipOracleForAotVerification=true \
             -p:HonuaIncludeStacOpsDemo=false \
             -p:StripSymbols=true \
             -o ./publish

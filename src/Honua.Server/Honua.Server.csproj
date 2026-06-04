@@ -30,7 +30,14 @@
     / HonuaIncludeStacOpsDemo. ILC IL3000 docs: third-party Assembly.Location use.
   -->
   <PropertyGroup>
-    <HonuaSkipOracleForAotVerification Condition="'$(HonuaSkipOracleForAotVerification)' == '' and '$(PublishAot)' == 'true' and '$(RuntimeIdentifier)' != ''">true</HonuaSkipOracleForAotVerification>
+    <!--
+      Opt-in ONLY: set explicitly by the AOT-verification publish command in
+      .github/workflows/ci.yml (alongside HonuaSkipAdminClientForAotVerification).
+      It is deliberately NOT auto-inferred from PublishAot/RuntimeIdentifier:
+      the multi-stage Docker publish restores without -p:PublishAot=false and
+      then builds with it, so an inferred condition would evaluate differently
+      between restore and build and drop Honua.Oracle's assets file (NETSDK1004).
+    -->
     <DefineConstants Condition="'$(HonuaSkipOracleForAotVerification)' == 'true'">$(DefineConstants);HONUA_SKIP_ORACLE</DefineConstants>
   </PropertyGroup>
 
