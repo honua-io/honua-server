@@ -96,6 +96,37 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
         creationDate.GetInt64().Should().BeGreaterThan(0);
     }
 
+    // The ArcGIS API for Python (FeatureLayerCollection.create_replica /
+    // extract_changes) sends the `layers` parameter as the Esri JSON-array form
+    // (layers=[0] / layers=[0,1]) rather than the comma-separated form. Both forms
+    // must be accepted identically.
+    [IntegrationTest]
+    [Operation(Operations.CreateReplica)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
+    public async Task CreateReplica_LayersAsJsonArray_ReturnsReplicaId()
+    {
+        var payload = JsonSerializer.Serialize(new
+        {
+            replicaName = "JsonArrayReplica",
+            layers = "[0]",
+            syncModel = "perReplica",
+            f = "json"
+        });
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+        var root = document.RootElement;
+
+        root.TryGetProperty("layers", out var layers).Should().BeTrue();
+        layers.EnumerateArray().Should().Contain(item => item.GetProperty("id").GetInt32() == 0);
+    }
+
     [IntegrationTest]
     [Operation(Operations.ListReplicas)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/replicas")]
@@ -343,6 +374,37 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
         root.TryGetProperty("serverGen", out _).Should().BeTrue();
         root.TryGetProperty("minServerGen", out _).Should().BeTrue();
         root.TryGetProperty("maxServerGen", out _).Should().BeTrue();
+    }
+
+    // The ArcGIS API for Python sends layers as a JSON array (layers=[0,1]). The
+    // serverGen-based extractChanges flow must accept it identically to the
+    // comma-separated form (layers=0,1).
+    [IntegrationTest]
+    [Operation(Operations.ExtractChanges)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/extractChanges")]
+    public async Task ExtractChanges_LayersAsJsonArray_ReturnsChanges()
+    {
+        var payload = JsonSerializer.Serialize(new
+        {
+            serverGen = 0,
+            layers = "[0]",
+            f = "json"
+        });
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/extractChanges",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+        var root = document.RootElement;
+
+        root.GetProperty("success").GetBoolean().Should().BeTrue();
+        root.TryGetProperty("layerChanges", out var layerChanges).Should().BeTrue();
+        layerChanges.ValueKind.Should().Be(JsonValueKind.Array);
+        layerChanges.GetArrayLength().Should().BeGreaterThanOrEqualTo(1);
     }
 
     [IntegrationTest]

@@ -269,6 +269,7 @@ public class ImageServerBasicTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /rest/services/{serviceId}/ImageServer")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/conf.json")]
     [Endpoint("GET /rest/services/{serviceId}/ImageServer/exportImage")]
     [Endpoint("POST /rest/services/{serviceId}/ImageServer/exportImage")]
     [Endpoint("GET /rest/services/{serviceId}/ImageServer/identify")]
@@ -303,6 +304,7 @@ public class ImageServerBasicTests : IAsyncLifetime
         var getUris = new[]
         {
             $"/rest/services/{serviceId}/ImageServer?f=json",
+            $"/rest/services/{serviceId}/ImageServer/conf.json?f=json",
             $"/rest/services/{serviceId}/ImageServer/exportImage?bbox=-180,-90,180,90&size=256,256&format=png&f=json",
             $"/rest/services/{serviceId}/ImageServer/identify?geometry=0,0&geometryType=esriGeometryPoint&f=json",
             $"/rest/services/{serviceId}/ImageServer/tile/0/0/0?format=png",

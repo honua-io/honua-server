@@ -53,6 +53,48 @@ public sealed class ImageServerClientCompatibilityTests
         }
     }
 
+    // The ArcGIS Maps SDK for .NET native runtime probes /ImageServer/conf.json when
+    // loading an ImageServiceRaster; a 404 is reported as "could not read the
+    // ImageServer conf". The dynamic (non-cached) service serves a storage descriptor.
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /rest/services/{id}/ImageServer/conf.json")]
+    public async Task NativeRuntime_ReadsImageServerConfJson()
+    {
+        var fixture = await CreateFixtureAsync();
+        try
+        {
+            using var response = await fixture.Client.GetAsync($"/rest/services/{TestLayerId}/ImageServer/conf.json?f=json");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var root = doc.RootElement;
+
+            root.GetProperty("singleFusedMapCache").GetBoolean().Should().BeFalse();
+            root.TryGetProperty("tileInfo", out var tileInfo).Should().BeTrue();
+            tileInfo.ValueKind.Should().Be(JsonValueKind.Null);
+
+            root.TryGetProperty("storageInfo", out var storageInfo).Should().BeTrue();
+            storageInfo.GetProperty("blockWidth").GetInt32().Should().BeGreaterThan(0);
+            storageInfo.GetProperty("blockHeight").GetInt32().Should().BeGreaterThan(0);
+
+            root.GetProperty("blockWidth").GetInt32()
+                .Should().Be(storageInfo.GetProperty("blockWidth").GetInt32());
+            root.GetProperty("blockHeight").GetInt32()
+                .Should().Be(storageInfo.GetProperty("blockHeight").GetInt32());
+
+            root.TryGetProperty("fullExtent", out _).Should().BeTrue();
+            root.TryGetProperty("spatialReference", out _).Should().BeTrue();
+            root.GetProperty("bandCount").GetInt32().Should().Be(1);
+            root.GetProperty("pixelType").GetString().Should().Be("U8");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
     [IntegrationTest]
     [Operation(Operations.Export)]
     [Endpoint("GET /rest/services/{id}/ImageServer/exportImage")]
