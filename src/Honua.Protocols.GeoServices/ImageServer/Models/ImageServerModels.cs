@@ -536,6 +536,55 @@ public sealed class ImageServerStorageInfo
 }
 
 /// <summary>
+/// Storage/configuration descriptor served at the <c>/ImageServer/conf.json</c>
+/// resource. The ArcGIS Maps SDK for .NET native runtime probes <c>conf.json</c>
+/// when loading an <c>ImageServiceRaster</c>; for a dynamic (non-cached) image
+/// service it must receive a well-formed descriptor (200) rather than a 404, which
+/// the native runtime reports as "could not read the ImageServer conf". This block
+/// explicitly advertises no fused tile cache (<c>singleFusedMapCache=false</c>,
+/// <c>tileInfo=null</c>) and surfaces the pixel-block <c>storageInfo</c>, extent, and
+/// spatial reference the runtime uses to plan chunked pixel reads.
+/// </summary>
+public sealed class ImageServerConfInfo
+{
+    /// <summary>Whether the service is backed by a single fused tile cache.</summary>
+    [JsonPropertyName("singleFusedMapCache")]
+    public bool SingleFusedMapCache { get; init; }
+
+    /// <summary>Tile cache scheme; null for a dynamic (non-cached) image service.</summary>
+    [JsonPropertyName("tileInfo")]
+    public TileInfo? TileInfo { get; init; }
+
+    /// <summary>Pixel-block storage information describing chunked pixel reads.</summary>
+    [JsonPropertyName("storageInfo")]
+    public required ImageServerStorageInfo StorageInfo { get; init; }
+
+    /// <summary>Width, in pixels, of a stored pixel block (mirrors storageInfo).</summary>
+    [JsonPropertyName("blockWidth")]
+    public required int BlockWidth { get; init; }
+
+    /// <summary>Height, in pixels, of a stored pixel block (mirrors storageInfo).</summary>
+    [JsonPropertyName("blockHeight")]
+    public required int BlockHeight { get; init; }
+
+    /// <summary>Spatial reference of the image service.</summary>
+    [JsonPropertyName("spatialReference")]
+    public required SpatialReference SpatialReference { get; init; }
+
+    /// <summary>Full extent of the image service.</summary>
+    [JsonPropertyName("fullExtent")]
+    public required ImageServerExtent FullExtent { get; init; }
+
+    /// <summary>Esri pixel type advertised by the service (e.g. U8, F32).</summary>
+    [JsonPropertyName("pixelType")]
+    public required string PixelType { get; init; }
+
+    /// <summary>Number of bands in the source raster mosaic.</summary>
+    [JsonPropertyName("bandCount")]
+    public required int BandCount { get; init; }
+}
+
+/// <summary>
 /// Field definition for image services.
 /// </summary>
 public sealed class Field

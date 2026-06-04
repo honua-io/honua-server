@@ -59,6 +59,17 @@ internal static class ImageServerEndpoints
             .Produces<ImageServerServiceInfo>()
             .Produces(404);
 
+        // The ArcGIS Maps SDK for .NET native runtime probes conf.json when loading an
+        // ImageServiceRaster. A 404 is reported as "could not read the ImageServer conf",
+        // so serve the dynamic-service storage descriptor here.
+        group.MapGet("/conf.json", GetServiceConf)
+            .WithDisplayName("Get Image Service Configuration")
+            .WithName("GetImageServiceConf")
+            .WithSummary("Get Image Server configuration descriptor")
+            .WithDescription("Returns the storage/configuration descriptor (storageInfo, extent, spatial reference) the native ImageServiceRaster runtime probes when loading the service")
+            .Produces<ImageServerConfInfo>()
+            .Produces(404);
+
         // Export image endpoint - core rendering capability
         group.MapGet("/exportImage", ExportImage)
             .WithDisplayName("Export Image")
@@ -366,6 +377,14 @@ internal static class ImageServerEndpoints
             .Produces<ImageServerServiceInfo>()
             .Produces(404);
 
+        serviceGroup.MapGet("/conf.json", GetServiceConfByService)
+            .WithDisplayName("Get Image Service Configuration by Service")
+            .WithName("GetImageServiceConfByService")
+            .WithSummary("Get Image Server configuration descriptor")
+            .WithDescription("Returns the storage/configuration descriptor the native ImageServiceRaster runtime probes when loading the named service")
+            .Produces<ImageServerConfInfo>()
+            .Produces(404);
+
         serviceGroup.MapGet("/exportImage", ExportImageByService)
             .WithDisplayName("Export Image by Service")
             .WithName("ExportImageByService")
@@ -635,6 +654,41 @@ internal static class ImageServerEndpoints
     {
         var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
         return resolution.ErrorResult ?? await GetServiceInfo(resolution.LayerId, f, context, handler, cancellationToken);
+    }
+
+    /// <summary>
+    /// Serve the conf.json storage/configuration descriptor for the native runtime.
+    /// </summary>
+    private static async Task<IResult> GetServiceConf(
+        int id,
+        string? f,
+        HttpContext context,
+        ImageServerMetadataHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        if (!IsSupportedJsonResponseFormat(f))
+        {
+            return CreateUnsupportedJsonFormatResult(context);
+        }
+
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        if (layerError is not null)
+        {
+            return layerError;
+        }
+
+        return await handler.GetServiceConfAsync(context, id, cancellationToken);
+    }
+
+    private static async Task<IResult> GetServiceConfByService(
+        string serviceId,
+        string? f,
+        HttpContext context,
+        ImageServerMetadataHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        return resolution.ErrorResult ?? await GetServiceConf(resolution.LayerId, f, context, handler, cancellationToken);
     }
 
     /// <summary>
