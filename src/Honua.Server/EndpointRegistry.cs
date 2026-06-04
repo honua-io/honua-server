@@ -568,6 +568,12 @@ public static class EndpointRegistry
         new("GET", "/sharing/rest/content/items/{id}"),
         new("GET", "/sharing/rest/content/items/{id}/data"),
 
+        // ArcGIS Portal OAuth2 named-user bridge (#1242).
+        new("GET", "/sharing/rest/oauth2/authorize"),
+        new("GET", "/sharing/rest/oauth2/callback"),
+        new("POST", "/sharing/rest/oauth2/token"),
+        new("GET", "/sharing/rest/oauth2/token"),
+
         new("GET", "/rest/services"),
         new("GET", "/rest/info"),
         new("GET", "/rest/services/{locatorName}/GeocodeServer"),

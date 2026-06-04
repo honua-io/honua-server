@@ -77,6 +77,7 @@ public static class SharingRestEndpoints
             .Produces(StatusCodes.Status402PaymentRequired);
 
         endpoints.MapSharingRestReadEndpoints();
+        endpoints.MapSharingOAuth2Endpoints();
 
         return endpoints;
     }

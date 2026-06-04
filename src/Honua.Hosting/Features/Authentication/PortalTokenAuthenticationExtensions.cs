@@ -4,6 +4,7 @@
 using Honua.Core.Features.Authorization;
 using Honua.Core.Features.Authorization.Abstractions;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
@@ -54,6 +55,7 @@ public static class PortalTokenAuthenticationExtensions
         services.TryAddSingletonPortalTokenIssuer();
         services.TryAddPortalCredentialVerifier();
         services.TryAddPortalAccessProjection(configuration);
+        services.TryAddPortalOAuthBridge();
 
         services.AddAuthentication()
             .AddScheme<AuthenticationSchemeOptions, PortalTokenAuthenticationHandler>(
@@ -115,6 +117,25 @@ public static class PortalTokenAuthenticationExtensions
                 ? new CompositePortalCredentialVerifier(oidc, admin)
                 : oidc;
         });
+    }
+
+    private static void TryAddPortalOAuthBridge(this IServiceCollection services)
+    {
+        // The ArcGIS OAuth2 named-user bridge (#1242) composes the existing OIDC
+        // identity core and IPortalTokenIssuer rather than introducing a parallel
+        // auth subsystem (ADR-0049). The store/broker/token-service are scoped to
+        // the request like the credential verifier; the store is registered as a
+        // singleton because it is stateless over the shared distributed/memory cache.
+        services.TryAddSingleton<PortalOAuthStore>();
+        services.AddScoped<PortalOAuthBroker>();
+        services.AddScoped<PortalOAuthTokenService>();
+
+        if (!services.Any(d => d.ServiceType == typeof(IHttpClientFactory)))
+        {
+            services.AddHttpClient();
+        }
+
+        services.AddHttpClient(PortalOAuthBroker.HttpClientName);
     }
 
     private static void TryAddPortalAccessProjection(this IServiceCollection services, IConfiguration configuration)
