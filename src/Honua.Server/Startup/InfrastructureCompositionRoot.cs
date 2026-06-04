@@ -78,10 +78,15 @@ internal static class InfrastructureCompositionRoot
         // through the shared FeatureProviderQueryRouter. Disabled when Oracle:Enabled is explicitly false.
         // Oracle.ManagedDataAccess.Core uses internal reflection and is not Native AOT-compatible;
         // operators publishing trimmed/AOT artifacts should leave the provider disabled.
+        // The AOT-verification publish (HonuaSkipOracleForAotVerification) drops the Honua.Oracle
+        // ProjectReference and defines HONUA_SKIP_ORACLE, so this registration is compiled out and
+        // the non-single-file-safe driver (IL3000 Assembly.Location) is never linked into the AOT image.
+#if !HONUA_SKIP_ORACLE
         if (configuration.GetValue("Oracle:Enabled", true))
         {
             Honua.Oracle.ServiceCollectionExtensions.AddOracleFeatureProvider(services, configuration);
         }
+#endif
 
         services.TryAddScoped<IFeatureDataProviderRegistry>(serviceProvider =>
             new FeatureDataProviderRegistry(serviceProvider.GetServices<IFeatureDataProvider>()));

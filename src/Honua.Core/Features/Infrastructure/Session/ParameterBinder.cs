@@ -3,6 +3,7 @@
 
 using System.Collections;
 using System.Data.Common;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 
 namespace Honua.Core.Features.Infrastructure.Session;
@@ -21,6 +22,15 @@ public static class ParameterBinder
     /// <summary>
     /// Binds <paramref name="parameters"/> onto <paramref name="command"/>.
     /// </summary>
+    [UnconditionalSuppressMessage(
+        "Trimming",
+        "IL2075:'this' argument does not satisfy 'DynamicallyAccessedMemberTypes.PublicProperties'",
+        Justification =
+            "Reflection only reads the public instance property getters of the supplied parameters " +
+            "object (dapper-style binding). Every caller of the IDatabaseSession abstraction passes " +
+            "anonymous types, dictionaries, or POCOs that are constructed in-assembly, so the trimmer " +
+            "preserves their public properties for the instances that reach this method. No properties " +
+            "are discovered on types that are not otherwise instantiated, so binding stays trim-safe.")]
     public static void Bind(DbCommand command, object? parameters)
     {
         ArgumentNullException.ThrowIfNull(command);
