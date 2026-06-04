@@ -63,7 +63,12 @@ internal static partial class FeatureServerEndpoints
         private static readonly string[] EsriMetadataClientParameters =
         [
             "returnFieldGroups",
-            "returnPbfFeatureEncodings"
+            "returnPbfFeatureEncodings",
+            // The ArcGIS Maps SDK for .NET appends returnAdvancedSymbols to the
+            // layer/service metadata GET during ServiceFeatureTable.LoadAsync. #1455
+            // accepted it on the layer-query endpoint but not here, so LoadAsync
+            // returned 400 and the entire .NET FeatureServer client was blocked.
+            "returnAdvancedSymbols"
         ];
 
         public static readonly FrozenSet<string> ServiceMetadata =
