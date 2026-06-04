@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Migration.Services;
@@ -86,6 +87,32 @@ public interface IMigrationCatalogWriter
     Task<MigrationCatalogWriteOutcome> EnsureStyleAsync(
         string connectionString,
         MigrationStyleRequest request,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Idempotently persist relationship metadata for an imported layer set
+    /// (issue #1256). Writes both the canonical Metadata v2 graph entry
+    /// (<see cref="Honua.Core.Features.Metadata.Domain.V2.MetadataV2Resource.Relationships"/>
+    /// on the origin resource) and the v1 <c>honua.relationships</c> row used by
+    /// the GeoServices FeatureServer <c>queryRelatedRecords</c> path.
+    /// </summary>
+    /// <remarks>
+    /// All requests in a single call MUST target the same target database. Per
+    /// request, both writes are idempotent: the v2 graph append checks for an
+    /// existing relationship by stable id, and the v1 insert uses
+    /// <c>ON CONFLICT (layer_id, relationship_id) DO NOTHING</c>. Relationships
+    /// that already exist on either side return
+    /// <see cref="MigrationCatalogWriteOutcome.AlreadyExists"/>.
+    /// </remarks>
+    /// <param name="connectionString">PostgreSQL connection string for the target catalog.</param>
+    /// <param name="graphStore">Read-write graph store used to mutate the v2 graph snapshot. May be <c>null</c>; when null the v2 graph write is skipped and only the v1 row is written.</param>
+    /// <param name="requests">Per-relationship apply requests.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Per-relationship outcomes ordered by source relationship id.</returns>
+    Task<MigrationRelationshipApplyOutcome[]> EnsureRelationshipsAsync(
+        string connectionString,
+        IMetadataV2GraphStore? graphStore,
+        MigrationRelationshipApplyRequest[] requests,
         CancellationToken cancellationToken = default);
 }
 
@@ -315,4 +342,94 @@ public sealed record MigrationStyleRequest
     /// the manifest translator already marked the source style as unsupported.
     /// </summary>
     public string ReviewDisposition { get; init; } = "applied";
+}
+
+/// <summary>
+/// Request payload for <see cref="IMigrationCatalogWriter.EnsureRelationshipsAsync"/>
+/// (issue #1256). Carries a single source-side relationship class plus the
+/// resolved Honua layer ids for both sides. Multiple requests can be passed
+/// in a single call so the writer can batch v2 graph mutations.
+/// </summary>
+public sealed record MigrationRelationshipApplyRequest
+{
+    /// <summary>
+    /// Stable identifier derived from the source fidelity record (for example
+    /// <c>classification:resource:Inspections:layer:0:relationship:2</c>). Used
+    /// for outcome correlation and step-result reporting.
+    /// </summary>
+    public required string SourceRelationshipId { get; init; }
+
+    /// <summary>
+    /// Optional original integer relationship id advertised by the ArcGIS
+    /// service. Persisted to <c>honua.relationships.relationship_id</c> and
+    /// surfaced as <see cref="Honua.Core.Features.Metadata.Domain.V2.MetadataV2Relationship.EsriRelationshipId"/>
+    /// so Esri-style clients can call <c>queryRelatedRecords</c> with the same
+    /// integer the source service advertised.
+    /// </summary>
+    public int? EsriRelationshipId { get; init; }
+
+    /// <summary>
+    /// Optional display name for the relationship.
+    /// </summary>
+    public string? Name { get; init; }
+
+    /// <summary>
+    /// Resolved Honua layer id of the origin (source) layer in the relationship.
+    /// </summary>
+    public required int OriginLayerId { get; init; }
+
+    /// <summary>
+    /// Resolved Honua layer id of the destination (related) layer.
+    /// </summary>
+    public required int RelatedLayerId { get; init; }
+
+    /// <summary>
+    /// Foreign-key field name on the origin layer.
+    /// </summary>
+    public required string OriginKeyField { get; init; }
+
+    /// <summary>
+    /// Primary/foreign-key field name on the destination layer.
+    /// </summary>
+    public required string DestinationKeyField { get; init; }
+
+    /// <summary>
+    /// Normalized relationship role (<c>origin</c> or <c>destination</c>). Used to
+    /// pick the v1 <c>relationship_type</c> column value and the v2
+    /// <see cref="Honua.Core.Features.Metadata.Domain.V2.MetadataV2Relationship.Role"/>.
+    /// </summary>
+    public required string Role { get; init; }
+
+    /// <summary>
+    /// Normalized relationship cardinality (<c>1:1</c>, <c>1:N</c>, or <c>M:N</c>).
+    /// </summary>
+    public required string Cardinality { get; init; }
+}
+
+/// <summary>
+/// Outcome of a single <see cref="MigrationRelationshipApplyRequest"/>.
+/// </summary>
+public sealed record MigrationRelationshipApplyOutcome
+{
+    /// <summary>
+    /// Source relationship id from the original request.
+    /// </summary>
+    public required string SourceRelationshipId { get; init; }
+
+    /// <summary>
+    /// Per-relationship outcome.
+    /// </summary>
+    public required MigrationCatalogWriteOutcome Outcome { get; init; }
+
+    /// <summary>
+    /// Operator-facing summary describing what was written, skipped, or
+    /// re-applied.
+    /// </summary>
+    public required string Message { get; init; }
+
+    /// <summary>
+    /// Stable target relationship reference (<c>rel:{originLayerId}:{esriRelationshipId}</c>)
+    /// that the apply step should record on its manifest manifest <c>TargetRelationshipRef</c>.
+    /// </summary>
+    public required string TargetRelationshipRef { get; init; }
 }

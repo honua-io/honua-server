@@ -1386,8 +1386,32 @@
                   "Nullable": false
                 },
                 {
+                  "JsonName": "destinationKeyField",
+                  "ClrName": "DestinationKeyField",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "esriRelationshipId",
+                  "ClrName": "EsriRelationshipId",
+                  "Container": "scalar",
+                  "ElementType": "int",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
                   "JsonName": "name",
                   "ClrName": "Name",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "originKeyField",
+                  "ClrName": "OriginKeyField",
                   "Container": "scalar",
                   "ElementType": "string",
                   "Required": false,
@@ -1412,6 +1436,14 @@
                 {
                   "JsonName": "relationshipType",
                   "ClrName": "RelationshipType",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "role",
+                  "ClrName": "Role",
                   "Container": "scalar",
                   "ElementType": "string",
                   "Required": false,

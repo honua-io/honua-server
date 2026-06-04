@@ -13,6 +13,7 @@ using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Validation;
 using Honua.Protocols.Scene.Models;
+using Honua.Scene.Assets;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
@@ -669,7 +670,9 @@ internal static partial class SceneEndpoints
     }
 
     // EventIds 8404-8408 reserved here. 8401-8403 are owned by
-    // Honua.Core's MonitoredCacheLog; 8410-8415 are owned by SceneAccessLog.
+    // Honua.Core's MonitoredCacheLog; 8410-8419 are reserved by SceneAccessLog
+    // (8410-8415 in use); 8416 is owned by SceneDiscoveryEndpoints; 8430-8438
+    // are owned by SceneTilesPublishExecutor.SceneGenerationLog.
     private static partial class Log
     {
         [LoggerMessage(EventId = 8404, Level = LogLevel.Warning,

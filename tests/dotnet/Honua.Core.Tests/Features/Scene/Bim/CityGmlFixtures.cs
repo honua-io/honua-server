@@ -156,6 +156,45 @@ internal static class CityGmlFixtures
         return Encoding.UTF8.GetBytes(xml);
     }
 
+    /// <summary>
+    /// A document whose building carries no <c>gml:id</c>, exercising the
+    /// deterministic synthetic-id fallback. The surface keeps an id so geometry
+    /// still parses; only the building id must be synthesised.
+    /// </summary>
+    public static byte[] BuildingWithoutId()
+    {
+        const string xml = """
+<?xml version="1.0" encoding="UTF-8"?>
+<core:CityModel
+    xmlns:core="http://www.opengis.net/citygml/2.0"
+    xmlns:bldg="http://www.opengis.net/citygml/building/2.0"
+    xmlns:gml="http://www.opengis.net/gml">
+  <core:cityObjectMember>
+    <bldg:Building>
+      <bldg:boundedBy>
+        <bldg:GroundSurface gml:id="GND_NOID">
+          <bldg:lod1MultiSurface>
+            <gml:MultiSurface>
+              <gml:surfaceMember>
+                <gml:Polygon>
+                  <gml:exterior>
+                    <gml:LinearRing>
+                      <gml:posList srsDimension="3">0.0 0.0 0.0 0.001 0.0 0.0 0.001 0.001 0.0 0.0 0.0 0.0</gml:posList>
+                    </gml:LinearRing>
+                  </gml:exterior>
+                </gml:Polygon>
+              </gml:surfaceMember>
+            </gml:MultiSurface>
+          </bldg:lod1MultiSurface>
+        </bldg:GroundSurface>
+      </bldg:boundedBy>
+    </bldg:Building>
+  </core:cityObjectMember>
+</core:CityModel>
+""";
+        return Encoding.UTF8.GetBytes(xml);
+    }
+
     /// <summary>A document with no building geometry, to exercise the empty-input rejection.</summary>
     public static byte[] NoBuildings()
     {

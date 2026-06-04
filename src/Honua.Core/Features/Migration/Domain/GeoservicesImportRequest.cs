@@ -267,6 +267,15 @@ public sealed record GeoservicesImportRequest
     /// not plaintext token or password values.
     /// </summary>
     public GeoservicesCredentialDescriptor? Credentials { get; init; }
+
+    /// <summary>
+    /// Whether to copy feature attachments advertised by the source layer
+    /// (<c>hasAttachments == true</c>) into the Honua attachment store after
+    /// features have been inserted and the layer auto-published. Skipped when
+    /// auto-publish is disabled, no published layer was registered, or no
+    /// attachment store is configured.
+    /// </summary>
+    public bool ImportAttachments { get; init; } = true;
 }
 
 /// <summary>
@@ -350,6 +359,20 @@ public sealed record GeoservicesImportResult
     public IReadOnlyList<string> Warnings { get; init; } = [];
 
     /// <summary>
+    /// Number of attachments successfully copied into the Honua attachment store.
+    /// Zero when the source layer does not advertise attachments, the attachment
+    /// copy step was disabled, or no attachment store was registered.
+    /// </summary>
+    public int AttachmentCount { get; init; }
+
+    /// <summary>
+    /// Number of source attachments that could not be copied. Includes per-attachment
+    /// download/upload errors and skipped attachments whose parent ObjectId could not
+    /// be mapped to an inserted Honua feature.
+    /// </summary>
+    public int FailedAttachments { get; init; }
+
+    /// <summary>
     /// Create successful import result.
     /// </summary>
     public static GeoservicesImportResult CreateSuccess(
@@ -362,7 +385,9 @@ public sealed record GeoservicesImportResult
         string? serviceName = null,
         string? sourceLayerName = null,
         TimeSpan duration = default,
-        IReadOnlyList<string>? warnings = null) =>
+        IReadOnlyList<string>? warnings = null,
+        int attachmentCount = 0,
+        int failedAttachments = 0) =>
         new()
         {
             Success = true,
@@ -375,7 +400,9 @@ public sealed record GeoservicesImportResult
             PublishedLayerId = publishedLayerId,
             ServiceName = serviceName,
             Duration = duration,
-            Warnings = warnings ?? []
+            Warnings = warnings ?? [],
+            AttachmentCount = attachmentCount,
+            FailedAttachments = failedAttachments
         };
 
     /// <summary>

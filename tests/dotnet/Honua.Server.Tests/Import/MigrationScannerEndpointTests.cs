@@ -684,6 +684,13 @@ public sealed class MigrationScannerEndpointTests : IAsyncLifetime
                 request.ServiceUrl,
                 request.LayerId,
                 featureCount: 0));
+
+        public Task<MigrationRelationshipApplyOutcome[]> ApplyRelationshipsAsync(
+            MigrationManifestArtifact manifest,
+            IReadOnlyDictionary<string, int> publishedLayerMap,
+            Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphStore? graphStore,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(Array.Empty<MigrationRelationshipApplyOutcome>());
     }
 
     private sealed class FakeOgcScanService : IOgcServiceMigrationScanner

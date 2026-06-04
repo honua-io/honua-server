@@ -11,7 +11,7 @@ namespace Honua.Protocols.Scene.I3s;
 /// <c>/scenes/{sceneId}/SceneServer</c> root. It advertises the service
 /// version and the set of scene layers an ArcGIS / I3S client can load.
 /// </summary>
-public sealed class I3sSceneServiceDocument
+internal sealed class I3sSceneServiceDocument
 {
     /// <summary>Service name (the hosting scene's display name).</summary>
     [JsonPropertyName("serviceName")]
@@ -44,6 +44,6 @@ public sealed class I3sSceneServiceDocument
 [JsonSerializable(typeof(I3sSpatialReference))]
 [JsonSerializable(typeof(I3sFullExtent))]
 [JsonSerializable(typeof(I3sStore))]
-public sealed partial class I3sServingJsonContext : JsonSerializerContext
+internal sealed partial class I3sServingJsonContext : JsonSerializerContext
 {
 }

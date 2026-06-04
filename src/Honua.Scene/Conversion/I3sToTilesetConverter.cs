@@ -88,16 +88,34 @@ public static class I3sToTilesetConverter
                 "The I3S fullExtent is degenerate (min bound exceeds max bound).");
         }
 
+        // The extent is consumed below as WGS-84 degrees (boundingRegionDegrees);
+        // validate it lies within the geographic ranges (lon [-180,180], lat
+        // [-90,90]) before treating it as such. A WKID-4326 layer with bounds in
+        // a projected unit (e.g. metres) would otherwise produce a bogus region
+        // far outside the globe.
+        if (!double.IsFinite(extent.Xmin) || !double.IsFinite(extent.Ymin)
+            || !double.IsFinite(extent.Xmax) || !double.IsFinite(extent.Ymax)
+            || extent.Xmin < -180.0 || extent.Xmax > 180.0
+            || extent.Ymin < -90.0 || extent.Ymax > 90.0)
+        {
+            throw new I3sConversionException(
+                I3sConversionErrorReason.MissingExtent,
+                "The I3S fullExtent is outside the WGS-84 geographic range (longitude [-180,180], latitude [-90,90]).");
+        }
+
         var minHeight = extent.Zmin ?? 0.0;
         var maxHeight = extent.Zmax ?? 0.0;
 
-        // Geometric error sized to the geographic diagonal of the extent so a
-        // 3D Tiles client refines at a sensible scale. The diagonal is in
-        // degrees; convert to an approximate meter span (1 deg ~= 111_320 m).
-        var spanDegrees = Math.Max(
-            extent.Xmax - extent.Xmin,
-            extent.Ymax - extent.Ymin);
-        var geometricError = Math.Max(1.0, spanDegrees * 111_320.0);
+        // Geometric error sized to the 3D geographic diagonal of the extent so a
+        // 3D Tiles client refines at a sensible scale, via the shared geodesy
+        // helper used by every scene builder (GeodesicError.RootGeometricError):
+        // a cos(midLatitude)-corrected longitude span, the meridian-arc latitude
+        // span, AND the vertical (Zmin/Zmax) extent in the diagonal — the prior
+        // I3S-local copy dropped the height term, understating the error for tall,
+        // geographically small layers (a single skyscraper or a cliff mesh).
+        // Determinism is preserved (pure arithmetic on the extent bounds).
+        var geometricError = GeodesicError.RootGeometricError(
+            extent.Xmin, extent.Ymin, extent.Xmax, extent.Ymax, minHeight, maxHeight);
 
         var contentUris = string.IsNullOrWhiteSpace(rootContentUri)
             ? Array.Empty<string>()

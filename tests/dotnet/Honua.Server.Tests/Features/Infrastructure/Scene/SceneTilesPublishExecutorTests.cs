@@ -380,6 +380,48 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     }
 
     [UnitTest]
+    public async Task Execute_LodPathDegenerateLeaf_DropsLeafAndEmitsValidTiles()
+    {
+        // Regression (#2): in the LOD path the layer-level degeneracy guard only
+        // proves >=1 non-degenerate feature in the WHOLE layer, not per leaf. A
+        // spatial cluster of all-degenerate features lands in its own quadtree
+        // leaf; previously that leaf was routed into GeometryTileBuilder.BuildGlb
+        // with zero vertices, threw InvalidOperationException("No vertices
+        // produced for tile."), and aborted the entire generation run. The content
+        // node selection must now DROP such a leaf and still emit the valid tiles.
+        BuildLayer();
+        _featureSource.Features = ValidLinesWithDegenerateCluster();
+
+        var executor = BuildExecutor(new SceneGenerationServerOptions
+        {
+            OutputRoot = _outputRoot,
+            MaxFeatureCount = 1_000_000,
+            LodFeatureThreshold = 50, // force the LOD path for this small fixture.
+            MaxFeaturesPerTile = 20,
+            MaxLodDepth = 12,
+            InteriorSampleCount = 64,
+            GeneratorTag = "honua-test-generator/1.0"
+        });
+
+        // Must NOT throw: the degenerate-only leaf is dropped, not aborted.
+        var outcome = await executor.RunDirectAsync(
+            BuildIntent(sceneId: "lod-degenerate-leaf"), CancellationToken.None);
+
+        outcome.Result.Summary.TileCount.Should().BeGreaterThan(0,
+            "the valid lines elsewhere must still produce at least one tile.");
+
+        var root = outcome.Result.AssetRoot;
+        var glbCount = Directory.GetFiles(root, "tile_*.glb").Length;
+        glbCount.Should().Be(outcome.Result.Summary.TileCount).And.BeGreaterThan(0);
+
+        // Every emitted GLB must be a real, non-empty tile.
+        foreach (var glb in Directory.GetFiles(root, "tile_*.glb"))
+        {
+            new FileInfo(glb).Length.Should().BeGreaterThan(0);
+        }
+    }
+
+    [UnitTest]
     public async Task Execute_AppliesExtrusionOverrideToProduceVerticalGeometry()
     {
         BuildLayer();
@@ -1446,6 +1488,75 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
                 }
             }
         };
+    }
+
+    private static List<SceneFeature> ValidLinesWithDegenerateCluster()
+    {
+        // Two-vertex valid lines spread across most of the bounds (enough to force
+        // subdivision under a low MaxFeaturesPerTile) PLUS a tight cluster of
+        // single-vertex (degenerate) lines pinned to one corner so they all
+        // centroid into the SAME quadtree leaf, isolated from every valid feature.
+        // The whole layer shares SceneGeometryKind.LineString (a v1 requirement).
+        const double west = -122.5, south = 37.7, east = -122.4, north = 37.8;
+        var features = new List<SceneFeature>();
+        var id = 1;
+
+        // 100 valid lines on a 10x10 grid over the lower-left 80% of the bounds,
+        // deliberately avoiding the top-right corner reserved for the cluster.
+        const int cols = 10, rows = 10;
+        var lonStep = (east - west) * 0.8 / (cols + 1);
+        var latStep = (north - south) * 0.8 / (rows + 1);
+        for (var r = 0; r < rows; r++)
+        {
+            for (var c = 0; c < cols; c++)
+            {
+                var lon = west + lonStep * (c + 1);
+                var lat = south + latStep * (r + 1);
+                features.Add(new SceneFeature
+                {
+                    Id = id,
+                    Geometry = new SceneFeatureGeometry
+                    {
+                        Kind = SceneGeometryKind.LineString,
+                        Vertices = new[]
+                        {
+                            new SceneVertex(lon, lat, 0),
+                            new SceneVertex(lon + lonStep * 0.25, lat + latStep * 0.25, 0)
+                        }
+                    },
+                    Attributes = new Dictionary<string, object?>(StringComparer.Ordinal)
+                    {
+                        ["name"] = "line" + id.ToString(CultureInfo.InvariantCulture),
+                        ["height"] = 0
+                    }
+                });
+                id++;
+            }
+        }
+
+        // 60 degenerate single-vertex lines clustered in the top-right corner.
+        var clusterLon = east - (east - west) * 0.01;
+        var clusterLat = north - (north - south) * 0.01;
+        for (var i = 0; i < 60; i++)
+        {
+            features.Add(new SceneFeature
+            {
+                Id = id,
+                Geometry = new SceneFeatureGeometry
+                {
+                    Kind = SceneGeometryKind.LineString,
+                    Vertices = new[] { new SceneVertex(clusterLon, clusterLat, 0) }
+                },
+                Attributes = new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["name"] = "degenerate" + id.ToString(CultureInfo.InvariantCulture),
+                    ["height"] = 0
+                }
+            });
+            id++;
+        }
+
+        return features;
     }
 
     private static PublishIntent BuildIntent(

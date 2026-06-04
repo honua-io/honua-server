@@ -76,6 +76,7 @@ internal sealed partial class GeoservicesImportService
             var offset = 0;
             var batchNumber = 0;
             var hasMore = true;
+            var objectIdMap = new Dictionary<long, long>();
 
             while (hasMore && !cancellationToken.IsCancellationRequested)
             {
@@ -108,7 +109,7 @@ internal sealed partial class GeoservicesImportService
                     $"Inserting batch {batchNumber} ({queryResult.Features.Length} features)",
                     featuresProcessed, totalFeatures, layerInfo.Name);
 
-                var (inserted, failed) = await InsertFeaturesAsync(
+                var batchInsert = await InsertFeaturesAsync(
                     connection,
                     targetSchema,
                     request.TableName,
@@ -117,15 +118,20 @@ internal sealed partial class GeoservicesImportService
                     request.TargetSrid,
                     cancellationToken);
 
-                featuresProcessed += inserted;
-                failedFeatures += failed;
+                featuresProcessed += batchInsert.Inserted;
+                failedFeatures += batchInsert.Failed;
 
-                if (failed > 0)
+                foreach (var entry in batchInsert.ObjectIdMap)
                 {
-                    warnings.Add($"Batch {batchNumber}: {failed} features failed to insert");
+                    objectIdMap[entry.Key] = entry.Value;
                 }
 
-                Log.BatchCompleted(_logger, batchNumber, inserted, failed, featuresProcessed);
+                if (batchInsert.Failed > 0)
+                {
+                    warnings.Add($"Batch {batchNumber}: {batchInsert.Failed} features failed to insert");
+                }
+
+                Log.BatchCompleted(_logger, batchNumber, batchInsert.Inserted, batchInsert.Failed, featuresProcessed);
 
                 offset += queryResult.Features.Length;
                 hasMore = queryResult.ExceededTransferLimit || queryResult.Features.Length == batchSize;
@@ -155,6 +161,32 @@ internal sealed partial class GeoservicesImportService
                     cancellationToken).ConfigureAwait(false);
             }
 
+            var attachmentCount = 0;
+            var failedAttachments = 0;
+            if (layerInfo.HasAttachments
+                && request.ImportAttachments
+                && publishedLayer != null
+                && _attachmentStore != null
+                && objectIdMap.Count > 0)
+            {
+                (attachmentCount, failedAttachments) = await CopyAttachmentsAsync(
+                    request,
+                    layerInfo,
+                    publishedLayer.LayerId,
+                    objectIdMap,
+                    warnings,
+                    progress,
+                    jobId,
+                    startedAt,
+                    featuresProcessed,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            else if (layerInfo.HasAttachments && request.ImportAttachments && _attachmentStore == null)
+            {
+                warnings.Add(
+                    "Layer advertises attachments, but no attachment store is registered; attachments were not copied.");
+            }
+
             stopwatch.Stop();
 
             Log.ImportCompleted(_logger, request.TableName, featuresProcessed, failedFeatures,
@@ -166,7 +198,9 @@ internal sealed partial class GeoservicesImportService
                 featuresProcessed,
                 featuresProcessed,
                 layerInfo.Name,
-                publishedLayer?.LayerId);
+                publishedLayer?.LayerId,
+                attachmentsProcessed: attachmentCount,
+                failedAttachments: failedAttachments);
 
             return GeoservicesImportResult.CreateSuccess(
                 request.TableName,
@@ -178,7 +212,9 @@ internal sealed partial class GeoservicesImportService
                 publishedLayer?.ServiceName ?? request.ServiceName,
                 layerInfo.Name,
                 duration: stopwatch.Elapsed,
-                warnings: warnings);
+                warnings: warnings,
+                attachmentCount: attachmentCount,
+                failedAttachments: failedAttachments);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

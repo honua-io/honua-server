@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Buffers.Binary;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -69,6 +70,103 @@ public sealed class GeometryTileBuilderTests
         var featureIds = ext.GetProperty("featureIds")[0];
         featureIds.GetProperty("featureCount").GetInt32().Should().Be(2);
         featureIds.GetProperty("propertyTable").GetInt32().Should().Be(0);
+    }
+
+    [UnitTest]
+    public void BuildGlb_RecentersPositionsAboutNodeTranslation()
+    {
+        // Regression for the float32 ECEF precision defect: vertex positions
+        // used to be stored as ABSOLUTE ECEF meters (~6.3e6 magnitude) cast to
+        // float32, quantizing every vertex to ~0.5-1 m. The builder now subtracts
+        // a per-tile ECEF centroid (emitted as the node translation) BEFORE the
+        // float cast, so the stored POSITION values are small-magnitude.
+        var glb = BuildSimpleSquare();
+        var json = ExtractJsonChunk(glb);
+
+        using var doc = JsonDocument.Parse(json);
+
+        // The single node must now carry a double[3] translation (the RTC center)
+        // that is near the surface of the Earth in ECEF (|centroid| ~ 6.37e6 m).
+        var node = doc.RootElement.GetProperty("nodes")[0];
+        node.GetProperty("mesh").GetInt32().Should().Be(0);
+        var translation = node.GetProperty("translation").EnumerateArray().Select(e => e.GetDouble()).ToArray();
+        translation.Should().HaveCount(3);
+        var translationMagnitude = Math.Sqrt(
+            translation[0] * translation[0]
+            + translation[1] * translation[1]
+            + translation[2] * translation[2]);
+        translationMagnitude.Should().BeApproximately(6_371_000d, 50_000d,
+            "the node translation is the tile's absolute ECEF centroid near the ellipsoid surface.");
+
+        // The POSITION accessor min/max must now be small-magnitude (the recentered
+        // extents of a ~0.1 deg square are well under ~20 km, not millions of meters).
+        var posAccessor = doc.RootElement.GetProperty("accessors")[0];
+        var min = posAccessor.GetProperty("min").EnumerateArray().Select(e => e.GetDouble()).ToArray();
+        var max = posAccessor.GetProperty("max").EnumerateArray().Select(e => e.GetDouble()).ToArray();
+        foreach (var component in min.Concat(max))
+        {
+            Math.Abs(component).Should().BeLessThan(50_000d,
+                "recentered POSITION extents must be small-magnitude so float32 retains sub-centimeter precision.");
+        }
+
+        // Spot-check a raw stored POSITION float: it must be small-magnitude
+        // (i.e. relative to the RTC center), not absolute ECEF (~6.3e6).
+        var posView = posAccessor.GetProperty("bufferView").GetInt32();
+        var bufferViews = doc.RootElement.GetProperty("bufferViews");
+        var posByteOffset = bufferViews[posView].GetProperty("byteOffset").GetInt32();
+        var bin = ExtractBinChunk(glb);
+        var firstX = BinaryPrimitives.ReadSingleLittleEndian(bin.AsSpan(posByteOffset, 4));
+        Math.Abs(firstX).Should().BeLessThan(50_000f,
+            "stored POSITION floats are relative to the node translation, not absolute ECEF.");
+    }
+
+    [UnitTest]
+    public void BuildGlb_Recentering_PreservesSubMeterPrecision()
+    {
+        // Two vertices 0.1 m apart on the same building wall must remain
+        // distinguishable after the float cast. With absolute ECEF in float32 the
+        // ~0.5-1 m quantization step would collapse them onto the same value;
+        // recentering keeps them distinct.
+        var lower = new SceneVertex(-122.41999990, 37.77000000, 100.00);
+        var near = new SceneVertex(-122.41999990, 37.77000000, 100.10); // +0.10 m in height
+        var line = new SceneFeature
+        {
+            Id = 1,
+            Geometry = new SceneFeatureGeometry
+            {
+                Kind = SceneGeometryKind.LineString,
+                Vertices = new[] { lower, near }
+            }
+        };
+
+        var glb = GeometryTileBuilder.BuildGlb(
+            [line],
+            metadataAttributes: Array.Empty<SceneAttributeSchema>(),
+            extrusion: null);
+        var json = ExtractJsonChunk(glb);
+        using var doc = JsonDocument.Parse(json);
+
+        var posAccessor = doc.RootElement.GetProperty("accessors")[0];
+        var posView = posAccessor.GetProperty("bufferView").GetInt32();
+        var posByteOffset = doc.RootElement.GetProperty("bufferViews")[posView]
+            .GetProperty("byteOffset").GetInt32();
+        var bin = ExtractBinChunk(glb);
+
+        // Two vertices => 6 floats. Their per-axis difference magnitude should sum
+        // to ~0.1 m and must be non-zero (i.e. the two vertices did not collapse).
+        var v0 = new float[3];
+        var v1 = new float[3];
+        for (var i = 0; i < 3; i++)
+        {
+            v0[i] = BinaryPrimitives.ReadSingleLittleEndian(bin.AsSpan(posByteOffset + i * 4, 4));
+            v1[i] = BinaryPrimitives.ReadSingleLittleEndian(bin.AsSpan(posByteOffset + 12 + i * 4, 4));
+        }
+        var dist = Math.Sqrt(
+            Math.Pow(v0[0] - v1[0], 2) + Math.Pow(v0[1] - v1[1], 2) + Math.Pow(v0[2] - v1[2], 2));
+        dist.Should().BeGreaterThan(0.0,
+            "a 0.1 m vertex offset must survive the float32 cast after RTC recentering.");
+        dist.Should().BeApproximately(0.1, 0.02,
+            "the recentered float positions must preserve the 0.1 m offset to within float precision.");
     }
 
     [UnitTest]
@@ -213,6 +311,73 @@ public sealed class GeometryTileBuilderTests
             offset.Should().Be(0u,
                 "all-null/all-empty string offsets stay at 0 so every value decodes as empty string.");
         }
+    }
+
+    [UnitTest]
+    public void BuildGlb_StringMetadataFromNumericValue_IsCultureInvariant()
+    {
+        // Regression for the culture-dependent STRING formatting (#5): a numeric
+        // value routed to a STRING column must be formatted with the invariant
+        // culture so the GLB stays byte-identical across locales. Under de-DE a
+        // naive double.ToString() would emit "1234,5"; the builder must emit
+        // "1234.5".
+        var features = new[]
+        {
+            new SceneFeature
+            {
+                Id = 1,
+                Geometry = new SceneFeatureGeometry
+                {
+                    Kind = SceneGeometryKind.Polygon,
+                    Vertices = SquareRing()
+                },
+                Attributes = new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["label"] = 1234.5d
+                }
+            }
+        };
+
+        var schemas = new[]
+        {
+            new SceneAttributeSchema { PropertyId = "label", FieldName = "label", SchemaType = "STRING", SchemaComponentType = string.Empty }
+        };
+
+        var originalCulture = CultureInfo.CurrentCulture;
+        byte[] germanGlb;
+        byte[] invariantGlb;
+        try
+        {
+            CultureInfo.CurrentCulture = new CultureInfo("de-DE");
+            germanGlb = GeometryTileBuilder.BuildGlb(features, schemas, extrusion: null);
+
+            CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
+            invariantGlb = GeometryTileBuilder.BuildGlb(features, schemas, extrusion: null);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+        }
+
+        // Byte-identical regardless of the thread culture.
+        germanGlb.Should().Equal(invariantGlb,
+            "STRING metadata must format with the invariant culture so the GLB is byte-stable across locales.");
+
+        // And the encoded string is the invariant "1234.5", not the de-DE "1234,5".
+        var json = ExtractJsonChunk(germanGlb);
+        using var doc = JsonDocument.Parse(json);
+        var labelProperty = doc.RootElement.GetProperty("extensions").GetProperty("EXT_structural_metadata")
+            .GetProperty("propertyTables")[0]
+            .GetProperty("properties").GetProperty("label");
+        var valuesView = labelProperty.GetProperty("values").GetInt32();
+        var bufferViews = doc.RootElement.GetProperty("bufferViews");
+        var valuesByteOffset = bufferViews[valuesView].GetProperty("byteOffset").GetInt32();
+        var valuesByteLength = bufferViews[valuesView].GetProperty("byteLength").GetInt32();
+
+        var bin = ExtractBinChunk(germanGlb);
+        var encoded = Encoding.UTF8.GetString(bin, valuesByteOffset, valuesByteLength);
+        encoded.Should().Be("1234.5",
+            "the numeric STRING value must be invariant-formatted, not locale-formatted (\"1234,5\").");
     }
 
     [UnitTest]

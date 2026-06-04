@@ -111,6 +111,148 @@ public sealed class PointCloudTilesetBuilderTests
         act.Should().Throw<ArgumentException>();
     }
 
+    [UnitTest]
+    public void Build_ColorDepthDecidedDatasetWide_AllTilesEncodeIdentically()
+    {
+        // Regression for the per-tile colour seam (#1): the 8-bit-vs-16-bit RGB
+        // interpretation must be decided ONCE for the whole cloud, not inside
+        // each tile. Two well-separated clusters land in distinct leaves: cluster
+        // A is entirely dark (every channel <= 255) and cluster B contains a
+        // channel > 255, so the dataset is genuine 16-bit. Both clusters share a
+        // point whose raw colour is exactly 200. Under the dataset-wide decision
+        // every tile >>8-scales, so raw 200 encodes to 0 in BOTH tiles. With the
+        // old per-tile heuristic the all-dark tile would have copied 200 verbatim
+        // while the bright tile scaled it to 0 — a visible seam.
+        var darkCluster = new List<LasFixtureBuilder.Point>
+        {
+            new(0.0001, 0.0001, 1.0, 100, 2, Red: 200, Green: 100, Blue: 50),
+            new(0.0002, 0.0002, 1.0, 100, 2, Red: 10, Green: 20, Blue: 30),
+        };
+        var brightCluster = new List<LasFixtureBuilder.Point>
+        {
+            new(0.9001, 0.9001, 1.0, 100, 2, Red: 200, Green: 100, Blue: 50),
+            new(0.9002, 0.9002, 1.0, 100, 2, Red: 60000, Green: 30000, Blue: 10000),
+        };
+        var sourcePoints = new List<LasFixtureBuilder.Point>();
+        sourcePoints.AddRange(darkCluster);
+        sourcePoints.AddRange(brightCluster);
+
+        var las = LasFixtureBuilder.BuildFormat3(sourcePoints);
+        var points = LasPointCloudReader.ReadPoints(las).ToList();
+
+        var result = PointCloudTilesetBuilder.Build(
+            points, IdentityGeo,
+            new PointCloudTilingOptions { MaxPointsPerTile = 2, MaxDepth = 8, InteriorSampleCount = 0 });
+
+        // The two clusters must split across at least two leaf tiles so the
+        // per-tile-vs-dataset-wide distinction is actually exercised.
+        result.TileCount.Should().BeGreaterThan(1);
+
+        var rawTwoHundredEncodings = new List<byte>();
+        foreach (var tile in result.Tiles.Values)
+        {
+            foreach (var (r, g, b) in ExtractRgb(tile))
+            {
+                // Locate the encoded colour for the shared raw (200,100,50) point.
+                // Under the dataset-wide 16-bit decision it is (0,0,0); a per-tile
+                // 8-bit flip in the dark tile would leave it (200,100,50).
+                if ((r == 0 && g == 0 && b == 0) || (r == 200 && g == 100 && b == 50))
+                {
+                    rawTwoHundredEncodings.Add(r);
+                }
+            }
+        }
+
+        // Both clusters contributed a raw (200,100,50) point; every occurrence
+        // must have collapsed to 0 (dataset-wide 16-bit), never copied verbatim.
+        rawTwoHundredEncodings.Should().NotBeEmpty();
+        rawTwoHundredEncodings.Should().OnlyContain(value => value == 0,
+            "the dataset-wide colour decision must encode raw 200 as 200>>8 == 0 in every tile");
+    }
+
+    private static List<(byte R, byte G, byte B)> ExtractRgb(byte[] tile)
+    {
+        var featureJsonLen = (int)System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(tile.AsSpan(12, 4));
+        var json = Encoding.UTF8.GetString(tile, 28, featureJsonLen);
+        using var doc = JsonDocument.Parse(json);
+        if (!doc.RootElement.TryGetProperty("RGB", out var rgb))
+        {
+            return [];
+        }
+
+        var pointsLength = doc.RootElement.GetProperty("POINTS_LENGTH").GetInt32();
+        var rgbByteOffset = rgb.GetProperty("byteOffset").GetInt32();
+        var rgbStart = 28 + featureJsonLen + rgbByteOffset;
+
+        var result = new List<(byte, byte, byte)>(pointsLength);
+        for (var i = 0; i < pointsLength; i++)
+        {
+            var o = rgbStart + (i * 3);
+            result.Add((tile[o], tile[o + 1], tile[o + 2]));
+        }
+        return result;
+    }
+
+    [UnitTest]
+    public void Build_DegenerateSinglePointCloud_FloorsRootGeometricError()
+    {
+        // A single point (or all co-located points) yields a zero-extent
+        // bounding box. The root geometric error must be floored at a positive
+        // value so a 3D Tiles client still has a refinement budget — mirroring
+        // the I3S converter / BSL builder.
+        var las = LasFixtureBuilder.BuildFormat3(
+        [
+            new(0.001, 0.001, 1.0, 1000, 2, 60000, 40000, 30000),
+        ]);
+        var points = LasPointCloudReader.ReadPoints(las).ToList();
+
+        var result = PointCloudTilesetBuilder.Build(
+            points, IdentityGeo,
+            new PointCloudTilingOptions { MaxPointsPerTile = 100, MaxDepth = 4, InteriorSampleCount = 0 });
+
+        using var json = JsonDocument.Parse(Encoding.UTF8.GetString(result.TilesetJsonBytes));
+        json.RootElement.GetProperty("root").GetProperty("geometricError").GetDouble()
+            .Should().BeGreaterThanOrEqualTo(1.0);
+    }
+
+    [UnitTest]
+    public void Build_MultiLevelTileset_LeafNodesDeclareZeroGeometricError()
+    {
+        // A leaf tile has no children, so its geometricError must be 0.0: a
+        // positive value tells the client finer detail exists below it and
+        // screen-space-error refinement never converges at the deepest LOD.
+        // Mirrors the feature pipeline (SceneQuadtreePartitioner leaf == 0.0).
+        var las = LasFixtureBuilder.BuildFormat3(GridPoints(24, 24), scale: 1e-7);
+        var points = LasPointCloudReader.ReadPoints(las).ToList();
+
+        var result = PointCloudTilesetBuilder.Build(
+            points, IdentityGeo,
+            new PointCloudTilingOptions { MaxPointsPerTile = 30, MaxDepth = 8, InteriorSampleCount = 16 });
+
+        using var json = JsonDocument.Parse(Encoding.UTF8.GetString(result.TilesetJsonBytes));
+        var leafErrors = new List<double>();
+        CollectLeafGeometricErrors(json.RootElement.GetProperty("root"), leafErrors);
+
+        leafErrors.Should().NotBeEmpty();
+        leafErrors.Should().OnlyContain(error => error == 0.0);
+    }
+
+    private static void CollectLeafGeometricErrors(JsonElement node, List<double> sink)
+    {
+        var hasChildren = node.TryGetProperty("children", out var children)
+            && children.GetArrayLength() > 0;
+        if (!hasChildren)
+        {
+            sink.Add(node.GetProperty("geometricError").GetDouble());
+            return;
+        }
+
+        foreach (var child in children.EnumerateArray())
+        {
+            CollectLeafGeometricErrors(child, sink);
+        }
+    }
+
     private static void CollectContentUris(JsonElement node, List<string> sink)
     {
         if (node.TryGetProperty("content", out var content))

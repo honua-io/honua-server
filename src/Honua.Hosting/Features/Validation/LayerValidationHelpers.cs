@@ -7,6 +7,7 @@ using Honua.Core.Features.Security.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Microsoft.Extensions.DependencyInjection;
+using AccessDecision = Honua.Core.Features.Security.Domain.AccessDecision;
 using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 
 namespace Honua.Infrastructure.Validation;
@@ -312,6 +313,63 @@ internal static class LayerValidationHelpers
         }
 
         return new MetadataV2ValidationResult(true, publication, resource, service, null);
+    }
+
+    /// <summary>
+    /// Outcome of a non-HTTP (e.g. gRPC) layer read-access evaluation. Unlike the
+    /// <see cref="MetadataV2ValidationResult"/> path this carries no
+    /// <see cref="IResult"/>; instead it reports a structured outcome plus the
+    /// <see cref="AccessDecision"/> so a gRPC adapter can map denial to the
+    /// appropriate <c>RpcException</c> status. <see cref="NotFound"/> means the
+    /// layer is absent or retired; <see cref="Decision"/> is the evaluated access
+    /// decision when the layer was resolved.
+    /// </summary>
+    /// <param name="NotFound">True when no live publication/resource matched the layer.</param>
+    /// <param name="Decision">The evaluated access decision (only meaningful when not <see cref="NotFound"/>).</param>
+    /// <param name="Resource">The resolved resource, when found.</param>
+    /// <param name="Service">The resolved service, when found.</param>
+    internal readonly record struct LayerReadAccessResult(
+        bool NotFound,
+        AccessDecision Decision,
+        MetadataV2Resource? Resource,
+        MetadataV2Service? Service);
+
+    /// <summary>
+    /// Resolves the (publication, resource, service) triple for a layer index from
+    /// the V2 graph snapshot and evaluates read access through the shared
+    /// <see cref="AccessPolicyHelpers.EvaluateResourceAccessAsync"/> seam — the
+    /// same per-operation-grant-then-coarse-policy pipeline the HTTP layer
+    /// validators use — returning a structured <see cref="LayerReadAccessResult"/>
+    /// rather than an <see cref="IResult"/>. This is the shared enforcement seam
+    /// for non-HTTP adapters (gRPC) so a protected layer is gated identically to
+    /// the HTTP surface without duplicating resolution or policy logic.
+    /// </summary>
+    /// <param name="context">The request context (carries principal + request services).</param>
+    /// <param name="layerId">The publication layer index to resolve.</param>
+    /// <param name="requiredProtocol">Optional protocol gate for triple resolution.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public static async Task<LayerReadAccessResult> EvaluateLayerReadAccessV2Async(
+        HttpContext context,
+        int layerId,
+        string? requiredProtocol = null,
+        CancellationToken cancellationToken = default)
+    {
+        var snapshot = await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
+        var (publication, resource, service) = ResolveV2Triple(snapshot, layerId, requiredProtocol);
+
+        if (publication is null || resource is null || IsRetired(publication) || IsRetired(resource))
+        {
+            return new LayerReadAccessResult(NotFound: true, default, null, null);
+        }
+
+        var decision = await AccessPolicyHelpers.EvaluateResourceAccessAsync(
+            context,
+            resource,
+            service,
+            AccessPolicyHelpers.DefaultOperationForScope(AccessScope.Read),
+            cancellationToken).ConfigureAwait(false);
+
+        return new LayerReadAccessResult(NotFound: false, decision, resource, service);
     }
 
     /// <summary>
