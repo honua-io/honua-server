@@ -66,63 +66,50 @@ public static class PntsTileWriter
         cy /= count;
         cz /= count;
 
-        // Feature-table binary: POSITION (VEC3 float32) then optional RGB (3 x uint8).
-        var positionBytes = new byte[count * 12];
+        // Feature-table binary: POSITION (VEC3 float32) then optional RGB
+        // (3 x uint8). Sizes are known up front, so allocate the final buffer
+        // once and write each semantic into its slice — no intermediate copies.
+        var positionLength = count * 12;
+        var rgbByteOffset = hasColor ? positionLength : -1;
+        var featureBinaryArray = new byte[positionLength + (hasColor ? count * 3 : 0)];
         for (var i = 0; i < count; i++)
         {
             var p = points[i];
-            BinaryPrimitives.WriteSingleLittleEndian(positionBytes.AsSpan(i * 12, 4), (float)(p.EcefX - cx));
-            BinaryPrimitives.WriteSingleLittleEndian(positionBytes.AsSpan(i * 12 + 4, 4), (float)(p.EcefY - cy));
-            BinaryPrimitives.WriteSingleLittleEndian(positionBytes.AsSpan(i * 12 + 8, 4), (float)(p.EcefZ - cz));
+            BinaryPrimitives.WriteSingleLittleEndian(featureBinaryArray.AsSpan(i * 12, 4), (float)(p.EcefX - cx));
+            BinaryPrimitives.WriteSingleLittleEndian(featureBinaryArray.AsSpan(i * 12 + 4, 4), (float)(p.EcefY - cy));
+            BinaryPrimitives.WriteSingleLittleEndian(featureBinaryArray.AsSpan(i * 12 + 8, 4), (float)(p.EcefZ - cz));
         }
 
-        byte[]? rgbBytes = null;
         if (hasColor)
         {
-            rgbBytes = new byte[count * 3];
             for (var i = 0; i < count; i++)
             {
                 var p = points[i];
+                var rgbStart = rgbByteOffset + (i * 3);
                 // LAS stores 16-bit colour; >>8 maps to 8-bit deterministically.
-                rgbBytes[i * 3] = (byte)(p.Red >> 8);
-                rgbBytes[i * 3 + 1] = (byte)(p.Green >> 8);
-                rgbBytes[i * 3 + 2] = (byte)(p.Blue >> 8);
+                featureBinaryArray[rgbStart] = (byte)(p.Red >> 8);
+                featureBinaryArray[rgbStart + 1] = (byte)(p.Green >> 8);
+                featureBinaryArray[rgbStart + 2] = (byte)(p.Blue >> 8);
             }
         }
 
-        var featureBinary = new List<byte>(positionBytes.Length + (rgbBytes?.Length ?? 0));
-        featureBinary.AddRange(positionBytes);
-        var rgbByteOffset = -1;
-        if (rgbBytes is not null)
-        {
-            rgbByteOffset = featureBinary.Count;
-            featureBinary.AddRange(rgbBytes);
-        }
-
-        // Batch-table binary: INTENSITY (uint16) and CLASSIFICATION (uint8).
-        var intensityBytes = new byte[count * 2];
-        var classificationBytes = new byte[count];
+        // Batch-table binary: INTENSITY (uint16) then CLASSIFICATION (uint8).
+        var intensityOffset = 0;
+        var classificationOffset = count * 2;
+        var batchBinaryArray = new byte[(count * 2) + count];
         for (var i = 0; i < count; i++)
         {
-            BinaryPrimitives.WriteUInt16LittleEndian(intensityBytes.AsSpan(i * 2, 2), points[i].Intensity);
-            classificationBytes[i] = points[i].Classification;
+            BinaryPrimitives.WriteUInt16LittleEndian(batchBinaryArray.AsSpan(i * 2, 2), points[i].Intensity);
+            batchBinaryArray[classificationOffset + i] = points[i].Classification;
         }
-
-        var batchBinary = new List<byte>(intensityBytes.Length + classificationBytes.Length);
-        var intensityOffset = 0;
-        batchBinary.AddRange(intensityBytes);
-        var classificationOffset = batchBinary.Count;
-        batchBinary.AddRange(classificationBytes);
 
         var featureTableJson = BuildFeatureTableJson(count, cx, cy, cz, hasColor, rgbByteOffset);
         var batchTableJson = BuildBatchTableJson(intensityOffset, classificationOffset);
 
         // Pad each JSON section to an 8-byte boundary (PNTS spec) with spaces.
         var featureJsonPadded = PadJson(featureTableJson, HeaderLength);
-        var featureBinaryArray = featureBinary.ToArray();
         // The feature-table binary must start 8-byte aligned within the tile.
         var batchJsonPadded = PadJson(batchTableJson, HeaderLength + featureJsonPadded.Length + featureBinaryArray.Length);
-        var batchBinaryArray = batchBinary.ToArray();
 
         var unpaddedLength = HeaderLength
             + featureJsonPadded.Length + featureBinaryArray.Length

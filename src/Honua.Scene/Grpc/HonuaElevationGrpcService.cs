@@ -5,6 +5,7 @@ using Grpc.Core;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.ServiceDefaults;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Geometries;
@@ -60,6 +61,11 @@ internal sealed class HonuaElevationGrpcService : Proto.ElevationService.Elevati
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
+        using var activity = HonuaTelemetry.StartActivity(SceneGrpcTelemetry.GetElevationActivity);
+        activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.Grpc);
+        activity?.SetTag(HonuaTelemetry.Tags.Operation, SceneGrpcTelemetry.GetElevationOperation);
+        activity?.SetTag(HonuaTelemetry.Tags.LayerId, request.LayerId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
         if (request.Point is null)
         {
             throw new RpcException(new Status(StatusCode.InvalidArgument, "point is required."));
@@ -97,12 +103,22 @@ internal sealed class HonuaElevationGrpcService : Proto.ElevationService.Elevati
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
+        using var activity = HonuaTelemetry.StartActivity(SceneGrpcTelemetry.GetElevationProfileActivity);
+        activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.Grpc);
+        activity?.SetTag(HonuaTelemetry.Tags.Operation, SceneGrpcTelemetry.GetElevationProfileOperation);
+        activity?.SetTag(HonuaTelemetry.Tags.LayerId, request.LayerId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
         var lineString = BuildLineString(request.Line);
         var srid = ResolveSrid(request.SpatialReference) ?? Wgs84;
         var mergeStrategy = SceneGrpcMapping.ParseMergeStrategy(request.MosaicRule);
 
         var requestedSampleCount = request.SampleCount;
-        if (requestedSampleCount == 1)
+
+        // sample_count is "at least 2; zero uses the server default" per the
+        // proto. Reject any non-zero value below 2 (including negatives) so a
+        // malformed -1 is not silently coerced to the default — mirroring the
+        // HTTP elevation endpoint, which rejects any supplied value < 2.
+        if (requestedSampleCount != 0 && requestedSampleCount < 2)
         {
             throw new RpcException(new Status(StatusCode.InvalidArgument, "sample_count must be at least 2."));
         }
@@ -129,6 +145,7 @@ internal sealed class HonuaElevationGrpcService : Proto.ElevationService.Elevati
             var result = await _elevationService
                 .QueryProfileAsync(request.LayerId, WriteLineWkb(lineString), srid, samplingOptions, mergeStrategy, context.CancellationToken)
                 .ConfigureAwait(false);
+            activity?.SetTag(SceneGrpcTelemetry.SampleCountTag, result.SampleCount);
             return SceneGrpcMapping.ToElevationProfileResponse(result, mergeStrategy);
         }
         catch (ElevationQueryException ex)

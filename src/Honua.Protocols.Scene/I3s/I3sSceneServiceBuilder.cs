@@ -19,7 +19,7 @@ namespace Honua.Protocols.Scene.I3s;
 /// tracked follow-up; the descriptor advertises a 3DObject layer rooted at the
 /// scene extent so a client can discover and inspect the layer.
 /// </remarks>
-public static class I3sSceneServiceBuilder
+internal static class I3sSceneServiceBuilder
 {
     /// <summary>Default I3S layer type Honua serves for hosted scenes.</summary>
     public const string DefaultLayerType = "3DObject";

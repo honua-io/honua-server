@@ -6,8 +6,7 @@ using Google.Protobuf;
 using Grpc.Core;
 using Honua.Core.Features.Scene.Abstractions;
 using Honua.Scene.Assets;
-using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.DependencyInjection;
+using Honua.ServiceDefaults;
 using Microsoft.Extensions.Logging;
 using Domain = Honua.Core.Features.Scene.Domain;
 using Proto = Geospatial.V1;
@@ -51,6 +50,12 @@ internal sealed class HonuaTileGrpcService : Proto.TileService.TileServiceBase
             throw new RpcException(new Status(StatusCode.InvalidArgument, "node_id is required."));
         }
 
+        using var activity = HonuaTelemetry.StartActivity(SceneGrpcTelemetry.GetTileActivity);
+        activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.Grpc);
+        activity?.SetTag(HonuaTelemetry.Tags.Operation, SceneGrpcTelemetry.GetTileOperation);
+        activity?.SetTag(SceneGrpcTelemetry.SceneIdTag, request.SceneId);
+        activity?.SetTag(SceneGrpcTelemetry.NodeIdTag, request.NodeId);
+
         var location = await ResolveSceneAsync(request.SceneId, context).ConfigureAwait(false);
         SceneAccessGuard.EnforceReadAccess(context, location.AccessPolicy);
         var document = await LoadTilesetAsync(location, context.CancellationToken).ConfigureAwait(false);
@@ -63,9 +68,22 @@ internal sealed class HonuaTileGrpcService : Proto.TileService.TileServiceBase
         }
 
         var tile = await BuildTileAsync(entry, location.AssetRoot, context.CancellationToken).ConfigureAwait(false);
+        activity?.SetTag(SceneGrpcTelemetry.TileBytesTag, tile.Content.Length);
         return new Proto.GetTileResponse { Tile = tile };
     }
 
+    /// <summary>
+    /// Streams a scene's tiles, filtered by level of detail, geometric error, and
+    /// spatial extent.
+    /// </summary>
+    /// <remarks>
+    /// Intentional contract divergence: the proto documents
+    /// <c>max_geometric_error = 0</c> as "server default", but Honua applies no
+    /// server-side default cap. A value of <c>0</c> (the default for an unset
+    /// field) therefore means "unbounded" — no geometric-error filtering — exactly
+    /// like <c>max_lod = 0</c> means "all LODs". Callers that want a cap must send
+    /// an explicit positive <c>max_geometric_error</c>.
+    /// </remarks>
     public override async Task StreamTiles(
         Proto.StreamTilesRequest request,
         IServerStreamWriter<Proto.Tile> responseStream,
@@ -75,11 +93,18 @@ internal sealed class HonuaTileGrpcService : Proto.TileService.TileServiceBase
         ArgumentNullException.ThrowIfNull(responseStream);
         ArgumentNullException.ThrowIfNull(context);
 
+        using var activity = HonuaTelemetry.StartActivity(SceneGrpcTelemetry.StreamTilesActivity);
+        activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.Grpc);
+        activity?.SetTag(HonuaTelemetry.Tags.Operation, SceneGrpcTelemetry.StreamTilesOperation);
+        activity?.SetTag(SceneGrpcTelemetry.SceneIdTag, request.SceneId);
+
         var location = await ResolveSceneAsync(request.SceneId, context).ConfigureAwait(false);
         SceneAccessGuard.EnforceReadAccess(context, location.AccessPolicy);
         var document = await LoadTilesetAsync(location, context.CancellationToken).ConfigureAwait(false);
         var entries = SceneTileCatalog.Build(document);
 
+        var streamedTiles = 0;
+        var streamedBytes = 0L;
         foreach (var entry in entries)
         {
             context.CancellationToken.ThrowIfCancellationRequested();
@@ -112,7 +137,12 @@ internal sealed class HonuaTileGrpcService : Proto.TileService.TileServiceBase
 
             var tile = await BuildTileAsync(entry, location.AssetRoot, context.CancellationToken).ConfigureAwait(false);
             await responseStream.WriteAsync(tile).ConfigureAwait(false);
+            streamedTiles++;
+            streamedBytes += tile.Content.Length;
         }
+
+        activity?.SetTag(SceneGrpcTelemetry.TileCountTag, streamedTiles);
+        activity?.SetTag(SceneGrpcTelemetry.TileBytesTag, streamedBytes);
     }
 
     private static async Task<Proto.Tile> BuildTileAsync(SceneTileEntry entry, string assetRoot, CancellationToken cancellationToken)
@@ -150,33 +180,12 @@ internal sealed class HonuaTileGrpcService : Proto.TileService.TileServiceBase
             throw new RpcException(new Status(StatusCode.InvalidArgument, "scene_id is required."));
         }
 
-        var registration = context.GetHttpContext()?.RequestServices.GetService<ISceneRegistrationService>();
-        if (registration is not null)
-        {
-            var record = await registration.GetBySceneIdAsync(sceneId, context.CancellationToken).ConfigureAwait(false);
-            if (record is not null)
-            {
-                if (record.Status != Domain.SceneDatasetStatus.Active)
-                {
-                    throw new RpcException(new Status(StatusCode.NotFound, $"Scene '{sceneId}' was not found."));
-                }
-
-                // Mirror PostgresSceneDatasetRegistry.ProjectToServing: a public
-                // record carries no policy; a non-public record maps RequiresAuth
-                // (AllowAnonymous=false) plus its allowed roles into an
-                // AccessPolicy the shared evaluator understands.
-                var recordPolicy = record.IsPublic
-                    ? null
-                    : new AccessPolicy
-                    {
-                        AllowAnonymous = false,
-                        AllowedRoles = record.AllowedRoles?.ToArray(),
-                    };
-
-                return new SceneLocation(record.AssetRoot, record.TilesetFileName, recordPolicy);
-            }
-        }
-
+        // Resolve exclusively through the registry. ISceneDatasetRegistry.FindAsync
+        // returns the already-projected SceneDataset for BOTH configuration- and
+        // database-backed scenes: it applies active-status filtering, derives the
+        // canonical AccessPolicy (SceneServingProjection), and canonicalizes the
+        // AssetRoot. The gRPC adapter therefore consumes that projection directly
+        // instead of re-deriving authorization or re-canonicalizing the root.
         var scene = await _registry.FindAsync(sceneId, context.CancellationToken).ConfigureAwait(false);
         if (scene is null)
         {
@@ -214,23 +223,16 @@ internal sealed class HonuaTileGrpcService : Proto.TileService.TileServiceBase
     /// bytes, drive-letter/UNC prefixes, collapsed segments, and symlink /
     /// reparse-point redirection) as the HTTP/I3S scene asset endpoints.
     /// </summary>
+    /// <remarks>
+    /// The <paramref name="assetRoot"/> is already canonicalized by
+    /// <see cref="ISceneDatasetRegistry.FindAsync"/> (which applies the same
+    /// absolute/trimmed normalization the dataset registries use), so this method
+    /// does not re-canonicalize it; <see cref="SceneAssetResolver"/> tolerates any
+    /// root shape regardless.
+    /// </remarks>
     private static bool TryResolveAssetFile(string assetRoot, string relativePath, out string fullPath)
     {
-        // Canonicalize + trim the asset root the same way the dataset registries
-        // do so the resolver's lexical under-root check sees a normalized root
-        // for record-backed scenes whose stored root may be relative.
-        string canonicalRoot;
-        try
-        {
-            canonicalRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(assetRoot));
-        }
-        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
-        {
-            fullPath = string.Empty;
-            return false;
-        }
-
-        if (SceneAssetResolver.TryResolve(canonicalRoot, relativePath, out var resolved, out _))
+        if (SceneAssetResolver.TryResolve(assetRoot, relativePath, out var resolved, out _))
         {
             fullPath = resolved.File.FullName;
             return true;

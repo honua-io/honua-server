@@ -38,6 +38,17 @@ public static class GeometryTileBuilder
     private const int ChunkHeaderLength = 8;
     private const uint GlbMagic = 0x46546C67; // "glTF"
     private const uint GlbVersion = 2;
+
+    /// <summary>
+    /// Largest feature count whose per-feature integer id is representable
+    /// exactly as a 32-bit float (2^24). The <c>_FEATURE_ID_0</c> accessor and
+    /// the COLOR_0 baking carry the per-vertex feature index through a float
+    /// buffer; beyond this ceiling distinct ids would alias, corrupting both the
+    /// structural-metadata attribution and the symbology lookup. Production tile
+    /// caps sit far below this, but the guard makes the limit explicit rather
+    /// than implicit so an uncapped caller fails loudly instead of silently.
+    /// </summary>
+    private const int MaxExactFloatFeatureCount = 1 << 24;
     private const uint JsonChunkType = 0x4E4F534A; // "JSON"
     private const uint BinChunkType = 0x004E4942; // "BIN\0"
 
@@ -73,6 +84,20 @@ public static class GeometryTileBuilder
         if (features.Count == 0)
         {
             throw new ArgumentException("At least one feature is required to build a tile.", nameof(features));
+        }
+
+        if (features.Count > MaxExactFloatFeatureCount)
+        {
+            // The per-vertex feature id is carried through a float32 buffer (the
+            // _FEATURE_ID_0 accessor and the COLOR_0 baking lookup). Past 2^24
+            // distinct integer ids alias, so refuse to emit a corrupt tile and
+            // require the caller to split the feature set instead.
+            throw new ArgumentException(
+                string.Format(
+                    CultureInfo.InvariantCulture,
+                    "A single tile cannot carry more than {0} features; split the feature set across tiles.",
+                    MaxExactFloatFeatureCount),
+                nameof(features));
         }
 
         if (perFeatureSymbology is not null && perFeatureSymbology.Count != features.Count)

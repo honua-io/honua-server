@@ -24,10 +24,13 @@ namespace Honua.Server.Tests.Features.Protocols.Scene;
 public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
 {
     private const string SceneId = "i3s-fixture";
+    private const string ProtectedSceneId = "i3s-protected";
+    private const string AdminPassword = "i3s-auth-test-key";
 
     private readonly WebAppFixture _enterpriseFixture;
     private readonly WebAppFixture _communityFixture;
     private readonly string _fixtureRoot;
+    private HttpClient _authenticatedClient = null!;
 
     public I3sSceneServerEndpointTests()
     {
@@ -43,6 +46,7 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
             .ConfigureWebHost(builder =>
             {
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
                 builder.ConfigureAppConfiguration((_, configBuilder) =>
                 {
                     configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
@@ -51,6 +55,14 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
                         [$"Scenes:Datasets:0:Name"] = "I3S Fixture Scene",
                         [$"Scenes:Datasets:0:Description"] = "Static scene used by I3S serving tests",
                         [$"Scenes:Datasets:0:AssetRoot"] = _fixtureRoot,
+
+                        // Protected scene — requires an authenticated principal so
+                        // the I3S SceneServer access-policy enforcement is covered
+                        // (mirrors the gRPC and HTTP tileset RBAC parity tests).
+                        [$"Scenes:Datasets:1:Id"] = ProtectedSceneId,
+                        [$"Scenes:Datasets:1:Name"] = "I3S Protected Scene",
+                        [$"Scenes:Datasets:1:AssetRoot"] = _fixtureRoot,
+                        [$"Scenes:Datasets:1:AccessPolicy:AllowAnonymous"] = "false",
                     });
                 });
             })
@@ -64,6 +76,8 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
     {
         await _enterpriseFixture.InitializeAsync();
         await _communityFixture.InitializeAsync();
+        _authenticatedClient = _enterpriseFixture.CreateClient(
+            c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
     }
 
     public async Task DisposeAsync()
@@ -135,6 +149,56 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
         var response = await _communityFixture.Client.GetAsync($"/scenes/{SceneId}/SceneServer");
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /scenes/{sceneId}/SceneServer")]
+    public async Task GetService_ProtectedScene_WithoutAuth_ReturnsUnauthorized()
+    {
+        // The I3S SceneServer root must enforce the scene access policy: an
+        // anonymous caller against a protected scene is denied before the
+        // descriptor is built. Guards against a regression dropping the
+        // AccessPolicyHelpers.RequireAccess call.
+        var response = await _enterpriseFixture.Client.GetAsync($"/scenes/{ProtectedSceneId}/SceneServer");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /scenes/{sceneId}/SceneServer/layers/{layerId:int}")]
+    public async Task GetLayer_ProtectedScene_WithoutAuth_ReturnsUnauthorized()
+    {
+        var response = await _enterpriseFixture.Client.GetAsync($"/scenes/{ProtectedSceneId}/SceneServer/layers/0");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /scenes/{sceneId}/SceneServer")]
+    public async Task GetService_ProtectedScene_WithAuth_ReturnsI3sServiceDescriptor()
+    {
+        var response = await _authenticatedClient.GetAsync($"/scenes/{ProtectedSceneId}/SceneServer");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.GetProperty("serviceName").GetString().Should().Be("I3S Protected Scene");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /scenes/{sceneId}/SceneServer/layers/{layerId:int}")]
+    public async Task GetLayer_ProtectedScene_WithAuth_ReturnsThreeDObjectLayer()
+    {
+        var response = await _authenticatedClient.GetAsync($"/scenes/{ProtectedSceneId}/SceneServer/layers/0");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.GetProperty("layerType").GetString().Should().Be("3DObject");
     }
 
     private sealed class StubLicenseStatusProvider : ILicenseStatusProvider

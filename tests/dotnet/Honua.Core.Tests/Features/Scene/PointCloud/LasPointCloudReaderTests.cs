@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Buffers.Binary;
 using Honua.Core.Features.Scene.PointCloud;
 using Honua.TestKit.Attributes;
 
@@ -84,6 +85,35 @@ public sealed class LasPointCloudReaderTests
         var act = () => LasPointCloudReader.ReadPoints(truncated).ToList();
 
         act.Should().Throw<LasFormatException>();
+    }
+
+    [UnitTest]
+    public void ReadPoints_OffsetBeyondEndOfFile_ThrowsStableLasFormatException()
+    {
+        // OffsetToPointData (a uint32 at byte 96) is attacker-controlled. A value
+        // beyond the buffer must surface the stable LasFormatException rather
+        // than a checked-cast OverflowException or an AsSpan range exception.
+        var las = LasFixtureBuilder.BuildFormat3(SamplePoints());
+        BinaryPrimitives.WriteUInt32LittleEndian(las.AsSpan(96, 4), (uint)(las.Length + 1));
+
+        var act = () => LasPointCloudReader.ReadPoints(las).ToList();
+
+        act.Should().Throw<LasFormatException>()
+            .Which.Code.Should().Be("SCENE_MODEL_ASSET_INVALID");
+    }
+
+    [UnitTest]
+    public void ReadPoints_OffsetExceedingInt32_ThrowsStableLasFormatException()
+    {
+        // A uint32 OffsetToPointData larger than int.MaxValue would overflow a
+        // narrowing int cast; long/ulong validation must intercept it first.
+        var las = LasFixtureBuilder.BuildFormat3(SamplePoints());
+        BinaryPrimitives.WriteUInt32LittleEndian(las.AsSpan(96, 4), uint.MaxValue);
+
+        var act = () => LasPointCloudReader.ReadPoints(las).ToList();
+
+        act.Should().Throw<LasFormatException>()
+            .Which.Code.Should().Be("SCENE_MODEL_ASSET_INVALID");
     }
 
     private static List<LasFixtureBuilder.Point> SamplePoints() =>

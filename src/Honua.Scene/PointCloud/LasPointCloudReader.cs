@@ -171,17 +171,37 @@ public static class LasPointCloudReader
         var colorOffset = ColorByteOffset(format);
         var classificationOffset = ClassificationByteOffset(format);
 
-        var start = checked((int)header.OffsetToPointData);
+        // Validate header-derived offsets and the full point-record window using
+        // long/ulong math BEFORE narrowing to int so attacker-controlled header
+        // values surface the stable LasFormatException instead of letting a
+        // checked-cast OverflowException or AsSpan ArgumentOutOfRangeException
+        // escape. OffsetToPointData is a uint32 read straight from the file
+        // header and can exceed int.MaxValue; PointCount is a uint64.
+        long sourceLength = source.Length;
+        long startOffset = header.OffsetToPointData;
+        if (startOffset > sourceLength)
+        {
+            throw new LasFormatException(
+                SceneGenerationErrorCodes.ModelAssetInvalid,
+                "LAS point data offset lies beyond the end of the file.");
+        }
+
+        // Total bytes required for all declared point records. ulong avoids any
+        // overflow for legacy/extended point counts and large record lengths.
+        ulong requiredBytes = header.PointCount * (ulong)recordLength;
+        if ((ulong)startOffset + requiredBytes > (ulong)sourceLength)
+        {
+            throw new LasFormatException(
+                SceneGenerationErrorCodes.ModelAssetInvalid,
+                "LAS point data is truncated relative to the declared point count.");
+        }
+
+        var start = (int)startOffset;
         for (ulong i = 0; i < header.PointCount; i++)
         {
-            var recordStart = start + checked((int)(i * (ulong)recordLength));
-            if (recordStart + recordLength > source.Length)
-            {
-                throw new LasFormatException(
-                    SceneGenerationErrorCodes.ModelAssetInvalid,
-                    "LAS point data is truncated relative to the declared point count.");
-            }
-
+            // The aggregate window was validated above, so each record's offset
+            // fits in int and lies fully within the source buffer.
+            var recordStart = start + (int)(i * (ulong)recordLength);
             var record = source.AsSpan(recordStart, recordLength);
 
             var xi = BinaryPrimitives.ReadInt32LittleEndian(record.Slice(0, 4));

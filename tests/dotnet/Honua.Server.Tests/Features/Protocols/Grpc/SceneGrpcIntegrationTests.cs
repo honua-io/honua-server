@@ -5,10 +5,13 @@ using FluentAssertions;
 using Grpc.Core;
 using Grpc.Net.Client;
 using Grpc.Net.Client.Web;
+using Honua.Core.Features.Scene.Abstractions;
+using Honua.Core.Features.Scene.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Proto = Geospatial.V1;
 
 namespace Honua.Server.Tests.Features.Protocols.Grpc;
@@ -28,6 +31,15 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
 {
     private const string FixtureSceneId = "fixture-tileset";
     private const string MissingContentSceneId = "missing-content-tileset";
+
+    // A database-backed scene carrying a small WGS-84 extent near the prime
+    // meridian, used to exercise the ListScenes spatial extent filter (config
+    // scenes have no persisted extent and so cannot be excluded by it).
+    private const string ExtentSceneId = "extent-scene";
+    private const double ExtentXMin = 0.0;
+    private const double ExtentYMin = 0.0;
+    private const double ExtentXMax = 1.0;
+    private const double ExtentYMax = 1.0;
 
     private readonly WebAppFixture _fixture;
     private readonly string _missingContentRoot;
@@ -79,6 +91,34 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
         {
             _headers.Add("X-Honua-Test-Schema", _fixture.CurrentSchema);
         }
+
+        await RegisterExtentSceneAsync();
+    }
+
+    /// <summary>
+    /// Registers a database-backed scene with a persisted extent so the
+    /// ListScenes spatial-filter tests have a scene whose footprint can be
+    /// included or excluded by an extent constraint (configuration scenes carry
+    /// no extent and so are always included).
+    /// </summary>
+    private async Task RegisterExtentSceneAsync()
+    {
+        var registration = _fixture.GetService<ISceneRegistrationService>();
+        await registration.RegisterAsync(new SceneDatasetRecord
+        {
+            DatasetId = Guid.NewGuid(),
+            Id = ExtentSceneId,
+            Name = "Extent Scene",
+            AssetRoot = _missingContentRoot,
+            TilesetFileName = "tileset.json",
+            DatasetType = SceneDatasetType.HostedTiles,
+            Extent = new SceneExtent(ExtentXMin, ExtentYMin, ExtentXMax, ExtentYMax),
+            CachePolicy = SceneCachePolicy.Default,
+            IsPublic = true,
+            Status = SceneDatasetStatus.Active,
+            CreatedAt = DateTimeOffset.UtcNow,
+            CreatedBy = "test",
+        });
     }
 
     public async Task DisposeAsync()
@@ -111,6 +151,101 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
         var fixtureScene = response.Scenes.Single(scene => scene.SceneId == FixtureSceneId);
         fixtureScene.TilesetUrl.Should().Be($"/scenes/{FixtureSceneId}/tileset.json");
         fixtureScene.Capabilities.Should().Contain("3d-tiles");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetServiceInfo)]
+    [Endpoint("POST /geospatial.v1.SceneService/ListScenes")]
+    public async Task ListScenes_WithResultRecordCountBelowTotal_PagesAndSetsExceededTransferLimit()
+    {
+        // The fixture registers at least three scenes (two config + one DB-backed
+        // extent scene), so a page size of 1 must return a single scene and flag
+        // that more records remain.
+        var response = await _sceneClient!.ListScenesAsync(
+            new Proto.ListScenesRequest { ResultRecordCount = 1 },
+            _headers);
+
+        response.Scenes.Should().ContainSingle();
+        response.ExceededTransferLimit.Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetServiceInfo)]
+    [Endpoint("POST /geospatial.v1.SceneService/ListScenes")]
+    public async Task ListScenes_WithResultRecordCountEqualToTotal_DoesNotSetExceededTransferLimit()
+    {
+        var total = (await _sceneClient!.ListScenesAsync(new Proto.ListScenesRequest(), _headers)).Scenes.Count;
+
+        var response = await _sceneClient!.ListScenesAsync(
+            new Proto.ListScenesRequest { ResultRecordCount = total },
+            _headers);
+
+        response.Scenes.Count.Should().Be(total);
+        response.ExceededTransferLimit.Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetServiceInfo)]
+    [Endpoint("POST /geospatial.v1.SceneService/ListScenes")]
+    public async Task ListScenes_WithResultOffsetPastEnd_ReturnsEmptyPage()
+    {
+        var response = await _sceneClient!.ListScenesAsync(
+            new Proto.ListScenesRequest { ResultOffset = 10_000 },
+            _headers);
+
+        response.Scenes.Should().BeEmpty();
+        response.ExceededTransferLimit.Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetServiceInfo)]
+    [Endpoint("POST /geospatial.v1.SceneService/ListScenes")]
+    public async Task ListScenes_WithOverlappingExtent_IncludesScene()
+    {
+        var request = new Proto.ListScenesRequest
+        {
+            Extent = new Proto.Extent3D
+            {
+                Extent = new Proto.Extent
+                {
+                    Xmin = ExtentXMin - 0.5,
+                    Ymin = ExtentYMin - 0.5,
+                    Xmax = ExtentXMin + 0.5,
+                    Ymax = ExtentYMin + 0.5,
+                    SpatialReference = new Proto.SpatialReference { Wkid = 4326, LatestWkid = 4326 },
+                },
+            },
+        };
+
+        var response = await _sceneClient!.ListScenesAsync(request, _headers);
+
+        response.Scenes.Should().Contain(scene => scene.SceneId == ExtentSceneId);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetServiceInfo)]
+    [Endpoint("POST /geospatial.v1.SceneService/ListScenes")]
+    public async Task ListScenes_WithDisjointExtent_ExcludesScene()
+    {
+        // An extent far from the registered scene's footprint must exclude it.
+        var request = new Proto.ListScenesRequest
+        {
+            Extent = new Proto.Extent3D
+            {
+                Extent = new Proto.Extent
+                {
+                    Xmin = 100.0,
+                    Ymin = 60.0,
+                    Xmax = 101.0,
+                    Ymax = 61.0,
+                    SpatialReference = new Proto.SpatialReference { Wkid = 4326, LatestWkid = 4326 },
+                },
+            },
+        };
+
+        var response = await _sceneClient!.ListScenesAsync(request, _headers);
+
+        response.Scenes.Should().NotContain(scene => scene.SceneId == ExtentSceneId);
     }
 
     [IntegrationTest]
@@ -250,6 +385,28 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
         tiles.Should().NotBeEmpty();
         tiles.Should().NotContain(tile => tile.Node.NodeId == "0");
         tiles.Should().OnlyContain(tile => tile.Node.GeometricError <= 50.0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Streaming)]
+    [Endpoint("POST /geospatial.v1.TileService/StreamTiles")]
+    public async Task StreamTiles_WithMaxGeometricErrorZero_AppliesNoGeometricErrorFilter()
+    {
+        // Intentional contract divergence (documented on StreamTiles): the proto
+        // calls max_geometric_error=0 "server default", but Honua applies NO
+        // server-side default cap — 0 means unbounded. The coarse root node
+        // (error 100) must therefore still stream when the cap is left unset.
+        var unbounded = await StreamAsync(new Proto.StreamTilesRequest
+        {
+            SceneId = FixtureSceneId,
+            MaxGeometricError = 0.0,
+        });
+
+        var unfiltered = await StreamAsync(new Proto.StreamTilesRequest { SceneId = FixtureSceneId });
+
+        unbounded.Should().Contain(tile => tile.Node.NodeId == "0");
+        unbounded.Select(tile => tile.Node.NodeId)
+            .Should().BeEquivalentTo(unfiltered.Select(tile => tile.Node.NodeId));
     }
 
     [IntegrationTest]
@@ -403,6 +560,76 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
         {
             DatasetId = "missing-dataset",
             LayerId = 999999,
+            Line = line,
+        };
+
+        var act = async () => await _elevationClient!.GetElevationProfileAsync(request, _headers);
+
+        (await act.Should().ThrowAsync<RpcException>())
+            .Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ElevationService/GetElevationProfile")]
+    public async Task GetElevationProfile_WithNegativeSampleCount_ThrowsInvalidArgument()
+    {
+        // A negative sample_count is invalid (the contract is "at least 2; zero
+        // means server default") and must be rejected rather than silently
+        // coerced to the default count.
+        var line = new Proto.PolylineGeometry();
+        var path = new Proto.CoordinateSequence();
+        path.Coords.Add(new Proto.Coordinate { X = 0, Y = 0 });
+        path.Coords.Add(new Proto.Coordinate { X = 0.001, Y = 0.001 });
+        line.Paths.Add(path);
+
+        var request = new Proto.GetElevationProfileRequest
+        {
+            DatasetId = "missing-dataset",
+            LayerId = 0,
+            Line = line,
+            SampleCount = -1,
+        };
+
+        var act = async () => await _elevationClient!.GetElevationProfileAsync(request, _headers);
+
+        (await act.Should().ThrowAsync<RpcException>())
+            .Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ElevationService/GetElevation")]
+    public async Task GetElevation_WithNonFinitePoint_ThrowsInvalidArgument()
+    {
+        var request = new Proto.GetElevationRequest
+        {
+            DatasetId = "missing-dataset",
+            LayerId = 0,
+            Point = new Proto.PointGeometry { X = double.NaN, Y = 0 },
+        };
+
+        var act = async () => await _elevationClient!.GetElevationAsync(request, _headers);
+
+        (await act.Should().ThrowAsync<RpcException>())
+            .Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ElevationService/GetElevationProfile")]
+    public async Task GetElevationProfile_WithNonFiniteCoordinate_ThrowsInvalidArgument()
+    {
+        var line = new Proto.PolylineGeometry();
+        var path = new Proto.CoordinateSequence();
+        path.Coords.Add(new Proto.Coordinate { X = 0, Y = 0 });
+        path.Coords.Add(new Proto.Coordinate { X = 0.001, Y = double.PositiveInfinity });
+        line.Paths.Add(path);
+
+        var request = new Proto.GetElevationProfileRequest
+        {
+            DatasetId = "missing-dataset",
+            LayerId = 0,
             Line = line,
         };
 

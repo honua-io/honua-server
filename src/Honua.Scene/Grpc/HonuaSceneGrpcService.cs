@@ -5,12 +5,12 @@ using Grpc.Core;
 using Honua.Core.Features.Scene.Abstractions;
 using Honua.Core.Features.Scene.Domain;
 using Honua.Infrastructure.Scene;
+using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Proto = Geospatial.V1;
-using SecurityDomain = Honua.Core.Features.Security.Domain;
 
 namespace Honua.Scene.Grpc;
 
@@ -47,6 +47,10 @@ internal sealed class HonuaSceneGrpcService : Proto.SceneService.SceneServiceBas
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
+
+        using var activity = HonuaTelemetry.StartActivity(SceneGrpcTelemetry.ListScenesActivity);
+        activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.Grpc);
+        activity?.SetTag(HonuaTelemetry.Tags.Operation, SceneGrpcTelemetry.ListScenesOperation);
 
         var registration = ResolveRegistrationService(context);
         var scenes = new List<Proto.SceneMetadata>();
@@ -89,7 +93,16 @@ internal sealed class HonuaSceneGrpcService : Proto.SceneService.SceneServiceBas
             }
         }
 
-        var ordered = scenes
+        // Apply the proto's optional spatial constraint: when an extent filter is
+        // supplied, include only scenes whose advertised extent intersects it.
+        // Scenes that carry no extent are included (their footprint is unknown, so
+        // they cannot be excluded). Mirrors SceneTileCatalog.IntersectsExtent.
+        var filter = request.Extent?.Extent;
+        var filtered = filter is null
+            ? scenes
+            : scenes.Where(scene => SceneIntersectsExtent(scene, filter)).ToList();
+
+        var ordered = filtered
             .OrderBy(scene => scene.SceneId, StringComparer.Ordinal)
             .ToList();
 
@@ -107,6 +120,7 @@ internal sealed class HonuaSceneGrpcService : Proto.SceneService.SceneServiceBas
             ExceededTransferLimit = count > 0 && ordered.Count > offset + count,
         };
         response.Scenes.AddRange(page);
+        activity?.SetTag(SceneGrpcTelemetry.SceneCountTag, response.Scenes.Count);
         return response;
     }
 
@@ -122,6 +136,11 @@ internal sealed class HonuaSceneGrpcService : Proto.SceneService.SceneServiceBas
             throw new RpcException(new Status(StatusCode.InvalidArgument, "scene_id is required."));
         }
 
+        using var activity = HonuaTelemetry.StartActivity(SceneGrpcTelemetry.GetSceneActivity);
+        activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.Grpc);
+        activity?.SetTag(HonuaTelemetry.Tags.Operation, SceneGrpcTelemetry.GetSceneOperation);
+        activity?.SetTag(SceneGrpcTelemetry.SceneIdTag, request.SceneId);
+
         var registration = ResolveRegistrationService(context);
         if (registration is not null)
         {
@@ -136,16 +155,10 @@ internal sealed class HonuaSceneGrpcService : Proto.SceneService.SceneServiceBas
                 }
 
                 // Enforce the same per-scene authorization the HTTP/I3S surfaces
-                // apply before returning metadata for a protected scene. Mirrors
-                // PostgresSceneDatasetRegistry.ProjectToServing's policy mapping.
-                var recordPolicy = record.IsPublic
-                    ? null
-                    : new SecurityDomain.AccessPolicy
-                    {
-                        AllowAnonymous = false,
-                        AllowedRoles = record.AllowedRoles?.ToArray(),
-                    };
-                SceneAccessGuard.EnforceReadAccess(context, recordPolicy);
+                // apply before returning metadata for a protected scene, deriving
+                // the policy through the shared canonical projection so the gRPC
+                // surface cannot drift from the registry's mapping.
+                SceneAccessGuard.EnforceReadAccess(context, SceneServingProjection.ToAccessPolicy(record));
 
                 return new Proto.GetSceneResponse { Scene = SceneGrpcMapping.ToSceneMetadata(record) };
             }
@@ -160,6 +173,25 @@ internal sealed class HonuaSceneGrpcService : Proto.SceneService.SceneServiceBas
         SceneAccessGuard.EnforceReadAccess(context, scene.AccessPolicy);
 
         return new Proto.GetSceneResponse { Scene = SceneGrpcMapping.ToSceneMetadata(scene) };
+    }
+
+    /// <summary>
+    /// Tests whether a scene's advertised 2D extent intersects the request's
+    /// horizontal filter box. Scenes without an extent are treated as a match
+    /// (their footprint is unknown and cannot be excluded).
+    /// </summary>
+    private static bool SceneIntersectsExtent(Proto.SceneMetadata scene, Proto.Extent filter)
+    {
+        var sceneExtent = scene.Extent?.Extent;
+        if (sceneExtent is null)
+        {
+            return true;
+        }
+
+        return sceneExtent.Xmin <= filter.Xmax
+            && sceneExtent.Xmax >= filter.Xmin
+            && sceneExtent.Ymin <= filter.Ymax
+            && sceneExtent.Ymax >= filter.Ymin;
     }
 
     /// <summary>

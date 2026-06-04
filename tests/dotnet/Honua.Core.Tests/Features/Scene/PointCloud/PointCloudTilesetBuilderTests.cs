@@ -111,6 +111,28 @@ public sealed class PointCloudTilesetBuilderTests
         act.Should().Throw<ArgumentException>();
     }
 
+    [UnitTest]
+    public void Build_DegenerateSinglePointCloud_FloorsRootGeometricError()
+    {
+        // A single point (or all co-located points) yields a zero-extent
+        // bounding box. The root geometric error must be floored at a positive
+        // value so a 3D Tiles client still has a refinement budget — mirroring
+        // the I3S converter / BSL builder.
+        var las = LasFixtureBuilder.BuildFormat3(
+        [
+            new(0.001, 0.001, 1.0, 1000, 2, 60000, 40000, 30000),
+        ]);
+        var points = LasPointCloudReader.ReadPoints(las).ToList();
+
+        var result = PointCloudTilesetBuilder.Build(
+            points, IdentityGeo,
+            new PointCloudTilingOptions { MaxPointsPerTile = 100, MaxDepth = 4, InteriorSampleCount = 0 });
+
+        using var json = JsonDocument.Parse(Encoding.UTF8.GetString(result.TilesetJsonBytes));
+        json.RootElement.GetProperty("root").GetProperty("geometricError").GetDouble()
+            .Should().BeGreaterThanOrEqualTo(1.0);
+    }
+
     private static void CollectContentUris(JsonElement node, List<string> sink)
     {
         if (node.TryGetProperty("content", out var content))

@@ -310,7 +310,13 @@ public static class PointCloudTilesetBuilder
         var latMeters = Math.Abs(latSpanRad) * EcefCoordinateTransform.WgsSemiMajorAxis;
         var heightMeters = Math.Max(0.0, maxHeight - minHeight);
         var diagonal = Math.Sqrt(lonMeters * lonMeters + latMeters * latMeters + heightMeters * heightMeters);
-        return Math.Round(diagonal, 6, MidpointRounding.AwayFromZero);
+
+        // Floor the root geometric error at a positive value so degenerate clouds
+        // (a single point, or all points co-located) still declare a refinement
+        // budget. A zero root error defeats screen-space-error refinement and can
+        // leave a client never scheduling the root tile. Mirrors the I3S converter
+        // (I3sToTilesetConverter.Convert) and the BSL builder.
+        return Math.Max(1.0, Math.Round(diagonal, 6, MidpointRounding.AwayFromZero));
     }
 
     private readonly record struct ProjectedPoint(
