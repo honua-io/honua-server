@@ -75,6 +75,10 @@ internal static partial class AttachmentHandler
                 groups.Add(new AttachmentGroup
                 {
                     ParentObjectId = featureId,
+                    // Esri always emits parentGlobalId; Honua attachments have no
+                    // global-id identity column, so emit an empty string (never omit
+                    // the key) so AttachmentManager.search() does not KeyError.
+                    ParentGlobalId = string.Empty,
                     AttachmentInfos = infos
                 });
             }

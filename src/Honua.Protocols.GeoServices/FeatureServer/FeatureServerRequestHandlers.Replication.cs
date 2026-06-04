@@ -312,8 +312,13 @@ internal static partial class FeatureServerEndpoints
         var replicaId = GetValueString(values, "replicaID");
         if (string.IsNullOrWhiteSpace(replicaId))
         {
-            return StandardErrorHelpers.CreateBadRequest(context,
-                "replicaID parameter is required");
+            // No replicaID: the serverGen-based change-tracking flow used by the ArcGIS
+            // SDK FeatureLayerCollection.extract_changes(). The caller supplies the
+            // generation to extract from (serverGen/serverGens) and optionally a layers
+            // filter; we return changes since that generation without requiring a
+            // registered replica. Only available on sync/change-tracking-enabled services.
+            return await HandleExtractChangesWithoutReplicaAsync(
+                serviceId, context, service, snapshot, values, activity, cancellationToken);
         }
 
         activity?.SetTag("honua.replicaId", replicaId);
@@ -481,6 +486,241 @@ internal static partial class FeatureServerEndpoints
         };
 
         return Results.Json(response, FeatureServerJsonContext.Default.ExtractChangesResponse, contentType: "application/json");
+    }
+
+    /// <summary>
+    /// Serves the no-replicaID <c>extractChanges</c> flow: the serverGen-based change
+    /// tracking the ArcGIS SDK <c>FeatureLayerCollection.extract_changes()</c> uses. The
+    /// caller passes the generation to extract from (<c>serverGen</c> / <c>serverGens</c>)
+    /// and optionally a <c>layers</c> filter, and receives changes since that generation
+    /// without registering a replica. Only available on sync/change-tracking-enabled
+    /// services. <c>returnIdsOnly=true</c> omits the per-feature attribute payload.
+    /// </summary>
+    private static async Task<IResult> HandleExtractChangesWithoutReplicaAsync(
+        string serviceId,
+        HttpContext context,
+        MetadataV2Service service,
+        MetadataV2GraphSnapshot snapshot,
+        IReadOnlyDictionary<string, Microsoft.Extensions.Primitives.StringValues> values,
+        System.Diagnostics.Activity? activity,
+        CancellationToken cancellationToken)
+    {
+        // The serverGen-based change-tracking flow is served on the same change-tracking
+        // backend the replica flow uses; it is not gated on the advertised "Sync"
+        // capability token (the replica extractChanges path is served unconditionally too,
+        // and the change tracker is always available). Layer access is still enforced
+        // below so unauthorized callers cannot extract changes.
+
+        // Resolve the layers to extract from: the optional layers filter, otherwise all
+        // accessible service layers. This reuses the same access-checked resolution the
+        // replica flow uses for the layers parameter.
+        var layersParam = GetValueString(values, "layers");
+        if (!TryResolveReplicaLayerIdsV2(context, service, snapshot, layersParam, out var requestedLayerIds, out var layerError))
+        {
+            return layerError ?? StandardErrorHelpers.CreateBadRequest(context,
+                "Unable to resolve layers for extractChanges.");
+        }
+
+        var requestedIdSet = requestedLayerIds.ToHashSet();
+        var extractLayers = ResolveServiceReplicaLayersV2(service, snapshot)
+            .Where(layer => requestedIdSet.Contains(layer.PublicLayerId))
+            .DistinctBy(layer => layer.PublicLayerId)
+            .ToArray();
+
+        if (extractLayers.Length == 0)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "No accessible layers to extract changes from for this service.");
+        }
+
+        if (!TryParseBoolValue(values, "returnIdsOnly", false, out var returnIdsOnly, out var returnIdsOnlyError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid returnIdsOnly parameter",
+                [returnIdsOnlyError ?? "returnIdsOnly must be a boolean value."]);
+        }
+
+        var changeTracker = context.RequestServices.GetRequiredService<IChangeTracker>();
+        var currentGen = await changeTracker.GetCurrentGenerationAsync(cancellationToken);
+
+        // Resolve the "since" generation from serverGen / serverGens. When omitted we
+        // extract from the beginning (generation 0), matching a first full extract.
+        if (!TryResolveExtractSinceGeneration(values, currentGen, out var sinceGeneration, out var sinceError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid serverGen parameter",
+                [sinceError ?? "serverGen must be a non-negative integer."]);
+        }
+
+        activity?.SetTag("honua.extractChanges.sinceGen", sinceGeneration);
+        activity?.SetTag("honua.extractChanges.returnIdsOnly", returnIdsOnly);
+
+        var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
+        var queryLimits = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value.Query;
+
+        var changes = await changeTracker.GetChangesSinceAsync(
+            sinceGeneration,
+            extractLayers.Select(layer => layer.StorageLayerId).Distinct().ToArray(),
+            cancellationToken);
+
+        var changesByLayer = changes
+            .GroupBy(c => c.LayerId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        var layerChanges = new List<LayerChanges>(extractLayers.Length);
+        foreach (var layer in extractLayers)
+        {
+            if (!changesByLayer.TryGetValue(layer.StorageLayerId, out var layerChangeList))
+            {
+                layerChanges.Add(new LayerChanges
+                {
+                    Id = layer.PublicLayerId,
+                    Adds = 0,
+                    Updates = 0,
+                    Deletes = 0
+                });
+                continue;
+            }
+
+            var insertIds = layerChangeList
+                .Where(c => c.Operation == FeatureChangeOperation.Insert)
+                .Select(c => c.ObjectId)
+                .ToArray();
+            var updateIds = layerChangeList
+                .Where(c => c.Operation == FeatureChangeOperation.Update)
+                .Select(c => c.ObjectId)
+                .ToArray();
+            var deleteIds = layerChangeList
+                .Where(c => c.Operation == FeatureChangeOperation.Delete)
+                .Select(c => c.ObjectId)
+                .ToArray();
+
+            if (insertIds.Length > queryLimits.MaxRecordCount ||
+                updateIds.Length > queryLimits.MaxRecordCount ||
+                deleteIds.Length > queryLimits.MaxRecordCount)
+            {
+                return StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    "extractChanges exceeds the configured per-layer change limit.",
+                    [$"Layer {layer.PublicLayerId} exceeded {queryLimits.MaxRecordCount} adds, updates, or deletes in a single extract."]);
+            }
+
+            // returnIdsOnly omits the per-feature attribute payload; only the counts and
+            // delete ids are reported (matching the SDK ids-only change-tracking flow).
+            GeoServicesFeature[]? addFeatures = null;
+            GeoServicesFeature[]? updateFeatures = null;
+            if (!returnIdsOnly)
+            {
+                if (insertIds.Length > 0)
+                {
+                    var result = await featureReader.QueryAsync(
+                        layer.StorageLayerId,
+                        new FeatureQuery { ObjectIds = ImmutableArray.Create(insertIds) },
+                        cancellationToken);
+                    addFeatures = result.Items.Select(f => ConvertFeatureToGeoServices(f)).ToArray();
+                }
+
+                if (updateIds.Length > 0)
+                {
+                    var result = await featureReader.QueryAsync(
+                        layer.StorageLayerId,
+                        new FeatureQuery { ObjectIds = ImmutableArray.Create(updateIds) },
+                        cancellationToken);
+                    updateFeatures = result.Items.Select(f => ConvertFeatureToGeoServices(f)).ToArray();
+                }
+            }
+
+            layerChanges.Add(new LayerChanges
+            {
+                Id = layer.PublicLayerId,
+                Adds = insertIds.Length,
+                Updates = updateIds.Length,
+                Deletes = deleteIds.Length,
+                AddFeatures = addFeatures,
+                UpdateFeatures = updateFeatures,
+                DeleteIds = deleteIds.Length > 0 ? deleteIds : null
+            });
+        }
+
+        // No replica: ReplicaId is left null (omitted) and the change window is reported
+        // through serverGen/minServerGen/maxServerGen for the serverGen-based flow.
+        var response = new ExtractChangesResponse
+        {
+            Success = true,
+            ReplicaId = null,
+            LayerChanges = layerChanges.ToArray(),
+            ServerGen = currentGen,
+            MinServerGen = sinceGeneration,
+            MaxServerGen = currentGen
+        };
+
+        return Results.Json(response, FeatureServerJsonContext.Default.ExtractChangesResponse, contentType: "application/json");
+    }
+
+    /// <summary>
+    /// Resolves the "extract since" generation from the Esri <c>serverGen</c> /
+    /// <c>serverGens</c> parameters. Accepts a single integer, or a JSON array of
+    /// integers (in which case the minimum is used as the inclusive lower bound). When
+    /// omitted, returns 0 (full extract). The resolved value is clamped to the current
+    /// generation.
+    /// </summary>
+    private static bool TryResolveExtractSinceGeneration(
+        IReadOnlyDictionary<string, Microsoft.Extensions.Primitives.StringValues> values,
+        long currentGen,
+        out long sinceGeneration,
+        out string? error)
+    {
+        sinceGeneration = 0;
+        error = null;
+
+        var raw = GetValueString(values, "serverGen") ?? GetValueString(values, "serverGens");
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return true;
+        }
+
+        var trimmed = raw.Trim();
+        if (long.TryParse(trimmed, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var single))
+        {
+            if (single < 0)
+            {
+                error = "serverGen must be a non-negative integer.";
+                return false;
+            }
+
+            sinceGeneration = Math.Min(single, currentGen);
+            return true;
+        }
+
+        if (trimmed.StartsWith('[') && trimmed.EndsWith(']'))
+        {
+            try
+            {
+                var parsed = System.Text.Json.JsonSerializer.Deserialize(trimmed, FeatureServerJsonContext.Default.Int64Array);
+                if (parsed is { Length: > 0 })
+                {
+                    if (parsed.Any(g => g < 0))
+                    {
+                        error = "serverGens values must be non-negative integers.";
+                        return false;
+                    }
+
+                    sinceGeneration = Math.Min(parsed.Min(), currentGen);
+                    return true;
+                }
+
+                // Empty array → full extract.
+                return true;
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                error = "serverGens must be an integer or a JSON array of integers.";
+                return false;
+            }
+        }
+
+        error = "serverGen must be an integer or a JSON array of integers.";
+        return false;
     }
 
     private static async Task<IResult> HandleSynchronizeReplica(

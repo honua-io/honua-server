@@ -122,6 +122,16 @@ public sealed class FeatureServerAccessFilteringTests
         root.GetProperty("supportsQueryAttachments").GetBoolean().Should().BeTrue();
         root.GetProperty("supportsAttachmentKeywords").GetBoolean().Should().BeTrue();
         root.GetProperty("supportsAttachmentsByUploadId").GetBoolean().Should().BeTrue();
+
+        // Regression for the operations-block inconsistency: the @arcgis/core JS SDK
+        // reads supportsQueryAttachments off the nested advancedQueryCapabilities
+        // (operations) block, not the root, when deciding whether queryAttachments({where})
+        // is permitted. The nested flag must match the root flag, otherwise a layer that
+        // advertises attachments at the root is refused the operation.
+        root.GetProperty("advancedQueryCapabilities")
+            .GetProperty("supportsQueryAttachments")
+            .GetBoolean()
+            .Should().BeTrue();
     }
 
     private static WebApplicationFactory<Program> CreateFactory()
