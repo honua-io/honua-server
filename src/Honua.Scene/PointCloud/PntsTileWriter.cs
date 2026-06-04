@@ -17,15 +17,21 @@ namespace Honua.Core.Features.Scene.PointCloud;
 /// Positions are encoded as <c>Float32</c> XYZ relative to an
 /// <c>RTC_CENTER</c> (the tile's ECEF centroid) so the 32-bit mantissa retains
 /// centimetre precision regardless of the cloud's global ECEF magnitude. RGB is
-/// emitted as <c>UNSIGNED_BYTE</c> per channel (LAS 16-bit colour is scaled to
-/// 8-bit). When the source has no colour the writer omits the RGB semantic and
-/// the client falls back to a uniform point colour.
+/// emitted as <c>UNSIGNED_BYTE</c> per channel. LAS colour lives in 16-bit
+/// fields, but many producers store unscaled 8-bit (0-255) values there; the
+/// writer samples every channel and, when all components are &lt;= 255, copies
+/// the low byte verbatim (treating the cloud as 8-bit) instead of <c>&gt;&gt;8</c>'ing
+/// genuine-255 values down to black. Otherwise it scales true 16-bit colour to
+/// 8-bit via <c>&gt;&gt;8</c>. When the source has no colour the writer omits the RGB
+/// semantic and the client falls back to a uniform point colour.
 /// </para>
 /// <para>
-/// The byte layout — header, padded feature-table JSON, feature-table binary,
-/// batch-table JSON, batch-table binary — follows the PNTS spec exactly and is
-/// produced in a fixed property order, so identical input yields byte-identical
-/// output.
+/// The byte layout — header, padded feature-table JSON, padded feature-table
+/// binary, padded batch-table JSON, padded batch-table binary — follows the
+/// PNTS spec exactly: every section header and binary body starts AND ends on an
+/// 8-byte boundary, and the whole tile byteLength is 8-aligned. Output is
+/// produced in a fixed property order with deterministic zero padding, so
+/// identical input yields byte-identical output.
 /// </para>
 /// </remarks>
 public static class PntsTileWriter
@@ -82,14 +88,38 @@ public static class PntsTileWriter
 
         if (hasColor)
         {
+            // LAS stores colour in 16-bit fields, but many producers stuff 8-bit
+            // (0-255) values into those fields unscaled. A blind >>8 would map
+            // those to 0 (black). Sample every channel: if EVERY component is
+            // <= 255 the cloud is 8-bit-in-16-bit and we copy the low byte
+            // verbatim; otherwise it is genuine 16-bit colour and we >>8 to 8-bit.
+            // The choice is deterministic for a given point set.
+            var eightBit = true;
+            for (var i = 0; i < count && eightBit; i++)
+            {
+                var p = points[i];
+                if (p.Red > 255 || p.Green > 255 || p.Blue > 255)
+                {
+                    eightBit = false;
+                }
+            }
+
             for (var i = 0; i < count; i++)
             {
                 var p = points[i];
                 var rgbStart = rgbByteOffset + (i * 3);
-                // LAS stores 16-bit colour; >>8 maps to 8-bit deterministically.
-                featureBinaryArray[rgbStart] = (byte)(p.Red >> 8);
-                featureBinaryArray[rgbStart + 1] = (byte)(p.Green >> 8);
-                featureBinaryArray[rgbStart + 2] = (byte)(p.Blue >> 8);
+                if (eightBit)
+                {
+                    featureBinaryArray[rgbStart] = (byte)p.Red;
+                    featureBinaryArray[rgbStart + 1] = (byte)p.Green;
+                    featureBinaryArray[rgbStart + 2] = (byte)p.Blue;
+                }
+                else
+                {
+                    featureBinaryArray[rgbStart] = (byte)(p.Red >> 8);
+                    featureBinaryArray[rgbStart + 1] = (byte)(p.Green >> 8);
+                    featureBinaryArray[rgbStart + 2] = (byte)(p.Blue >> 8);
+                }
             }
         }
 
@@ -108,11 +138,23 @@ public static class PntsTileWriter
 
         // Pad each JSON section to an 8-byte boundary (PNTS spec) with spaces.
         var featureJsonPadded = PadJson(featureTableJson, HeaderLength);
-        // The feature-table binary must start 8-byte aligned within the tile.
-        var batchJsonPadded = PadJson(batchTableJson, HeaderLength + featureJsonPadded.Length + featureBinaryArray.Length);
+
+        // The 3D Tiles PNTS spec requires every binary body to START AND END on
+        // an 8-byte boundary. The feature-table JSON above guarantees the
+        // feature BINARY starts aligned, but the feature binary itself is
+        // count*12 (uncoloured) or count*15 (coloured) bytes — only a multiple
+        // of 8 for even uncoloured counts / coloured counts divisible by 8. Pad
+        // it with deterministic zero bytes up to the next multiple of 8 so the
+        // following batch-table JSON header also starts 8-aligned. The
+        // featureTableBinaryByteLength written at offset 16 reflects this padded
+        // length so a strict reader sees an aligned layout.
+        var featureBinaryPad = (8 - (featureBinaryArray.Length & 7)) & 7;
+        var featureBinaryLength = featureBinaryArray.Length + featureBinaryPad;
+
+        var batchJsonPadded = PadJson(batchTableJson, HeaderLength + featureJsonPadded.Length + featureBinaryLength);
 
         var unpaddedLength = HeaderLength
-            + featureJsonPadded.Length + featureBinaryArray.Length
+            + featureJsonPadded.Length + featureBinaryLength
             + batchJsonPadded.Length + batchBinaryArray.Length;
 
         // The whole tile's byteLength must be 8-byte aligned (3D Tiles PNTS
@@ -129,7 +171,7 @@ public static class PntsTileWriter
         BinaryPrimitives.WriteUInt32LittleEndian(tile.AsSpan(4, 4), Version);
         BinaryPrimitives.WriteUInt32LittleEndian(tile.AsSpan(8, 4), (uint)totalLength);
         BinaryPrimitives.WriteUInt32LittleEndian(tile.AsSpan(12, 4), (uint)featureJsonPadded.Length);
-        BinaryPrimitives.WriteUInt32LittleEndian(tile.AsSpan(16, 4), (uint)featureBinaryArray.Length);
+        BinaryPrimitives.WriteUInt32LittleEndian(tile.AsSpan(16, 4), (uint)featureBinaryLength);
         BinaryPrimitives.WriteUInt32LittleEndian(tile.AsSpan(20, 4), (uint)batchJsonPadded.Length);
         BinaryPrimitives.WriteUInt32LittleEndian(tile.AsSpan(24, 4), (uint)batchBinaryLength);
 
@@ -137,7 +179,9 @@ public static class PntsTileWriter
         featureJsonPadded.CopyTo(tile.AsSpan(offset));
         offset += featureJsonPadded.Length;
         featureBinaryArray.CopyTo(tile.AsSpan(offset));
-        offset += featureBinaryArray.Length;
+        // Skip the zero-padding bytes already present in the zero-initialised
+        // tile buffer so the batch-table JSON lands on its 8-aligned offset.
+        offset += featureBinaryLength;
         batchJsonPadded.CopyTo(tile.AsSpan(offset));
         offset += batchJsonPadded.Length;
         batchBinaryArray.CopyTo(tile.AsSpan(offset));

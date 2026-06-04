@@ -88,6 +88,21 @@ public static class I3sToTilesetConverter
                 "The I3S fullExtent is degenerate (min bound exceeds max bound).");
         }
 
+        // The extent is consumed below as WGS-84 degrees (boundingRegionDegrees);
+        // validate it lies within the geographic ranges (lon [-180,180], lat
+        // [-90,90]) before treating it as such. A WKID-4326 layer with bounds in
+        // a projected unit (e.g. metres) would otherwise produce a bogus region
+        // far outside the globe.
+        if (!double.IsFinite(extent.Xmin) || !double.IsFinite(extent.Ymin)
+            || !double.IsFinite(extent.Xmax) || !double.IsFinite(extent.Ymax)
+            || extent.Xmin < -180.0 || extent.Xmax > 180.0
+            || extent.Ymin < -90.0 || extent.Ymax > 90.0)
+        {
+            throw new I3sConversionException(
+                I3sConversionErrorReason.MissingExtent,
+                "The I3S fullExtent is outside the WGS-84 geographic range (longitude [-180,180], latitude [-90,90]).");
+        }
+
         var minHeight = extent.Zmin ?? 0.0;
         var maxHeight = extent.Zmax ?? 0.0;
 

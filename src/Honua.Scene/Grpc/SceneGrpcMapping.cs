@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
-using Google.Protobuf;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Scene.Domain;
 using Proto = Geospatial.V1;
@@ -226,7 +225,4 @@ internal static class SceneGrpcMapping
 
     private static string BuildTilesetPath(string sceneId)
         => string.Create(CultureInfo.InvariantCulture, $"/scenes/{sceneId}/tileset.json");
-
-    /// <summary>Serializes raw tile bytes into a protobuf byte string.</summary>
-    public static ByteString ToByteString(byte[] content) => ByteString.CopyFrom(content);
 }

@@ -87,6 +87,95 @@ public sealed class PntsTileWriterTests
     }
 
     [UnitTest]
+    public void Build_ColoredOddByteCount_BatchTableJsonHeaderIsEightByteAligned()
+    {
+        // 3 colored points => feature binary = 3*12 (POSITION) + 3*3 (RGB) = 45
+        // bytes, which is NOT a multiple of 8. Without padding the feature binary
+        // the batch-table JSON header would start misaligned. Assert the writer
+        // pads the feature binary so the batch JSON offset is 8-aligned.
+        var tile = PntsTileWriter.Build(SamplePoints());
+
+        var featureJsonLen = BinaryPrimitives.ReadUInt32LittleEndian(tile.AsSpan(12, 4));
+        var featureBinLen = BinaryPrimitives.ReadUInt32LittleEndian(tile.AsSpan(16, 4));
+
+        var batchJsonOffset = 28 + featureJsonLen + featureBinLen;
+        (batchJsonOffset % 8).Should().Be(0u, "the batch-table JSON header must begin on an 8-byte boundary");
+        (featureBinLen % 8).Should().Be(0u, "the feature-table binary length (offset 16) must be 8-byte padded");
+    }
+
+    [UnitTest]
+    public void Build_OddUncoloredCount_BatchTableJsonHeaderIsEightByteAligned()
+    {
+        // 3 uncolored points => feature binary = 3*12 = 36 bytes (not a multiple
+        // of 8). The writer must pad it so the batch-table JSON header aligns.
+        var points = new List<PntsPoint>
+        {
+            new(6_378_137.0, 0.0, 0.0, 100, 2, HasColor: false, 0, 0, 0),
+            new(6_378_138.0, 1.0, 1.0, 200, 5, HasColor: false, 0, 0, 0),
+            new(6_378_139.0, 2.0, 2.0, 300, 6, HasColor: false, 0, 0, 0),
+        };
+
+        var tile = PntsTileWriter.Build(points);
+
+        var featureJsonLen = BinaryPrimitives.ReadUInt32LittleEndian(tile.AsSpan(12, 4));
+        var featureBinLen = BinaryPrimitives.ReadUInt32LittleEndian(tile.AsSpan(16, 4));
+
+        ((28 + featureJsonLen + featureBinLen) % 8).Should().Be(0u, "the batch-table JSON header must begin on an 8-byte boundary");
+        (featureBinLen % 8).Should().Be(0u, "the feature-table binary length must be 8-byte padded");
+        (tile.Length % 8).Should().Be(0, "the whole tile byteLength must remain 8-aligned");
+    }
+
+    [UnitTest]
+    public void Build_EightBitColorInSixteenBitField_RendersNonBlackRgb()
+    {
+        // Some LAS producers store 8-bit (0-255) colour unscaled in the 16-bit
+        // RGB fields. A blind >>8 would map these to 0 (black). The heuristic
+        // detects all-<=255 components and copies the low byte verbatim.
+        var points = new List<PntsPoint>
+        {
+            new(6_378_137.0, 0.0, 0.0, 100, 2, HasColor: true, 200, 150, 50),
+            new(6_378_138.0, 1.0, 1.0, 200, 5, HasColor: true, 10, 255, 128),
+        };
+
+        var tile = PntsTileWriter.Build(points);
+
+        var featureJsonLen = (int)BinaryPrimitives.ReadUInt32LittleEndian(tile.AsSpan(12, 4));
+        var json = Encoding.UTF8.GetString(tile, 28, featureJsonLen);
+        using var doc = JsonDocument.Parse(json);
+        var rgbByteOffset = doc.RootElement.GetProperty("RGB").GetProperty("byteOffset").GetInt32();
+
+        var rgbStart = 28 + featureJsonLen + rgbByteOffset;
+        // First point's RGB must be the verbatim 8-bit values, not >>8'd to 0.
+        tile[rgbStart].Should().Be(200);
+        tile[rgbStart + 1].Should().Be(150);
+        tile[rgbStart + 2].Should().Be(50);
+    }
+
+    [UnitTest]
+    public void Build_TrueSixteenBitColor_ScalesToEightBit()
+    {
+        // When any component exceeds 255 the cloud is genuine 16-bit colour and
+        // every channel is scaled by >>8.
+        var points = new List<PntsPoint>
+        {
+            new(6_378_137.0, 0.0, 0.0, 100, 2, HasColor: true, 60000, 30000, 10000),
+            new(6_378_138.0, 1.0, 1.0, 200, 5, HasColor: true, 256, 256, 256),
+        };
+
+        var tile = PntsTileWriter.Build(points);
+
+        var featureJsonLen = (int)BinaryPrimitives.ReadUInt32LittleEndian(tile.AsSpan(12, 4));
+        var json = Encoding.UTF8.GetString(tile, 28, featureJsonLen);
+        using var doc = JsonDocument.Parse(json);
+        var rgbByteOffset = doc.RootElement.GetProperty("RGB").GetProperty("byteOffset").GetInt32();
+
+        var rgbStart = 28 + featureJsonLen + rgbByteOffset;
+        tile[rgbStart].Should().Be((byte)(60000 >> 8));
+        tile[rgbStart + 1].Should().Be((byte)(30000 >> 8));
+        tile[rgbStart + 2].Should().Be((byte)(10000 >> 8));
+    }
+
+    [UnitTest]
     public void Build_NoColor_OmitsRgbSemantic()
     {
         var points = new List<PntsPoint>

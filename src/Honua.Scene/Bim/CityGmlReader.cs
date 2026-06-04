@@ -44,17 +44,44 @@ public static class CityGmlReader
     private const long MaxDocumentCharacters = 256L * 1024 * 1024;
 
     /// <summary>
+    /// Upper bound on XML element nesting depth. A deeply-nested but otherwise
+    /// well-formed document would make <see cref="XDocument.Load(System.Xml.XmlReader)"/>
+    /// recurse until it StackOverflows — an uncatchable failure that kills the
+    /// process. The depth is bounded BEFORE materialization by a streaming
+    /// pre-scan so <c>XDocument.Load</c> never builds a pathological tree. 256
+    /// levels comfortably exceeds any realistic CityGML feature nesting.
+    /// </summary>
+    private const int MaxElementDepth = 256;
+
+    private static System.Xml.XmlReaderSettings CreateReaderSettings() => new()
+    {
+        // LoadOptions.None + the safe reader settings (DTD disabled, no external
+        // resolver) harden the parse against XXE; CityGML never relies on a DTD.
+        // MaxCharactersFromEntities = 0 blocks entity-expansion amplification and
+        // MaxCharactersInDocument caps the total document size so an oversized-
+        // but-well-formed document cannot make XDocument materialize an unbounded
+        // tree (DoS). The shared SecureXmlDocumentParser applies the same
+        // DTD/entity caps but only accepts a buffered string; CityGML reads a
+        // stream, so the caps are applied inline here.
+        DtdProcessing = System.Xml.DtdProcessing.Prohibit,
+        XmlResolver = null,
+        MaxCharactersFromEntities = 0,
+        MaxCharactersInDocument = MaxDocumentCharacters,
+        IgnoreComments = true,
+        IgnoreProcessingInstructions = true
+    };
+
+    /// <summary>
     /// Parses a CityGML document from a UTF-8 byte buffer into a
     /// <see cref="CityGmlModel"/>.
     /// </summary>
     /// <param name="source">The CityGML document bytes (UTF-8 or BOM-prefixed).</param>
     /// <returns>The parsed building model with BSL hierarchy and attributes.</returns>
-    /// <exception cref="CityGmlFormatException">The document is malformed or contains no parseable building geometry.</exception>
+    /// <exception cref="CityGmlFormatException">The document is malformed, exceeds the nesting-depth cap, or contains no parseable building geometry.</exception>
     public static CityGmlModel Read(byte[] source)
     {
         ArgumentNullException.ThrowIfNull(source);
-        using var stream = new MemoryStream(source, writable: false);
-        return Read(stream);
+        return ReadFromBuffer(source, source.Length);
     }
 
     /// <summary>
@@ -62,32 +89,30 @@ public static class CityGmlReader
     /// </summary>
     /// <param name="source">The CityGML document stream.</param>
     /// <returns>The parsed building model with BSL hierarchy and attributes.</returns>
-    /// <exception cref="CityGmlFormatException">The document is malformed or contains no parseable building geometry.</exception>
+    /// <exception cref="CityGmlFormatException">The document is malformed, exceeds the nesting-depth cap, or contains no parseable building geometry.</exception>
     public static CityGmlModel Read(Stream source)
     {
         ArgumentNullException.ThrowIfNull(source);
 
+        // Buffer the document once so the depth pre-scan and the materializing
+        // load both read from the same bytes (a stream may be forward-only).
+        using var buffer = new MemoryStream();
+        source.CopyTo(buffer);
+        return ReadFromBuffer(buffer.GetBuffer(), (int)buffer.Length);
+    }
+
+    private static CityGmlModel ReadFromBuffer(byte[] source, int length)
+    {
+        // Pre-scan depth with a streaming reader (no tree materialization) so a
+        // pathologically deep document is rejected as a CityGmlFormatException
+        // instead of StackOverflowing XDocument.Load below.
+        EnsureDepthWithinLimit(source, length);
+
         XDocument document;
         try
         {
-            // LoadOptions.None + the safe reader settings (DTD disabled, no
-            // external resolver) harden the parse against XXE; CityGML never
-            // relies on a DTD. MaxCharactersFromEntities = 0 blocks entity-
-            // expansion amplification and MaxCharactersInDocument caps the total
-            // document size so an oversized-but-well-formed document cannot make
-            // XDocument materialize an unbounded tree (DoS). The shared
-            // SecureXmlDocumentParser applies the same DTD/entity caps but only
-            // accepts a buffered string; CityGML reads a stream, so the caps are
-            // applied inline here to avoid buffering the whole document twice.
-            using var reader = System.Xml.XmlReader.Create(source, new System.Xml.XmlReaderSettings
-            {
-                DtdProcessing = System.Xml.DtdProcessing.Prohibit,
-                XmlResolver = null,
-                MaxCharactersFromEntities = 0,
-                MaxCharactersInDocument = MaxDocumentCharacters,
-                IgnoreComments = true,
-                IgnoreProcessingInstructions = true
-            });
+            using var stream = new MemoryStream(source, 0, length, writable: false);
+            using var reader = System.Xml.XmlReader.Create(stream, CreateReaderSettings());
             document = XDocument.Load(reader);
         }
         catch (System.Xml.XmlException ex)
@@ -143,6 +168,39 @@ public static class CityGmlReader
             LatitudeFirst = latitudeFirst,
             Buildings = buildings
         };
+    }
+
+    /// <summary>
+    /// Streams the document with a depth-tracking <see cref="System.Xml.XmlReader"/>
+    /// (no tree materialization) and throws <see cref="CityGmlFormatException"/>
+    /// if element nesting exceeds <see cref="MaxElementDepth"/>. This guard runs
+    /// BEFORE <see cref="XDocument.Load(System.Xml.XmlReader)"/> so a deeply
+    /// nested payload cannot StackOverflow the recursive tree build (an
+    /// uncatchable, process-killing failure).
+    /// </summary>
+    private static void EnsureDepthWithinLimit(byte[] source, int length)
+    {
+        try
+        {
+            using var stream = new MemoryStream(source, 0, length, writable: false);
+            using var reader = System.Xml.XmlReader.Create(stream, CreateReaderSettings());
+            while (reader.Read())
+            {
+                if (reader.NodeType == System.Xml.XmlNodeType.Element && reader.Depth > MaxElementDepth)
+                {
+                    throw new CityGmlFormatException(
+                        SceneGenerationErrorCodes.ModelAssetInvalid,
+                        $"CityGML document exceeds the maximum element nesting depth of {MaxElementDepth}.");
+                }
+            }
+        }
+        catch (System.Xml.XmlException ex)
+        {
+            throw new CityGmlFormatException(
+                SceneGenerationErrorCodes.ModelAssetInvalid,
+                "CityGML document is not well-formed XML.",
+                ex);
+        }
     }
 
     private static CityGmlBuilding? ReadBuilding(XElement element, int ordinal)

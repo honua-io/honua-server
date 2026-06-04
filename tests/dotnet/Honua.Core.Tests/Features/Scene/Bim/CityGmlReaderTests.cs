@@ -130,4 +130,29 @@ public sealed class CityGmlReaderTests
         act.Should().Throw<CityGmlFormatException>()
             .Which.Code.Should().Be("SCENE_MODEL_ASSET_INVALID");
     }
+
+    [UnitTest]
+    public void Read_DeeplyNestedDocument_ThrowsAndDoesNotStackOverflow()
+    {
+        // A deeply-nested but well-formed document would make XDocument.Load
+        // recurse until it StackOverflows (an uncatchable, process-killing
+        // failure). The reader bounds depth with a streaming pre-scan BEFORE
+        // materialization, so a pathological document is rejected with the
+        // stable CityGmlFormatException instead of crashing the process.
+        const int depth = 5000; // far beyond the 256-level cap.
+        var builder = new System.Text.StringBuilder("<?xml version=\"1.0\"?>");
+        for (var i = 0; i < depth; i++)
+        {
+            builder.Append("<n>");
+        }
+        for (var i = 0; i < depth; i++)
+        {
+            builder.Append("</n>");
+        }
+
+        var act = () => CityGmlReader.Read(System.Text.Encoding.UTF8.GetBytes(builder.ToString()));
+
+        act.Should().Throw<CityGmlFormatException>()
+            .Which.Code.Should().Be("SCENE_MODEL_ASSET_INVALID");
+    }
 }

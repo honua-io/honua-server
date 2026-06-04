@@ -6,6 +6,8 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Scene.Abstractions;
+using Honua.Core.Features.Scene.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Hosting;
@@ -26,6 +28,16 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
     private const string SceneId = "i3s-fixture";
     private const string ProtectedSceneId = "i3s-protected";
     private const string AdminPassword = "i3s-auth-test-key";
+
+    // A database-backed scene carrying a persisted WGS-84 extent so the
+    // registration branch of ResolveExtentAsync (record.Extent) is exercised and
+    // the I3S descriptor's fullExtent is populated. Config scenes carry no
+    // extent and so only cover the null-extent path.
+    private const string ExtentSceneId = "i3s-extent-scene";
+    private const double ExtentXMin = -122.5;
+    private const double ExtentYMin = 37.7;
+    private const double ExtentXMax = -122.4;
+    private const double ExtentYMax = 37.8;
 
     private readonly WebAppFixture _enterpriseFixture;
     private readonly WebAppFixture _communityFixture;
@@ -78,6 +90,34 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
         await _communityFixture.InitializeAsync();
         _authenticatedClient = _enterpriseFixture.CreateClient(
             c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+
+        await RegisterExtentSceneAsync();
+    }
+
+    /// <summary>
+    /// Registers a database-backed scene with a persisted extent so the
+    /// registration branch of <c>ResolveExtentAsync</c> populates the I3S
+    /// <c>fullExtent</c>. The scene is public so the descriptor is reachable
+    /// without auth.
+    /// </summary>
+    private async Task RegisterExtentSceneAsync()
+    {
+        var registration = _enterpriseFixture.GetService<ISceneRegistrationService>();
+        await registration.RegisterAsync(new SceneDatasetRecord
+        {
+            DatasetId = Guid.NewGuid(),
+            Id = ExtentSceneId,
+            Name = "I3S Extent Scene",
+            AssetRoot = _fixtureRoot,
+            TilesetFileName = "tileset.json",
+            DatasetType = SceneDatasetType.HostedTiles,
+            Extent = new SceneExtent(ExtentXMin, ExtentYMin, ExtentXMax, ExtentYMax),
+            CachePolicy = SceneCachePolicy.Default,
+            IsPublic = true,
+            Status = SceneDatasetStatus.Active,
+            CreatedAt = DateTimeOffset.UtcNow,
+            CreatedBy = "test",
+        });
     }
 
     public async Task DisposeAsync()
@@ -199,6 +239,44 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
 
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         json.RootElement.GetProperty("layerType").GetString().Should().Be("3DObject");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /scenes/{sceneId}/SceneServer/layers/{layerId:int}")]
+    public async Task GetLayer_SceneWithPersistedExtent_PopulatesFullExtent()
+    {
+        // The DB-registered scene carries a persisted extent, so the registration
+        // branch of ResolveExtentAsync threads it into the descriptor's
+        // fullExtent (xmin/ymin/xmax/ymax). Guards against a regression dropping
+        // the extent lookup.
+        var response = await _enterpriseFixture.Client.GetAsync($"/scenes/{ExtentSceneId}/SceneServer/layers/0");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var fullExtent = json.RootElement.GetProperty("fullExtent");
+        fullExtent.GetProperty("xmin").GetDouble().Should().BeApproximately(ExtentXMin, 1e-9);
+        fullExtent.GetProperty("ymin").GetDouble().Should().BeApproximately(ExtentYMin, 1e-9);
+        fullExtent.GetProperty("xmax").GetDouble().Should().BeApproximately(ExtentXMax, 1e-9);
+        fullExtent.GetProperty("ymax").GetDouble().Should().BeApproximately(ExtentYMax, 1e-9);
+        fullExtent.GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(4326);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /scenes/{sceneId}/SceneServer")]
+    public async Task GetService_SceneWithPersistedExtent_PopulatesLayerFullExtent()
+    {
+        var response = await _enterpriseFixture.Client.GetAsync($"/scenes/{ExtentSceneId}/SceneServer");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var layer = json.RootElement.GetProperty("layers").EnumerateArray().Single();
+        var fullExtent = layer.GetProperty("fullExtent");
+        fullExtent.GetProperty("xmin").GetDouble().Should().BeApproximately(ExtentXMin, 1e-9);
+        fullExtent.GetProperty("ymax").GetDouble().Should().BeApproximately(ExtentYMax, 1e-9);
     }
 
     private sealed class StubLicenseStatusProvider : ILicenseStatusProvider

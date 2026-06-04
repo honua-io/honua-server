@@ -108,8 +108,7 @@ internal static class SceneTileCatalog
     /// </remarks>
     public static Proto.BoundingVolume? ToBoundingVolume(Domain.BoundingVolume? volume)
     {
-        var region = volume?.Region;
-        if (region is null || region.Length < 6)
+        if (!TryDecodeRegion(volume?.Region, out var decoded) || !decoded.HasHeight)
         {
             return null;
         }
@@ -120,16 +119,58 @@ internal static class SceneTileCatalog
             {
                 Extent = new Proto.Extent
                 {
-                    Xmin = region[0] * RadiansToDegrees,
-                    Ymin = region[1] * RadiansToDegrees,
-                    Xmax = region[2] * RadiansToDegrees,
-                    Ymax = region[3] * RadiansToDegrees,
+                    Xmin = decoded.XMin,
+                    Ymin = decoded.YMin,
+                    Xmax = decoded.XMax,
+                    Ymax = decoded.YMax,
                     SpatialReference = new Proto.SpatialReference { Wkid = Wgs84, LatestWkid = Wgs84 },
                 },
-                MinHeight = region[4],
-                MaxHeight = region[5],
+                MinHeight = decoded.MinHeight,
+                MaxHeight = decoded.MaxHeight,
             },
         };
+    }
+
+    /// <summary>
+    /// Horizontal envelope (degrees) and optional vertical range (metres)
+    /// decoded from a 3D Tiles region bounding volume.
+    /// </summary>
+    private readonly record struct DecodedRegion(
+        double XMin,
+        double YMin,
+        double XMax,
+        double YMax,
+        bool HasHeight,
+        double MinHeight,
+        double MaxHeight);
+
+    /// <summary>
+    /// Decodes a 3D Tiles region array (<c>[west, south, east, north]</c> in
+    /// radians, plus an optional <c>[minHeight, maxHeight]</c> in metres) into a
+    /// WGS-84-degree envelope. Returns <see langword="false"/> for a missing or
+    /// short (&lt; 4 element) region so callers can treat it as "no bound".
+    /// <see cref="DecodedRegion.HasHeight"/> is set only when the array carries
+    /// the full 6 elements. Single shared decode used by every region-consuming
+    /// site so the radians-to-degrees conversion stays identical.
+    /// </summary>
+    private static bool TryDecodeRegion(double[]? region, out DecodedRegion decoded)
+    {
+        if (region is null || region.Length < 4)
+        {
+            decoded = default;
+            return false;
+        }
+
+        var hasHeight = region.Length >= 6;
+        decoded = new DecodedRegion(
+            XMin: region[0] * RadiansToDegrees,
+            YMin: region[1] * RadiansToDegrees,
+            XMax: region[2] * RadiansToDegrees,
+            YMax: region[3] * RadiansToDegrees,
+            HasHeight: hasHeight,
+            MinHeight: hasHeight ? region[4] : 0d,
+            MaxHeight: hasHeight ? region[5] : 0d);
+        return true;
     }
 
     /// <summary>Infers the gRPC tile content encoding from a content uri's extension.</summary>
@@ -165,20 +206,14 @@ internal static class SceneTileCatalog
             return true;
         }
 
-        var region = node.BoundingVolume?.Region;
-        if (region is null || region.Length < 4)
+        if (!TryDecodeRegion(node.BoundingVolume?.Region, out var decoded))
         {
             return true;
         }
 
-        var nodeXMin = region[0] * RadiansToDegrees;
-        var nodeYMin = region[1] * RadiansToDegrees;
-        var nodeXMax = region[2] * RadiansToDegrees;
-        var nodeYMax = region[3] * RadiansToDegrees;
-
-        return nodeXMin <= filter.Xmax
-            && nodeXMax >= filter.Xmin
-            && nodeYMin <= filter.Ymax
-            && nodeYMax >= filter.Ymin;
+        return decoded.XMin <= filter.Xmax
+            && decoded.XMax >= filter.Xmin
+            && decoded.YMin <= filter.Ymax
+            && decoded.YMax >= filter.Ymin;
     }
 }

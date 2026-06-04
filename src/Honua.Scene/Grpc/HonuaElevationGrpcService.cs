@@ -229,12 +229,30 @@ internal sealed partial class HonuaElevationGrpcService : Proto.ElevationService
         return reference.Wkid;
     }
 
+    /// <summary>
+    /// Builds the geodesic-profile line from the proto polyline.
+    /// </summary>
+    /// <remarks>
+    /// Single-path contract: a profile is sampled along ONE continuous polyline.
+    /// The proto <c>PolylineGeometry</c> can carry multiple paths (a multi-part
+    /// line), but a multi-part profile has no well-defined cumulative distance,
+    /// so a request with more than one path is rejected with
+    /// <see cref="StatusCode.InvalidArgument"/> rather than silently sampling
+    /// only the first part. Callers that need several profiles must issue one
+    /// request per path.
+    /// </remarks>
     private LineString BuildLineString(Proto.PolylineGeometry? line, int layerId)
     {
         if (line is null || line.Paths.Count == 0)
         {
             Log.InvalidArgument(_logger, SceneGrpcTelemetry.GetElevationProfileOperation, layerId, "line with at least one path is required.");
             throw new RpcException(new Status(StatusCode.InvalidArgument, "line with at least one path is required."));
+        }
+
+        if (line.Paths.Count > 1)
+        {
+            Log.InvalidArgument(_logger, SceneGrpcTelemetry.GetElevationProfileOperation, layerId, "line must contain exactly one path; multi-part profiles are not supported.");
+            throw new RpcException(new Status(StatusCode.InvalidArgument, "line must contain exactly one path; submit one request per path for a multi-part line."));
         }
 
         var path = line.Paths[0];

@@ -281,6 +281,36 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.GetServiceInfo)]
+    [Endpoint("POST /geospatial.v1.SceneService/ListScenes")]
+    public async Task ListScenes_WithDisjointExtent_StillIncludesSceneWithoutExtent()
+    {
+        // The config-backed fixture scene carries NO persisted extent. A scene
+        // without an extent cannot be excluded by the spatial filter and must be
+        // returned regardless of the request extent (the filter only excludes
+        // scenes whose known footprint is disjoint).
+        var request = new Proto.ListScenesRequest
+        {
+            Extent = new Proto.Extent3D
+            {
+                Extent = new Proto.Extent
+                {
+                    Xmin = 100.0,
+                    Ymin = 60.0,
+                    Xmax = 101.0,
+                    Ymax = 61.0,
+                    SpatialReference = new Proto.SpatialReference { Wkid = 4326, LatestWkid = 4326 },
+                },
+            },
+        };
+
+        var response = await _sceneClient!.ListScenesAsync(request, _headers);
+
+        response.Scenes.Should().Contain(scene => scene.SceneId == FixtureSceneId);
+        response.Scenes.Should().NotContain(scene => scene.SceneId == ExtentSceneId);
+    }
+
+    [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("POST /geospatial.v1.SceneService/GetScene")]
     [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.SceneService/GetScene")]
@@ -336,6 +366,26 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
 
         (await act.Should().ThrowAsync<RpcException>())
             .Which.StatusCode.Should().Be(StatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTile)]
+    [Endpoint("POST /geospatial.v1.TileService/GetTile")]
+    public async Task GetTile_ForExternalSubTilesetNode_StreamsOpaqueUnspecifiedContent()
+    {
+        // The fixture's LOD-1 child node's content uri is an external .json
+        // sub-tileset (nested/sub-tileset.json). The contract (documented on
+        // HonuaTileGrpcService.BuildTileAsync) is to stream it as OPAQUE bytes
+        // with TileContentType.Unspecified — the server does not expand the
+        // sub-tileset; the client follows it.
+        var response = await _tileClient!.GetTileAsync(
+            new Proto.GetTileRequest { SceneId = FixtureSceneId, NodeId = "0-0" },
+            _headers);
+
+        response.Tile.Should().NotBeNull();
+        response.Tile.Node.NodeId.Should().Be("0-0");
+        response.Tile.ContentType.Should().Be(Proto.TileContentType.Unspecified);
+        response.Tile.Content.Length.Should().BeGreaterThan(0, "the external sub-tileset is streamed verbatim as opaque bytes");
     }
 
     [IntegrationTest]
@@ -715,6 +765,37 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
             DatasetId = "missing-dataset",
             LayerId = 0,
             Line = new Proto.PolylineGeometry(),
+        };
+
+        var act = async () => await _elevationClient!.GetElevationProfileAsync(request, _headers);
+
+        (await act.Should().ThrowAsync<RpcException>())
+            .Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ElevationService/GetElevationProfile")]
+    public async Task GetElevationProfile_WithMultiplePaths_ThrowsInvalidArgument()
+    {
+        // A profile is sampled along ONE continuous polyline; a multi-part line
+        // has no well-defined cumulative distance. The adapter rejects a request
+        // with more than one path rather than silently sampling only the first.
+        var line = new Proto.PolylineGeometry();
+        var first = new Proto.CoordinateSequence();
+        first.Coords.Add(new Proto.Coordinate { X = 0, Y = 0 });
+        first.Coords.Add(new Proto.Coordinate { X = 0.001, Y = 0.001 });
+        var second = new Proto.CoordinateSequence();
+        second.Coords.Add(new Proto.Coordinate { X = 1, Y = 1 });
+        second.Coords.Add(new Proto.Coordinate { X = 1.001, Y = 1.001 });
+        line.Paths.Add(first);
+        line.Paths.Add(second);
+
+        var request = new Proto.GetElevationProfileRequest
+        {
+            DatasetId = "missing-dataset",
+            LayerId = 0,
+            Line = line,
         };
 
         var act = async () => await _elevationClient!.GetElevationProfileAsync(request, _headers);
@@ -1185,6 +1266,49 @@ public sealed class ElevationGrpcAuthorizationTests : IAsyncLifetime
         // and the canonical service produced a value (not a no-data/out-of-bounds).
         (response.HasElevation || response.NoData || response.OutOfBounds).Should().BeTrue();
         response.HasElevation.Should().BeTrue("the seeded raster covers the origin, so a public query returns a value.");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ElevationService/GetElevationProfile")]
+    [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.ElevationService/GetElevationProfile")]
+    public async Task GetElevationProfile_PublicLayer_ReturnsOrderedSamplesAndSourceMetadata()
+    {
+        // Happy path: a public layer over the seeded full-world raster returns an
+        // ordered profile with a positive line length, the echoed mosaic rule, and
+        // populated source metadata (mirrors GetElevation_PublicLayer happy path).
+        _fixture.UpdateV2ServiceMetadata(
+            WebAppFixture.TestServiceId,
+            accessPolicy: new AccessPolicy { AllowAnonymous = true });
+
+        const int sampleCount = 5;
+        var line = new Proto.PolylineGeometry();
+        var path = new Proto.CoordinateSequence();
+        path.Coords.Add(new Proto.Coordinate { X = -WebMercatorExtent / 2, Y = 0 });
+        path.Coords.Add(new Proto.Coordinate { X = WebMercatorExtent / 2, Y = 0 });
+        line.Paths.Add(path);
+
+        var request = new Proto.GetElevationProfileRequest
+        {
+            LayerId = WebAppFixture.TestLayerId,
+            SampleCount = sampleCount,
+            SpatialReference = new Proto.SpatialReference { Wkid = 3857, LatestWkid = 3857 },
+            Line = line,
+        };
+
+        var response = await _elevationClient!.GetElevationProfileAsync(request, _headers);
+
+        response.Samples.Should().HaveCount(sampleCount);
+        response.Samples.Select(s => s.DistanceMeters).Should()
+            .BeInAscendingOrder("profile samples must be ordered by distance along the line");
+        response.Samples[0].DistanceMeters.Should().Be(0d);
+        response.LineLengthMeters.Should().BeGreaterThan(0d);
+        response.Samples[^1].DistanceMeters.Should().BeApproximately(response.LineLengthMeters, 1e-3);
+        response.MosaicRule.Should().NotBeNullOrEmpty("the resolved mosaic rule is echoed back");
+        response.IsAllNoData.Should().BeFalse("the seeded raster covers the line");
+        response.Source.Should().NotBeNull();
+        response.Source.RasterIds.Should().NotBeEmpty("the source raster ids identify the contributing rasters");
+        response.Source.SourceSpatialReference.Wkid.Should().Be(3857);
     }
 
     private Task SeedFullWorldRasterAsync(double elevationMeters)

@@ -147,6 +147,23 @@ internal sealed partial class HonuaTileGrpcService : Proto.TileService.TileServi
         activity?.SetTag(SceneGrpcTelemetry.TileBytesTag, streamedBytes);
     }
 
+    /// <summary>
+    /// Reads a node's content payload from disk and wraps it in a
+    /// <see cref="Proto.Tile"/>, inferring the content type from the uri
+    /// extension.
+    /// </summary>
+    /// <remarks>
+    /// External sub-tileset contract: a node whose content uri is an external
+    /// <c>.json</c> sub-tileset is streamed as OPAQUE bytes with
+    /// <see cref="Proto.TileContentType.Unspecified"/> (the extension is not
+    /// glb/b3dm/i3dm/pnts). This slice does NOT expand external tilesets
+    /// server-side; it serves the referenced <c>.json</c> verbatim and the client
+    /// is responsible for parsing it and following its nested content/children.
+    /// The deterministic node ids assigned by <see cref="SceneTileCatalog"/> are
+    /// confined to a single tileset document, so an external tileset's nodes are
+    /// only addressable after the client re-issues requests against that
+    /// expanded tree (a tracked follow-up if server-side expansion is needed).
+    /// </remarks>
     private static async Task<Proto.Tile> BuildTileAsync(SceneTileEntry entry, string assetRoot, CancellationToken cancellationToken)
     {
         var tile = new Proto.Tile
