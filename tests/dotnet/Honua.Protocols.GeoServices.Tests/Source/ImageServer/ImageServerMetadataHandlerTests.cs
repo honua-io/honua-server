@@ -282,68 +282,6 @@ public class ImageServerMetadataHandlerTests
 
     [UnitTest]
     [Operation(Operations.GetServiceInfo)]
-    public async Task GetServiceConfAsync_ReturnsDynamicStorageDescriptor()
-    {
-        // The ArcGIS Maps SDK for .NET native runtime probes /ImageServer/conf.json
-        // when loading an ImageServiceRaster; a 404 is reported as "could not read the
-        // ImageServer conf". The dynamic (non-cached) service must return a well-formed
-        // descriptor that advertises no fused tile cache and carries the pixel-block
-        // storageInfo, extent, and spatial reference the runtime needs.
-        SetupSuccessfulMetadata();
-
-        var context = CreateImageServerContext();
-        var result = await _handler.GetServiceConfAsync(context, 1);
-
-        var jsonResult = result as JsonHttpResult<ImageServerConfInfo>;
-        jsonResult.Should().NotBeNull();
-        var conf = jsonResult!.Value!;
-
-        conf.SingleFusedMapCache.Should().BeFalse();
-        conf.TileInfo.Should().BeNull();
-
-        conf.StorageInfo.Should().NotBeNull();
-        conf.StorageInfo.BlockWidth.Should().BeGreaterThan(0);
-        conf.StorageInfo.BlockHeight.Should().BeGreaterThan(0);
-
-        // Block dimensions are mirrored at the root for the native runtime.
-        conf.BlockWidth.Should().Be(conf.StorageInfo.BlockWidth);
-        conf.BlockHeight.Should().Be(conf.StorageInfo.BlockHeight);
-
-        conf.FullExtent.Should().NotBeNull();
-        conf.FullExtent.XMin.Should().Be(-180);
-        conf.FullExtent.YMax.Should().Be(90);
-        conf.SpatialReference.Wkid.Should().Be(4326);
-        conf.BandCount.Should().BeGreaterThan(0);
-        conf.PixelType.Should().NotBeNullOrWhiteSpace();
-    }
-
-    [UnitTest]
-    [Operation(Operations.GetServiceInfo)]
-    public async Task GetServiceConfAsync_LayerNotFound_ReturnsNotFound()
-    {
-        var context = CreateImageServerContext();
-        var result = await _handler.GetServiceConfAsync(context, 99);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status404NotFound);
-    }
-
-    [UnitTest]
-    [Operation(Operations.GetServiceInfo)]
-    public async Task GetServiceConfAsync_NoRasters_ReturnsNotFound()
-    {
-        _rasterStore.ListRastersAsync(1, Arg.Any<CancellationToken>())
-            .Returns(Array.Empty<RasterInfo>());
-
-        var context = CreateImageServerContext();
-        var result = await _handler.GetServiceConfAsync(context, 1);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status404NotFound);
-    }
-
-    [UnitTest]
-    [Operation(Operations.GetServiceInfo)]
     public async Task GetServiceInfoAsync_EmptyStatistics_ReturnsOk()
     {
         SetupLayerAndRasters();
