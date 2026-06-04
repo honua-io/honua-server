@@ -42,7 +42,7 @@ an admin-request timeout. Asynchronous job tracking through a durable
 | `displayName` | no | Human-readable name (≤ 128 characters). When omitted, defaults to `"{layer.Name} ({sceneId})"` (truncated to fit), so repeated generations from the same layer never collide on the registry's name uniqueness constraint. Provide an explicit value to override. |
 | `description` | no | Optional description text. |
 | `includeAttributes` | no | Allowlist of attribute fields to project into the tileset's metadata schema. Empty means all numeric/string attributes. |
-| `maxFeatureCount` | no | Per-job override of the v1 50 000-feature cap; the smaller of the two values wins. |
+| `maxFeatureCount` | no | Per-job override of the server feature cap; the smaller of the two values wins. |
 | `cacheMaxAgeSeconds` | no | Cache directive applied to the registered scene dataset. Bounded to `[0, 86400]` (24 hours); values above the ceiling are rejected with `SCENE_OPTIONS_INVALID`. |
 | `editionGate` | no | Optional licensing gate forwarded to the scene record. Must be a lowercase slug (letters, digits, hyphens). |
 
@@ -66,7 +66,9 @@ Once the response returns, the tileset is discoverable via the existing
 hosted serving routes:
 
 - `GET /scenes/{sceneId}/tileset.json` — root document.
-- `GET /scenes/{sceneId}/tile_0000.glb` — single tile content.
+- `GET /scenes/{sceneId}/tile_0000.glb` — tile content (single-tile output, or
+  the first node of a quadtree LOD tileset; LOD jobs emit `tile_0001.glb`, … and
+  point-cloud jobs emit `points_0000.pnts`, …).
 
 #### Response warnings
 
@@ -212,13 +214,27 @@ problem-detail helpers:
 | `SCENE_REGISTRATION_CONFLICT` | 409 | The requested scene id or display name collides with an existing dataset (active OR inactive). The executor preflights against the registry and stages every generation under an intent-scoped `.staging-{intentId}` directory before promoting to `{sceneId}/`; the registry INSERT remains the canonical collision authority, and a losing request's staging bytes are deleted without ever touching the winner's final-path files. If a prior generation failed during staging promotion (e.g. permission denied on `Directory.Move`), the executor compensates by deactivating the inserted registry record so the serving path returns 404, but the inactive record still occupies the slug/name until the operator deletes the record via the admin scene CRUD path (#844). |
 | `SCENE_OPTIONS_INVALID` | 400 | Generation options failed validation. The executor runs the canonical `SceneDatasetValidator` checks (`sceneId`, `displayName`, `cacheMaxAgeSeconds`, `editionGate`) before doing any I/O so invalid input never produces a partial output directory. The executor also rejects an explicit `cacheMaxAgeSeconds` that is non-numeric or negative and an explicit `maxFeatureCount` that is non-numeric or non-positive, rather than silently falling back to the server defaults. |
 
-## Limits and known v1 limitations
+## Tiling, LOD, and limits
 
-- **Hard 50 000 feature cap.** Layers exceeding the cap are rejected; raise
-  the `SceneGeneration:MaxFeatureCount` configuration value with care.
-- **Single-tile output.** v1 emits one tile per generation job and does not
-  spatially partition large datasets. Enterprise-scale tiling and LOD
-  optimization are deferred.
+- **Quadtree LOD partitioning (#1200).** Datasets at or above
+  `SceneGeneration:LodFeatureThreshold` (default 50 000) are partitioned into a
+  quadtree of tiles with per-level geometric error and a coarse interior LOD
+  sample, instead of one oversized tile. Smaller datasets keep the byte-stable
+  single-tile layout. The hierarchy uses `REPLACE` refinement so a 3D Tiles
+  client (CesiumJS) swaps a coarse parent tile for its finer children as the
+  camera approaches. Tile content files are named `tile_0000.glb`,
+  `tile_0001.glb`, … in a deterministic pre-order walk.
+- **Feature cap.** The hard per-job cap is `SceneGeneration:MaxFeatureCount`
+  (default 1 000 000, raised from the v1 single-tile 50 000). Layers exceeding
+  the cap are rejected with `SCENE_FEATURE_LIMIT_EXCEEDED`.
+- **LOD tuning knobs.** `SceneGeneration:MaxFeaturesPerTile` (leaf split
+  threshold, default 2 000), `SceneGeneration:MaxLodDepth` (default 12), and
+  `SceneGeneration:InteriorSampleCount` (coarse-LOD sample size, default 256)
+  control the partition shape. Output stays deterministic for any fixed
+  configuration.
+- **Per-LOD feature thinning.** Interior nodes carry a deterministic strided
+  sample of the features beneath them as their coarse level of detail. Leaf
+  tiles carry their full membership; every feature appears in exactly one leaf.
 - **Fan triangulation for polygons.** Convex polygons render correctly;
   non-convex rings produce visually imperfect fills (the topology is
   still deterministic and the mesh remains parsable).
@@ -236,12 +252,34 @@ problem-detail helpers:
   `SCENE_REGISTRATION_CONFLICT` after its staging bytes are deleted — the winner's
   final-path files are never overwritten.
 
+## Point-cloud ingest (#1201)
+
+The scene module includes a pure-managed LAS point-cloud ingest pipeline that
+converts an uncompressed ASPRS LAS file into a deterministic 3D Tiles point
+tileset (a quadtree of Cesium `.pnts` tiles plus a `tileset.json` tree):
+
+- **Supported formats.** Uncompressed LAS 1.1–1.4, point data record formats
+  0, 1, 2, 3, 6, 7, and 8. Position is descaled with the header scale/offset;
+  classification, intensity, and (for colour-bearing formats) per-point RGB are
+  preserved into the `.pnts` feature/batch tables.
+- **Output.** `points_0000.pnts`, `points_0001.pnts`, … with positions
+  ECEF-encoded relative to a per-tile `RTC_CENTER`, RGB as `UNSIGNED_BYTE`, and a
+  batch table carrying `INTENSITY` (UNSIGNED_SHORT) and `CLASSIFICATION`
+  (UNSIGNED_BYTE). The tileset serves through the existing scene endpoints.
+- **Limits / deferred.** LAZ (LASzip) and Cloud-Optimized Point Cloud (COPC)
+  inputs are detected and rejected with `SCENE_MODEL_ASSET_INVALID` rather than
+  mis-parsed; native LAZ/COPC decompression is a tracked follow-up. Malformed
+  or truncated inputs surface a problem-detail error code without leaking
+  parser internals.
+
 ## Deferred enterprise-scale work
 
-- Quadtree/oct-tree spatial partitioning for medium/large datasets.
-- LOD generation with automatic mesh decimation.
+- Octree spatial partitioning (the quadtree path landed in #1200).
+- Mesh decimation / vertex-welding per LOD (current LOD thins by feature
+  sampling, not geometry simplification).
 - Streaming/incremental tile production for million-feature datasets.
 - Distributed tiling for parallel pipelines.
+- Native LAZ/COPC point-cloud decompression (#1201 ships uncompressed LAS).
 - glTF/GLB model-asset substitution (rooftops, tree instances).
 - CityGML/IFC ingestion.
 - Native I3S output (informed by #843).
@@ -378,13 +416,12 @@ follow-on under #842; the v1 demo does not require it.
 
 ### Upgrade path
 
-This demo slice is deliberately small. The following limits documented
-in this file apply unchanged: 50 000-feature cap, single-tile output,
-fan triangulation, no inner-ring or model-asset support, and no streaming
-LOD. The full producer roadmap that lifts these limits — quadtree
-partitioning, mesh decimation, distributed tiling, glTF model assets,
-CityGML/IFC ingestion — is tracked in #842. Drone and point-cloud paths
-are tracked separately in #900.
+This demo slice is deliberately small. It stays under the LOD threshold so it
+keeps single-tile output, but the broader pipeline now supports quadtree LOD
+partitioning (#1200) and LAS point-cloud ingest (#1201). The remaining producer
+roadmap — mesh decimation, octree partitioning, distributed tiling, glTF model
+assets, CityGML/IFC ingestion, and native LAZ/COPC — is tracked in #842 and the
+deferred-work list above.
 
 ## Related
 
