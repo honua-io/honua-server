@@ -172,7 +172,7 @@ internal sealed class AnthropicWorkflowGenerationProvider : IWorkflowGenerationP
 
             var proposal = WorkflowGenerationProposalMapper.ToProposal(proposalModel, _providerId, model, usage);
             WorkflowGenerationLog.GenerationProduced(
-                _logger, proposal.Status.ToString(), _providerId, proposal.Graph?.Nodes.Count ?? 0);
+                _logger, proposal.Status, _providerId, proposal.Graph?.Nodes.Count ?? 0);
             activity?.SetTag("workflowgen.success", true);
             activity?.SetTag("workflowgen.status", proposal.Status.ToString());
             return proposal;

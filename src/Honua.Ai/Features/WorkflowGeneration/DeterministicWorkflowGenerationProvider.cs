@@ -62,7 +62,7 @@ internal sealed class DeterministicWorkflowGenerationProvider : IWorkflowGenerat
             usage: null);
 
         var nodeCount = proposal.Graph?.Nodes.Count ?? 0;
-        WorkflowGenerationLog.GenerationProduced(_logger, proposal.Status.ToString(), ProviderId, nodeCount);
+        WorkflowGenerationLog.GenerationProduced(_logger, proposal.Status, ProviderId, nodeCount);
         activity?.SetTag("workflowgen.success", true);
         activity?.SetTag("workflowgen.status", proposal.Status.ToString());
 
