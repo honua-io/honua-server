@@ -60,20 +60,66 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
         queryResponse!.RelatedRecordGroups.Should().NotBeNull();
         queryResponse.RelatedRecordGroups.Should().HaveCount(2); // Two object IDs requested
 
+        // Esri queryRelatedRecords contract (#1452): field/geometry metadata is at the
+        // response top level, and each group's relatedRecords is a flat array.
+        queryResponse.Fields.Should().NotBeNull();
+        queryResponse.Fields.Should().Contain(f => f.Name == "objectid");
+        queryResponse.ObjectIdFieldName.Should().Be("objectid");
+
         // Validate each related record group
         foreach (var group in queryResponse.RelatedRecordGroups)
         {
             group.ObjectId.Should().BeOneOf(1L, 2L);
             group.RelatedRecords.Should().NotBeNull();
-            group.RelatedRecords!.Features.Should().NotBeNull();
 
-            // Validate feature structure
-            foreach (var feature in group.RelatedRecords.Features)
+            // Validate flat-array feature structure
+            foreach (var feature in group.RelatedRecords!)
             {
                 feature.Attributes.Should().NotBeNull();
                 feature.Attributes.Should().ContainKey("objectid");
                 feature.Geometry.Should().NotBeNull();
             }
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryRelatedRecords)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
+    public async Task QueryRelatedRecords_RelatedRecordsIsFlatArrayPerEsriSpec()
+    {
+        // Regression for #1452: relatedRecords must be a FLAT array of records (the
+        // ArcGIS Maps SDK for JavaScript reads relatedRecords.length), not a nested
+        // FeatureSet object. Assert the raw JSON shape rather than the typed model.
+        var response = await GetWithRetryAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1&relationshipId={TestRelationshipId}");
+
+        response.Be200Ok();
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var jsonDoc = JsonDocument.Parse(content);
+        var root = jsonDoc.RootElement;
+
+        // Field/geometry metadata lives at the top level per the Esri spec.
+        root.GetProperty("fields").ValueKind.Should().Be(JsonValueKind.Array);
+        root.GetProperty("objectIdFieldName").GetString().Should().Be("objectid");
+
+        var groups = root.GetProperty("relatedRecordGroups");
+        groups.ValueKind.Should().Be(JsonValueKind.Array);
+        groups.GetArrayLength().Should().Be(1);
+
+        var group = groups[0];
+        group.GetProperty("objectId").GetInt64().Should().Be(1L);
+
+        var relatedRecords = group.GetProperty("relatedRecords");
+        relatedRecords.ValueKind.Should().Be(JsonValueKind.Array,
+            "the Esri queryRelatedRecords spec defines relatedRecords as a flat array");
+
+        foreach (var record in relatedRecords.EnumerateArray())
+        {
+            record.ValueKind.Should().Be(JsonValueKind.Object);
+            record.GetProperty("attributes").ValueKind.Should().Be(JsonValueKind.Object);
+            // A flat record must NOT itself be a FeatureSet (no nested features array).
+            record.TryGetProperty("features", out _).Should().BeFalse();
         }
     }
 
@@ -118,9 +164,9 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
         queryResponse!.RelatedRecordGroups.Should().HaveCount(1);
 
         var relatedRecords = queryResponse.RelatedRecordGroups[0].RelatedRecords;
-        if (relatedRecords?.Features.Length > 0)
+        if (relatedRecords?.Length > 0)
         {
-            relatedRecords.Features.Should().AllSatisfy(f =>
+            relatedRecords.Should().AllSatisfy(f =>
                 f.Attributes.Should().ContainKey("name"));
         }
     }
@@ -144,9 +190,9 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
         queryResponse.Should().NotBeNull();
         var relatedRecords = queryResponse!.RelatedRecordGroups[0].RelatedRecords;
 
-        if (relatedRecords?.Features.Length > 0)
+        if (relatedRecords?.Length > 0)
         {
-            relatedRecords.Features.Should().AllSatisfy(f =>
+            relatedRecords.Should().AllSatisfy(f =>
             {
                 f.Attributes.Keys.Should().Contain("objectid");
                 f.Attributes.Keys.Should().Contain("name");
@@ -185,7 +231,11 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
         queryResponse.Should().NotBeNull();
         var relatedRecords = queryResponse!.RelatedRecordGroups[0].RelatedRecords;
 
-        relatedRecords?.Features.Should().AllSatisfy(f => f.Geometry.Should().BeNull());
+        relatedRecords?.Should().AllSatisfy(f => f.Geometry.Should().BeNull());
+
+        // With returnGeometry=false the top-level geometry metadata is suppressed.
+        queryResponse.GeometryType.Should().BeNull();
+        queryResponse.SpatialReference.Should().BeNull();
     }
 
     [IntegrationTest]
@@ -208,7 +258,81 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
         var relatedRecords = queryResponse!.RelatedRecordGroups[0].RelatedRecords;
 
         relatedRecords.Should().NotBeNull();
-        relatedRecords!.Features.Length.Should().BeLessThanOrEqualTo(1);
+        relatedRecords!.Length.Should().BeLessThanOrEqualTo(1);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryRelatedRecords)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
+    public async Task QueryRelatedRecords_WithReturnCountOnly_ReturnsCountsWithoutRecords()
+    {
+        // #1396: returnCountOnly returns a per-source-object count instead of the
+        // related-record attributes/geometry.
+        var response = await GetWithRetryAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1,2&relationshipId={TestRelationshipId}&returnCountOnly=true");
+
+        response.Be200Ok();
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var jsonDoc = JsonDocument.Parse(content);
+        var root = jsonDoc.RootElement;
+
+        var groups = root.GetProperty("relatedRecordGroups");
+        groups.ValueKind.Should().Be(JsonValueKind.Array);
+        groups.GetArrayLength().Should().Be(2);
+
+        foreach (var group in groups.EnumerateArray())
+        {
+            group.TryGetProperty("count", out var count).Should().BeTrue(
+                "returnCountOnly groups carry a count");
+            count.GetInt64().Should().BeGreaterThanOrEqualTo(0);
+            group.TryGetProperty("relatedRecords", out _).Should().BeFalse(
+                "returnCountOnly suppresses the per-record payload");
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryRelatedRecords)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
+    public async Task QueryRelatedRecords_WithOrderByFields_ReturnsSortedRecords()
+    {
+        // #1396: orderByFields sorts the related records of each source object.
+        var response = await GetWithRetryAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1&relationshipId={TestRelationshipId}&orderByFields={Uri.EscapeDataString("name DESC")}");
+
+        response.Be200Ok();
+
+        var content = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize<QueryRelatedRecordsResponse>(
+            content, FeatureServerJsonContext.Default.QueryRelatedRecordsResponse);
+
+        queryResponse.Should().NotBeNull();
+        var relatedRecords = queryResponse!.RelatedRecordGroups[0].RelatedRecords;
+
+        if (relatedRecords is { Length: > 1 })
+        {
+            var names = relatedRecords
+                .Select(r => r.Attributes.TryGetValue("name", out var value) ? value?.ToString() : null)
+                .Where(name => name is not null)
+                .ToArray();
+
+            names.Should().BeInDescendingOrder();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryRelatedRecords)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
+    public async Task QueryRelatedRecords_WithUnknownOrderByField_Returns400()
+    {
+        // #1396: orderByFields is validated against the related layer schema.
+        var response = await GetWithRetryAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1&relationshipId={TestRelationshipId}&orderByFields=does_not_exist");
+
+        response.Be400BadRequest();
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("orderByFields");
     }
 
     [IntegrationTest]
@@ -559,9 +683,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
 
             if (group.RelatedRecords != null)
             {
-                group.RelatedRecords.Features.Should().NotBeNull();
-
-                foreach (var feature in group.RelatedRecords.Features)
+                foreach (var feature in group.RelatedRecords)
                 {
                     feature.Attributes.Should().NotBeNull();
                     feature.Attributes.Should().ContainKey("objectid");
@@ -593,12 +715,10 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
             content, FeatureServerJsonContext.Default.QueryRelatedRecordsResponse);
 
         queryResponse.Should().NotBeNull();
-        var relatedRecords = queryResponse!.RelatedRecordGroups[0].RelatedRecords;
-        if (relatedRecords != null)
-        {
-            relatedRecords.SpatialReference.Should().NotBeNull();
-            relatedRecords.SpatialReference!.Wkid.Should().Be(4326);
-        }
+
+        // outSR is reflected in the top-level spatialReference per the Esri spec.
+        queryResponse!.SpatialReference.Should().NotBeNull();
+        queryResponse.SpatialReference!.Wkid.Should().Be(4326);
     }
 
     [IntegrationTest]

@@ -258,6 +258,18 @@ internal sealed class ImageServerExportHandler
                 return false;
             }
 
+            if (!TryParseBandIds(request.BandIds, out var bands, out var bandError))
+            {
+                error = new ExportParameterParseError(bandError ?? "bandIds is invalid.");
+                return false;
+            }
+
+            if (!TryValidateNoData(request.NoData, request.NoDataInterpretation, out var noDataError))
+            {
+                error = new ExportParameterParseError(noDataError ?? "noData is invalid.");
+                return false;
+            }
+
             query = new RasterQuery
             {
                 OutputFormat = outputFormat,
@@ -266,6 +278,7 @@ internal sealed class ImageServerExportHandler
                 OutputWidth = requestedWidth,
                 OutputHeight = requestedHeight,
                 TiffCompression = tiffCompression,
+                Bands = bands,
             };
 
             if (!string.IsNullOrEmpty(request.Bbox))
@@ -345,6 +358,74 @@ internal sealed class ImageServerExportHandler
                     string.IsNullOrWhiteSpace(normalized) ? "png" : normalized,
                     out outputFormat);
         }
+    }
+
+    // bandIds selects and orders the output bands (Esri sends a CSV of 0-based band
+    // indices). Honua's raster store uses 1-based band indexing, so each index is
+    // shifted by one. The selection is forwarded to the shared export pipeline via
+    // RasterQuery.Bands; an empty or whitespace value means "all bands".
+    private static bool TryParseBandIds(string? bandIds, out int[]? bands, out string? error)
+    {
+        bands = null;
+        error = null;
+
+        if (string.IsNullOrWhiteSpace(bandIds))
+        {
+            return true;
+        }
+
+        var parts = bandIds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length == 0)
+        {
+            return true;
+        }
+
+        var parsed = new List<int>(parts.Length);
+        foreach (var part in parts)
+        {
+            if (!int.TryParse(part, NumberStyles.Integer, CultureInfo.InvariantCulture, out var zeroBased) ||
+                zeroBased < 0)
+            {
+                error = "bandIds must be a comma-separated list of non-negative band indices.";
+                return false;
+            }
+
+            parsed.Add(zeroBased + 1);
+        }
+
+        bands = parsed.ToArray();
+        return true;
+    }
+
+    // noData / noDataInterpretation are validated for shape so callers get a structured
+    // 400 rather than a silently ignored value. The NoData fill is applied by the shared
+    // raster export pipeline when the underlying driver supports it; the interpretation
+    // token is constrained to the Esri enumeration.
+    private static bool TryValidateNoData(string? noData, string? noDataInterpretation, out string? error)
+    {
+        error = null;
+
+        if (!string.IsNullOrWhiteSpace(noData))
+        {
+            foreach (var token in noData.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                if (!double.TryParse(token, NumberStyles.Float, CultureInfo.InvariantCulture, out _))
+                {
+                    error = "noData must be a number or a comma-separated list of per-band numbers.";
+                    return false;
+                }
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(noDataInterpretation) &&
+            !noDataInterpretation.Equals("esriNoDataMatchAny", StringComparison.OrdinalIgnoreCase) &&
+            !noDataInterpretation.Equals("esriNoDataMatchAll", StringComparison.OrdinalIgnoreCase))
+        {
+            error = "noDataInterpretation must be esriNoDataMatchAny or esriNoDataMatchAll.";
+            return false;
+        }
+
+        return true;
     }
 
     private static bool TryResolveTiffCompression(

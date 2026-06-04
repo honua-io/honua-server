@@ -2810,7 +2810,7 @@
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/Features/Admin/SceneGenerationEndpoints.cs",
-            "src/Honua.Server/Features/Infrastructure/Scene/SceneTilesPublishExecutor.cs",
+            "src/Honua.Scene/Publishing/SceneTilesPublishExecutor.cs",
             "src/Honua.Server/Features/Infrastructure/Hosting/FeatureRegistrationExtensions.cs",
             "src/Honua.Server/EndpointRegistry.cs",
             "tests/dotnet/Honua.Server.Tests/Features/Admin/SceneGenerationEndpointsTests.cs"
@@ -3345,6 +3345,141 @@
           "ownerRepo": "honua-server",
           "status": "implemented",
           "linkedTicket": "#801",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
+      "surfaceId": "grpc-scene-service",
+      "displayName": "gRPC SceneService",
+      "surfaceKind": "operation-surface",
+      "protocol": "gRPC",
+      "canonicalIdentifier": "geospatial.v1.SceneService/*",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [
+        "Grpc::geospatial.v1.SceneService/ListScenes",
+        "Grpc::geospatial.v1.SceneService/GetScene"
+      ],
+      "proofs": [
+        {
+          "proofClass": "operation-coverage",
+          "proofMechanism": "OperationRegistry coverage and deployed-method drift checks",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/OperationRegistry.cs",
+            "tests/dotnet/Honua.Architecture.Tests/OperationCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Grpc/SceneGrpcIntegrationTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "contract-governance",
+          "proofMechanism": "Proto wire compatibility gate against the published schema",
+          "executionLane": "repo:honua-io/geospatial-grpc",
+          "evidenceLocations": [
+            "https://github.com/honua-io/geospatial-grpc",
+            "https://github.com/honua-io/geospatial-grpc/blob/main/geospatial/v1/scene_service.proto"
+          ],
+          "ownerRepo": "geospatial-grpc",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
+      "surfaceId": "grpc-tile-service",
+      "displayName": "gRPC TileService",
+      "surfaceKind": "operation-surface",
+      "protocol": "gRPC",
+      "canonicalIdentifier": "geospatial.v1.TileService/*",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [
+        "Grpc::geospatial.v1.TileService/GetTile",
+        "Grpc::geospatial.v1.TileService/StreamTiles"
+      ],
+      "proofs": [
+        {
+          "proofClass": "operation-coverage",
+          "proofMechanism": "OperationRegistry coverage and deployed-method drift checks",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/OperationRegistry.cs",
+            "tests/dotnet/Honua.Architecture.Tests/OperationCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Grpc/SceneGrpcIntegrationTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "contract-governance",
+          "proofMechanism": "Proto wire compatibility gate against the published schema",
+          "executionLane": "repo:honua-io/geospatial-grpc",
+          "evidenceLocations": [
+            "https://github.com/honua-io/geospatial-grpc",
+            "https://github.com/honua-io/geospatial-grpc/blob/main/geospatial/v1/tile_service.proto"
+          ],
+          "ownerRepo": "geospatial-grpc",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
+      "surfaceId": "grpc-elevation-service",
+      "displayName": "gRPC ElevationService",
+      "surfaceKind": "operation-surface",
+      "protocol": "gRPC",
+      "canonicalIdentifier": "geospatial.v1.ElevationService/*",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [
+        "Grpc::geospatial.v1.ElevationService/GetElevation",
+        "Grpc::geospatial.v1.ElevationService/GetElevationProfile"
+      ],
+      "proofs": [
+        {
+          "proofClass": "operation-coverage",
+          "proofMechanism": "OperationRegistry coverage and deployed-method drift checks",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/OperationRegistry.cs",
+            "tests/dotnet/Honua.Architecture.Tests/OperationCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Grpc/SceneGrpcIntegrationTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "contract-governance",
+          "proofMechanism": "Proto wire compatibility gate against the published schema",
+          "executionLane": "repo:honua-io/geospatial-grpc",
+          "evidenceLocations": [
+            "https://github.com/honua-io/geospatial-grpc",
+            "https://github.com/honua-io/geospatial-grpc/blob/main/geospatial/v1/elevation_service.proto"
+          ],
+          "ownerRepo": "geospatial-grpc",
+          "status": "implemented",
+          "linkedTicket": null,
           "versionCaptureRule": null
         }
       ]

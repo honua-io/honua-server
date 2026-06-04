@@ -26,6 +26,23 @@ public sealed class ImageServerServiceInfo
     [JsonPropertyName("extent")]
     public required ImageServerExtent Extent { get; init; }
 
+    /// <summary>
+    /// Full geographic extent of the image service. The native .NET ArcGIS Runtime
+    /// <c>ImageServiceRaster.LoadAsync</c> reads <c>fullExtent</c> (not <c>extent</c>)
+    /// and fails configuration parsing when it is absent (#1456).
+    /// </summary>
+    [JsonPropertyName("fullExtent")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ImageServerExtent? FullExtent { get; init; }
+
+    /// <summary>
+    /// Initial display extent of the image service. Esri clients read this when
+    /// first loading the layer; mirror <see cref="FullExtent"/> when unspecified (#1456).
+    /// </summary>
+    [JsonPropertyName("initialExtent")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ImageServerExtent? InitialExtent { get; init; }
+
     [JsonPropertyName("spatialReference")]
     public required SpatialReference SpatialReference { get; init; }
 
@@ -119,6 +136,16 @@ public sealed class ImageServerServiceInfo
 
     [JsonPropertyName("tileInfo")]
     public TileInfo? TileInfo { get; init; }
+
+    /// <summary>
+    /// Pixel-block storage characteristics. The native .NET ArcGIS Runtime
+    /// <c>ImageServiceRaster.LoadAsync</c> requires <c>storageInfo</c> (with
+    /// <c>blockWidth</c>/<c>blockHeight</c>) to read configuration data; without it
+    /// the load fails with "Failed to read configuration data" (#1456).
+    /// </summary>
+    [JsonPropertyName("storageInfo")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ImageServerStorageInfo? StorageInfo { get; init; }
 
     [JsonPropertyName("cacheType")]
     public string? CacheType { get; init; }
@@ -458,6 +485,38 @@ public sealed class ImageServerExtent
 }
 
 /// <summary>
+/// Pixel-block storage information for an image service. Describes the tile/block
+/// dimensions the service uses when streaming pixels. Esri clients (including the
+/// native .NET <c>ImageServiceRaster</c>) read these to plan chunked pixel reads.
+/// </summary>
+public sealed class ImageServerStorageInfo
+{
+    /// <summary>
+    /// Width, in pixels, of a stored pixel block.
+    /// </summary>
+    [JsonPropertyName("blockWidth")]
+    public required int BlockWidth { get; init; }
+
+    /// <summary>
+    /// Height, in pixels, of a stored pixel block.
+    /// </summary>
+    [JsonPropertyName("blockHeight")]
+    public required int BlockHeight { get; init; }
+
+    /// <summary>
+    /// Resampling type used when building pyramids.
+    /// </summary>
+    [JsonPropertyName("pyramidResamplingType")]
+    public string PyramidResamplingType { get; init; } = "Bilinear";
+
+    /// <summary>
+    /// Pyramid scaling factor between successive resolution levels.
+    /// </summary>
+    [JsonPropertyName("pyramidScalingFactor")]
+    public int PyramidScalingFactor { get; init; } = 2;
+}
+
+/// <summary>
 /// Field definition for image services.
 /// </summary>
 public sealed class Field
@@ -661,8 +720,12 @@ public sealed class ExportImageRequest
     [StringLength(512, ErrorMessage = "BboxSr is too long")]
     public string? BboxSr { get; init; }
 
-    [RegularExpression(@"^(png|jpg|jpeg|tiff|tif)$",
-        ErrorMessage = "Format must be png, jpg, jpeg, tiff, or tif")]
+    // Accepts the Esri ImageServer format tokens the ArcGIS SDKs send. png8/png24/png32
+    // and jpgpng are normalised to a concrete encoding by the handler; bmp and gif are
+    // accepted for shape but rejected with a clear 400 because the shared raster export
+    // pipeline only emits png/jpeg/tiff containers.
+    [RegularExpression(@"(?i)^(png|png8|png24|png32|jpgpng|jpg|jpeg|tiff|tif|bmp|gif)$",
+        ErrorMessage = "Format must be one of png, png8, png24, png32, jpgpng, jpg, jpeg, tiff, tif, bmp, or gif")]
     public string? Format { get; init; } = "png";
 
     [RegularExpression(@"(?i)^(C128|C64|F32|F64|S16|S32|S8|U1|U16|U2|U32|U4|U8|UNKNOWN)$",

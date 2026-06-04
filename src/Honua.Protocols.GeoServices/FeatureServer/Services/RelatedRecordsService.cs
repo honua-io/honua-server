@@ -67,8 +67,19 @@ internal interface IRelatedRecordsService
     /// <param name="maxAllowableOffset">Output geometry simplification tolerance override</param>
     /// <param name="outFields">Fields to include in response</param>
     /// <param name="relatedResource">Canonical metadata for the related layer used to populate field schema</param>
-    /// <returns>Grouped related record results</returns>
-    RelatedRecordGroup[] GroupRelatedRecords(
+    /// <param name="orderBy">
+    /// Optional in-memory ordering applied to each origin object's related records
+    /// (Esri <c>orderByFields</c>); null preserves the storage ordering.
+    /// </param>
+    /// <param name="returnCountOnly">
+    /// When <c>true</c>, each group carries only the related-record count (Esri
+    /// <c>returnCountOnly</c>) and the per-record attributes/geometry are omitted.
+    /// </param>
+    /// <returns>
+    /// Grouped related record results plus the shared field/geometry metadata that
+    /// the Esri queryRelatedRecords contract emits at the response top level.
+    /// </returns>
+    GroupedRelatedRecords GroupRelatedRecords(
         QueryResult<Feature> result,
         long[] objectIds,
         MetadataV2Relationship relationship,
@@ -80,8 +91,31 @@ internal interface IRelatedRecordsService
         int? geometryPrecision,
         double? maxAllowableOffset,
         ImmutableArray<string>? outFields,
-        MetadataV2Resource relatedResource);
+        MetadataV2Resource relatedResource,
+        ImmutableArray<OrderByClause>? orderBy = null,
+        bool returnCountOnly = false);
 }
+
+/// <summary>
+/// Grouped related records together with the shared metadata (field schema,
+/// object-id field name, spatial reference) that the Esri queryRelatedRecords
+/// response carries once at the top level rather than per group.
+/// </summary>
+/// <param name="Groups">Related record groups, one per requested object id.</param>
+/// <param name="Fields">Field definitions for the returned attributes.</param>
+/// <param name="ObjectIdFieldName">Object id field name for the related records.</param>
+/// <param name="GeometryType">Esri geometry-type token for related records that include geometry; null for tables or geometry-suppressed responses.</param>
+/// <param name="SpatialReference">Spatial reference for returned geometries; null when no geometry is emitted.</param>
+/// <param name="HasZ">Whether any returned geometry carries Z values.</param>
+/// <param name="HasM">Whether any returned geometry carries M values.</param>
+internal readonly record struct GroupedRelatedRecords(
+    RelatedRecordGroup[] Groups,
+    GeoServicesFieldInfo[] Fields,
+    string ObjectIdFieldName,
+    string? GeometryType,
+    GeoServicesSpatialReference? SpatialReference,
+    bool HasZ,
+    bool HasM);
 
 /// <summary>
 /// Implementation of related records processing for FeatureServer operations.
@@ -107,6 +141,9 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
         int relatedStorageLayerId,
         SqlFragment? sqlFilter)
     {
+        // returnCountOnly reports the total number of matching related records per
+        // source object, so pagination (resultRecordCount/resultOffset) must not be
+        // applied — otherwise the count would reflect a single page, not the total.
         var query = RelatedQuery.ForObjects(
             objectIds,
             relatedStorageLayerId,
@@ -115,8 +152,8 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
         {
             Where = queryParams.Where,
             SqlFilter = sqlFilter,
-            Limit = queryParams.ResultRecordCount,
-            Offset = queryParams.ResultOffset
+            Limit = queryParams.ReturnCountOnly ? null : queryParams.ResultRecordCount,
+            Offset = queryParams.ReturnCountOnly ? null : queryParams.ResultOffset
         };
 
         // Parse outFields if specified
@@ -168,7 +205,7 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
     /// <summary>
     /// Groups related records by their origin object IDs for API response.
     /// </summary>
-    public RelatedRecordGroup[] GroupRelatedRecords(
+    public GroupedRelatedRecords GroupRelatedRecords(
         QueryResult<Feature> result,
         long[] objectIds,
         MetadataV2Relationship relationship,
@@ -180,7 +217,9 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
         int? geometryPrecision,
         double? maxAllowableOffset,
         ImmutableArray<string>? outFields,
-        MetadataV2Resource relatedResource)
+        MetadataV2Resource relatedResource,
+        ImmutableArray<OrderByClause>? orderBy = null,
+        bool returnCountOnly = false)
     {
         ArgumentNullException.ThrowIfNull(relatedResource);
 
@@ -190,13 +229,28 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
             outFieldSet = new HashSet<string>(outFields.Value, StringComparer.OrdinalIgnoreCase);
         }
 
-        // Esri spec: each relatedRecordGroup's relatedRecords block carries the field
-        // definitions for the returned attributes. Build them from the related layer
-        // schema using the same field projection the main query response uses.
+        // Esri spec: the field definitions for the returned attributes are carried
+        // once at the response top level. Build them from the related layer schema
+        // using the same field projection the main query response uses (#1431).
         var relatedFields = QueryFormatter.BuildQueryFields(
             relatedResource,
             outFields.HasValue && outFields.Value.Length > 0 ? outFields.Value.ToArray() : null,
             objectIdFieldName);
+
+        // Geometry metadata (geometryType / spatialReference / hasZ / hasM) is emitted
+        // once at the response top level per the Esri queryRelatedRecords contract, and
+        // only when geometry is actually returned (layers, returnGeometry=true).
+        var canonicalGeometryType = relatedResource.ReadGeometryType();
+        var resourceHasGeometry = canonicalGeometryType != MetadataV2GeometryType.None
+            || relatedResource.FindPrimaryGeometryField() is not null;
+        var emitGeometryMetadata = returnGeometry && resourceHasGeometry;
+
+        var srid = outputSrid.HasValue && outputSrid.Value > 0
+            ? outputSrid.Value
+            : relatedResource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
+        var spatialReference = emitGeometryMetadata
+            ? new GeoServicesSpatialReference { Wkid = srid, LatestWkid = srid }
+            : null;
 
         var effectiveGeometryLimits = GeometryOutputProcessor.CreateEffectiveLimits(
             _geometryLimits,
@@ -221,38 +275,100 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
             }
         }
 
-        // Create a related record group for each requested object ID
-        return [.. objectIds.Select(objectId =>
+        // Apply the requested in-memory ordering to each origin object's related
+        // records (Esri orderByFields). The storage query returns rows ordered by
+        // objectid; orderByFields re-sorts each bucket so the emitted records honor
+        // the caller's requested ordering.
+        if (orderBy is { Length: > 0 } orderByClauses)
+        {
+            foreach (var bucket in featuresByOriginId.Values)
+            {
+                bucket.Sort((left, right) => CompareByOrderBy(left, right, orderByClauses));
+            }
+        }
+
+        // Create a related record group for each requested object ID. Per the Esri
+        // queryRelatedRecords contract, relatedRecords is a FLAT array of records
+        // (each {attributes, geometry}); the JS SDK reads relatedRecords.length.
+        // With returnCountOnly the group carries only the related-record count.
+        var groups = objectIds.Select(objectId =>
         {
             bool hasRelatedFeatures = featuresByOriginId.TryGetValue(objectId, out List<Feature>? relatedFeatures);
-            var spatialReference = outputSrid.HasValue && outputSrid.Value > 0
-                ? new GeoServicesSpatialReference { Wkid = outputSrid.Value, LatestWkid = outputSrid.Value }
-                : null;
+            var relatedCount = hasRelatedFeatures ? relatedFeatures!.Count : 0;
+
+            if (returnCountOnly)
+            {
+                return new RelatedRecordGroup
+                {
+                    ObjectId = objectId,
+                    Count = relatedCount
+                };
+            }
 
             return new RelatedRecordGroup
             {
                 ObjectId = objectId,
-                RelatedRecords = hasRelatedFeatures && relatedFeatures!.Count > 0
-                    ? new RelatedRecords
-                    {
-                        ObjectIdFieldName = objectIdFieldName,
-                        Fields = relatedFields,
-                        SpatialReference = spatialReference,
-                        Features =
-                        [
-                            ..relatedFeatures!.Select(f => ConvertToGeoServicesFeature(
-                                f,
-                                returnGeometry,
-                                outputSrid,
-                                returnZ,
-                                returnM,
-                                outFieldSet,
-                                effectiveGeometryLimits))
-                        ]
-                    }
+                RelatedRecords = hasRelatedFeatures && relatedCount > 0
+                    ?
+                    [
+                        ..relatedFeatures!.Select(f => ConvertToGeoServicesFeature(
+                            f,
+                            returnGeometry,
+                            outputSrid,
+                            returnZ,
+                            returnM,
+                            outFieldSet,
+                            effectiveGeometryLimits))
+                    ]
                     : null
             };
-        })];
+        }).ToArray();
+
+        // Count-only responses carry no field/geometry schema or per-record payload.
+        if (returnCountOnly)
+        {
+            return new GroupedRelatedRecords(
+                groups,
+                Fields: [],
+                objectIdFieldName,
+                GeometryType: null,
+                SpatialReference: null,
+                HasZ: false,
+                HasM: false);
+        }
+
+        var hasZ = false;
+        var hasM = false;
+        if (emitGeometryMetadata)
+        {
+            foreach (var group in groups)
+            {
+                if (group.RelatedRecords is null)
+                {
+                    continue;
+                }
+
+                foreach (var record in group.RelatedRecords)
+                {
+                    if (record.Geometry is null)
+                    {
+                        continue;
+                    }
+
+                    hasZ |= record.Geometry.HasZ;
+                    hasM |= record.Geometry.HasM;
+                }
+            }
+        }
+
+        return new GroupedRelatedRecords(
+            groups,
+            relatedFields,
+            objectIdFieldName,
+            emitGeometryMetadata ? QueryFormatter.MapGeometryType(canonicalGeometryType) : null,
+            spatialReference,
+            hasZ,
+            hasM);
     }
 
     /// <summary>
@@ -289,5 +405,65 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
                     returnM)
                 : null
         };
+    }
+
+    /// <summary>
+    /// Compares two related features against the requested orderByFields clauses.
+    /// Nulls sort last for ascending order (and first for descending), matching the
+    /// SQL NULLS-LAST convention the storage query uses elsewhere.
+    /// </summary>
+    private static int CompareByOrderBy(
+        Feature left,
+        Feature right,
+        ImmutableArray<OrderByClause> orderBy)
+    {
+        foreach (var clause in orderBy)
+        {
+            left.Attributes.TryGetValue(clause.Field, out var leftValue);
+            right.Attributes.TryGetValue(clause.Field, out var rightValue);
+
+            var comparison = CompareValues(leftValue, rightValue);
+            if (comparison != 0)
+            {
+                return clause.Ascending ? comparison : -comparison;
+            }
+        }
+
+        return 0;
+    }
+
+    private static int CompareValues(object? left, object? right)
+    {
+        if (left is null && right is null)
+        {
+            return 0;
+        }
+
+        // Nulls sort last under ascending order (CompareByOrderBy negates for DESC).
+        if (left is null)
+        {
+            return 1;
+        }
+
+        if (right is null)
+        {
+            return -1;
+        }
+
+        if (left is IComparable comparable && left.GetType() == right.GetType())
+        {
+            return comparable.CompareTo(right);
+        }
+
+        if (FeatureServerValueParser.TryConvertToDouble(left, out var leftNumber) &&
+            FeatureServerValueParser.TryConvertToDouble(right, out var rightNumber))
+        {
+            return leftNumber.CompareTo(rightNumber);
+        }
+
+        return string.Compare(
+            left.ToString(),
+            right.ToString(),
+            StringComparison.OrdinalIgnoreCase);
     }
 }

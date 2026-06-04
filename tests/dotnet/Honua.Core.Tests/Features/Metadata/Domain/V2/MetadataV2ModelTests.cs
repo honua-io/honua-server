@@ -611,6 +611,74 @@ public sealed class MetadataV2ModelTests
             "resource 'resource.buildings' symbology3D.rules.attribute 'missing_height' is not declared in schemaFields.");
     }
 
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void MetadataV2Field_Deserialize_AbsentEditable_DefaultsToTrue()
+    {
+        // Snapshots produced without an explicit "editable" key must read as editable so
+        // edit-capable services do not reject updates to ordinary fields. Source-generated
+        // deserialization of an all-init record materializes absent value-type members as
+        // their CLR default, so the default-true contract must survive a missing key.
+        const string json = """{"name":"name","type":"string","nullable":true}""";
+
+        var field = JsonSerializer.Deserialize(json, MetadataV2JsonContext.Default.MetadataV2Field);
+
+        field.Should().NotBeNull();
+        field!.EditableValue.Should().BeNull();
+        field.Editable.Should().BeTrue();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void MetadataV2Field_Deserialize_ExplicitEditableFalse_IsHonoured()
+    {
+        const string json = """{"name":"objectid","type":"integer","editable":false}""";
+
+        var field = JsonSerializer.Deserialize(json, MetadataV2JsonContext.Default.MetadataV2Field);
+
+        field.Should().NotBeNull();
+        field!.EditableValue.Should().BeFalse();
+        field.Editable.Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void MetadataV2Field_Editable_RoundTripsThroughInitializer()
+    {
+        var editable = new MetadataV2Field { Name = "name", Editable = true };
+        var nonEditable = new MetadataV2Field { Name = "objectid", Editable = false };
+
+        editable.Editable.Should().BeTrue();
+        editable.EditableValue.Should().BeTrue();
+        nonEditable.Editable.Should().BeFalse();
+        nonEditable.EditableValue.Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void IsPreferredPublicationType_MatchesCanonicalSurfacePerProtocol()
+    {
+        ServiceProtocols.IsPreferredPublicationType(
+            ServiceProtocols.OgcFeatures, MetadataV2PublicationType.OgcCollection).Should().BeTrue();
+        ServiceProtocols.IsPreferredPublicationType(
+            ServiceProtocols.OgcFeatures, MetadataV2PublicationType.EsriImageLayer).Should().BeFalse();
+
+        ServiceProtocols.IsPreferredPublicationType(
+            ServiceProtocols.Stac, MetadataV2PublicationType.StacCollection).Should().BeTrue();
+        ServiceProtocols.IsPreferredPublicationType(
+            ServiceProtocols.FeatureServer, MetadataV2PublicationType.EsriFeatureLayer).Should().BeTrue();
+        ServiceProtocols.IsPreferredPublicationType(
+            ServiceProtocols.ImageServer, MetadataV2PublicationType.EsriImageLayer).Should().BeTrue();
+        ServiceProtocols.IsPreferredPublicationType(
+            ServiceProtocols.Wfs20, MetadataV2PublicationType.WfsFeatureType).Should().BeTrue();
+
+        // Unknown / unspecified protocols leave callers on their generic match order.
+        ServiceProtocols.IsPreferredPublicationType(
+            null, MetadataV2PublicationType.OgcCollection).Should().BeFalse();
+        ServiceProtocols.IsPreferredPublicationType(
+            "Grpc", MetadataV2PublicationType.OgcCollection).Should().BeFalse();
+    }
+
     private static MetadataV2Graph CreateValidGraph()
     {
         return new MetadataV2Graph

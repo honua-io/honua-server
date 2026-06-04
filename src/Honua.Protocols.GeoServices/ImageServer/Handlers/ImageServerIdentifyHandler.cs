@@ -23,7 +23,9 @@ namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 internal sealed class ImageServerIdentifyHandler
 {
     private const int MaxGeometryInputLength = 1000;
-    private const string SupportedGeometryType = "esriGeometryPoint";
+    private const string PointGeometryType = "esriGeometryPoint";
+    private const string EnvelopeGeometryType = "esriGeometryEnvelope";
+    private const string PolygonGeometryType = "esriGeometryPolygon";
 
     private readonly IMetadataV2GraphProvider _graphProvider;
     private readonly IRasterStore _rasterStore;
@@ -65,15 +67,17 @@ internal sealed class ImageServerIdentifyHandler
             }
 
             if (!string.IsNullOrWhiteSpace(request.GeometryType) &&
-                !string.Equals(request.GeometryType, SupportedGeometryType, StringComparison.OrdinalIgnoreCase))
+                !IsSupportedGeometryType(request.GeometryType))
             {
                 ImageServerLog.InvalidIdentifyParameters(_logger, layerId, "Unsupported geometry type");
                 return StandardErrorHelpers.CreateBadRequest(
                     context,
-                    $"Unsupported geometryType '{request.GeometryType}'. Only {SupportedGeometryType} is supported.");
+                    $"Unsupported geometryType '{request.GeometryType}'. Supported: {PointGeometryType}, {EnvelopeGeometryType}, {PolygonGeometryType}.");
             }
 
-            // Parse geometry coordinates
+            // Parse geometry coordinates. Point geometries identify at the point; envelope and
+            // polygon geometries identify at their centroid (the representative pixel for the
+            // AOI), matching how ArcGIS resolves a single identify value for an area geometry.
             var (x, y, srid) = ParseGeometry(request);
             if (!x.HasValue || !y.HasValue)
             {
@@ -147,6 +151,11 @@ internal sealed class ImageServerIdentifyHandler
                     srid,
                     cancellationToken);
 
+            // returnGeometry controls whether catalog item footprints are emitted. ArcGIS
+            // returns the footprint envelope on each participating catalog item when
+            // returnGeometry=true (the default) and omits it when false.
+            var includeFootprint = request.ReturnGeometry != false;
+
             // Build identify response
             var response = new IdentifyResponse
             {
@@ -158,9 +167,14 @@ internal sealed class ImageServerIdentifyHandler
                     X = pixelResult.X,
                     Y = pixelResult.Y
                 },
-                Properties = CreateProperties(pixelResult),
+                Properties = CreateProperties(pixelResult, request.PixelSize),
                 CatalogItems = request.ReturnCatalogItems == true
-                    ? selectedRasters.Select(r => new CatalogItem { Id = r.Id, Name = r.Name }).ToArray()
+                    ? selectedRasters.Select(r => new CatalogItem
+                    {
+                        Id = r.Id,
+                        Name = r.Name,
+                        Footprint = includeFootprint ? BuildFootprint(r) : null,
+                    }).ToArray()
                     : null
             };
 
@@ -181,6 +195,11 @@ internal sealed class ImageServerIdentifyHandler
         }
     }
 
+    private static bool IsSupportedGeometryType(string geometryType)
+        => geometryType.Equals(PointGeometryType, StringComparison.OrdinalIgnoreCase) ||
+           geometryType.Equals(EnvelopeGeometryType, StringComparison.OrdinalIgnoreCase) ||
+           geometryType.Equals(PolygonGeometryType, StringComparison.OrdinalIgnoreCase);
+
     private static (double? x, double? y, int? srid) ParseGeometry(IdentifyRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Geometry))
@@ -199,8 +218,8 @@ internal sealed class ImageServerIdentifyHandler
             return (null, null, null);
         }
 
-        // Handle point geometry string (e.g., "x,y" or JSON format)
-        if (request.Geometry.Contains(','))
+        // Handle point geometry string (e.g., "x,y")
+        if (!request.Geometry.TrimStart().StartsWith('{') && request.Geometry.Contains(','))
         {
             var coords = request.Geometry.Split(',', StringSplitOptions.TrimEntries);
             if (coords.Length == 2 &&
@@ -211,25 +230,22 @@ internal sealed class ImageServerIdentifyHandler
             }
         }
 
-        // Handle JSON geometry format
-        if (request.Geometry.StartsWith('{'))
+        // Handle JSON geometry: point ({x,y}), envelope, or polygon (rings). For area
+        // geometries the centroid of the bounding envelope is the representative identify
+        // location. ImageServerGeometryHelpers centralises the Esri-JSON envelope math so the
+        // geometry parsing stays consistent with the compute/getSamples operations.
+        if (request.Geometry.TrimStart().StartsWith('{'))
         {
-            try
-            {
-                using var geometryDoc = JsonDocument.Parse(request.Geometry);
-                if (geometryDoc.RootElement.TryGetProperty("x", out var xElement) &&
-                    geometryDoc.RootElement.TryGetProperty("y", out var yElement))
-                {
-                    if (xElement.TryGetDouble(out var x) && yElement.TryGetDouble(out var y))
-                    {
-                        return (x, y, srid);
-                    }
-                }
-            }
-            catch (JsonException)
+            if (!ImageServerGeometryHelpers.TryGetEnvelope(request.Geometry, out var envelope, out _))
             {
                 return (null, null, null);
             }
+
+            var centerX = (envelope.XMin + envelope.XMax) / 2.0;
+            var centerY = (envelope.YMin + envelope.YMax) / 2.0;
+
+            // Explicit sr wins; otherwise honour the geometry's embedded spatialReference.
+            return (centerX, centerY, srid ?? envelope.Srid);
         }
 
         return (null, null, null);
@@ -251,7 +267,9 @@ internal sealed class ImageServerIdentifyHandler
         return string.Join("; ", values);
     }
 
-    private static Dictionary<string, object?> CreateProperties(Core.Features.Raster.Domain.PixelValueResult pixelResult)
+    private static Dictionary<string, object?> CreateProperties(
+        Core.Features.Raster.Domain.PixelValueResult pixelResult,
+        int? pixelSize)
     {
         var properties = new Dictionary<string, object?>
         {
@@ -261,6 +279,15 @@ internal sealed class ImageServerIdentifyHandler
             ["BandCount"] = pixelResult.BandValues.Count
         };
 
+        // pixelSize is the requested sampling resolution. The shared raster identify
+        // path samples at the source/mosaic native resolution today, so the requested
+        // value is echoed back for transparency rather than silently dropped; resolution-
+        // specific pyramid selection is deferred follow-up scope.
+        if (pixelSize.HasValue)
+        {
+            properties["PixelSize"] = pixelSize.Value;
+        }
+
         // Add individual band values
         foreach (var band in pixelResult.BandValues.OrderBy(kvp => kvp.Key))
         {
@@ -268,5 +295,27 @@ internal sealed class ImageServerIdentifyHandler
         }
 
         return properties;
+    }
+
+    /// <summary>
+    /// Builds an Esri envelope object for a raster footprint from its extent, used to
+    /// populate <see cref="CatalogItem.Footprint"/> when <c>returnGeometry</c> is true.
+    /// </summary>
+    private static ImageServerExtent? BuildFootprint(Core.Features.Raster.Domain.RasterInfo raster)
+    {
+        if (raster.Extent is not { } extent)
+        {
+            return null;
+        }
+
+        var srid = extent.Srid ?? 4326;
+        return new ImageServerExtent
+        {
+            XMin = extent.XMin,
+            YMin = extent.YMin,
+            XMax = extent.XMax,
+            YMax = extent.YMax,
+            SpatialReference = new SpatialReference { Wkid = srid, LatestWkid = srid },
+        };
     }
 }

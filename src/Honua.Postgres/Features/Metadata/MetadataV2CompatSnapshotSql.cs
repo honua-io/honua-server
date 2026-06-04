@@ -338,9 +338,10 @@ internal static class MetadataV2CompatSnapshotSql
                         -- production publish path does (PostgreSqlLayerPublishingService.MetadataV2Graph
                         -- sets MetadataV2ServiceProtocols.All on a single service). Without Wcs here
                         -- the WCS GetCapabilities preflight 404s with OperationNotSupported even
-                        -- though the raster-backed layers exist. (honua-server#1412.)
-                        'protocols', to_jsonb(ARRAY['FeatureServer', 'MapServer', 'ImageServer', 'OData', 'Grpc', 'OgcFeatures', 'Wfs20', 'Wms', 'Wmts', 'Wcs', 'OGC-API-Maps', 'OGC-API-Tiles', 'OGC-API-Coverages']::text[]),
-                        'enabledProtocols', to_jsonb(ARRAY['FeatureServer', 'MapServer', 'ImageServer', 'OData', 'Grpc', 'OgcFeatures', 'Wfs20', 'Wms', 'Wmts', 'Wcs', 'OGC-API-Maps', 'OGC-API-Tiles', 'OGC-API-Coverages']::text[]),
+                        -- though the raster-backed layers exist; without GPServer the GeoServices
+                        -- GPServer service/task routes 404 with "GPServer is not enabled". (honua-server#1412.)
+                        'protocols', to_jsonb(ARRAY['FeatureServer', 'MapServer', 'ImageServer', 'GPServer', 'OData', 'Grpc', 'OgcFeatures', 'Wfs20', 'Wms', 'Wmts', 'Wcs', 'OGC-API-Maps', 'OGC-API-Tiles', 'OGC-API-Coverages']::text[]),
+                        'enabledProtocols', to_jsonb(ARRAY['FeatureServer', 'MapServer', 'ImageServer', 'GPServer', 'OData', 'Grpc', 'OgcFeatures', 'Wfs20', 'Wms', 'Wmts', 'Wcs', 'OGC-API-Maps', 'OGC-API-Tiles', 'OGC-API-Coverages']::text[]),
                         'options', '{}'::jsonb,
                         'accessPolicy', service_access_policy,
                         'status', (SELECT value FROM status_doc),

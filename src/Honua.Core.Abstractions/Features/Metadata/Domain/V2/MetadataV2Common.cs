@@ -404,11 +404,27 @@ public sealed record MetadataV2Field
     public string? Alias { get; init; }
 
     /// <summary>
-    /// True when the field is editable through edit-capable services.
-    /// Defaults to true to preserve existing behaviour.
+    /// Serialized editable flag. Nullable so an absent value round-trips as "unspecified"
+    /// rather than <see langword="false"/>: System.Text.Json source-generated deserialization
+    /// of an all-<c>init</c> record materializes absent value-type members as their CLR
+    /// default (<see langword="false"/>) and does not run a <c>= true</c> property
+    /// initializer, so a plain <c>bool</c> property would silently deserialize to
+    /// non-editable. Consumers read <see cref="Editable"/>, which applies the true default.
     /// </summary>
     [JsonPropertyName("editable")]
-    public bool Editable { get; init; } = true;
+    public bool? EditableValue { get; init; }
+
+    /// <summary>
+    /// True when the field is editable through edit-capable services.
+    /// Defaults to true (when <see cref="EditableValue"/> is unspecified) to preserve
+    /// existing behaviour.
+    /// </summary>
+    [JsonIgnore]
+    public bool Editable
+    {
+        get => EditableValue ?? true;
+        init => EditableValue = value;
+    }
 
     /// <summary>
     /// Maximum length for VARCHAR-typed fields. Null for non-string or

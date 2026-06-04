@@ -240,6 +240,42 @@ public class ImageServerMetadataHandlerTests
 
     [UnitTest]
     [Operation(Operations.GetServiceInfo)]
+    public async Task GetServiceInfoAsync_PopulatesFullExtentInitialExtentAndStorageInfo()
+    {
+        // Regression for #1456: the native .NET ImageServiceRaster.LoadAsync reads
+        // fullExtent/initialExtent and storageInfo (blockWidth/blockHeight) and fails
+        // "Failed to read configuration data" when they are null. The service is a
+        // dynamic (non-tiled) image service, so it must not advertise a tile cache
+        // (singleFusedMapCache=false, tileInfo=null) and never trigger a conf.json fetch.
+        SetupSuccessfulMetadata();
+
+        var context = CreateImageServerContext();
+        var result = await _handler.GetServiceInfoAsync(context, 1);
+
+        var jsonResult = result as JsonHttpResult<ImageServerServiceInfo>;
+        jsonResult.Should().NotBeNull();
+        var info = jsonResult!.Value!;
+
+        info.FullExtent.Should().NotBeNull();
+        info.FullExtent!.XMin.Should().Be(-180);
+        info.FullExtent.YMax.Should().Be(90);
+        info.FullExtent.SpatialReference.Wkid.Should().Be(4326);
+
+        info.InitialExtent.Should().NotBeNull();
+        info.InitialExtent!.XMin.Should().Be(-180);
+        info.InitialExtent.YMax.Should().Be(90);
+
+        info.StorageInfo.Should().NotBeNull();
+        info.StorageInfo!.BlockWidth.Should().BeGreaterThan(0);
+        info.StorageInfo.BlockHeight.Should().BeGreaterThan(0);
+
+        // Non-tiled service: no fused cache, so the SDK never requests conf.json.
+        info.SingleFusedMapCache.Should().BeFalse();
+        info.TileInfo.Should().BeNull();
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
     public async Task GetServiceInfoAsync_EmptyStatistics_ReturnsOk()
     {
         SetupLayerAndRasters();

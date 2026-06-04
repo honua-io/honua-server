@@ -201,7 +201,7 @@ public sealed class FeatureServerExceptionMappingTests
             return Task.FromResult(QueryResult<Feature>.Empty());
         }
 
-        public RelatedRecordGroup[] GroupRelatedRecords(
+        public GroupedRelatedRecords GroupRelatedRecords(
             QueryResult<Feature> result,
             long[] objectIds,
             MetadataV2Relationship relationship,
@@ -213,9 +213,11 @@ public sealed class FeatureServerExceptionMappingTests
             int? geometryPrecision,
             double? maxAllowableOffset,
             ImmutableArray<string>? outFields,
-            MetadataV2Resource relatedResource)
+            MetadataV2Resource relatedResource,
+            ImmutableArray<OrderByClause>? orderBy = null,
+            bool returnCountOnly = false)
         {
-            return [];
+            return new GroupedRelatedRecords([], [], objectIdFieldName, null, null, false, false);
         }
     }
 }
