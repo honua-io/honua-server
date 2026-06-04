@@ -88,6 +88,88 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     }
 
     [UnitTest]
+    public async Task Execute_LargeFixtureAboveLodThreshold_ProducesMultiTileLodTileset()
+    {
+        // #1200 acceptance: a feature set at/above the LOD threshold must
+        // generate a multi-tile, multi-LOD tileset (REPLACE refinement, a
+        // nested tile tree, more than one GLB) instead of one oversized tile.
+        BuildLayer();
+        _featureSource.Features = PointGrid(260, 260); // 67 600 features.
+
+        var executor = BuildExecutor(new SceneGenerationServerOptions
+        {
+            OutputRoot = _outputRoot,
+            MaxFeatureCount = 1_000_000,
+            LodFeatureThreshold = 50_000,
+            MaxFeaturesPerTile = 2_000,
+            MaxLodDepth = 12,
+            InteriorSampleCount = 128,
+            GeneratorTag = "honua-test-generator/1.0"
+        });
+
+        var outcome = await executor.RunDirectAsync(BuildIntent(sceneId: "large-lod"), CancellationToken.None);
+
+        outcome.Result.Summary.TileCount.Should().BeGreaterThan(1,
+            "a >50k dataset must partition into multiple tiles.");
+
+        var root = outcome.Result.AssetRoot;
+        var glbCount = Directory.GetFiles(root, "tile_*.glb").Length;
+        glbCount.Should().Be(outcome.Result.Summary.TileCount);
+        glbCount.Should().BeGreaterThan(1);
+
+        var tilesetBytes = await File.ReadAllBytesAsync(Path.Combine(root, "tileset.json"));
+        using var doc = JsonDocument.Parse(tilesetBytes);
+        var rootTile = doc.RootElement.GetProperty("root");
+        rootTile.GetProperty("refine").GetString().Should().Be("REPLACE");
+        rootTile.GetProperty("children").GetArrayLength().Should().BeGreaterThan(0);
+
+        // Geometric error refines: each child error is strictly less than root.
+        var rootError = rootTile.GetProperty("geometricError").GetDouble();
+        rootError.Should().BeGreaterThan(0.0);
+        foreach (var child in rootTile.GetProperty("children").EnumerateArray())
+        {
+            child.GetProperty("geometricError").GetDouble().Should().BeLessThan(rootError);
+        }
+    }
+
+    [UnitTest]
+    public async Task Execute_LodOutput_IsDeterministicAcrossRuns()
+    {
+        BuildLayer();
+        _featureSource.Features = PointGrid(80, 80); // 6 400 features.
+
+        var serverOptions = new SceneGenerationServerOptions
+        {
+            OutputRoot = _outputRoot,
+            MaxFeatureCount = 1_000_000,
+            LodFeatureThreshold = 1_000, // force the LOD path for a small fixture.
+            MaxFeaturesPerTile = 500,
+            MaxLodDepth = 10,
+            InteriorSampleCount = 64,
+            GeneratorTag = "honua-test-generator/1.0"
+        };
+        var executorA = BuildExecutor(serverOptions);
+        var executorB = BuildExecutor(serverOptions);
+
+        var a = await executorA.RunDirectAsync(BuildIntent(sceneId: "lod-determ-a"), CancellationToken.None);
+        var b = await executorB.RunDirectAsync(BuildIntent(sceneId: "lod-determ-b"), CancellationToken.None);
+
+        a.Result.Summary.TileCount.Should().Be(b.Result.Summary.TileCount).And.BeGreaterThan(1);
+
+        var tilesetA = await File.ReadAllBytesAsync(Path.Combine(a.Result.AssetRoot, "tileset.json"));
+        var tilesetB = await File.ReadAllBytesAsync(Path.Combine(b.Result.AssetRoot, "tileset.json"));
+        tilesetA.Should().Equal(tilesetB);
+
+        for (var i = 0; i < a.Result.Summary.TileCount; i++)
+        {
+            var name = $"tile_{i:0000}.glb";
+            var glbA = await File.ReadAllBytesAsync(Path.Combine(a.Result.AssetRoot, name));
+            var glbB = await File.ReadAllBytesAsync(Path.Combine(b.Result.AssetRoot, name));
+            glbA.Should().Equal(glbB, "LOD tile {0} must be byte-identical across runs.", name);
+        }
+    }
+
+    [UnitTest]
     public async Task Execute_PreservesAttributesInGlbStructuralMetadata()
     {
         BuildLayer();
@@ -1017,6 +1099,50 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
             new MetadataV2Field { Name = "height", Type = MetadataV2FieldType.Integer, Length = null, Nullable = true }
         };
         _metadataProvider.SetGraph(BuildSceneGraph(srid: sr.Wkid, accessPolicy: accessPolicy, fields: fields));
+    }
+
+    private SceneTilesPublishExecutor BuildExecutor(SceneGenerationServerOptions serverOptions)
+        => new(
+            _featureSource,
+            _metadataProvider,
+            new TestHostEnvironment(),
+            Options.Create(serverOptions),
+            NullLogger<SceneTilesPublishExecutor>.Instance,
+            _registration);
+
+    private static List<SceneFeature> PointGrid(int cols, int rows)
+    {
+        // Distinct single-vertex point features spread across the layer bounds
+        // so the quadtree subdivides into many leaves.
+        const double west = -122.5, south = 37.7, east = -122.4, north = 37.8;
+        var lonStep = (east - west) / (cols + 1);
+        var latStep = (north - south) / (rows + 1);
+        var features = new List<SceneFeature>(cols * rows);
+        var id = 1;
+        for (var r = 0; r < rows; r++)
+        {
+            for (var c = 0; c < cols; c++)
+            {
+                var lon = west + lonStep * (c + 1);
+                var lat = south + latStep * (r + 1);
+                features.Add(new SceneFeature
+                {
+                    Id = id,
+                    Geometry = new SceneFeatureGeometry
+                    {
+                        Kind = SceneGeometryKind.Point,
+                        Vertices = [new SceneVertex(lon, lat, 10.0)]
+                    },
+                    Attributes = new Dictionary<string, object?>(StringComparer.Ordinal)
+                    {
+                        ["name"] = "p" + id.ToString(CultureInfo.InvariantCulture),
+                        ["height"] = 10
+                    }
+                });
+                id++;
+            }
+        }
+        return features;
     }
 
     private void SetResourceExtrusion(MetadataV2ExtrusionInfo extrusion)
