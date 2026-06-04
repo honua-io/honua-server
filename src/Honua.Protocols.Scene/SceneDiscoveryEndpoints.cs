@@ -2,11 +2,13 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Scene.Abstractions;
+using Honua.Core.Features.Scene.Catalog;
 using Honua.Core.Features.Scene.Domain;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Scene;
 using Honua.Protocols.Scene.Models;
+using Honua.Scene.Assets;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 
@@ -75,49 +77,71 @@ internal static partial class SceneDiscoveryEndpoints
             var requestedCapabilities = ParseRequestedCapabilities(context.Request.Query["capabilities"].ToString());
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
             var summaries = new List<PublicSceneSummary>();
-            var seen = new HashSet<string>(StringComparer.Ordinal);
 
             var registration = context.RequestServices.GetService<ISceneRegistrationService>();
-            if (registration is not null)
+
+            if (includeInactive)
             {
-                var records = await registration.ListAsync(includeInactive: true, cancellationToken).ConfigureAwait(false);
-                foreach (var record in records)
+                // Disabled-scene listing is a discovery-surface-specific behavior
+                // (no gRPC equivalent): it surfaces inactive records too, so it
+                // cannot use the shared active-only catalog. Keep the dedup/merge
+                // inline for this branch only.
+                var seen = new HashSet<string>(StringComparer.Ordinal);
+                if (registration is not null)
                 {
-                    seen.Add(record.Id);
+                    var records = await registration.ListAsync(includeInactive: true, cancellationToken).ConfigureAwait(false);
+                    foreach (var record in records)
+                    {
+                        seen.Add(record.Id);
+                        if (MatchesCapabilities(requestedCapabilities, record.DatasetType))
+                        {
+                            summaries.Add(ToSummary(record, baseUrl));
+                        }
+                    }
+                }
 
-                    if (!includeInactive && record.Status != SceneDatasetStatus.Active)
+                foreach (var entry in options.Value?.Datasets ?? [])
+                {
+                    if (string.IsNullOrWhiteSpace(entry.Id) || !seen.Add(entry.Id))
                     {
                         continue;
                     }
 
-                    if (!MatchesCapabilities(requestedCapabilities, record.DatasetType))
+                    if (!MatchesCapabilities(requestedCapabilities, SceneDatasetType.HostedTiles))
                     {
                         continue;
                     }
 
-                    summaries.Add(ToSummary(record, baseUrl));
+                    var scene = await registry.FindAsync(entry.Id, cancellationToken).ConfigureAwait(false);
+                    if (scene is not null)
+                    {
+                        summaries.Add(ToSummary(scene, baseUrl));
+                    }
                 }
             }
-
-            foreach (var entry in options.Value?.Datasets ?? [])
+            else
             {
-                if (string.IsNullOrWhiteSpace(entry.Id) || !seen.Add(entry.Id))
-                {
-                    continue;
-                }
+                // Active catalog: share the deduped/merged/ordered enumeration with
+                // the gRPC SceneService.ListScenes adapter (SceneCatalog), then
+                // apply the discovery-specific capabilities filter and DTO mapping.
+                var catalog = await SceneCatalog
+                    .ListActiveAsync(registration, registry, options.Value ?? new SceneDatasetOptions(), cancellationToken)
+                    .ConfigureAwait(false);
 
-                if (!MatchesCapabilities(requestedCapabilities, SceneDatasetType.HostedTiles))
+                foreach (var resolved in catalog)
                 {
-                    continue;
+                    if (resolved.Record is { } record)
+                    {
+                        if (MatchesCapabilities(requestedCapabilities, record.DatasetType))
+                        {
+                            summaries.Add(ToSummary(record, baseUrl));
+                        }
+                    }
+                    else if (MatchesCapabilities(requestedCapabilities, SceneDatasetType.HostedTiles))
+                    {
+                        summaries.Add(ToSummary(resolved.Scene!, baseUrl));
+                    }
                 }
-
-                var scene = await registry.FindAsync(entry.Id, cancellationToken).ConfigureAwait(false);
-                if (scene is null)
-                {
-                    continue;
-                }
-
-                summaries.Add(ToSummary(scene, baseUrl));
             }
 
             var response = new PublicSceneListResponse

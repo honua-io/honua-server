@@ -20,7 +20,7 @@ namespace Honua.Postgres.Features.Migration;
 
 internal sealed partial class GeoservicesImportService
 {
-    private async Task<(int inserted, int failed)> InsertFeaturesAsync(
+    private async Task<InsertFeaturesResult> InsertFeaturesAsync(
         NpgsqlConnection connection,
         string schemaName,
         string tableName,
@@ -37,6 +37,8 @@ internal sealed partial class GeoservicesImportService
         // Build insert statement
         var fields = layerInfo.Fields.Where(f => !f.IsObjectId && !IsGeometryField(f)).ToArray();
         var hasGeometry = !string.IsNullOrEmpty(layerInfo.GeometryType);
+        var sourceObjectIdField = layerInfo.Fields.FirstOrDefault(f => f.IsObjectId)?.Name;
+        var objectIdMap = new Dictionary<long, long>(features.Length);
 
         var columnNames = string.Join(", ", fields.Select(f => $"\"{f.Name.SanitizeFieldName()}\""));
         if (hasGeometry)
@@ -50,7 +52,8 @@ internal sealed partial class GeoservicesImportService
             parameterPlaceholders += $", {BuildGeometryInsertExpression(layerInfo.GeometryType, targetSrid)}";
         }
 
-        var insertSql = $"INSERT INTO {QuoteIdentifier(schemaName)}.{QuoteIdentifier(tableName)} ({columnNames}) VALUES ({parameterPlaceholders})";
+        var insertSql =
+            $"INSERT INTO {QuoteIdentifier(schemaName)}.{QuoteIdentifier(tableName)} ({columnNames}) VALUES ({parameterPlaceholders}) RETURNING {FieldNames.ObjectId}";
 
         // Create the command once, add parameters with placeholder values, and prepare
         await using var cmd = connection.CreateCommand();
@@ -107,8 +110,16 @@ internal sealed partial class GeoservicesImportService
                     cmd.Parameters["geom"].Value = DBNull.Value;
                 }
 
-                await cmd.ExecuteNonQueryAsync(cancellationToken);
+                var rawInsertedId = await cmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
                 inserted++;
+
+                if (sourceObjectIdField is not null
+                    && TryReadSourceObjectId(feature, sourceObjectIdField, out var sourceOid)
+                    && rawInsertedId is not null
+                    && rawInsertedId is not DBNull)
+                {
+                    objectIdMap[sourceOid] = Convert.ToInt64(rawInsertedId, System.Globalization.CultureInfo.InvariantCulture);
+                }
             }
             catch (Exception ex)
             {
@@ -128,8 +139,63 @@ internal sealed partial class GeoservicesImportService
             Log.HigherDimensionGeometryDetected(_logger, higherDimensionCount, tableName);
         }
 
-        return (inserted, failed);
+        return new InsertFeaturesResult(inserted, failed, objectIdMap);
     }
+
+    private static bool TryReadSourceObjectId(
+        ArcGisFeature feature,
+        string sourceObjectIdField,
+        out long sourceObjectId)
+    {
+        sourceObjectId = 0;
+        if (feature.Attributes is null)
+        {
+            return false;
+        }
+
+        if (!feature.Attributes.TryGetValue(sourceObjectIdField, out var element))
+        {
+            return false;
+        }
+
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Number:
+                if (element.TryGetInt64(out var int64))
+                {
+                    sourceObjectId = int64;
+                    return true;
+                }
+
+                if (element.TryGetDouble(out var dbl) && !double.IsNaN(dbl) && !double.IsInfinity(dbl))
+                {
+                    sourceObjectId = (long)dbl;
+                    return true;
+                }
+
+                return false;
+
+            case JsonValueKind.String:
+                return long.TryParse(
+                    element.GetString(),
+                    System.Globalization.NumberStyles.Integer,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out sourceObjectId);
+
+            default:
+                return false;
+        }
+    }
+
+    /// <summary>
+    /// Outcome of a single InsertFeaturesAsync batch: insert/fail counters plus a
+    /// mapping from source ObjectId to the BIGSERIAL identifier assigned by the
+    /// imported table. Used to link attachments back to the persisted features.
+    /// </summary>
+    internal readonly record struct InsertFeaturesResult(
+        int Inserted,
+        int Failed,
+        Dictionary<long, long> ObjectIdMap);
 
     private static string BuildGeometryInsertExpression(string? geometryType, int targetSrid)
     {

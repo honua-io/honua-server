@@ -38,6 +38,17 @@ public static class GeometryTileBuilder
     private const int ChunkHeaderLength = 8;
     private const uint GlbMagic = 0x46546C67; // "glTF"
     private const uint GlbVersion = 2;
+
+    /// <summary>
+    /// Largest feature count whose per-feature integer id is representable
+    /// exactly as a 32-bit float (2^24). The <c>_FEATURE_ID_0</c> accessor and
+    /// the COLOR_0 baking carry the per-vertex feature index through a float
+    /// buffer; beyond this ceiling distinct ids would alias, corrupting both the
+    /// structural-metadata attribution and the symbology lookup. Production tile
+    /// caps sit far below this, but the guard makes the limit explicit rather
+    /// than implicit so an uncapped caller fails loudly instead of silently.
+    /// </summary>
+    private const int MaxExactFloatFeatureCount = 1 << 24;
     private const uint JsonChunkType = 0x4E4F534A; // "JSON"
     private const uint BinChunkType = 0x004E4942; // "BIN\0"
 
@@ -75,6 +86,20 @@ public static class GeometryTileBuilder
             throw new ArgumentException("At least one feature is required to build a tile.", nameof(features));
         }
 
+        if (features.Count > MaxExactFloatFeatureCount)
+        {
+            // The per-vertex feature id is carried through a float32 buffer (the
+            // _FEATURE_ID_0 accessor and the COLOR_0 baking lookup). Past 2^24
+            // distinct integer ids alias, so refuse to emit a corrupt tile and
+            // require the caller to split the feature set instead.
+            throw new ArgumentException(
+                string.Format(
+                    CultureInfo.InvariantCulture,
+                    "A single tile cannot carry more than {0} features; split the feature set across tiles.",
+                    MaxExactFloatFeatureCount),
+                nameof(features));
+        }
+
         if (perFeatureSymbology is not null && perFeatureSymbology.Count != features.Count)
         {
             throw new ArgumentException(
@@ -94,7 +119,11 @@ public static class GeometryTileBuilder
         }
 
         // 1. Build geometry buffers (positions + per-vertex feature ids).
-        var positions = new List<float>(features.Count * 8);
+        // Positions are accumulated in double-precision ECEF meters so the RTC
+        // centroid (computed below) can be subtracted BEFORE the float cast; a
+        // direct float cast of absolute ECEF would already have lost ~1 m before
+        // any recentering could help.
+        var positions = new List<double>(features.Count * 8);
         var featureIds = new List<float>(features.Count * 8);
         var primitiveMode = kind switch
         {
@@ -113,8 +142,25 @@ public static class GeometryTileBuilder
         var vertexCount = positions.Count / 3;
         if (vertexCount == 0)
         {
-            throw new InvalidOperationException("No vertices produced for tile.");
+            throw new InvalidOperationException(
+                $"No renderable vertices produced for tile: all {features.Count} feature(s) of kind " +
+                $"'{kind}' are degenerate (e.g. LineString with <2 vertices, empty Point, or Polygon ring " +
+                "with <3 distinct vertices). Callers should drop such tiles before BuildGlb rather than " +
+                "routing a vertex-less feature set into it.");
         }
+
+        // 1b. Recenter positions about the tile's ECEF centroid (RTC). Vertex
+        // positions are absolute ECEF meters (magnitude ~6.3e6 near the
+        // surface); a float32 has ~24 bits of mantissa, so storing absolute
+        // ECEF quantizes every vertex to ~0.5-1 m. Subtract a per-tile centroid
+        // (accumulated in double precision in AppendVertex) BEFORE the float
+        // cast and emit the centroid as the glTF node `translation`, so the
+        // float positions stay small-magnitude and retain sub-centimeter
+        // precision. This mirrors the PNTS path's RTC_CENTER (PntsTileWriter).
+        // The centroid is the arithmetic mean of the double-precision vertex
+        // positions, so it is deterministic for identical input.
+        var translation = ComputeCentroid(positions, vertexCount);
+        var positionFloats = RecenterToFloat(positions, translation);
 
         // 2. Build the per-feature property table buffers.
         var propertyTable = SceneMetadataTable.Build(features, metadataAttributes, warnings);
@@ -140,11 +186,27 @@ public static class GeometryTileBuilder
 
         // 3. Lay out the binary buffer: positions, feature ids, optional vertex
         // colors, then each property column.
-        var positionBytes = AsByteSpan(positions);
+        var positionBytes = FloatsToByteArray(positionFloats);
         var featureIdBytes = AsByteSpan(featureIds);
 
         var bufferViews = new List<BufferViewDescriptor>(3 + propertyTable.Columns.Count);
-        var binaryWriter = new BinaryBufferBuilder();
+
+        // Pre-size the binary buffer to the exact payload total plus per-append
+        // alignment slack, so the backing array is allocated once instead of
+        // repeatedly doubling onto the LOH. Output bytes are unchanged (the
+        // alignment math below is unaffected); this only reserves capacity.
+        var estimatedCapacity = positionBytes.Length + featureIdBytes.Length + (colorBytes?.Length ?? 0);
+        foreach (var column in propertyTable.Columns)
+        {
+            estimatedCapacity += column.Bytes.Length + (column.StringOffsetBytes?.Length ?? 0);
+        }
+
+        // Reserve worst-case alignment padding: positions/feature-ids/colors are
+        // 4-aligned and each property column (plus its optional string-offset
+        // view) can pad up to its component alignment; budget a fixed-8 pad per
+        // appended view to stay an upper bound regardless of alignment.
+        estimatedCapacity += 8 * (3 + (propertyTable.Columns.Count * 2));
+        var binaryWriter = new BinaryBufferBuilder(estimatedCapacity);
 
         var positionView = binaryWriter.Append(positionBytes);
         bufferViews.Add(new BufferViewDescriptor(positionView, BufferViewTarget.ArrayBuffer));
@@ -182,7 +244,8 @@ public static class GeometryTileBuilder
         var jsonBytes = BuildJsonChunk(
             primitiveMode,
             vertexCount,
-            positions,
+            positionFloats,
+            translation,
             bufferViews,
             positionViewIndex: 0,
             featureIdViewIndex: 1,
@@ -225,7 +288,7 @@ public static class GeometryTileBuilder
         float featureIndex,
         SceneGeometryKind kind,
         MetadataV2ExtrusionInfo? extrusion,
-        List<float> positions,
+        List<double> positions,
         List<float> featureIds)
     {
         var vertices = feature.Geometry.Vertices;
@@ -257,15 +320,15 @@ public static class GeometryTileBuilder
     private static void AppendVertex(
         SceneVertex vertex,
         double? heightOverride,
-        List<float> positions,
+        List<double> positions,
         List<float> featureIds,
         float featureIndex)
     {
         var height = heightOverride ?? vertex.Height ?? 0.0;
         var (x, y, z) = EcefCoordinateTransform.ToEcef(vertex.Longitude, vertex.Latitude, height);
-        positions.Add((float)x);
-        positions.Add((float)y);
-        positions.Add((float)z);
+        positions.Add(x);
+        positions.Add(y);
+        positions.Add(z);
         featureIds.Add(featureIndex);
     }
 
@@ -273,7 +336,7 @@ public static class GeometryTileBuilder
         SceneFeature feature,
         float featureIndex,
         MetadataV2ExtrusionInfo? extrusion,
-        List<float> positions,
+        List<double> positions,
         List<float> featureIds)
     {
         var ring = feature.Geometry.Vertices;
@@ -300,7 +363,7 @@ public static class GeometryTileBuilder
 
         var hasExtrusion = extrusion is not null;
         var topHeight = hasExtrusion
-            ? ResolveExtrusionHeight(feature, extrusion!)
+            ? SceneExtrusionResolver.ResolveTopHeightMeters(feature, extrusion!)
             : 0.0;
 
         if (!hasExtrusion)
@@ -316,7 +379,7 @@ public static class GeometryTileBuilder
         }
 
         // Extruded prism: top face, bottom face (reversed winding), and walls.
-        var baseHeight = ResolveBaseHeight(feature, extrusion!);
+        var baseHeight = SceneExtrusionResolver.ResolveBaseHeightMeters(feature, extrusion!);
         var topZ = baseHeight + topHeight;
 
         for (var i = 1; i < ringCount - 1; i++)
@@ -345,54 +408,6 @@ public static class GeometryTileBuilder
         }
     }
 
-    private static double ResolveExtrusionHeight(SceneFeature feature, MetadataV2ExtrusionInfo extrusion)
-    {
-        var raw = LookupNumericAttribute(feature, extrusion.HeightField) ?? extrusion.DefaultHeight ?? 0.0;
-        return ConvertVerticalToMeters(raw, extrusion.Unit);
-    }
-
-    private static double ResolveBaseHeight(SceneFeature feature, MetadataV2ExtrusionInfo extrusion)
-    {
-        if (string.IsNullOrEmpty(extrusion.BaseHeightField))
-        {
-            return 0.0;
-        }
-
-        var raw = LookupNumericAttribute(feature, extrusion.BaseHeightField) ?? 0.0;
-        return ConvertVerticalToMeters(raw, extrusion.Unit);
-    }
-
-    private static double? LookupNumericAttribute(SceneFeature feature, string fieldName)
-    {
-        if (!feature.Attributes.TryGetValue(fieldName, out var raw) || raw is null)
-        {
-            return null;
-        }
-
-        return raw switch
-        {
-            double d => d,
-            float f => f,
-            int i => i,
-            long l => l,
-            short s => s,
-            decimal m => (double)m,
-            string s when double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var v) => v,
-            _ => null
-        };
-    }
-
-    private static double ConvertVerticalToMeters(double value, string? unit)
-    {
-        MetadataV2VerticalUnits.TryNormalize(unit, out var normalized);
-        return normalized switch
-        {
-            MetadataV2VerticalUnits.Feet => value * 0.3048,
-            MetadataV2VerticalUnits.UsSurveyFeet => value * (1200.0 / 3937.0),
-            _ => value
-        };
-    }
-
     private static byte[] AsByteSpan(List<float> values)
     {
         var bytes = new byte[values.Count * 4];
@@ -401,6 +416,51 @@ public static class GeometryTileBuilder
             BinaryPrimitives.WriteSingleLittleEndian(bytes.AsSpan(i * 4, 4), values[i]);
         }
         return bytes;
+    }
+
+    private static byte[] FloatsToByteArray(float[] values)
+    {
+        var bytes = new byte[values.Length * 4];
+        for (var i = 0; i < values.Length; i++)
+        {
+            BinaryPrimitives.WriteSingleLittleEndian(bytes.AsSpan(i * 4, 4), values[i]);
+        }
+        return bytes;
+    }
+
+    /// <summary>
+    /// Computes the RTC centroid (arithmetic mean of the double-precision ECEF
+    /// vertex positions). Returned as a double[3] so it can be emitted verbatim
+    /// as the glTF node <c>translation</c> without a lossy float cast.
+    /// </summary>
+    private static double[] ComputeCentroid(List<double> positions, int vertexCount)
+    {
+        double cx = 0, cy = 0, cz = 0;
+        for (var i = 0; i < positions.Count; i += 3)
+        {
+            cx += positions[i];
+            cy += positions[i + 1];
+            cz += positions[i + 2];
+        }
+        return new[] { cx / vertexCount, cy / vertexCount, cz / vertexCount };
+    }
+
+    /// <summary>
+    /// Subtracts the RTC centroid from each double-precision position and casts
+    /// to float32. Recentering before the cast keeps the magnitudes small so the
+    /// float mantissa retains sub-centimeter precision; the absolute position is
+    /// reconstructed client-side as <c>translation + position</c>.
+    /// </summary>
+    private static float[] RecenterToFloat(List<double> positions, double[] translation)
+    {
+        var result = new float[positions.Count];
+        for (var i = 0; i < positions.Count; i += 3)
+        {
+            result[i] = (float)(positions[i] - translation[0]);
+            result[i + 1] = (float)(positions[i + 1] - translation[1]);
+            result[i + 2] = (float)(positions[i + 2] - translation[2]);
+        }
+        return result;
     }
 
     private static byte[] PadJsonToFourBytes(byte[] json)
@@ -422,7 +482,8 @@ public static class GeometryTileBuilder
     private static byte[] BuildJsonChunk(
         int primitiveMode,
         int vertexCount,
-        List<float> positions,
+        float[] positions,
+        double[] translation,
         List<BufferViewDescriptor> bufferViews,
         int positionViewIndex,
         int featureIdViewIndex,
@@ -468,6 +529,16 @@ public static class GeometryTileBuilder
             writer.WriteStartArray("nodes");
             writer.WriteStartObject();
             writer.WriteNumber("mesh", 0);
+            // RTC translation: the absolute ECEF centroid subtracted from every
+            // vertex above. Emitting it as the node translation lets the client
+            // reconstruct absolute ECEF (translation + position) while the stored
+            // float positions stay small-magnitude and precise. This replaces the
+            // former bare {"mesh":0} node (which left absolute ECEF in float32).
+            writer.WriteStartArray("translation");
+            writer.WriteNumberValue(translation[0]);
+            writer.WriteNumberValue(translation[1]);
+            writer.WriteNumberValue(translation[2]);
+            writer.WriteEndArray();
             writer.WriteEndObject();
             writer.WriteEndArray();
 
@@ -638,7 +709,7 @@ public static class GeometryTileBuilder
         return stream.ToArray();
     }
 
-    private static (double, double, double, double, double, double) ComputePositionBounds(List<float> positions)
+    private static (double, double, double, double, double, double) ComputePositionBounds(float[] positions)
     {
         var minX = double.PositiveInfinity;
         var minY = double.PositiveInfinity;
@@ -647,7 +718,7 @@ public static class GeometryTileBuilder
         var maxY = double.NegativeInfinity;
         var maxZ = double.NegativeInfinity;
 
-        for (var i = 0; i < positions.Count; i += 3)
+        for (var i = 0; i < positions.Length; i += 3)
         {
             var x = positions[i];
             var y = positions[i + 1];
@@ -702,7 +773,20 @@ public static class GeometryTileBuilder
 
     private sealed class BinaryBufferBuilder
     {
-        private readonly List<byte> _buffer = new();
+        // Single pre-sized backing array. Each Append copies its payload exactly
+        // once (the prior List<byte>-backed implementation copied every payload
+        // three times: AsByteSpan -> AddRange -> ToArray). The estimated
+        // capacity passed by BuildGlb is an upper bound that includes worst-case
+        // alignment slack, so _buffer never reallocates; GetPayloadWithPadding
+        // returns the exact-length slice (zero-trailing-pad included).
+        private readonly byte[] _buffer;
+        private int _length;
+
+        public BinaryBufferBuilder(int capacity)
+        {
+            // capacity is a guaranteed upper bound from BuildGlb. Allocate once.
+            _buffer = new byte[capacity > 0 ? capacity : 0];
+        }
 
         public BufferRange Append(byte[] payload, int alignment = 4)
         {
@@ -712,24 +796,28 @@ public static class GeometryTileBuilder
             // requiring alignment equal to the component byte length (8 for
             // INT64/UINT64). Pad with zeros to keep alignment deterministic.
             var mask = alignment - 1;
-            var pad = (alignment - (_buffer.Count & mask)) & mask;
-            for (var i = 0; i < pad; i++)
-            {
-                _buffer.Add(0);
-            }
-            var offset = _buffer.Count;
-            _buffer.AddRange(payload);
+            var pad = (alignment - (_length & mask)) & mask;
+            // _buffer is zero-initialized so advancing past the pad bytes leaves
+            // them at 0 without an explicit write.
+            _length += pad;
+            var offset = _length;
+            payload.CopyTo(_buffer.AsSpan(_length));
+            _length += payload.Length;
             return new BufferRange(offset, payload.Length);
         }
 
         public byte[] GetPayloadWithPadding()
         {
-            var pad = (4 - (_buffer.Count & 3)) & 3;
-            for (var i = 0; i < pad; i++)
+            var pad = (4 - (_length & 3)) & 3;
+            _length += pad;
+            // One final copy to the exact tile length. This is unavoidable: the
+            // GLB assembler needs a byte[] of the precise padded length to splice
+            // into the BIN chunk, and the backing array is an upper-bound size.
+            if (_length == _buffer.Length)
             {
-                _buffer.Add(0);
+                return _buffer;
             }
-            return _buffer.ToArray();
+            return _buffer.AsSpan(0, _length).ToArray();
         }
     }
 }
@@ -890,24 +978,49 @@ internal sealed class SceneMetadataColumn
 
     private static SceneMetadataColumn BuildString(SceneAttributeSchema schema, IReadOnlyList<SceneFeature> features)
     {
-        var stringBytes = new List<byte>(features.Count * 16);
+        // Two-pass build: encode each value once into a reusable per-feature byte
+        // buffer to compute offsets/total length, then allocate the values array
+        // exactly once and write each segment into its slice. This avoids the
+        // List<byte> grow-by-doubling churn AND the final ToArray copy the prior
+        // AddRange+ToArray approach paid, mirroring the single-allocation pattern
+        // BuildGlb already uses for its binary buffers. Output bytes are identical.
+        var encoded = new byte[features.Count][];
         var offsets = new uint[features.Count + 1];
         offsets[0] = 0;
+        var total = 0;
         for (var i = 0; i < features.Count; i++)
         {
             features[i].Attributes.TryGetValue(schema.FieldName, out var raw);
-            var encoded = Encoding.UTF8.GetBytes(raw?.ToString() ?? string.Empty);
-            stringBytes.AddRange(encoded);
-            offsets[i + 1] = (uint)stringBytes.Count;
+            // Format with the invariant culture so byte output is locale-stable
+            // (the class-level byte-identical guarantee). For plain strings this
+            // is a no-op; for an IFormattable (numeric/date/decimal value routed
+            // to a STRING column) it pins invariant formatting instead of the
+            // thread culture's (e.g. "1234.5" not "1234,5").
+            encoded[i] = Encoding.UTF8.GetBytes(FormatStringValue(raw));
+            total += encoded[i].Length;
+            offsets[i + 1] = (uint)total;
         }
 
         // glTF 2.0 requires bufferView.byteLength >= 1, so a column whose
         // values are all null/empty would otherwise emit an invalid zero-byte
         // values view. Pad with a single 0x00 byte; every offset stays at 0
         // and every string therefore decodes as empty (length = next - prev).
-        var values = stringBytes.Count == 0
-            ? new byte[] { 0 }
-            : stringBytes.ToArray();
+        byte[] values;
+        if (total == 0)
+        {
+            values = new byte[] { 0 };
+        }
+        else
+        {
+            values = new byte[total];
+            var written = 0;
+            for (var i = 0; i < encoded.Length; i++)
+            {
+                var segment = encoded[i];
+                Buffer.BlockCopy(segment, 0, values, written, segment.Length);
+                written += segment.Length;
+            }
+        }
 
         var offsetBytes = new byte[offsets.Length * 4];
         for (var i = 0; i < offsets.Length; i++)
@@ -924,6 +1037,14 @@ internal sealed class SceneMetadataColumn
             StringOffsetBytes = offsetBytes
         };
     }
+
+    private static string FormatStringValue(object? value) => value switch
+    {
+        null => string.Empty,
+        string s => s,
+        IFormattable f => f.ToString(null, CultureInfo.InvariantCulture),
+        _ => value.ToString() ?? string.Empty
+    };
 
     private static float ToFloat(object? value) => value switch
     {

@@ -123,4 +123,33 @@ public sealed class I3sToTilesetConverterTests
         act.Should().Throw<I3sConversionException>()
             .Which.Reason.Should().Be(I3sConversionErrorReason.MissingExtent);
     }
+
+    [UnitTest]
+    public void Convert_LongitudeOutsideWgs84Range_Throws()
+    {
+        // A WKID-4326 layer whose bounds are in a non-degree unit (e.g. metres)
+        // would otherwise be placed far outside the globe. The converter
+        // validates the WGS-84 range before treating the extent as degrees.
+        var layer = BuildSampleLayer();
+        layer.FullExtent!.Xmin = 0.0;
+        layer.FullExtent.Xmax = 500_000.0; // > 180 degrees.
+
+        var act = () => I3sToTilesetConverter.Convert(layer);
+
+        act.Should().Throw<I3sConversionException>()
+            .Which.Reason.Should().Be(I3sConversionErrorReason.MissingExtent);
+    }
+
+    [UnitTest]
+    public void Convert_LatitudeOutsideWgs84Range_Throws()
+    {
+        var layer = BuildSampleLayer();
+        layer.FullExtent!.Ymin = -95.0; // < -90 degrees.
+        layer.FullExtent.Ymax = 10.0;
+
+        var act = () => I3sToTilesetConverter.Convert(layer);
+
+        act.Should().Throw<I3sConversionException>()
+            .Which.Reason.Should().Be(I3sConversionErrorReason.MissingExtent);
+    }
 }

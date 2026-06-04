@@ -727,6 +727,13 @@ public sealed class ImportBackgroundServiceTests
 
             throw new InvalidOperationException("unreachable");
         }
+
+        public Task<MigrationRelationshipApplyOutcome[]> ApplyRelationshipsAsync(
+            MigrationManifestArtifact manifest,
+            IReadOnlyDictionary<string, int> publishedLayerMap,
+            Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphStore? graphStore,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
     }
 
     private sealed class SuccessfulGeoservicesImportService : IGeoservicesImportService
@@ -775,6 +782,13 @@ public sealed class ImportBackgroundServiceTests
                 serviceName: request.ServiceName,
                 sourceLayerName: "Roads"));
         }
+
+        public Task<MigrationRelationshipApplyOutcome[]> ApplyRelationshipsAsync(
+            MigrationManifestArtifact manifest,
+            IReadOnlyDictionary<string, int> publishedLayerMap,
+            Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphStore? graphStore,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(Array.Empty<MigrationRelationshipApplyOutcome>());
     }
 
     private sealed class ThrowingGeoServerImportService(ThrowingBehavior behavior) : IGeoServerImportService

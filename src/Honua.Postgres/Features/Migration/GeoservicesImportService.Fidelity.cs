@@ -156,24 +156,10 @@ internal sealed partial class GeoservicesImportService
                 subtypes.ManualSteps));
         }
 
-        if (HasRelationshipMetadata(resourceElement))
-        {
-            var relationships = _constructCapabilityRegistry.ResolveOrUnknown(EsriConstructCapabilityRegistry.Keys.ResourceRelationships);
-            records.Add(CreateFidelityRecord(
-                $"{resource.Id}:relationships",
-                resource.Id,
-                "relationship",
-                "relationships",
-                resource.Name,
-                relationships.AutomationStatus,
-                relationships.Code,
-                relationships.Reason,
-                relationships.ManualSteps));
-        }
+        records.AddRange(BuildRelationshipFidelityRecords(resource, resourceElement));
 
         if (resource.HasAttachments == true)
         {
-            var attachments = _constructCapabilityRegistry.ResolveOrUnknown(EsriConstructCapabilityRegistry.Keys.ResourceAttachments);
             var attachmentDependencyIds = dependencies
                 .Where(static dependency => string.Equals(dependency.Kind, "attachments", StringComparison.Ordinal))
                 .Select(static dependency => dependency.Id)
@@ -184,10 +170,9 @@ internal sealed partial class GeoservicesImportService
                 "attachment",
                 "attachments",
                 resource.Name,
-                attachments.AutomationStatus,
-                attachments.Code,
-                attachments.Reason,
-                attachments.ManualSteps,
+                MigrationFidelityAutomationStatuses.Automated,
+                ImportCompatibilityCodes.Compatible,
+                "Attachments are automatically copied to the Honua attachment store during import when ImportAttachments is enabled and auto-publish succeeds.",
                 relatedIds: attachmentDependencyIds));
         }
 
@@ -278,9 +263,135 @@ internal sealed partial class GeoservicesImportService
             HasNonEmptyArray(resourceElement, "subtypes") ||
             !string.IsNullOrWhiteSpace(GetOptionalStringProperty(resourceElement, "subtypeField"));
 
-    private static bool HasRelationshipMetadata(JsonElement resourceElement)
-        => HasNonEmptyArray(resourceElement, "relationships") ||
-            HasNonEmptyArray(resourceElement, "relationshipInfos");
+    private static IEnumerable<MigrationFidelityClassificationRecord> BuildRelationshipFidelityRecords(
+        MigrationInventoryResource resource,
+        JsonElement resourceElement)
+    {
+        if (!TryGetRelationshipArray(resourceElement, out var relationships))
+        {
+            yield break;
+        }
+
+        foreach (var relationship in relationships.EnumerateArray())
+        {
+            if (relationship.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            var relationshipId = GetOptionalIntProperty(relationship, "id");
+            var name = GetOptionalStringProperty(relationship, "name");
+            var cardinality = GetOptionalStringProperty(relationship, "cardinality");
+            var role = GetOptionalStringProperty(relationship, "role");
+            var keyField = GetOptionalStringProperty(relationship, "keyField");
+            var relatedTableId = GetOptionalIntProperty(relationship, "relatedTableId");
+            var relationshipType = GetOptionalStringProperty(relationship, "relationshipType");
+            var composite = GetOptionalBoolProperty(relationship, "composite");
+
+            var derivedType = relationshipType;
+            if (composite == true && string.IsNullOrWhiteSpace(derivedType))
+            {
+                derivedType = "composite";
+            }
+
+            var isComposite = composite == true ||
+                string.Equals(derivedType, "composite", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(derivedType, "attributed", StringComparison.OrdinalIgnoreCase);
+            var isManyToMany = !string.IsNullOrWhiteSpace(cardinality) &&
+                cardinality.Trim().Equals("esriRelCardinalityManyToMany", StringComparison.OrdinalIgnoreCase);
+
+            var automationStatus = isComposite || isManyToMany
+                ? MigrationFidelityAutomationStatuses.ManualReview
+                : MigrationFidelityAutomationStatuses.Automated;
+            var compatibilityCode = automationStatus == MigrationFidelityAutomationStatuses.Automated
+                ? ImportCompatibilityCodes.Compatible
+                : ImportCompatibilityCodes.ArcGisRelationshipsManualReview;
+
+            var reason = automationStatus == MigrationFidelityAutomationStatuses.Automated
+                ? "Simple relationship class captured for automated migration to honua.relationships and MetadataV2Resource.Relationships."
+                : isComposite
+                    ? $"Relationship type '{derivedType ?? "composite"}' carries side-effects (composite delete or junction attributes) that this slice does not recreate automatically."
+                    : isManyToMany
+                        ? "Many-to-many relationships require a junction table and are deferred from automated migration."
+                        : "Relationship metadata was detected and captured for operator review; automated relationship migration is not implemented.";
+
+            var manualSteps = automationStatus == MigrationFidelityAutomationStatuses.ManualReview
+                ? new[] { "Map related layers or tables to target relationship configuration before cutover." }
+                : Array.Empty<string>();
+
+            var metadata = new SortedDictionary<string, string>(StringComparer.Ordinal);
+            if (relationshipId.HasValue)
+            {
+                metadata["relationshipId"] = relationshipId.Value.ToString(CultureInfo.InvariantCulture);
+            }
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                metadata["name"] = name!;
+            }
+            if (!string.IsNullOrWhiteSpace(cardinality))
+            {
+                metadata["cardinality"] = cardinality!;
+            }
+            if (!string.IsNullOrWhiteSpace(role))
+            {
+                metadata["role"] = role!;
+            }
+            if (!string.IsNullOrWhiteSpace(keyField))
+            {
+                metadata["originKeyField"] = keyField!;
+                metadata["destinationKeyField"] = keyField!;
+            }
+            if (relatedTableId.HasValue)
+            {
+                metadata["relatedLayerIds"] = $"layer:{relatedTableId.Value}";
+            }
+            if (!string.IsNullOrWhiteSpace(derivedType))
+            {
+                metadata["relationshipType"] = derivedType!;
+            }
+
+            var idSuffix = relationshipId.HasValue
+                ? relationshipId.Value.ToString(CultureInfo.InvariantCulture)
+                : (string.IsNullOrWhiteSpace(name) ? "unknown" : name!);
+
+            yield return CreateFidelityRecord(
+                $"{resource.Id}:relationship:{idSuffix}",
+                resource.Id,
+                "relationship",
+                "relationships",
+                string.IsNullOrWhiteSpace(name) ? resource.Name : name,
+                automationStatus,
+                compatibilityCode,
+                reason,
+                manualSteps,
+                metadata: metadata);
+        }
+    }
+
+    private static bool TryGetRelationshipArray(JsonElement resourceElement, out JsonElement relationships)
+    {
+        // Prefer the non-empty array so MapServer documents that advertise an
+        // empty "relationships" alongside a populated "relationshipInfos" still
+        // surface per-relationship fidelity.
+        if (resourceElement.TryGetProperty("relationships", out var array) &&
+            array.ValueKind == JsonValueKind.Array &&
+            array.GetArrayLength() > 0)
+        {
+            relationships = array;
+            return true;
+        }
+
+        if (resourceElement.TryGetProperty("relationshipInfos", out array) &&
+            array.ValueKind == JsonValueKind.Array &&
+            array.GetArrayLength() > 0)
+        {
+            relationships = array;
+            return true;
+        }
+
+        relationships = default;
+        return false;
+    }
 
     private static bool HasNonEmptyArray(JsonElement element, string propertyName)
         => element.TryGetProperty(propertyName, out var property) &&

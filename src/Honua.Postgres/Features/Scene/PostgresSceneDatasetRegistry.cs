@@ -5,7 +5,6 @@ using System.Data.Common;
 using System.Globalization;
 using Honua.Core.Features.Scene.Abstractions;
 using Honua.Core.Features.Scene.Domain;
-using Honua.Core.Features.Security.Domain;
 using Honua.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -370,14 +369,6 @@ internal sealed class PostgresSceneDatasetRegistry : ISceneDatasetRegistry, ISce
 
     private SceneDataset ProjectToServing(SceneDatasetRecord record)
     {
-        var accessPolicy = record.IsPublic
-            ? null
-            : new AccessPolicy
-            {
-                AllowAnonymous = false,
-                AllowedRoles = record.AllowedRoles?.ToArray()
-            };
-
         return new SceneDataset
         {
             Id = record.Id,
@@ -385,7 +376,7 @@ internal sealed class PostgresSceneDatasetRegistry : ISceneDatasetRegistry, ISce
             Description = record.Description,
             AssetRoot = CanonicalizeAssetRoot(record.AssetRoot),
             TilesetFileName = record.TilesetFileName,
-            AccessPolicy = accessPolicy,
+            AccessPolicy = SceneServingProjection.ToAccessPolicy(record),
             CachePolicy = record.CachePolicy
         };
     }

@@ -1,7 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-namespace Honua.Protocols.Scene;
+namespace Honua.Scene.Assets;
 
 /// <summary>
 /// MIME-type mapping for OGC 3D Tiles asset payloads.
@@ -11,6 +11,9 @@ namespace Honua.Protocols.Scene;
 /// follow Cesium's convention of <c>application/octet-stream</c> for the tile
 /// container formats and use the registered <c>model/gltf-*</c> media types
 /// for glTF/GLB payloads. Image and JSON payloads use their standard types.
+/// This type is shared by the HTTP/I3S scene adapters (Honua.Protocols.Scene)
+/// and the gRPC scene services so the asset path-safety + content-type contract
+/// has a single implementation.
 /// </remarks>
 internal static class SceneContentTypes
 {

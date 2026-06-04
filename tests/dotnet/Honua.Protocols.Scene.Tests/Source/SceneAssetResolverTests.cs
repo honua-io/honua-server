@@ -4,6 +4,7 @@
 using FluentAssertions;
 using Honua.Core.Features.Scene.Domain;
 using Honua.Protocols.Scene;
+using Honua.Scene.Assets;
 using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.Scene;

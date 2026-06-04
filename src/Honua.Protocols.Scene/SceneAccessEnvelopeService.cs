@@ -6,6 +6,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Honua.Protocols.Scene.Models;
+using Honua.Scene.Assets;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Protocols.Scene;

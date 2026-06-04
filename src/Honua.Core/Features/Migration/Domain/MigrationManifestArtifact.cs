@@ -522,6 +522,34 @@ public sealed record MigrationManifestRelationshipRecord
     public string[] RelatedLayerIds { get; init; } = [];
 
     /// <summary>
+    /// Optional relationship role on this resource (e.g. <c>esriRelRoleOrigin</c>,
+    /// <c>esriRelRoleDestination</c>). Drives the V2 graph write direction for
+    /// simple relationships: only origin-role records produce a
+    /// <c>MetadataV2Resource.Relationships</c> entry on the origin resource.
+    /// </summary>
+    public string? Role { get; init; }
+
+    /// <summary>
+    /// Foreign key field name on the origin (source) layer. For simple ArcGIS
+    /// relationships, this is the same field name as
+    /// <see cref="DestinationKeyField"/> because both sides use a shared
+    /// <c>keyField</c> value.
+    /// </summary>
+    public string? OriginKeyField { get; init; }
+
+    /// <summary>
+    /// Primary or foreign key field name on the destination (related) layer.
+    /// </summary>
+    public string? DestinationKeyField { get; init; }
+
+    /// <summary>
+    /// Optional original integer relationship id advertised by the source ArcGIS
+    /// service. Used to construct stable Esri-style relationship identifiers in
+    /// the target catalog.
+    /// </summary>
+    public int? EsriRelationshipId { get; init; }
+
+    /// <summary>
     /// Automation classification. One of
     /// <see cref="MigrationManifestRelationshipClassifications.Automated"/>,
     /// <see cref="MigrationManifestRelationshipClassifications.Assisted"/>,

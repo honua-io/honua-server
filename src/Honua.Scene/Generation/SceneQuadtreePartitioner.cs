@@ -125,7 +125,7 @@ public static class SceneQuadtreePartitioner
             var leafFeatures = MaterializeFeatures(features, memberIndices);
             return new SceneTileNode(
                 west, south, east, north,
-                geometricError: 0.0,
+                geometricError: LeafGeometricError(depth, geometricError),
                 depth,
                 leafFeatures,
                 children: Array.Empty<SceneTileNode>());
@@ -171,7 +171,7 @@ public static class SceneQuadtreePartitioner
             var leafFeatures = MaterializeFeatures(features, memberIndices);
             return new SceneTileNode(
                 west, south, east, north,
-                geometricError: 0.0,
+                geometricError: LeafGeometricError(depth, geometricError),
                 depth,
                 leafFeatures,
                 children: Array.Empty<SceneTileNode>());
@@ -199,6 +199,25 @@ public static class SceneQuadtreePartitioner
             sample,
             children);
     }
+
+    /// <summary>
+    /// Geometric error for a leaf tile. A childless tile's geometric error is the
+    /// error introduced when its (non-existent) children are not rendered, so for
+    /// a non-root leaf that is 0.0: a positive value would tell a 3D Tiles client
+    /// that finer detail still exists and screen-space-error refinement would
+    /// never converge at the deepest LOD.
+    /// <para>
+    /// The root tile is the exception: even when the whole dataset fits one leaf
+    /// (root is also a leaf), the root must carry its floored, positive root
+    /// geometric error. A zero root error gives the root a zero screen-space error
+    /// and can leave a client never scheduling the root tile, defeating root SSE
+    /// refinement. This mirrors the point-cloud builder
+    /// (PointCloudTilesetBuilder.MakeLeaf), which deliberately keeps the floored
+    /// root error on a root-leaf.
+    /// </para>
+    /// </summary>
+    private static double LeafGeometricError(int depth, double inheritedGeometricError)
+        => depth == 0 ? inheritedGeometricError : 0.0;
 
     private static void AddChild(
         List<SceneTileNode> children,
@@ -248,7 +267,19 @@ public static class SceneQuadtreePartitioner
         int[] memberIndices,
         int sampleCount)
     {
-        if (sampleCount <= 0 || memberIndices.Length <= sampleCount)
+        // A non-positive sample count disables interior content entirely: the
+        // interior node carries no features (and is therefore skipped by content
+        // emission), so the tileset only carries leaf geometry. This honours the
+        // documented SceneLodOptions.InteriorSampleCount contract ("Zero disables
+        // interior content"). It is distinct from the case where the member set is
+        // already at-or-below the cap, where the full set IS the representative
+        // sample.
+        if (sampleCount <= 0)
+        {
+            return Array.Empty<SceneFeature>();
+        }
+
+        if (memberIndices.Length <= sampleCount)
         {
             return MaterializeFeatures(features, memberIndices);
         }

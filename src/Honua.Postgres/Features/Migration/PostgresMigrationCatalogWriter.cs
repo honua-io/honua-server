@@ -5,6 +5,8 @@ using Honua.Core.Features.Import.Abstractions;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Migration.Services;
@@ -323,6 +325,360 @@ internal sealed partial class PostgresMigrationCatalogWriter : IMigrationCatalog
         return outcome;
     }
 
+    public async Task<MigrationRelationshipApplyOutcome[]> EnsureRelationshipsAsync(
+        string connectionString,
+        IMetadataV2GraphStore? graphStore,
+        MigrationRelationshipApplyRequest[] requests,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
+        ArgumentNullException.ThrowIfNull(requests);
+        if (requests.Length == 0)
+        {
+            return [];
+        }
+
+        var orderedRequests = requests
+            .OrderBy(static r => r.OriginLayerId)
+            .ThenBy(static r => r.SourceRelationshipId, StringComparer.Ordinal)
+            .ToArray();
+
+        var graphOutcomes = graphStore == null
+            ? new Dictionary<string, GraphRelationshipOutcome>(StringComparer.Ordinal)
+            : await ApplyRelationshipGraphPatchAsync(graphStore, orderedRequests, cancellationToken).ConfigureAwait(false);
+
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+
+        var results = new List<MigrationRelationshipApplyOutcome>(orderedRequests.Length);
+        var v1Created = 0;
+        var v1AlreadyExists = 0;
+
+        foreach (var request in orderedRequests)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            // V1 honua.relationships row: required for the FeatureServer
+            // queryRelatedRecords path that reads from honua.relationships via the
+            // shared IRelationshipStore. The unique key (layer_id, relationship_id)
+            // keeps re-apply idempotent.
+            var v1Outcome = await InsertRelationshipRowAsync(connection, request, cancellationToken).ConfigureAwait(false);
+            if (v1Outcome == MigrationCatalogWriteOutcome.Created)
+            {
+                v1Created++;
+            }
+            else
+            {
+                v1AlreadyExists++;
+            }
+
+            graphOutcomes.TryGetValue(request.SourceRelationshipId, out var graphOutcome);
+            var combined = CombineRelationshipOutcomes(graphOutcome, v1Outcome, graphStore != null);
+            results.Add(new MigrationRelationshipApplyOutcome
+            {
+                SourceRelationshipId = request.SourceRelationshipId,
+                Outcome = combined.Outcome,
+                Message = combined.Message,
+                TargetRelationshipRef = BuildTargetRelationshipRef(request)
+            });
+        }
+
+        Log.RelationshipsPersisted(_logger, v1Created, v1AlreadyExists, graphStore == null ? "skipped" : "applied");
+        return results.ToArray();
+    }
+
+    private static async Task<Dictionary<string, GraphRelationshipOutcome>> ApplyRelationshipGraphPatchAsync(
+        IMetadataV2GraphStore graphStore,
+        MigrationRelationshipApplyRequest[] orderedRequests,
+        CancellationToken cancellationToken)
+    {
+        // Group requests by origin layer so each resource's relationships list is
+        // patched once per save instead of saving per relationship. Each save
+        // increments the graph revision, so coalescing keeps the snapshot small
+        // and avoids needless cache churn.
+        const int MaxAttempts = 2;
+        var outcomes = new Dictionary<string, GraphRelationshipOutcome>(StringComparer.Ordinal);
+        for (var attempt = 1; attempt <= MaxAttempts; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var snapshot = await graphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            var graph = snapshot.Graph;
+            var requestsByOrigin = orderedRequests
+                .GroupBy(static r => r.OriginLayerId)
+                .OrderBy(static g => g.Key);
+
+            var updatedResources = graph.Resources.ToList();
+            var resourcesById = updatedResources
+                .Select(static (resource, index) => (resource, index))
+                .ToDictionary(item => item.resource.Metadata.Id, item => item.index, StringComparer.Ordinal);
+
+            var graphChanged = false;
+            var perRequestOutcomes = new Dictionary<string, GraphRelationshipOutcome>(StringComparer.Ordinal);
+
+            foreach (var group in requestsByOrigin)
+            {
+                var originResourceId = BuildResourceId(group.Key);
+                if (!resourcesById.TryGetValue(originResourceId, out var index))
+                {
+                    foreach (var req in group)
+                    {
+                        perRequestOutcomes[req.SourceRelationshipId] = new GraphRelationshipOutcome(
+                            MigrationCatalogWriteOutcome.AlreadyExists,
+                            $"Origin resource '{originResourceId}' not present in the Metadata v2 graph; v2 relationship entry skipped.");
+                    }
+                    continue;
+                }
+
+                var origin = updatedResources[index];
+                var existingRelationships = origin.Relationships.ToList();
+                var existingIds = new HashSet<string>(existingRelationships.Select(static r => r.Id), StringComparer.Ordinal);
+
+                foreach (var req in group)
+                {
+                    var relationshipId = BuildRelationshipId(req);
+                    if (existingIds.Contains(relationshipId))
+                    {
+                        perRequestOutcomes[req.SourceRelationshipId] = new GraphRelationshipOutcome(
+                            MigrationCatalogWriteOutcome.AlreadyExists,
+                            $"Relationship '{relationshipId}' already present on resource '{originResourceId}'; v2 graph entry unchanged.");
+                        continue;
+                    }
+
+                    existingRelationships.Add(BuildRelationshipMetadata(req, relationshipId));
+                    existingIds.Add(relationshipId);
+                    perRequestOutcomes[req.SourceRelationshipId] = new GraphRelationshipOutcome(
+                        MigrationCatalogWriteOutcome.Created,
+                        $"Appended relationship '{relationshipId}' to resource '{originResourceId}' in the Metadata v2 graph.");
+                    graphChanged = true;
+                }
+
+                if (graphChanged)
+                {
+                    updatedResources[index] = origin with { Relationships = existingRelationships };
+                }
+            }
+
+            if (!graphChanged)
+            {
+                foreach (var kv in perRequestOutcomes)
+                {
+                    outcomes[kv.Key] = kv.Value;
+                }
+                return outcomes;
+            }
+
+            var updatedGraph = graph with
+            {
+                Revision = Math.Max(graph.Revision + 1, 1),
+                GeneratedAt = graph.GeneratedAt,
+                Resources = updatedResources
+            };
+
+            try
+            {
+                await graphStore.SaveAsync(updatedGraph, snapshot.Etag, cancellationToken).ConfigureAwait(false);
+                foreach (var kv in perRequestOutcomes)
+                {
+                    outcomes[kv.Key] = kv.Value;
+                }
+                return outcomes;
+            }
+            catch (InvalidOperationException) when (attempt < MaxAttempts)
+            {
+                // Optimistic concurrency conflict: another writer beat us. Re-read
+                // the snapshot and rebuild the patch. We retry once; if a second
+                // attempt also fails the exception surfaces to the caller so the
+                // apply step can record a failed outcome.
+            }
+        }
+
+        return outcomes;
+    }
+
+    private static async Task<MigrationCatalogWriteOutcome> InsertRelationshipRowAsync(
+        NpgsqlConnection connection,
+        MigrationRelationshipApplyRequest request,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            INSERT INTO honua.relationships (
+                layer_id,
+                relationship_id,
+                name,
+                related_layer_id,
+                relationship_type,
+                origin_foreign_key,
+                destination_foreign_key,
+                description
+            )
+            VALUES (@layerId, @relationshipId, @name, @relatedLayerId, @relationshipType,
+                    @originForeignKey, @destinationForeignKey, NULL)
+            ON CONFLICT (layer_id, relationship_id) DO NOTHING
+            RETURNING relationship_id;
+            """;
+
+        // honua.relationships has CHECK constraints on relationship_id > 0 and
+        // relationship_type ∈ {esriRelRoleOrigin, esriRelRoleDestination,
+        // esriRelRoleAny}. Stable-hash the source identifier when the source did
+        // not advertise an integer id so the row still satisfies the schema.
+        var relationshipId = request.EsriRelationshipId ?? DeriveStableRelationshipId(request.SourceRelationshipId);
+        var relationshipType = NormalizeRelationshipRole(request.Role);
+        var name = string.IsNullOrWhiteSpace(request.Name)
+            ? $"rel-{relationshipId.ToString(System.Globalization.CultureInfo.InvariantCulture)}"
+            : request.Name!;
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@layerId", request.OriginLayerId);
+        command.Parameters.AddWithValue("@relationshipId", relationshipId);
+        command.Parameters.AddWithValue("@name", name);
+        command.Parameters.AddWithValue("@relatedLayerId", request.RelatedLayerId);
+        command.Parameters.AddWithValue("@relationshipType", relationshipType);
+        command.Parameters.AddWithValue("@originForeignKey", request.OriginKeyField);
+        command.Parameters.AddWithValue("@destinationForeignKey", request.DestinationKeyField);
+
+        var inserted = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return inserted is null
+            ? MigrationCatalogWriteOutcome.AlreadyExists
+            : MigrationCatalogWriteOutcome.Created;
+    }
+
+    private static (MigrationCatalogWriteOutcome Outcome, string Message) CombineRelationshipOutcomes(
+        GraphRelationshipOutcome? graphOutcome,
+        MigrationCatalogWriteOutcome v1Outcome,
+        bool graphRequested)
+    {
+        var v1Message = v1Outcome == MigrationCatalogWriteOutcome.Created
+            ? "Inserted honua.relationships row."
+            : "honua.relationships row already present.";
+
+        if (!graphRequested)
+        {
+            return (
+                v1Outcome,
+                $"{v1Message} Metadata v2 graph write skipped (no graph store provided).");
+        }
+
+        if (graphOutcome is null)
+        {
+            return (
+                MigrationCatalogWriteOutcome.AlreadyExists,
+                $"{v1Message} Metadata v2 graph write skipped: no matching origin resource.");
+        }
+
+        var combinedOutcome = graphOutcome.Outcome == MigrationCatalogWriteOutcome.Created ||
+                              v1Outcome == MigrationCatalogWriteOutcome.Created
+            ? MigrationCatalogWriteOutcome.Created
+            : MigrationCatalogWriteOutcome.AlreadyExists;
+
+        return (combinedOutcome, $"{graphOutcome.Message} {v1Message}");
+    }
+
+    private static MetadataV2Relationship BuildRelationshipMetadata(
+        MigrationRelationshipApplyRequest request,
+        string relationshipId)
+    {
+        return new MetadataV2Relationship
+        {
+            Id = relationshipId,
+            Name = string.IsNullOrWhiteSpace(request.Name) ? relationshipId : request.Name!,
+            RelatedResourceId = BuildResourceId(request.RelatedLayerId),
+            Role = string.IsNullOrWhiteSpace(request.Role) ? "origin" : request.Role!,
+            Cardinality = MapCardinalityToV2(request.Cardinality),
+            OriginField = request.OriginKeyField,
+            DestinationField = request.DestinationKeyField,
+            EsriRelationshipId = request.EsriRelationshipId
+        };
+    }
+
+    private static string BuildRelationshipId(MigrationRelationshipApplyRequest request)
+    {
+        var idPart = request.EsriRelationshipId.HasValue
+            ? request.EsriRelationshipId.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            : SanitizeRelationshipIdSuffix(request.SourceRelationshipId);
+        return $"rel-{request.OriginLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture)}-{idPart}";
+    }
+
+    private static string BuildTargetRelationshipRef(MigrationRelationshipApplyRequest request)
+        => BuildRelationshipId(request);
+
+    private static string BuildResourceId(int layerId)
+        => $"res-layer-{layerId.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+
+    private static string MapCardinalityToV2(string normalizedCardinality)
+    {
+        return normalizedCardinality switch
+        {
+            "1:1" => "one-to-one",
+            "1:N" => "one-to-many",
+            "M:N" => "many-to-many",
+            _ => "one-to-many"
+        };
+    }
+
+    private static string NormalizeRelationshipRole(string? role)
+    {
+        if (string.IsNullOrWhiteSpace(role))
+        {
+            return "esriRelRoleOrigin";
+        }
+
+        var trimmed = role.Trim();
+        if (trimmed.Equals("origin", StringComparison.OrdinalIgnoreCase) ||
+            trimmed.Equals("esriRelRoleOrigin", StringComparison.OrdinalIgnoreCase))
+        {
+            return "esriRelRoleOrigin";
+        }
+        if (trimmed.Equals("destination", StringComparison.OrdinalIgnoreCase) ||
+            trimmed.Equals("esriRelRoleDestination", StringComparison.OrdinalIgnoreCase))
+        {
+            return "esriRelRoleDestination";
+        }
+        if (trimmed.Equals("any", StringComparison.OrdinalIgnoreCase) ||
+            trimmed.Equals("esriRelRoleAny", StringComparison.OrdinalIgnoreCase))
+        {
+            return "esriRelRoleAny";
+        }
+
+        return "esriRelRoleOrigin";
+    }
+
+    private static int DeriveStableRelationshipId(string sourceRelationshipId)
+    {
+        // honua.relationships CHECK requires relationship_id > 0; the FNV-1a 32-bit
+        // hash gives us a deterministic positive integer when the source did not
+        // advertise an integer relationship id.
+        const uint Prime = 16777619;
+        var hash = 2166136261u;
+        foreach (var ch in sourceRelationshipId)
+        {
+            hash ^= ch;
+            hash *= Prime;
+        }
+
+        var shifted = (int)(hash & 0x7FFFFFFFu);
+        return shifted == 0 ? 1 : shifted;
+    }
+
+    private static string SanitizeRelationshipIdSuffix(string sourceRelationshipId)
+    {
+        var builder = new System.Text.StringBuilder(sourceRelationshipId.Length);
+        foreach (var ch in sourceRelationshipId)
+        {
+            if (char.IsLetterOrDigit(ch))
+            {
+                builder.Append(ch);
+            }
+            else if (builder.Length > 0 && builder[^1] != '-')
+            {
+                builder.Append('-');
+            }
+        }
+        var result = builder.ToString().Trim('-');
+        return string.IsNullOrEmpty(result) ? "unknown" : result;
+    }
+
+    private sealed record GraphRelationshipOutcome(MigrationCatalogWriteOutcome Outcome, string Message);
+
     private static async Task<long> CountRowsAsync(NpgsqlConnection connection, string identifier, CancellationToken cancellationToken)
     {
         await using var countCmd = new NpgsqlCommand($"SELECT COUNT(*) FROM {identifier};", connection);
@@ -372,5 +728,8 @@ internal sealed partial class PostgresMigrationCatalogWriter : IMigrationCatalog
 
         [LoggerMessage(7965, LogLevel.Information, "Migration catalog writer ensured {SourceFormat} style '{SourceId}' (disposition={Disposition}, {Outcome})")]
         public static partial void StylePersisted(ILogger logger, string sourceFormat, string sourceId, string disposition, string outcome);
+
+        [LoggerMessage(7966, LogLevel.Information, "Migration catalog writer ensured relationships: created={Created}, already-exists={AlreadyExists}, v2-graph={GraphStatus}")]
+        public static partial void RelationshipsPersisted(ILogger logger, int created, int alreadyExists, string graphStatus);
     }
 }

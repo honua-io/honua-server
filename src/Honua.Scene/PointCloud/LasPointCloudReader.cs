@@ -166,22 +166,75 @@ public static class LasPointCloudReader
 
         var recordLength = header.PointRecordLength;
         var format = header.PointDataRecordFormat;
+
+        // This overload is public and trusts a caller-supplied header (unlike the
+        // byte[]-only path, where ReadHeader enforces the per-format minimum). A
+        // record length below the per-format minimum (in particular 0) would skip
+        // the per-record overflow guard below, leave requiredBytes at 0, pass the
+        // truncation check, and then throw a raw ArgumentOutOfRangeException from
+        // record.Slice(0, 4) on a too-short span. Reject it up front with the
+        // stable LasFormatException contract.
+        if (recordLength < MinRecordLength(format))
+        {
+            throw new LasFormatException(
+                SceneGenerationErrorCodes.ModelAssetInvalid,
+                "LAS point record length is too small to hold a point record.");
+        }
+
         var hasColor = FormatHasColor(format);
         var hasIntensity = true; // every supported format carries intensity.
         var colorOffset = ColorByteOffset(format);
         var classificationOffset = ClassificationByteOffset(format);
 
-        var start = checked((int)header.OffsetToPointData);
+        // Validate header-derived offsets and the full point-record window using
+        // long/ulong math BEFORE narrowing to int so attacker-controlled header
+        // values surface the stable LasFormatException instead of letting a
+        // checked-cast OverflowException or AsSpan ArgumentOutOfRangeException
+        // escape. OffsetToPointData is a uint32 read straight from the file
+        // header and can exceed int.MaxValue; PointCount is a uint64.
+        long sourceLength = source.Length;
+        long startOffset = header.OffsetToPointData;
+        if (startOffset > sourceLength)
+        {
+            throw new LasFormatException(
+                SceneGenerationErrorCodes.ModelAssetInvalid,
+                "LAS point data offset lies beyond the end of the file.");
+        }
+
+        // Bound the declared point count by the bytes actually present BEFORE
+        // computing requiredBytes. PointCount is an attacker-controlled uint64
+        // and recordLength an attacker-controlled uint16, so a naive
+        // PointCount * recordLength multiply can overflow ulong and wrap small,
+        // bypassing the truncation guard below and admitting a 2^63-iteration
+        // loop / a raw AsSpan ArgumentOutOfRangeException. Dividing the available
+        // byte window by recordLength yields the maximum number of records the
+        // file can hold and cannot overflow, so this rejects oversized counts
+        // with the stable LasFormatException first.
+        if (recordLength != 0 &&
+            header.PointCount > (ulong)(sourceLength - startOffset) / (ulong)recordLength)
+        {
+            throw new LasFormatException(
+                SceneGenerationErrorCodes.ModelAssetInvalid,
+                "LAS declared point count exceeds the available data.");
+        }
+
+        // Total bytes required for all declared point records. The bound above
+        // guarantees this product fits within the source window, so the multiply
+        // cannot overflow.
+        ulong requiredBytes = header.PointCount * (ulong)recordLength;
+        if ((ulong)startOffset + requiredBytes > (ulong)sourceLength)
+        {
+            throw new LasFormatException(
+                SceneGenerationErrorCodes.ModelAssetInvalid,
+                "LAS point data is truncated relative to the declared point count.");
+        }
+
+        var start = (int)startOffset;
         for (ulong i = 0; i < header.PointCount; i++)
         {
-            var recordStart = start + checked((int)(i * (ulong)recordLength));
-            if (recordStart + recordLength > source.Length)
-            {
-                throw new LasFormatException(
-                    SceneGenerationErrorCodes.ModelAssetInvalid,
-                    "LAS point data is truncated relative to the declared point count.");
-            }
-
+            // The aggregate window was validated above, so each record's offset
+            // fits in int and lies fully within the source buffer.
+            var recordStart = start + (int)(i * (ulong)recordLength);
             var record = source.AsSpan(recordStart, recordLength);
 
             var xi = BinaryPrimitives.ReadInt32LittleEndian(record.Slice(0, 4));

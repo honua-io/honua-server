@@ -6,6 +6,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Core.Features.Raster.Geometry;
 using Honua.Core.Features.Security.Domain;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Raster;
@@ -238,7 +239,7 @@ internal static class ElevationEndpoints
         try
         {
             var lineSrid = resolvedSrid.Srid ?? DefaultSrid;
-            var lineWkb = WriteLineWkb(lineString);
+            var lineWkb = ElevationProfileWkb.Write(lineString);
             var capturedSampleCount = sampleCount.HasValue
                 ? Math.Min(sampleCount.Value, elevationLimits.MaxSampleCount)
                 : (int?)null;
@@ -272,12 +273,6 @@ internal static class ElevationEndpoints
             HonuaTelemetry.RecordException(activity, ex);
             return MapElevationException(context, ex);
         }
-    }
-
-    private static byte[] WriteLineWkb(LineString lineString)
-    {
-        var writer = new WKBWriter(ByteOrder.LittleEndian, handleSRID: false, emitZ: false, emitM: false);
-        return writer.Write(lineString);
     }
 
     private static bool TryParseLineString(string wkt, out LineString lineString, out string error)

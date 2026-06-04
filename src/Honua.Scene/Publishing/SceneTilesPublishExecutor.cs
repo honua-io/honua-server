@@ -208,8 +208,8 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
                 var extrusionMinZ = double.PositiveInfinity;
                 foreach (var feature in collected.Features)
                 {
-                    var baseHeight = ResolveExtrusionBase(feature, extrusion!);
-                    var topZ = baseHeight + ResolveExtrusionMax(feature, extrusion!);
+                    var baseHeight = SceneExtrusionResolver.ResolveBaseHeightMeters(feature, extrusion!);
+                    var topZ = baseHeight + SceneExtrusionResolver.ResolveTopHeightMeters(feature, extrusion!);
                     var featureMin = Math.Min(baseHeight, topZ);
                     var featureMax = Math.Max(baseHeight, topZ);
                     if (featureMax > extrusionMaxZ) extrusionMaxZ = featureMax;
@@ -503,7 +503,16 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
 
     private static void CollectContentNodes(SceneTileNode node, List<SceneTileNode> sink)
     {
-        if (node.Features.Count > 0)
+        // Only emit content for nodes that will actually produce renderable
+        // vertices. A quadtree leaf can hold a spatial cluster of features that
+        // are ALL degenerate (e.g. single-vertex linestrings or empty points)
+        // even when the layer as a whole has valid geometry elsewhere; the
+        // layer-level guard in CollectFeaturesAsync only proves >=1 non-degenerate
+        // feature in the whole layer, not per-leaf. Routing such a leaf into
+        // GeometryTileBuilder.BuildGlb would throw "No vertices produced for tile"
+        // and abort the entire generation run, so drop the node here using the
+        // same per-kind threshold the builder applies internally.
+        if (NodeWillProduceVertices(node.Features))
         {
             sink.Add(node);
         }
@@ -511,6 +520,25 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         {
             CollectContentNodes(child, sink);
         }
+    }
+
+    /// <summary>
+    /// Returns true when at least one feature in the node will contribute
+    /// renderable vertices, mirroring <see cref="GeometryTileBuilder"/>'s per-kind
+    /// emission thresholds via <see cref="WillProduceVertices"/>. Used to drop
+    /// all-degenerate leaves from LOD content emission instead of letting
+    /// <see cref="GeometryTileBuilder.BuildGlb"/> throw.
+    /// </summary>
+    private static bool NodeWillProduceVertices(IReadOnlyList<SceneFeature> features)
+    {
+        for (var i = 0; i < features.Count; i++)
+        {
+            if (WillProduceVertices(features[i]))
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     /// <summary>
@@ -530,8 +558,8 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         {
             if (extrusion is not null && feature.Geometry.Kind == SceneGeometryKind.Polygon)
             {
-                var baseHeight = ResolveExtrusionBase(feature, extrusion);
-                var topZ = baseHeight + ResolveExtrusionMax(feature, extrusion);
+                var baseHeight = SceneExtrusionResolver.ResolveBaseHeightMeters(feature, extrusion);
+                var topZ = baseHeight + SceneExtrusionResolver.ResolveTopHeightMeters(feature, extrusion);
                 var fMin = Math.Min(baseHeight, topZ);
                 var fMax = Math.Max(baseHeight, topZ);
                 if (fMax > max) max = fMax;
@@ -907,63 +935,6 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
     private static bool IsSupportedKind(SceneGeometryKind kind)
         => kind is SceneGeometryKind.Point or SceneGeometryKind.LineString or SceneGeometryKind.Polygon;
 
-    private static double ResolveExtrusionMax(SceneFeature feature, MetadataV2ExtrusionInfo extrusion)
-    {
-        if (!feature.Attributes.TryGetValue(extrusion.HeightField, out var raw) || raw is null)
-        {
-            return extrusion.DefaultHeight ?? 0.0;
-        }
-
-        var value = raw switch
-        {
-            double d => d,
-            float f => f,
-            int i => i,
-            long l => l,
-            short s => s,
-            decimal m => (double)m,
-            string s when double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var v) => v,
-            _ => extrusion.DefaultHeight ?? 0.0
-        };
-
-        return ConvertVerticalToMeters(value, extrusion.Unit);
-    }
-
-    private static double ResolveExtrusionBase(SceneFeature feature, MetadataV2ExtrusionInfo extrusion)
-    {
-        if (string.IsNullOrEmpty(extrusion.BaseHeightField))
-        {
-            return 0.0;
-        }
-        if (!feature.Attributes.TryGetValue(extrusion.BaseHeightField, out var raw) || raw is null)
-        {
-            return 0.0;
-        }
-        var value = raw switch
-        {
-            double d => d,
-            float f => f,
-            int i => i,
-            long l => l,
-            short s => s,
-            decimal m => (double)m,
-            string s when double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var v) => v,
-            _ => 0.0
-        };
-        return ConvertVerticalToMeters(value, extrusion.Unit);
-    }
-
-    private static double ConvertVerticalToMeters(double value, string? unit)
-    {
-        MetadataV2VerticalUnits.TryNormalize(unit, out var normalized);
-        return normalized switch
-        {
-            MetadataV2VerticalUnits.Feet => value * 0.3048,
-            MetadataV2VerticalUnits.UsSurveyFeet => value * (1200.0 / 3937.0),
-            _ => value
-        };
-    }
-
     private static string ResolveSceneId(PublishIntent intent, MetadataV2Resource resource)
     {
         var explicitId = TryGetTargetConfig(intent, TargetConfigSceneId);
@@ -1217,16 +1188,11 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
     }
 
     private static double ComputeGeometricError(double[] bounds, double minHeight, double maxHeight)
-    {
-        var lonSpanRad = (bounds[2] - bounds[0]) * Math.PI / 180.0;
-        var latSpanRad = (bounds[3] - bounds[1]) * Math.PI / 180.0;
-        var lonMeters = Math.Abs(lonSpanRad) * EcefCoordinateTransform.WgsSemiMajorAxis
-            * Math.Cos((bounds[1] + bounds[3]) * 0.5 * Math.PI / 180.0);
-        var latMeters = Math.Abs(latSpanRad) * EcefCoordinateTransform.WgsSemiMajorAxis;
-        var heightMeters = Math.Max(0.0, maxHeight - minHeight);
-        var diagonal = Math.Sqrt(lonMeters * lonMeters + latMeters * latMeters + heightMeters * heightMeters);
-        return Math.Round(diagonal, 6, MidpointRounding.AwayFromZero);
-    }
+        // Shared cos-lat-corrected 3D-diagonal geodesy (see GeodesicError). This is
+        // the root LOD budget handed to the partitioner, so it now also carries the
+        // positive floor the helper applies — ensuring the root tile (even a
+        // root-leaf) declares a non-zero geometric error.
+        => GeodesicError.RootGeometricError(bounds, minHeight, maxHeight);
 
     private static string SlugifyName(string name, int maxLength)
     {
@@ -1298,39 +1264,39 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
 
     internal static partial class SceneGenerationLog
     {
-        [LoggerMessage(EventId = 8410, Level = LogLevel.Information,
+        [LoggerMessage(EventId = 8430, Level = LogLevel.Information,
             Message = "Scene generation started: intent {IntentId}, source {SourceId}")]
         public static partial void Started(ILogger logger, string intentId, string sourceId);
 
-        [LoggerMessage(EventId = 8411, Level = LogLevel.Information,
+        [LoggerMessage(EventId = 8431, Level = LogLevel.Information,
             Message = "Scene generation completed: intent {IntentId}, scene {SceneId}, features {FeatureCount}, elapsed {ElapsedMs}ms")]
         public static partial void Completed(ILogger logger, string intentId, string sceneId, int featureCount, long elapsedMs);
 
-        [LoggerMessage(EventId = 8412, Level = LogLevel.Warning,
+        [LoggerMessage(EventId = 8432, Level = LogLevel.Warning,
             Message = "Scene generation failed: intent {IntentId}, source {SourceId}, reason {Reason}")]
         public static partial void Failed(ILogger logger, string intentId, string sourceId, string reason);
 
-        [LoggerMessage(EventId = 8413, Level = LogLevel.Information,
+        [LoggerMessage(EventId = 8433, Level = LogLevel.Information,
             Message = "Scene generation warning: intent {IntentId}, message {Message}")]
         public static partial void Warning(ILogger logger, string intentId, string message);
 
-        [LoggerMessage(EventId = 8414, Level = LogLevel.Warning,
+        [LoggerMessage(EventId = 8434, Level = LogLevel.Warning,
             Message = "Scene generation overwrote stale final directory {FinalDirectory} during staging promotion; the registry record now points at the new bytes.")]
         public static partial void PromotionOverwroteStaleFinalDir(ILogger logger, string finalDirectory);
 
-        [LoggerMessage(EventId = 8415, Level = LogLevel.Warning,
+        [LoggerMessage(EventId = 8435, Level = LogLevel.Warning,
             Message = "Scene generation could not delete staging directory {StagingDirectory}; subsequent generations are unaffected but the directory may need a manual sweep.")]
         public static partial void StagingCleanupFailed(ILogger logger, string stagingDirectory, Exception exception);
 
-        [LoggerMessage(EventId = 8416, Level = LogLevel.Warning,
+        [LoggerMessage(EventId = 8436, Level = LogLevel.Warning,
             Message = "Scene generation deactivated registry record for scene {SceneId} ({DatasetId}) after staging promotion failed; deactivated={Deactivated}.")]
         public static partial void RegistrationCompensated(ILogger logger, string sceneId, Guid datasetId, bool deactivated);
 
-        [LoggerMessage(EventId = 8417, Level = LogLevel.Error,
+        [LoggerMessage(EventId = 8437, Level = LogLevel.Error,
             Message = "Scene generation could not deactivate registry record for scene {SceneId} ({DatasetId}) after staging promotion failed; record remains Active and the operator must clean it up via the admin scene CRUD path.")]
         public static partial void RegistrationCompensationFailed(ILogger logger, string sceneId, Guid datasetId, Exception exception);
 
-        [LoggerMessage(EventId = 8418, Level = LogLevel.Error,
+        [LoggerMessage(EventId = 8438, Level = LogLevel.Error,
             Message = "Scene generation failed unexpectedly: intent {IntentId}, source {SourceId}")]
         public static partial void FailedUnexpected(ILogger logger, string intentId, string sourceId, Exception exception);
     }

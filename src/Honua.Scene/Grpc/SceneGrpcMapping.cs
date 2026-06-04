@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
-using Google.Protobuf;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Scene.Domain;
 using Proto = Geospatial.V1;
@@ -125,19 +124,6 @@ internal static class SceneGrpcMapping
         };
     }
 
-    /// <summary>Maps the gRPC mosaic-rule string to the raster merge strategy.</summary>
-    public static RasterMergeStrategy ParseMergeStrategy(string? mosaicRule)
-        => (mosaicRule ?? string.Empty).Trim().ToLowerInvariant() switch
-        {
-            "oldest" => RasterMergeStrategy.Oldest,
-            "average" => RasterMergeStrategy.Average,
-            "max" => RasterMergeStrategy.Max,
-            "min" => RasterMergeStrategy.Min,
-            // "newest" and the empty/default case both resolve to newest-wins,
-            // matching the server elevation default.
-            _ => RasterMergeStrategy.Newest,
-        };
-
     /// <summary>Formats a raster merge strategy back to its canonical rule string.</summary>
     public static string FormatMergeStrategy(RasterMergeStrategy strategy) => strategy switch
     {
@@ -239,7 +225,4 @@ internal static class SceneGrpcMapping
 
     private static string BuildTilesetPath(string sceneId)
         => string.Create(CultureInfo.InvariantCulture, $"/scenes/{sceneId}/tileset.json");
-
-    /// <summary>Serializes raw tile bytes into a protobuf byte string.</summary>
-    public static ByteString ToByteString(byte[] content) => ByteString.CopyFrom(content);
 }

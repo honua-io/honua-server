@@ -177,16 +177,21 @@ public sealed class GeoservicesArcGisInventoryBaselineTests
             record.Category == "subtypes" &&
             record.Code == ImportCompatibilityCodes.ArcGisSubtypesManualReview &&
             record.AutomationStatus == MigrationFidelityAutomationStatuses.ManualReview);
-        artifact.FidelityClassifications.Should().Contain(record =>
-            record.SourceId == resource.Id &&
-            record.Category == "relationships" &&
-            record.Code == ImportCompatibilityCodes.ArcGisRelationshipsManualReview &&
-            record.AutomationStatus == MigrationFidelityAutomationStatuses.ManualReview);
+        // Issue #1256: per-relationship fidelity records now classify simple
+        // (non-composite, non-attributed, non-many-to-many) relationships as
+        // Automated so the apply path can recreate them deterministically.
+        var relationshipRecord = artifact.FidelityClassifications.Should().ContainSingle(record =>
+            record.SourceId == resource.Id && record.Category == "relationships").Subject;
+        relationshipRecord.Code.Should().Be(ImportCompatibilityCodes.Compatible);
+        relationshipRecord.AutomationStatus.Should().Be(MigrationFidelityAutomationStatuses.Automated);
+        relationshipRecord.Metadata["relationshipId"].Should().Be("2");
+        relationshipRecord.Metadata["name"].Should().Be("InspectionPhotos");
+        relationshipRecord.Metadata["relatedLayerIds"].Should().Be("layer:3");
         artifact.FidelityClassifications.Should().Contain(record =>
             record.SourceId == resource.Id &&
             record.Category == "attachments" &&
-            record.Code == ImportCompatibilityCodes.ArcGisAttachments &&
-            record.AutomationStatus == MigrationFidelityAutomationStatuses.ManualReview);
+            record.Code == ImportCompatibilityCodes.Compatible &&
+            record.AutomationStatus == MigrationFidelityAutomationStatuses.Automated);
         artifact.FidelityClassifications.Should().Contain(record =>
             record.Category == "renderers" &&
             record.AutomationStatus == MigrationFidelityAutomationStatuses.ManualReview);
@@ -197,10 +202,13 @@ public sealed class GeoservicesArcGisInventoryBaselineTests
             record.AutomationStatus == MigrationFidelityAutomationStatuses.ManualReview);
 
         artifact.FidelityMatrix.Should().NotBeNull();
+        // Manual-review categories on current trunk are subtypes, renderers, and
+        // time-metadata (domains classify as Assisted; #1256 reclassifies the simple
+        // relationship as Automated), so the matrix carries exactly three manual-review cells.
         artifact.FidelityMatrix!.Summary.Should().Match<MigrationFidelityMatrixSummary>(summary =>
-            summary.AutomatedCount >= 4 &&
+            summary.AutomatedCount >= 5 &&
             summary.AssistedCount >= 1 &&
-            summary.ManualReviewCount >= 5 &&
+            summary.ManualReviewCount >= 3 &&
             summary.UnsupportedCount == 0);
         artifact.FidelityMatrix.Cells.Should().Contain(cell =>
             cell.Category == "domains" &&
@@ -208,8 +216,8 @@ public sealed class GeoservicesArcGisInventoryBaselineTests
             cell.SourceIds.SequenceEqual(new[] { resource.Id }));
         artifact.FidelityMatrix.Cells.Should().Contain(cell =>
             cell.Category == "relationships" &&
-            cell.AutomationStatus == MigrationFidelityAutomationStatuses.ManualReview &&
-            cell.Codes.SequenceEqual(new[] { ImportCompatibilityCodes.ArcGisRelationshipsManualReview }));
+            cell.AutomationStatus == MigrationFidelityAutomationStatuses.Automated &&
+            cell.Codes.SequenceEqual(new[] { ImportCompatibilityCodes.Compatible }));
         artifact.FidelityMatrix.Cells.Should().Contain(cell =>
             cell.Category == "renderers" &&
             cell.AutomationStatus == MigrationFidelityAutomationStatuses.ManualReview &&

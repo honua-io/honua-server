@@ -574,6 +574,13 @@ public sealed class GeoServerImportWorkspaceScopingTests
             MigrationStyleRequest request,
             CancellationToken cancellationToken = default)
             => Task.FromResult(MigrationCatalogWriteOutcome.Created);
+
+        public Task<MigrationRelationshipApplyOutcome[]> EnsureRelationshipsAsync(
+            string connectionString,
+            Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphStore? graphStore,
+            MigrationRelationshipApplyRequest[] requests,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(Array.Empty<MigrationRelationshipApplyOutcome>());
     }
 
     private sealed class RecordingLogger : ILogger<GeoServerImportService>
