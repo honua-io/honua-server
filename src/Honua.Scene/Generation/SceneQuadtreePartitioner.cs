@@ -125,7 +125,7 @@ public static class SceneQuadtreePartitioner
             var leafFeatures = MaterializeFeatures(features, memberIndices);
             return new SceneTileNode(
                 west, south, east, north,
-                geometricError: 0.0,
+                geometricError: LeafGeometricError(depth, geometricError),
                 depth,
                 leafFeatures,
                 children: Array.Empty<SceneTileNode>());
@@ -171,7 +171,7 @@ public static class SceneQuadtreePartitioner
             var leafFeatures = MaterializeFeatures(features, memberIndices);
             return new SceneTileNode(
                 west, south, east, north,
-                geometricError: 0.0,
+                geometricError: LeafGeometricError(depth, geometricError),
                 depth,
                 leafFeatures,
                 children: Array.Empty<SceneTileNode>());
@@ -199,6 +199,25 @@ public static class SceneQuadtreePartitioner
             sample,
             children);
     }
+
+    /// <summary>
+    /// Geometric error for a leaf tile. A childless tile's geometric error is the
+    /// error introduced when its (non-existent) children are not rendered, so for
+    /// a non-root leaf that is 0.0: a positive value would tell a 3D Tiles client
+    /// that finer detail still exists and screen-space-error refinement would
+    /// never converge at the deepest LOD.
+    /// <para>
+    /// The root tile is the exception: even when the whole dataset fits one leaf
+    /// (root is also a leaf), the root must carry its floored, positive root
+    /// geometric error. A zero root error gives the root a zero screen-space error
+    /// and can leave a client never scheduling the root tile, defeating root SSE
+    /// refinement. This mirrors the point-cloud builder
+    /// (PointCloudTilesetBuilder.MakeLeaf), which deliberately keeps the floored
+    /// root error on a root-leaf.
+    /// </para>
+    /// </summary>
+    private static double LeafGeometricError(int depth, double inheritedGeometricError)
+        => depth == 0 ? inheritedGeometricError : 0.0;
 
     private static void AddChild(
         List<SceneTileNode> children,

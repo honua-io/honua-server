@@ -60,6 +60,23 @@ public sealed class I3sSceneServiceBuilderTests
     }
 
     [UnitTest]
+    public void BuildLayer_WithExtentButNoHeights_LeavesVerticalExtentNull()
+    {
+        // The served descriptor path (I3sSceneServerEndpoints.ResolveExtentAsync)
+        // has no height source — the persisted SceneDatasetRecord carries only a 2D
+        // SceneExtent — so it passes null heights. The fullExtent must then advertise
+        // a horizontal-only extent (zmin/zmax omitted) rather than a fabricated 0..0
+        // vertical range; authoritative vertical bounds live on the gRPC TileService
+        // bounding volumes.
+        var layer = I3sSceneServiceBuilder.BuildLayer(Scene, Extent);
+
+        layer.FullExtent.Should().NotBeNull();
+        layer.FullExtent!.Xmin.Should().Be(-122.5);
+        layer.FullExtent.Zmin.Should().BeNull();
+        layer.FullExtent.Zmax.Should().BeNull();
+    }
+
+    [UnitTest]
     public void BuildLayer_WithoutExtent_OmitsFullExtent()
     {
         var layer = I3sSceneServiceBuilder.BuildLayer(Scene, extent: null);

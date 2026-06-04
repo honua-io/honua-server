@@ -119,7 +119,11 @@ public static class GeometryTileBuilder
         }
 
         // 1. Build geometry buffers (positions + per-vertex feature ids).
-        var positions = new List<float>(features.Count * 8);
+        // Positions are accumulated in double-precision ECEF meters so the RTC
+        // centroid (computed below) can be subtracted BEFORE the float cast; a
+        // direct float cast of absolute ECEF would already have lost ~1 m before
+        // any recentering could help.
+        var positions = new List<double>(features.Count * 8);
         var featureIds = new List<float>(features.Count * 8);
         var primitiveMode = kind switch
         {
@@ -140,6 +144,19 @@ public static class GeometryTileBuilder
         {
             throw new InvalidOperationException("No vertices produced for tile.");
         }
+
+        // 1b. Recenter positions about the tile's ECEF centroid (RTC). Vertex
+        // positions are absolute ECEF meters (magnitude ~6.3e6 near the
+        // surface); a float32 has ~24 bits of mantissa, so storing absolute
+        // ECEF quantizes every vertex to ~0.5-1 m. Subtract a per-tile centroid
+        // (accumulated in double precision in AppendVertex) BEFORE the float
+        // cast and emit the centroid as the glTF node `translation`, so the
+        // float positions stay small-magnitude and retain sub-centimeter
+        // precision. This mirrors the PNTS path's RTC_CENTER (PntsTileWriter).
+        // The centroid is the arithmetic mean of the double-precision vertex
+        // positions, so it is deterministic for identical input.
+        var translation = ComputeCentroid(positions, vertexCount);
+        var positionFloats = RecenterToFloat(positions, translation);
 
         // 2. Build the per-feature property table buffers.
         var propertyTable = SceneMetadataTable.Build(features, metadataAttributes, warnings);
@@ -165,7 +182,7 @@ public static class GeometryTileBuilder
 
         // 3. Lay out the binary buffer: positions, feature ids, optional vertex
         // colors, then each property column.
-        var positionBytes = AsByteSpan(positions);
+        var positionBytes = FloatsToByteArray(positionFloats);
         var featureIdBytes = AsByteSpan(featureIds);
 
         var bufferViews = new List<BufferViewDescriptor>(3 + propertyTable.Columns.Count);
@@ -223,7 +240,8 @@ public static class GeometryTileBuilder
         var jsonBytes = BuildJsonChunk(
             primitiveMode,
             vertexCount,
-            positions,
+            positionFloats,
+            translation,
             bufferViews,
             positionViewIndex: 0,
             featureIdViewIndex: 1,
@@ -266,7 +284,7 @@ public static class GeometryTileBuilder
         float featureIndex,
         SceneGeometryKind kind,
         MetadataV2ExtrusionInfo? extrusion,
-        List<float> positions,
+        List<double> positions,
         List<float> featureIds)
     {
         var vertices = feature.Geometry.Vertices;
@@ -298,15 +316,15 @@ public static class GeometryTileBuilder
     private static void AppendVertex(
         SceneVertex vertex,
         double? heightOverride,
-        List<float> positions,
+        List<double> positions,
         List<float> featureIds,
         float featureIndex)
     {
         var height = heightOverride ?? vertex.Height ?? 0.0;
         var (x, y, z) = EcefCoordinateTransform.ToEcef(vertex.Longitude, vertex.Latitude, height);
-        positions.Add((float)x);
-        positions.Add((float)y);
-        positions.Add((float)z);
+        positions.Add(x);
+        positions.Add(y);
+        positions.Add(z);
         featureIds.Add(featureIndex);
     }
 
@@ -314,7 +332,7 @@ public static class GeometryTileBuilder
         SceneFeature feature,
         float featureIndex,
         MetadataV2ExtrusionInfo? extrusion,
-        List<float> positions,
+        List<double> positions,
         List<float> featureIds)
     {
         var ring = feature.Geometry.Vertices;
@@ -444,6 +462,51 @@ public static class GeometryTileBuilder
         return bytes;
     }
 
+    private static byte[] FloatsToByteArray(float[] values)
+    {
+        var bytes = new byte[values.Length * 4];
+        for (var i = 0; i < values.Length; i++)
+        {
+            BinaryPrimitives.WriteSingleLittleEndian(bytes.AsSpan(i * 4, 4), values[i]);
+        }
+        return bytes;
+    }
+
+    /// <summary>
+    /// Computes the RTC centroid (arithmetic mean of the double-precision ECEF
+    /// vertex positions). Returned as a double[3] so it can be emitted verbatim
+    /// as the glTF node <c>translation</c> without a lossy float cast.
+    /// </summary>
+    private static double[] ComputeCentroid(List<double> positions, int vertexCount)
+    {
+        double cx = 0, cy = 0, cz = 0;
+        for (var i = 0; i < positions.Count; i += 3)
+        {
+            cx += positions[i];
+            cy += positions[i + 1];
+            cz += positions[i + 2];
+        }
+        return new[] { cx / vertexCount, cy / vertexCount, cz / vertexCount };
+    }
+
+    /// <summary>
+    /// Subtracts the RTC centroid from each double-precision position and casts
+    /// to float32. Recentering before the cast keeps the magnitudes small so the
+    /// float mantissa retains sub-centimeter precision; the absolute position is
+    /// reconstructed client-side as <c>translation + position</c>.
+    /// </summary>
+    private static float[] RecenterToFloat(List<double> positions, double[] translation)
+    {
+        var result = new float[positions.Count];
+        for (var i = 0; i < positions.Count; i += 3)
+        {
+            result[i] = (float)(positions[i] - translation[0]);
+            result[i + 1] = (float)(positions[i + 1] - translation[1]);
+            result[i + 2] = (float)(positions[i + 2] - translation[2]);
+        }
+        return result;
+    }
+
     private static byte[] PadJsonToFourBytes(byte[] json)
     {
         var padding = (4 - (json.Length & 3)) & 3;
@@ -463,7 +526,8 @@ public static class GeometryTileBuilder
     private static byte[] BuildJsonChunk(
         int primitiveMode,
         int vertexCount,
-        List<float> positions,
+        float[] positions,
+        double[] translation,
         List<BufferViewDescriptor> bufferViews,
         int positionViewIndex,
         int featureIdViewIndex,
@@ -509,6 +573,16 @@ public static class GeometryTileBuilder
             writer.WriteStartArray("nodes");
             writer.WriteStartObject();
             writer.WriteNumber("mesh", 0);
+            // RTC translation: the absolute ECEF centroid subtracted from every
+            // vertex above. Emitting it as the node translation lets the client
+            // reconstruct absolute ECEF (translation + position) while the stored
+            // float positions stay small-magnitude and precise. This replaces the
+            // former bare {"mesh":0} node (which left absolute ECEF in float32).
+            writer.WriteStartArray("translation");
+            writer.WriteNumberValue(translation[0]);
+            writer.WriteNumberValue(translation[1]);
+            writer.WriteNumberValue(translation[2]);
+            writer.WriteEndArray();
             writer.WriteEndObject();
             writer.WriteEndArray();
 
@@ -679,7 +753,7 @@ public static class GeometryTileBuilder
         return stream.ToArray();
     }
 
-    private static (double, double, double, double, double, double) ComputePositionBounds(List<float> positions)
+    private static (double, double, double, double, double, double) ComputePositionBounds(float[] positions)
     {
         var minX = double.PositiveInfinity;
         var minY = double.PositiveInfinity;
@@ -688,7 +762,7 @@ public static class GeometryTileBuilder
         var maxY = double.NegativeInfinity;
         var maxZ = double.NegativeInfinity;
 
-        for (var i = 0; i < positions.Count; i += 3)
+        for (var i = 0; i < positions.Length; i += 3)
         {
             var x = positions[i];
             var y = positions[i + 1];
@@ -743,11 +817,19 @@ public static class GeometryTileBuilder
 
     private sealed class BinaryBufferBuilder
     {
-        private readonly List<byte> _buffer;
+        // Single pre-sized backing array. Each Append copies its payload exactly
+        // once (the prior List<byte>-backed implementation copied every payload
+        // three times: AsByteSpan -> AddRange -> ToArray). The estimated
+        // capacity passed by BuildGlb is an upper bound that includes worst-case
+        // alignment slack, so _buffer never reallocates; GetPayloadWithPadding
+        // returns the exact-length slice (zero-trailing-pad included).
+        private readonly byte[] _buffer;
+        private int _length;
 
-        public BinaryBufferBuilder(int capacity = 0)
+        public BinaryBufferBuilder(int capacity)
         {
-            _buffer = new List<byte>(capacity > 0 ? capacity : 0);
+            // capacity is a guaranteed upper bound from BuildGlb. Allocate once.
+            _buffer = new byte[capacity > 0 ? capacity : 0];
         }
 
         public BufferRange Append(byte[] payload, int alignment = 4)
@@ -758,24 +840,28 @@ public static class GeometryTileBuilder
             // requiring alignment equal to the component byte length (8 for
             // INT64/UINT64). Pad with zeros to keep alignment deterministic.
             var mask = alignment - 1;
-            var pad = (alignment - (_buffer.Count & mask)) & mask;
-            for (var i = 0; i < pad; i++)
-            {
-                _buffer.Add(0);
-            }
-            var offset = _buffer.Count;
-            _buffer.AddRange(payload);
+            var pad = (alignment - (_length & mask)) & mask;
+            // _buffer is zero-initialized so advancing past the pad bytes leaves
+            // them at 0 without an explicit write.
+            _length += pad;
+            var offset = _length;
+            payload.CopyTo(_buffer.AsSpan(_length));
+            _length += payload.Length;
             return new BufferRange(offset, payload.Length);
         }
 
         public byte[] GetPayloadWithPadding()
         {
-            var pad = (4 - (_buffer.Count & 3)) & 3;
-            for (var i = 0; i < pad; i++)
+            var pad = (4 - (_length & 3)) & 3;
+            _length += pad;
+            // One final copy to the exact tile length. This is unavoidable: the
+            // GLB assembler needs a byte[] of the precise padded length to splice
+            // into the BIN chunk, and the backing array is an upper-bound size.
+            if (_length == _buffer.Length)
             {
-                _buffer.Add(0);
+                return _buffer;
             }
-            return _buffer.ToArray();
+            return _buffer.AsSpan(0, _length).ToArray();
         }
     }
 }

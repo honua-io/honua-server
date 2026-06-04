@@ -313,22 +313,10 @@ public static class PointCloudTilesetBuilder
     }
 
     private static double ComputeRootGeometricError(double[] boundsDegrees, double minHeight, double maxHeight)
-    {
-        var lonSpanRad = (boundsDegrees[2] - boundsDegrees[0]) * Math.PI / 180.0;
-        var latSpanRad = (boundsDegrees[3] - boundsDegrees[1]) * Math.PI / 180.0;
-        var lonMeters = Math.Abs(lonSpanRad) * EcefCoordinateTransform.WgsSemiMajorAxis
-            * Math.Cos((boundsDegrees[1] + boundsDegrees[3]) * 0.5 * Math.PI / 180.0);
-        var latMeters = Math.Abs(latSpanRad) * EcefCoordinateTransform.WgsSemiMajorAxis;
-        var heightMeters = Math.Max(0.0, maxHeight - minHeight);
-        var diagonal = Math.Sqrt(lonMeters * lonMeters + latMeters * latMeters + heightMeters * heightMeters);
-
-        // Floor the root geometric error at a positive value so degenerate clouds
-        // (a single point, or all points co-located) still declare a refinement
-        // budget. A zero root error defeats screen-space-error refinement and can
-        // leave a client never scheduling the root tile. Mirrors the I3S converter
-        // (I3sToTilesetConverter.Convert) and the BSL builder.
-        return Math.Max(1.0, Math.Round(diagonal, 6, MidpointRounding.AwayFromZero));
-    }
+        // Shared cos-lat-corrected diagonal geodesy (see GeodesicError); the floor,
+        // 6-decimal rounding, and height term all live in the one helper so the
+        // point-cloud, BSL, and I3S builders stay numerically identical.
+        => GeodesicError.RootGeometricError(boundsDegrees, minHeight, maxHeight);
 
     private readonly record struct ProjectedPoint(
         double Lon,

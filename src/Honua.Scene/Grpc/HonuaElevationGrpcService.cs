@@ -6,6 +6,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Infrastructure.Raster;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -90,7 +91,20 @@ internal sealed partial class HonuaElevationGrpcService : Proto.ElevationService
             SceneGrpcTelemetry.GetElevationOperation,
             request.LayerId,
             context.CancellationToken).ConfigureAwait(false);
-        var mergeStrategy = SceneGrpcMapping.ParseMergeStrategy(request.MosaicRule);
+        // Enforce per-layer read RBAC BEFORE querying, mirroring the HTTP
+        // elevation surface (ElevationEndpoints.ValidateDatasetAsync). The shared
+        // guard maps a protected layer to Unauthenticated/PermissionDenied and an
+        // unknown layer to NotFound, and returns the authorized resource.
+        var resource = await ElevationAccessGuard
+            .EnforceReadAccessAsync(context, request.LayerId, context.CancellationToken)
+            .ConfigureAwait(false);
+
+        // Resolve the merge strategy through the shared RasterMosaicUtilities used
+        // by the HTTP elevation path (ElevationEndpoints), so the request rule and
+        // the dataset's configured default mergeStrategy resolve identically across
+        // protocols (the prior protocol-local ParseMergeStrategy ignored both the
+        // resource default and the canonical token aliases).
+        var mergeStrategy = RasterMosaicUtilities.ResolveMergeStrategy(resource, request.MosaicRule);
 
         try
         {
@@ -126,7 +140,6 @@ internal sealed partial class HonuaElevationGrpcService : Proto.ElevationService
             SceneGrpcTelemetry.GetElevationProfileOperation,
             request.LayerId,
             context.CancellationToken).ConfigureAwait(false) ?? Wgs84;
-        var mergeStrategy = SceneGrpcMapping.ParseMergeStrategy(request.MosaicRule);
 
         var requestedSampleCount = request.SampleCount;
 
@@ -155,6 +168,15 @@ internal sealed partial class HonuaElevationGrpcService : Proto.ElevationService
             DefaultSampleCount = _limits.Elevation.DefaultSampleCount,
             MaxSampleCount = _limits.Elevation.MaxSampleCount,
         };
+
+        // Enforce per-layer read RBAC BEFORE querying, mirroring the HTTP
+        // elevation surface (ElevationEndpoints.ValidateDatasetAsync).
+        var resource = await ElevationAccessGuard
+            .EnforceReadAccessAsync(context, request.LayerId, context.CancellationToken)
+            .ConfigureAwait(false);
+
+        // Shared mosaic-rule resolution (see GetElevation for rationale).
+        var mergeStrategy = RasterMosaicUtilities.ResolveMergeStrategy(resource, request.MosaicRule);
 
         try
         {

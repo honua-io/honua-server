@@ -4,6 +4,7 @@
 using FluentAssertions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Scene.Domain;
+using Honua.Infrastructure.Raster;
 using Honua.Scene.Grpc;
 using Honua.TestKit.Attributes;
 
@@ -61,23 +62,13 @@ public sealed class SceneGrpcMappingTests
         camera.Pitch.Should().Be(-45);
     }
 
-    [Theory]
-    [InlineData("newest", RasterMergeStrategy.Newest)]
-    [InlineData("oldest", RasterMergeStrategy.Oldest)]
-    [InlineData("average", RasterMergeStrategy.Average)]
-    [InlineData("max", RasterMergeStrategy.Max)]
-    [InlineData("min", RasterMergeStrategy.Min)]
-    [InlineData("", RasterMergeStrategy.Newest)]
-    [InlineData("unrecognized", RasterMergeStrategy.Newest)]
-    [Trait("Category", "Unit")]
-    public void ParseMergeStrategy_MapsKnownRulesAndDefaultsToNewest(string rule, RasterMergeStrategy expected)
-    {
-        SceneGrpcMapping.ParseMergeStrategy(rule).Should().Be(expected);
-    }
-
     [UnitTest]
-    public void FormatMergeStrategy_RoundTripsWithParse()
+    public void FormatMergeStrategy_RoundTripsThroughSharedMosaicResolver()
     {
+        // The elevation gRPC adapter now resolves the mosaic rule through the
+        // shared RasterMosaicUtilities (#11) rather than a protocol-local parser.
+        // FormatMergeStrategy must emit a canonical token that the shared resolver
+        // round-trips back to the same strategy.
         foreach (var strategy in new[]
         {
             RasterMergeStrategy.Newest,
@@ -88,7 +79,160 @@ public sealed class SceneGrpcMappingTests
         })
         {
             var formatted = SceneGrpcMapping.FormatMergeStrategy(strategy);
-            SceneGrpcMapping.ParseMergeStrategy(formatted).Should().Be(strategy);
+            RasterMosaicUtilities.ResolveMergeStrategy(resource: null, formatted).Should().Be(strategy);
         }
+    }
+
+    [UnitTest]
+    public void ToElevationResponse_WithValue_SetsElevationAndSource()
+    {
+        var result = new ElevationPointResult
+        {
+            LayerId = 7,
+            Elevation = 123.5,
+            NoData = false,
+            OutOfBounds = false,
+            X = -157.0,
+            Y = 21.0,
+            QuerySrid = 4326,
+            RasterIds = new long[] { 11, 22 },
+            SourceSrid = 3857,
+            PixelType = "F32",
+            NoDataValue = -9999.0,
+            VerticalUnit = "meter",
+            VerticalDatum = "EGM2008",
+        };
+
+        var response = SceneGrpcMapping.ToElevationResponse(result, RasterMergeStrategy.Max);
+
+        response.HasElevation.Should().BeTrue();
+        response.Elevation.Should().Be(123.5);
+        response.NoData.Should().BeFalse();
+        response.OutOfBounds.Should().BeFalse();
+        response.X.Should().Be(-157.0);
+        response.Y.Should().Be(21.0);
+        response.MosaicRule.Should().Be("max");
+        response.Source.Should().NotBeNull();
+        response.Source.RasterIds.Should().Equal(11, 22);
+        response.Source.PixelType.Should().Be("F32");
+        response.Source.VerticalUnit.Should().Be("meter");
+        response.Source.VerticalDatum.Should().Be("EGM2008");
+        response.Source.SourceSpatialReference.Wkid.Should().Be(3857);
+        response.Source.HasNoDataValue.Should().BeTrue();
+        response.Source.NoDataValue.Should().Be(-9999.0);
+    }
+
+    [UnitTest]
+    public void ToElevationResponse_NoData_LeavesElevationUnset()
+    {
+        var result = new ElevationPointResult
+        {
+            LayerId = 7,
+            Elevation = 50.0, // present but suppressed because NoData is true
+            NoData = true,
+            OutOfBounds = false,
+            X = 0,
+            Y = 0,
+            QuerySrid = 4326,
+            RasterIds = Array.Empty<long>(),
+        };
+
+        var response = SceneGrpcMapping.ToElevationResponse(result, RasterMergeStrategy.Newest);
+
+        response.HasElevation.Should().BeFalse(
+            "the proto leaves elevation unset for a no-data sample even when a numeric value is present.");
+        response.NoData.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void ToElevationResponse_OutOfBounds_LeavesElevationUnset()
+    {
+        var result = new ElevationPointResult
+        {
+            LayerId = 7,
+            Elevation = 50.0,
+            NoData = false,
+            OutOfBounds = true,
+            X = 0,
+            Y = 0,
+            QuerySrid = 4326,
+            RasterIds = Array.Empty<long>(),
+        };
+
+        var response = SceneGrpcMapping.ToElevationResponse(result, RasterMergeStrategy.Newest);
+
+        response.HasElevation.Should().BeFalse();
+        response.OutOfBounds.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void ToElevationResponse_NoSourceSridOrNoDataValue_LeavesOptionalsUnset()
+    {
+        var result = new ElevationPointResult
+        {
+            LayerId = 7,
+            Elevation = 1.0,
+            NoData = false,
+            OutOfBounds = false,
+            X = 0,
+            Y = 0,
+            QuerySrid = 4326,
+            RasterIds = Array.Empty<long>(),
+            SourceSrid = null,
+            NoDataValue = null,
+        };
+
+        var response = SceneGrpcMapping.ToElevationResponse(result, RasterMergeStrategy.Newest);
+
+        response.Source.SourceSpatialReference.Should().BeNull(
+            "a null source SRID must not populate the optional spatial reference.");
+        response.Source.HasNoDataValue.Should().BeFalse();
+        response.Source.PixelType.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public void ToElevationProfileResponse_MapsSamplesAndSuppressesNoDataElevation()
+    {
+        var result = new ElevationProfileResult
+        {
+            LayerId = 7,
+            SampleCount = 3,
+            LineLengthMeters = 1000.0,
+            IsAllNoData = false,
+            Samples = new[]
+            {
+                new ElevationSample { DistanceMeters = 0, Elevation = 10.0, NoData = false },
+                new ElevationSample { DistanceMeters = 500, Elevation = 20.0, NoData = true },
+                new ElevationSample { DistanceMeters = 1000, Elevation = 30.0, NoData = false },
+            },
+            RasterIds = new long[] { 5 },
+            SourceSrid = 4326,
+            PixelType = "F32",
+            NoDataValue = -9999.0,
+            VerticalUnit = "meter",
+            VerticalDatum = "EGM96",
+        };
+
+        var response = SceneGrpcMapping.ToElevationProfileResponse(result, RasterMergeStrategy.Min);
+
+        response.LineLengthMeters.Should().Be(1000.0);
+        response.IsAllNoData.Should().BeFalse();
+        response.MosaicRule.Should().Be("min");
+        response.Samples.Should().HaveCount(3);
+
+        response.Samples[0].HasElevation.Should().BeTrue();
+        response.Samples[0].Elevation.Should().Be(10.0);
+        response.Samples[0].DistanceMeters.Should().Be(0);
+
+        response.Samples[1].HasElevation.Should().BeFalse(
+            "a no-data profile sample leaves its elevation unset even when a numeric value is present.");
+        response.Samples[1].NoData.Should().BeTrue();
+
+        response.Samples[2].HasElevation.Should().BeTrue();
+        response.Samples[2].Elevation.Should().Be(30.0);
+
+        response.Source.RasterIds.Should().Equal(5);
+        response.Source.SourceSpatialReference.Wkid.Should().Be(4326);
+        response.Source.VerticalDatum.Should().Be("EGM96");
     }
 }

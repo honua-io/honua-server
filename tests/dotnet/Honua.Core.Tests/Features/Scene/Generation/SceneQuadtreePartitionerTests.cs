@@ -112,6 +112,71 @@ public sealed class SceneQuadtreePartitionerTests
         tree.Root.Features.Should().HaveCount(500);
     }
 
+    [UnitTest]
+    public void Partition_RootIsLeaf_RootKeepsPositiveGeometricError()
+    {
+        // When the whole dataset fits one leaf, the root tile is also a leaf. It
+        // must still carry its (positive) root geometric error rather than 0.0: a
+        // zero root error gives the root a zero screen-space error and can leave a
+        // client never scheduling the root tile, defeating root SSE refinement.
+        var features = MakePointGrid(2, 2); // 4 features, well under the threshold.
+        var options = new SceneLodOptions { MaxFeaturesPerTile = 100, MaxDepth = 8, InteriorSampleCount = 8 };
+
+        var tree = SceneQuadtreePartitioner.Partition(features, Bounds, 1234.0, options);
+
+        tree.Root.IsLeaf.Should().BeTrue();
+        tree.Root.GeometricError.Should().Be(1234.0,
+            "a root-leaf must retain the floored, positive root geometric error.");
+    }
+
+    [UnitTest]
+    public void Partition_DegenerateRootLeaf_RootKeepsPositiveGeometricError()
+    {
+        // All features at the same coordinate collapse the split into a single
+        // root-leaf via the degenerate-quadrant path; that path must also preserve
+        // the positive root geometric error.
+        var features = new List<SceneFeature>();
+        for (var i = 0; i < 50; i++)
+        {
+            features.Add(MakePoint(i, -122.45, 37.75));
+        }
+        var options = new SceneLodOptions { MaxFeaturesPerTile = 10, MaxDepth = 12, InteriorSampleCount = 8 };
+
+        var tree = SceneQuadtreePartitioner.Partition(features, Bounds, 777.0, options);
+
+        tree.Root.IsLeaf.Should().BeTrue();
+        tree.Root.GeometricError.Should().Be(777.0);
+    }
+
+    [UnitTest]
+    public void Partition_NonRootLeaves_HaveZeroGeometricError()
+    {
+        // Every non-root leaf (a childless tile below the root) must report
+        // geometric error 0.0, so a 3D Tiles client's SSE refinement converges at
+        // the deepest LOD instead of believing finer detail still exists.
+        var features = MakePointGrid(40, 40);
+        var options = new SceneLodOptions { MaxFeaturesPerTile = 50, MaxDepth = 10, InteriorSampleCount = 16 };
+
+        var tree = SceneQuadtreePartitioner.Partition(features, Bounds, 2048.0, options);
+
+        tree.Root.IsLeaf.Should().BeFalse("the large grid must subdivide so non-root leaves exist.");
+        AssertNonRootLeavesAreZero(tree.Root, isRoot: true);
+    }
+
+    private static void AssertNonRootLeavesAreZero(SceneTileNode node, bool isRoot)
+    {
+        if (node.IsLeaf && !isRoot)
+        {
+            node.GeometricError.Should().Be(0.0,
+                "a non-root leaf must have zero geometric error so SSE refinement converges.");
+            return;
+        }
+        foreach (var child in node.Children)
+        {
+            AssertNonRootLeavesAreZero(child, isRoot: false);
+        }
+    }
+
     private static void AssertErrorDecreases(SceneTileNode node)
     {
         foreach (var child in node.Children)

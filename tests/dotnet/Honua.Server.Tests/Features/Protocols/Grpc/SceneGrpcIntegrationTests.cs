@@ -10,6 +10,7 @@ using Honua.Core.Features.Scene.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Infrastructure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Proto = Geospatial.V1;
@@ -151,6 +152,37 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
         var fixtureScene = response.Scenes.Single(scene => scene.SceneId == FixtureSceneId);
         fixtureScene.TilesetUrl.Should().Be($"/scenes/{FixtureSceneId}/tileset.json");
         fixtureScene.Capabilities.Should().Contain("3d-tiles");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetServiceInfo)]
+    [Endpoint("POST /geospatial.v1.SceneService/ListScenes")]
+    public async Task ListScenes_ZeroResultRecordCount_ReturnsEntireCatalog()
+    {
+        // Documented intentional divergence: the proto comments result_record_count
+        // zero as "server default", but the adapter treats 0/unset as "no limit"
+        // because the scene catalog is a small bounded set. A request that leaves
+        // the count unset (0) must return every scene, never an arbitrary default
+        // page, and must not flag ExceededTransferLimit.
+        var total = (await _sceneClient!.ListScenesAsync(
+            new Proto.ListScenesRequest { ResultRecordCount = 0 },
+            _headers)).Scenes.Count;
+
+        // The total here equals the count returned by an explicit page sized to the
+        // catalog, confirming 0 imposed no cap.
+        var explicitFull = await _sceneClient!.ListScenesAsync(
+            new Proto.ListScenesRequest { ResultRecordCount = total },
+            _headers);
+
+        total.Should().BeGreaterThan(0);
+        explicitFull.Scenes.Count.Should().Be(total);
+
+        var zeroCount = await _sceneClient!.ListScenesAsync(
+            new Proto.ListScenesRequest { ResultRecordCount = 0 },
+            _headers);
+        zeroCount.Scenes.Count.Should().Be(total);
+        zeroCount.ExceededTransferLimit.Should().BeFalse(
+            "a zero/unset result_record_count imposes no cap, so the transfer limit is never exceeded.");
     }
 
     [IntegrationTest]
@@ -1022,4 +1054,153 @@ public sealed class SceneGrpcAuthorizationTests : IAsyncLifetime
         throw new DirectoryNotFoundException(
             "Could not locate tests/fixtures/scenes/fixture-tileset from the test base directory.");
     }
+}
+
+/// <summary>
+/// Authorization tests proving the gRPC <c>ElevationService</c> enforces the same
+/// per-layer RBAC the HTTP elevation surface enforces. The HTTP adapter validates
+/// the elevation layer through <c>LayerValidationHelpers.ValidateLayerWithAccessV2Async</c>
+/// at read scope before querying; the gRPC adapter routes through the shared
+/// <c>ElevationAccessGuard</c>/<c>EvaluateLayerReadAccessV2Async</c> seam. A
+/// protected (anonymous-denied) elevation layer must therefore be refused for an
+/// unauthenticated gRPC caller, and a public layer must remain queryable. Dev-auth
+/// is disabled so the anonymous caller is genuinely unauthenticated.
+/// </summary>
+[Collection("Database")]
+[Protocol(TestProtocols.Grpc)]
+public sealed class ElevationGrpcAuthorizationTests : IAsyncLifetime
+{
+    private const double WebMercatorExtent = 20037508.342789244;
+    private const string AdminPassword = "elevation-grpc-auth-test-key";
+
+    private readonly WebAppFixture _fixture;
+    private GrpcChannel? _channel;
+    private Proto.ElevationService.ElevationServiceClient? _elevationClient;
+    private Metadata? _headers;
+
+    public ElevationGrpcAuthorizationTests()
+    {
+        _fixture = new WebAppFixture()
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+            });
+    }
+
+    public async Task InitializeAsync()
+    {
+        await _fixture.InitializeAsync();
+
+        var grpcWebHandler = new GrpcWebHandler(GrpcWebMode.GrpcWeb, _fixture.CreateHandler());
+        _channel = GrpcChannel.ForAddress("http://localhost", new GrpcChannelOptions { HttpHandler = grpcWebHandler });
+        _elevationClient = new Proto.ElevationService.ElevationServiceClient(_channel);
+
+        _headers = new Metadata();
+        if (_fixture.CurrentSchema is not null)
+        {
+            _headers.Add("X-Honua-Test-Schema", _fixture.CurrentSchema);
+        }
+
+        await SeedFullWorldRasterAsync(100.0);
+    }
+
+    public async Task DisposeAsync()
+    {
+        _channel?.Dispose();
+        await _fixture.DisposeAsync();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ElevationService/GetElevation")]
+    public async Task GetElevation_ProtectedLayer_WithoutAuth_IsDenied()
+    {
+        // Restrict the test service so anonymous callers are denied at read scope.
+        _fixture.UpdateV2ServiceMetadata(
+            WebAppFixture.TestServiceId,
+            accessPolicy: new AccessPolicy { AllowAnonymous = false, AllowedRoles = ["elevation-admin"] });
+
+        var request = new Proto.GetElevationRequest
+        {
+            LayerId = WebAppFixture.TestLayerId,
+            Point = new Proto.PointGeometry { X = 0, Y = 0 },
+        };
+
+        var act = async () => await _elevationClient!.GetElevationAsync(request, _headers);
+
+        (await act.Should().ThrowAsync<RpcException>())
+            .Which.StatusCode.Should().BeOneOf(StatusCode.Unauthenticated, StatusCode.PermissionDenied);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ElevationService/GetElevationProfile")]
+    public async Task GetElevationProfile_ProtectedLayer_WithoutAuth_IsDenied()
+    {
+        _fixture.UpdateV2ServiceMetadata(
+            WebAppFixture.TestServiceId,
+            accessPolicy: new AccessPolicy { AllowAnonymous = false, AllowedRoles = ["elevation-admin"] });
+
+        var line = new Proto.PolylineGeometry();
+        var path = new Proto.CoordinateSequence();
+        path.Coords.Add(new Proto.Coordinate { X = 0, Y = 0 });
+        path.Coords.Add(new Proto.Coordinate { X = 0.001, Y = 0.001 });
+        line.Paths.Add(path);
+
+        var request = new Proto.GetElevationProfileRequest
+        {
+            LayerId = WebAppFixture.TestLayerId,
+            Line = line,
+            SampleCount = 5,
+        };
+
+        var act = async () => await _elevationClient!.GetElevationProfileAsync(request, _headers);
+
+        (await act.Should().ThrowAsync<RpcException>())
+            .Which.StatusCode.Should().BeOneOf(StatusCode.Unauthenticated, StatusCode.PermissionDenied);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ElevationService/GetElevation")]
+    public async Task GetElevation_PublicLayer_WithoutAuth_Succeeds()
+    {
+        // Control: with anonymous access allowed the same query is NOT gated by the
+        // RBAC guard and reaches the canonical elevation service, returning a
+        // structured result rather than an auth denial.
+        _fixture.UpdateV2ServiceMetadata(
+            WebAppFixture.TestServiceId,
+            accessPolicy: new AccessPolicy { AllowAnonymous = true });
+
+        var request = new Proto.GetElevationRequest
+        {
+            LayerId = WebAppFixture.TestLayerId,
+            Point = new Proto.PointGeometry { X = 0, Y = 0 },
+        };
+
+        var response = await _elevationClient!.GetElevationAsync(request, _headers);
+
+        // The seeded full-world raster covers (0,0); the guard let the query through
+        // and the canonical service produced a value (not a no-data/out-of-bounds).
+        (response.HasElevation || response.NoData || response.OutOfBounds).Should().BeTrue();
+        response.HasElevation.Should().BeTrue("the seeded raster covers the origin, so a public query returns a value.");
+    }
+
+    private Task SeedFullWorldRasterAsync(double elevationMeters)
+        => RasterIntegrationTestData.ReplaceLayerRastersAsync(
+            _fixture,
+            WebAppFixture.TestLayerId,
+            new RasterSeed(
+                Name: "world-dem",
+                Width: 2,
+                Height: 2,
+                UpperLeftX: -WebMercatorExtent,
+                UpperLeftY: WebMercatorExtent,
+                ScaleX: WebMercatorExtent,
+                ScaleY: -WebMercatorExtent,
+                Value: elevationMeters,
+                AcquisitionDate: RasterIntegrationTestData.WestAcquisition,
+                CreatedAt: RasterIntegrationTestData.WestAcquisition,
+                Srid: 3857));
 }

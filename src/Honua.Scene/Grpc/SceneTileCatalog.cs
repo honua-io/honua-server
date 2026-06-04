@@ -95,6 +95,17 @@ internal static class SceneTileCatalog
     /// plus a min/max height in meters) to the gRPC region bounding volume,
     /// converting the horizontal envelope to WGS 84 degrees.
     /// </summary>
+    /// <remarks>
+    /// The proto <c>BoundingVolume</c> is a oneof of region/box/sphere (mirroring
+    /// the 3D Tiles spec), but the Honua domain model only ever carries a
+    /// <c>region</c> (<see cref="Domain.BoundingVolume.Region"/>; there is no box
+    /// or sphere field), and every server-generated tileset emits region volumes.
+    /// Box/sphere therefore cannot occur on this path, so only the region arm of
+    /// the oneof is populated. A missing or short (&lt; 6 element) region maps to
+    /// <see langword="null"/> rather than a degenerate all-zero region, so a node
+    /// without a real bound advertises no bounding volume instead of a bogus one
+    /// at the equator/prime-meridian origin.
+    /// </remarks>
     public static Proto.BoundingVolume? ToBoundingVolume(Domain.BoundingVolume? volume)
     {
         var region = volume?.Region;

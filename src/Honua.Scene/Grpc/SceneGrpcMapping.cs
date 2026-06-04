@@ -125,19 +125,6 @@ internal static class SceneGrpcMapping
         };
     }
 
-    /// <summary>Maps the gRPC mosaic-rule string to the raster merge strategy.</summary>
-    public static RasterMergeStrategy ParseMergeStrategy(string? mosaicRule)
-        => (mosaicRule ?? string.Empty).Trim().ToLowerInvariant() switch
-        {
-            "oldest" => RasterMergeStrategy.Oldest,
-            "average" => RasterMergeStrategy.Average,
-            "max" => RasterMergeStrategy.Max,
-            "min" => RasterMergeStrategy.Min,
-            // "newest" and the empty/default case both resolve to newest-wins,
-            // matching the server elevation default.
-            _ => RasterMergeStrategy.Newest,
-        };
-
     /// <summary>Formats a raster merge strategy back to its canonical rule string.</summary>
     public static string FormatMergeStrategy(RasterMergeStrategy strategy) => strategy switch
     {

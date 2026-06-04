@@ -149,6 +149,24 @@ public sealed class LasPointCloudReaderTests
             .Which.Code.Should().Be("SCENE_MODEL_ASSET_INVALID");
     }
 
+    [UnitTest]
+    public void ReadPoints_WithCallerHeaderPointRecordLengthZero_ThrowsStableLasFormatException()
+    {
+        // The public ReadPoints(byte[], LasHeader) overload trusts a caller-supplied
+        // header. A zero PointRecordLength would skip the per-record overflow guard
+        // (recordLength != 0), leave requiredBytes at 0, pass the truncation check,
+        // and then throw a raw ArgumentOutOfRangeException from record.Slice(0, 4)
+        // on a zero-length span. The reader must instead reject it with the stable
+        // LasFormatException contract.
+        var las = LasFixtureBuilder.BuildFormat3(SamplePoints());
+        var header = LasPointCloudReader.ReadHeader(las) with { PointRecordLength = 0 };
+
+        var act = () => LasPointCloudReader.ReadPoints(las, header).ToList();
+
+        act.Should().Throw<LasFormatException>()
+            .Which.Code.Should().Be("SCENE_MODEL_ASSET_INVALID");
+    }
+
     private static List<LasFixtureBuilder.Point> SamplePoints() =>
     [
         new(100.5, 200.5, 5.5, 1200, 2, 60000, 30000, 10000),

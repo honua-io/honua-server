@@ -35,6 +35,15 @@ namespace Honua.Core.Features.Scene.Bim;
 public static class CityGmlReader
 {
     /// <summary>
+    /// Upper bound on the total number of characters the XML reader will accept
+    /// from a single CityGML document. Caps memory amplification from an
+    /// oversized-but-well-formed document (the whole tree is materialized by
+    /// <see cref="XDocument"/>). 256 MiB of characters comfortably exceeds any
+    /// realistic single-building-tile CityGML payload while bounding the parse.
+    /// </summary>
+    private const long MaxDocumentCharacters = 256L * 1024 * 1024;
+
+    /// <summary>
     /// Parses a CityGML document from a UTF-8 byte buffer into a
     /// <see cref="CityGmlModel"/>.
     /// </summary>
@@ -61,13 +70,21 @@ public static class CityGmlReader
         XDocument document;
         try
         {
-            // LoadOptions.None + the default safe reader settings (DTD disabled,
-            // no external resolver) harden the parse against XXE; CityGML never
-            // relies on a DTD.
+            // LoadOptions.None + the safe reader settings (DTD disabled, no
+            // external resolver) harden the parse against XXE; CityGML never
+            // relies on a DTD. MaxCharactersFromEntities = 0 blocks entity-
+            // expansion amplification and MaxCharactersInDocument caps the total
+            // document size so an oversized-but-well-formed document cannot make
+            // XDocument materialize an unbounded tree (DoS). The shared
+            // SecureXmlDocumentParser applies the same DTD/entity caps but only
+            // accepts a buffered string; CityGML reads a stream, so the caps are
+            // applied inline here to avoid buffering the whole document twice.
             using var reader = System.Xml.XmlReader.Create(source, new System.Xml.XmlReaderSettings
             {
                 DtdProcessing = System.Xml.DtdProcessing.Prohibit,
                 XmlResolver = null,
+                MaxCharactersFromEntities = 0,
+                MaxCharactersInDocument = MaxDocumentCharacters,
                 IgnoreComments = true,
                 IgnoreProcessingInstructions = true
             });

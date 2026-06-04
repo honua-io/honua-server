@@ -1217,16 +1217,11 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
     }
 
     private static double ComputeGeometricError(double[] bounds, double minHeight, double maxHeight)
-    {
-        var lonSpanRad = (bounds[2] - bounds[0]) * Math.PI / 180.0;
-        var latSpanRad = (bounds[3] - bounds[1]) * Math.PI / 180.0;
-        var lonMeters = Math.Abs(lonSpanRad) * EcefCoordinateTransform.WgsSemiMajorAxis
-            * Math.Cos((bounds[1] + bounds[3]) * 0.5 * Math.PI / 180.0);
-        var latMeters = Math.Abs(latSpanRad) * EcefCoordinateTransform.WgsSemiMajorAxis;
-        var heightMeters = Math.Max(0.0, maxHeight - minHeight);
-        var diagonal = Math.Sqrt(lonMeters * lonMeters + latMeters * latMeters + heightMeters * heightMeters);
-        return Math.Round(diagonal, 6, MidpointRounding.AwayFromZero);
-    }
+        // Shared cos-lat-corrected 3D-diagonal geodesy (see GeodesicError). This is
+        // the root LOD budget handed to the partitioner, so it now also carries the
+        // positive floor the helper applies — ensuring the root tile (even a
+        // root-leaf) declares a non-zero geometric error.
+        => GeodesicError.RootGeometricError(bounds, minHeight, maxHeight);
 
     private static string SlugifyName(string name, int maxLength)
     {

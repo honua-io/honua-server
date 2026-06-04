@@ -92,6 +92,14 @@ internal sealed partial class HonuaSceneGrpcService : Proto.SceneService.SceneSe
         var offset = Math.Max(0, request.ResultOffset);
         var count = request.ResultRecordCount;
 
+        // Intentional protocol divergence (documented per CLAUDE.md "If a protocol
+        // intentionally diverges ... document why in code and add direct
+        // endpoint-level tests"): the proto comments result_record_count's zero as
+        // "server default", but the scene catalog is a small, bounded set of
+        // published scenes (not an unbounded feature table), so a zero/unset count
+        // returns the entire catalog rather than imposing an arbitrary default page
+        // size. This keeps a typical "list all my scenes" call complete in one round
+        // trip. Covered by ListScenes_ZeroResultRecordCount_ReturnsEntireCatalog.
         IEnumerable<Proto.SceneMetadata> page = ordered.Skip(offset);
         if (count > 0)
         {

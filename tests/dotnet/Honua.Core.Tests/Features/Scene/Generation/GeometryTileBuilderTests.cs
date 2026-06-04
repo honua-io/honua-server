@@ -72,6 +72,103 @@ public sealed class GeometryTileBuilderTests
     }
 
     [UnitTest]
+    public void BuildGlb_RecentersPositionsAboutNodeTranslation()
+    {
+        // Regression for the float32 ECEF precision defect: vertex positions
+        // used to be stored as ABSOLUTE ECEF meters (~6.3e6 magnitude) cast to
+        // float32, quantizing every vertex to ~0.5-1 m. The builder now subtracts
+        // a per-tile ECEF centroid (emitted as the node translation) BEFORE the
+        // float cast, so the stored POSITION values are small-magnitude.
+        var glb = BuildSimpleSquare();
+        var json = ExtractJsonChunk(glb);
+
+        using var doc = JsonDocument.Parse(json);
+
+        // The single node must now carry a double[3] translation (the RTC center)
+        // that is near the surface of the Earth in ECEF (|centroid| ~ 6.37e6 m).
+        var node = doc.RootElement.GetProperty("nodes")[0];
+        node.GetProperty("mesh").GetInt32().Should().Be(0);
+        var translation = node.GetProperty("translation").EnumerateArray().Select(e => e.GetDouble()).ToArray();
+        translation.Should().HaveCount(3);
+        var translationMagnitude = Math.Sqrt(
+            translation[0] * translation[0]
+            + translation[1] * translation[1]
+            + translation[2] * translation[2]);
+        translationMagnitude.Should().BeApproximately(6_371_000d, 50_000d,
+            "the node translation is the tile's absolute ECEF centroid near the ellipsoid surface.");
+
+        // The POSITION accessor min/max must now be small-magnitude (the recentered
+        // extents of a ~0.1 deg square are well under ~20 km, not millions of meters).
+        var posAccessor = doc.RootElement.GetProperty("accessors")[0];
+        var min = posAccessor.GetProperty("min").EnumerateArray().Select(e => e.GetDouble()).ToArray();
+        var max = posAccessor.GetProperty("max").EnumerateArray().Select(e => e.GetDouble()).ToArray();
+        foreach (var component in min.Concat(max))
+        {
+            Math.Abs(component).Should().BeLessThan(50_000d,
+                "recentered POSITION extents must be small-magnitude so float32 retains sub-centimeter precision.");
+        }
+
+        // Spot-check a raw stored POSITION float: it must be small-magnitude
+        // (i.e. relative to the RTC center), not absolute ECEF (~6.3e6).
+        var posView = posAccessor.GetProperty("bufferView").GetInt32();
+        var bufferViews = doc.RootElement.GetProperty("bufferViews");
+        var posByteOffset = bufferViews[posView].GetProperty("byteOffset").GetInt32();
+        var bin = ExtractBinChunk(glb);
+        var firstX = BinaryPrimitives.ReadSingleLittleEndian(bin.AsSpan(posByteOffset, 4));
+        Math.Abs(firstX).Should().BeLessThan(50_000f,
+            "stored POSITION floats are relative to the node translation, not absolute ECEF.");
+    }
+
+    [UnitTest]
+    public void BuildGlb_Recentering_PreservesSubMeterPrecision()
+    {
+        // Two vertices 0.1 m apart on the same building wall must remain
+        // distinguishable after the float cast. With absolute ECEF in float32 the
+        // ~0.5-1 m quantization step would collapse them onto the same value;
+        // recentering keeps them distinct.
+        var lower = new SceneVertex(-122.41999990, 37.77000000, 100.00);
+        var near = new SceneVertex(-122.41999990, 37.77000000, 100.10); // +0.10 m in height
+        var line = new SceneFeature
+        {
+            Id = 1,
+            Geometry = new SceneFeatureGeometry
+            {
+                Kind = SceneGeometryKind.LineString,
+                Vertices = new[] { lower, near }
+            }
+        };
+
+        var glb = GeometryTileBuilder.BuildGlb(
+            [line],
+            metadataAttributes: Array.Empty<SceneAttributeSchema>(),
+            extrusion: null);
+        var json = ExtractJsonChunk(glb);
+        using var doc = JsonDocument.Parse(json);
+
+        var posAccessor = doc.RootElement.GetProperty("accessors")[0];
+        var posView = posAccessor.GetProperty("bufferView").GetInt32();
+        var posByteOffset = doc.RootElement.GetProperty("bufferViews")[posView]
+            .GetProperty("byteOffset").GetInt32();
+        var bin = ExtractBinChunk(glb);
+
+        // Two vertices => 6 floats. Their per-axis difference magnitude should sum
+        // to ~0.1 m and must be non-zero (i.e. the two vertices did not collapse).
+        var v0 = new float[3];
+        var v1 = new float[3];
+        for (var i = 0; i < 3; i++)
+        {
+            v0[i] = BinaryPrimitives.ReadSingleLittleEndian(bin.AsSpan(posByteOffset + i * 4, 4));
+            v1[i] = BinaryPrimitives.ReadSingleLittleEndian(bin.AsSpan(posByteOffset + 12 + i * 4, 4));
+        }
+        var dist = Math.Sqrt(
+            Math.Pow(v0[0] - v1[0], 2) + Math.Pow(v0[1] - v1[1], 2) + Math.Pow(v0[2] - v1[2], 2));
+        dist.Should().BeGreaterThan(0.0,
+            "a 0.1 m vertex offset must survive the float32 cast after RTC recentering.");
+        dist.Should().BeApproximately(0.1, 0.02,
+            "the recentered float positions must preserve the 0.1 m offset to within float precision.");
+    }
+
+    [UnitTest]
     public void BuildGlb_AppliesExtrusionToProducePositiveZ()
     {
         var feature = new SceneFeature

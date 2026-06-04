@@ -91,22 +91,16 @@ public static class I3sToTilesetConverter
         var minHeight = extent.Zmin ?? 0.0;
         var maxHeight = extent.Zmax ?? 0.0;
 
-        // Geometric error sized to the geographic diagonal of the extent so a
-        // 3D Tiles client refines at a sensible scale. Convert the degree spans
-        // to meters the same way the other scene builders do
-        // (PointCloudTilesetBuilder.ComputeRootGeometricError /
-        // BuildingSceneLayerBuilder.ComputeGeometricError): apply the
-        // cos(midLatitude) correction to the longitude span so an east-west-wide
-        // extent at high latitude is not overstated by ~1/cos(lat), and take the
-        // true diagonal rather than max(span). Determinism is preserved (pure
-        // arithmetic on the extent bounds).
-        var midLatRad = (extent.Ymin + extent.Ymax) * 0.5 * Math.PI / 180.0;
-        var lonMeters = Math.Abs(extent.Xmax - extent.Xmin) * Math.PI / 180.0
-            * EcefCoordinateTransform.WgsSemiMajorAxis
-            * Math.Cos(midLatRad);
-        var latMeters = Math.Abs(extent.Ymax - extent.Ymin) * Math.PI / 180.0
-            * EcefCoordinateTransform.WgsSemiMajorAxis;
-        var geometricError = Math.Max(1.0, Math.Sqrt(lonMeters * lonMeters + latMeters * latMeters));
+        // Geometric error sized to the 3D geographic diagonal of the extent so a
+        // 3D Tiles client refines at a sensible scale, via the shared geodesy
+        // helper used by every scene builder (GeodesicError.RootGeometricError):
+        // a cos(midLatitude)-corrected longitude span, the meridian-arc latitude
+        // span, AND the vertical (Zmin/Zmax) extent in the diagonal — the prior
+        // I3S-local copy dropped the height term, understating the error for tall,
+        // geographically small layers (a single skyscraper or a cliff mesh).
+        // Determinism is preserved (pure arithmetic on the extent bounds).
+        var geometricError = GeodesicError.RootGeometricError(
+            extent.Xmin, extent.Ymin, extent.Xmax, extent.Ymax, minHeight, maxHeight);
 
         var contentUris = string.IsNullOrWhiteSpace(rootContentUri)
             ? Array.Empty<string>()

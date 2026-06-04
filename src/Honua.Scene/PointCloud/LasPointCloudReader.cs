@@ -166,6 +166,21 @@ public static class LasPointCloudReader
 
         var recordLength = header.PointRecordLength;
         var format = header.PointDataRecordFormat;
+
+        // This overload is public and trusts a caller-supplied header (unlike the
+        // byte[]-only path, where ReadHeader enforces the per-format minimum). A
+        // record length below the per-format minimum (in particular 0) would skip
+        // the per-record overflow guard below, leave requiredBytes at 0, pass the
+        // truncation check, and then throw a raw ArgumentOutOfRangeException from
+        // record.Slice(0, 4) on a too-short span. Reject it up front with the
+        // stable LasFormatException contract.
+        if (recordLength < MinRecordLength(format))
+        {
+            throw new LasFormatException(
+                SceneGenerationErrorCodes.ModelAssetInvalid,
+                "LAS point record length is too small to hold a point record.");
+        }
+
         var hasColor = FormatHasColor(format);
         var hasIntensity = true; // every supported format carries intensity.
         var colorOffset = ColorByteOffset(format);

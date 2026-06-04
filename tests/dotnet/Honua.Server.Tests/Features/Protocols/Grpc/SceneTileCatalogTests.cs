@@ -76,6 +76,29 @@ public sealed class SceneTileCatalogTests
         volume.Region.MaxHeight.Should().Be(25);
     }
 
+    [UnitTest]
+    public void ToBoundingVolume_NullVolume_ReturnsNull()
+    {
+        // The domain model only carries a region (no box/sphere), so a node with
+        // no bounding volume must advertise none rather than a degenerate region.
+        SceneTileCatalog.ToBoundingVolume(volume: null).Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData(0)] // empty region
+    [InlineData(4)] // horizontal-only, missing min/max height
+    [InlineData(5)] // one element short of a full region
+    [Trait("Category", "Unit")]
+    public void ToBoundingVolume_InvalidRegion_ReturnsNullNotDegenerateRegion(int length)
+    {
+        // A region shorter than the required 6 elements (west/south/east/north/
+        // minHeight/maxHeight) must map to null, never an all-zero region at the
+        // equator/prime-meridian origin.
+        var volume = new Domain.BoundingVolume { Region = new double[length] };
+
+        SceneTileCatalog.ToBoundingVolume(volume).Should().BeNull();
+    }
+
     [Theory]
     [InlineData("tiles/0.b3dm", Proto.TileContentType.B3Dm)]
     [InlineData("model.glb", Proto.TileContentType.Glb)]

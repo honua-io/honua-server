@@ -109,4 +109,25 @@ public sealed class CityGmlReaderTests
         act.Should().Throw<CityGmlFormatException>()
             .Which.Code.Should().Be("SCENE_MODEL_ASSET_INVALID");
     }
+
+    [UnitTest]
+    public void Read_DocumentWithDtdEntityExpansion_ThrowsAndDoesNotExpand()
+    {
+        // The reader hardens the parse with DtdProcessing.Prohibit AND
+        // MaxCharactersFromEntities = 0, so a "billion laughs"-style entity
+        // expansion (and any DTD) is rejected with the stable
+        // CityGmlFormatException rather than being expanded into memory.
+        const string entityBomb =
+            "<?xml version=\"1.0\"?>" +
+            "<!DOCTYPE root [" +
+            "<!ENTITY a \"aaaaaaaaaa\">" +
+            "<!ENTITY b \"&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;\">" +
+            "]>" +
+            "<root>&b;</root>";
+
+        var act = () => CityGmlReader.Read(System.Text.Encoding.UTF8.GetBytes(entityBomb));
+
+        act.Should().Throw<CityGmlFormatException>()
+            .Which.Code.Should().Be("SCENE_MODEL_ASSET_INVALID");
+    }
 }
