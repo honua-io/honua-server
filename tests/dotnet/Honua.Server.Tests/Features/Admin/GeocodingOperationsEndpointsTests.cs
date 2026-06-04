@@ -4,7 +4,7 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Geocoding.Abstractions;
+using Honua.Geocoding.Features.Geocoding.Abstractions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -78,7 +78,7 @@ public sealed class GeocodingOperationsEndpointsTests : IAsyncLifetime
     {
         var coordinator = Substitute.For<IGeocodeProviderCoordinator>();
         coordinator.CheckAllProvidersHealthAsync(Arg.Any<CancellationToken>())
-            .Returns<Task<IReadOnlyList<Honua.Core.Features.Geocoding.Domain.GeocodeProviderHealth>>>(_ =>
+            .Returns<Task<IReadOnlyList<Honua.Geocoding.Features.Geocoding.Domain.GeocodeProviderHealth>>>(_ =>
                 throw new InvalidOperationException("provider secret connection string"));
 
         var fixture = new WebAppFixture()

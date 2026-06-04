@@ -19,8 +19,11 @@ public sealed class RelatedRecordGroup
     public required long ObjectId { get; init; }
 
     /// <summary>
-    /// Flat array of related records for this source feature. Omitted when the
-    /// source feature has no related records.
+    /// Flat array of related records for this source feature. Always emitted as an
+    /// array (empty when the source feature has no related rows) for the standard
+    /// queryRelatedRecords flow, because the @arcgis/core JS SDK reads
+    /// <c>group.relatedRecords.length</c> unconditionally. Omitted only for
+    /// <c>returnCountOnly=true</c> responses, which carry <see cref="Count"/> instead.
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public GeoServicesFeature[]? RelatedRecords { get; init; }

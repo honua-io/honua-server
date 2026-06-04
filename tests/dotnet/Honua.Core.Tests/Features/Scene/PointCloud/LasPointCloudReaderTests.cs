@@ -1,0 +1,95 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using Honua.Core.Features.Scene.PointCloud;
+using Honua.TestKit.Attributes;
+
+namespace Honua.Core.Tests.Features.Scene.PointCloud;
+
+/// <summary>
+/// Unit tests for the pure-managed LAS reader (#1201).
+/// </summary>
+public sealed class LasPointCloudReaderTests
+{
+    [UnitTest]
+    public void ReadHeader_ParsesVersionFormatAndCounts()
+    {
+        var las = LasFixtureBuilder.BuildFormat3(SamplePoints());
+
+        var header = LasPointCloudReader.ReadHeader(las);
+
+        header.VersionMajor.Should().Be(1);
+        header.VersionMinor.Should().Be(2);
+        header.PointDataRecordFormat.Should().Be(3);
+        header.PointCount.Should().Be(3UL);
+        header.HasColor.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void ReadPoints_DescalesPositionAndPreservesAttributes()
+    {
+        var points = SamplePoints();
+        var las = LasFixtureBuilder.BuildFormat3(points, scale: 0.01, offsetX: 100.0, offsetY: 200.0, offsetZ: 5.0);
+
+        var decoded = LasPointCloudReader.ReadPoints(las).ToList();
+
+        decoded.Should().HaveCount(3);
+        decoded[0].X.Should().BeApproximately(points[0].X, 0.01);
+        decoded[0].Y.Should().BeApproximately(points[0].Y, 0.01);
+        decoded[0].Z.Should().BeApproximately(points[0].Z, 0.01);
+        decoded[0].Classification.Should().Be(points[0].Classification);
+        decoded[0].Intensity.Should().Be(points[0].Intensity);
+        decoded[0].Red.Should().Be(points[0].Red);
+        decoded[0].Green.Should().Be(points[0].Green);
+        decoded[0].Blue.Should().Be(points[0].Blue);
+        decoded[0].HasColor.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void ReadHeader_NonLasSignature_Throws()
+    {
+        var garbage = new byte[300];
+        garbage[0] = (byte)'N';
+
+        var act = () => LasPointCloudReader.ReadHeader(garbage);
+
+        act.Should().Throw<LasFormatException>().Which.Code.Should().Be("SCENE_MODEL_ASSET_INVALID");
+    }
+
+    [UnitTest]
+    public void ReadHeader_TooShort_Throws()
+    {
+        var act = () => LasPointCloudReader.ReadHeader(new byte[10]);
+
+        act.Should().Throw<LasFormatException>();
+    }
+
+    [UnitTest]
+    public void ReadHeader_CompressedLaz_RejectsWithClearError()
+    {
+        var laz = LasFixtureBuilder.MarkCompressed(LasFixtureBuilder.BuildFormat3(SamplePoints()));
+
+        var act = () => LasPointCloudReader.ReadHeader(laz);
+
+        act.Should().Throw<LasFormatException>()
+            .WithMessage("*LAZ*");
+    }
+
+    [UnitTest]
+    public void ReadPoints_TruncatedData_Throws()
+    {
+        var las = LasFixtureBuilder.BuildFormat3(SamplePoints());
+        var truncated = las[..^10];
+
+        var act = () => LasPointCloudReader.ReadPoints(truncated).ToList();
+
+        act.Should().Throw<LasFormatException>();
+    }
+
+    private static List<LasFixtureBuilder.Point> SamplePoints() =>
+    [
+        new(100.5, 200.5, 5.5, 1200, 2, 60000, 30000, 10000),
+        new(101.0, 201.0, 6.0, 800, 6, 40000, 50000, 20000),
+        new(102.25, 202.75, 7.5, 4000, 1, 10000, 10000, 65000),
+    ];
+}

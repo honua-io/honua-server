@@ -63,7 +63,12 @@ internal static partial class FeatureServerEndpoints
         private static readonly string[] EsriMetadataClientParameters =
         [
             "returnFieldGroups",
-            "returnPbfFeatureEncodings"
+            "returnPbfFeatureEncodings",
+            // The ArcGIS Maps SDK for .NET appends returnAdvancedSymbols to the
+            // layer/service metadata GET during ServiceFeatureTable.LoadAsync. #1455
+            // accepted it on the layer-query endpoint but not here, so LoadAsync
+            // returned 400 and the entire .NET FeatureServer client was blocked.
+            "returnAdvancedSymbols"
         ];
 
         public static readonly FrozenSet<string> ServiceMetadata =
@@ -252,7 +257,8 @@ internal static partial class FeatureServerEndpoints
         bool supportsStatistics,
         bool supportsOrderBy,
         bool supportsDistinct,
-        bool supportsPagination)
+        bool supportsPagination,
+        bool supportsQueryAttachments = false)
     {
         return new AdvancedQueryCapabilities
         {
@@ -270,7 +276,14 @@ internal static partial class FeatureServerEndpoints
             // advertise it whenever the layer supports advanced queries so Esri
             // clients (arcgis query_top_features) discover the operation.
             SupportsTopFeaturesQuery = supportsAdvancedQueries,
-            SupportsBatchEditing = supportsAdvancedQueries
+            SupportsBatchEditing = supportsAdvancedQueries,
+            // Mirror the layer-root supportsQueryAttachments flag into the nested
+            // operations/advanced-query-capabilities block. The @arcgis/core JS SDK
+            // gates queryAttachments({where}) on this nested flag, so it must stay
+            // consistent with the root flag (true when the layer has attachments),
+            // otherwise a layer that advertises attachments at the root is refused the
+            // operation because the nested flag reported false (#1453).
+            SupportsQueryAttachments = supportsQueryAttachments
         };
     }
 
@@ -354,6 +367,24 @@ internal static partial class FeatureServerEndpoints
         };
     }
 
+    /// <summary>
+    /// Normalizes the GeoServices <c>layers</c> parameter to its inner token list,
+    /// accepting both the comma-separated form (<c>0</c> / <c>0,1</c>) and the Esri
+    /// JSON-array form (<c>[0]</c> / <c>[0,1]</c>) the ArcGIS API for Python sends.
+    /// </summary>
+    internal static string StripLayerListBrackets(string rawValue)
+    {
+        var normalized = rawValue.Trim();
+        if (normalized.Length >= 2 &&
+            normalized.StartsWith('[') &&
+            normalized.EndsWith(']'))
+        {
+            normalized = normalized[1..^1];
+        }
+
+        return normalized;
+    }
+
     internal static bool TryParseLayerIdList(string rawValue, out int[] layerIds, out string? error)
     {
         layerIds = [];
@@ -365,15 +396,7 @@ internal static partial class FeatureServerEndpoints
             return false;
         }
 
-        var normalized = rawValue.Trim();
-        if (normalized.StartsWith('[') &&
-            normalized.EndsWith(']') &&
-            normalized.Length >= 2)
-        {
-            normalized = normalized[1..^1];
-        }
-
-        var tokens = normalized.Split(',', StringSplitOptions.TrimEntries);
+        var tokens = StripLayerListBrackets(rawValue).Split(',', StringSplitOptions.TrimEntries);
         if (tokens.Length == 0 || tokens.Any(static token => token.Length == 0))
         {
             error = "layers parameter must contain only numeric layer IDs.";

@@ -1,17 +1,26 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-namespace Honua.Core.Features.Geocoding.Domain;
+namespace Honua.Geocoding.Features.Geocoding.Domain;
 
 /// <summary>
 /// Exception thrown when a geocoding provider is not available or misconfigured
 /// </summary>
 public sealed class GeocodeProviderException : Exception
 {
+    /// <summary>
+    /// Initializes a new instance of the <see cref="GeocodeProviderException"/> class with a message.
+    /// </summary>
+    /// <param name="message">The message that describes the error.</param>
     public GeocodeProviderException(string message) : base(message)
     {
     }
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="GeocodeProviderException"/> class with a message and inner exception.
+    /// </summary>
+    /// <param name="message">The message that describes the error.</param>
+    /// <param name="innerException">The exception that caused the current exception.</param>
     public GeocodeProviderException(string message, Exception innerException) : base(message, innerException)
     {
     }
@@ -32,10 +41,19 @@ public sealed class GeocodeProviderException : Exception
 /// </summary>
 public sealed class GeocodeRequestException : Exception
 {
+    /// <summary>
+    /// Initializes a new instance of the <see cref="GeocodeRequestException"/> class with a message.
+    /// </summary>
+    /// <param name="message">The message that describes the error.</param>
     public GeocodeRequestException(string message) : base(message)
     {
     }
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="GeocodeRequestException"/> class with a message and inner exception.
+    /// </summary>
+    /// <param name="message">The message that describes the error.</param>
+    /// <param name="innerException">The exception that caused the current exception.</param>
     public GeocodeRequestException(string message, Exception innerException) : base(message, innerException)
     {
     }
@@ -51,10 +69,19 @@ public sealed class GeocodeRequestException : Exception
 /// </summary>
 public sealed class GeocodeRateLimitException : Exception
 {
+    /// <summary>
+    /// Initializes a new instance of the <see cref="GeocodeRateLimitException"/> class with a message.
+    /// </summary>
+    /// <param name="message">The message that describes the error.</param>
     public GeocodeRateLimitException(string message) : base(message)
     {
     }
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="GeocodeRateLimitException"/> class with a message and inner exception.
+    /// </summary>
+    /// <param name="message">The message that describes the error.</param>
+    /// <param name="innerException">The exception that caused the current exception.</param>
     public GeocodeRateLimitException(string message, Exception innerException) : base(message, innerException)
     {
     }
@@ -75,10 +102,19 @@ public sealed class GeocodeRateLimitException : Exception
 /// </summary>
 public sealed class GeocodeAuthenticationException : Exception
 {
+    /// <summary>
+    /// Initializes a new instance of the <see cref="GeocodeAuthenticationException"/> class with a message.
+    /// </summary>
+    /// <param name="message">The message that describes the error.</param>
     public GeocodeAuthenticationException(string message) : base(message)
     {
     }
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="GeocodeAuthenticationException"/> class with a message and inner exception.
+    /// </summary>
+    /// <param name="message">The message that describes the error.</param>
+    /// <param name="innerException">The exception that caused the current exception.</param>
     public GeocodeAuthenticationException(string message, Exception innerException) : base(message, innerException)
     {
     }

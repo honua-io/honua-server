@@ -2,14 +2,22 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
-using Honua.Core.Features.Geocoding.Domain;
+using Honua.Geocoding.Features.Geocoding.Domain;
 
-namespace Honua.Core.Features.Geocoding.Abstractions;
+namespace Honua.Geocoding.Features.Geocoding.Abstractions;
 
 /// <summary>
-/// Base implementation for geocoding providers with common functionality
+/// Base implementation for geocoding providers with common functionality.
 /// </summary>
-public abstract class BaseGeocodeProvider : IGeocodeProvider
+/// <remarks>
+/// This is an assembly-internal extension point: all built-in providers
+/// (<c>Nominatim</c>, <c>AmazonLocation</c>, <c>AzureMaps</c>, <c>Mock</c>) live inside
+/// <c>Honua.Geocoding</c> and derive from this base. It is intentionally <c>internal</c>
+/// per the infrastructure-encapsulation rule; the public extension contract is
+/// <see cref="IGeocodeProvider"/>. Promote to <c>public</c> only if an out-of-assembly
+/// SDK provider is required.
+/// </remarks>
+internal abstract class BaseGeocodeProvider : IGeocodeProvider
 {
     /// <inheritdoc />
     public abstract string Name { get; }

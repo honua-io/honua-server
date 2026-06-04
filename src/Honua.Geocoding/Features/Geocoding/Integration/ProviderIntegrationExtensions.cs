@@ -1,15 +1,15 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Features.Geocoding.Abstractions;
-using Honua.Core.Features.Geocoding.Domain;
-using Honua.Core.Features.Geocoding.Providers;
+using Honua.Geocoding.Features.Geocoding.Abstractions;
+using Honua.Geocoding.Features.Geocoding.Domain;
+using Honua.Geocoding.Features.Geocoding.Providers;
 using Honua.Core.Features.Infrastructure.Resilience;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Core.Features.Geocoding.Integration;
+namespace Honua.Geocoding.Features.Geocoding.Integration;
 
 /// <summary>
 /// Integration extensions for registering specific geocoding providers

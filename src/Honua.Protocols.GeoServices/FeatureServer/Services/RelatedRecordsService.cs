@@ -308,6 +308,11 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
             return new RelatedRecordGroup
             {
                 ObjectId = objectId,
+                // Always emit relatedRecords as an array (empty when the source object
+                // has no related rows). The @arcgis/core JS SDK reads
+                // group.relatedRecords.length unconditionally and throws
+                // "Cannot read properties of undefined (reading 'length')" when the key
+                // is absent, so an empty group must still carry relatedRecords: [].
                 RelatedRecords = hasRelatedFeatures && relatedCount > 0
                     ?
                     [
@@ -320,7 +325,7 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
                             outFieldSet,
                             effectiveGeometryLimits))
                     ]
-                    : null
+                    : []
             };
         }).ToArray();
 

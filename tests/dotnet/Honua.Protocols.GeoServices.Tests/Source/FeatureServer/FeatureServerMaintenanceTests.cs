@@ -400,4 +400,112 @@ public sealed class FeatureServerMaintenanceTests : IAsyncLifetime
         using var document = JsonDocument.Parse(body);
         document.RootElement.GetProperty("isValidSQL").GetBoolean().Should().BeTrue();
     }
+
+    // #1446: Esri's canonical validateSQL is at the SERVICE level (no layerId) and takes
+    // sql + sqlType (one of where, orderBy, expression).
+    [IntegrationTest]
+    [Operation(Operations.ValidateSql)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/validateSQL")]
+    public async Task ServiceValidateSql_WhereType_ReturnsIsValid()
+    {
+        var content = new FormUrlEncodedContent(new[]
+        {
+            new KeyValuePair<string, string>("sql", "objectid > 0"),
+            new KeyValuePair<string, string>("sqlType", "where"),
+            new KeyValuePair<string, string>("f", "json"),
+        });
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/validateSQL",
+            content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("isValidSQL").GetBoolean().Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ValidateSql)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/validateSQL")]
+    public async Task ServiceValidateSql_OrderByType_ReturnsIsValid()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/validateSQL?sql={Uri.EscapeDataString("objectid DESC")}&sqlType=orderBy&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("isValidSQL").GetBoolean().Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ValidateSql)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/validateSQL")]
+    public async Task ServiceValidateSql_ExpressionType_ReturnsIsValid()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/validateSQL?sql={Uri.EscapeDataString("objectid = 1")}&sqlType=expression&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("isValidSQL").GetBoolean().Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ValidateSql)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/validateSQL")]
+    public async Task ServiceValidateSql_DefaultsToWhenSqlTypeOmitted_ReturnsIsValid()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/validateSQL?sql={Uri.EscapeDataString("objectid > 0")}&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("isValidSQL").GetBoolean().Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ValidateSql)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/validateSQL")]
+    public async Task ServiceValidateSql_InvalidSqlType_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/validateSQL?sql={Uri.EscapeDataString("objectid > 0")}&sqlType=bogus&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ValidateSql)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/validateSQL")]
+    public async Task ServiceValidateSql_MissingSql_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/validateSQL?sqlType=where&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ValidateSql)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/validateSQL")]
+    public async Task ServiceValidateSql_InvalidWhere_ReturnsIsValidFalse()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/validateSQL?sql={Uri.EscapeDataString("INVALID %%%")}&sqlType=where&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("isValidSQL").GetBoolean().Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ValidateSql)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/validateSQL")]
+    public async Task ServiceValidateSql_NonExistentService_ReturnsNotFound()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/nonexistent/FeatureServer/validateSQL?sql={Uri.EscapeDataString("objectid > 0")}&sqlType=where&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
 }

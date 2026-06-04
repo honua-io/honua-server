@@ -2,11 +2,11 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
-using Honua.Core.Features.Geocoding.Abstractions;
-using Honua.Core.Features.Geocoding.Domain;
+using Honua.Geocoding.Features.Geocoding.Abstractions;
+using Honua.Geocoding.Features.Geocoding.Domain;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Core.Features.Geocoding.Services;
+namespace Honua.Geocoding.Features.Geocoding.Services;
 
 internal sealed class GeocodeProviderRegistry : IGeocodeProviderRegistry, IGeocodeProviderFactory
 {
@@ -132,12 +132,22 @@ internal sealed class GeocodeProviderRegistry : IGeocodeProviderRegistry, IGeoco
     private int GetProviderPriority(string providerName)
     {
         var providers = _configuration.Value.Providers;
-        return providerName.ToLowerInvariant() switch
+
+        if (string.Equals(providerName, GeocodeProviderNames.Nominatim, StringComparison.OrdinalIgnoreCase))
         {
-            GeocodeProviderNames.Nominatim => providers.Nominatim.Priority,
-            GeocodeProviderNames.AmazonLocation => providers.AmazonLocation.Priority,
-            GeocodeProviderNames.AzureMaps => providers.AzureMaps.Priority,
-            _ => 0
-        };
+            return providers.Nominatim.Priority;
+        }
+
+        if (string.Equals(providerName, GeocodeProviderNames.AmazonLocation, StringComparison.OrdinalIgnoreCase))
+        {
+            return providers.AmazonLocation.Priority;
+        }
+
+        if (string.Equals(providerName, GeocodeProviderNames.AzureMaps, StringComparison.OrdinalIgnoreCase))
+        {
+            return providers.AzureMaps.Priority;
+        }
+
+        return 0;
     }
 }

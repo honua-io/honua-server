@@ -40,6 +40,7 @@
 - [Hosted 3D Tiles Scenes](gis/scenes-3dtiles.md)
 - [OpenUSD and Omniverse Export Path](gis/openusd-omniverse-export-path.md)
 - [Point Cloud, Drone, and Reality-Capture Ingest](gis/point-cloud-reality-capture-ingest.md)
+- [CityGML / BIM Building Scene Layer Ingest](gis/citygml-bim-building-scene-layer-ingest.md)
 - [3D Tiles Generation Pipeline](gis/scene-generation.md)
 - [Elevation Query and Profile API](gis/elevation-api.md)
 - [Known Limitations](gis/MVP_COMPATIBILITY_CONTRACT.md)

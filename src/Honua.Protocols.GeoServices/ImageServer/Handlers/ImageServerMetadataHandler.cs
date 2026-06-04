@@ -144,6 +144,11 @@ internal sealed class ImageServerMetadataHandler
                 FullExtent = BuildExtent(extent.Value),
                 InitialExtent = BuildExtent(extent.Value),
                 StorageInfo = BuildStorageInfo(),
+                // Esri's ImageServer root surfaces blockWidth/blockHeight both at the top
+                // level AND inside storageInfo. The ArcGIS Maps SDK for .NET
+                // ImageServiceRaster reads them from the root, so mirror them there (#1456).
+                BlockWidth = BlockWidth,
+                BlockHeight = BlockHeight,
                 SpatialReference = CreateSpatialReference(referenceRaster.Srid),
                 PixelSizeX = CalculatePixelSize(extent.Value, referenceRaster.Width),
                 PixelSizeY = CalculatePixelSize(extent.Value, referenceRaster.Height, isHeight: true),

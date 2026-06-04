@@ -913,6 +913,176 @@ internal static partial class FeatureServerEndpoints
     }
 
     /// <summary>
+    /// Service-level <c>validateSQL</c> (#1446). Esri's canonical validateSQL lives at the
+    /// FeatureServer service root and takes <c>sql</c> plus <c>sqlType</c> (one of
+    /// <c>where</c>, <c>orderBy</c>, or <c>expression</c>). It reuses the same SQL parsing /
+    /// validation the layer-level route uses, validating against a representative accessible
+    /// layer of the service.
+    /// </summary>
+    private static async Task<IResult> HandleServiceValidateSql(
+        string serviceId,
+        HttpContext context)
+    {
+        using var activity = HonuaTelemetry.ActivitySource.StartActivity("featureserver.validateSQL.service");
+        activity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
+
+        var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
+        var cancellationToken = GetTimeoutAwareCancellationToken(context);
+        var serviceValidationResult = await FeatureServerResourceValidationHelpers.ValidateServiceV2Async(
+            resourceValidator,
+            serviceId,
+            context,
+            logger: null,
+            cancellationToken: cancellationToken);
+        if (!serviceValidationResult.IsValid)
+        {
+            return serviceValidationResult.ErrorResult!;
+        }
+
+        var service = serviceValidationResult.Service!;
+        var snapshotProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
+        var snapshot = await snapshotProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+
+        var queryValues = ToCaseInsensitiveDictionary(context.Request.Query);
+        if (!TryResolveRequestedServiceLayersV2(service, snapshot, queryValues, out var selectedLayers, out _, out var selectionError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid query parameters",
+                [selectionError ?? "Invalid layer selection."]);
+        }
+
+        var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
+            context,
+            selectedLayers.Select(pair => pair.Resource),
+            service);
+        if (accessError != null)
+        {
+            return accessError;
+        }
+
+        var accessibleLayers = FilterAccessibleLayersV2(context, service, selectedLayers);
+        if (accessibleLayers.Length == 0)
+        {
+            return StandardErrorHelpers.CreateNotFound(context,
+                $"Service '{serviceId}' has no accessible layers to validate SQL against.");
+        }
+
+        // validateSQL is GET or POST. Merge query and (for POST) form/body values so the
+        // Esri parameters can arrive via either transport.
+        IReadOnlyDictionary<string, StringValues> values = queryValues;
+        if (HttpMethods.IsPost(context.Request.Method))
+        {
+            var (bodyValues, readError) = await TryReadRequestValuesAsync(context.Request, cancellationToken);
+            if (bodyValues == null)
+            {
+                if (TryGetUnsupportedMediaType(readError, out var receivedContentType))
+                {
+                    return CreateUnsupportedRequestContentTypeResult(context, receivedContentType);
+                }
+
+                return StandardErrorHelpers.CreateBadRequest(context, readError ?? "Invalid request body.");
+            }
+
+            var mergedValues = ToCaseInsensitiveDictionary(context.Request.Query);
+            foreach (var pair in bodyValues)
+            {
+                mergedValues[pair.Key] = pair.Value;
+            }
+
+            values = mergedValues;
+        }
+
+        var sqlExpression = GetValueString(values, "sql");
+        if (string.IsNullOrWhiteSpace(sqlExpression))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, "sql parameter is required");
+        }
+
+        // Esri's service-level sqlType is one of where|orderBy|expression. It defaults to
+        // `where` when omitted, matching the most common ArcGIS client usage.
+        var sqlType = GetValueString(values, "sqlType");
+        if (string.IsNullOrWhiteSpace(sqlType))
+        {
+            sqlType = "where";
+        }
+
+        if (!IsSupportedServiceSqlType(sqlType))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid sqlType parameter",
+                ["sqlType must be 'where', 'orderBy', or 'expression'."]);
+        }
+
+        // Validate against a representative accessible layer of the service.
+        var representativeResource = accessibleLayers[0].Resource;
+        var (isValid, validationError) = ValidateServiceSql(
+            context.RequestServices.GetRequiredService<IFilterExpressionService>(),
+            sqlExpression,
+            sqlType,
+            representativeResource);
+
+        var response = new ValidateSqlResponse
+        {
+            IsValidSql = isValid,
+            ValidationError = isValid ? null : validationError
+        };
+        return Results.Json(response, FeatureServerJsonContext.Default.ValidateSqlResponse, contentType: "application/json");
+    }
+
+    private static bool IsSupportedServiceSqlType(string sqlType)
+        => string.Equals(sqlType, "where", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(sqlType, "orderBy", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(sqlType, "expression", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Validates a SQL string for the given Esri <c>sqlType</c> against a layer schema.
+    /// <c>where</c>/<c>expression</c> are parsed and translated through the shared filter
+    /// service; <c>orderBy</c> is validated through the shared orderBy parser.
+    /// </summary>
+    private static (bool IsValid, string? Error) ValidateServiceSql(
+        IFilterExpressionService filterService,
+        string sqlExpression,
+        string sqlType,
+        MetadataV2Resource resource)
+    {
+        if (string.Equals(sqlType, "orderBy", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                OrderByParsing.ParseFeatureServerOrderBy(
+                    sqlExpression,
+                    resource,
+                    FeatureServerOrderByFields.AllowedCoreOrderByFields);
+                return (true, null);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return (false, ex.Message);
+            }
+        }
+
+        // where + expression both validate as ArcGIS SQL filter expressions. Parse for
+        // syntax, then translate against the layer schema so unknown fields / type
+        // mismatches are reported as invalid rather than passing a syntactic-only check.
+        var parseResult = filterService.Parse(FilterLanguage.ArcGisSql, sqlExpression);
+        if (!parseResult.IsSuccess)
+        {
+            return (false, parseResult.ErrorMessage ?? "Invalid SQL syntax.");
+        }
+
+        if (parseResult.Expression != null)
+        {
+            var translationResult = filterService.Translate(parseResult.Expression, resource);
+            if (!translationResult.IsSuccess)
+            {
+                return (false, translationResult.ErrorMessage ?? "Invalid SQL expression for the service schema.");
+            }
+        }
+
+        return (true, null);
+    }
+
+    /// <summary>
     /// Parses the "edits" parameter from request values into a feature array.
     /// Returns a tuple of (features, error). On success, error is null.
     /// </summary>

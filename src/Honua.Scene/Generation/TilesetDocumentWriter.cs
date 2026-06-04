@@ -94,6 +94,84 @@ public static class TilesetDocumentWriter
     }
 
     /// <summary>
+    /// Builds a multi-level tileset document from a quadtree LOD partition
+    /// (#1200). Every <see cref="SceneTileNode"/> that carries content becomes a
+    /// <see cref="TileNode"/> with its own bounding region and tile content; the
+    /// tree refinement is "REPLACE" so a client swaps a coarse interior tile for
+    /// its finer children as the camera approaches.
+    /// </summary>
+    /// <param name="tree">The partition produced by <see cref="SceneQuadtreePartitioner"/>.</param>
+    /// <param name="content">
+    /// Maps a content-bearing node to its emitted content (relative GLB uri plus
+    /// the node's vertical extent in meters). Nodes with no features are skipped.
+    /// </param>
+    /// <param name="generatorTag">Optional generator label written into the asset block.</param>
+    /// <param name="styleReference">Optional style-metadata contract reference advertised under <c>extras</c>.</param>
+    public static TilesetDocument BuildTree(
+        SceneTileTree tree,
+        IReadOnlyDictionary<SceneTileNode, SceneTileContent> content,
+        string? generatorTag = null,
+        TilesetStyleReference? styleReference = null)
+    {
+        ArgumentNullException.ThrowIfNull(tree);
+        ArgumentNullException.ThrowIfNull(content);
+
+        var root = BuildTileNode(tree.Root, content);
+
+        return new TilesetDocument
+        {
+            Asset = new TilesetAsset
+            {
+                Version = "1.1",
+                Generator = string.IsNullOrEmpty(generatorTag) ? null : generatorTag
+            },
+            GeometricError = tree.RootGeometricError,
+            Root = root,
+            Extras = styleReference is null
+                ? null
+                : new TilesetExtras { Style = styleReference }
+        };
+    }
+
+    private static TileNode BuildTileNode(
+        SceneTileNode node,
+        IReadOnlyDictionary<SceneTileNode, SceneTileContent> content)
+    {
+        var hasContent = content.TryGetValue(node, out var nodeContent);
+
+        var region = new[]
+        {
+            node.West * Math.PI / 180.0,
+            node.South * Math.PI / 180.0,
+            node.East * Math.PI / 180.0,
+            node.North * Math.PI / 180.0,
+            hasContent ? nodeContent.MinHeightMeters : 0.0,
+            hasContent ? nodeContent.MaxHeightMeters : 0.0
+        };
+
+        List<TileNode>? children = null;
+        if (node.Children.Count > 0)
+        {
+            children = new List<TileNode>(node.Children.Count);
+            foreach (var child in node.Children)
+            {
+                children.Add(BuildTileNode(child, content));
+            }
+        }
+
+        return new TileNode
+        {
+            BoundingVolume = new BoundingVolume { Region = region },
+            GeometricError = node.GeometricError,
+            // REPLACE so a parent's coarse LOD is swapped for its children's
+            // finer geometry as the client refines toward the leaves.
+            Refine = "REPLACE",
+            Content = hasContent ? new TileContent { Uri = nodeContent.Uri } : null,
+            Children = children
+        };
+    }
+
+    /// <summary>
     /// Serializes the tileset document to a deterministic UTF-8 byte sequence.
     /// </summary>
     public static byte[] Serialize(TilesetDocument document)
@@ -102,3 +180,12 @@ public static class TilesetDocumentWriter
         return JsonSerializer.SerializeToUtf8Bytes(document, TilesetJsonContext.Default.TilesetDocument);
     }
 }
+
+/// <summary>
+/// Content emitted for a single quadtree tile node: the relative GLB uri plus
+/// the node's vertical extent (meters) used to size its bounding region.
+/// </summary>
+/// <param name="Uri">Relative content uri (e.g. <c>tile_0003.glb</c>).</param>
+/// <param name="MinHeightMeters">Minimum vertex height in the node, meters.</param>
+/// <param name="MaxHeightMeters">Maximum vertex height in the node, meters.</param>
+public readonly record struct SceneTileContent(string Uri, double MinHeightMeters, double MaxHeightMeters);

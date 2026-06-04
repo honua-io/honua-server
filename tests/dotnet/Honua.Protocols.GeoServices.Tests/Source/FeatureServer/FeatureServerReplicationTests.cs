@@ -96,6 +96,37 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
         creationDate.GetInt64().Should().BeGreaterThan(0);
     }
 
+    // The ArcGIS API for Python (FeatureLayerCollection.create_replica /
+    // extract_changes) sends the `layers` parameter as the Esri JSON-array form
+    // (layers=[0] / layers=[0,1]) rather than the comma-separated form. Both forms
+    // must be accepted identically.
+    [IntegrationTest]
+    [Operation(Operations.CreateReplica)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
+    public async Task CreateReplica_LayersAsJsonArray_ReturnsReplicaId()
+    {
+        var payload = JsonSerializer.Serialize(new
+        {
+            replicaName = "JsonArrayReplica",
+            layers = "[0]",
+            syncModel = "perReplica",
+            f = "json"
+        });
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+        var root = document.RootElement;
+
+        root.TryGetProperty("layers", out var layers).Should().BeTrue();
+        layers.EnumerateArray().Should().Contain(item => item.GetProperty("id").GetInt32() == 0);
+    }
+
     [IntegrationTest]
     [Operation(Operations.ListReplicas)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/replicas")]
@@ -302,21 +333,114 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
         layerChanges.GetArrayLength().Should().BeGreaterThanOrEqualTo(1);
     }
 
+    // The serverGen-based change-tracking flow the ArcGIS SDK
+    // FeatureLayerCollection.extract_changes() uses calls extractChanges WITHOUT a
+    // replicaID. On a sync-enabled service this must return a valid changes envelope
+    // (since the provided serverGen) rather than 400.
     [IntegrationTest]
     [Operation(Operations.ExtractChanges)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/extractChanges")]
-    public async Task ExtractChanges_MissingReplicaId_ReturnsBadRequest()
+    public async Task ExtractChanges_WithoutReplicaId_ServerGenFlow_ReturnsChanges()
     {
-        var payload = JsonSerializer.Serialize(new { f = "json" });
+        var payload = JsonSerializer.Serialize(new
+        {
+            serverGen = 0,
+            layers = "0",
+            f = "json"
+        });
 
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/extractChanges",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("replicaID");
+        using var document = JsonDocument.Parse(content);
+        var root = document.RootElement;
+
+        root.GetProperty("success").GetBoolean().Should().BeTrue();
+        // No replica was registered, so replicaID must be absent (or null).
+        if (root.TryGetProperty("replicaID", out var replicaIdElement))
+        {
+            replicaIdElement.ValueKind.Should().Be(JsonValueKind.Null);
+        }
+
+        root.TryGetProperty("layerChanges", out var layerChanges).Should().BeTrue();
+        layerChanges.ValueKind.Should().Be(JsonValueKind.Array);
+        layerChanges.GetArrayLength().Should().BeGreaterThanOrEqualTo(1);
+
+        // The change window is reported through serverGen/min/max for the serverGen flow.
+        root.TryGetProperty("serverGen", out _).Should().BeTrue();
+        root.TryGetProperty("minServerGen", out _).Should().BeTrue();
+        root.TryGetProperty("maxServerGen", out _).Should().BeTrue();
+    }
+
+    // The ArcGIS API for Python sends layers as a JSON array (layers=[0,1]). The
+    // serverGen-based extractChanges flow must accept it identically to the
+    // comma-separated form (layers=0,1).
+    [IntegrationTest]
+    [Operation(Operations.ExtractChanges)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/extractChanges")]
+    public async Task ExtractChanges_LayersAsJsonArray_ReturnsChanges()
+    {
+        var payload = JsonSerializer.Serialize(new
+        {
+            serverGen = 0,
+            layers = "[0]",
+            f = "json"
+        });
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/extractChanges",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+        var root = document.RootElement;
+
+        root.GetProperty("success").GetBoolean().Should().BeTrue();
+        root.TryGetProperty("layerChanges", out var layerChanges).Should().BeTrue();
+        layerChanges.ValueKind.Should().Be(JsonValueKind.Array);
+        layerChanges.GetArrayLength().Should().BeGreaterThanOrEqualTo(1);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ExtractChanges)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/extractChanges")]
+    public async Task ExtractChanges_WithoutReplicaId_ReturnIdsOnly_OmitsFeaturePayload()
+    {
+        var payload = JsonSerializer.Serialize(new
+        {
+            serverGen = 0,
+            layers = "0",
+            returnIdsOnly = true,
+            f = "json"
+        });
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/extractChanges",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+        var root = document.RootElement;
+
+        root.GetProperty("success").GetBoolean().Should().BeTrue();
+        var layerChanges = root.GetProperty("layerChanges");
+        layerChanges.GetArrayLength().Should().BeGreaterThanOrEqualTo(1);
+
+        // returnIdsOnly suppresses the per-feature attribute payload; no addFeatures /
+        // updateFeatures arrays should be present.
+        foreach (var layer in layerChanges.EnumerateArray())
+        {
+            layer.TryGetProperty("addFeatures", out _).Should().BeFalse();
+            layer.TryGetProperty("updateFeatures", out _).Should().BeFalse();
+        }
     }
 
     [IntegrationTest]

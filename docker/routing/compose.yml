@@ -1,0 +1,92 @@
+name: honua-routing
+
+# Separate pgRouting-enabled PostGIS database for routing development and the
+# gated PgRoutingProvider integration test (issue #1266).
+#
+# The default Honua runtime/test PostGIS images (postgis/postgis:*) do NOT
+# bundle the pgRouting extension, so `CREATE EXTENSION pgrouting` fails there
+# (see migration 043_CreatePgRoutingTopology.sql and ADR-0050). This compose
+# uses the official pgrouting/pgrouting image, which ships PostGIS + pgRouting,
+# and seeds a tiny deterministic 3x3 lattice (init-routing.sql) so routes and
+# service areas can be solved immediately.
+#
+# Usage:
+#   docker compose -f docker/routing/compose.yml up -d
+#   curl/psql against localhost:${POSTGRES_ROUTING_PORT:-5434}
+#
+# Point the gated integration test at this DB:
+#   export HONUA_ROUTING_TEST=1
+#   export HONUA_ROUTING_TEST_DB_URL='Host=localhost;Port=5434;Database=honua_routing;Username=test;Password=test'
+#   dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj --filter "Category=Routing"
+
+services:
+  pgrouting:
+    # PG17 / PostGIS 3.5 / pgRouting 3.7.3 (verified pullable).
+    image: pgrouting/pgrouting:17-3.5-3.7.3
+    environment:
+      POSTGRES_DB: honua_routing
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C --data-checksums"
+    ports:
+      - "${POSTGRES_ROUTING_PORT:-5434}:5432"
+    volumes:
+      - postgres_routing_data:/var/lib/postgresql/data
+      - ./init-routing.sql:/docker-entrypoint-initdb.d/init-routing.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test -d honua_routing"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # One-shot OSM ingestion (issue #1266). NOT started by the default
+  # `docker compose -f docker/routing/compose.yml up -d` — only by
+  # `docker compose -f docker/routing/compose.yml --profile osm-import run --rm osm-import`.
+  #
+  # osm2pgrouting builds its own osm2pgrouting-compatible ways /
+  # ways_vertices_pgr schema; --clean DROPS+recreates those tables, so this
+  # REPLACES the deterministic lattice seed in honua_routing.
+  #
+  # iboates/osm2pgrouting bundles the osm2pgrouting CLI (the base
+  # pgrouting/pgrouting image does not). By default it imports the bundled
+  # synthetic sample; mount your own extract over /data/extract.osm (or point
+  # OSM_FILE at it) to import a real Geofabrik/OSM network. See README.md and
+  # ADR-0050 for the open-data constraint.
+  osm-import:
+    # THIRD-PARTY image: iboates/osm2pgrouting is a personal Docker Hub image (not
+    # an official/verified publisher), so it is pinned by digest to lock the exact
+    # bytes and prevent tag-mutation supply-chain drift. It is gated behind the
+    # non-default "osm-import" profile and is never started by `up -d`. To re-pin
+    # after an intentional upgrade:
+    #   docker pull iboates/osm2pgrouting:<tag>
+    #   docker inspect --format '{{index .RepoDigests 0}}' iboates/osm2pgrouting:<tag>
+    image: iboates/osm2pgrouting:2.3.7@sha256:0438aa938dd41c3df928bfdb70d563e7c6f1ce7d2106ea88bf5a750bc5418e6b
+    profiles: ["osm-import"]
+    depends_on:
+      pgrouting:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: test
+    volumes:
+      - ./sample:/data/sample:ro
+      - ./mapconfig.xml:/data/mapconfig.xml:ro
+    command:
+      - "--f"
+      - "${OSM_FILE:-/data/sample/sample.osm}"
+      - "--conf"
+      - "/data/mapconfig.xml"
+      - "--dbname"
+      - "honua_routing"
+      - "--host"
+      - "pgrouting"
+      - "--port"
+      - "5432"
+      - "--username"
+      - "test"
+      - "--password"
+      - "test"
+      - "--clean"
+
+volumes:
+  postgres_routing_data:

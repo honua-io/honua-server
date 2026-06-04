@@ -62,6 +62,7 @@ public sealed class ModuleDependencyPolicyTests
         Core,
         Geometry,
         Geocoding,
+        Routing,
         Aws,
         Azure,
         Hosting,
@@ -107,6 +108,12 @@ public sealed class ModuleDependencyPolicyTests
         (ModuleRole.Geometry,  ModuleRole.Core),
         (ModuleRole.Geocoding, ModuleRole.Abstractions),
         (ModuleRole.Geocoding, ModuleRole.Core),
+        // Routing (pgRouting engine + NAServer route/service-area solves, #1266).
+        // Mirrors the Geocoding satellite: it depends on Abstractions only (the
+        // IDatabaseConnectionProvider surface) and is consumed by the GeoServices
+        // NAServer protocol adapter. It must NEVER reference a storage provider or
+        // back-reference Server.
+        (ModuleRole.Routing,   ModuleRole.Abstractions),
         (ModuleRole.Aws,       ModuleRole.Abstractions),
         (ModuleRole.Aws,       ModuleRole.Core),
         (ModuleRole.Azure,     ModuleRole.Abstractions),
@@ -168,6 +175,7 @@ public sealed class ModuleDependencyPolicyTests
         (ModuleRole.Protocols, ModuleRole.Hosting),
         (ModuleRole.Protocols, ModuleRole.Jobs),
         (ModuleRole.Protocols, ModuleRole.Geoprocessing),
+        (ModuleRole.Protocols, ModuleRole.Routing),
         (ModuleRole.Protocols, ModuleRole.Scene),
         (ModuleRole.Protocols, ModuleRole.ServiceDefaults),
         (ModuleRole.Protocols, ModuleRole.Protocols),
@@ -258,6 +266,7 @@ public sealed class ModuleDependencyPolicyTests
         (ModuleRole.Server, ModuleRole.Core),
         (ModuleRole.Server, ModuleRole.Geometry),
         (ModuleRole.Server, ModuleRole.Geocoding),
+        (ModuleRole.Server, ModuleRole.Routing),
         (ModuleRole.Server, ModuleRole.Aws),
         (ModuleRole.Server, ModuleRole.Azure),
         (ModuleRole.Server, ModuleRole.Ai),
@@ -556,6 +565,10 @@ public sealed class ModuleDependencyPolicyTests
         if (projectName.Equals("Honua.Geocoding", StringComparison.Ordinal))
         {
             return ModuleRole.Geocoding;
+        }
+        if (projectName.Equals("Honua.Routing", StringComparison.Ordinal))
+        {
+            return ModuleRole.Routing;
         }
         if (projectName.Equals("Honua.Aws", StringComparison.Ordinal) ||
             projectName.StartsWith("Honua.Aws.", StringComparison.Ordinal))

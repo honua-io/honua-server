@@ -5,9 +5,9 @@ using Aspire.Hosting;
 
 var builder = DistributedApplication.CreateBuilder(args);
 
-// PostgreSQL with PostGIS
+// PostgreSQL with PostGIS + pgRouting (dev gets routing topology support)
 var postgres = builder.AddPostgres("postgres")
-    .WithImage("postgis/postgis", "16-3.4")
+    .WithImage("pgrouting/pgrouting", "17-3.5-3.7.3")
     .WithDataVolume("honua-postgres-data")
     .WithPgAdmin();
 

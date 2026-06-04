@@ -4,16 +4,16 @@
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Honua.Core.Features.Geocoding.Abstractions;
-using Honua.Core.Features.Geocoding.Domain;
+using Honua.Geocoding.Features.Geocoding.Abstractions;
+using Honua.Geocoding.Features.Geocoding.Domain;
 using Honua.Core.Features.Infrastructure.Validation;
 
-namespace Honua.Core.Features.Geocoding.Providers;
+namespace Honua.Geocoding.Features.Geocoding.Providers;
 
 /// <summary>
 /// Nominatim geocoding provider using OpenStreetMap data
 /// </summary>
-public sealed class NominatimGeocodeProvider : BaseGeocodeProvider
+internal sealed class NominatimGeocodeProvider : BaseGeocodeProvider
 {
     /// <summary>
     /// Nominatim provider name constant

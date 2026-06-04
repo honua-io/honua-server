@@ -30,6 +30,16 @@ public sealed class AttachmentGroup
     public required long ParentObjectId { get; init; }
 
     /// <summary>
+    /// Parent feature global ID. Esri always emits this key on every attachment
+    /// group; the ArcGIS API for Python <c>AttachmentManager.search()</c> reads
+    /// <c>group['parentGlobalId']</c> unconditionally and raises
+    /// <c>KeyError('parentGlobalId')</c> when it is absent. Honua attachments are
+    /// keyed by integer object IDs and the layer has no global-id identity column,
+    /// so this is emitted as an empty string per Esri convention rather than omitted.
+    /// </summary>
+    public string ParentGlobalId { get; init; } = string.Empty;
+
+    /// <summary>
     /// Attachment infos associated with the parent feature.
     /// </summary>
     public AttachmentInfo[] AttachmentInfos { get; init; } = [];

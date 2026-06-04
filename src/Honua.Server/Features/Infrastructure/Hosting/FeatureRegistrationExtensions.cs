@@ -51,6 +51,7 @@ using Honua.Server.Features.Protocols.Tiles.PMTilesProxy;
 using Honua.Protocols.Ogc.Classic;
 using Honua.Protocols.Ogc.Classic.Wcs20;
 using Honua.Protocols.Scene;
+using Honua.Protocols.Scene.I3s;
 using Honua.Server.Features.Protocols.SpatialAnalytics;
 using Honua.Server.Features.Protocols.Elevation;
 using Honua.Protocols.Stac;
@@ -108,6 +109,9 @@ internal static class FeatureRegistrationExtensions
         services.AddSceneGeneration(configuration);
         services.AddPrintingTools();
         services.AddGeoprocessing(configuration);
+        // Routing subsystem (#1266): selects pgRouting or the mock provider via
+        // Routing:Provider. The GeoServices NAServer adapter consumes IRoutingProvider.
+        Honua.Routing.Features.Routing.ServiceCollectionExtensions.AddRouting(services, configuration);
         // Job-orchestration substrate (queue + log store) used by AddGeoprocessing.
         // Lives in Honua.Server because it composes a Share-export terminal callback
         // that depends on Honua.Server.Features.Admin.Share — out of reach for the
@@ -169,6 +173,7 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapTerrainEndpoints();
         endpoints.MapSceneDiscoveryEndpoints();
         endpoints.MapSceneEndpoints();
+        endpoints.MapI3sSceneServerEndpoints();
         endpoints.MapSceneDatasetEndpoints();
         endpoints.MapElevationEndpoints();
         endpoints.MapSceneAnalysisEndpoints();
