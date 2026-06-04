@@ -22,7 +22,7 @@ namespace Honua.Scene.Grpc;
 /// scene progressively, filtered by level of detail, geometric error, and
 /// spatial extent.
 /// </summary>
-internal sealed class HonuaTileGrpcService : Proto.TileService.TileServiceBase
+internal sealed partial class HonuaTileGrpcService : Proto.TileService.TileServiceBase
 {
     private readonly ISceneDatasetRegistry _registry;
     private readonly ILogger<HonuaTileGrpcService> _logger;
@@ -47,6 +47,7 @@ internal sealed class HonuaTileGrpcService : Proto.TileService.TileServiceBase
 
         if (string.IsNullOrWhiteSpace(request.NodeId))
         {
+            Log.InvalidArgument(_logger, SceneGrpcTelemetry.GetTileOperation, request.SceneId, "node_id is required.");
             throw new RpcException(new Status(StatusCode.InvalidArgument, "node_id is required."));
         }
 
@@ -64,6 +65,7 @@ internal sealed class HonuaTileGrpcService : Proto.TileService.TileServiceBase
         var entry = entries.FirstOrDefault(candidate => string.Equals(candidate.NodeId, request.NodeId, StringComparison.Ordinal));
         if (entry is null)
         {
+            Log.TileNodeNotFound(_logger, SceneGrpcTelemetry.GetTileOperation, request.SceneId, request.NodeId);
             throw new RpcException(new Status(StatusCode.NotFound, $"Tile node '{request.NodeId}' was not found in scene '{request.SceneId}'."));
         }
 
@@ -177,6 +179,7 @@ internal sealed class HonuaTileGrpcService : Proto.TileService.TileServiceBase
     {
         if (string.IsNullOrWhiteSpace(sceneId))
         {
+            Log.InvalidArgument(_logger, SceneGrpcTelemetry.GetTileOperation, sceneId, "scene_id is required.");
             throw new RpcException(new Status(StatusCode.InvalidArgument, "scene_id is required."));
         }
 
@@ -189,6 +192,7 @@ internal sealed class HonuaTileGrpcService : Proto.TileService.TileServiceBase
         var scene = await _registry.FindAsync(sceneId, context.CancellationToken).ConfigureAwait(false);
         if (scene is null)
         {
+            Log.SceneNotFound(_logger, SceneGrpcTelemetry.GetTileOperation, sceneId);
             throw new RpcException(new Status(StatusCode.NotFound, $"Scene '{sceneId}' was not found."));
         }
 
@@ -243,4 +247,19 @@ internal sealed class HonuaTileGrpcService : Proto.TileService.TileServiceBase
     }
 
     private readonly record struct SceneLocation(string AssetRoot, string TilesetFileName, AccessPolicy? AccessPolicy);
+
+    private static partial class Log
+    {
+        [LoggerMessage(EventId = 8445, Level = LogLevel.Debug,
+            Message = "gRPC tile {Operation} rejected scene {SceneId}: {Reason}")]
+        public static partial void InvalidArgument(ILogger logger, string operation, string sceneId, string reason);
+
+        [LoggerMessage(EventId = 8446, Level = LogLevel.Debug,
+            Message = "gRPC tile {Operation} did not find scene {SceneId}.")]
+        public static partial void SceneNotFound(ILogger logger, string operation, string sceneId);
+
+        [LoggerMessage(EventId = 8447, Level = LogLevel.Debug,
+            Message = "gRPC tile {Operation} did not find node {NodeId} in scene {SceneId}.")]
+        public static partial void TileNodeNotFound(ILogger logger, string operation, string sceneId, string nodeId);
+    }
 }

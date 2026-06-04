@@ -129,6 +129,14 @@ public static class I3sSceneLayerReader
     /// buffer length well below <see cref="int.MaxValue"/> so the later
     /// <c>(int)buffer.Length</c> span cast is safe.
     /// </summary>
+    /// <remarks>
+    /// A structurally valid zip whose descriptor entry is a corrupt gzip/deflate
+    /// member surfaces a raw <see cref="InvalidDataException"/> from the
+    /// decompression stream's <c>Read</c>. That is mapped to the stable
+    /// <see cref="I3sConversionException"/> contract here so callers never see a
+    /// framework parser exception leak past the converter, mirroring the
+    /// archive-construction catch in <see cref="ReadFromSlpk"/>.
+    /// </remarks>
     private static MemoryStream CopyWithLimit(Stream source, int maxBytes)
     {
         var buffer = new MemoryStream();
@@ -149,6 +157,14 @@ public static class I3sSceneLayerReader
 
                 buffer.Write(chunk, 0, read);
             }
+        }
+        catch (InvalidDataException ex)
+        {
+            buffer.Dispose();
+            throw new I3sConversionException(
+                I3sConversionErrorReason.InvalidArchive,
+                "The .slpk 3dSceneLayer.json descriptor entry could not be decompressed.",
+                ex);
         }
         catch
         {

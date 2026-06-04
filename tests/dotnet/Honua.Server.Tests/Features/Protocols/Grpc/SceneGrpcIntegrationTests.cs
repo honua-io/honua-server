@@ -639,6 +639,180 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
             .Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ElevationService/GetElevationProfile")]
+    public async Task GetElevationProfile_WithSampleCountAboveMax_ThrowsInvalidArgument()
+    {
+        // The over-max guard (sample_count > configured MaxSampleCount) must
+        // reject the request rather than streaming an unbounded sample count to
+        // the provider. Read the configured cap from the running fixture so the
+        // test stays correct if the default changes.
+        var limits = _fixture.GetService<Microsoft.Extensions.Options.IOptions<Honua.Core.Configuration.LimitsOptions>>();
+        var aboveMax = limits.Value.Elevation.MaxSampleCount + 1;
+
+        var line = new Proto.PolylineGeometry();
+        var path = new Proto.CoordinateSequence();
+        path.Coords.Add(new Proto.Coordinate { X = 0, Y = 0 });
+        path.Coords.Add(new Proto.Coordinate { X = 0.001, Y = 0.001 });
+        line.Paths.Add(path);
+
+        var request = new Proto.GetElevationProfileRequest
+        {
+            DatasetId = "missing-dataset",
+            LayerId = 0,
+            Line = line,
+            SampleCount = aboveMax,
+        };
+
+        var act = async () => await _elevationClient!.GetElevationProfileAsync(request, _headers);
+
+        (await act.Should().ThrowAsync<RpcException>())
+            .Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ElevationService/GetElevationProfile")]
+    public async Task GetElevationProfile_WithEmptyLine_ThrowsInvalidArgument()
+    {
+        // A PolylineGeometry with zero paths (and the unset-Line case it shares a
+        // branch with) must be rejected with InvalidArgument before any sampling.
+        var request = new Proto.GetElevationProfileRequest
+        {
+            DatasetId = "missing-dataset",
+            LayerId = 0,
+            Line = new Proto.PolylineGeometry(),
+        };
+
+        var act = async () => await _elevationClient!.GetElevationProfileAsync(request, _headers);
+
+        (await act.Should().ThrowAsync<RpcException>())
+            .Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ElevationService/GetElevation")]
+    public async Task GetElevation_WithUnsupportedCrs_ThrowsInvalidArgument()
+    {
+        // The gRPC elevation surface validates the requested WKID against the
+        // shared ICrsRegistry (parity with the HTTP elevation endpoint); an
+        // unsupported WKID must be rejected with InvalidArgument before reaching
+        // provider code.
+        var request = new Proto.GetElevationRequest
+        {
+            DatasetId = "missing-dataset",
+            LayerId = 0,
+            Point = new Proto.PointGeometry { X = 0, Y = 0 },
+            SpatialReference = new Proto.SpatialReference { Wkid = 999999 },
+        };
+
+        var act = async () => await _elevationClient!.GetElevationAsync(request, _headers);
+
+        (await act.Should().ThrowAsync<RpcException>())
+            .Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /geospatial.v1.SceneService/GetScene")]
+    public async Task GetScene_ForInactiveScene_ThrowsNotFound()
+    {
+        // A registered-but-inactive scene must never be disclosed via GetScene;
+        // it surfaces as NotFound just like a scene that does not exist.
+        const string inactiveSceneId = "inactive-grpc-scene";
+        var registration = _fixture.GetService<ISceneRegistrationService>();
+        await registration.RegisterAsync(new SceneDatasetRecord
+        {
+            DatasetId = Guid.NewGuid(),
+            Id = inactiveSceneId,
+            Name = "Inactive Scene",
+            AssetRoot = _missingContentRoot,
+            TilesetFileName = "tileset.json",
+            DatasetType = SceneDatasetType.HostedTiles,
+            CachePolicy = SceneCachePolicy.Default,
+            IsPublic = true,
+            Status = SceneDatasetStatus.Inactive,
+            CreatedAt = DateTimeOffset.UtcNow,
+            CreatedBy = "test",
+        });
+
+        var act = async () => await _sceneClient!.GetSceneAsync(
+            new Proto.GetSceneRequest { SceneId = inactiveSceneId },
+            _headers);
+
+        (await act.Should().ThrowAsync<RpcException>())
+            .Which.StatusCode.Should().Be(StatusCode.NotFound);
+    }
+
+    [Theory]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /geospatial.v1.SceneService/GetScene")]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task GetScene_WithBlankSceneId_ThrowsInvalidArgument(string sceneId)
+    {
+        var act = async () => await _sceneClient!.GetSceneAsync(
+            new Proto.GetSceneRequest { SceneId = sceneId },
+            _headers);
+
+        (await act.Should().ThrowAsync<RpcException>())
+            .Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+    }
+
+    [Theory]
+    [Operation(Operations.GetTile)]
+    [Endpoint("POST /geospatial.v1.TileService/GetTile")]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task GetTile_WithBlankSceneId_ThrowsInvalidArgument(string sceneId)
+    {
+        var act = async () => await _tileClient!.GetTileAsync(
+            new Proto.GetTileRequest { SceneId = sceneId, NodeId = "0" },
+            _headers);
+
+        (await act.Should().ThrowAsync<RpcException>())
+            .Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+    }
+
+    [Theory]
+    [Operation(Operations.GetTile)]
+    [Endpoint("POST /geospatial.v1.TileService/GetTile")]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task GetTile_WithBlankNodeId_ThrowsInvalidArgument(string nodeId)
+    {
+        var act = async () => await _tileClient!.GetTileAsync(
+            new Proto.GetTileRequest { SceneId = FixtureSceneId, NodeId = nodeId },
+            _headers);
+
+        (await act.Should().ThrowAsync<RpcException>())
+            .Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+    }
+
+    [Theory]
+    [Operation(Operations.Streaming)]
+    [Endpoint("POST /geospatial.v1.TileService/StreamTiles")]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task StreamTiles_WithBlankSceneId_ThrowsInvalidArgument(string sceneId)
+    {
+        using var call = _tileClient!.StreamTiles(
+            new Proto.StreamTilesRequest { SceneId = sceneId },
+            _headers);
+
+        var act = async () =>
+        {
+            await foreach (var _ in call.ResponseStream.ReadAllAsync())
+            {
+            }
+        };
+
+        (await act.Should().ThrowAsync<RpcException>())
+            .Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+    }
+
     private async Task<List<Proto.Tile>> StreamAsync(Proto.StreamTilesRequest request)
     {
         using var call = _tileClient!.StreamTiles(request, _headers);

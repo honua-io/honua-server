@@ -38,6 +38,25 @@ public sealed class I3sSceneServiceBuilderTests
         layer.FullExtent.Ymax.Should().Be(37.8);
         layer.FullExtent.Zmax.Should().Be(100.0);
         layer.Store!.Id.Should().Be("downtown");
+        layer.Store.Profile.Should().Be("meshpyramids");
+
+        // The descriptor carries the spec-required heightModelInfo block that is
+        // honestly knowable for a hosted WGS-84 scene.
+        layer.HeightModelInfo.Should().NotBeNull();
+        layer.HeightModelInfo!.HeightModel.Should().Be("ellipsoidal");
+        layer.HeightModelInfo.HeightUnit.Should().Be("meter");
+    }
+
+    [UnitTest]
+    public void BuildLayer_DoesNotAdvertiseUnservableRootNode()
+    {
+        // This slice is a descriptor preview: per-node geometry (the nodes/*
+        // store) is a tracked follow-up (#1202) and no node routes are mapped, so
+        // the descriptor must NOT advertise a fetchable rootNode that would 404
+        // for a conformant I3S/ArcGIS client.
+        var layer = I3sSceneServiceBuilder.BuildLayer(Scene, Extent);
+
+        layer.Store!.RootNode.Should().BeNull();
     }
 
     [UnitTest]

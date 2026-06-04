@@ -133,6 +133,44 @@ public sealed class PointCloudTilesetBuilderTests
             .Should().BeGreaterThanOrEqualTo(1.0);
     }
 
+    [UnitTest]
+    public void Build_MultiLevelTileset_LeafNodesDeclareZeroGeometricError()
+    {
+        // A leaf tile has no children, so its geometricError must be 0.0: a
+        // positive value tells the client finer detail exists below it and
+        // screen-space-error refinement never converges at the deepest LOD.
+        // Mirrors the feature pipeline (SceneQuadtreePartitioner leaf == 0.0).
+        var las = LasFixtureBuilder.BuildFormat3(GridPoints(24, 24), scale: 1e-7);
+        var points = LasPointCloudReader.ReadPoints(las).ToList();
+
+        var result = PointCloudTilesetBuilder.Build(
+            points, IdentityGeo,
+            new PointCloudTilingOptions { MaxPointsPerTile = 30, MaxDepth = 8, InteriorSampleCount = 16 });
+
+        using var json = JsonDocument.Parse(Encoding.UTF8.GetString(result.TilesetJsonBytes));
+        var leafErrors = new List<double>();
+        CollectLeafGeometricErrors(json.RootElement.GetProperty("root"), leafErrors);
+
+        leafErrors.Should().NotBeEmpty();
+        leafErrors.Should().OnlyContain(error => error == 0.0);
+    }
+
+    private static void CollectLeafGeometricErrors(JsonElement node, List<double> sink)
+    {
+        var hasChildren = node.TryGetProperty("children", out var children)
+            && children.GetArrayLength() > 0;
+        if (!hasChildren)
+        {
+            sink.Add(node.GetProperty("geometricError").GetDouble());
+            return;
+        }
+
+        foreach (var child in children.EnumerateArray())
+        {
+            CollectLeafGeometricErrors(child, sink);
+        }
+    }
+
     private static void CollectContentUris(JsonElement node, List<string> sink)
     {
         if (node.TryGetProperty("content", out var content))

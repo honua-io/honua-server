@@ -1298,39 +1298,39 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
 
     internal static partial class SceneGenerationLog
     {
-        [LoggerMessage(EventId = 8410, Level = LogLevel.Information,
+        [LoggerMessage(EventId = 8430, Level = LogLevel.Information,
             Message = "Scene generation started: intent {IntentId}, source {SourceId}")]
         public static partial void Started(ILogger logger, string intentId, string sourceId);
 
-        [LoggerMessage(EventId = 8411, Level = LogLevel.Information,
+        [LoggerMessage(EventId = 8431, Level = LogLevel.Information,
             Message = "Scene generation completed: intent {IntentId}, scene {SceneId}, features {FeatureCount}, elapsed {ElapsedMs}ms")]
         public static partial void Completed(ILogger logger, string intentId, string sceneId, int featureCount, long elapsedMs);
 
-        [LoggerMessage(EventId = 8412, Level = LogLevel.Warning,
+        [LoggerMessage(EventId = 8432, Level = LogLevel.Warning,
             Message = "Scene generation failed: intent {IntentId}, source {SourceId}, reason {Reason}")]
         public static partial void Failed(ILogger logger, string intentId, string sourceId, string reason);
 
-        [LoggerMessage(EventId = 8413, Level = LogLevel.Information,
+        [LoggerMessage(EventId = 8433, Level = LogLevel.Information,
             Message = "Scene generation warning: intent {IntentId}, message {Message}")]
         public static partial void Warning(ILogger logger, string intentId, string message);
 
-        [LoggerMessage(EventId = 8414, Level = LogLevel.Warning,
+        [LoggerMessage(EventId = 8434, Level = LogLevel.Warning,
             Message = "Scene generation overwrote stale final directory {FinalDirectory} during staging promotion; the registry record now points at the new bytes.")]
         public static partial void PromotionOverwroteStaleFinalDir(ILogger logger, string finalDirectory);
 
-        [LoggerMessage(EventId = 8415, Level = LogLevel.Warning,
+        [LoggerMessage(EventId = 8435, Level = LogLevel.Warning,
             Message = "Scene generation could not delete staging directory {StagingDirectory}; subsequent generations are unaffected but the directory may need a manual sweep.")]
         public static partial void StagingCleanupFailed(ILogger logger, string stagingDirectory, Exception exception);
 
-        [LoggerMessage(EventId = 8416, Level = LogLevel.Warning,
+        [LoggerMessage(EventId = 8436, Level = LogLevel.Warning,
             Message = "Scene generation deactivated registry record for scene {SceneId} ({DatasetId}) after staging promotion failed; deactivated={Deactivated}.")]
         public static partial void RegistrationCompensated(ILogger logger, string sceneId, Guid datasetId, bool deactivated);
 
-        [LoggerMessage(EventId = 8417, Level = LogLevel.Error,
+        [LoggerMessage(EventId = 8437, Level = LogLevel.Error,
             Message = "Scene generation could not deactivate registry record for scene {SceneId} ({DatasetId}) after staging promotion failed; record remains Active and the operator must clean it up via the admin scene CRUD path.")]
         public static partial void RegistrationCompensationFailed(ILogger logger, string sceneId, Guid datasetId, Exception exception);
 
-        [LoggerMessage(EventId = 8418, Level = LogLevel.Error,
+        [LoggerMessage(EventId = 8438, Level = LogLevel.Error,
             Message = "Scene generation failed unexpectedly: intent {IntentId}, source {SourceId}")]
         public static partial void FailedUnexpected(ILogger logger, string intentId, string sourceId, Exception exception);
     }

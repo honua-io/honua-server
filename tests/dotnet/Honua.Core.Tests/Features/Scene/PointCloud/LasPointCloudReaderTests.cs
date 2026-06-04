@@ -116,6 +116,39 @@ public sealed class LasPointCloudReaderTests
             .Which.Code.Should().Be("SCENE_MODEL_ASSET_INVALID");
     }
 
+    [UnitTest]
+    public void ReadPoints_PointCountOverflowsRequiredBytes_ThrowsStableLasFormatException()
+    {
+        // PointCount is an attacker-controlled uint64 and PointRecordLength a
+        // uint16; PointCount * recordLength can overflow ulong and wrap small,
+        // bypassing the truncation guard and admitting a near-infinite loop / a
+        // raw AsSpan ArgumentOutOfRangeException. A declared count of
+        // ulong.MaxValue over a tiny body must surface the stable
+        // LasFormatException, not an OverflowException/ArgumentOutOfRangeException.
+        var las = LasFixtureBuilder.BuildFormat3(SamplePoints());
+        var header = LasPointCloudReader.ReadHeader(las) with { PointCount = ulong.MaxValue };
+
+        var act = () => LasPointCloudReader.ReadPoints(las, header).ToList();
+
+        act.Should().Throw<LasFormatException>()
+            .Which.Code.Should().Be("SCENE_MODEL_ASSET_INVALID");
+    }
+
+    [UnitTest]
+    public void ReadPoints_PointCountNearInt64Max_ThrowsStableLasFormatException()
+    {
+        // 2^63 records with a small record length also wrap the product; the
+        // overflow-safe bound (PointCount > availableBytes / recordLength) must
+        // reject it without overflowing.
+        var las = LasFixtureBuilder.BuildFormat3(SamplePoints());
+        var header = LasPointCloudReader.ReadHeader(las) with { PointCount = 1UL << 63 };
+
+        var act = () => LasPointCloudReader.ReadPoints(las, header).ToList();
+
+        act.Should().Throw<LasFormatException>()
+            .Which.Code.Should().Be("SCENE_MODEL_ASSET_INVALID");
+    }
+
     private static List<LasFixtureBuilder.Point> SamplePoints() =>
     [
         new(100.5, 200.5, 5.5, 1200, 2, 60000, 30000, 10000),

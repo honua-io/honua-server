@@ -3,6 +3,7 @@
 
 using Grpc.Core;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.ServiceDefaults;
@@ -32,24 +33,28 @@ namespace Honua.Scene.Grpc;
 /// matches CLAUDE.md's requirement to document intentional protocol divergence
 /// in code; the divergence is covered by the elevation gRPC tests.
 /// </remarks>
-internal sealed class HonuaElevationGrpcService : Proto.ElevationService.ElevationServiceBase
+internal sealed partial class HonuaElevationGrpcService : Proto.ElevationService.ElevationServiceBase
 {
     private const int Wgs84 = 4326;
 
     private readonly IElevationService _elevationService;
+    private readonly ICrsRegistry _crsRegistry;
     private readonly LimitsOptions _limits;
     private readonly ILogger<HonuaElevationGrpcService> _logger;
 
     public HonuaElevationGrpcService(
         IElevationService elevationService,
+        ICrsRegistry crsRegistry,
         IOptions<LimitsOptions> limits,
         ILogger<HonuaElevationGrpcService> logger)
     {
         ArgumentNullException.ThrowIfNull(elevationService);
+        ArgumentNullException.ThrowIfNull(crsRegistry);
         ArgumentNullException.ThrowIfNull(limits);
         ArgumentNullException.ThrowIfNull(logger);
 
         _elevationService = elevationService;
+        _crsRegistry = crsRegistry;
         _limits = limits.Value;
         _logger = logger;
     }
@@ -68,6 +73,7 @@ internal sealed class HonuaElevationGrpcService : Proto.ElevationService.Elevati
 
         if (request.Point is null)
         {
+            Log.InvalidArgument(_logger, SceneGrpcTelemetry.GetElevationOperation, request.LayerId, "point is required.");
             throw new RpcException(new Status(StatusCode.InvalidArgument, "point is required."));
         }
 
@@ -75,10 +81,15 @@ internal sealed class HonuaElevationGrpcService : Proto.ElevationService.Elevati
         var y = request.Point.Y;
         if (!double.IsFinite(x) || !double.IsFinite(y))
         {
+            Log.InvalidArgument(_logger, SceneGrpcTelemetry.GetElevationOperation, request.LayerId, "point x and y must be finite values.");
             throw new RpcException(new Status(StatusCode.InvalidArgument, "point x and y must be finite values."));
         }
 
-        var srid = ResolveSrid(request.SpatialReference);
+        var srid = await ValidateSridAsync(
+            request.SpatialReference,
+            SceneGrpcTelemetry.GetElevationOperation,
+            request.LayerId,
+            context.CancellationToken).ConfigureAwait(false);
         var mergeStrategy = SceneGrpcMapping.ParseMergeStrategy(request.MosaicRule);
 
         try
@@ -92,6 +103,7 @@ internal sealed class HonuaElevationGrpcService : Proto.ElevationService.Elevati
         }
         catch (ElevationQueryException ex)
         {
+            Log.ElevationQueryFailed(_logger, SceneGrpcTelemetry.GetElevationOperation, request.LayerId, ex.Message);
             throw ToRpcException(ex);
         }
     }
@@ -108,8 +120,12 @@ internal sealed class HonuaElevationGrpcService : Proto.ElevationService.Elevati
         activity?.SetTag(HonuaTelemetry.Tags.Operation, SceneGrpcTelemetry.GetElevationProfileOperation);
         activity?.SetTag(HonuaTelemetry.Tags.LayerId, request.LayerId.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
-        var lineString = BuildLineString(request.Line);
-        var srid = ResolveSrid(request.SpatialReference) ?? Wgs84;
+        var lineString = BuildLineString(request.Line, request.LayerId);
+        var srid = await ValidateSridAsync(
+            request.SpatialReference,
+            SceneGrpcTelemetry.GetElevationProfileOperation,
+            request.LayerId,
+            context.CancellationToken).ConfigureAwait(false) ?? Wgs84;
         var mergeStrategy = SceneGrpcMapping.ParseMergeStrategy(request.MosaicRule);
 
         var requestedSampleCount = request.SampleCount;
@@ -120,11 +136,13 @@ internal sealed class HonuaElevationGrpcService : Proto.ElevationService.Elevati
         // HTTP elevation endpoint, which rejects any supplied value < 2.
         if (requestedSampleCount != 0 && requestedSampleCount < 2)
         {
+            Log.InvalidArgument(_logger, SceneGrpcTelemetry.GetElevationProfileOperation, request.LayerId, "sample_count must be at least 2.");
             throw new RpcException(new Status(StatusCode.InvalidArgument, "sample_count must be at least 2."));
         }
 
         if (requestedSampleCount > _limits.Elevation.MaxSampleCount)
         {
+            Log.InvalidArgument(_logger, SceneGrpcTelemetry.GetElevationProfileOperation, request.LayerId, "sample_count exceeds the configured maximum.");
             throw new RpcException(new Status(
                 StatusCode.InvalidArgument,
                 $"sample_count ({requestedSampleCount}) exceeds the configured maximum of {_limits.Elevation.MaxSampleCount}."));
@@ -150,23 +168,57 @@ internal sealed class HonuaElevationGrpcService : Proto.ElevationService.Elevati
         }
         catch (ElevationQueryException ex)
         {
+            Log.ElevationQueryFailed(_logger, SceneGrpcTelemetry.GetElevationProfileOperation, request.LayerId, ex.Message);
             throw ToRpcException(ex);
         }
     }
 
-    private static int? ResolveSrid(Proto.SpatialReference? spatialReference)
-        => spatialReference is { Wkid: > 0 } reference ? reference.Wkid : null;
+    /// <summary>
+    /// Resolves the requested input SRID from the proto spatial reference and
+    /// validates it against the shared <see cref="ICrsRegistry"/>, mirroring the
+    /// HTTP elevation surface (<c>ElevationEndpoints.ResolveSridAsync</c>) so an
+    /// unsupported/garbage WKID is rejected with <see cref="StatusCode.InvalidArgument"/>
+    /// before reaching provider code rather than diverging from the shared
+    /// validation pipeline. A null/unset reference (Wkid &lt;= 0) defers to the
+    /// canonical service default (WGS-84).
+    /// </summary>
+    private async Task<int?> ValidateSridAsync(
+        Proto.SpatialReference? spatialReference,
+        string operation,
+        int layerId,
+        CancellationToken cancellationToken)
+    {
+        if (spatialReference is not { Wkid: > 0 } reference)
+        {
+            return null;
+        }
 
-    private static LineString BuildLineString(Proto.PolylineGeometry? line)
+        var supported = await _crsRegistry
+            .IsSridSupportedAsync(reference.Wkid, cancellationToken)
+            .ConfigureAwait(false);
+        if (!supported)
+        {
+            Log.UnsupportedCrs(_logger, operation, layerId, reference.Wkid);
+            throw new RpcException(new Status(
+                StatusCode.InvalidArgument,
+                $"spatial reference WKID {reference.Wkid} is not supported."));
+        }
+
+        return reference.Wkid;
+    }
+
+    private LineString BuildLineString(Proto.PolylineGeometry? line, int layerId)
     {
         if (line is null || line.Paths.Count == 0)
         {
+            Log.InvalidArgument(_logger, SceneGrpcTelemetry.GetElevationProfileOperation, layerId, "line with at least one path is required.");
             throw new RpcException(new Status(StatusCode.InvalidArgument, "line with at least one path is required."));
         }
 
         var path = line.Paths[0];
         if (path.Coords.Count < 2)
         {
+            Log.InvalidArgument(_logger, SceneGrpcTelemetry.GetElevationProfileOperation, layerId, "line must contain at least 2 coordinates.");
             throw new RpcException(new Status(StatusCode.InvalidArgument, "line must contain at least 2 coordinates."));
         }
 
@@ -176,6 +228,7 @@ internal sealed class HonuaElevationGrpcService : Proto.ElevationService.Elevati
             var coord = path.Coords[i];
             if (!double.IsFinite(coord.X) || !double.IsFinite(coord.Y))
             {
+                Log.InvalidArgument(_logger, SceneGrpcTelemetry.GetElevationProfileOperation, layerId, "line coordinates must be finite values.");
                 throw new RpcException(new Status(StatusCode.InvalidArgument, "line coordinates must be finite values."));
             }
 
@@ -193,4 +246,19 @@ internal sealed class HonuaElevationGrpcService : Proto.ElevationService.Elevati
 
     private static RpcException ToRpcException(ElevationQueryException exception)
         => new(new Status(StatusCode.FailedPrecondition, exception.Message));
+
+    private static partial class Log
+    {
+        [LoggerMessage(EventId = 8440, Level = LogLevel.Debug,
+            Message = "gRPC elevation {Operation} rejected layer {LayerId}: {Reason}")]
+        public static partial void InvalidArgument(ILogger logger, string operation, int layerId, string reason);
+
+        [LoggerMessage(EventId = 8441, Level = LogLevel.Debug,
+            Message = "gRPC elevation {Operation} rejected layer {LayerId}: unsupported CRS WKID {Wkid}")]
+        public static partial void UnsupportedCrs(ILogger logger, string operation, int layerId, int wkid);
+
+        [LoggerMessage(EventId = 8442, Level = LogLevel.Debug,
+            Message = "gRPC elevation {Operation} query failed for layer {LayerId}: {Reason}")]
+        public static partial void ElevationQueryFailed(ILogger logger, string operation, int layerId, string reason);
+    }
 }

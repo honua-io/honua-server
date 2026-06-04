@@ -138,13 +138,11 @@ public static class PointCloudTilesetBuilder
         double geometricError,
         PointCloudTilingOptions options)
     {
-        var sceneNode = new SceneTileNode(west, south, east, north, geometricError, depth, Array.Empty<SceneFeature>(), Array.Empty<SceneTileNode>());
-
         var leafReached = memberIndices.Length <= options.MaxPointsPerTile;
         var depthReached = depth >= options.MaxDepth;
         if (leafReached || depthReached)
         {
-            return MakeLeaf(projected, memberIndices, west, south, east, north, depth, sceneNode);
+            return MakeLeaf(projected, memberIndices, west, south, east, north, depth, geometricError);
         }
 
         var midLon = (west + east) * 0.5;
@@ -173,7 +171,7 @@ public static class PointCloudTilesetBuilder
             (nw.Count > 0 ? 1 : 0) + (ne.Count > 0 ? 1 : 0);
         if (nonEmpty <= 1)
         {
-            return MakeLeaf(projected, memberIndices, west, south, east, north, depth, sceneNode);
+            return MakeLeaf(projected, memberIndices, west, south, east, north, depth, geometricError);
         }
 
         var childError = geometricError * 0.5;
@@ -231,8 +229,21 @@ public static class PointCloudTilesetBuilder
         double east,
         double north,
         int depth,
-        SceneTileNode sceneNode)
+        double inheritedGeometricError)
     {
+        // A leaf has no children, so its geometric error must be 0.0: in 3D
+        // Tiles a tile's geometricError is the error introduced when its
+        // children are not rendered, so a positive value on a childless tile
+        // tells the client finer detail still exists and screen-space-error
+        // refinement never converges at the deepest LOD. Mirrors the feature
+        // pipeline (SceneQuadtreePartitioner.BuildNode leaf).
+        //
+        // Exception: the root tile (depth 0) keeps its (floored, positive) root
+        // geometric error even when it is also a leaf — a zero root error defeats
+        // screen-space-error refinement of the root itself and can leave a client
+        // never scheduling the root tile (see ComputeRootGeometricError).
+        var leafError = depth == 0 ? inheritedGeometricError : 0.0;
+        var sceneNode = new SceneTileNode(west, south, east, north, leafError, depth, Array.Empty<SceneFeature>(), Array.Empty<SceneTileNode>());
         var pts = MaterializePoints(projected, memberIndices);
         var (min, max) = HeightExtent(projected, memberIndices);
         return new PointTileNode

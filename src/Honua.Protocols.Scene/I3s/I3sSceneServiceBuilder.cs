@@ -14,10 +14,21 @@ namespace Honua.Protocols.Scene.I3s;
 /// scene layer.
 /// </summary>
 /// <remarks>
-/// This slice serves the service and layer descriptor JSON. Per-node geometry
-/// streaming (node pages, geometry/attribute/texture binary resources) is a
-/// tracked follow-up; the descriptor advertises a 3DObject layer rooted at the
-/// scene extent so a client can discover and inspect the layer.
+/// <para>
+/// This slice serves the service and layer descriptor JSON only: it is a
+/// metadata/descriptor preview. Per-node geometry streaming (node pages,
+/// geometry/attribute/texture binary resources, the <c>nodes/*</c> store) is a
+/// tracked follow-up (#1202) and the server maps no node/geometry routes yet.
+/// </para>
+/// <para>
+/// The descriptor therefore deliberately does NOT advertise a fetchable
+/// <c>store.rootNode</c> / node-page resource: doing so would make a conformant
+/// I3S/ArcGIS client request a node URL that 404s. It carries only the
+/// spec-required scalar fields that are honestly knowable today (id, name,
+/// version, spatialReference, heightModelInfo, fullExtent, and store id/profile/
+/// version), so the advertised contract matches what the server can actually
+/// serve until per-node geometry lands.
+/// </para>
 /// </remarks>
 internal static class I3sSceneServiceBuilder
 {
@@ -74,13 +85,23 @@ internal static class I3sSceneServiceBuilder
             Description = scene.Description,
             Version = "1.7",
             SpatialReference = spatialReference,
+            HeightModelInfo = new I3sHeightModelInfo
+            {
+                HeightModel = "ellipsoidal",
+                VertCrs = "meter",
+                HeightUnit = "meter",
+            },
             FullExtent = fullExtent,
+            // Descriptor preview only: do NOT advertise a fetchable rootNode /
+            // node-page store, because the server maps no node/geometry routes
+            // yet (#1202). Advertising one would make conformant clients request
+            // a node URL that 404s. Only the honestly-servable store scalars are
+            // emitted here.
             Store = new I3sStore
             {
                 Id = scene.Id,
                 Profile = "meshpyramids",
                 Version = "1.7",
-                RootNode = "./nodes/root",
             },
         };
     }

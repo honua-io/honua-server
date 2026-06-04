@@ -3,6 +3,7 @@
 
 using Grpc.Core;
 using Honua.Core.Features.Scene.Abstractions;
+using Honua.Core.Features.Scene.Catalog;
 using Honua.Core.Features.Scene.Domain;
 using Honua.Infrastructure.Scene;
 using Honua.ServiceDefaults;
@@ -21,7 +22,7 @@ namespace Honua.Scene.Grpc;
 /// configuration-backed hosted-tile datasets, returning the same catalog over
 /// the typed gRPC contract.
 /// </summary>
-internal sealed class HonuaSceneGrpcService : Proto.SceneService.SceneServiceBase
+internal sealed partial class HonuaSceneGrpcService : Proto.SceneService.SceneServiceBase
 {
     private readonly ISceneDatasetRegistry _registry;
     private readonly SceneDatasetOptions _options;
@@ -53,8 +54,6 @@ internal sealed class HonuaSceneGrpcService : Proto.SceneService.SceneServiceBas
         activity?.SetTag(HonuaTelemetry.Tags.Operation, SceneGrpcTelemetry.ListScenesOperation);
 
         var registration = ResolveRegistrationService(context);
-        var scenes = new List<Proto.SceneMetadata>();
-        var seen = new HashSet<string>(StringComparer.Ordinal);
 
         // ListScenes intentionally mirrors the public HTTP scene discovery
         // catalog (SceneDiscoveryEndpoints), which lists every active scene —
@@ -63,48 +62,32 @@ internal sealed class HonuaSceneGrpcService : Proto.SceneService.SceneServiceBas
         // when metadata or tiles are actually fetched (GetScene / GetTile /
         // StreamTiles), so the discovery surface stays at parity across
         // protocols. Keep this method ungated to preserve that parity.
-        if (registration is not null)
+        //
+        // The active, deduped, ordered catalog merge (database-over-config
+        // precedence) is shared with the HTTP discovery surface via SceneCatalog;
+        // this adapter only maps to the proto DTO and applies the gRPC-specific
+        // spatial-extent filter.
+        var catalog = await SceneCatalog
+            .ListActiveAsync(registration, _registry, _options, context.CancellationToken)
+            .ConfigureAwait(false);
+
+        var scenes = new List<Proto.SceneMetadata>(catalog.Count);
+        foreach (var resolved in catalog)
         {
-            var records = await registration
-                .ListAsync(includeInactive: true, context.CancellationToken)
-                .ConfigureAwait(false);
-
-            foreach (var record in records)
-            {
-                seen.Add(record.Id);
-                if (record.Status == SceneDatasetStatus.Active)
-                {
-                    scenes.Add(SceneGrpcMapping.ToSceneMetadata(record));
-                }
-            }
-        }
-
-        foreach (var entry in _options.Datasets ?? [])
-        {
-            if (string.IsNullOrWhiteSpace(entry.Id) || !seen.Add(entry.Id))
-            {
-                continue;
-            }
-
-            var scene = await _registry.FindAsync(entry.Id, context.CancellationToken).ConfigureAwait(false);
-            if (scene is not null)
-            {
-                scenes.Add(SceneGrpcMapping.ToSceneMetadata(scene));
-            }
+            scenes.Add(resolved.Record is not null
+                ? SceneGrpcMapping.ToSceneMetadata(resolved.Record)
+                : SceneGrpcMapping.ToSceneMetadata(resolved.Scene!));
         }
 
         // Apply the proto's optional spatial constraint: when an extent filter is
         // supplied, include only scenes whose advertised extent intersects it.
         // Scenes that carry no extent are included (their footprint is unknown, so
         // they cannot be excluded). Mirrors SceneTileCatalog.IntersectsExtent.
+        // SceneCatalog already orders by id (Ordinal), so preserve that order.
         var filter = request.Extent?.Extent;
-        var filtered = filter is null
+        var ordered = filter is null
             ? scenes
             : scenes.Where(scene => SceneIntersectsExtent(scene, filter)).ToList();
-
-        var ordered = filtered
-            .OrderBy(scene => scene.SceneId, StringComparer.Ordinal)
-            .ToList();
 
         var offset = Math.Max(0, request.ResultOffset);
         var count = request.ResultRecordCount;
@@ -133,6 +116,7 @@ internal sealed class HonuaSceneGrpcService : Proto.SceneService.SceneServiceBas
 
         if (string.IsNullOrWhiteSpace(request.SceneId))
         {
+            Log.InvalidArgument(_logger, SceneGrpcTelemetry.GetSceneOperation, "scene_id is required.");
             throw new RpcException(new Status(StatusCode.InvalidArgument, "scene_id is required."));
         }
 
@@ -151,6 +135,7 @@ internal sealed class HonuaSceneGrpcService : Proto.SceneService.SceneServiceBas
             {
                 if (record.Status != SceneDatasetStatus.Active)
                 {
+                    Log.SceneNotFound(_logger, SceneGrpcTelemetry.GetSceneOperation, request.SceneId);
                     throw new RpcException(new Status(StatusCode.NotFound, $"Scene '{request.SceneId}' was not found."));
                 }
 
@@ -167,6 +152,7 @@ internal sealed class HonuaSceneGrpcService : Proto.SceneService.SceneServiceBas
         var scene = await _registry.FindAsync(request.SceneId, context.CancellationToken).ConfigureAwait(false);
         if (scene is null)
         {
+            Log.SceneNotFound(_logger, SceneGrpcTelemetry.GetSceneOperation, request.SceneId);
             throw new RpcException(new Status(StatusCode.NotFound, $"Scene '{request.SceneId}' was not found."));
         }
 
@@ -201,4 +187,15 @@ internal sealed class HonuaSceneGrpcService : Proto.SceneService.SceneServiceBas
     /// </summary>
     private static ISceneRegistrationService? ResolveRegistrationService(ServerCallContext context)
         => context.GetHttpContext()?.RequestServices.GetService<ISceneRegistrationService>();
+
+    private static partial class Log
+    {
+        [LoggerMessage(EventId = 8443, Level = LogLevel.Debug,
+            Message = "gRPC scene {Operation} rejected: {Reason}")]
+        public static partial void InvalidArgument(ILogger logger, string operation, string reason);
+
+        [LoggerMessage(EventId = 8444, Level = LogLevel.Debug,
+            Message = "gRPC scene {Operation} did not find scene {SceneId}.")]
+        public static partial void SceneNotFound(ILogger logger, string operation, string sceneId);
+    }
 }

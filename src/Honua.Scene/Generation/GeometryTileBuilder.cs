@@ -169,7 +169,23 @@ public static class GeometryTileBuilder
         var featureIdBytes = AsByteSpan(featureIds);
 
         var bufferViews = new List<BufferViewDescriptor>(3 + propertyTable.Columns.Count);
-        var binaryWriter = new BinaryBufferBuilder();
+
+        // Pre-size the binary buffer to the exact payload total plus per-append
+        // alignment slack, so the backing array is allocated once instead of
+        // repeatedly doubling onto the LOH. Output bytes are unchanged (the
+        // alignment math below is unaffected); this only reserves capacity.
+        var estimatedCapacity = positionBytes.Length + featureIdBytes.Length + (colorBytes?.Length ?? 0);
+        foreach (var column in propertyTable.Columns)
+        {
+            estimatedCapacity += column.Bytes.Length + (column.StringOffsetBytes?.Length ?? 0);
+        }
+
+        // Reserve worst-case alignment padding: positions/feature-ids/colors are
+        // 4-aligned and each property column (plus its optional string-offset
+        // view) can pad up to its component alignment; budget a fixed-8 pad per
+        // appended view to stay an upper bound regardless of alignment.
+        estimatedCapacity += 8 * (3 + (propertyTable.Columns.Count * 2));
+        var binaryWriter = new BinaryBufferBuilder(estimatedCapacity);
 
         var positionView = binaryWriter.Append(positionBytes);
         bufferViews.Add(new BufferViewDescriptor(positionView, BufferViewTarget.ArrayBuffer));
@@ -727,7 +743,12 @@ public static class GeometryTileBuilder
 
     private sealed class BinaryBufferBuilder
     {
-        private readonly List<byte> _buffer = new();
+        private readonly List<byte> _buffer;
+
+        public BinaryBufferBuilder(int capacity = 0)
+        {
+            _buffer = new List<byte>(capacity > 0 ? capacity : 0);
+        }
 
         public BufferRange Append(byte[] payload, int alignment = 4)
         {

@@ -186,8 +186,26 @@ public static class LasPointCloudReader
                 "LAS point data offset lies beyond the end of the file.");
         }
 
-        // Total bytes required for all declared point records. ulong avoids any
-        // overflow for legacy/extended point counts and large record lengths.
+        // Bound the declared point count by the bytes actually present BEFORE
+        // computing requiredBytes. PointCount is an attacker-controlled uint64
+        // and recordLength an attacker-controlled uint16, so a naive
+        // PointCount * recordLength multiply can overflow ulong and wrap small,
+        // bypassing the truncation guard below and admitting a 2^63-iteration
+        // loop / a raw AsSpan ArgumentOutOfRangeException. Dividing the available
+        // byte window by recordLength yields the maximum number of records the
+        // file can hold and cannot overflow, so this rejects oversized counts
+        // with the stable LasFormatException first.
+        if (recordLength != 0 &&
+            header.PointCount > (ulong)(sourceLength - startOffset) / (ulong)recordLength)
+        {
+            throw new LasFormatException(
+                SceneGenerationErrorCodes.ModelAssetInvalid,
+                "LAS declared point count exceeds the available data.");
+        }
+
+        // Total bytes required for all declared point records. The bound above
+        // guarantees this product fits within the source window, so the multiply
+        // cannot overflow.
         ulong requiredBytes = header.PointCount * (ulong)recordLength;
         if ((ulong)startOffset + requiredBytes > (ulong)sourceLength)
         {
