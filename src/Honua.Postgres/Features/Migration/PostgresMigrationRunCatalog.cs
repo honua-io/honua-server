@@ -255,6 +255,7 @@ internal sealed partial class PostgresMigrationRunCatalog : IMigrationRunCatalog
                    completed_at,
                    evidence_pack_ref,
                    evidence_pack_fingerprint,
+                   reconciliation_scorecard_fingerprint,
                    status_note
             FROM honua.migration_runs
             WHERE (@sourceKind::text IS NULL OR LOWER(source_kind) = @sourceKind::text)
@@ -315,6 +316,67 @@ internal sealed partial class PostgresMigrationRunCatalog : IMigrationRunCatalog
         };
     }
 
+    public async Task<MigrationRunRecord?> RecordScorecardAsync(
+        string runId,
+        string scorecardFingerprint,
+        string scorecardBody,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(runId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(scorecardFingerprint);
+        ArgumentException.ThrowIfNullOrWhiteSpace(scorecardBody);
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+
+        const string updateSql = """
+            UPDATE honua.migration_runs
+            SET reconciliation_scorecard_fingerprint = @fingerprint,
+                reconciliation_scorecard_body = CAST(@body AS jsonb)
+            WHERE run_id = @runId;
+            """;
+
+        await using (var update = new NpgsqlCommand(updateSql, connection))
+        {
+            update.Parameters.AddWithValue("@runId", runId);
+            update.Parameters.AddWithValue("@fingerprint", scorecardFingerprint);
+            var bodyParam = update.Parameters.Add("@body", NpgsqlDbType.Text);
+            bodyParam.Value = scorecardBody;
+
+            await update.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        return await GetInternalAsync(connection, runId, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<string?> GetScorecardAsync(
+        string runId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(runId);
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+
+        const string sql = """
+            SELECT reconciliation_scorecard_body::text
+            FROM honua.migration_runs
+            WHERE run_id = @runId
+            LIMIT 1;
+            """;
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@runId", runId);
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return result switch
+        {
+            null => null,
+            DBNull => null,
+            string body => body,
+            _ => result.ToString()
+        };
+    }
+
     private static async Task<MigrationRunRecord?> GetInternalAsync(
         NpgsqlConnection connection,
         string runId,
@@ -330,6 +392,7 @@ internal sealed partial class PostgresMigrationRunCatalog : IMigrationRunCatalog
                    completed_at,
                    evidence_pack_ref,
                    evidence_pack_fingerprint,
+                   reconciliation_scorecard_fingerprint,
                    status_note
             FROM honua.migration_runs
             WHERE run_id = @runId
@@ -372,6 +435,9 @@ internal sealed partial class PostgresMigrationRunCatalog : IMigrationRunCatalog
             EvidencePackFingerprint = reader.IsDBNull(reader.GetOrdinal("evidence_pack_fingerprint"))
                 ? null
                 : reader.GetString(reader.GetOrdinal("evidence_pack_fingerprint")),
+            ReconciliationScorecardFingerprint = reader.IsDBNull(reader.GetOrdinal("reconciliation_scorecard_fingerprint"))
+                ? null
+                : reader.GetString(reader.GetOrdinal("reconciliation_scorecard_fingerprint")),
             StatusNote = reader.IsDBNull(reader.GetOrdinal("status_note"))
                 ? null
                 : reader.GetString(reader.GetOrdinal("status_note"))

@@ -437,4 +437,124 @@ public sealed class MigrationCatalogReconcilerTests
             },
             Editing = new MetadataV2ResourceEditing { GlobalIdField = "GLOBALID" }
         };
+
+    [Fact]
+    public void Reconcile_WhenSourceAdvertisesAttachmentsButPublishedDoesNot_EmitsAttachmentMissingFinding()
+    {
+        var inventory = BuildInventoryResource() with { HasAttachments = true };
+        var published = BuildPublishedResource() with
+        {
+            Editing = new MetadataV2ResourceEditing { GlobalIdField = "GLOBALID", SupportsAttachments = false }
+        };
+
+        var outcome = MigrationCatalogReconciler.ReconcileResource(inventory, published);
+
+        outcome.Classification.Should().Be(MigrationCatalogReconciliationClassifications.Fail);
+        outcome.Findings.Should().ContainSingle(f => f.Code == MigrationCatalogReconciliationCodes.AttachmentMissing)
+            .Which.Severity.Should().Be(MigrationCatalogReconciliationSeverities.Fail);
+    }
+
+    [Fact]
+    public void Reconcile_WhenSourceAndPublishedBothSupportAttachments_EmitsNoAttachmentFinding()
+    {
+        var inventory = BuildInventoryResource() with { HasAttachments = true };
+        var published = BuildPublishedResource() with
+        {
+            Editing = new MetadataV2ResourceEditing { GlobalIdField = "GLOBALID", SupportsAttachments = true }
+        };
+
+        var outcome = MigrationCatalogReconciler.ReconcileResource(inventory, published);
+
+        outcome.Findings.Should().NotContain(f => f.Code == MigrationCatalogReconciliationCodes.AttachmentMissing);
+    }
+
+    [Fact]
+    public void Reconcile_WhenSourceDidNotAdvertiseAttachments_DoesNotFalseFailOnMissingAttachmentSupport()
+    {
+        // HasAttachments == null means "source did not report" — must not be treated as a fail.
+        var inventory = BuildInventoryResource() with { HasAttachments = null };
+        var published = BuildPublishedResource() with { Editing = null };
+
+        var outcome = MigrationCatalogReconciler.ReconcileResource(inventory, published);
+
+        outcome.Findings.Should().NotContain(f => f.Code == MigrationCatalogReconciliationCodes.AttachmentMissing);
+    }
+
+    [Fact]
+    public void Reconcile_WhenSourceSubtypesMissingFromPublished_EmitsSubtypeMissingFinding()
+    {
+        var inventory = BuildInventoryResource();
+        var published = BuildPublishedResource() with { Subtypes = null };
+        var expectedSubtypes = BuildSubtypes("STATUS", ("1", "Active"), ("2", "Retired"));
+
+        var outcome = MigrationCatalogReconciler.ReconcileResource(
+            inventory, published, expectedSubtypes: expectedSubtypes);
+
+        outcome.Classification.Should().Be(MigrationCatalogReconciliationClassifications.Fail);
+        outcome.Findings.Should().ContainSingle(f => f.Code == MigrationCatalogReconciliationCodes.SubtypeMissing)
+            .Which.Expected.Should().Be("STATUS");
+    }
+
+    [Fact]
+    public void Reconcile_WhenPublishedSubtypeFieldDiffers_EmitsSubtypeFieldMismatchFinding()
+    {
+        var inventory = BuildInventoryResource();
+        var published = BuildPublishedResource() with
+        {
+            Subtypes = BuildSubtypes("KIND", ("1", "Active"), ("2", "Retired"))
+        };
+        var expectedSubtypes = BuildSubtypes("STATUS", ("1", "Active"), ("2", "Retired"));
+
+        var outcome = MigrationCatalogReconciler.ReconcileResource(
+            inventory, published, expectedSubtypes: expectedSubtypes);
+
+        outcome.Findings.Should().ContainSingle(f => f.Code == MigrationCatalogReconciliationCodes.SubtypeFieldMismatch)
+            .Which.Actual.Should().Be("KIND");
+    }
+
+    [Fact]
+    public void Reconcile_WhenPublishedMissingSubtypeCode_EmitsSubtypeCodeMissingFinding()
+    {
+        var inventory = BuildInventoryResource();
+        var published = BuildPublishedResource() with
+        {
+            Subtypes = BuildSubtypes("STATUS", ("1", "Active"))
+        };
+        var expectedSubtypes = BuildSubtypes("STATUS", ("1", "Active"), ("2", "Retired"));
+
+        var outcome = MigrationCatalogReconciler.ReconcileResource(
+            inventory, published, expectedSubtypes: expectedSubtypes);
+
+        outcome.Findings.Should().ContainSingle(f => f.Code == MigrationCatalogReconciliationCodes.SubtypeCodeMissing)
+            .Which.Summary.Should().Contain("2");
+    }
+
+    [Fact]
+    public void Reconcile_WhenSubtypesMatch_EmitsNoSubtypeFindings()
+    {
+        var inventory = BuildInventoryResource();
+        var subtypes = BuildSubtypes("STATUS", ("1", "Active"), ("2", "Retired"));
+        var published = BuildPublishedResource() with { Subtypes = subtypes };
+
+        var outcome = MigrationCatalogReconciler.ReconcileResource(
+            inventory, published, expectedSubtypes: subtypes);
+
+        outcome.Findings.Should().NotContain(f =>
+            f.Code == MigrationCatalogReconciliationCodes.SubtypeMissing ||
+            f.Code == MigrationCatalogReconciliationCodes.SubtypeFieldMismatch ||
+            f.Code == MigrationCatalogReconciliationCodes.SubtypeCodeMissing);
+    }
+
+    private static MetadataV2Subtypes BuildSubtypes(string subtypeField, params (string Code, string Name)[] subtypes)
+        => new()
+        {
+            SubtypeField = subtypeField,
+            Subtypes = subtypes
+                .Select(s => new MetadataV2Subtype
+                {
+                    Code = JsonDocument.Parse($"\"{s.Code}\"").RootElement,
+                    Name = s.Name
+                })
+                .ToArray()
+        };
 }

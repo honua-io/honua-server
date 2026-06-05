@@ -114,6 +114,31 @@ public interface IMigrationRunCatalog
     Task<string?> GetEvidencePackAsync(
         string runId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Record the signed reconciliation scorecard (issue #1381) for an existing run. Persists the
+    /// scorecard fingerprint on the run row and the scorecard JSON body for later retrieval via
+    /// <see cref="GetScorecardAsync"/>. Returns the updated record, or <c>null</c> if the run-id is
+    /// unknown. Recording is independent of <see cref="RecordCompletedAsync"/> so a scorecard can be
+    /// attached whether the run completed or was routed to review.
+    /// </summary>
+    /// <param name="runId">Run identifier to attach the scorecard to.</param>
+    /// <param name="scorecardFingerprint">Signed scorecard fingerprint (<c>sha256:&lt;hex&gt;</c>).</param>
+    /// <param name="scorecardBody">Scorecard JSON body to persist.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<MigrationRunRecord?> RecordScorecardAsync(
+        string runId,
+        string scorecardFingerprint,
+        string scorecardBody,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Return the reconciliation-scorecard JSON body recorded for the given run, or <c>null</c> if
+    /// the run is unknown or no scorecard has been recorded yet.
+    /// </summary>
+    Task<string?> GetScorecardAsync(
+        string runId,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>
