@@ -10,11 +10,13 @@ using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Resilience;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Styling.Domain;
 using Honua.Postgres.Features.Infrastructure;
+using Honua.Postgres.Features.Metadata;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using Honua.Core.Features.Migration.Abstractions;
@@ -43,6 +45,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
     private readonly IAttachmentStore? _attachmentStore;
     private readonly IMigrationCatalogWriter? _catalogWriter;
     private readonly ILayerReconciliationService? _reconciliationService;
+    private readonly IMetadataV2GraphWriteBaseReader? _metadataWriteBaseReader;
     private readonly ILogger<GeoservicesImportService> _logger;
     private readonly PostgresSchemaConfiguration _schemaConfiguration;
 
@@ -58,6 +61,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         IAttachmentStore? attachmentStore = null,
         IMigrationCatalogWriter? catalogWriter = null,
         ILayerReconciliationService? reconciliationService = null,
+        IMetadataV2GraphStore? metadataGraphStore = null,
         PostgresSchemaConfiguration? schemaConfiguration = null)
     {
         _restClient = restClient ?? throw new ArgumentNullException(nameof(restClient));
@@ -70,6 +74,11 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         _attachmentStore = attachmentStore;
         _catalogWriter = catalogWriter;
         _reconciliationService = reconciliationService;
+        // The catalog-reconciliation read-back (issue #1379) needs the genuinely-persisted current
+        // graph (where AutoPublish materialized res-layer-{layerId}), never the V1-catalog compat
+        // synthesis. The Postgres store implements this seam; a non-implementing test double leaves
+        // the reader null and catalog reconciliation is skipped.
+        _metadataWriteBaseReader = metadataGraphStore as IMetadataV2GraphWriteBaseReader;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _schemaConfiguration = schemaConfiguration ?? new PostgresSchemaConfiguration(
             PostgresSchemaConfiguration.DefaultMetadataSchema,

@@ -545,6 +545,87 @@ public sealed class MigrationCatalogReconcilerTests
             f.Code == MigrationCatalogReconciliationCodes.SubtypeCodeMissing);
     }
 
+    [Fact]
+    public void Reconcile_WhenCappedCodedValueDomainHasNoCapturedValuesAndPublishedOmitsDomain_DoesNotFalseFail()
+    {
+        // A coded-value domain that exceeded the capture cap is captured with its type/name but NO
+        // values (DomainValues == null) and is intentionally omitted from publish. Reconciliation
+        // must not report DomainMissing/DomainValuesMismatch against the omitted published domain.
+        var inventory = BuildInventoryResource() with
+        {
+            Fields =
+            [
+                new MigrationInventoryField { Name = "OBJECTID", FieldType = "esriFieldTypeOID", Nullable = false },
+                new MigrationInventoryField { Name = "GLOBALID", FieldType = "esriFieldTypeGlobalID", Nullable = false },
+                new MigrationInventoryField
+                {
+                    Name = "TYPE",
+                    FieldType = "esriFieldTypeString",
+                    Nullable = true,
+                    DomainType = "codedValue",
+                    DomainName = "HugeParcelType",
+                    DomainValues = null // capped: over the CodedValueDomainCap, no values captured
+                }
+            ]
+        };
+
+        // Published field carries no domain (publish dropped the over-cap domain).
+        var published = BuildPublishedResource() with
+        {
+            SchemaFields = BuildPublishedResource().SchemaFields
+                .Select(field => field.Name == "TYPE" ? field with { Domain = null } : field)
+                .ToArray()
+        };
+
+        var outcome = MigrationCatalogReconciler.ReconcileResource(inventory, published);
+
+        outcome.Findings.Should().NotContain(f =>
+            f.Code == MigrationCatalogReconciliationCodes.DomainMissing ||
+            f.Code == MigrationCatalogReconciliationCodes.DomainValuesMismatch);
+        outcome.Classification.Should().Be(MigrationCatalogReconciliationClassifications.Pass);
+    }
+
+    [Fact]
+    public void Reconcile_WhenCappedCodedValueDomainButPublishedRetainsDomain_StillChecksDomainName()
+    {
+        // When the published field DID retain a domain, a capped (valueless) inventory domain can
+        // still meaningfully reconcile the domain NAME — only the missing/values probes are skipped.
+        var inventory = BuildInventoryResource() with
+        {
+            Fields =
+            [
+                new MigrationInventoryField { Name = "OBJECTID", FieldType = "esriFieldTypeOID", Nullable = false },
+                new MigrationInventoryField { Name = "GLOBALID", FieldType = "esriFieldTypeGlobalID", Nullable = false },
+                new MigrationInventoryField
+                {
+                    Name = "TYPE",
+                    FieldType = "esriFieldTypeString",
+                    Nullable = true,
+                    DomainType = "codedValue",
+                    DomainName = "ParcelType",
+                    DomainValues = null
+                }
+            ]
+        };
+
+        var published = BuildPublishedResource() with
+        {
+            SchemaFields = BuildPublishedResource().SchemaFields
+                .Select(field => field.Name == "TYPE"
+                    ? field with { Domain = field.Domain! with { Name = "RenamedParcelType" } }
+                    : field)
+                .ToArray()
+        };
+
+        var outcome = MigrationCatalogReconciler.ReconcileResource(inventory, published);
+
+        // Missing/values probes skipped, but the name-mismatch warn still fires.
+        outcome.Findings.Should().NotContain(f =>
+            f.Code == MigrationCatalogReconciliationCodes.DomainMissing ||
+            f.Code == MigrationCatalogReconciliationCodes.DomainValuesMismatch);
+        outcome.Findings.Should().ContainSingle(f => f.Code == MigrationCatalogReconciliationCodes.DomainNameMismatch);
+    }
+
     private static MetadataV2Subtypes BuildSubtypes(string subtypeField, params (string Code, string Name)[] subtypes)
         => new()
         {

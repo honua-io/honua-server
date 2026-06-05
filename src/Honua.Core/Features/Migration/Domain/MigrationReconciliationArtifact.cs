@@ -87,6 +87,15 @@ public sealed record MigrationReconciliationArtifact
     /// Tolerances applied to this run. Persisted so an audit can replay the same gate.
     /// </summary>
     public required LayerReconciliationOptions Options { get; init; }
+
+    /// <summary>
+    /// Deeper catalog-parity report produced by the Validating phase when a published Metadata v2
+    /// catalog entry was available to reconcile against (issue #1379). Carries the per-resource
+    /// schema/domain/identifier/relationship/attachment/subtype findings that the count/geometry/
+    /// content/extent probes above intentionally do not cover (counts can match while the schema is
+    /// wrong). <c>null</c> when no published catalog entry was available to reconcile against.
+    /// </summary>
+    public MigrationCatalogReconciliationReport? CatalogReconciliation { get; init; }
 }
 
 /// <summary>
