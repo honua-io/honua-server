@@ -516,8 +516,9 @@ The `value` endpoint returns the sampled elevation, source dataset id, source ra
 ```
 /rest/services/{service-name}/GPServer
 |-- /                                      (service info — available tasks)
-|-- /{taskName}                            (task info — parameters, data types)
+|-- /{taskName}                            (task info — parameters, data types, choiceList)
 |-- /{taskName}/submitJob                  (async job submission)
+|-- /{taskName}/execute                    (sync execution for sync-eligible tasks)
 |-- /{taskName}/jobs/{jobId}               (job status polling)
 |-- /{taskName}/jobs/{jobId}/results/{paramName}  (named output result)
 |-- /{taskName}/jobs/{jobId}/cancel        (cancel in-flight job)
@@ -525,21 +526,23 @@ The `value` endpoint returns the sampled elevation, source dataset id, source ra
 
 **Output formats:** JSON (Esri camelCase convention)
 
-**Limitations:** Generic built-in tasks are currently async-only and do not publish a generic `execute` route until canonical `ExecutePlan` and synchronous-task projection exist. Generic task names are currently the published built-in process IDs (for example `geometry.buffer`). GP environment controls (`env:*`) are rejected with `400`; `context` is preserved as protocol metadata but not interpreted yet. Per-parameter result retrieval route is registered but actual output retrieval is pending execution-engine and result-storage support.
+**Limitations:** Synchronous `execute` (GET + POST) is published for sync-eligible tasks — the `geometry.*` family plus `conversion.geometry-format`, classified by `GPServerExecutionPolicy.SyncEligibleProcessIds`. Every other built-in task is async-only and an `execute` request returns `400` with a capability message pointing at `submitJob`. Advertised `executionType` on task info remains `esriExecutionTypeAsynchronous` — the synchronous capability is additive and gated server-side, not declared per-task. Generic task names are currently the published built-in process IDs (for example `geometry.buffer`). On `submitJob`, GP environment controls (`env:*`) are still rejected with `400`; the sync `execute` route honors `env:outSR` (output reprojection of `FeatureLayer` artifacts) and `env:processSR` (recorded as protocol metadata). `context` is preserved as protocol metadata on both routes but not interpreted yet. `choiceList` is currently seeded only for `conversion.geometry-format.target`. Per-parameter result retrieval route is registered but actual output retrieval is pending execution-engine and result-storage support.
 
 **Typical use cases:**
 - ArcGIS Pro / SDK geoprocessing tool connectivity
 - Async analysis workflows with job lifecycle polling
 - Per-parameter result retrieval for terminal jobs
+- Synchronous deterministic geometry operations (`geometry.buffer`, `geometry.union`, `conversion.geometry-format`, …) for stock ArcGIS clients that call `/execute` directly
 
 **Contract notes:**
 - GPServer is a protocol adapter over the canonical process runtime; it does not define its own job storage, and result packages are read from persisted terminal packages or synthesized from the durable execution-job record.
-- Service root, task info, `submitJob`, and `cancel` accept both GET and POST on the generic adapter. Job status and named result resources are GET-only. PrintingTools continues to publish `execute` because it has a real synchronous implementation; generic built-in GPServer tasks do not. For POST requests, query-string parameters are read first and then overlaid by form-encoded body values (body takes precedence on key collision).
+- Service root, task info, `submitJob`, `execute`, and `cancel` accept both GET and POST on the generic adapter. Job status and named result resources are GET-only. For POST requests, query-string parameters are read first and then overlaid by form-encoded body values (body takes precedence on key collision).
 - `submitJob` resolves `taskName` against the built-in `IProcessCatalog` and returns HTTP `200 OK` with the Esri job envelope (`jobId`, `jobStatus`), matching ArcGIS GPServer response shape.
+- `execute` shares the same submission and parameter-translation pipeline as `submitJob`. For sync-eligible tasks the adapter blocks until the canonical runtime reaches a terminal state (with exponential 50 ms → 500 ms polling, capped by the request timeout) and returns the Esri execute envelope (`results[]`, `messages[]`, `jobStatus`) inline. Cancellation and failure terminal states surface as `esriJobCancelled` / `esriJobFailed` envelopes with the corresponding error/warning messages. Activities are tagged with `gpserver.syncExecute=true` so telemetry can distinguish the sync surface from `submitJob`.
 - Canonical `ExecutionJobStatus` maps to Esri status strings: `Queued`→`esriJobSubmitted`, `Provisioning`→`esriJobWaiting`, `Running`→`esriJobExecuting`, `Succeeded`→`esriJobSucceeded`, `Failed`→`esriJobFailed`, `Cancelled`→`esriJobCancelled`.
-- Parameter translation converts Esri GP types (GPDataFile, GPLinearUnit, GPFeatureRecordSetLayer, etc.) to canonical opaque step inputs and maps `ArtifactKind` back to GP data types on output.
+- Parameter translation converts Esri GP types (GPDataFile, GPLinearUnit, GPFeatureRecordSetLayer, etc.) to canonical opaque step inputs and maps `ArtifactKind` back to GP data types on output. GPMultiValue inputs (parameters whose spec declares `ProcessParameterValueType.WkbArray`, surfaced as `GPMultiValue:GPDataFile`) accept either a JSON-array literal or a comma-delimited string and are re-emitted as the canonical JSON-array string the runtime executors consume. GPChoice values are validated case-insensitively against `ProcessParameterSpec.AllowedValues` at the adapter boundary, and rejected values return `400` with the allowed-value list. Task info surfaces `AllowedValues` as `choiceList` on each parameter (currently seeded for `conversion.geometry-format.target`).
+- GP environment controls: the sync `execute` route honors `env:outSR` (output reprojection of `FeatureLayer` artifact JSON; non-FeatureLayer outputs emit an informational warning instead of dropping the request) and `env:processSR` (recorded as protocol metadata). Both are persisted in job metadata under `gpserver.outSR` / `gpserver.processSR`. `env:outSR` / `env:processSR` accept either a bare WKID integer or a spatial-reference JSON object (`{"wkid": 3857}` or `{"latestWkid": …}`). The async `submitJob` route continues to reject all `env:*` controls with `400` (cross-repo integration tests assert this contract).
 - Route binding is validated: job status/result/cancel endpoints verify the `serviceId` and `taskName` match the stored job metadata, returning 404 for mismatches. Jobs submitted via other protocols (e.g. gRPC) are rejected to prevent cross-protocol access.
-- Generic built-in tasks are currently async-only. PrintingTools remains the only published GPServer surface with synchronous `execute` support in this codebase.
 - See [ADR-0029](../contributor/adr/0029-geoprocess-canonical-model-mappings.md) for adapter invariants and the [Geoprocess Framework Analysis](geoprocess-framework-analysis.md) for the full canonical model mapping.
 
 ---

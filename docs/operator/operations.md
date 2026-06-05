@@ -789,13 +789,17 @@ The lifecycle rules described in this section are the current workspace contract
 ### GPServer Job Lifecycle
 
 GPServer REST endpoints expose the canonical geoprocessing job lifecycle to
-Esri clients. Catalog-backed service info, task info, and `submitJob` are
-functional over the built-in `IProcessCatalog` (34 seeded processes across
-`geometry.*`, `analytics.*`, `surface.*`, `raster.*`, `conversion.*`,
-`generalization.*`, and `data-management.*`); generic built-in tasks are
-currently async-only and do not publish a generic `execute` route. Heavyweight
-`surface.*` and `raster.*` processes stay on the canonical worker boundary and
-route through the optional cloud executor adapters from #727 when configured.
+Esri clients. Catalog-backed service info, task info, `submitJob`, and the
+synchronous `execute` route are functional over the built-in `IProcessCatalog`
+(34 seeded processes across `geometry.*`, `analytics.*`, `surface.*`,
+`raster.*`, `conversion.*`, `generalization.*`, and `data-management.*`). The
+synchronous `execute` route (#1262) accepts sync-eligible tasks classified by
+`GPServerExecutionPolicy.SyncEligibleProcessIds` (the `geometry.*` family plus
+`conversion.geometry-format`) — those tasks run inline through the same job
+runtime as `submitJob` and return the Esri execute envelope on the request;
+async-only tasks return `400` pointing at `submitJob`. Heavyweight `surface.*`
+and `raster.*` processes stay on the canonical worker boundary and route
+through the optional cloud executor adapters from #727 when configured.
 Destructive `data-management.*` ids
 (`delete-features`, `calculate-field`) are classified server-side and route
 through `OperatorApprovalGate` with `IsDestructive = true`. When

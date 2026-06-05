@@ -1910,12 +1910,17 @@
       "implementedSurface": [
         "PrintingTools Export Web Map Task (service info, sync execute, async submitJob, job status, job result)",
         "PrintingTools Get Layout Templates Info Task (sync execute)",
-        "Generic GPServer adapter (#723): catalog-backed service info, task metadata, async submitJob, job status, job result route, and cancel job over the canonical process runtime using the built-in IProcessCatalog (34 seeded processes across geometry.*, analytics.*, surface.*, raster.*, conversion.*, generalization.*, data-management.*)"
+        "Generic GPServer adapter (#723, #1262): catalog-backed service info, task metadata, async submitJob, synchronous execute (GET + POST) for sync-eligible tasks, job status, job result route, and cancel job over the canonical process runtime using the built-in IProcessCatalog (34 seeded processes across geometry.*, analytics.*, surface.*, raster.*, conversion.*, generalization.*, data-management.*)",
+        "Sync-eligible tasks (#1262): geometry.* family plus conversion.geometry-format run inline through the same job runtime as submitJob and return the result envelope on the request; async-only tasks reject /execute with 400 pointing at submitJob",
+        "GPMultiValue input fidelity (#1262): WkbArray parameters (for example geometry.union.geometries) accept either a JSON-array literal or a comma-delimited string and are re-emitted as the canonical JSON-array string the runtime consumes",
+        "GPChoice / choiceList (#1262): parameters with ProcessParameterSpec.AllowedValues populated surface as choiceList on task info (seeded for conversion.geometry-format.target) and reject out-of-list values with 400",
+        "GP environment controls on sync execute (#1262): env:outSR is honored to reproject FeatureLayer artifact output (non-FeatureLayer outputs emit an informational warning); env:processSR is recorded as protocol metadata; both are persisted in job metadata"
       ],
       "knownGaps": [
-        "generic built-in tasks are async-only and do not publish a generic execute route until synchronous task projection exists",
         "published generic task names currently mirror internal built-in process IDs (for example geometry.buffer)",
-        "GP environment controls (env:*) are rejected with 400 until engine support is available; context is preserved as protocol metadata but not interpreted yet",
+        "advertised task-info executionType remains esriExecutionTypeAsynchronous for every task; the synchronous execute capability is additive and gated server-side by GPServerExecutionPolicy.SyncEligibleProcessIds rather than advertised per task",
+        "async submitJob continues to reject all env:* GP environment controls with 400; only the sync execute route honors env:outSR/env:processSR. context is preserved as protocol metadata on both routes but not interpreted yet",
+        "only conversion.geometry-format.target declares AllowedValues today; other enum-bearing parameters (for example surface.*, raster.*, transform.*) do not yet emit choiceList",
         "per-parameter result retrieval route registered but actual output retrieval pending execution-engine/result-storage support"
       ],
       "evidence": {
@@ -2008,22 +2013,22 @@
             "name": "Submit Job (generic)",
             "esriPath": "/rest/services/{serviceId}/GPServer/{taskName}/submitJob",
             "methods": ["GET", "POST"],
-            "notes": "Resolves the published task name against the built-in IProcessCatalog, validates inputs, persists GPServer route metadata, and returns an Esri job envelope. Implemented in #723."
-          }
-        ],
-        "not_implemented": [
+            "notes": "Resolves the published task name against the built-in IProcessCatalog, validates inputs, persists GPServer route metadata, and returns an Esri job envelope. Implemented in #723. Rejects all env:* GP environment controls with 400 (cross-repo integration tests assert this contract)."
+          },
           {
             "name": "Execute Task (generic, sync)",
             "esriPath": "/rest/services/{serviceId}/GPServer/{taskName}/execute",
-            "methods": [],
-            "notes": "Not published for the current generic GPServer surface because the built-in tasks are async-only. PrintingTools remains the published synchronous GPServer implementation."
+            "methods": ["GET", "POST"],
+            "notes": "Runs sync-eligible tasks (geometry.* family plus conversion.geometry-format, classified by GPServerExecutionPolicy.SyncEligibleProcessIds) inline through the same job runtime as submitJob and returns the Esri execute envelope (results[], messages[], jobStatus) on the request. Async-only tasks return 400 pointing at submitJob. Honors env:outSR (output reprojection of FeatureLayer artifacts; non-FeatureLayer outputs emit an informational warning) and env:processSR (recorded as protocol metadata). GPMultiValue inputs (WkbArray params) are unpacked from JSON-array or comma-delimited form, and GPChoice values are validated against ProcessParameterSpec.AllowedValues. Implemented in #1262."
           }
-        ]
+        ],
+        "not_implemented": []
       },
       "knownLimitations": [
         "PrintingTools GPServer surface (Export Web Map Task, Get Layout Templates Info Task) is implemented via dedicated endpoints.",
-        "Generic GPServer adapter (#723) operates over the canonical process runtime. The built-in IProcessCatalog seeds 34 processes across geometry.*, analytics.*, surface.*, raster.*, conversion.*, generalization.*, and data-management.* families for plan validation (#735, #736, #737); heavyweight surface.* and raster.* workloads remain on the canonical worker/executor boundary (optional #727 executor adapters), and destructive data-management ids (delete-features, calculate-field) route through the operator approval gate before execution. Published task names currently mirror those built-in process IDs.",
-        "Generic built-in tasks are async-only; a generic synchronous execute route is not published until ExecutePlan and synchronous task projection exist.",
+        "Generic GPServer adapter (#723, #1262) operates over the canonical process runtime. The built-in IProcessCatalog seeds 34 processes across geometry.*, analytics.*, surface.*, raster.*, conversion.*, generalization.*, and data-management.* families for plan validation (#735, #736, #737); heavyweight surface.* and raster.* workloads remain on the canonical worker/executor boundary (optional #727 executor adapters), and destructive data-management ids (delete-features, calculate-field) route through the operator approval gate before execution. Published task names currently mirror those built-in process IDs.",
+        "Synchronous /execute is published for the geometry.* family plus conversion.geometry-format; every other built-in task remains async-only and a sync execute request returns 400 with a capability message pointing at submitJob.",
+        "Advertised task-info executionType remains esriExecutionTypeAsynchronous (#1262 ships /execute as an additive server-side capability gated by GPServerExecutionPolicy, not as an advertised per-task contract change).",
         "Canonical model and lifecycle state mappings are established in #360."
       ]
     }
