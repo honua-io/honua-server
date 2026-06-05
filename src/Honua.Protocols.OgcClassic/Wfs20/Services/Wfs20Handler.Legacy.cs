@@ -885,10 +885,10 @@ internal sealed partial class Wfs20Handler
             schema.AppendLine("""      <xsd:extension base="gml:AbstractFeatureType">""");
             schema.AppendLine("""        <xsd:sequence>""");
 
-            var geometryField = featureType.Resource.FindPrimaryGeometryField();
-            if (geometryField is not null)
+            var geometryPropertyName = ResolveGeometryPropertyName(featureType.Resource);
+            if (geometryPropertyName is not null)
             {
-                schema.AppendLine($"""          <xsd:element name="{XmlConvert.EncodeLocalName(geometryField.Name)}" type="gml:GeometryPropertyType" minOccurs="0" nillable="true"/>""");
+                schema.AppendLine($"""          <xsd:element name="{XmlConvert.EncodeLocalName(geometryPropertyName)}" type="gml:GeometryPropertyType" minOccurs="0" nillable="true"/>""");
             }
 
             foreach (var field in GetVisibleAttributeFields(featureType.Resource))

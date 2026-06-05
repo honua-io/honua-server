@@ -204,6 +204,152 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
         return new TestMetadataV2GraphProvider(graph);
     }
 
+    // WFS local name BuildTypeLocalName derives from the resource title; "Geometry Only Layer"
+    // collapses to this slug, which the geometry-from-type regression tests request by TYPENAMES.
+    private const string GeometryFromTypeTypeName = "geometry_only_layer";
+
+    /// <summary>
+    /// Builds a graph with a single point feature type that declares a geometry type but
+    /// carries NO geometry schema field (only objectid/name), reproducing a FeatureServer
+    /// layer such as honua:browser_points. The storage binding targets the seeded layer 0
+    /// rows so GetFeature returns real point geometry. WFS must still expose geometry in
+    /// DescribeFeatureType and GetFeature exactly as GeoServices REST and OGC API Features do.
+    /// </summary>
+    private static TestMetadataV2GraphProvider BuildGeometryFromTypeMetadataProvider()
+    {
+        const string ResourceId = "res-geometry-from-type";
+        const string StorageBindingId = "binding-geometry-from-type";
+        const string ServiceId = "svc-geometry-from-type-wfs";
+        const int SeededPointStorageLayerId = 0;
+
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddResource(
+                ResourceId,
+                "Geometry Only Layer",
+                MetadataV2ResourceType.FeatureDataset,
+                accessPolicy: new AccessPolicy { AllowAnonymous = true },
+                fields:
+                [
+                    // Deliberately no geometry field — mirrors browser_points, whose
+                    // layer_fields only registered objectid + name.
+                    new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false },
+                    new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Nullable = true },
+                ],
+                spatial: new MetadataV2ResourceSpatial
+                {
+                    SpatialReference = MetadataV2SpatialReference.Wgs84,
+                    GeometryType = MetadataV2GeometryType.Point,
+                    SupportedCrs = [MetadataV2SpatialReference.Wgs84],
+                })
+            .AddStorageBinding(
+                StorageBindingId,
+                ResourceId,
+                "features",
+                storageLayerId: SeededPointStorageLayerId,
+                options: new Dictionary<string, JsonElement>
+                {
+                    ["geometryColumn"] = JsonSerializer.SerializeToElement("geometry"),
+                    ["attributesColumn"] = JsonSerializer.SerializeToElement("attributes"),
+                })
+            .AddService(
+                ServiceId,
+                "geometry_from_type",
+                accessPolicy: new AccessPolicy { AllowAnonymous = true },
+                protocols: [MetadataV2ServiceProtocols.Wfs20])
+            .AddPublication(
+                "pub-geometry-from-type-wfs",
+                ServiceId,
+                ResourceId,
+                layerIndex: SeededPointStorageLayerId,
+                storageBindingId: StorageBindingId,
+                serviceLocalId: GeometryFromTypeTypeName,
+                publicationType: MetadataV2PublicationType.WfsFeatureType)
+            .Build();
+
+        return new TestMetadataV2GraphProvider(graph);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "DescribeFeatureType")]
+    public async Task Wfs_DescribeFeatureType_LayerWithGeometryTypeButNoGeometryField_IncludesGeometryElement()
+    {
+        var fixture = new WebAppFixture()
+            .ReplaceService<IMetadataV2GraphProvider>(BuildGeometryFromTypeMetadataProvider());
+
+        try
+        {
+            await fixture.InitializeAsync();
+
+            var response = await fixture.Client.GetAsync(
+                $"/wfs?SERVICE=WFS&REQUEST=DescribeFeatureType&VERSION=2.0.0&TYPENAMES={GeometryFromTypeTypeName}");
+
+            var content = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+            // A point layer with no explicit geometry schema field must still advertise a
+            // geometry element (named after the storage binding's geometry column).
+            content.Should().Contain(
+                "<xsd:element name=\"geometry\" type=\"gml:PointPropertyType\"",
+                content);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
+    public async Task Wfs_GetFeature_LayerWithGeometryTypeButNoGeometryField_ReturnsGmlGeometry()
+    {
+        var fixture = new WebAppFixture()
+            .ReplaceService<IMetadataV2GraphProvider>(BuildGeometryFromTypeMetadataProvider());
+
+        try
+        {
+            await fixture.InitializeAsync();
+
+            var response = await fixture.Client.GetAsync(
+                $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES={GeometryFromTypeTypeName}&COUNT=1");
+
+            var content = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+            // Geometry must be emitted in a honua:geometry property containing a gml:Point.
+            content.Should().Contain("<honua:geometry>", content);
+            content.Should().Contain("<gml:Point", content);
+            content.Should().Contain("<gml:pos", content);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
+    public async Task Wfs_GetFeature_NullAttribute_EmitsXsiNilNotEmptyString()
+    {
+        // Seed feature test_layer.5 has an explicit null event_date (tests/seed/server.yaml).
+        var response = await _fixture.Client.GetAsync(
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer&RESOURCEID=test_layer.5");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+        // The null value must be surfaced as xsi:nil per GML, never as an empty element or
+        // the literal text "null".
+        content.Should().Contain("<honua:event_date xsi:nil=\"true\"", content);
+        content.Should().NotContain("<honua:event_date></honua:event_date>", content);
+        content.Should().NotContain("<honua:event_date>null</honua:event_date>", content);
+    }
+
     [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /wfs")]
