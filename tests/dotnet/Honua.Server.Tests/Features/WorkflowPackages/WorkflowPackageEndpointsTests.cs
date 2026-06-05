@@ -13,8 +13,11 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 
 namespace Honua.Server.Tests.Features.WorkflowPackages;
 
@@ -46,6 +49,19 @@ public sealed class WorkflowPackageEndpointsTests : IAsyncLifetime
                 services.AddSingleton<IExecutionJobStore>(_jobStore);
                 services.AddSingleton<IUniversalProgressStore>(_progressStore);
                 services.AddSingleton<IJobQueue>(_jobQueue);
+            })
+            .ConfigureWebHost(builder =>
+            {
+                // Enable the natural-language workflow-generation feature with the deterministic
+                // (no-network) provider so the generation endpoints can be exercised in CI.
+                builder.ConfigureAppConfiguration((_, config) =>
+                {
+                    config.AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["WorkflowGeneration:Enabled"] = "true",
+                        ["WorkflowGeneration:DefaultProvider"] = "deterministic"
+                    });
+                });
             });
     }
 
@@ -96,6 +112,64 @@ public sealed class WorkflowPackageEndpointsTests : IAsyncLifetime
         using var nodeDoc = await ReadJsonAsync(nodeResponse);
         nodeDoc.RootElement.GetProperty("data").GetProperty("nodeTypeId").GetString()
             .Should().Be("process:geometry.buffer");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/console/workflow-generation/providers")]
+    public async Task GetGenerationProviders_WhenEnabled_ReportsDeterministicProvider()
+    {
+        var response = await _client.GetAsync("/api/v1/console/workflow-generation/providers");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.CacheControl!.NoStore.Should().BeTrue();
+
+        using var doc = await ReadJsonAsync(response);
+        doc.RootElement.GetProperty("success").GetBoolean().Should().BeTrue();
+        var data = doc.RootElement.GetProperty("data");
+        data.GetProperty("enabled").GetBoolean().Should().BeTrue();
+        data.GetProperty("defaultProvider").GetString().Should().Be("deterministic");
+        data.GetProperty("providers").EnumerateArray()
+            .Should().Contain(provider =>
+                provider.GetProperty("id").GetString() == "deterministic" &&
+                provider.GetProperty("available").GetBoolean());
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/console/workflow-packages/generate")]
+    public async Task GenerateWorkflow_WithDeterministicProvider_ReturnsGeneratedGraph()
+    {
+        var response = await _client.PostAsJsonAsync(
+            "/api/v1/console/workflow-packages/generate",
+            new
+            {
+                provider = "deterministic",
+                // Keyed prompt for the deterministic "generated" fixture (workflow-generation-contract-v1.json).
+                prompt = "Nightly: copy new assessor parcels into a working layer, "
+                    + "stamp a reviewed flag, then compute parcel area."
+            },
+            JsonOptions);
+
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+
+        using var doc = JsonDocument.Parse(body);
+        doc.RootElement.GetProperty("success").GetBoolean().Should().BeTrue();
+        var data = doc.RootElement.GetProperty("data");
+        data.GetProperty("status").GetString().Should().Be("generated");
+        data.GetProperty("provider").GetString().Should().Be("deterministic");
+        data.GetProperty("graph").GetProperty("nodes").GetArrayLength().Should().BeGreaterThan(0);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/console/workflow-packages/generate")]
+    public async Task GenerateWorkflow_WithEmptyPrompt_ReturnsBadRequest()
+    {
+        var response = await _client.PostAsJsonAsync(
+            "/api/v1/console/workflow-packages/generate",
+            new { provider = "deterministic", prompt = string.Empty },
+            JsonOptions);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [IntegrationTest]
