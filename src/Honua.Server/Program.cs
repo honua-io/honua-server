@@ -1147,6 +1147,9 @@ app.MapRasterImportEndpoints();
 // Configure Geoservices service import endpoints
 app.MapGeoservicesImportEndpoints();
 
+// Configure footprint-driven batch import orchestration endpoints (issue #1253)
+app.MapMigrationBatchEndpoints();
+
 // Configure GeoServer import endpoints
 app.MapGeoServerImportEndpoints();
 

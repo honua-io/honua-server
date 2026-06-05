@@ -407,6 +407,14 @@ internal static class ServiceCollectionExtensions
         // copy runs during ArcGIS layer imports without a separate wiring step.
         services.AddScoped<IGeoservicesImportService, GeoservicesImportService>();
 
+        // Footprint-driven batch import run catalog (#1253). Persists batch
+        // composition, ordering, and per-child status backing the batch
+        // orchestration endpoints. Scoped to align with the scoped orchestrator.
+        services.AddScoped<IMigrationBatchRunCatalog>(serviceProvider =>
+            new PostgresMigrationBatchRunCatalog(
+                ResolveConnectionString(serviceProvider, configuration),
+                serviceProvider.GetRequiredService<ILogger<PostgresMigrationBatchRunCatalog>>()));
+
         // Register the post-publish reconciliation service (issues #1247/#1380). It probes the
         // published layer through IFeatureReader, so it is scoped to align with the scoped feature
         // store. TimeProvider is guarded here in case no host-level registration ran first.
