@@ -137,7 +137,32 @@ real (#1374 + #1375):
   (`OperatorResourceType`/`OperatorOperation`), not the per-layer/service
   `AuthorizationOperation` taxonomy, so it is tracked as a separate follow-up.
 
-Deferred to **#1242**: the OAuth2 bridge itself.
+Deferred to **#1242**: the OAuth2 bridge itself — now landed (see below).
+
+## As-built update — #1242 OAuth2 bridge landed
+
+The OAuth2 named-user bridge (#1242) has since shipped on top of this
+foundation, honoring the decision above with no parallel auth/token/user store:
+
+- Honua acts as the OAuth2 authorization server that ArcGIS clients
+  (Pro "Add Portal", Field Maps) talk to, exposing
+  `GET /sharing/rest/oauth2/authorize`, `GET /sharing/rest/oauth2/callback`,
+  and `GET|POST /sharing/rest/oauth2/token`.
+- `authorize` delegates **identity** to the operator's configured OIDC
+  provider via the existing auth-code+PKCE machinery (`PortalOAuthBroker`
+  over `OidcProviderCatalog` + discovery + the shared
+  `IPortalCredentialVerifier`); the verified principal is the same one a
+  direct OIDC session yields.
+- `token` returns the Esri-shaped `{ access_token, expires_in, refresh_token }`
+  minted through `IPortalTokenIssuer`.
+- `PortalOAuthBroker` / `PortalOAuthStore` / `PortalOAuthTokenService` carry
+  only the short-lived broker-session + authorization-code state required by
+  the OAuth2 handshake; they are not a user store, a durable token store, or a
+  group→role mapping (those remain OIDC claims transformation, the persistent
+  role store, and the resolver respectively).
+
+The `PortalOAuthBroker` source explicitly cross-references this ADR, so the
+prohibition above is enforced in code, not just on paper.
 
 ## OAuth2 bridge hardening (#1484)
 
@@ -201,6 +226,7 @@ provides. The conclusion is captured here and in
 ## Cross-references
 
 - Complements ADR-0024 (Open-Core Edition Model) and the RBAC enforcement model.
+- This ADR is the decision deliverable tracked by #1377.
 - Linked from #348 (OIDC SSO), #349 (RBAC tracking), #1240 (ArcGIS portal
-  facade), #1242 (ArcGIS OAuth2 named-user), #1374 (persistent store),
-  #1375 (resolver), #1376 (cross-protocol per-operation enforcement).
+  facade), #1242 (ArcGIS OAuth2 named-user — bridge as-built), #1374 (persistent
+  store), #1375 (resolver), #1376 (cross-protocol per-operation enforcement).
