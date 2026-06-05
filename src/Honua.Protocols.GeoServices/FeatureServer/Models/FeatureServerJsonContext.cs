@@ -120,6 +120,10 @@ namespace Honua.Protocols.GeoServices.FeatureServer.Models;
 [JsonSerializable(typeof(DistributedReplicaStore.ReplicaStateEnvelope))]
 [JsonSerializable(typeof(SynchronizeReplicaRequest))]
 [JsonSerializable(typeof(SynchronizeReplicaResponse))]
+[JsonSerializable(typeof(SynchronizeReplicaConflict))]
+[JsonSerializable(typeof(SynchronizeReplicaConflict[]))]
+[JsonSerializable(typeof(SynchronizeReplicaLayerEdits))]
+[JsonSerializable(typeof(SynchronizeReplicaLayerEdits[]), TypeInfoPropertyName = "SynchronizeReplicaLayerEditsArray")]
 [JsonSerializable(typeof(UnRegisterReplicaRequest))]
 [JsonSerializable(typeof(SuccessResponse))]
 // Maintenance models

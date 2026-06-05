@@ -222,4 +222,10 @@ internal sealed record ReplicaState(
     public DateTimeOffset LastSyncTime { get; init; } = CreatedAt;
 
     public long LastSyncGeneration { get; init; }
+
+    /// <summary>
+    /// Server generation produced by the most recent upload sync. Used as the download "since"
+    /// cursor so a replica does not receive its own just-applied edits back (#1272).
+    /// </summary>
+    public long UploadBaseGeneration { get; init; }
 }

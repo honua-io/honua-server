@@ -861,6 +861,7 @@ sql:
           CONSTRAINT replicas_valid_service CHECK(LENGTH(service_id) > 0),
           CONSTRAINT replicas_valid_sync_model CHECK(sync_model IN ('none', 'perLayer', 'perReplica'))
       );
+  - "ALTER TABLE honua.replicas ADD COLUMN IF NOT EXISTS upload_base_generation BIGINT NOT NULL DEFAULT 0;"
   - |
       CREATE TABLE IF NOT EXISTS honua.feature_changes (
           change_id BIGSERIAL PRIMARY KEY,
