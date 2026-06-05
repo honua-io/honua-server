@@ -122,6 +122,100 @@ public sealed class TilesetDocumentTreeWriterTests
         AssertRegionEnclosesDescendants(tree.Root, doc.Root, content);
     }
 
+    [UnitTest]
+    public void BuildTree_ContentBearingInteriorNode_RegionEnclosesDescendantHeights()
+    {
+        // Interior nodes DO carry content here (InteriorSampleCount > 0), but a
+        // content-bearing interior node's height comes from a thinned sample of
+        // its subtree, so its own [min,max] can be narrower than a descendant
+        // leaf's. The emitted region must union the whole subtree's extent rather
+        // than trust the node's own sampled span — otherwise it under-encloses
+        // and a conformant 3D Tiles client culls visible geometry.
+        var features = MakePointGrid(40, 40);
+        var options = new SceneLodOptions { MaxFeaturesPerTile = 80, MaxDepth = 8, InteriorSampleCount = 64 };
+        var tree = SceneQuadtreePartitioner.Partition(features, Bounds, 4096.0, options);
+
+        // Give every content-bearing node (interior samples included) a narrow,
+        // distinct height span...
+        var content = new Dictionary<SceneTileNode, SceneTileContent>();
+        var index = 0;
+        void AssignNarrow(SceneTileNode node)
+        {
+            if (node.Features.Count > 0)
+            {
+                var min = 100.0 + index;
+                content[node] = new SceneTileContent($"tile_{index:0000}.glb", min, min + 5.0);
+                index++;
+            }
+            foreach (var child in node.Children)
+            {
+                AssignNarrow(child);
+            }
+        }
+        AssignNarrow(tree.Root);
+
+        // ...then force the deepest content-bearing leaf to carry an extreme span
+        // that none of its narrow-span ancestors enclose on their own.
+        SceneTileNode? deepestLeaf = null;
+        var deepestDepth = -1;
+        void FindDeepestLeaf(SceneTileNode node, int depth)
+        {
+            if (node.Children.Count == 0 && content.ContainsKey(node) && depth > deepestDepth)
+            {
+                deepestLeaf = node;
+                deepestDepth = depth;
+            }
+            foreach (var child in node.Children)
+            {
+                FindDeepestLeaf(child, depth + 1);
+            }
+        }
+        FindDeepestLeaf(tree.Root, 0);
+        deepestLeaf.Should().NotBeNull("the fixture must contain a content-bearing leaf");
+        content[deepestLeaf!] = new SceneTileContent("tile_extreme.glb", -500.0, 1500.0);
+
+        // Sanity: at least one content-bearing INTERIOR node now fails to enclose
+        // its descendants on its own span — so the test exercises the
+        // content-bearing path and would fail if the writer trusted that span.
+        CountUnderEnclosingInteriorContentNodes(tree.Root, content).Should().BeGreaterThan(0);
+
+        var doc = TilesetDocumentWriter.BuildTree(tree, content, "honua-test");
+
+        AssertRegionEnclosesDescendants(tree.Root, doc.Root, content);
+    }
+
+    private static int CountUnderEnclosingInteriorContentNodes(
+        SceneTileNode node,
+        IReadOnlyDictionary<SceneTileNode, SceneTileContent> content)
+    {
+        var count = 0;
+        if (node.Children.Count > 0 && content.TryGetValue(node, out var own))
+        {
+            var childMin = double.PositiveInfinity;
+            var childMax = double.NegativeInfinity;
+            var childFound = false;
+            foreach (var child in node.Children)
+            {
+                var (found, min, max) = DescendantHeightExtent(child, content);
+                if (found)
+                {
+                    childFound = true;
+                    if (min < childMin) childMin = min;
+                    if (max > childMax) childMax = max;
+                }
+            }
+            if (childFound && (own.MinHeightMeters > childMin || own.MaxHeightMeters < childMax))
+            {
+                count = 1;
+            }
+        }
+        foreach (var child in node.Children)
+        {
+            count += CountUnderEnclosingInteriorContentNodes(child, content);
+        }
+        return count;
+    }
+
     private static int CountInteriorContentLessNodes(
         SceneTileNode node,
         IReadOnlyDictionary<SceneTileNode, SceneTileContent> content)

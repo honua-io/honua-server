@@ -148,23 +148,22 @@ public static class TilesetDocumentWriter
         // 3D Tiles 1.1 requires a tile's boundingVolume to spatially enclose
         // every descendant's bounding volume. The lon/lat bounds come from the
         // node envelope (which already encloses its children), but the vertical
-        // extent must too. A content-bearing node uses its own emitted
-        // [min,max]; a content-less interior node (e.g. when interior sampling
-        // is disabled) would otherwise default to [0,0], which fails to enclose
-        // its content-bearing descendants and lets a conformant client cull
-        // visible geometry — so derive its vertical extent from the union of all
-        // content-bearing descendants instead.
+        // extent must too. Derive it from the union of this node's own content
+        // and every content-bearing descendant rather than the node's own
+        // emitted [min,max]: a content-bearing interior node's height comes from
+        // a thinned representative sample of its subtree (SampleFeatures strides
+        // by key order, not height), so the sample can exclude the leaf carrying
+        // the subtree's extreme height — leaving the node's own extent narrower
+        // than its descendants. A content-less interior node (interior sampling
+        // disabled) has no own extent at all. Either way the node's own [min,max]
+        // can fail to enclose descendants and let a conformant client cull
+        // visible geometry, so always union over the whole subtree.
         double minHeight;
         double maxHeight;
-        if (hasContent)
+        if (TryGetDescendantHeightExtent(node, content, out var subtreeMin, out var subtreeMax))
         {
-            minHeight = nodeContent.MinHeightMeters;
-            maxHeight = nodeContent.MaxHeightMeters;
-        }
-        else if (TryGetDescendantHeightExtent(node, content, out var descMin, out var descMax))
-        {
-            minHeight = descMin;
-            maxHeight = descMax;
+            minHeight = subtreeMin;
+            maxHeight = subtreeMax;
         }
         else
         {
