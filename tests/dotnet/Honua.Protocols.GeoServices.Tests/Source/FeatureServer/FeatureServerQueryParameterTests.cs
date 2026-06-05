@@ -77,21 +77,7 @@ public sealed class FeatureServerQueryParameterTests : IAsyncLifetime
         content.Should().NotContain("Unsupported query parameters");
     }
 
-    // BUG B regression: resultRecordCount above the layer maxRecordCount is clamped, not 400.
-    [IntegrationTest]
-    [Operation(Operations.Query)]
-    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
-    public async Task Query_WithResultRecordCountAboveMax_ClampsInsteadOfBadRequest()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?where=1%3D1&resultRecordCount=99999999&f=json");
-
-        var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
-        content.Should().NotContain("cannot exceed");
-    }
-
-    // BUG B guard: a negative resultRecordCount must still be rejected.
+    // A negative resultRecordCount must still be rejected.
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]

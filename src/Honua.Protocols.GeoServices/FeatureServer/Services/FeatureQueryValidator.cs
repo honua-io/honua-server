@@ -33,18 +33,6 @@ internal sealed class FeatureQueryValidator : IFeatureQueryValidator
             effectiveResultRecordCount = queryParams.ObjectIds.Length;
         }
 
-        // Esri semantics: a resultRecordCount that exceeds the layer's maxRecordCount is
-        // clamped to maxRecordCount (and the response reports exceededTransferLimit=true when
-        // more rows exist) rather than returning a 400. The layer's advertised maxRecordCount
-        // is QueryLimits.MaxRecordCount, so clamp here before the shared pagination validator
-        // (which rejects limits above MaxRecordCount). Negative/zero/non-numeric values are
-        // still rejected upstream during parsing and by the shared MinLimit check (#1463).
-        var maxRecordCount = _commonQueryValidator.QueryLimits.MaxRecordCount;
-        if (effectiveResultRecordCount is int requested && requested > maxRecordCount)
-        {
-            effectiveResultRecordCount = maxRecordCount;
-        }
-
         var paginationResult = _commonQueryValidator.ValidateAndNormalizePagination(
             queryParams.ResultOffset,
             effectiveResultRecordCount,

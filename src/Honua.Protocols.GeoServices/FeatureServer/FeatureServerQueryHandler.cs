@@ -2130,11 +2130,10 @@ internal sealed partial class FeatureServerQueryHandler(
             unsupported.Add("returnTrueCurves");
         }
 
-        // returnExceededLimitFeatures is accepted and ignored: the Esri contract for this flag
-        // is "return rows beyond maxRecordCount and report exceededTransferLimit", which is
-        // exactly Honua's default behavior (clamp to maxRecordCount + exceededTransferLimit=true).
-        // The ArcGIS Maps SDK for .NET ServiceFeatureTable.QueryFeaturesAsync always sends it,
-        // so rejecting it broke every .NET FeatureServer client (#1460).
+        // returnExceededLimitFeatures is accepted and ignored: Honua already reports
+        // exceededTransferLimit when more rows exist within the page, so the flag needs no
+        // special handling. The ArcGIS Maps SDK for .NET ServiceFeatureTable.QueryFeaturesAsync
+        // always sends it, so rejecting it broke every .NET FeatureServer client (#1460).
 
         if (queryParams.ReturnCentroid)
         {
