@@ -39,6 +39,11 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
     private const string MissingTilesetSceneId = "missing-tileset-scene";
     private const string MalformedTilesetSceneId = "malformed-tileset-scene";
 
+    // A scene whose root content uri points at a file larger than the gRPC tile
+    // service's MaxTileContentBytes cap (256 MiB), exercising the
+    // ResourceExhausted oversized-tile rejection branch.
+    private const string OversizedTileSceneId = "oversized-tile-scene";
+
     // A database-backed scene carrying a small WGS-84 extent near the prime
     // meridian, used to exercise the ListScenes spatial extent filter (config
     // scenes have no persisted extent and so cannot be excluded by it).
@@ -52,6 +57,7 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
     private readonly string _missingContentRoot;
     private readonly string _missingTilesetRoot;
     private readonly string _malformedTilesetRoot;
+    private readonly string _oversizedTileRoot;
     private GrpcChannel? _channel;
     private Proto.SceneService.SceneServiceClient? _sceneClient;
     private Proto.TileService.TileServiceClient? _tileClient;
@@ -64,6 +70,7 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
         _missingContentRoot = CreateMissingContentTilesetRoot();
         _missingTilesetRoot = CreateMissingTilesetRoot();
         _malformedTilesetRoot = CreateMalformedTilesetRoot();
+        _oversizedTileRoot = CreateOversizedTileRoot();
         _fixture = new WebAppFixture()
             .ConfigureWebHost(builder =>
             {
@@ -94,6 +101,13 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
                         ["Scenes:Datasets:3:Id"] = MalformedTilesetSceneId,
                         ["Scenes:Datasets:3:Name"] = "Malformed Tileset",
                         ["Scenes:Datasets:3:AssetRoot"] = _malformedTilesetRoot,
+
+                        // A scene whose root content uri points at a file larger
+                        // than MaxTileContentBytes, exercising the GetTile/
+                        // StreamTiles ResourceExhausted oversized-tile branch.
+                        ["Scenes:Datasets:4:Id"] = OversizedTileSceneId,
+                        ["Scenes:Datasets:4:Name"] = "Oversized Tile",
+                        ["Scenes:Datasets:4:AssetRoot"] = _oversizedTileRoot,
                     });
                 });
             });
@@ -149,7 +163,7 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
         _channel?.Dispose();
         await _fixture.DisposeAsync();
 
-        foreach (var root in new[] { _missingContentRoot, _missingTilesetRoot, _malformedTilesetRoot })
+        foreach (var root in new[] { _missingContentRoot, _missingTilesetRoot, _malformedTilesetRoot, _oversizedTileRoot })
         {
             try
             {
@@ -683,6 +697,44 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.GetTile)]
+    [Endpoint("POST /geospatial.v1.TileService/GetTile")]
+    public async Task GetTile_ForOversizedContentFile_ThrowsResourceExhausted()
+    {
+        // The root content file is one byte over MaxTileContentBytes (256 MiB),
+        // so the tile service rejects it with ResourceExhausted before buffering
+        // it, rather than attempting an unbounded ~2x allocation.
+        var act = async () => await _tileClient!.GetTileAsync(
+            new Proto.GetTileRequest { SceneId = OversizedTileSceneId, NodeId = "0" },
+            _headers);
+
+        (await act.Should().ThrowAsync<RpcException>())
+            .Which.StatusCode.Should().Be(StatusCode.ResourceExhausted);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Streaming)]
+    [Endpoint("POST /geospatial.v1.TileService/StreamTiles")]
+    public async Task StreamTiles_ForOversizedContentFile_ThrowsResourceExhausted()
+    {
+        // The oversized-tile guard is shared by GetTile and StreamTiles; pin the
+        // ResourceExhausted branch on the streaming path too.
+        using var call = _tileClient!.StreamTiles(
+            new Proto.StreamTilesRequest { SceneId = OversizedTileSceneId },
+            _headers);
+
+        var act = async () =>
+        {
+            await foreach (var _ in call.ResponseStream.ReadAllAsync())
+            {
+            }
+        };
+
+        (await act.Should().ThrowAsync<RpcException>())
+            .Which.StatusCode.Should().Be(StatusCode.ResourceExhausted);
+    }
+
+    [IntegrationTest]
     [Operation(Operations.Streaming)]
     [Endpoint("POST /geospatial.v1.TileService/StreamTiles")]
     public async Task StreamTiles_WithOverlappingExtent_StreamsMatchingTiles()
@@ -1146,6 +1198,47 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
         var root = Path.Combine(Path.GetTempPath(), "honua-grpc-malformed-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         File.WriteAllText(Path.Combine(root, "tileset.json"), "null");
+        return root;
+    }
+
+    /// <summary>
+    /// Creates a temporary scene asset root whose <c>tileset.json</c> root
+    /// content uri points at a file just over the gRPC tile service's
+    /// MaxTileContentBytes cap (256 MiB). The oversized payload is a sparse,
+    /// zero-filled file produced via <see cref="FileStream.SetLength"/> so it
+    /// consumes no real disk and the test stays CI-fast, exercising the
+    /// ResourceExhausted oversized-tile rejection branch.
+    /// </summary>
+    private static string CreateOversizedTileRoot()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "honua-grpc-oversized-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+
+        const string tilesetJson = """
+        {
+          "asset": { "version": "1.1" },
+          "geometricError": 100.0,
+          "root": {
+            "boundingVolume": { "region": [-1.31970, 0.69886, -1.31965, 0.69890, 0.0, 20.0] },
+            "geometricError": 100.0,
+            "refine": "REPLACE",
+            "content": { "uri": "tiles/oversized.b3dm" }
+          }
+        }
+        """;
+        File.WriteAllText(Path.Combine(root, "tileset.json"), tilesetJson);
+
+        var tilesDir = Path.Combine(root, "tiles");
+        Directory.CreateDirectory(tilesDir);
+        // 256 MiB + 1 byte: one byte over MaxTileContentBytes. SetLength on a
+        // fresh file produces a sparse extent on the platforms CI runs on, so no
+        // bytes are actually written.
+        const long oversized = (256L * 1024 * 1024) + 1;
+        using (var fs = new FileStream(Path.Combine(tilesDir, "oversized.b3dm"), FileMode.CreateNew, FileAccess.Write))
+        {
+            fs.SetLength(oversized);
+        }
+
         return root;
     }
 
