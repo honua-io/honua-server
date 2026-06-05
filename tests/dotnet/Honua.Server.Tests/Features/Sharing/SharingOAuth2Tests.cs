@@ -319,7 +319,10 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
     private static async Task<HttpResponseMessage> PostFormAsync(HttpClient client, params (string Key, string Value)[] pairs)
     {
         var content = new FormUrlEncodedContent(pairs.Select(p => new KeyValuePair<string, string>(p.Key, p.Value)));
-        return await client.PostAsync(TokenEndpoint, content);
+        // Use the literal route path (not the TokenEndpoint const) so the endpoint-registry
+        // governance scanner recognises this as a same-method (POST) HTTP request that backs
+        // POST /sharing/rest/oauth2/token.
+        return await client.PostAsync("/sharing/rest/oauth2/token", content);
     }
 
     private static async Task<TokenPayload> ReadTokenAsync(HttpResponseMessage response)
