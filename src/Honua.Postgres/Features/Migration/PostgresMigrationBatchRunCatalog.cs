@@ -297,11 +297,22 @@ internal sealed partial class PostgresMigrationBatchRunCatalog : IMigrationBatch
             """;
 
         var ids = new List<string>();
-        await using var command = new NpgsqlCommand(sql, connection);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        try
         {
-            ids.Add(reader.GetString(0));
+            await using var command = new NpgsqlCommand(sql, connection);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                ids.Add(reader.GetString(0));
+            }
+        }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UndefinedTable)
+        {
+            // The batch schema (migration 045) is not present yet — e.g. during the
+            // boot window before migrations run, or in test fixtures pinned to an
+            // earlier schema. Treat as "no active batches" so the background poller
+            // does not error every cycle; polling resumes once the table exists.
+            return [];
         }
 
         return ids;
