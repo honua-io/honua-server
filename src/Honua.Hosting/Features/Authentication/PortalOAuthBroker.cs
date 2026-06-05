@@ -110,6 +110,17 @@ internal sealed class PortalOAuthBroker(
         // The IdP callback returns to Honua, carrying the broker session id in the
         // CSRF state so the callback can recover the pinned ArcGIS parameters
         // without a cookie (ArcGIS Pro's embedded browser is hostile to cookies).
+        //
+        // CSRF posture (#1484, see ADR-0049 "CSRF posture"): the cookieless binding
+        // is judged adequate. `idpState` (32 random chars) plus `brokerSessionId`
+        // (256-bit cache-key entropy) are both unguessable; the callback consumes the
+        // session single-use by id and constant-time-compares `idpState` before
+        // proceeding. The secret lives server-side in the single-use, 15-minute
+        // broker session, so the cookieless transport does not weaken the standard
+        // state-parameter binding. The ArcGIS-facing code is additionally bound to
+        // the client's hard-required PKCE challenge and allow-listed exact
+        // redirect_uri/client_id, so a code minted on a victim's behalf cannot be
+        // redeemed by an attacker.
         var combinedState = $"{idpState}.{brokerSessionId}";
         var callbackUri = callbackUriFactory(PortalOAuthRoutes.CallbackPath);
 

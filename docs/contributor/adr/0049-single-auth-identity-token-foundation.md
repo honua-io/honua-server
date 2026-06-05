@@ -139,6 +139,65 @@ real (#1374 + #1375):
 
 Deferred to **#1242**: the OAuth2 bridge itself.
 
+## OAuth2 bridge hardening (#1484)
+
+The OAuth2 bridge (`/sharing/rest/oauth2/{authorize,callback,token}`) landed in
+#1242 and stays opt-in/off-by-default. Before it can be enabled in production the
+following hardening (#1484) is required and now lands with this ADR:
+
+- **`redirect_uri` allow-list (open-redirect mitigation).** `oauth2/authorize`
+  validates the client `redirect_uri` against a per-deployment allow-list
+  (`Authentication:PortalToken:OAuth2:AllowedRedirectUris`) via the shared
+  `PortalOAuthRedirectUriValidator` (exact-URI or same-origin match; the ArcGIS
+  Pro `urn:ietf:wg:oauth:2.0:oob` native redirect is only honored when listed
+  verbatim). An empty list rejects everything, and a non-allow-listed URI gets a
+  direct 400 and is **never** redirected to (RFC 6749 §4.1.2.1), so the bridge
+  cannot be used to bounce an authorization code to a hostile host.
+- **Hard-required PKCE.** With `OAuth2.RequirePkce` (default on), `authorize`
+  rejects a code flow with no `code_challenge`, and the token endpoint rejects an
+  `authorization_code` grant whose stored code carries no challenge — so every
+  code flow has had PKCE. (Previously PKCE was only verified when a challenge had
+  been registered.)
+- **Refresh-token rotation.** With `OAuth2.RotateRefreshTokens` (default on), a
+  `refresh_token` grant revokes the presented token and returns a fresh one,
+  bounding a leaked token's replay window to a single use. Refresh tokens remain
+  90-day, cache-backed, and revocable by cache eviction; rotation can be disabled
+  for clients that cannot persist a refreshed token.
+
+### CSRF posture: cookieless `idpState.brokerSessionId` binding
+
+ArcGIS Pro's embedded browser is hostile to cookies, so the bridge cannot use a
+cookie-bound CSRF/state for the IdP leg. Instead `PortalOAuthBroker` mints a
+high-entropy random `idpState` (32 chars) and a separate broker-session id (256
+bits of cache-key entropy) at `authorize` time, persists the ArcGIS client's
+pinned parameters (redirect_uri/state/PKCE challenge) plus the IdP PKCE verifier
+in the single-use, short-lived (15 min) broker session, and sends the IdP the
+**combined** `state = idpState.brokerSessionId`. At `callback` the broker
+splits the value, consumes the broker session by id (single-use; removed on
+read), and constant-time-compares the returned `idpState` against the stored one
+before proceeding.
+
+This was reviewed against the CSRF/authorization-fixation threat model and is
+judged adequate for the bridge:
+
+- The IdP leg's CSRF defense rests on (a) the unguessable, single-use
+  `brokerSessionId` (an attacker cannot forge or replay a valid session id) and
+  (b) the constant-time `idpState` equality check, which is the standard
+  state-parameter binding — the cookieless transport does not weaken it because
+  the secret lives server-side in the broker session, not in a cookie.
+- The authorization code returned to the ArcGIS client is independently bound to
+  that client's own PKCE `code_challenge` (now hard-required) plus the
+  allow-listed, exact-match `redirect_uri` and `client_id`, so a code obtained on
+  a victim's behalf cannot be redeemed by an attacker.
+- Broker sessions and codes are single-use and expire quickly (15 min / 5 min),
+  bounding any race or replay window.
+
+No stronger binding (for example a `PORTAL_OAUTH_STATE` cookie or a
+device/PKCE-bound state) is added: it would either break the embedded-browser
+flow or duplicate the protection the server-side single-use session already
+provides. The conclusion is captured here and in
+`PortalOAuthBroker.BeginAuthorizeAsync`.
+
 ## Cross-references
 
 - Complements ADR-0024 (Open-Core Edition Model) and the RBAC enforcement model.
