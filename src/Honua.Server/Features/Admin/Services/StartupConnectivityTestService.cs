@@ -114,7 +114,7 @@ internal sealed class StartupConnectivityTestService
             else
             {
                 secretProviderTest.Success = true;
-                secretProviderTest.Details.Add("Provider Count", supportedProviders.Length.ToString());
+                secretProviderTest.Details.Add("Provider Count", supportedProviders.Length.ToString(System.Globalization.CultureInfo.InvariantCulture));
             }
         }
         catch (Exception ex)
@@ -284,7 +284,7 @@ internal sealed class StartupConnectivityTestService
 
                 test.Success = response.IsSuccessStatusCode;
                 test.Details.Add("URL", url);
-                test.Details.Add("Status Code", ((int)response.StatusCode).ToString());
+                test.Details.Add("Status Code", ((int)response.StatusCode).ToString(System.Globalization.CultureInfo.InvariantCulture));
                 test.Details.Add("Response Time", $"{httpClient.Timeout.TotalMilliseconds}ms max");
 
                 if (!response.IsSuccessStatusCode)

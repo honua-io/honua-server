@@ -123,7 +123,7 @@ internal sealed class GlobalExceptionMiddleware(
         // Handle ServiceUnavailable with Retry-After header
         if (exception is ServiceUnavailableException serviceEx && serviceEx.RetryAfterSeconds.HasValue)
         {
-            context.Response.Headers["Retry-After"] = serviceEx.RetryAfterSeconds.Value.ToString();
+            context.Response.Headers["Retry-After"] = serviceEx.RetryAfterSeconds.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
             options = new ErrorResponseFormatterOptions
             {
                 IncludeAdditionalDetails = options.IncludeAdditionalDetails,
@@ -131,7 +131,7 @@ internal sealed class GlobalExceptionMiddleware(
                 ContentType = options.ContentType,
                 AdditionalHeaders = new Dictionary<string, string>
                 {
-                    ["Retry-After"] = serviceEx.RetryAfterSeconds.Value.ToString()
+                    ["Retry-After"] = serviceEx.RetryAfterSeconds.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)
                 }
             };
         }

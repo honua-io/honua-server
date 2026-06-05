@@ -85,9 +85,9 @@ internal sealed class TeamsAlertDeliverySink : IAlertDeliverySink
                             [
                                 new TeamsAlertFact { Name = "Severity", Value = alertEvent.Severity.ToString() },
                                 new TeamsAlertFact { Name = "Status", Value = alertEvent.IncidentStatus.ToString() },
-                                new TeamsAlertFact { Name = "Rule ID", Value = alertEvent.RuleId.ToString() },
-                                new TeamsAlertFact { Name = "Layer", Value = alertEvent.LayerId.ToString() },
-                                new TeamsAlertFact { Name = "Feature", Value = alertEvent.ObjectId.ToString() },
+                                new TeamsAlertFact { Name = "Rule ID", Value = alertEvent.RuleId.ToString(System.Globalization.CultureInfo.InvariantCulture) },
+                                new TeamsAlertFact { Name = "Layer", Value = alertEvent.LayerId.ToString(System.Globalization.CultureInfo.InvariantCulture) },
+                                new TeamsAlertFact { Name = "Feature", Value = alertEvent.ObjectId.ToString(System.Globalization.CultureInfo.InvariantCulture) },
                                 new TeamsAlertFact { Name = "Occurred At", Value = alertEvent.OccurredAt.ToString("O") }
                             ],
                             Markdown = true

@@ -127,4 +127,23 @@ assert_descriptor \
   "true" \
   "Core"
 
+# A change to the shared Honua.Core validation pipeline must target the protocol
+# shards that exercise it (query/edit/metadata validation) instead of escalating
+# to run_all. ResourceValidator/CommonQueryValidator are consumed by the
+# GeoServices, OGC API, OGC Classic, OData, STAC, Geometry, Operator Eval, Admin
+# and MCP query/edit paths, so a validation-only diff is targeted, not run_all.
+assert_descriptor \
+  "core-validation-targeted" \
+  "src/Honua.Core/Features/Validation/ResourceValidator.cs" \
+  "targeted" \
+  "false" \
+  "OGC API Maps and Tiles"
+
+assert_descriptor \
+  "core-validation-targeted-features" \
+  "src/Honua.Core/Features/Validation/CommonQueryValidator.cs" \
+  "targeted" \
+  "false" \
+  "OGC API Features"
+
 echo "CI router validation passed."

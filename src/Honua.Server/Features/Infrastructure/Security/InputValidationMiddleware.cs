@@ -121,9 +121,9 @@ internal sealed class InputValidationMiddleware
     private bool ShouldSkipValidation(PathString path)
     {
         var pathValue = path.Value?.ToLowerInvariant();
-        return pathValue?.StartsWith("/health") == true ||
-               pathValue?.StartsWith("/metrics") == true ||
-               pathValue?.StartsWith("/ready") == true ||
+        return pathValue?.StartsWith("/health", StringComparison.Ordinal) == true ||
+               pathValue?.StartsWith("/metrics", StringComparison.Ordinal) == true ||
+               pathValue?.StartsWith("/ready", StringComparison.Ordinal) == true ||
                _options.ExcludedPaths.Any(excluded =>
                    pathValue?.StartsWith(excluded, StringComparison.OrdinalIgnoreCase) == true);
     }
