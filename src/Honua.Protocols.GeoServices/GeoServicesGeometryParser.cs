@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Frozen;
 using System.Text.Json;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Infrastructure.Parsing;
@@ -14,6 +15,17 @@ internal static class GeoServicesGeometryParser
 {
     private static readonly char[] _coordinateSeparators = { ',', ' ' };
 
+    // The Esri geometryType enum (esriGeometryType). An unknown value must be rejected
+    // rather than silently coerced to an envelope based on coordinate count (#1462).
+    private static readonly FrozenSet<string> _knownGeometryTypes = new[]
+    {
+        "esrigeometrypoint",
+        "esrigeometrymultipoint",
+        "esrigeometrypolyline",
+        "esrigeometrypolygon",
+        "esrigeometryenvelope"
+    }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
     internal static bool TryParseGeoServicesGeometry(
         string? geometryText,
         string? geometryType,
@@ -22,6 +34,18 @@ internal static class GeoServicesGeometryParser
     {
         geometry = null;
         error = null;
+
+        // Validate geometryType against the Esri esriGeometryType enum up-front. An unknown
+        // value (e.g. esriGeometryBogus) must produce a 400 instead of being silently coerced
+        // to an envelope by coordinate count (#1462).
+        if (!string.IsNullOrWhiteSpace(geometryType) &&
+            !_knownGeometryTypes.Contains(geometryType.Trim()))
+        {
+            error = $"Unsupported geometryType '{geometryType.Trim()}'. Supported values: " +
+                "esriGeometryPoint, esriGeometryMultipoint, esriGeometryPolyline, " +
+                "esriGeometryPolygon, esriGeometryEnvelope.";
+            return false;
+        }
 
         if (string.IsNullOrWhiteSpace(geometryText))
         {
