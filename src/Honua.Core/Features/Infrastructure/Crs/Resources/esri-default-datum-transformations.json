@@ -1,0 +1,47 @@
+{
+  "_comment": [
+    "Esri default geotransformation parity table.",
+    "Each entry maps a (fromSrid -> toSrid) geographic-CRS reprojection to the",
+    "geotransformation ArcGIS selects by default for the listed area of use, plus",
+    "the EPSG coordinate-operation code and the explicit PROJ pipeline that PostGIS",
+    "executes via 3-argument ST_Transform(geom, '<projPipeline>', toSrid).",
+    "",
+    "Provenance: WKID and name follow Esri's published geographic-transformation list;",
+    "epsgOperationCode references the EPSG Geodetic Parameter Dataset; projPipeline is",
+    "the PROJ pipeline string corresponding to that EPSG operation. Reverse lookups are",
+    "synthesized at load time (the runtime applies the inverse for toSrid -> fromSrid).",
+    "",
+    "Grid-backed pipelines (NADCON/NTv2/GEOID) list requiredGrids; the runtime fails",
+    "explicitly when a listed grid is absent from the PROJ data path rather than",
+    "silently degrading to a Helmert/geocentric approximation.",
+    "",
+    "Only pipelines verified against the PostGIS/PROJ runtime are seeded here. EPSG 1188",
+    "(NAD83<->WGS84) is a null transformation, expressed as +proj=noop (exact identity,",
+    "version-stable). Additional Helmert-based pairs (NAD83(2011), HARN realizations) are",
+    "a documented follow-up: each Helmert pipeline string must be generated from the EPSG",
+    "operation via projinfo and validated against the runtime before seeding, so the table",
+    "never ships a pipeline string PostGIS rejects (which would degrade to a null result)."
+  ],
+  "transformations": [
+    {
+      "wkid": 108001,
+      "name": "NAD_1983_To_WGS_1984_1",
+      "fromSrid": 4269,
+      "toSrid": 4326,
+      "areaOfUse": "North America - onshore (CONUS, Canada, Mexico, Central America)",
+      "epsgOperationCode": 1188,
+      "projPipeline": "+proj=noop",
+      "requiredGrids": []
+    },
+    {
+      "wkid": 1241,
+      "name": "NAD_1927_To_NAD_1983_NADCON",
+      "fromSrid": 4267,
+      "toSrid": 4269,
+      "areaOfUse": "USA - CONUS onshore",
+      "epsgOperationCode": 1241,
+      "projPipeline": "+proj=pipeline +step +proj=unitconvert +xy_in=deg +xy_out=rad +step +proj=hgridshift +grids=us_noaa_conus.tif +step +proj=unitconvert +xy_in=rad +xy_out=deg",
+      "requiredGrids": ["us_noaa_conus.tif"]
+    }
+  ]
+}

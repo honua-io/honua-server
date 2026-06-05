@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Edit;
+using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Query;
 using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Honua.Infrastructure.Abstractions;
@@ -17,6 +18,9 @@ internal static class FeatureServerServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
 
         services.AddHttpContextAccessor();
+
+        // Esri-default datum-transformation parity catalog (stateless, loaded once).
+        services.TryAddSingleton<IDatumTransformationCatalog>(static _ => EsriDatumTransformationCatalog.Create());
 
         services.AddScoped<PbfQueryFormatter>();
         services.AddScoped<IQueryFormatter, QueryFormatter>();

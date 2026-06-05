@@ -27,7 +27,7 @@ internal sealed class GeometryProcessor : IGeometryProcessor
         if (query.OutputSrid.HasValue &&
             (!query.SpatialReferenceSrid.HasValue || query.OutputSrid.Value != query.SpatialReferenceSrid.Value))
         {
-            baseGeometry = $"ST_Transform({baseGeometry}, {query.OutputSrid.Value})";
+            baseGeometry = DatumTransformSql.BuildTransformExpression(baseGeometry, query.OutputSrid.Value, query.OutputDatumTransformation);
         }
 
         return $"ST_AsBinary({baseGeometry}) AS {FeatureQueryEncoding.GeometryColumn}";
@@ -40,7 +40,7 @@ internal sealed class GeometryProcessor : IGeometryProcessor
         if (query.OutputSrid.HasValue &&
             (!query.SpatialReferenceSrid.HasValue || query.OutputSrid.Value != query.SpatialReferenceSrid.Value))
         {
-            baseGeometry = $"ST_Transform({baseGeometry}, {query.OutputSrid.Value})";
+            baseGeometry = DatumTransformSql.BuildTransformExpression(baseGeometry, query.OutputSrid.Value, query.OutputDatumTransformation);
         }
 
         return $"ST_AsGML(3, {baseGeometry}, {FeatureQueryEncoding.GeometryTextPrecision}, {GetGmlOptions(query)})";
@@ -53,7 +53,7 @@ internal sealed class GeometryProcessor : IGeometryProcessor
         if (query.OutputSrid.HasValue &&
             (!query.SpatialReferenceSrid.HasValue || query.OutputSrid.Value != query.SpatialReferenceSrid.Value))
         {
-            baseGeometry = $"ST_Transform({baseGeometry}, {query.OutputSrid.Value})";
+            baseGeometry = DatumTransformSql.BuildTransformExpression(baseGeometry, query.OutputSrid.Value, query.OutputDatumTransformation);
         }
 
         return $"ST_AsGeoJSON({baseGeometry}, {_geoJsonTextPrecision}, 0)";
@@ -66,7 +66,7 @@ internal sealed class GeometryProcessor : IGeometryProcessor
         if (query.OutputSrid.HasValue &&
             (!query.SpatialReferenceSrid.HasValue || query.OutputSrid.Value != query.SpatialReferenceSrid.Value))
         {
-            baseGeometry = $"ST_Transform({baseGeometry}, {query.OutputSrid.Value})";
+            baseGeometry = DatumTransformSql.BuildTransformExpression(baseGeometry, query.OutputSrid.Value, query.OutputDatumTransformation);
         }
 
         return $"ST_AsKML({baseGeometry}, {FeatureQueryEncoding.GeometryTextPrecision})";
