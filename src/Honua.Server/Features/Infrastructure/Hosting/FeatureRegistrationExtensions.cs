@@ -141,6 +141,12 @@ internal static class FeatureRegistrationExtensions
         // NL -> report.document generation. Reuses the workflow-generation provider config + chat plumbing
         // and a self-contained structural ReportDocumentValidator (no DB). Mirrors the form/map registration.
         services.TryAddSingleton<Honua.Ai.ReportGeneration.IReportGenerationService, Honua.Ai.ReportGeneration.ReportGenerationService>();
+        // NL -> dashboard.document generation. Reuses the workflow-generation provider config + chat plumbing
+        // and a self-contained structural DashboardDocumentValidator (no DB). The dashboard is the close
+        // analog of the report (panels/charts/Vega-Lite + bindings/layout) with interactive filter/metric
+        // panels; the console reaches it via the shared /console/publications/generate endpoint with
+        // kind=dashboard. Mirrors the report registration.
+        services.TryAddSingleton<Honua.Ai.DashboardGeneration.IDashboardGenerationService, Honua.Ai.DashboardGeneration.DashboardGenerationService>();
         // Durable Studio map collaboration: comment threads + activity feed (#1278, slice 1).
         // In-memory store is the default; AddPostgreSqlServices overrides it with durable storage.
         Honua.Core.Features.Console.Collaboration.StudioMapCollaborationServiceCollectionExtensions

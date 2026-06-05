@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using Honua.Ai.AnalysisGeneration;
+using Honua.Ai.QueryGeneration;
 using Honua.Core.Features.AnalysisContent.Abstractions;
 using Honua.Core.Features.AnalysisContent.Domain;
 using Honua.Core.Features.Validation.Contracts;
@@ -31,6 +32,12 @@ internal static partial class AnalysisContentEndpoints
             .WithSummary("Generate or refine an analysis package from a natural-language prompt.")
             .Accepts<GenerateAnalysisContentRequest>("application/json")
             .Produces<AnalysisGenerationResult>();
+
+        _ = content.MapPost("/queries/generate", HandleGenerateSavedQueryAsync)
+            .WithName("GenerateSavedQuery")
+            .WithSummary("Generate or refine a saved query (spatial/attribute filter) from a natural-language prompt.")
+            .Accepts<GenerateSavedQueryRequest>("application/json")
+            .Produces<QueryGenerationResult>();
 
         _ = content.MapPost("/items", HandleCreateItemAsync)
             .WithName("CreateAnalysisContentItem")
@@ -136,6 +143,45 @@ internal static partial class AnalysisContentEndpoints
 
         context.Response.Headers.CacheControl = "no-store";
         return Results.Json(result, AnalysisGenerationApiJsonContext.Default.AnalysisGenerationResult);
+    }
+
+    private static async Task<IResult> HandleGenerateSavedQueryAsync(
+        HttpContext context,
+        [FromServices] IQueryGenerationService generation)
+    {
+        GenerateSavedQueryRequest? request;
+        try
+        {
+            request = await JsonSerializer.DeserializeAsync(
+                context.Request.Body,
+                QueryGenerationApiJsonContext.Default.GenerateSavedQueryRequest,
+                context.RequestAborted).ConfigureAwait(false);
+        }
+        catch (JsonException)
+        {
+            request = null;
+        }
+
+        if (request is null || string.IsNullOrWhiteSpace(request.Prompt))
+        {
+            var bad = new QueryGenerationResult { Status = "error", Rationale = "A non-empty 'prompt' is required." };
+            return Results.Json(bad, QueryGenerationApiJsonContext.Default.QueryGenerationResult, statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        var result = await generation.GenerateAsync(
+            new QueryGenerationRequest
+            {
+                Prompt = request.Prompt,
+                Provider = request.Provider,
+                Model = request.Model,
+                CurrentQuery = request.Query,
+                Conversation = request.Conversation,
+                Answers = request.Answers
+            },
+            context.RequestAborted).ConfigureAwait(false);
+
+        context.Response.Headers.CacheControl = "no-store";
+        return Results.Json(result, QueryGenerationApiJsonContext.Default.QueryGenerationResult);
     }
 
     private static async Task<IResult> HandleCreateItemAsync(

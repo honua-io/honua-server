@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using Honua.Ai.DashboardGeneration;
 using Honua.Ai.ReportGeneration;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Publishing.Content;
@@ -68,21 +69,74 @@ internal static class ContentPublicationEndpoints
             .WithSummary("Updates server-owned visibility/share/embed/public-link policy and records an audited event.")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Patch }));
 
-        group.MapPost("/generate", HandleGenerateReport)
-            .WithDisplayName("Generate Report Document")
-            .WithSummary("Generate or refine a report document from a natural-language prompt.")
+        group.MapPost("/generate", HandleGenerateContent)
+            .WithDisplayName("Generate Content Document")
+            .WithSummary("Generate or refine a report or dashboard document from a natural-language prompt (dispatched on 'kind').")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+    }
+
+    /// <summary>
+    /// Shared NL content-generation endpoint. Dispatches on the request's <c>kind</c> discriminator:
+    /// <c>dashboard</c> routes to the dashboard generation service, anything else (including the default
+    /// <c>report</c>) routes to the report generation service. Both produce the same wire shape — {status,
+    /// document, routeSlug, rationale, clarifications, unmappedRequests, capabilityState, provider, model} —
+    /// so the console binds either with the same generation outcome mapper. The body is buffered once so the
+    /// <c>kind</c> can be peeked before deserializing into the kind-specific request.
+    /// </summary>
+    private static async Task<IResult> HandleGenerateContent(
+        HttpContext context,
+        [FromServices] IReportGenerationService reportGeneration,
+        [FromServices] IDashboardGenerationService dashboardGeneration)
+    {
+        // Buffer the body so the kind discriminator can be peeked before deserializing into the
+        // kind-specific request shape (both shapes share the kind/prompt/provider/model/document fields).
+        using var buffered = new MemoryStream();
+        await context.Request.Body.CopyToAsync(buffered, context.RequestAborted).ConfigureAwait(false);
+        buffered.Position = 0;
+
+        var kind = PeekKind(buffered);
+        buffered.Position = 0;
+        context.Response.Headers.CacheControl = "no-store";
+
+        if (string.Equals(kind, "dashboard", StringComparison.OrdinalIgnoreCase))
+        {
+            return await HandleGenerateDashboard(context, buffered, dashboardGeneration).ConfigureAwait(false);
+        }
+
+        return await HandleGenerateReport(context, buffered, reportGeneration).ConfigureAwait(false);
+    }
+
+    /// <summary>Reads only the <c>kind</c> discriminator from a buffered request body; null when absent/invalid.</summary>
+    private static string? PeekKind(Stream body)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(body);
+            if (document.RootElement.ValueKind == JsonValueKind.Object &&
+                document.RootElement.TryGetProperty("kind", out var kindElement) &&
+                kindElement.ValueKind == JsonValueKind.String)
+            {
+                return kindElement.GetString();
+            }
+        }
+        catch (JsonException)
+        {
+            // Fall through; the kind-specific deserialize below reports the malformed body.
+        }
+
+        return null;
     }
 
     private static async Task<IResult> HandleGenerateReport(
         HttpContext context,
-        [FromServices] IReportGenerationService generation)
+        Stream body,
+        IReportGenerationService generation)
     {
         GenerateReportContentRequest? request;
         try
         {
             request = await JsonSerializer.DeserializeAsync(
-                context.Request.Body,
+                body,
                 ReportGenerationApiJsonContext.Default.GenerateReportContentRequest,
                 context.RequestAborted).ConfigureAwait(false);
         }
@@ -109,8 +163,46 @@ internal static class ContentPublicationEndpoints
             },
             context.RequestAborted).ConfigureAwait(false);
 
-        context.Response.Headers.CacheControl = "no-store";
         return Results.Json(result, ReportGenerationApiJsonContext.Default.ReportGenerationResult);
+    }
+
+    private static async Task<IResult> HandleGenerateDashboard(
+        HttpContext context,
+        Stream body,
+        IDashboardGenerationService generation)
+    {
+        GenerateDashboardContentRequest? request;
+        try
+        {
+            request = await JsonSerializer.DeserializeAsync(
+                body,
+                DashboardGenerationApiJsonContext.Default.GenerateDashboardContentRequest,
+                context.RequestAborted).ConfigureAwait(false);
+        }
+        catch (JsonException)
+        {
+            request = null;
+        }
+
+        if (request is null || string.IsNullOrWhiteSpace(request.Prompt))
+        {
+            var bad = new DashboardGenerationResult { Status = "error", Rationale = "A non-empty 'prompt' is required." };
+            return Results.Json(bad, DashboardGenerationApiJsonContext.Default.DashboardGenerationResult, statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        var result = await generation.GenerateAsync(
+            new DashboardGenerationRequest
+            {
+                Prompt = request.Prompt,
+                Provider = request.Provider,
+                Model = request.Model,
+                CurrentDocument = request.Document,
+                Conversation = request.Conversation,
+                Answers = request.Answers
+            },
+            context.RequestAborted).ConfigureAwait(false);
+
+        return Results.Json(result, DashboardGenerationApiJsonContext.Default.DashboardGenerationResult);
     }
 
     private static async Task<IResult> HandlePublish(
