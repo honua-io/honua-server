@@ -81,7 +81,6 @@ public sealed class GeoServicesGeometryParserTests
     [InlineData("esriGeometryPolygon")]
     [InlineData("esriGeometryEnvelope")]
     [InlineData("ESRIGEOMETRYENVELOPE")]
-    [UnitTest]
     public void TryParse_WithKnownGeometryTypeAndNoGeometry_Succeeds(string geometryType)
     {
         var parsed = GeoServicesGeometryParser.TryParseGeoServicesGeometry(

@@ -1082,7 +1082,13 @@ internal static partial class FeatureServerEndpoints
             return (parsed.Request, ExtractDeleteFilterParameters(values), parsed.Error, null);
         }
 
-        if (request.ContentLength is 0)
+        // A deleteFeatures request may carry no body at all when every selection
+        // parameter (objectIds/where/geometry) is supplied in the query string. ArcGIS
+        // clients commonly POST these as a bodyless request, which arrives with no
+        // Content-Length (null) and no Content-Type. Treat an absent/empty body as an
+        // empty request so the query-string filter can drive row selection, rather than
+        // rejecting it as an unsupported media type.
+        if (request.ContentLength is null or 0 && string.IsNullOrEmpty(request.ContentType))
         {
             return (new ApplyEditsRequest(), null, null, null);
         }

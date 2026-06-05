@@ -163,16 +163,37 @@ internal sealed partial class FeatureDataAccess
         // map related rows back to their origin object id. Do NOT collapse with
         // DISTINCT — distinct object ids can share a foreign-key value (and the same
         // related rows then belong to each of them).
+        //
+        // When the origin foreign key IS the object-id column, source the value from the
+        // objectid column itself rather than the attributes JSON. The objectid is the
+        // canonical primary key column and is injected into a feature's attributes only
+        // at read time; rows added via the edit API (which assigns the objectid) do not
+        // carry it in the attributes JSON, so attributes->>'objectid' would be NULL for
+        // them and their related records would not resolve. Reading the column keeps
+        // object-id-keyed relationships working for any origin object id, including the
+        // high auto-assigned ids produced by addFeatures.
+        var originKeyIsObjectId =
+            originForeignKeyField.Equals(DatabaseSchema.ObjectIdColumn, StringComparison.OrdinalIgnoreCase) ||
+            originForeignKeyField.Equals(DatabaseSchema.ObjectIdColumnAlt, StringComparison.OrdinalIgnoreCase);
+
+        var fkValueExpression = originKeyIsObjectId
+            ? "objectid::text"
+            : $"{DatabaseSchema.AttributesColumn}->> $3";
+
         var sql = $@"
-            SELECT objectid, {DatabaseSchema.AttributesColumn}->> $3 AS fk_value
+            SELECT objectid, {fkValueExpression} AS fk_value
             FROM {_tableName}
             WHERE layer_id = $1 AND objectid = ANY($2)
-              AND {DatabaseSchema.AttributesColumn}->> $3 IS NOT NULL";
+              AND {fkValueExpression} IS NOT NULL";
 
         await using var command = CreateSafeCommand(connection, sql);
         command.Parameters.AddWithValue(layerId);
         command.Parameters.AddWithValue(query.ObjectIds);
-        command.Parameters.AddWithValue(originForeignKeyField);
+        if (!originKeyIsObjectId)
+        {
+            command.Parameters.AddWithValue(originForeignKeyField);
+        }
+
         ApplyCommandTimeout(command, _queryTimeoutSeconds);
 
         var map = new Dictionary<string, List<long>>(StringComparer.Ordinal);

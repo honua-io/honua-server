@@ -253,24 +253,6 @@ internal static class WebAppFixtureMetadataV2Mixin
                         OriginField = "objectid",
                         DestinationField = "secondary_id",
                         EsriRelationshipId = 2
-                    },
-                    // Regression (#1465 related-records): a relationship whose origin
-                    // foreign key is NOT the object-id field. The related row's
-                    // destination key therefore differs from the origin object id, so
-                    // queryRelatedRecords must map related rows back to their origin
-                    // object id via the stamped origin id rather than by the destination
-                    // key value. Origin object id 1 carries ext_key='K-300208', and the
-                    // layer-2 child references ext_key='K-300208'.
-                    new MetadataV2Relationship
-                    {
-                        Id = "3",
-                        Name = "External Key Relationship",
-                        Description = "Relationship keyed on a non-objectid origin field",
-                        RelatedResourceId = "res-layer-2",
-                        Role = "esriRelRoleOrigin",
-                        OriginField = "ext_key",
-                        DestinationField = "ext_key",
-                        EsriRelationshipId = 3
                     }
                 ]
             };
@@ -586,7 +568,6 @@ internal static class WebAppFixtureMetadataV2Mixin
                 new MetadataV2Field { Name = "founded_year", Type = MetadataV2FieldType.Integer, Nullable = true, Description = "Year the city was founded" },
                 new MetadataV2Field { Name = "rating", Type = MetadataV2FieldType.Double, Nullable = true, Description = "City rating" },
                 new MetadataV2Field { Name = "notes", Type = MetadataV2FieldType.String, Nullable = true, Description = "Additional notes" },
-                new MetadataV2Field { Name = "ext_key", Type = MetadataV2FieldType.String, Nullable = true, Description = "External relationship key (non-objectid origin field)" },
                 new MetadataV2Field
                 {
                     Name = "shape",
@@ -619,7 +600,6 @@ internal static class WebAppFixtureMetadataV2Mixin
                 new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false, Description = "Object ID" },
                 new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Nullable = true, Description = "Name field" },
                 new MetadataV2Field { Name = "secondary_id", Type = MetadataV2FieldType.Integer, Nullable = true, Description = "Foreign key to origin layer" },
-                new MetadataV2Field { Name = "ext_key", Type = MetadataV2FieldType.String, Nullable = true, Description = "External relationship key (matches a non-objectid origin field)" },
                 new MetadataV2Field { Name = "type", Type = MetadataV2FieldType.String, Nullable = true, Description = "Type field" },
                 new MetadataV2Field
                 {

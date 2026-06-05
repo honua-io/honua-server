@@ -283,6 +283,7 @@ public sealed class RelatedRecordsServiceTests
 
         // The related row's destination key ('K-300208') is NOT the origin object id
         // (300208). Only the stamped origin id ties the row back to its origin.
+        var originIds300208 = new[] { 300208L };
         var relatedFeature = Feature.Create(
             10,
             geometry: null,
@@ -291,7 +292,7 @@ public sealed class RelatedRecordsServiceTests
                 ["objectid"] = 10L,
                 ["ext_key"] = "K-300208",
                 ["label"] = "child-a",
-                [RelatedQuery.OriginObjectIdsAttribute] = new[] { 300208L }
+                [RelatedQuery.OriginObjectIdsAttribute] = originIds300208
             }.ToImmutableDictionary());
 
         var result = QueryResult<Feature>.Create(1, [relatedFeature]);
@@ -336,6 +337,7 @@ public sealed class RelatedRecordsServiceTests
             DestinationField = "ext_key"
         };
 
+        var originIds7And9 = new[] { 7L, 9L };
         var relatedFeature = Feature.Create(
             10,
             geometry: null,
@@ -344,7 +346,7 @@ public sealed class RelatedRecordsServiceTests
                 ["objectid"] = 10L,
                 ["ext_key"] = "shared",
                 ["label"] = "child-a",
-                [RelatedQuery.OriginObjectIdsAttribute] = new[] { 7L, 9L }
+                [RelatedQuery.OriginObjectIdsAttribute] = originIds7And9
             }.ToImmutableDictionary());
 
         var result = QueryResult<Feature>.Create(1, [relatedFeature]);
