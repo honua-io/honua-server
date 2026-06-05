@@ -98,8 +98,12 @@ public sealed class ImageServerServiceInfo
     [JsonPropertyName("defaultMosaicMethod")]
     public string DefaultMosaicMethod { get; init; } = "esriMosaicNorthwest";
 
+    // Esri serializes allowedMosaicMethods as a comma-separated STRING, not an
+    // array. The ArcGIS Maps SDK for .NET native runtime parses the ImageServer
+    // config with a strict reader that rejects an array here ("Invalid
+    // configuration file"), so emit the Esri string form (#1456).
     [JsonPropertyName("allowedMosaicMethods")]
-    public string[] AllowedMosaicMethods { get; init; } = ["esriMosaicNorthwest", "esriMosaicCenter"];
+    public string AllowedMosaicMethods { get; init; } = "esriMosaicNorthwest,esriMosaicCenter";
 
     [JsonPropertyName("sortField")]
     public string? SortField { get; init; }
@@ -134,7 +138,11 @@ public sealed class ImageServerServiceInfo
     [JsonPropertyName("singleFusedMapCache")]
     public bool SingleFusedMapCache { get; init; } = false;
 
+    // Dynamic (non-fused-cache) services have no tile scheme. Esri omits tileInfo
+    // entirely in that case; emitting "tileInfo":null trips the native .NET
+    // runtime's strict ImageServer config parser, so omit when unset (#1456).
     [JsonPropertyName("tileInfo")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public TileInfo? TileInfo { get; init; }
 
     /// <summary>
@@ -478,7 +486,12 @@ public sealed class SpatialReference
     [JsonPropertyName("latestWkid")]
     public int? LatestWkid { get; init; }
 
+    // Esri omits wkt entirely when a well-known id is present. The ArcGIS Maps
+    // SDK for .NET native runtime reads the ImageServer config (descriptor /
+    // conf.json) with a strict parser that rejects a null wkt, so omit it when
+    // unset rather than emitting "wkt":null (#1456).
     [JsonPropertyName("wkt")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Wkt { get; init; }
 }
 

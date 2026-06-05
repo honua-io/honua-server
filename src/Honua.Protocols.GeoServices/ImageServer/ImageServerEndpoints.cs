@@ -59,6 +59,20 @@ internal static class ImageServerEndpoints
             .Produces<ImageServerServiceInfo>()
             .Produces(404);
 
+        // Tile-cache configuration document. Honua's ImageServer is a dynamic
+        // (non-fused-cache) service, but the ArcGIS Maps SDK for .NET native
+        // runtime (ImageServiceRaster.LoadAsync) unconditionally probes
+        // `conf.json` while reading raster configuration and treats a bare/empty
+        // 404 as a fatal "Failed to read configuration data". Serving the
+        // Esri-shaped "no fused cache" document here lets LoadAsync proceed down
+        // the dynamic path instead of erroring (#1456).
+        group.MapGet("/conf.json", GetTileCacheConf)
+            .WithDisplayName("Get Image Service Tile Cache Configuration")
+            .WithName("GetImageServiceConf")
+            .WithSummary("Get the tile-cache configuration document")
+            .Produces(200, contentType: JsonContentType)
+            .AllowAnonymous();
+
         // Export image endpoint - core rendering capability
         group.MapGet("/exportImage", ExportImage)
             .WithDisplayName("Export Image")
@@ -366,6 +380,14 @@ internal static class ImageServerEndpoints
             .Produces<ImageServerServiceInfo>()
             .Produces(404);
 
+        // See the {id:int} group's conf.json route for why this exists (#1456).
+        serviceGroup.MapGet("/conf.json", GetTileCacheConfByService)
+            .WithDisplayName("Get Image Service Tile Cache Configuration by Service")
+            .WithName("GetImageServiceConfByService")
+            .WithSummary("Get the tile-cache configuration document")
+            .Produces(200, contentType: JsonContentType)
+            .AllowAnonymous();
+
         serviceGroup.MapGet("/exportImage", ExportImageByService)
             .WithDisplayName("Export Image by Service")
             .WithName("ExportImageByService")
@@ -635,6 +657,39 @@ internal static class ImageServerEndpoints
     {
         var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
         return resolution.ErrorResult ?? await GetServiceInfo(resolution.LayerId, f, context, handler, cancellationToken);
+    }
+
+    // On a real Esri ImageServer, `…/ImageServer/conf.json` returns the SAME
+    // service-descriptor document as `…/ImageServer?f=json` (verified against a
+    // public Esri ImageServer: conf.json yields currentVersion/extent/
+    // spatialReference/… — the service info, not a tile-cache schema). The ArcGIS
+    // Maps SDK for .NET native runtime reads this while loading an
+    // ImageServiceRaster; honua previously 404'd here, so LoadAsync failed with
+    // "could not read configuration data". Serve the service descriptor (always
+    // JSON, the runtime does not send f=json) so the dynamic load proceeds (#1456).
+    private static async Task<IResult> GetTileCacheConf(
+        int id,
+        HttpContext context,
+        ImageServerMetadataHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        if (layerError is not null)
+        {
+            return layerError;
+        }
+
+        return await handler.GetServiceInfoAsync(context, id, cancellationToken);
+    }
+
+    private static async Task<IResult> GetTileCacheConfByService(
+        string serviceId,
+        HttpContext context,
+        ImageServerMetadataHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        return resolution.ErrorResult ?? await GetTileCacheConf(resolution.LayerId, context, handler, cancellationToken);
     }
 
     /// <summary>
