@@ -240,13 +240,18 @@ public class ImageServerMetadataHandlerTests
 
     [UnitTest]
     [Operation(Operations.GetServiceInfo)]
-    public async Task GetServiceInfoAsync_PopulatesFullExtentInitialExtentAndStorageInfo()
+    public async Task GetServiceInfoAsync_DynamicService_MatchesEsriShapeForArcGisRuntime()
     {
-        // Regression for #1456: the native .NET ImageServiceRaster.LoadAsync reads
-        // fullExtent/initialExtent and storageInfo (blockWidth/blockHeight) and fails
-        // "Failed to read configuration data" when they are null. The service is a
-        // dynamic (non-tiled) image service, so it must not advertise a tile cache
-        // (singleFusedMapCache=false, tileInfo=null) and never trigger a conf.json fetch.
+        // #1456: the native .NET ImageServiceRaster.LoadAsync ALWAYS fetches the
+        // ImageServer config (served at both the root descriptor and conf.json) and
+        // parses it with a strict reader. Verified against a public Esri ImageServer,
+        // a dynamic (non-fused-cache) service:
+        //   * populates fullExtent/initialExtent,
+        //   * OMITS storageInfo and the root blockWidth/blockHeight (those belong to a
+        //     tile cache; emitting them made the runtime reject the config),
+        //   * omits a tile scheme (singleFusedMapCache=false, tileInfo=null), and
+        //   * serializes allowedMosaicMethods as a comma-separated STRING (an array
+        //     trips the runtime with "Invalid configuration file").
         SetupSuccessfulMetadata();
 
         var context = CreateImageServerContext();
@@ -265,19 +270,16 @@ public class ImageServerMetadataHandlerTests
         info.InitialExtent!.XMin.Should().Be(-180);
         info.InitialExtent.YMax.Should().Be(90);
 
-        info.StorageInfo.Should().NotBeNull();
-        info.StorageInfo!.BlockWidth.Should().BeGreaterThan(0);
-        info.StorageInfo.BlockHeight.Should().BeGreaterThan(0);
-
-        // #1456: blockWidth/blockHeight must ALSO be surfaced at the metadata root, not
-        // only nested under storageInfo. The ArcGIS Maps SDK for .NET ImageServiceRaster
-        // reads them from the root, and the root values must match the storageInfo values.
-        info.BlockWidth.Should().Be(info.StorageInfo.BlockWidth);
-        info.BlockHeight.Should().Be(info.StorageInfo.BlockHeight);
-
-        // Non-tiled service: no fused cache, so the SDK never requests conf.json.
+        // Dynamic service: no fused cache, no tile-cache storage block (matches Esri).
         info.SingleFusedMapCache.Should().BeFalse();
         info.TileInfo.Should().BeNull();
+        info.StorageInfo.Should().BeNull();
+        info.BlockWidth.Should().BeNull();
+        info.BlockHeight.Should().BeNull();
+
+        // Esri serializes allowedMosaicMethods as a comma-separated string, not an array.
+        info.AllowedMosaicMethods.Should().BeOfType<string>();
+        info.AllowedMosaicMethods.Should().Contain("esriMosaic");
     }
 
     [UnitTest]

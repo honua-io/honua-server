@@ -852,4 +852,43 @@ public class ImageServerEndpointsTests
             await fixture.DisposeAsync();
         }
     }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/conf.json")]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task ConfJson_ReturnsServiceDescriptor_InArcGisRuntimeCompatibleShape()
+    {
+        // Regression for #1456: the ArcGIS Maps SDK for .NET ImageServiceRaster
+        // unconditionally fetches conf.json while loading and parses it strictly.
+        // conf.json must return the service descriptor (like a real Esri ImageServer),
+        // and that descriptor must use the Esri wire shape the native parser accepts:
+        // allowedMosaicMethods as a comma-separated STRING (not an array) and no
+        // tile-cache storageInfo for a dynamic service. Any of these tripped
+        // LoadAsync with "could not read configuration data" / "Invalid configuration file".
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/conf.json");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+            var root = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+
+            // conf.json returns the service descriptor.
+            root.TryGetProperty("currentVersion", out _).Should().BeTrue();
+            root.TryGetProperty("extent", out _).Should().BeTrue();
+
+            // allowedMosaicMethods must serialize as a string, not an array.
+            root.GetProperty("allowedMosaicMethods").ValueKind.Should().Be(JsonValueKind.String);
+
+            // Dynamic service: no tile-cache storage block.
+            root.TryGetProperty("storageInfo", out _).Should().BeFalse();
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
 }
