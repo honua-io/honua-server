@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
+using Honua.Core.Features.AttributeRules;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -247,7 +248,7 @@ internal sealed class FeatureServerEditsHandler(
                 // request's, but using request.Adds[i].Geometry directly keeps the rule
                 // identical to the update path.
                 var requestHasGeometry = request.Adds[i].Geometry != null;
-                var newFeature = await BuildFeatureFromGeoServicesAsync(request.Adds[i], 0, resource, cancellationToken);
+                var newFeature = await BuildFeatureFromGeoServicesAsync(request.Adds[i], 0, resource, AttributeRuleEditEvent.Insert, cancellationToken);
                 context.CreateFeatures.Add(newFeature);
                 context.CreateIndexes.Add(i);
                 context.CreateGeometryChanged.Add(requestHasGeometry);
@@ -322,6 +323,7 @@ internal sealed class FeatureServerEditsHandler(
                     update,
                     internalObjectId,
                     resource,
+                    AttributeRuleEditEvent.Update,
                     cancellationToken,
                     existingFeature).ConfigureAwait(false);
                 context.UpdateFeatures.Add(updateFeature);
@@ -730,6 +732,7 @@ internal sealed class FeatureServerEditsHandler(
         GeoServicesFeature feature,
         long objectId,
         MetadataV2Resource resource,
+        AttributeRuleEditEvent editEvent,
         CancellationToken cancellationToken,
         Feature? existingFeature = null)
     {
@@ -816,7 +819,55 @@ internal sealed class FeatureServerEditsHandler(
             attributes.Remove(objectIdFieldName);
         }
 
+        // Esri attribute rules fire on the shared edit path after attribute validation
+        // and merge: calculation rules populate their target field, constraint/validation
+        // rules reject violating edits. Expressions outside the supported safe subset are
+        // routed out of scope (skipped with a logged warning) by the engine, keeping full
+        // Arcade parity a non-goal of this path. Throwing ArgumentException lets the
+        // surrounding per-feature try/catch convert a violation into a clean edit failure
+        // result rather than a 500.
+        var ruleResult = AttributeRuleEngine.Apply(
+            resource,
+            attributes,
+            editEvent,
+            new UnsupportedExpressionLogger(_logger));
+        if (!ruleResult.IsValid)
+        {
+            var message = ruleResult.Violations[0].Message;
+            throw new ArgumentException(SanitizeEditErrorMessage(message, "Attribute rule violation."));
+        }
+
+        if (!ReferenceEquals(ruleResult.Attributes, (IReadOnlyDictionary<string, object?>)attributes))
+        {
+            attributes = ImmutableDictionary.CreateBuilder<string, object?>(StringComparer.OrdinalIgnoreCase);
+            foreach (var (key, value) in ruleResult.Attributes)
+            {
+                attributes[key] = value;
+            }
+        }
+
         return Feature.Create(objectId, geometry, attributes.ToImmutable());
+    }
+
+    /// <summary>
+    /// Routes attribute-rule expressions outside the supported safe subset out of scope by
+    /// emitting a structured warning identifying the layer and rule. The edit is allowed to
+    /// proceed (full Arcade parity is a non-goal of the edit path).
+    /// </summary>
+    private sealed class UnsupportedExpressionLogger(ILogger logger) : IUnsupportedExpressionSink
+    {
+        public void OnUnsupported(MetadataV2Resource resource, MetadataV2AttributeRule rule)
+        {
+            var resourceId = string.IsNullOrEmpty(resource.Metadata.Id)
+                ? (string.IsNullOrEmpty(resource.Metadata.Name) ? "unknown" : resource.Metadata.Name)
+                : resource.Metadata.Id;
+            FeatureServerLog.AttributeRuleExpressionUnsupported(
+                logger,
+                resourceId,
+                0,
+                rule.Name,
+                rule.Type.ToString());
+        }
     }
 
     /// <summary>

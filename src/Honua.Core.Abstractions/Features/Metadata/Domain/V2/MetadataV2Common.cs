@@ -603,3 +603,84 @@ public sealed record MetadataV2SubtypeFieldOverride
     [JsonPropertyName("domain")]
     public MetadataV2FieldDomain? Domain { get; init; }
 }
+
+/// <summary>
+/// Esri-style attribute rule attached to a resource. Attribute rules are the modern
+/// sibling to coded-value/range domains: they fire on the edit path to either compute
+/// a field value (<c>calculation</c>), reject a violating edit (<c>constraint</c>), or
+/// flag a non-conforming row (<c>validation</c>). The rule's logic is expressed as an
+/// Arcade expression. Honua evaluates a deliberately small, safe subset of Arcade on
+/// the edit path; expressions outside that subset are routed out of scope (skipped with
+/// a logged warning) rather than failing the edit, so importing a layer that uses
+/// complex Arcade never breaks editing. See <c>AttributeRuleEvaluator</c> for the
+/// supported subset.
+/// </summary>
+public sealed record MetadataV2AttributeRule
+{
+    /// <summary>
+    /// Stable rule name (unique within the resource).
+    /// </summary>
+    [JsonPropertyName("name")]
+    public string Name { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Rule kind. Canonical values: <c>calculation</c>, <c>constraint</c>, or
+    /// <c>validation</c>.
+    /// </summary>
+    [JsonPropertyName("type")]
+    public MetadataV2AttributeRuleType Type { get; init; } = MetadataV2AttributeRuleType.Calculation;
+
+    /// <summary>
+    /// Target field that a <see cref="MetadataV2AttributeRuleType.Calculation"/> rule
+    /// writes its computed value into. References a declared
+    /// <see cref="MetadataV2Resource.SchemaFields"/> entry. Ignored for constraint and
+    /// validation rules.
+    /// </summary>
+    [JsonPropertyName("fieldName")]
+    public string? FieldName { get; init; }
+
+    /// <summary>
+    /// Arcade expression text. For calculation rules this evaluates to the value written
+    /// into <see cref="FieldName"/>; for constraint/validation rules it evaluates to a
+    /// boolean where <c>false</c> indicates a violation.
+    /// </summary>
+    [JsonPropertyName("scriptExpression")]
+    public string ScriptExpression { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Edit events that trigger the rule. Canonical values: <c>insert</c>, <c>update</c>,
+    /// <c>delete</c>. An empty set is treated as "all editing events" to match Esri's
+    /// default of firing on every edit.
+    /// </summary>
+    [JsonPropertyName("triggeringEvents")]
+    public IReadOnlyList<string> TriggeringEvents { get; init; } = Array.Empty<string>();
+
+    /// <summary>
+    /// Operator-facing message surfaced when a constraint/validation rule reports a
+    /// violation. Falls back to a generic message when unset.
+    /// </summary>
+    [JsonPropertyName("errorMessage")]
+    public string? ErrorMessage { get; init; }
+
+    /// <summary>
+    /// Whether the rule is active. Inactive rules are imported for fidelity but never
+    /// fire on the edit path. Defaults to true.
+    /// </summary>
+    [JsonPropertyName("isEnabled")]
+    public bool IsEnabled { get; init; } = true;
+}
+
+/// <summary>
+/// Canonical attribute-rule kinds. String-encoded in JSON for snapshot readability.
+/// </summary>
+public enum MetadataV2AttributeRuleType
+{
+    /// <summary>Computes a target field value when the rule's triggering event fires.</summary>
+    Calculation,
+
+    /// <summary>Rejects an edit when the rule's boolean expression evaluates to false.</summary>
+    Constraint,
+
+    /// <summary>Flags a non-conforming row; evaluated like a constraint on the edit path.</summary>
+    Validation
+}
