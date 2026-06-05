@@ -736,6 +736,16 @@ internal sealed class FeatureServerEditsHandler(
         byte[]? geometry = existingFeature?.Geometry;
         if (feature.Geometry != null)
         {
+            // Enforce the layer's declared geometry type. ArcGIS rejects a feature whose
+            // geometry shape does not match the layer's geometryType (e.g. a polygon sent to
+            // an esriGeometryPoint layer). Without this the WKB converter would happily store
+            // the mismatched shape, silently corrupting the layer's geometry homogeneity.
+            var layerGeometryType = resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None;
+            if (!IsGeometryTypeCompatible(feature.Geometry, layerGeometryType, out var geometryTypeError))
+            {
+                throw new ArgumentException(geometryTypeError);
+            }
+
             // Layer 1: Validate Esri JSON input
             var esriValidation = _geometryServices.ValidateEsriJson(feature.Geometry);
             if (!esriValidation.IsValid)
@@ -808,6 +818,115 @@ internal sealed class FeatureServerEditsHandler(
 
         return Feature.Create(objectId, geometry, attributes.ToImmutable());
     }
+
+    /// <summary>
+    /// Verifies that an inbound GeoServices geometry's shape is compatible with the layer's
+    /// declared <see cref="MetadataV2GeometryType"/>. ArcGIS feature layers are geometry-type
+    /// homogeneous, so an add/update whose geometry shape disagrees with the layer must fail
+    /// per-feature rather than be silently stored. The check classifies the geometry by its
+    /// populated coordinate members (the GeoServices JSON shape is discriminated by which of
+    /// x/y, points, paths, rings, or the envelope bounds are present). Point and multipoint
+    /// inputs are accepted on a point layer (a single coordinate is a degenerate multipoint),
+    /// and multi-* layer types accept their single-part equivalents.
+    /// </summary>
+    private static bool IsGeometryTypeCompatible(
+        GeoServicesGeometry geometry,
+        MetadataV2GeometryType layerGeometryType,
+        out string? error)
+    {
+        error = null;
+
+        // Mixed / collection / unspecified layers do not constrain the geometry shape.
+        if (layerGeometryType is MetadataV2GeometryType.None
+            or MetadataV2GeometryType.Mixed
+            or MetadataV2GeometryType.GeometryCollection)
+        {
+            return true;
+        }
+
+        var inputType = ClassifyGeoServicesGeometry(geometry);
+        if (inputType is null)
+        {
+            // Could not classify (e.g. empty geometry object); leave shape validation to the
+            // downstream Esri-JSON / WKB validators rather than rejecting here.
+            return true;
+        }
+
+        if (IsGeometryShapeCompatible(layerGeometryType, inputType.Value))
+        {
+            return true;
+        }
+
+        error = $"Geometry type {DescribeGeometryType(inputType.Value)} does not match the layer geometry type {DescribeGeometryType(layerGeometryType)}.";
+        return false;
+    }
+
+    /// <summary>
+    /// Classifies a GeoServices geometry object into the canonical geometry-shape family it
+    /// represents based on which coordinate members are populated. Returns <c>null</c> when no
+    /// recognizable geometry members are present.
+    /// </summary>
+    private static MetadataV2GeometryType? ClassifyGeoServicesGeometry(GeoServicesGeometry geometry)
+    {
+        if (geometry.Rings != null)
+        {
+            return MetadataV2GeometryType.Polygon;
+        }
+
+        if (geometry.Paths != null)
+        {
+            return MetadataV2GeometryType.LineString;
+        }
+
+        if (geometry.Points != null)
+        {
+            return MetadataV2GeometryType.MultiPoint;
+        }
+
+        if (geometry.X.HasValue || geometry.Y.HasValue)
+        {
+            return MetadataV2GeometryType.Point;
+        }
+
+        if (geometry.Xmin.HasValue || geometry.Ymin.HasValue
+            || geometry.Xmax.HasValue || geometry.Ymax.HasValue)
+        {
+            // Envelopes are polygonal in shape; only meaningful on polygon layers.
+            return MetadataV2GeometryType.Polygon;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Returns true when an input geometry shape may be stored on a layer of the given type.
+    /// A point may be stored on a multipoint layer and vice-versa; line/polygon single- and
+    /// multi-part variants are interchangeable, matching how the GeoServices JSON encodes both
+    /// single- and multi-part polylines/polygons with the same paths/rings members.
+    /// </summary>
+    private static bool IsGeometryShapeCompatible(MetadataV2GeometryType layerType, MetadataV2GeometryType inputType)
+    {
+        return layerType switch
+        {
+            MetadataV2GeometryType.Point or MetadataV2GeometryType.MultiPoint
+                => inputType is MetadataV2GeometryType.Point or MetadataV2GeometryType.MultiPoint,
+            MetadataV2GeometryType.LineString or MetadataV2GeometryType.MultiLineString
+                => inputType is MetadataV2GeometryType.LineString or MetadataV2GeometryType.MultiLineString,
+            MetadataV2GeometryType.Polygon or MetadataV2GeometryType.MultiPolygon
+                => inputType is MetadataV2GeometryType.Polygon or MetadataV2GeometryType.MultiPolygon,
+            _ => false
+        };
+    }
+
+    private static string DescribeGeometryType(MetadataV2GeometryType geometryType)
+        => geometryType switch
+        {
+            MetadataV2GeometryType.Point => "esriGeometryPoint",
+            MetadataV2GeometryType.MultiPoint => "esriGeometryMultipoint",
+            MetadataV2GeometryType.LineString or MetadataV2GeometryType.MultiLineString => "esriGeometryPolyline",
+            MetadataV2GeometryType.Polygon or MetadataV2GeometryType.MultiPolygon => "esriGeometryPolygon",
+            _ => "esriGeometryNull"
+        };
 
     private static bool TryGetObjectId(Dictionary<string, object?>? attributes, MetadataV2Resource resource, out long objectId)
     {
