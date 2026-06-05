@@ -59,6 +59,13 @@ internal static class ImportExportTileOperationsRegistration
                 sp.GetRequiredService<IHostEnvironment>(),
                 sp.GetService<IConnectionMultiplexer>()));
         services.AddHostedService<GeoservicesImportBackgroundService>();
+
+        // Footprint-driven batch import orchestration (#1253). The orchestrator
+        // composes the per-layer Geoservices import pipeline into an ordered,
+        // resumable batch run; the background service advances active batches
+        // under the shared import leader election.
+        services.AddScoped<IMigrationBatchOrchestrator, MigrationBatchOrchestrator>();
+        services.AddHostedService<MigrationBatchBackgroundService>();
         services.AddSingleton<GeoServerImportJobManager>(sp =>
             new GeoServerImportJobManager(
                 sp.GetRequiredService<IUniversalProgressStore>(),

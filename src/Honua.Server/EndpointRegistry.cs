@@ -404,6 +404,10 @@ public static class EndpointRegistry
         new("POST", "/api/v1/admin/import/geoservices/jobs/{jobId}/cancel"),
         new("GET", "/api/v1/admin/import/geoservices/jobs"),
 
+        // v1 admin footprint-driven batch import orchestration (#1253)
+        new("POST", "/api/v1/admin/import/migrations"),
+        new("GET", "/api/v1/admin/import/migrations/{batchId}"),
+
         // v1 admin import endpoints (Raster)
         new("POST", "/api/v1/admin/import/raster"),
         new("GET", "/api/v1/admin/import/raster/formats"),
