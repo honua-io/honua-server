@@ -49,4 +49,56 @@ public sealed class PortalTokenAuthenticationOptions
     /// Requests above this value are clamped to the maximum.
     /// </summary>
     public int MaxExpirationMinutes { get; set; } = DefaultMaxExpirationMinutesValue;
+
+    /// <summary>
+    /// Hardening options for the ArcGIS OAuth2 named-user bridge
+    /// (<c>/sharing/rest/oauth2/{authorize,callback,token}</c>, #1242/#1484).
+    /// </summary>
+    public PortalOAuth2Options OAuth2 { get; set; } = new();
+}
+
+/// <summary>
+/// Security-hardening options for the ArcGIS OAuth2 named-user bridge (#1484):
+/// the per-deployment <c>redirect_uri</c> allow-list (open-redirect mitigation)
+/// and the hard PKCE requirement toggle.
+/// </summary>
+public sealed class PortalOAuth2Options
+{
+    /// <summary>
+    /// Configuration section binding root, relative to
+    /// <see cref="PortalTokenAuthenticationOptions.SectionName"/>.
+    /// </summary>
+    public const string SectionName = "OAuth2";
+
+    /// <summary>
+    /// Per-deployment allow-list of redirect URIs the <c>oauth2/authorize</c>
+    /// endpoint will accept (#1484). Each entry is either an exact absolute URI or
+    /// an <em>origin</em> (scheme + host + optional port, with no path beyond
+    /// <c>/</c>); an origin entry matches any redirect URI sharing that exact
+    /// scheme/host/port. The ArcGIS Pro native loopback redirect
+    /// (<c>urn:ietf:wg:oauth:2.0:oob</c>) is only accepted when listed verbatim.
+    /// When the list is empty the authorize endpoint rejects every redirect URI,
+    /// so the bridge cannot be exploited as an open redirector before an operator
+    /// has explicitly registered its trusted clients.
+    /// </summary>
+    public string[] AllowedRedirectUris { get; set; } = [];
+
+    /// <summary>
+    /// When <see langword="true"/> (the default) every authorization-code flow
+    /// must carry a PKCE <c>code_challenge</c> at <c>authorize</c> time and a
+    /// matching <c>code_verifier</c> at <c>token</c> time (#1484). Set to
+    /// <see langword="false"/> only for a legacy client that genuinely cannot send
+    /// PKCE; doing so re-opens the authorization-code interception window.
+    /// </summary>
+    public bool RequirePkce { get; set; } = true;
+
+    /// <summary>
+    /// When <see langword="true"/> (the default) a successful <c>refresh_token</c>
+    /// grant rotates the refresh token: the presented token is revoked and a new one
+    /// is returned in the response (#1484). Rotation bounds the replay window of a
+    /// leaked refresh token to a single use. Set to <see langword="false"/> to
+    /// restore the non-rotating behavior for clients that cannot persist a
+    /// refreshed token.
+    /// </summary>
+    public bool RotateRefreshTokens { get; set; } = true;
 }

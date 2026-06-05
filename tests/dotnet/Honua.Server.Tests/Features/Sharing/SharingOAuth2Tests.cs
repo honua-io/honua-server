@@ -140,6 +140,75 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Security)]
     [Endpoint("POST /sharing/rest/oauth2/token")]
+    public async Task Token_AuthorizationCodeWithoutRegisteredPkce_ReturnsInvalidGrant()
+    {
+        // Hard PKCE requirement (#1484): a code minted without a code_challenge is
+        // rejected by the token endpoint even if the client sends no verifier. This
+        // guards the seam directly (the authorize endpoint also blocks no-PKCE flows).
+        var code = await SeedAuthorizationCodeAsync(codeChallenge: null, method: null);
+
+        using var client = _fixture.CreateClient();
+        using var response = await PostFormAsync(
+            client,
+            ("grant_type", "authorization_code"),
+            ("code", code),
+            ("redirect_uri", RedirectUri),
+            ("client_id", ClientId));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var error = await ReadErrorAsync(response);
+        error.Error.Should().Be("invalid_grant");
+        error.ErrorDescription.Should().Contain("PKCE");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /sharing/rest/oauth2/token")]
+    public async Task Token_RefreshTokenGrant_RotatesRefreshTokenAndRevokesOld()
+    {
+        // Refresh-token rotation (#1484): a refresh exchange returns a NEW refresh
+        // token and revokes the presented one, so reusing the old token fails.
+        var verifier = "rotation-pkce-verifier-value-abcdefghijklmnopqrstuv";
+        var challenge = WebEncoders.Base64UrlEncode(SHA256.HashData(Encoding.ASCII.GetBytes(verifier)));
+        var code = await SeedAuthorizationCodeAsync(challenge, "S256");
+
+        using var client = _fixture.CreateClient();
+        using var first = await PostFormAsync(
+            client,
+            ("grant_type", "authorization_code"),
+            ("code", code),
+            ("redirect_uri", RedirectUri),
+            ("client_id", ClientId),
+            ("code_verifier", verifier));
+        first.StatusCode.Should().Be(HttpStatusCode.OK);
+        var firstPayload = await ReadTokenAsync(first);
+        firstPayload.RefreshToken.Should().NotBeNullOrWhiteSpace();
+
+        using var rotated = await PostFormAsync(
+            client,
+            ("grant_type", "refresh_token"),
+            ("refresh_token", firstPayload.RefreshToken!),
+            ("client_id", ClientId));
+        rotated.StatusCode.Should().Be(HttpStatusCode.OK);
+        var rotatedPayload = await ReadTokenAsync(rotated);
+        rotatedPayload.RefreshToken.Should().NotBeNullOrWhiteSpace();
+        rotatedPayload.RefreshToken.Should().NotBe(firstPayload.RefreshToken,
+            "a rotated refresh token must differ from the one it replaces");
+
+        // The original refresh token is now revoked and must not be accepted again.
+        using var replay = await PostFormAsync(
+            client,
+            ("grant_type", "refresh_token"),
+            ("refresh_token", firstPayload.RefreshToken!),
+            ("client_id", ClientId));
+        replay.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var replayError = await ReadErrorAsync(replay);
+        replayError.Error.Should().Be("invalid_grant");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /sharing/rest/oauth2/token")]
     public async Task Token_UnknownAuthorizationCode_ReturnsInvalidGrant()
     {
         using var client = _fixture.CreateClient();

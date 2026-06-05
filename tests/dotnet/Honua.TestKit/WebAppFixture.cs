@@ -533,6 +533,27 @@ public sealed class WebAppFixture : IAsyncLifetime
     }
 
     /// <summary>
+    /// Create a new HTTP client with control over automatic redirect following.
+    /// Pass <see langword="false"/> to inspect 3xx responses (their <c>Location</c>
+    /// header) instead of transparently following them — required when a redirect
+    /// target points off-server (for example the OAuth2 bridge IdP leg).
+    /// </summary>
+    public HttpClient CreateClient(bool allowAutoRedirect)
+    {
+        var client = ActiveFactory.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions
+        {
+            AllowAutoRedirect = allowAutoRedirect,
+        });
+        client.Timeout = _defaultTestClientTimeout;
+        if (_useSharedServer && !string.IsNullOrWhiteSpace(_currentSchema))
+        {
+            client.DefaultRequestHeaders.Add("X-Honua-Test-Schema", _currentSchema);
+        }
+
+        return client;
+    }
+
+    /// <summary>
     /// Create a new HTTP client with admin authorization for testing admin endpoints.
     /// </summary>
     public HttpClient CreateAdminClient()

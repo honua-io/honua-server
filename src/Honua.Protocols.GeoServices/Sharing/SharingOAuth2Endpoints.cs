@@ -113,6 +113,26 @@ internal static class SharingOAuth2Endpoints
             return StandardErrorHelpers.CreateBadRequest(context, "redirect_uri must be an absolute URI.");
         }
 
+        // Open-redirect mitigation (#1484): the redirect_uri must be registered in
+        // the per-deployment allow-list. A non-allow-listed redirect_uri is rejected
+        // with a direct 400 and is NEVER redirected to (RFC 6749 §4.1.2.1) so the
+        // bridge cannot be used to bounce an authorization code to a hostile host.
+        if (!PortalOAuthRedirectUriValidator.IsAllowed(redirectUri, tokenOptions.Value.OAuth2.AllowedRedirectUris))
+        {
+            SharingRestLog.OAuthRedirectUriRejected(logger);
+            return StandardErrorHelpers.CreateBadRequest(context, "redirect_uri is not registered for this deployment.");
+        }
+
+        // Hard PKCE requirement (#1484): when enabled, every authorization-code flow
+        // must register a PKCE code_challenge up front so the matching code_verifier
+        // is enforced at the token endpoint. Without this an intercepted code could
+        // be redeemed by an attacker.
+        if (tokenOptions.Value.OAuth2.RequirePkce && string.IsNullOrWhiteSpace(ReadFirst(query["code_challenge"])))
+        {
+            return RedirectError(context, redirectUri, ReadFirst(query["state"]),
+                "invalid_request", "code_challenge is required (PKCE).");
+        }
+
         var request = new PortalOAuthAuthorizeRequest(
             ClientId: clientId,
             RedirectUri: redirectUri,
