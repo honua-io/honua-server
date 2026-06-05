@@ -291,6 +291,7 @@ public class ImageServerBasicTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/ImageServer/multidimensionalInfo")]
     [Endpoint("GET /rest/services/{serviceId}/ImageServer/slices")]
     [Endpoint("POST /rest/services/{serviceId}/ImageServer/slices")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/conf.json")]
     [Operation(Operations.Metadata)]
     public async Task ServiceNameRoutes_DispatchToImageServerSurface()
     {
@@ -315,6 +316,7 @@ public class ImageServerBasicTests : IAsyncLifetime
             $"/rest/services/{serviceId}/ImageServer/computeClassStatistics?f=json&classDescriptions={classDescriptions}",
             $"/rest/services/{serviceId}/ImageServer/multidimensionalInfo?f=json",
             $"/rest/services/{serviceId}/ImageServer/slices?f=json",
+            $"/rest/services/{serviceId}/ImageServer/conf.json",
         };
 
         foreach (var uri in getUris)
