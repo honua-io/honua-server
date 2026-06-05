@@ -532,6 +532,23 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 warnings);
             return result;
         }
+        catch (Npgsql.PostgresException ex)
+        {
+            // Surface the underlying PostgreSQL server message (e.g. a missing staging
+            // table or a constraint violation) instead of collapsing to the generic
+            // "Import failed." MessageText is the server-supplied message and never
+            // includes the connection string, SQL text, or a managed stack trace, so it
+            // is safe to relay to the operator while remaining actionable.
+            ImportLog.ImportFailedWithException(_logger, ex, jobId, request.TableName);
+            errorMessage = $"Import failed: {ex.MessageText}";
+            result = ImportResult.CreateFailure(
+                request.TableName,
+                format ?? SupportedFileFormat.GeoJson,
+                errorMessage,
+                stopwatch.Elapsed,
+                warnings);
+            return result;
+        }
         catch (Exception ex)
         {
             ImportLog.ImportFailedWithException(_logger, ex, jobId, request.TableName);

@@ -205,8 +205,21 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
             }
         }
 
+        // Bootstrap reconciliation (honua-server#1395): when no current snapshot is
+        // activated for this environment the caller (LoadCurrentOrEmptyGraphAsync) started
+        // from an empty graph and is forcing a first write at a low revision. A shared or
+        // partially-written database can still carry orphaned sidecar rows (e.g. a prior
+        // RefreshSidecarsAsync that committed before metadata_v2_current did). On databases
+        // created before migration 046 those rows also collided with the then-unique
+        // idx_metadata_v2_services_name and surfaced as a raw Postgres 23505. When
+        // bootstrapping, clear stale sidecar rows for the whole environment (all revisions)
+        // rather than only the target (environment, revision), so the first write reconciles
+        // cleanly instead of 500ing the layer-publish path and never leaves orphaned
+        // revisions behind.
+        var isBootstrap = await ReadCurrentEtagAsync(connection, transaction, cancellationToken).ConfigureAwait(false) is null;
+
         await UpsertSnapshotAsync(connection, transaction, graph, json, etag, cancellationToken).ConfigureAwait(false);
-        await RefreshSidecarsAsync(connection, transaction, graph, cancellationToken).ConfigureAwait(false);
+        await RefreshSidecarsAsync(connection, transaction, graph, clearStaleEnvironmentRows: isBootstrap, cancellationToken).ConfigureAwait(false);
         await UpsertCurrentAsync(connection, transaction, graph.Revision, etag, cancellationToken).ConfigureAwait(false);
 
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
@@ -425,22 +438,32 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         MetadataV2Graph graph,
+        bool clearStaleEnvironmentRows,
         CancellationToken cancellationToken)
     {
         // Wipe sidecars for this (environment, revision) and rewrite. Cheap and simple.
+        // On a bootstrap write (no activated current snapshot) also clear any orphaned
+        // rows for the whole environment so a stale partial write does not collide with
+        // the unique service-name index. (honua-server#1395.)
+        var revisionScope = clearStaleEnvironmentRows
+            ? string.Empty
+            : " AND revision = @revision";
         var deleteSql = new[]
         {
-            $"DELETE FROM {_resourcesIdxTable} WHERE environment = @environment AND revision = @revision",
-            $"DELETE FROM {_servicesIdxTable} WHERE environment = @environment AND revision = @revision",
-            $"DELETE FROM {_publicationsIdxTable} WHERE environment = @environment AND revision = @revision",
-            $"DELETE FROM {_storageBindingsIdxTable} WHERE environment = @environment AND revision = @revision",
-            $"DELETE FROM {_connectionsIdxTable} WHERE environment = @environment AND revision = @revision",
+            $"DELETE FROM {_resourcesIdxTable} WHERE environment = @environment{revisionScope}",
+            $"DELETE FROM {_servicesIdxTable} WHERE environment = @environment{revisionScope}",
+            $"DELETE FROM {_publicationsIdxTable} WHERE environment = @environment{revisionScope}",
+            $"DELETE FROM {_storageBindingsIdxTable} WHERE environment = @environment{revisionScope}",
+            $"DELETE FROM {_connectionsIdxTable} WHERE environment = @environment{revisionScope}",
         };
         foreach (var sql in deleteSql)
         {
             await using var cmd = new NpgsqlCommand(sql, connection, transaction);
             cmd.Parameters.AddWithValue("@environment", _environment);
-            cmd.Parameters.AddWithValue("@revision", graph.Revision);
+            if (!clearStaleEnvironmentRows)
+            {
+                cmd.Parameters.AddWithValue("@revision", graph.Revision);
+            }
             await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
