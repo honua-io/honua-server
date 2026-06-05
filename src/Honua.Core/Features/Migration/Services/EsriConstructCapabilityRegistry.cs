@@ -56,6 +56,46 @@ public sealed class EsriConstructCapabilityRegistry : IEsriConstructCapabilityRe
 
         /// <summary>Resource temporal/time metadata.</summary>
         public const string ResourceTimeMetadata = "resource.time-metadata";
+
+        // --- Portal-facade serve lane (#1382) -------------------------------
+        // The Portal facade re-exposes imported Esri-shaped Metadata v2 services
+        // as ArcGIS Portal items. These keys carry the per-service-construct
+        // "can this construct be served through the facade?" verdict so the
+        // facade lane resolves from the shared registry instead of a private
+        // protocol→item-type table.
+
+        /// <summary>Feature service exposed through the Portal facade as a feature-service item.</summary>
+        public const string FacadeFeatureService = "facade.feature-service";
+
+        /// <summary>Map service exposed through the Portal facade as a map-service item.</summary>
+        public const string FacadeMapService = "facade.map-service";
+
+        /// <summary>Image service exposed through the Portal facade as an image-service item.</summary>
+        public const string FacadeImageService = "facade.image-service";
+
+        // --- GP-translation lane (#1382) ------------------------------------
+        // The geoprocessing migration evidence classifier groups built-in
+        // processes into construct families. These keys carry the per-family
+        // automation verdict so the GP lane resolves from the shared registry
+        // instead of a private process-id/category table.
+
+        /// <summary>First-slice deterministic vector geoprocessing family.</summary>
+        public const string GpVectorDeterministic = "gp.vector-deterministic";
+
+        /// <summary>Destructive data-management geoprocessing family (approval-gated).</summary>
+        public const string GpDestructiveDataManagement = "gp.destructive-data-management";
+
+        /// <summary>Heavyweight raster/surface geoprocessing family.</summary>
+        public const string GpRasterSurface = "gp.raster-surface";
+
+        /// <summary>Heavyweight raster-producing conversion geoprocessing family.</summary>
+        public const string GpRasterConversion = "gp.raster-conversion";
+
+        /// <summary>Non-destructive data-management geoprocessing family.</summary>
+        public const string GpDataManagement = "gp.data-management";
+
+        /// <summary>Geoprocessing family not included in the first migration evidence slice.</summary>
+        public const string GpUnsupported = "gp.unsupported";
     }
 
     /// <summary>
@@ -206,6 +246,101 @@ public sealed class EsriConstructCapabilityRegistry : IEsriConstructCapabilityRe
             CanTransform = false,
             CanServe = false,
             RequiresCheck = true
+        },
+
+        // --- Portal-facade serve lane (#1382) -------------------------------
+        new EsriConstructCapabilityDescriptor
+        {
+            ConstructKey = Keys.FacadeFeatureService,
+            AutomationStatus = MigrationFidelityAutomationStatuses.Automated,
+            Code = ImportCompatibilityCodes.Compatible,
+            Reason = "FeatureServer services are re-exposed through the Portal facade as feature-service items.",
+            CanTransform = true,
+            CanServe = true,
+            RequiresCheck = false
+        },
+        new EsriConstructCapabilityDescriptor
+        {
+            ConstructKey = Keys.FacadeMapService,
+            AutomationStatus = MigrationFidelityAutomationStatuses.Automated,
+            Code = ImportCompatibilityCodes.Compatible,
+            Reason = "MapServer services are re-exposed through the Portal facade as map-service items.",
+            CanTransform = true,
+            CanServe = true,
+            RequiresCheck = false
+        },
+        new EsriConstructCapabilityDescriptor
+        {
+            ConstructKey = Keys.FacadeImageService,
+            AutomationStatus = MigrationFidelityAutomationStatuses.Automated,
+            Code = ImportCompatibilityCodes.Compatible,
+            Reason = "ImageServer services are re-exposed through the Portal facade as image-service items.",
+            CanTransform = true,
+            CanServe = true,
+            RequiresCheck = false
+        },
+
+        // --- GP-translation lane (#1382) ------------------------------------
+        new EsriConstructCapabilityDescriptor
+        {
+            ConstructKey = Keys.GpVectorDeterministic,
+            AutomationStatus = MigrationFidelityAutomationStatuses.Automated,
+            Code = ImportCompatibilityCodes.Compatible,
+            Reason = "First-slice deterministic vector process evidence.",
+            CanTransform = true,
+            CanServe = true,
+            RequiresCheck = false
+        },
+        new EsriConstructCapabilityDescriptor
+        {
+            ConstructKey = Keys.GpDestructiveDataManagement,
+            AutomationStatus = MigrationFidelityAutomationStatuses.ManualReview,
+            Code = ImportCompatibilityCodes.ManualReview,
+            Reason = "Destructive data-management process; execution requires operator approval.",
+            ManualSteps = ["Obtain operator approval before executing this destructive process."],
+            CanTransform = false,
+            CanServe = false,
+            RequiresCheck = true
+        },
+        new EsriConstructCapabilityDescriptor
+        {
+            ConstructKey = Keys.GpRasterSurface,
+            AutomationStatus = MigrationFidelityAutomationStatuses.Assisted,
+            Code = ImportCompatibilityCodes.ManualReview,
+            Reason = "Heavyweight raster/surface family; native-profile execution routed to the GDAL worker image, validation-only in the lean image.",
+            CanTransform = false,
+            CanServe = false,
+            RequiresCheck = false
+        },
+        new EsriConstructCapabilityDescriptor
+        {
+            ConstructKey = Keys.GpRasterConversion,
+            AutomationStatus = MigrationFidelityAutomationStatuses.Assisted,
+            Code = ImportCompatibilityCodes.ManualReview,
+            Reason = "Heavyweight raster conversion family; catalog and validation only in this evidence slice.",
+            CanTransform = false,
+            CanServe = false,
+            RequiresCheck = false
+        },
+        new EsriConstructCapabilityDescriptor
+        {
+            ConstructKey = Keys.GpDataManagement,
+            AutomationStatus = MigrationFidelityAutomationStatuses.Assisted,
+            Code = ImportCompatibilityCodes.ManualReview,
+            Reason = "Data-management process is inventoried for migration review, not projected as automated runtime evidence.",
+            CanTransform = false,
+            CanServe = false,
+            RequiresCheck = false
+        },
+        new EsriConstructCapabilityDescriptor
+        {
+            ConstructKey = Keys.GpUnsupported,
+            AutomationStatus = MigrationFidelityAutomationStatuses.Unsupported,
+            Code = ImportCompatibilityCodes.ManualReview,
+            Reason = "Not included in the first process migration evidence slice.",
+            CanTransform = false,
+            CanServe = false,
+            RequiresCheck = false
         }
     ];
 

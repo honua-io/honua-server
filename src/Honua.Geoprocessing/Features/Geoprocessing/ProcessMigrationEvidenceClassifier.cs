@@ -3,12 +3,23 @@
 
 using System.Collections.Frozen;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Migration.Abstractions;
+using Honua.Core.Features.Migration.Domain;
+using Honua.Core.Features.Migration.Services;
 
 namespace Honua.Geoprocessing;
 
 /// <summary>
 /// Classifies built-in processes for migration evidence claims.
 /// </summary>
+/// <remarks>
+/// The capability/fidelity verdict (automation tier) is sourced from the shared
+/// <see cref="IEsriConstructCapabilityRegistry"/> (#1382): the classifier maps a
+/// process onto a GP construct family key and the registry supplies the verdict,
+/// keeping the GP lane aligned with the importer and Portal-facade lanes rather
+/// than maintaining a private tier table. Unrecognised keys fall back to the
+/// shared <c>manual-review</c> descriptor.
+/// </remarks>
 internal static class ProcessMigrationEvidenceClassifier
 {
     private static readonly FrozenSet<string> FirstSliceAutomatedVectorProcessIds =
@@ -37,56 +48,79 @@ internal static class ProcessMigrationEvidenceClassifier
             "generalization.dissolve",
         }.ToFrozenSet(StringComparer.Ordinal);
 
+    // Single shared registry instance built from the same descriptor set the DI
+    // container seeds, so the static GP classifier resolves identical verdicts.
+    private static readonly IEsriConstructCapabilityRegistry Registry =
+        new EsriConstructCapabilityRegistry(EsriConstructCapabilityRegistry.BuiltInDescriptors);
+
     public static ProcessMigrationEvidenceClassification Classify(ProcessDefinition definition)
+        => Classify(definition, Registry);
+
+    /// <summary>
+    /// Classifies <paramref name="definition"/> using the supplied capability
+    /// registry. The construct-family mapping stays local (it is the lane's
+    /// parsing job); the registry owns the per-family capability/fidelity verdict.
+    /// </summary>
+    public static ProcessMigrationEvidenceClassification Classify(
+        ProcessDefinition definition,
+        IEsriConstructCapabilityRegistry registry)
     {
         ArgumentNullException.ThrowIfNull(definition);
+        ArgumentNullException.ThrowIfNull(registry);
 
+        var constructKey = ResolveConstructKey(definition);
+        var descriptor = registry.ResolveOrUnknown(constructKey);
+
+        var tier = ToAutomationTier(descriptor.AutomationStatus);
+        var requiresApproval = string.Equals(
+            constructKey,
+            EsriConstructCapabilityRegistry.Keys.GpDestructiveDataManagement,
+            StringComparison.Ordinal);
+
+        return new ProcessMigrationEvidenceClassification(
+            tier,
+            RequiresApproval: requiresApproval,
+            IsProjectedThroughOgcApiProcesses: descriptor.CanServe,
+            descriptor.Reason);
+    }
+
+    /// <summary>
+    /// Maps a process to its GP construct family registry key. Every process maps
+    /// to a registered family (including the explicit <c>gp.unsupported</c> catch
+    /// for processes outside the first evidence slice), so the shared unknown
+    /// fallback only fires when the registry itself lacks the key.
+    /// </summary>
+    private static string ResolveConstructKey(ProcessDefinition definition)
+    {
         var processId = definition.ProcessId;
         if (FirstSliceAutomatedVectorProcessIds.Contains(processId))
         {
-            return new ProcessMigrationEvidenceClassification(
-                ProcessMigrationAutomationTier.Automated,
-                RequiresApproval: false,
-                IsProjectedThroughOgcApiProcesses: true,
-                "First-slice deterministic vector process evidence.");
+            return EsriConstructCapabilityRegistry.Keys.GpVectorDeterministic;
         }
 
         if (ProcessDestructiveClassifier.IsDestructive(processId))
         {
-            return new ProcessMigrationEvidenceClassification(
-                ProcessMigrationAutomationTier.ManualReview,
-                RequiresApproval: true,
-                IsProjectedThroughOgcApiProcesses: false,
-                "Destructive data-management process; execution requires operator approval.");
+            return EsriConstructCapabilityRegistry.Keys.GpDestructiveDataManagement;
         }
 
         return definition.Category switch
         {
-            "surface" or "raster" => new ProcessMigrationEvidenceClassification(
-                ProcessMigrationAutomationTier.Assisted,
-                RequiresApproval: false,
-                IsProjectedThroughOgcApiProcesses: false,
-                "Heavyweight raster/surface family; native-profile execution routed to the GDAL worker image, validation-only in the lean image."),
-
-            "conversion" when definition.OutputArtifactKinds.Contains(ArtifactKind.Raster) => new ProcessMigrationEvidenceClassification(
-                ProcessMigrationAutomationTier.Assisted,
-                RequiresApproval: false,
-                IsProjectedThroughOgcApiProcesses: false,
-                "Heavyweight raster conversion family; catalog and validation only in this evidence slice."),
-
-            "data-management" => new ProcessMigrationEvidenceClassification(
-                ProcessMigrationAutomationTier.Assisted,
-                RequiresApproval: false,
-                IsProjectedThroughOgcApiProcesses: false,
-                "Data-management process is inventoried for migration review, not projected as automated runtime evidence."),
-
-            _ => new ProcessMigrationEvidenceClassification(
-                ProcessMigrationAutomationTier.Unsupported,
-                RequiresApproval: false,
-                IsProjectedThroughOgcApiProcesses: false,
-                "Not included in the first process migration evidence slice.")
+            "surface" or "raster" => EsriConstructCapabilityRegistry.Keys.GpRasterSurface,
+            "conversion" when definition.OutputArtifactKinds.Contains(ArtifactKind.Raster) =>
+                EsriConstructCapabilityRegistry.Keys.GpRasterConversion,
+            "data-management" => EsriConstructCapabilityRegistry.Keys.GpDataManagement,
+            _ => EsriConstructCapabilityRegistry.Keys.GpUnsupported
         };
     }
+
+    private static ProcessMigrationAutomationTier ToAutomationTier(string automationStatus)
+        => automationStatus switch
+        {
+            MigrationFidelityAutomationStatuses.Automated => ProcessMigrationAutomationTier.Automated,
+            MigrationFidelityAutomationStatuses.Assisted => ProcessMigrationAutomationTier.Assisted,
+            MigrationFidelityAutomationStatuses.ManualReview => ProcessMigrationAutomationTier.ManualReview,
+            _ => ProcessMigrationAutomationTier.Unsupported
+        };
 
     public static bool IsFirstSliceOgcProcess(ProcessDefinition definition)
         => Classify(definition).IsProjectedThroughOgcApiProcesses;
