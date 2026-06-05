@@ -34,7 +34,6 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
 {
     private const string AdminPassword = WebAppFixture.SharedAdminPassword;
     private const string TokenEndpoint = "/sharing/rest/oauth2/token";
-    private const string AuthorizeEndpoint = "/sharing/rest/oauth2/authorize";
     private const string ClientId = "arcgispro";
     private const string RedirectUri = "https://app.example.com/oauth/redirect";
 
@@ -206,7 +205,10 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
         var code = await SeedAuthorizationCodeAsync(challenge, "S256");
 
         using var client = _fixture.CreateClient();
-        var url = QueryHelpers.AddQueryString(TokenEndpoint, new Dictionary<string, string?>
+        // Use the literal route path (not the TokenEndpoint const) so the
+        // endpoint-registry governance scanner recognises this as a same-method
+        // (GET) HTTP request that backs GET /sharing/rest/oauth2/token.
+        var url = QueryHelpers.AddQueryString("/sharing/rest/oauth2/token", new Dictionary<string, string?>
         {
             ["grant_type"] = "authorization_code",
             ["code"] = code,
@@ -245,7 +247,10 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
     public async Task Authorize_WhenNoOidcProviderConfigured_Returns404()
     {
         using var client = _fixture.CreateClient();
-        var url = QueryHelpers.AddQueryString(AuthorizeEndpoint, new Dictionary<string, string?>
+        // Use the literal route path (not the AuthorizeEndpoint const) so the
+        // endpoint-registry governance scanner recognises this as a same-method
+        // HTTP request that backs GET /sharing/rest/oauth2/authorize.
+        var url = QueryHelpers.AddQueryString("/sharing/rest/oauth2/authorize", new Dictionary<string, string?>
         {
             ["response_type"] = "code",
             ["client_id"] = ClientId,
