@@ -1,0 +1,70 @@
+{
+  "_comment": [
+    "Esri default geotransformation parity table.",
+    "Each entry maps a (fromSrid -> toSrid) geographic-CRS reprojection to the",
+    "geotransformation ArcGIS selects by default for the listed area of use, plus",
+    "the EPSG coordinate-operation code and the explicit PROJ pipeline that PostGIS",
+    "executes via 3-argument ST_Transform(geom, '<projPipeline>', toSrid).",
+    "",
+    "Provenance: WKID and name follow Esri's published geographic-transformation list;",
+    "epsgOperationCode references the EPSG Geodetic Parameter Dataset; projPipeline is",
+    "the PROJ pipeline string corresponding to that EPSG operation. Reverse lookups are",
+    "synthesized at load time (the runtime applies the inverse for toSrid -> fromSrid).",
+    "",
+    "Grid-backed pipelines (NADCON/NTv2/GEOID) list requiredGrids; the runtime fails",
+    "explicitly when a listed grid is absent from the PROJ data path rather than",
+    "silently degrading to a Helmert/geocentric approximation."
+  ],
+  "transformations": [
+    {
+      "wkid": 108001,
+      "name": "NAD_1983_To_WGS_1984_1",
+      "fromSrid": 4269,
+      "toSrid": 4326,
+      "areaOfUse": "North America - onshore (CONUS, Canada, Mexico, Central America)",
+      "epsgOperationCode": 1188,
+      "projPipeline": "+proj=pipeline +step +proj=axisswap +order=2,1 +step +proj=unitconvert +xy_in=deg +xy_out=rad +step +proj=push +v_3 +step +proj=cart +ellps=GRS80 +step +proj=helmert +x=0 +y=0 +z=0 +step +inv +proj=cart +ellps=WGS84 +step +proj=pop +v_3 +step +proj=unitconvert +xy_in=rad +xy_out=deg +step +proj=axisswap +order=2,1",
+      "requiredGrids": []
+    },
+    {
+      "wkid": 1515,
+      "name": "NAD_1983_To_WGS_1984_5",
+      "fromSrid": 4269,
+      "toSrid": 4326,
+      "areaOfUse": "USA - CONUS and Alaska; PRVI",
+      "epsgOperationCode": 15931,
+      "projPipeline": "+proj=pipeline +step +proj=axisswap +order=2,1 +step +proj=unitconvert +xy_in=deg +xy_out=rad +step +proj=push +v_3 +step +proj=cart +ellps=GRS80 +step +proj=helmert +x=-0.991 +y=1.9072 +z=0.5129 +rx=-0.0257899075194932 +ry=-0.0096500989618564 +rz=-0.0116599432323421 +s=0.0 +convention=coordinate_frame +step +inv +proj=cart +ellps=WGS84 +step +proj=pop +v_3 +step +proj=unitconvert +xy_in=rad +xy_out=deg +step +proj=axisswap +order=2,1",
+      "requiredGrids": []
+    },
+    {
+      "wkid": 1241,
+      "name": "NAD_1927_To_NAD_1983_NADCON",
+      "fromSrid": 4267,
+      "toSrid": 4269,
+      "areaOfUse": "USA - CONUS onshore",
+      "epsgOperationCode": 1241,
+      "projPipeline": "+proj=pipeline +step +proj=axisswap +order=2,1 +step +proj=unitconvert +xy_in=deg +xy_out=rad +step +proj=hgridshift +grids=us_noaa_conus.tif +step +proj=unitconvert +xy_in=rad +xy_out=deg +step +proj=axisswap +order=2,1",
+      "requiredGrids": ["us_noaa_conus.tif"]
+    },
+    {
+      "wkid": 15851,
+      "name": "NAD_1983_To_NAD_1983_2011_1",
+      "fromSrid": 4269,
+      "toSrid": 6318,
+      "areaOfUse": "USA - CONUS and Alaska",
+      "epsgOperationCode": 1311,
+      "projPipeline": "+proj=pipeline +step +proj=axisswap +order=2,1 +step +proj=unitconvert +xy_in=deg +xy_out=rad +step +proj=push +v_3 +step +proj=cart +ellps=GRS80 +step +proj=helmert +x=0.99343 +y=-1.90331 +z=-0.52655 +rx=0.02591467 +ry=0.00942645 +rz=0.01159935 +s=0.00171504 +convention=coordinate_frame +step +inv +proj=cart +ellps=GRS80 +step +proj=pop +v_3 +step +proj=unitconvert +xy_in=rad +xy_out=deg +step +proj=axisswap +order=2,1",
+      "requiredGrids": []
+    },
+    {
+      "wkid": 108190,
+      "name": "WGS_1984_(ITRF00)_To_NAD_1983_2011",
+      "fromSrid": 4326,
+      "toSrid": 6318,
+      "areaOfUse": "USA - CORS96/2011 realization",
+      "epsgOperationCode": 8259,
+      "projPipeline": "+proj=pipeline +step +proj=axisswap +order=2,1 +step +proj=unitconvert +xy_in=deg +xy_out=rad +step +proj=push +v_3 +step +proj=cart +ellps=WGS84 +step +proj=helmert +x=-1.00513 +y=1.90924 +z=0.54174 +rx=-0.0267814 +ry=0.0004203 +rz=-0.0109321 +s=-0.00037 +convention=coordinate_frame +step +inv +proj=cart +ellps=GRS80 +step +proj=pop +v_3 +step +proj=unitconvert +xy_in=rad +xy_out=deg +step +proj=axisswap +order=2,1",
+      "requiredGrids": []
+    }
+  ]
+}

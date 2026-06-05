@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Diagnostics.CodeAnalysis;
+using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
@@ -69,6 +70,15 @@ public readonly record struct FeatureQuery
     /// Optional output SRID for geometry transformation in query results
     /// </summary>
     public int? OutputSrid { get; init; }
+
+    /// <summary>
+    /// Optional datum (geographic) transformation selected for the
+    /// <see cref="SpatialReferenceSrid"/> → <see cref="OutputSrid"/> reprojection.
+    /// When set, providers emit the explicit 3-argument PostGIS
+    /// <c>ST_Transform(geom, '&lt;pipeline&gt;', toSrid)</c> so output geometry matches
+    /// the selected (Esri-parity) pipeline rather than PROJ's implicit default.
+    /// </summary>
+    public DatumTransformationSelection? OutputDatumTransformation { get; init; }
 
     /// <summary>
     /// Optional output axis order for formats that encode coordinates according to CRS axis definitions.

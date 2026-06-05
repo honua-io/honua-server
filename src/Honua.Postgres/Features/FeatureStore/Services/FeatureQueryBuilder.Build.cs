@@ -70,7 +70,7 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
             else if (query.OutputSrid.HasValue &&
                 (!query.SpatialReferenceSrid.HasValue || query.OutputSrid.Value != query.SpatialReferenceSrid.Value))
             {
-                pointGeometry = $"ST_Transform({pointGeometry}, {query.OutputSrid.Value})";
+                pointGeometry = DatumTransformSql.BuildTransformExpression(pointGeometry, query.OutputSrid.Value, query.OutputDatumTransformation);
             }
 
             if (query.RasterPointGrid is { } pointGrid)
@@ -169,7 +169,7 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
             if (query.OutputSrid.HasValue &&
                 (!query.SpatialReferenceSrid.HasValue || query.OutputSrid.Value != query.SpatialReferenceSrid.Value))
             {
-                pointGeometry = $"ST_Transform({pointGeometry}, {query.OutputSrid.Value})";
+                pointGeometry = DatumTransformSql.BuildTransformExpression(pointGeometry, query.OutputSrid.Value, query.OutputDatumTransformation);
             }
 
             var pointX = BuildPointCoordinateExpression(pointGeometry, "X");
@@ -371,7 +371,7 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
             effectiveQuery.SpatialReferenceSrid.HasValue &&
             effectiveQuery.OutputSrid.Value != effectiveQuery.SpatialReferenceSrid.Value)
         {
-            extentExpression = $"ST_Transform({extentExpression}, {effectiveQuery.OutputSrid.Value})";
+            extentExpression = DatumTransformSql.BuildTransformExpression(extentExpression, effectiveQuery.OutputSrid.Value, effectiveQuery.OutputDatumTransformation);
         }
 
         var sql = _stringBuilderPool.Get();

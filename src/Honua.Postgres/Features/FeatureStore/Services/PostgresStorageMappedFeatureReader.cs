@@ -384,7 +384,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         var storageSrid = _storageSrid;
         if (query.OutputSrid.HasValue && query.OutputSrid.Value != storageSrid)
         {
-            geometryExpression = $"ST_Transform({geometryExpression}, {query.OutputSrid.Value})";
+            geometryExpression = DatumTransformSql.BuildTransformExpression(geometryExpression, query.OutputSrid.Value, query.OutputDatumTransformation);
         }
 
         return geometryExpression;

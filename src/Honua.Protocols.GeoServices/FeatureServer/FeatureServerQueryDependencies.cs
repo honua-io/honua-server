@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.Infrastructure.Caching;
+using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Infrastructure.Validation;
 using Honua.Core.Features.Query;
 using Honua.Core.Features.Validation.Abstractions;
@@ -24,6 +25,7 @@ internal sealed class FeatureServerQueryDependencies
         IQueryProcessor queryProcessor,
         IResponseCache responseCache,
         IETagService etagService,
+        IDatumTransformationCatalog datumTransformationCatalog,
         IOptions<CacheOptions> cacheOptions)
     {
         // Validation framework eliminates 7 lines of duplicate null checks
@@ -35,6 +37,7 @@ internal sealed class FeatureServerQueryDependencies
         QueryProcessor = queryProcessor.ThrowIfNull();
         ResponseCache = responseCache.ThrowIfNull();
         ETagService = etagService.ThrowIfNull();
+        DatumTransformationCatalog = datumTransformationCatalog.ThrowIfNull();
         CacheOptions = cacheOptions.ValidateAndGetValue();
     }
 
@@ -46,5 +49,6 @@ internal sealed class FeatureServerQueryDependencies
     public IQueryProcessor QueryProcessor { get; }
     public IResponseCache ResponseCache { get; }
     public IETagService ETagService { get; }
+    public IDatumTransformationCatalog DatumTransformationCatalog { get; }
     public CacheOptions CacheOptions { get; }
 }

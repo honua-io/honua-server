@@ -133,6 +133,14 @@ public sealed class AdvancedQueryCapabilities
     public bool SupportsQueryWithDistance { get; init; } = true;
 
     /// <summary>
+    /// Whether the layer honors the <c>datumTransformation</c> query parameter,
+    /// selecting an Esri-parity datum/geographic transformation for the
+    /// layerSR → outSR reprojection. Advertised so ArcGIS clients know the choice
+    /// is respected rather than silently dropped.
+    /// </summary>
+    public bool SupportsQueryWithDatumTransformation { get; init; } = true;
+
+    /// <summary>
     /// Whether the layer supports SQL expressions in queries
     /// </summary>
     public bool SupportsSqlExpression { get; init; } = true;

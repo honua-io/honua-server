@@ -347,13 +347,13 @@ internal static partial class FeatureServerLog
     public static partial void RelationshipNotFound(ILogger logger, int layerId, int relationshipId);
 
     /// <summary>
-    /// Logs when datumTransformation parameter is specified. PostGIS default pipeline is used.
+    /// Logs when a client-supplied datumTransformation is honored via the Esri-parity catalog.
     /// </summary>
     /// <param name="logger">The logger instance.</param>
     /// <param name="datumTransformation">The requested datum transformation value.</param>
     [LoggerMessage(
         EventId = 2405,
         Level = LogLevel.Information,
-        Message = "datumTransformation parameter specified ({DatumTransformation}); using default PostGIS datum pipeline")]
+        Message = "datumTransformation honored ({DatumTransformation}); applying selected datum pipeline")]
     public static partial void DatumTransformationRequested(ILogger logger, string datumTransformation);
 }

@@ -117,6 +117,57 @@ public sealed class FeatureServerSpatialReferenceTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithSupportedDatumTransformation_IsHonored_Returns200(/* #1274 */)
+    {
+        // Reproject WGS84 layer geometry to NAD83 (4269) using the Esri-default
+        // geotransformation (WKID 108001). The selection must be honored, not dropped.
+        var requestUri = $"/rest/services/{SpatialReferenceTestLayerCatalog.ServiceId}/FeatureServer/{SpatialReferenceTestLayerCatalog.PointLayerId}/query" +
+                         $"?where=objectid%20%3D%20{_pointObjectId}&outSR=4269&datumTransformation=108001&f=json";
+
+        var response = await _fixture.Client.GetAsync(requestUri);
+
+        response.Be200Ok();
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.QueryResponse);
+        result.Should().NotBeNull();
+        result!.SpatialReference!.Wkid.Should().Be(4269);
+        result.Features.Should().HaveCount(1);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithUnsupportedDatumTransformation_ReturnsExplicitError(/* #1274 */)
+    {
+        // An unknown datumTransformation WKID must produce an explicit error rather than
+        // a silent substitution to PROJ's default pipeline.
+        var requestUri = $"/rest/services/{SpatialReferenceTestLayerCatalog.ServiceId}/FeatureServer/{SpatialReferenceTestLayerCatalog.PointLayerId}/query" +
+                         $"?where=objectid%20%3D%20{_pointObjectId}&outSR=4269&datumTransformation=999999&f=json";
+
+        var response = await _fixture.Client.GetAsync(requestUri);
+
+        response.Be400BadRequest();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithVerticalCoordinateSystemOutSr_ReturnsExplicitError(/* #1274 */)
+    {
+        // outSR carrying a vertical CS (vcsWkid) requests a vertical datum transformation,
+        // which is not supported; it must fail explicitly instead of being ignored.
+        var outSr = Uri.EscapeDataString("""{"wkid":4326,"vcsWkid":5703}""");
+        var requestUri = $"/rest/services/{SpatialReferenceTestLayerCatalog.ServiceId}/FeatureServer/{SpatialReferenceTestLayerCatalog.PointLayerId}/query" +
+                         $"?where=objectid%20%3D%20{_pointObjectId}&outSR={outSr}&f=json";
+
+        var response = await _fixture.Client.GetAsync(requestUri);
+
+        response.Be400BadRequest();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task Query_WithGeoJsonFormat_RejectsNonWgs84OutSr()
     {
         var requestUri = $"/rest/services/{SpatialReferenceTestLayerCatalog.ServiceId}/FeatureServer/{SpatialReferenceTestLayerCatalog.PointLayerId}/query" +

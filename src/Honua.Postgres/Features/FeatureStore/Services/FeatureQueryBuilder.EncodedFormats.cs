@@ -36,7 +36,7 @@ internal sealed partial class FeatureQueryBuilder
             if (query.OutputSrid.HasValue &&
                 (!query.SpatialReferenceSrid.HasValue || query.OutputSrid.Value != query.SpatialReferenceSrid.Value))
             {
-                geometrySelect = $"ST_Transform({geometrySelect}, {query.OutputSrid.Value})";
+                geometrySelect = DatumTransformSql.BuildTransformExpression(geometrySelect, query.OutputSrid.Value, query.OutputDatumTransformation);
             }
 
             sql.Append("SELECT ");
