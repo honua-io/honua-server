@@ -63,6 +63,18 @@ public interface IOgcStyleProjection
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Validates and stores a style supplied as an Esri GeoServices <c>drawingInfo</c> renderer (ADR-0002).
+    /// The drawingInfo is converted server-side to the canonical MapLibre style and persisted; the console
+    /// never converts. Lossy conversions are reported in <see cref="OgcStyleUpdateResult.UnsupportedSymbolizers"/>
+    /// (and reject the request when <paramref name="strict"/> is set).
+    /// </summary>
+    Task<OgcStyleUpdateResult> UpdateStyleFromDrawingInfoAsync(
+        string styleId,
+        string drawingInfoJson,
+        bool strict,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Creates a new standalone style in the independent style catalog (OGC
     /// <c>manage-styles</c>, POST). Available from Phase 2 (ADR-0048, issue #1389).
     /// The new style is decoupled from any layer; it can later be associated with
@@ -106,7 +118,10 @@ public enum OgcStyleEncoding
     Sld10,
 
     /// <summary>OGC Styled Layer Descriptor 1.1, derived from the MapLibre style.</summary>
-    Sld11
+    Sld11,
+
+    /// <summary>Esri GeoServices <c>drawingInfo</c> renderer, derived from the MapLibre style (ADR-0002).</summary>
+    EsriDrawingInfo
 }
 
 /// <summary>
@@ -161,7 +176,14 @@ public enum OgcStyleUpdateStatus
 /// </summary>
 /// <param name="Status">Outcome status.</param>
 /// <param name="ErrorMessage">Human-readable error message when <paramref name="Status"/> is not <see cref="OgcStyleUpdateStatus.Updated"/>.</param>
-public sealed record OgcStyleUpdateResult(OgcStyleUpdateStatus Status, string? ErrorMessage);
+/// <param name="UnsupportedSymbolizers">
+/// Non-fatal lossy-conversion warnings (e.g. an Esri renderer feature the canonical MapLibre style can't
+/// represent), each a short "code: guidance" string. Empty/null when the conversion was lossless.
+/// </param>
+public sealed record OgcStyleUpdateResult(
+    OgcStyleUpdateStatus Status,
+    string? ErrorMessage,
+    IReadOnlyList<string>? UnsupportedSymbolizers = null);
 
 /// <summary>
 /// Status of an OGC style create attempt.

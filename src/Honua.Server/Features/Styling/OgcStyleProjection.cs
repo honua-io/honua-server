@@ -25,17 +25,20 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
     private readonly IMetadataV2GraphProvider _graphProvider;
     private readonly ILayerStyleService _styleService;
     private readonly ILayerStyleCatalog _styleCatalog;
+    private readonly IGeoServicesStyleConverter _geoServicesConverter;
     private readonly IStyleCatalog? _independentStyleCatalog;
 
     public OgcStyleProjection(
         IMetadataV2GraphProvider graphProvider,
         ILayerStyleService styleService,
         ILayerStyleCatalog styleCatalog,
+        IGeoServicesStyleConverter geoServicesConverter,
         IStyleCatalog? independentStyleCatalog = null)
     {
         _graphProvider = graphProvider ?? throw new ArgumentNullException(nameof(graphProvider));
         _styleService = styleService ?? throw new ArgumentNullException(nameof(styleService));
         _styleCatalog = styleCatalog ?? throw new ArgumentNullException(nameof(styleCatalog));
+        _geoServicesConverter = geoServicesConverter ?? throw new ArgumentNullException(nameof(geoServicesConverter));
         _independentStyleCatalog = independentStyleCatalog;
     }
 
@@ -120,6 +123,24 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         if (encoding == OgcStyleEncoding.MapboxStyle)
         {
             return new OgcStylesheet(mapLibreJson, OgcStyleMediaTypes.MapboxStyle, OgcStyleEncoding.MapboxStyle);
+        }
+
+        if (encoding == OgcStyleEncoding.EsriDrawingInfo)
+        {
+            // Esri renderer is a server-side projection of the canonical MapLibre style (ADR-0002): the style
+            // service back-generates drawingInfo from the stored MapLibre. The console never converts.
+            var drawingInfo = await _styleService
+                .GetDrawingInfoAsync(resource, storageLayerId.Value, cancellationToken)
+                .ConfigureAwait(false);
+            if (drawingInfo is not { ValueKind: not (JsonValueKind.Null or JsonValueKind.Undefined) })
+            {
+                return null;
+            }
+
+            return new OgcStylesheet(
+                drawingInfo.Value.GetRawText(),
+                OgcStyleMediaTypes.EsriDrawingInfo,
+                OgcStyleEncoding.EsriDrawingInfo);
         }
 
         var sld = DeriveSld(mapLibreJson, resource, storageLayerId.Value, encoding);
@@ -244,6 +265,77 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
             LayerStyleUpdateStatus.Updated => new OgcStyleUpdateResult(OgcStyleUpdateStatus.Updated, null),
             LayerStyleUpdateStatus.NotFound => new OgcStyleUpdateResult(OgcStyleUpdateStatus.NotFound, $"Style '{styleId}' not found."),
             _ => new OgcStyleUpdateResult(OgcStyleUpdateStatus.Invalid, result.ErrorMessage ?? "MapLibre style is invalid.")
+        };
+    }
+
+    /// <inheritdoc />
+    public async Task<OgcStyleUpdateResult> UpdateStyleFromDrawingInfoAsync(
+        string styleId,
+        string drawingInfoJson,
+        bool strict,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(styleId);
+        ArgumentNullException.ThrowIfNull(drawingInfoJson);
+
+        var (resource, storageLayerId, _) = await ResolveResourceAsync(styleId, cancellationToken).ConfigureAwait(false);
+        if (resource is null || !storageLayerId.HasValue)
+        {
+            return new OgcStyleUpdateResult(OgcStyleUpdateStatus.NotFound, $"Style '{styleId}' not found.");
+        }
+
+        JsonElement drawingInfo;
+        try
+        {
+            using var document = JsonDocument.Parse(drawingInfoJson);
+            drawingInfo = document.RootElement.Clone();
+        }
+        catch (JsonException ex)
+        {
+            return new OgcStyleUpdateResult(OgcStyleUpdateStatus.Invalid, $"drawingInfo is not valid JSON: {ex.Message}");
+        }
+
+        // Convert Esri drawingInfo -> canonical MapLibre server-side (ADR-0002), capturing lossy symbolizers.
+        var geometryType = resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None;
+        var conversion = _geoServicesConverter.Convert(
+            drawingInfo,
+            storageLayerId.Value,
+            string.IsNullOrWhiteSpace(resource.Metadata.Name) ? styleId : resource.Metadata.Name,
+            geometryType);
+
+        var warnings = conversion.Unsupported.Count == 0
+            ? null
+            : conversion.Unsupported.Select(u => $"{u.Code} ({u.SymbolizerType}): {u.Guidance}").ToArray();
+
+        // Strict: never persist a lossy conversion — reject so the operator can adjust the renderer.
+        if (strict && warnings is { Length: > 0 })
+        {
+            return new OgcStyleUpdateResult(
+                OgcStyleUpdateStatus.Invalid,
+                "The renderer uses features the canonical MapLibre style cannot represent. Resubmit without strict handling to accept the lossy conversion.",
+                warnings);
+        }
+
+        JsonElement mapLibre;
+        try
+        {
+            using var document = JsonDocument.Parse(conversion.MapLibreStyleJson);
+            mapLibre = document.RootElement.Clone();
+        }
+        catch (JsonException ex)
+        {
+            return new OgcStyleUpdateResult(OgcStyleUpdateStatus.Invalid, $"Converted MapLibre style is not valid JSON: {ex.Message}", warnings);
+        }
+
+        var result = await _styleService
+            .UpdateStyleAsync(resource, storageLayerId.Value, mapLibre, drawingInfo: null, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+
+        return result.Status switch
+        {
+            LayerStyleUpdateStatus.Updated => new OgcStyleUpdateResult(OgcStyleUpdateStatus.Updated, null, warnings),
+            LayerStyleUpdateStatus.NotFound => new OgcStyleUpdateResult(OgcStyleUpdateStatus.NotFound, $"Style '{styleId}' not found."),
+            _ => new OgcStyleUpdateResult(OgcStyleUpdateStatus.Invalid, result.ErrorMessage ?? "drawingInfo is invalid.", warnings)
         };
     }
 
@@ -457,4 +549,5 @@ internal static class OgcStyleMediaTypes
     public const string MapboxStyle = "application/vnd.mapbox.style+json";
     public const string Sld10 = "application/vnd.ogc.sld+xml;version=1.0";
     public const string Sld11 = "application/vnd.ogc.sld+xml;version=1.1";
+    public const string EsriDrawingInfo = "application/vnd.esri.drawinginfo+json";
 }

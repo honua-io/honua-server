@@ -256,6 +256,8 @@ public static class EndpointRegistry
         new("POST", "/api/v1/console/workflow-packages/{packageId}/versions/{packageVersion}/publish"),
         new("GET", "/api/v1/console/workflow-publications"),
         new("POST", "/api/v1/console/workflow-publications/{publicationId}/runs"),
+        new("GET", "/api/v1/console/workflow-generation/providers"),
+        new("POST", "/api/v1/console/workflow-packages/generate"),
 
         // v1 Studio package lifecycle endpoints (#1180)
         new("GET", "/api/v1/studio/package-families"),
@@ -300,6 +302,12 @@ public static class EndpointRegistry
         new("PUT", "/api/v1/admin/metadata/layers/{layerId}/style"),
         new("GET", "/api/v1/admin/metadata/layers/{layerId}/fields"),
         new("PUT", "/api/v1/admin/metadata/layers/{layerId}/fields"),
+        new("GET", "/api/v1/admin/metadata/layers/{layerId}/popup-info"),
+        new("PUT", "/api/v1/admin/metadata/layers/{layerId}/popup-info"),
+        new("GET", "/api/v1/admin/metadata/layers/{layerId}/drawing-info"),
+        new("PUT", "/api/v1/admin/metadata/layers/{layerId}/drawing-info"),
+        new("GET", "/api/v1/admin/metadata/layers/{layerId}/relationships"),
+        new("PUT", "/api/v1/admin/metadata/layers/{layerId}/relationships"),
         new("GET", "/api/v1/admin/metadata/layers/{layerId}/filter"),
         new("PUT", "/api/v1/admin/metadata/layers/{layerId}/filter"),
         new("GET", "/api/v1/admin/metadata/layers/{layerId}/validation"),

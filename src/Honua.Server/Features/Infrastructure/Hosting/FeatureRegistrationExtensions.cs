@@ -34,6 +34,7 @@ using Honua.Protocols.GeoServices.NAServer;
 using Honua.Protocols.GeoServices.Sharing;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.NlQuery;
+using Honua.Ai.WorkflowGeneration;
 using Honua.Protocols.OData;
 using Honua.Protocols.Ogc.Api.Coverages;
 using Honua.Protocols.Ogc.Api.Features;
@@ -98,6 +99,7 @@ internal static class FeatureRegistrationExtensions
         services.AddObservability(configuration);
         services.AddAlerts(configuration);
         services.AddNlQuery(configuration);
+        services.AddWorkflowGeneration(configuration);
         services.AddStac();
         services.AddStaticMap();
         services.AddTerrain();

@@ -4,6 +4,8 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Globalization;
+using System.Text;
+using System.Text.Json;
 using System.Xml;
 using System.Xml.Linq;
 using Honua.Server.Features.Admin.Models;
@@ -22,6 +24,8 @@ internal sealed partial class ExternalServiceDiscoveryService(
     internal const string HttpClientName = "external-service-discovery";
     private const int DefaultTimeoutSeconds = 30;
     private const int MaximumTimeoutSeconds = 120;
+    private const int MaxCatalogServices = 250;
+    private const int CatalogConcurrency = 6;
 
     public async Task<ExternalServiceDiscoveryResponse> DiscoverAsync(
         ExternalServiceDiscoveryRequest request,
@@ -35,7 +39,10 @@ internal sealed partial class ExternalServiceDiscoveryService(
             throw new ExternalServiceDiscoveryRequestException("Url is required.");
         }
 
+        var timeoutSeconds = ClampTimeout(request.TimeoutSeconds);
         var normalizedUri = await NormalizeAndValidateAsync(sourceUrl, cancellationToken).ConfigureAwait(false);
+        var auth = await ResolveAuthAsync(normalizedUri, request.Credentials, timeoutSeconds, cancellationToken)
+            .ConfigureAwait(false);
         var serviceType = GetServiceType(normalizedUri);
 
         if (serviceType is not null)
@@ -44,7 +51,20 @@ internal sealed partial class ExternalServiceDiscoveryService(
                     sourceUrl,
                     normalizedUri,
                     serviceType,
-                    ClampTimeout(request.TimeoutSeconds),
+                    auth,
+                    timeoutSeconds,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        if (TryGetArcGisCatalogRemainder(normalizedUri, out var catalogFolder))
+        {
+            return await DiscoverArcGisCatalogAsync(
+                    sourceUrl,
+                    normalizedUri,
+                    catalogFolder,
+                    auth,
+                    timeoutSeconds,
                     cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -54,7 +74,8 @@ internal sealed partial class ExternalServiceDiscoveryService(
             return await DiscoverWfsAsync(
                     sourceUrl,
                     normalizedUri,
-                    ClampTimeout(request.TimeoutSeconds),
+                    auth,
+                    timeoutSeconds,
                     cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -62,7 +83,8 @@ internal sealed partial class ExternalServiceDiscoveryService(
         return await DiscoverOgcApiFeaturesAsync(
                 sourceUrl,
                 normalizedUri,
-                ClampTimeout(request.TimeoutSeconds),
+                auth,
+                timeoutSeconds,
                 cancellationToken)
             .ConfigureAwait(false);
     }
@@ -71,7 +93,53 @@ internal sealed partial class ExternalServiceDiscoveryService(
         string sourceUrl,
         Uri serviceUri,
         string serviceType,
+        ResolvedAuth auth,
         int timeoutSeconds,
+        CancellationToken cancellationToken)
+    {
+        var warnings = new List<string>();
+        var summary = await DiscoverArcGisServiceCoreAsync(
+                serviceUri,
+                serviceType,
+                folderPath: null,
+                auth,
+                includeFeatureCount: true,
+                timeoutSeconds,
+                warnings,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        var normalizedUrl = serviceUri.ToString();
+        Log.ServiceDiscovered(logger, normalizedUrl, summary.Candidates.Length);
+
+        return new ExternalServiceDiscoveryResponse
+        {
+            SourceUrl = sourceUrl,
+            NormalizedUrl = normalizedUrl,
+            SourceKind = summary.SourceKind,
+            ServiceType = serviceType,
+            ServiceName = summary.ServiceName,
+            Srid = summary.Srid,
+            Candidates = summary.Candidates,
+            Services = [summary],
+            IsCatalog = false,
+            Warnings = warnings.ToArray()
+        };
+    }
+
+    /// <summary>
+    /// Reads a single ArcGIS service document and its layers/tables into a service summary. Shared by
+    /// single-service discovery and catalog enumeration. In catalog mode feature counts are skipped to keep
+    /// the per-service cost low; the cheap counts the layer document already exposes are still surfaced.
+    /// </summary>
+    private async Task<ExternalServiceSummary> DiscoverArcGisServiceCoreAsync(
+        Uri serviceUri,
+        string serviceType,
+        string? folderPath,
+        ResolvedAuth auth,
+        bool includeFeatureCount,
+        int timeoutSeconds,
+        List<string> warnings,
         CancellationToken cancellationToken)
     {
         var sourceKind = serviceType.Equals("FeatureServer", StringComparison.OrdinalIgnoreCase)
@@ -81,6 +149,7 @@ internal sealed partial class ExternalServiceDiscoveryService(
         var serviceDocument = await GetJsonAsync(
                 BuildServiceInfoUri(serviceUri),
                 ExternalServiceDiscoveryJsonContext.Default.ArcGisServiceDocument,
+                auth,
                 timeoutSeconds,
                 cancellationToken)
             .ConfigureAwait(false);
@@ -96,17 +165,15 @@ internal sealed partial class ExternalServiceDiscoveryService(
             serviceDocument.Name,
             ExtractServiceName(serviceUri));
 
-        var warnings = new List<string>();
         var candidates = new List<ExternalServiceLayerCandidate>();
-        var references = EnumerateLayerReferences(serviceDocument);
-
-        foreach (var reference in references)
+        foreach (var reference in EnumerateLayerReferences(serviceDocument))
         {
             try
             {
                 var layer = await GetJsonAsync(
                         BuildLayerInfoUri(serviceUri, reference.Id),
                         ExternalServiceDiscoveryJsonContext.Default.ArcGisLayerDocument,
+                        auth,
                         timeoutSeconds,
                         cancellationToken)
                     .ConfigureAwait(false);
@@ -118,9 +185,9 @@ internal sealed partial class ExternalServiceDiscoveryService(
                 }
 
                 var featureCount = layer.FeatureCount ?? layer.Count;
-                if (featureCount is null)
+                if (featureCount is null && includeFeatureCount)
                 {
-                    featureCount = await TryGetFeatureCountAsync(serviceUri, reference.Id, timeoutSeconds, cancellationToken)
+                    featureCount = await TryGetFeatureCountAsync(serviceUri, reference.Id, auth, timeoutSeconds, cancellationToken)
                         .ConfigureAwait(false);
                 }
 
@@ -137,7 +204,7 @@ internal sealed partial class ExternalServiceDiscoveryService(
             {
                 throw;
             }
-            catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException)
+            catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or JsonException)
             {
                 Log.LayerMetadataFailed(logger, reference.Id, ex);
                 warnings.Add($"Layer {reference.Id} metadata could not be read.");
@@ -150,21 +217,193 @@ internal sealed partial class ExternalServiceDiscoveryService(
             }
         }
 
-        var normalizedUrl = serviceUri.ToString();
-        Log.ServiceDiscovered(logger, normalizedUrl, candidates.Count);
+        return new ExternalServiceSummary
+        {
+            SourceKind = sourceKind,
+            ServiceName = serviceName,
+            ServiceType = serviceType,
+            ServiceUrl = serviceUri.ToString(),
+            FolderPath = folderPath,
+            Srid = GetSrid(serviceDocument.SpatialReference),
+            Candidates = candidates.ToArray()
+        };
+    }
+
+    private async Task<ExternalServiceDiscoveryResponse> DiscoverArcGisCatalogAsync(
+        string sourceUrl,
+        Uri catalogUri,
+        string? requestedFolder,
+        ResolvedAuth auth,
+        int timeoutSeconds,
+        CancellationToken cancellationToken)
+    {
+        // The catalog listing lives at the supplied URL; the services base is the URL with any folder removed,
+        // because ArcGIS service names in a folder listing are folder-qualified (e.g. "Census/Population").
+        var servicesBaseUri = requestedFolder is null ? catalogUri : RemoveLastSegment(catalogUri);
+        var warnings = new List<string>();
+
+        var rootCatalog = await GetJsonAsync(
+                BuildServiceInfoUri(catalogUri),
+                ExternalServiceDiscoveryJsonContext.Default.ArcGisCatalogDocument,
+                auth,
+                timeoutSeconds,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        if (rootCatalog.Error is not null)
+        {
+            throw new ExternalServiceDiscoveryRemoteException("ArcGIS catalog returned an error during discovery.");
+        }
+
+        // (folder, service) pairs to enumerate. The requested folder's services come from the root listing;
+        // when at the catalog root we also walk each child folder.
+        var serviceTargets = new List<(string? Folder, ArcGisCatalogServiceDocument Service)>();
+        foreach (var service in rootCatalog.Services ?? [])
+        {
+            serviceTargets.Add((requestedFolder, service));
+        }
+
+        if (requestedFolder is null)
+        {
+            foreach (var folder in rootCatalog.Folders ?? [])
+            {
+                if (string.IsNullOrWhiteSpace(folder))
+                {
+                    continue;
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
+                try
+                {
+                    var folderCatalog = await GetJsonAsync(
+                            BuildServiceInfoUri(AppendPathSegment(servicesBaseUri, folder)),
+                            ExternalServiceDiscoveryJsonContext.Default.ArcGisCatalogDocument,
+                            auth,
+                            timeoutSeconds,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+
+                    foreach (var service in folderCatalog.Services ?? [])
+                    {
+                        serviceTargets.Add((folder, service));
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or JsonException)
+                {
+                    Log.CatalogFolderFailed(logger, folder, ex);
+                    warnings.Add($"Folder '{folder}' could not be enumerated and was skipped.");
+                }
+            }
+        }
+
+        // Only feature/map services are importable; filter and de-duplicate before enumerating.
+        var importable = serviceTargets
+            .Where(target => GetCatalogServiceType(target.Service.Type) is not null &&
+                             !string.IsNullOrWhiteSpace(target.Service.Name))
+            .ToList();
+
+        if (importable.Count > MaxCatalogServices)
+        {
+            warnings.Add(
+                $"Catalog exposes {importable.Count} services; only the first {MaxCatalogServices} were enumerated.");
+            importable = importable.Take(MaxCatalogServices).ToList();
+        }
+
+        var summaries = await EnumerateCatalogServicesAsync(
+                servicesBaseUri,
+                importable,
+                auth,
+                timeoutSeconds,
+                warnings,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        var candidates = summaries.SelectMany(summary => summary.Candidates).ToArray();
+        var normalizedUrl = catalogUri.ToString();
+        Log.CatalogDiscovered(logger, normalizedUrl, summaries.Length, candidates.Length);
 
         return new ExternalServiceDiscoveryResponse
         {
             SourceUrl = sourceUrl,
             NormalizedUrl = normalizedUrl,
-            SourceKind = sourceKind,
-            ServiceType = serviceType,
-            ServiceName = serviceName,
-            Description = serviceDocument.Description,
-            Srid = GetSrid(serviceDocument.SpatialReference),
-            Candidates = candidates.ToArray(),
+            SourceKind = "arcgis-catalog",
+            ServiceType = "Catalog",
+            ServiceName = requestedFolder ?? ExtractCatalogName(catalogUri),
+            Srid = null,
+            Candidates = candidates,
+            Services = summaries,
+            IsCatalog = true,
             Warnings = warnings.ToArray()
         };
+    }
+
+    private async Task<ExternalServiceSummary[]> EnumerateCatalogServicesAsync(
+        Uri servicesBaseUri,
+        IReadOnlyList<(string? Folder, ArcGisCatalogServiceDocument Service)> targets,
+        ResolvedAuth auth,
+        int timeoutSeconds,
+        List<string> warnings,
+        CancellationToken cancellationToken)
+    {
+        using var throttle = new SemaphoreSlim(CatalogConcurrency);
+        var warningsLock = new object();
+
+        var tasks = targets.Select(async target =>
+        {
+            await throttle.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                var serviceType = GetCatalogServiceType(target.Service.Type)!;
+                var serviceUri = BuildCatalogServiceUri(servicesBaseUri, target.Service.Name!, serviceType);
+                var serviceWarnings = new List<string>();
+                var summary = await DiscoverArcGisServiceCoreAsync(
+                        serviceUri,
+                        serviceType,
+                        target.Folder,
+                        auth,
+                        includeFeatureCount: false,
+                        timeoutSeconds,
+                        serviceWarnings,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (serviceWarnings.Count > 0)
+                {
+                    lock (warningsLock)
+                    {
+                        warnings.AddRange(serviceWarnings);
+                    }
+                }
+
+                return summary;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException
+                                           or JsonException or ExternalServiceDiscoveryRemoteException)
+            {
+                Log.CatalogServiceFailed(logger, target.Service.Name ?? "(unknown)", ex);
+                lock (warningsLock)
+                {
+                    warnings.Add($"Service '{target.Service.Name}' could not be read and was skipped.");
+                }
+
+                return null;
+            }
+            finally
+            {
+                throttle.Release();
+            }
+        });
+
+        var results = await Task.WhenAll(tasks).ConfigureAwait(false);
+        return results.Where(static summary => summary is not null).Cast<ExternalServiceSummary>().ToArray();
     }
 
     private async Task<Uri> NormalizeAndValidateAsync(string sourceUrl, CancellationToken cancellationToken)
@@ -199,6 +438,7 @@ internal sealed partial class ExternalServiceDiscoveryService(
     private async Task<T> GetJsonAsync<T>(
         Uri uri,
         System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> jsonTypeInfo,
+        ResolvedAuth auth,
         int timeoutSeconds,
         CancellationToken cancellationToken)
     {
@@ -206,13 +446,26 @@ internal sealed partial class ExternalServiceDiscoveryService(
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeoutCts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
 
-        var result = await client.GetFromJsonAsync(uri, jsonTypeInfo, timeoutCts.Token).ConfigureAwait(false);
+        using var requestMessage = BuildAuthenticatedRequest(HttpMethod.Get, uri, auth);
+        using var response = await client
+            .SendAsync(requestMessage, HttpCompletionOption.ResponseHeadersRead, timeoutCts.Token)
+            .ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new HttpRequestException(
+                $"External service returned status {(int)response.StatusCode} during discovery.");
+        }
+
+        var result = await response.Content
+            .ReadFromJsonAsync(jsonTypeInfo, timeoutCts.Token)
+            .ConfigureAwait(false);
         return result ?? throw new InvalidOperationException("External service returned an empty JSON response.");
     }
 
     private async Task<int?> TryGetFeatureCountAsync(
         Uri serviceUri,
         int layerId,
+        ResolvedAuth auth,
         int timeoutSeconds,
         CancellationToken cancellationToken)
     {
@@ -221,6 +474,7 @@ internal sealed partial class ExternalServiceDiscoveryService(
             var count = await GetJsonAsync(
                     BuildLayerCountUri(serviceUri, layerId),
                     ExternalServiceDiscoveryJsonContext.Default.ArcGisCountDocument,
+                    auth,
                     timeoutSeconds,
                     cancellationToken)
                 .ConfigureAwait(false);
@@ -231,7 +485,7 @@ internal sealed partial class ExternalServiceDiscoveryService(
         {
             throw;
         }
-        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException)
+        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or JsonException)
         {
             Log.FeatureCountFailed(logger, layerId, ex);
             return null;
@@ -299,15 +553,17 @@ internal sealed partial class ExternalServiceDiscoveryService(
     private async Task<ExternalServiceDiscoveryResponse> DiscoverOgcApiFeaturesAsync(
         string sourceUrl,
         Uri serviceUri,
+        ResolvedAuth auth,
         int timeoutSeconds,
         CancellationToken cancellationToken)
     {
-        var landingDocument = await TryGetOgcLandingAsync(serviceUri, timeoutSeconds, cancellationToken)
+        var landingDocument = await TryGetOgcLandingAsync(serviceUri, auth, timeoutSeconds, cancellationToken)
             .ConfigureAwait(false);
         var collectionsUri = ResolveOgcCollectionsUri(serviceUri, landingDocument);
         var collectionsDocument = await GetJsonAsync(
                 collectionsUri,
                 ExternalServiceDiscoveryJsonContext.Default.OgcCollectionsDocument,
+                auth,
                 timeoutSeconds,
                 cancellationToken)
             .ConfigureAwait(false);
@@ -345,6 +601,19 @@ internal sealed partial class ExternalServiceDiscoveryService(
             Description = FirstNonWhiteSpaceOrNull(landingDocument?.Description, collectionsDocument.Description),
             Srid = 4326,
             Candidates = candidates,
+            Services =
+            [
+                new ExternalServiceSummary
+                {
+                    SourceKind = "ogc-api-features",
+                    ServiceName = serviceName,
+                    ServiceType = "OGC API Features",
+                    ServiceUrl = normalizedUrl,
+                    Srid = 4326,
+                    Candidates = candidates
+                }
+            ],
+            IsCatalog = false,
             Warnings = warnings
         };
     }
@@ -352,6 +621,7 @@ internal sealed partial class ExternalServiceDiscoveryService(
     private async Task<ExternalServiceDiscoveryResponse> DiscoverWfsAsync(
         string sourceUrl,
         Uri serviceUri,
+        ResolvedAuth auth,
         int timeoutSeconds,
         CancellationToken cancellationToken)
     {
@@ -359,7 +629,7 @@ internal sealed partial class ExternalServiceDiscoveryService(
         XDocument capabilitiesDocument;
         try
         {
-            capabilitiesDocument = await GetXmlAsync(capabilitiesUri, timeoutSeconds, cancellationToken)
+            capabilitiesDocument = await GetXmlAsync(capabilitiesUri, auth, timeoutSeconds, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (XmlException)
@@ -411,22 +681,37 @@ internal sealed partial class ExternalServiceDiscoveryService(
         var normalizedUrl = capabilitiesUri.ToString();
         Log.ServiceDiscovered(logger, normalizedUrl, candidates.Length);
 
+        var wfsServiceType = BuildWfsServiceType(root);
         return new ExternalServiceDiscoveryResponse
         {
             SourceUrl = sourceUrl,
             NormalizedUrl = normalizedUrl,
             SourceKind = "wfs",
-            ServiceType = BuildWfsServiceType(root),
+            ServiceType = wfsServiceType,
             ServiceName = serviceName,
             Description = GetWfsServiceMetadataValue(root, "Abstract"),
             Srid = responseSrid,
             Candidates = candidates,
+            Services =
+            [
+                new ExternalServiceSummary
+                {
+                    SourceKind = "wfs",
+                    ServiceName = serviceName,
+                    ServiceType = wfsServiceType,
+                    ServiceUrl = normalizedUrl,
+                    Srid = responseSrid,
+                    Candidates = candidates
+                }
+            ],
+            IsCatalog = false,
             Warnings = warnings.ToArray()
         };
     }
 
     private async Task<XDocument> GetXmlAsync(
         Uri uri,
+        ResolvedAuth auth,
         int timeoutSeconds,
         CancellationToken cancellationToken)
     {
@@ -434,7 +719,9 @@ internal sealed partial class ExternalServiceDiscoveryService(
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeoutCts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
 
-        using var response = await client.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, timeoutCts.Token)
+        using var requestMessage = BuildAuthenticatedRequest(HttpMethod.Get, uri, auth);
+        using var response = await client
+            .SendAsync(requestMessage, HttpCompletionOption.ResponseHeadersRead, timeoutCts.Token)
             .ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
@@ -557,6 +844,7 @@ internal sealed partial class ExternalServiceDiscoveryService(
 
     private async Task<OgcLandingDocument?> TryGetOgcLandingAsync(
         Uri serviceUri,
+        ResolvedAuth auth,
         int timeoutSeconds,
         CancellationToken cancellationToken)
     {
@@ -570,6 +858,7 @@ internal sealed partial class ExternalServiceDiscoveryService(
             return await GetJsonAsync(
                     serviceUri,
                     ExternalServiceDiscoveryJsonContext.Default.OgcLandingDocument,
+                    auth,
                     timeoutSeconds,
                     cancellationToken)
                 .ConfigureAwait(false);
@@ -578,7 +867,7 @@ internal sealed partial class ExternalServiceDiscoveryService(
         {
             throw;
         }
-        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException)
+        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or JsonException)
         {
             Log.OgcLandingPageFailed(logger, serviceUri, ex);
             return null;
@@ -729,6 +1018,304 @@ internal sealed partial class ExternalServiceDiscoveryService(
                     Nullable = field.Nullable
                 })
                 .ToArray();
+
+    // ---- Authentication -------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Resolved, transient authentication material applied to discovery requests: a token appended as a query
+    /// parameter (ArcGIS) and/or an Authorization header (Basic), plus an optional Referer.
+    /// </summary>
+    private readonly record struct ResolvedAuth(string? Token, string? AuthorizationHeader, string? Referer)
+    {
+        public static ResolvedAuth None => default;
+    }
+
+    private async Task<ResolvedAuth> ResolveAuthAsync(
+        Uri serviceUri,
+        ExternalServiceCredentials? credentials,
+        int timeoutSeconds,
+        CancellationToken cancellationToken)
+    {
+        if (credentials is null || string.IsNullOrWhiteSpace(credentials.Mode))
+        {
+            return ResolvedAuth.None;
+        }
+
+        switch (credentials.Mode.Trim().ToLowerInvariant())
+        {
+            case "anonymous":
+            case "none":
+                return ResolvedAuth.None;
+
+            case "token":
+                if (string.IsNullOrWhiteSpace(credentials.Token))
+                {
+                    throw new ExternalServiceDiscoveryRequestException("A token is required for token authentication.");
+                }
+
+                return new ResolvedAuth(credentials.Token.Trim(), null, credentials.Referer);
+
+            case "basic":
+                if (string.IsNullOrWhiteSpace(credentials.Username))
+                {
+                    throw new ExternalServiceDiscoveryRequestException(
+                        "A username and password are required for basic authentication.");
+                }
+
+                var encoded = Convert.ToBase64String(
+                    Encoding.UTF8.GetBytes($"{credentials.Username}:{credentials.Password}"));
+                return new ResolvedAuth(null, $"Basic {encoded}", null);
+
+            case "arcgis-token":
+                return await MintArcGisTokenAsync(serviceUri, credentials, timeoutSeconds, cancellationToken)
+                    .ConfigureAwait(false);
+
+            case "oauth":
+                return await MintOAuthTokenAsync(credentials, timeoutSeconds, cancellationToken)
+                    .ConfigureAwait(false);
+
+            default:
+                throw new ExternalServiceDiscoveryRequestException(
+                    $"Unsupported authentication mode '{credentials.Mode}'.");
+        }
+    }
+
+    private async Task<ResolvedAuth> MintArcGisTokenAsync(
+        Uri serviceUri,
+        ExternalServiceCredentials credentials,
+        int timeoutSeconds,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(credentials.Username) || string.IsNullOrWhiteSpace(credentials.Password))
+        {
+            throw new ExternalServiceDiscoveryRequestException(
+                "A username and password are required for ArcGIS token authentication.");
+        }
+
+        var tokenSource = string.IsNullOrWhiteSpace(credentials.TokenUrl)
+            ? DeriveArcGisTokenUrl(serviceUri)
+            : credentials.TokenUrl!;
+        var tokenUri = await NormalizeAndValidateAsync(tokenSource, cancellationToken).ConfigureAwait(false);
+
+        var form = new List<KeyValuePair<string, string>>
+        {
+            new("username", credentials.Username!),
+            new("password", credentials.Password ?? string.Empty),
+            new("f", "json"),
+            new("expiration", "60")
+        };
+        if (!string.IsNullOrWhiteSpace(credentials.Referer))
+        {
+            form.Add(new("referer", credentials.Referer!));
+            form.Add(new("client", "referer"));
+        }
+        else
+        {
+            form.Add(new("client", "requestip"));
+        }
+
+        var token = await PostFormAsync(
+                tokenUri,
+                form,
+                ExternalServiceDiscoveryJsonContext.Default.ArcGisTokenDocument,
+                timeoutSeconds,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        if (token.Error is not null || string.IsNullOrWhiteSpace(token.Token))
+        {
+            throw new ExternalServiceDiscoveryRequestException(
+                "ArcGIS token request was rejected. Verify the username, password, and token URL.");
+        }
+
+        return new ResolvedAuth(token.Token, null, credentials.Referer);
+    }
+
+    private async Task<ResolvedAuth> MintOAuthTokenAsync(
+        ExternalServiceCredentials credentials,
+        int timeoutSeconds,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(credentials.TokenUrl))
+        {
+            throw new ExternalServiceDiscoveryRequestException(
+                "A token endpoint URL is required for OAuth authentication.");
+        }
+
+        if (string.IsNullOrWhiteSpace(credentials.ClientId) || string.IsNullOrWhiteSpace(credentials.ClientSecret))
+        {
+            throw new ExternalServiceDiscoveryRequestException(
+                "A client id and client secret are required for OAuth authentication.");
+        }
+
+        var tokenUri = await NormalizeAndValidateAsync(credentials.TokenUrl!, cancellationToken).ConfigureAwait(false);
+        var form = new List<KeyValuePair<string, string>>
+        {
+            new("grant_type", "client_credentials"),
+            new("client_id", credentials.ClientId!),
+            new("client_secret", credentials.ClientSecret!),
+            new("f", "json")
+        };
+
+        var token = await PostFormAsync(
+                tokenUri,
+                form,
+                ExternalServiceDiscoveryJsonContext.Default.OAuthTokenDocument,
+                timeoutSeconds,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!string.IsNullOrWhiteSpace(token.Error) || string.IsNullOrWhiteSpace(token.AccessToken))
+        {
+            var detail = string.IsNullOrWhiteSpace(token.ErrorDescription) ? "." : $": {token.ErrorDescription}";
+            throw new ExternalServiceDiscoveryRequestException($"OAuth token request was rejected{detail}");
+        }
+
+        return new ResolvedAuth(token.AccessToken, null, null);
+    }
+
+    private async Task<T> PostFormAsync<T>(
+        Uri uri,
+        IEnumerable<KeyValuePair<string, string>> form,
+        System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> jsonTypeInfo,
+        int timeoutSeconds,
+        CancellationToken cancellationToken)
+    {
+        var client = httpClientFactory.CreateClient(HttpClientName);
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
+
+        using var content = new FormUrlEncodedContent(form);
+        using var response = await client.PostAsync(uri, content, timeoutCts.Token).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new ExternalServiceDiscoveryRequestException(
+                $"Authentication token endpoint returned status {(int)response.StatusCode}.");
+        }
+
+        var result = await response.Content.ReadFromJsonAsync(jsonTypeInfo, timeoutCts.Token).ConfigureAwait(false);
+        return result ?? throw new ExternalServiceDiscoveryRequestException(
+            "Authentication token endpoint returned an empty response.");
+    }
+
+    private static string DeriveArcGisTokenUrl(Uri serviceUri)
+    {
+        // ArcGIS Server co-locates a token endpoint at /{instance}/tokens/generateToken, where {instance} is the
+        // first path segment (commonly "arcgis"). Callers can override via Credentials.TokenUrl for portal/AGOL.
+        var segments = serviceUri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        var instance = segments.Length > 0 ? segments[0] : "arcgis";
+        return $"{serviceUri.GetLeftPart(UriPartial.Authority)}/{instance}/tokens/generateToken";
+    }
+
+    private static HttpRequestMessage BuildAuthenticatedRequest(HttpMethod method, Uri uri, ResolvedAuth auth)
+    {
+        var request = new HttpRequestMessage(method, ApplyTokenQuery(uri, auth));
+        if (!string.IsNullOrEmpty(auth.AuthorizationHeader))
+        {
+            request.Headers.TryAddWithoutValidation("Authorization", auth.AuthorizationHeader);
+        }
+
+        if (!string.IsNullOrEmpty(auth.Referer))
+        {
+            request.Headers.TryAddWithoutValidation("Referer", auth.Referer);
+        }
+
+        return request;
+    }
+
+    private static Uri ApplyTokenQuery(Uri uri, ResolvedAuth auth)
+    {
+        if (string.IsNullOrEmpty(auth.Token))
+        {
+            return uri;
+        }
+
+        var separator = string.IsNullOrEmpty(uri.Query) ? "?" : "&";
+        return new Uri($"{uri.AbsoluteUri}{separator}token={Uri.EscapeDataString(auth.Token)}", UriKind.Absolute);
+    }
+
+    // ---- ArcGIS catalog enumeration -------------------------------------------------------------------
+
+    /// <summary>
+    /// Detects an ArcGIS catalog root (<c>.../rest/services</c>) or single folder (<c>.../rest/services/{folder}</c>)
+    /// and returns the folder name (null at the root). Returns false for specific service/layer URLs.
+    /// </summary>
+    private static bool TryGetArcGisCatalogRemainder(Uri uri, out string? folderPath)
+    {
+        folderPath = null;
+        var segments = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+
+        var servicesIndex = -1;
+        for (var i = 1; i < segments.Length; i++)
+        {
+            if (segments[i].Equals("services", StringComparison.OrdinalIgnoreCase) &&
+                segments[i - 1].Equals("rest", StringComparison.OrdinalIgnoreCase))
+            {
+                servicesIndex = i;
+                break;
+            }
+        }
+
+        if (servicesIndex < 0)
+        {
+            return false;
+        }
+
+        var remainder = segments.Length - servicesIndex - 1;
+        if (remainder == 0)
+        {
+            return true;
+        }
+
+        if (remainder == 1)
+        {
+            var last = segments[^1];
+            if (last.Equals("FeatureServer", StringComparison.OrdinalIgnoreCase) ||
+                last.Equals("MapServer", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            folderPath = Uri.UnescapeDataString(last);
+            return true;
+        }
+
+        return false;
+    }
+
+    private static string? GetCatalogServiceType(string? type)
+    {
+        if (string.IsNullOrWhiteSpace(type))
+        {
+            return null;
+        }
+
+        if (type.Equals("FeatureServer", StringComparison.OrdinalIgnoreCase))
+        {
+            return "FeatureServer";
+        }
+
+        return type.Equals("MapServer", StringComparison.OrdinalIgnoreCase) ? "MapServer" : null;
+    }
+
+    private static Uri BuildCatalogServiceUri(Uri servicesBaseUri, string serviceName, string serviceType)
+        => AppendPathSegment(AppendPathSegment(servicesBaseUri, serviceName.Trim('/')), serviceType);
+
+    private static Uri RemoveLastSegment(Uri uri)
+    {
+        var segments = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        var trimmed = segments.Length > 0 ? string.Join('/', segments[..^1]) : string.Empty;
+        var builder = new UriBuilder(uri)
+        {
+            Query = string.Empty,
+            Fragment = string.Empty,
+            Path = "/" + trimmed
+        };
+
+        return builder.Uri;
+    }
+
+    private static string ExtractCatalogName(Uri uri) => uri.Host;
 
     private static Uri BuildServiceInfoUri(Uri serviceUri)
         => new($"{serviceUri}?f=json", UriKind.Absolute);
@@ -1027,6 +1614,24 @@ internal sealed partial class ExternalServiceDiscoveryService(
             Level = LogLevel.Debug,
             Message = "Failed to read OGC API Features landing page {ServiceUrl}")]
         public static partial void OgcLandingPageFailed(ILogger logger, Uri serviceUrl, Exception exception);
+
+        [LoggerMessage(
+            EventId = 4184,
+            Level = LogLevel.Information,
+            Message = "Discovered ArcGIS catalog {CatalogUrl} with {ServiceCount} services and {CandidateCount} candidates")]
+        public static partial void CatalogDiscovered(ILogger logger, string catalogUrl, int serviceCount, int candidateCount);
+
+        [LoggerMessage(
+            EventId = 4185,
+            Level = LogLevel.Debug,
+            Message = "Failed to enumerate ArcGIS catalog folder {Folder}")]
+        public static partial void CatalogFolderFailed(ILogger logger, string folder, Exception exception);
+
+        [LoggerMessage(
+            EventId = 4186,
+            Level = LogLevel.Debug,
+            Message = "Failed to read ArcGIS catalog service {Service}")]
+        public static partial void CatalogServiceFailed(ILogger logger, string service, Exception exception);
     }
 }
 

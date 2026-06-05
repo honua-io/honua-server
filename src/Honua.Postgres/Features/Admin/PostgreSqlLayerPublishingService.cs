@@ -330,8 +330,11 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         await EnsureServiceLayerAsync(connection, transaction, serviceName, layerId, cancellationToken);
         await UpdateServiceExtentAsync(connection, transaction, serviceName, cancellationToken);
 
-        await transaction.CommitAsync(cancellationToken);
-
+        // Project into the Metadata v2 graph BEFORE committing the layer transaction. The graph store uses
+        // its own connection/transaction, so it only needs the computed publish values (not the uncommitted
+        // layer row). Doing it first means a projection failure leaves the layer transaction uncommitted and
+        // rolled back on dispose — instead of committing an orphaned layer that then blocks re-publish with
+        // "Layer already exists". (Publish is atomic from the caller's perspective.)
         await UpsertPublishedLayerMetadataV2Async(
                 serviceName,
                 request,
@@ -347,6 +350,8 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                 extent,
                 cancellationToken)
             .ConfigureAwait(false);
+
+        await transaction.CommitAsync(cancellationToken);
 
         return new PublishedLayerSummary
         {

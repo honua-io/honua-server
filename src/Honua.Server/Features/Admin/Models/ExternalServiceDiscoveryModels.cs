@@ -25,6 +25,61 @@ internal sealed record ExternalServiceDiscoveryRequest
     /// Optional per-request timeout in seconds.
     /// </summary>
     public int? TimeoutSeconds { get; init; }
+
+    /// <summary>
+    /// Optional credentials for authenticated discovery of a protected service or catalog.
+    /// </summary>
+    public ExternalServiceCredentials? Credentials { get; init; }
+}
+
+/// <summary>
+/// Credentials used to authenticate against a protected external service or catalog. Secrets are used
+/// transiently for the discovery request only and are never persisted by the discovery service.
+/// </summary>
+internal sealed record ExternalServiceCredentials
+{
+    /// <summary>
+    /// Authentication mode: <c>arcgis-token</c> (exchange username/password for an ArcGIS token),
+    /// <c>token</c> (use a supplied ArcGIS token/API key directly), <c>basic</c> (HTTP Basic), or
+    /// <c>oauth</c> (client-credentials grant against a token endpoint).
+    /// </summary>
+    public string? Mode { get; init; }
+
+    /// <summary>
+    /// Username for <c>arcgis-token</c> and <c>basic</c> modes.
+    /// </summary>
+    public string? Username { get; init; }
+
+    /// <summary>
+    /// Password for <c>arcgis-token</c> and <c>basic</c> modes.
+    /// </summary>
+    public string? Password { get; init; }
+
+    /// <summary>
+    /// Pre-issued token / API key for <c>token</c> mode.
+    /// </summary>
+    public string? Token { get; init; }
+
+    /// <summary>
+    /// Token endpoint: the ArcGIS portal generateToken URL for <c>arcgis-token</c> mode, or the OAuth token
+    /// endpoint for <c>oauth</c> mode. When omitted for <c>arcgis-token</c> it is derived from the service host.
+    /// </summary>
+    public string? TokenUrl { get; init; }
+
+    /// <summary>
+    /// OAuth client id for <c>oauth</c> mode.
+    /// </summary>
+    public string? ClientId { get; init; }
+
+    /// <summary>
+    /// OAuth client secret for <c>oauth</c> mode.
+    /// </summary>
+    public string? ClientSecret { get; init; }
+
+    /// <summary>
+    /// Optional referer sent when minting an ArcGIS token (some portals bind tokens to a referer).
+    /// </summary>
+    public string? Referer { get; init; }
 }
 
 /// <summary>
@@ -68,14 +123,66 @@ internal sealed record ExternalServiceDiscoveryResponse
     public int? Srid { get; init; }
 
     /// <summary>
-    /// Discovered layer/table candidates.
+    /// Discovered layer/table candidates flattened across every service (the full selectable set).
     /// </summary>
     public ExternalServiceLayerCandidate[] Candidates { get; init; } = [];
+
+    /// <summary>
+    /// Discovered services. For a single-service URL this contains one entry; for a catalog root or folder it
+    /// contains every enumerated service grouped by folder. Each service carries its own candidate layers.
+    /// </summary>
+    public ExternalServiceSummary[] Services { get; init; } = [];
+
+    /// <summary>
+    /// True when the supplied URL was an ArcGIS catalog root or folder that was enumerated into multiple services.
+    /// </summary>
+    public bool IsCatalog { get; init; }
 
     /// <summary>
     /// Non-fatal discovery warnings.
     /// </summary>
     public string[] Warnings { get; init; } = [];
+}
+
+/// <summary>
+/// A single external service discovered within a catalog (or the sole service for a single-service URL).
+/// </summary>
+internal sealed record ExternalServiceSummary
+{
+    /// <summary>
+    /// Stable source kind for the service.
+    /// </summary>
+    public required string SourceKind { get; init; }
+
+    /// <summary>
+    /// Service display name.
+    /// </summary>
+    public required string ServiceName { get; init; }
+
+    /// <summary>
+    /// External service type such as FeatureServer or MapServer.
+    /// </summary>
+    public required string ServiceType { get; init; }
+
+    /// <summary>
+    /// Service root URL.
+    /// </summary>
+    public required string ServiceUrl { get; init; }
+
+    /// <summary>
+    /// Catalog folder the service belongs to, or null when at the catalog root / for a single service.
+    /// </summary>
+    public string? FolderPath { get; init; }
+
+    /// <summary>
+    /// Service-level SRID if reported.
+    /// </summary>
+    public int? Srid { get; init; }
+
+    /// <summary>
+    /// Layer/table candidates belonging to this service.
+    /// </summary>
+    public ExternalServiceLayerCandidate[] Candidates { get; init; } = [];
 }
 
 /// <summary>
@@ -211,6 +318,51 @@ internal sealed record ArcGisServiceDocument
 
     [JsonPropertyName("error")]
     public ArcGisErrorDocument? Error { get; init; }
+}
+
+internal sealed record ArcGisCatalogDocument
+{
+    [JsonPropertyName("folders")]
+    public string[]? Folders { get; init; }
+
+    [JsonPropertyName("services")]
+    public ArcGisCatalogServiceDocument[]? Services { get; init; }
+
+    [JsonPropertyName("error")]
+    public ArcGisErrorDocument? Error { get; init; }
+}
+
+internal sealed record ArcGisCatalogServiceDocument
+{
+    [JsonPropertyName("name")]
+    public string? Name { get; init; }
+
+    [JsonPropertyName("type")]
+    public string? Type { get; init; }
+}
+
+internal sealed record ArcGisTokenDocument
+{
+    [JsonPropertyName("token")]
+    public string? Token { get; init; }
+
+    [JsonPropertyName("expires")]
+    public long? Expires { get; init; }
+
+    [JsonPropertyName("error")]
+    public ArcGisErrorDocument? Error { get; init; }
+}
+
+internal sealed record OAuthTokenDocument
+{
+    [JsonPropertyName("access_token")]
+    public string? AccessToken { get; init; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; init; }
+
+    [JsonPropertyName("error_description")]
+    public string? ErrorDescription { get; init; }
 }
 
 internal sealed record ArcGisLayerReferenceDocument

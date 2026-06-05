@@ -625,6 +625,15 @@ internal static class ServiceSettingsEndpoints
         }
     }
 
+    // The Metadata v2 graph store uses optimistic concurrency: SaveAsync rejects a stale expected-etag with an
+    // "etag mismatch" InvalidOperationException. Background writers (catalog cache, CRS warmup) can bump the
+    // etag between our read and write, so the read-modify-write is retried a few times before surfacing.
+    private const int MetadataMutationMaxAttempts = 5;
+
+    private static bool IsEtagMismatch(Exception exception) =>
+        exception is InvalidOperationException
+        && exception.Message.Contains("etag mismatch", StringComparison.OrdinalIgnoreCase);
+
     /// <summary>
     /// Loads the canonical Metadata v2 graph, applies <paramref name="mutate"/> to every
     /// service whose <c>Metadata.Name</c> matches <paramref name="serviceName"/>
@@ -632,7 +641,7 @@ internal static class ServiceSettingsEndpoints
     /// a name when the same logical service is exposed under different protocols (e.g.
     /// FeatureServer / MapServer / Stac all named "test"), and the v1 admin endpoint
     /// updated all of them in one row because protocol toggles lived on a single
-    /// per-service settings record.
+    /// per-service settings record. Retries on optimistic-concurrency etag mismatch.
     /// </summary>
     private static async Task MutateServicesByNameAsync(
         IMetadataV2GraphStore graphStore,
@@ -640,29 +649,41 @@ internal static class ServiceSettingsEndpoints
         Func<MetadataV2Service, MetadataV2Service> mutate,
         CancellationToken cancellationToken)
     {
-        var snapshot = await graphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var services = snapshot.Graph.Services.ToArray();
-        var mutatedAny = false;
-        for (var i = 0; i < services.Length; i++)
+        for (var attempt = 1; ; attempt++)
         {
-            if (string.Equals(services[i].Metadata.Name, serviceName, StringComparison.OrdinalIgnoreCase))
+            var snapshot = await graphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            var services = snapshot.Graph.Services.ToArray();
+            var mutatedAny = false;
+            for (var i = 0; i < services.Length; i++)
             {
-                services[i] = mutate(services[i]);
-                mutatedAny = true;
+                if (string.Equals(services[i].Metadata.Name, serviceName, StringComparison.OrdinalIgnoreCase))
+                {
+                    services[i] = mutate(services[i]);
+                    mutatedAny = true;
+                }
+            }
+
+            if (!mutatedAny)
+            {
+                return;
+            }
+
+            var updated = snapshot.Graph with
+            {
+                Services = services,
+                Revision = snapshot.Graph.Revision + 1,
+            };
+
+            try
+            {
+                _ = await graphStore.SaveAsync(updated, snapshot.Etag, cancellationToken).ConfigureAwait(false);
+                return;
+            }
+            catch (Exception ex) when (IsEtagMismatch(ex) && attempt < MetadataMutationMaxAttempts)
+            {
+                // Concurrent etag bump — re-read and re-apply the mutation against the fresh snapshot.
             }
         }
-
-        if (!mutatedAny)
-        {
-            return;
-        }
-
-        var updated = snapshot.Graph with
-        {
-            Services = services,
-            Revision = snapshot.Graph.Revision + 1,
-        };
-        _ = await graphStore.SaveAsync(updated, snapshot.Etag, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -681,39 +702,51 @@ internal static class ServiceSettingsEndpoints
         Func<MetadataV2Resource, MetadataV2Resource> mutate,
         CancellationToken cancellationToken)
     {
-        var snapshot = await graphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var matchingServiceIds = snapshot.Graph.Services
-            .Where(s => string.Equals(s.Metadata.Name, serviceName, StringComparison.OrdinalIgnoreCase))
-            .Select(s => s.Metadata.Id)
-            .ToHashSet(StringComparer.Ordinal);
-
-        var targetResourceIds = snapshot.Graph.Publications
-            .Where(p => matchingServiceIds.Contains(p.ServiceId)
-                && p.Identifier.IsNumeric
-                && p.LayerIndex == layerId)
-            .Select(p => p.ResourceId)
-            .ToHashSet(StringComparer.Ordinal);
-
-        if (targetResourceIds.Count == 0)
+        for (var attempt = 1; ; attempt++)
         {
-            return;
-        }
+            var snapshot = await graphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            var matchingServiceIds = snapshot.Graph.Services
+                .Where(s => string.Equals(s.Metadata.Name, serviceName, StringComparison.OrdinalIgnoreCase))
+                .Select(s => s.Metadata.Id)
+                .ToHashSet(StringComparer.Ordinal);
 
-        var resources = snapshot.Graph.Resources.ToArray();
-        for (var i = 0; i < resources.Length; i++)
-        {
-            if (targetResourceIds.Contains(resources[i].Metadata.Id))
+            var targetResourceIds = snapshot.Graph.Publications
+                .Where(p => matchingServiceIds.Contains(p.ServiceId)
+                    && p.Identifier.IsNumeric
+                    && p.LayerIndex == layerId)
+                .Select(p => p.ResourceId)
+                .ToHashSet(StringComparer.Ordinal);
+
+            if (targetResourceIds.Count == 0)
             {
-                resources[i] = mutate(resources[i]);
+                return;
+            }
+
+            var resources = snapshot.Graph.Resources.ToArray();
+            for (var i = 0; i < resources.Length; i++)
+            {
+                if (targetResourceIds.Contains(resources[i].Metadata.Id))
+                {
+                    resources[i] = mutate(resources[i]);
+                }
+            }
+
+            var updated = snapshot.Graph with
+            {
+                Resources = resources,
+                Revision = snapshot.Graph.Revision + 1,
+            };
+
+            try
+            {
+                _ = await graphStore.SaveAsync(updated, snapshot.Etag, cancellationToken).ConfigureAwait(false);
+                return;
+            }
+            catch (Exception ex) when (IsEtagMismatch(ex) && attempt < MetadataMutationMaxAttempts)
+            {
+                // Concurrent etag bump — re-read and re-apply against the fresh snapshot.
             }
         }
-
-        var updated = snapshot.Graph with
-        {
-            Resources = resources,
-            Revision = snapshot.Graph.Revision + 1,
-        };
-        _ = await graphStore.SaveAsync(updated, snapshot.Etag, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>

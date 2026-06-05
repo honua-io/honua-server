@@ -107,6 +107,7 @@ internal static partial class FeatureServerEndpoints
         QueryLimits queryLimits,
         FeatureServerTimeInfo? timeInfo,
         JsonElement? drawingInfo,
+        JsonElement? popupInfo,
         FeatureServerExtrusionInfo? extrusionInfo,
         bool supportsGeobufOutput,
         bool supportsAttachmentUploads)
@@ -164,6 +165,7 @@ internal static partial class FeatureServerEndpoints
             DisplayField = displayField,
             UniqueIdField = new UniqueIdFieldInfo { Name = objectIdField, IsSystemMaintained = true },
             DrawingInfo = drawingInfo.HasValue ? drawingInfo.Value : null,
+            PopupInfo = popupInfo.HasValue ? popupInfo.Value : null,
             Capabilities = BuildLayerCapabilitiesV2(service, resource, supportsAttachmentUploads),
             SupportsAdvancedQueries = supportsAdvancedQueries,
             SupportsStatistics = supportsStatistics,

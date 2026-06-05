@@ -120,6 +120,7 @@ internal static partial class SecureConnectionEndpoints
             [FromServices] IDatabaseConnectionStringBuilder connectionStringBuilder,
             [FromServices] IConnectionSecretResolver secretResolver,
             [FromServices] IConnectionHealthTester connectionTester,
+            [FromServices] IConnectionDriverRegistry driverRegistry,
             HttpContext context,
             [FromServices] ILogger<SecureConnectionEndpointsLog> logger)
     {
@@ -151,6 +152,11 @@ internal static partial class SecureConnectionEndpoints
                 return TypedResults.BadRequest(ApiResponse<object>.Failure("SSL mode must require encrypted transport when SSL is required"));
             }
 
+            // Provider-aware: build + probe with the engine driver for the requested provider so MySQL / SQL
+            // Server / Oracle drafts are tested with the right ADO.NET provider. Falls back to the PostgreSQL
+            // builder/tester when no driver is registered for the provider (preserves prior behaviour).
+            var driver = driverRegistry.Find(request.Provider);
+
             string connectionString;
 
             if (!string.IsNullOrWhiteSpace(request.SecretReference))
@@ -166,16 +172,26 @@ internal static partial class SecureConnectionEndpoints
                     return TypedResults.BadRequest(ApiResponse<object>.Failure("Password is required when not using secret reference"));
                 }
 
-                connectionString = connectionStringBuilder.BuildConnectionString(
-                    request.Host,
-                    request.Port,
-                    request.DatabaseName,
-                    request.Username,
-                    request.Password,
-                    parsedSslMode);
+                connectionString = driver is not null
+                    ? driver.BuildConnectionString(new ConnectionTarget(
+                        request.Host!,
+                        request.Port,
+                        request.DatabaseName!,
+                        request.Username!,
+                        request.Password,
+                        parsedSslMode))
+                    : connectionStringBuilder.BuildConnectionString(
+                        request.Host!,
+                        request.Port,
+                        request.DatabaseName!,
+                        request.Username!,
+                        request.Password,
+                        parsedSslMode);
             }
 
-            var healthStatus = await connectionTester.TestConnectionAsync(connectionString, context.RequestAborted);
+            var healthStatus = driver is not null
+                ? await driver.TestConnectionAsync(connectionString, context.RequestAborted)
+                : await connectionTester.TestConnectionAsync(connectionString, context.RequestAborted);
             var isHealthy = healthStatus == ConnectionHealthStatus.Healthy;
             var result = new ConnectionTestResult
             {
@@ -308,6 +324,7 @@ internal static partial class SecureConnectionEndpoints
             [FromServices] ISecureConnectionRegistry registry,
             [FromServices] IConnectionEncryptionService encryptionService,
             [FromServices] IDatabaseConnectionStringBuilder connectionStringBuilder,
+            [FromServices] IConnectionDriverRegistry driverRegistry,
             HttpContext context)
     {
         var logger = context.RequestServices.GetRequiredService<ILogger<SecureConnectionEndpointsLog>>();
@@ -346,13 +363,16 @@ internal static partial class SecureConnectionEndpoints
 
             if (!string.IsNullOrWhiteSpace(request.SecretReference))
             {
-                // Create with secret reference
+                // Create with secret reference. The resolved secret holds the full connection string and is the
+                // source of truth, so host/database/username are optional display metadata here; fall back to a
+                // neutral placeholder when the caller omits them.
+                const string secretMetadataPlaceholder = "(from secret reference)";
                 connection = DataConnection.CreateWithSecretReference(
                     request.Name,
-                    request.Host,
+                    string.IsNullOrWhiteSpace(request.Host) ? secretMetadataPlaceholder : request.Host,
                     request.Port,
-                    request.DatabaseName,
-                    request.Username,
+                    string.IsNullOrWhiteSpace(request.DatabaseName) ? secretMetadataPlaceholder : request.DatabaseName,
+                    string.IsNullOrWhiteSpace(request.Username) ? secretMetadataPlaceholder : request.Username,
                     request.SecretReference,
                     request.SecretType!,
                     userIdentity,
@@ -368,24 +388,36 @@ internal static partial class SecureConnectionEndpoints
                     return TypedResults.BadRequest(ApiResponse<object>.Failure("Password is required when not using secret reference"));
                 }
 
-                // Build connection string and encrypt it
-                var connectionString = connectionStringBuilder.BuildConnectionString(
-                    request.Host,
-                    request.Port,
-                    request.DatabaseName,
-                    request.Username,
-                    request.Password,
-                    parsedSslMode);
+                // Build connection string in the engine's native format (Npgsql / MySqlConnector /
+                // Microsoft.Data.SqlClient / Oracle) so the stored, encrypted string actually works for this
+                // provider and the existing-connection test can re-probe it. Falls back to the PostgreSQL
+                // builder when no driver is registered for the provider.
+                var createDriver = driverRegistry.Find(request.Provider);
+                var connectionString = createDriver is not null
+                    ? createDriver.BuildConnectionString(new ConnectionTarget(
+                        request.Host!,
+                        request.Port,
+                        request.DatabaseName!,
+                        request.Username!,
+                        request.Password,
+                        parsedSslMode))
+                    : connectionStringBuilder.BuildConnectionString(
+                        request.Host!,
+                        request.Port,
+                        request.DatabaseName!,
+                        request.Username!,
+                        request.Password,
+                        parsedSslMode);
 
                 var encryptedData = await encryptionService.EncryptConnectionStringAsync(connectionString);
                 var keyVersion = await encryptionService.GetCurrentKeyVersionAsync();
 
                 connection = DataConnection.CreateWithEncryptedCredentials(
                     request.Name,
-                    request.Host,
+                    request.Host!,
                     request.Port,
-                    request.DatabaseName,
-                    request.Username,
+                    request.DatabaseName!,
+                    request.Username!,
                     encryptedData,
                     keyVersion,
                     userIdentity,

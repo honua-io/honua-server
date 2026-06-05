@@ -4,7 +4,11 @@
     <TargetFramework>net10.0</TargetFramework>
     <PublishAot>true</PublishAot>
     <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
-    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- Globalization must NOT be invariant: Microsoft.Data.SqlClient and Oracle.ManagedDataAccess throw
+         "Globalization Invariant Mode is not supported" at connect time, which breaks the provider-aware
+         admin connection test for SQL Server and Oracle. The published/AOT image must therefore include ICU
+         (e.g. libicu in the runtime base image). See honua-server#1369. -->
+    <InvariantGlobalization>false</InvariantGlobalization>
     <OptimizationPreference>Speed</OptimizationPreference>
     <IlcOptimizationPreference>Speed</IlcOptimizationPreference>
     <StripSymbols>true</StripSymbols>
@@ -14,7 +18,11 @@
     <!-- Suppress trim warnings from Serilog and endpoint mapping for AOT compatibility -->
     <!-- Suppress analyzer warnings that are not critical for compilation -->
     <!-- Temporarily allow CS1591 while establishing warnings-as-errors framework -->
-    <NoWarn>$(NoWarn);CS1591;IL2104;IL2026;IL3002;IL3050;CA1041;CA1000;CA1862;IDE0051;IDE0052;IDE0005;CA1844;IL2075</NoWarn>
+    <!-- CA1305/CA1310 (locale-sensitive ToString/StartsWith/EndsWith) were auto-suppressed while this project
+         ran in InvariantGlobalization mode. Disabling invariant mode (required for the SQL Server/Oracle
+         connection drivers) re-surfaces these pre-existing call sites as errors. Suppress them here to restore
+         the prior effective state. STOPGAP — track removal + per-site culture fixes in honua-server#1369. -->
+    <NoWarn>$(NoWarn);CS1591;IL2104;IL2026;IL3002;IL3050;CA1041;CA1000;CA1862;IDE0051;IDE0052;IDE0005;CA1844;IL2075;CA1305;CA1310</NoWarn>
   </PropertyGroup>
 
   <!--

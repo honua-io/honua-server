@@ -10,15 +10,24 @@ namespace Honua.Server.Features.Admin.Models;
 /// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
-    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
+    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    // Remote ArcGIS services occasionally emit NaN/Infinity (as named literals or strings) for empty-layer
+    // extents; tolerate them rather than failing the whole discovery.
+    NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals | JsonNumberHandling.AllowReadingFromString)]
 [JsonSerializable(typeof(ExternalServiceDiscoveryRequest))]
 [JsonSerializable(typeof(ExternalServiceDiscoveryResponse))]
+[JsonSerializable(typeof(ExternalServiceCredentials))]
+[JsonSerializable(typeof(ExternalServiceSummary))]
+[JsonSerializable(typeof(ExternalServiceSummary[]))]
 [JsonSerializable(typeof(ExternalServiceLayerCandidate))]
 [JsonSerializable(typeof(ExternalServiceLayerCandidate[]))]
 [JsonSerializable(typeof(ExternalServiceExtent))]
 [JsonSerializable(typeof(ExternalServiceField))]
 [JsonSerializable(typeof(ExternalServiceField[]))]
 [JsonSerializable(typeof(ArcGisServiceDocument))]
+[JsonSerializable(typeof(ArcGisCatalogDocument))]
+[JsonSerializable(typeof(ArcGisTokenDocument))]
+[JsonSerializable(typeof(OAuthTokenDocument))]
 [JsonSerializable(typeof(ArcGisLayerDocument))]
 [JsonSerializable(typeof(ArcGisCountDocument))]
 [JsonSerializable(typeof(OgcLandingDocument))]

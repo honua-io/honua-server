@@ -1,0 +1,89 @@
+{
+  "contractVersion": "workflow-generation-contract-v1",
+  "description": "Deterministic fixtures for natural-language workflow.package generation. Replayed by DeterministicWorkflowGenerationProvider so CI/eval can exercise the full grounding -> generate -> validate path with no live model. Node types reference the built-in geoprocessing process catalog.",
+  "scenarios": [
+    {
+      "id": "nightly-etl-publish",
+      "case": "generated",
+      "prompt": "Nightly: copy new assessor parcels into a working layer, stamp a reviewed flag, then compute parcel area.",
+      "generation": {
+        "status": "generated",
+        "provider": "deterministic",
+        "model": "deterministic-fixture",
+        "rationale": "Proposed a 3-step nightly pipeline: copy assessor parcels into a working layer, stamp a reviewed flag, then compute parcel area.",
+        "graph": {
+          "schemaVersion": "workflow-package.v1",
+          "nodes": [
+            {
+              "nodeId": "copy-parcels",
+              "nodeTypeId": "process:data-management.copy-features",
+              "parameters": {
+                "sourceLayerId": "12",
+                "targetLayerName": "parcels_working",
+                "where": "review_status = 'new'"
+              }
+            },
+            {
+              "nodeId": "stamp-reviewed",
+              "nodeTypeId": "process:data-management.calculate-field",
+              "parameters": {
+                "layerId": "12",
+                "fieldName": "reviewed",
+                "expression": "1"
+              }
+            },
+            {
+              "nodeId": "compute-area",
+              "nodeTypeId": "process:geometry.area",
+              "parameters": {
+                "wkb": "{{copy-parcels.geometry}}",
+                "srid": "4326"
+              }
+            }
+          ],
+          "edges": [
+            { "sourceNodeId": "copy-parcels", "targetNodeId": "stamp-reviewed", "kind": "Control" },
+            { "sourceNodeId": "stamp-reviewed", "targetNodeId": "compute-area", "kind": "Control" }
+          ],
+          "schedule": { "cronExpression": "0 2 * * *", "timeZone": "UTC", "enabled": true }
+        }
+      }
+    },
+    {
+      "id": "ambiguous-target-featureserver",
+      "case": "needs-clarification",
+      "prompt": "Copy the parcels into the public works layer and publish it.",
+      "generation": {
+        "status": "needs-clarification",
+        "provider": "deterministic",
+        "model": "deterministic-fixture",
+        "rationale": "Two layers match 'public works'. Pick the publish target before I build the pipeline.",
+        "clarifications": [
+          {
+            "id": "target-fs",
+            "kind": "target",
+            "prompt": "Which FeatureServer should Publish target?",
+            "reason": "Two candidates matched 'public works'.",
+            "choices": [
+              { "id": "public-works-fs", "label": "public-works-fs", "effect": "Publish layer 0" },
+              { "id": "pw-staging-fs", "label": "pw-staging-fs", "effect": "Publish to staging" }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "unsupported-step",
+      "case": "unsupported",
+      "prompt": "Pull the assessor CSV and then send a carrier pigeon to the county office.",
+      "generation": {
+        "status": "unsupported",
+        "provider": "deterministic",
+        "model": "deterministic-fixture",
+        "rationale": "No node type can deliver a physical carrier pigeon, so that step cannot be built.",
+        "unmappedRequests": [ "send a carrier pigeon to the county office" ],
+        "capabilityState": { "name": "carrier-pigeon", "state": "unsupported", "reason": "No node type maps to physical mail delivery." }
+      }
+    }
+  ]
+}
