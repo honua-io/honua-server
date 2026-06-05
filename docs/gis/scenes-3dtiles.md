@@ -39,10 +39,12 @@ URL slug via `ISceneDatasetRegistry.FindAsync`; the Postgres-backed
 implementation behind that interface projects each record to the lean
 `SceneDataset` shape served below.
 
-The [3D Tiles generation pipeline](scene-generation.md) (#842) auto-registers
-its outputs through the same registry, so producer-side workflows never need
-a separate `POST /api/v1/admin/scenes` step. The configuration block below
-remains for already-hosted (externally produced) bundles.
+The [3D Tiles generation pipeline](scene-generation.md) (#842) and the
+[I3S/.slpk scene-layer ingest endpoint](../operator/CONTROL_PLANE_API.md#i3s-scene-layer-import-endpoints) (#1268)
+both auto-register their outputs through the same registry, so producer-side
+workflows never need a separate `POST /api/v1/admin/scenes` step. The
+configuration block below remains for already-hosted (externally produced)
+bundles.
 
 The original `Scenes` configuration section remains in the codebase for
 local-dev/test scenarios where Postgres is not available. In production it

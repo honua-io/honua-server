@@ -392,4 +392,5 @@ are tracked separately in #900.
 - [Scene dataset registry admin API](../admin-api/scene-dataset-registry.md) (#844)
 - [Extruded 3D feature layers](extruded-3d-feature-layers.md) (#841)
 - [Point cloud, drone, and reality-capture ingest](point-cloud-reality-capture-ingest.md) (#900) — spike recommendation that complements this generation pipeline by registering pre-tiled drone/scanner output through the same scene dataset registry.
+- [I3S/.slpk scene-layer ingest](../operator/CONTROL_PLANE_API.md#i3s-scene-layer-import-endpoints) (#1268) — sibling producer path that converts an Esri `.slpk` 3D Object scene layer into an OGC 3D Tiles tileset and auto-registers it through the same scene dataset registry. Separate input class (existing I3S package, not a PostGIS feature layer); the served output is consumed by the same hosted serving routes.
 - [NVIDIA construction demo fixture](../../tests/fixtures/scenes/nvidia-construction/) (#898)

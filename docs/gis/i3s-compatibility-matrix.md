@@ -11,6 +11,18 @@ sequenced behind sibling tickets `honua-server-842` (3D Tiles generation
 pipeline) and `honua-server-849` (protected scene access envelope), and
 must remain Enterprise-edition only.
 
+> **Direction of travel.** This page covers **outbound** I3S — serving an
+> I3S `SceneServer` surface from Honua to ArcGIS Pro / Scene Viewer.
+> The complementary **inbound** path — ingesting an Esri `.slpk` scene
+> layer package and converting it to a Honua 3D Tiles tileset — ships
+> separately via `POST /api/v1/admin/import/i3s-slpk`
+> ([honua-server#1268](https://github.com/honua-io/honua-server/issues/1268)).
+> See [Control Plane API — I3S Scene-Layer Import Endpoints](../operator/CONTROL_PLANE_API.md#i3s-scene-layer-import-endpoints)
+> for the wire contract and [Import and Migration Capability Evidence](../contributor/import-capability-evidence.md)
+> for the capability row. The two paths share no implementation; ingest
+> has no dependency on the Enterprise-gated outbound roadmap described
+> below.
+
 ## Status vocabulary
 
 - **Translation adapter**: a Honua source already exists (or will exist after

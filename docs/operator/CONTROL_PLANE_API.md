@@ -445,6 +445,66 @@ Raster import accepts multipart form-data with a primary raster file and optiona
 
 Per-layer mosaic homogeneity is enforced at import: subsequent uploads to a layer must share the SRID and band count of the layer's first raster. Mismatched uploads return `400 Bad Request` with a structured message (`Layer {id} requires raster homogeneity for mosaic compositing. Expected SRID=…, BandCount=…; upload has SRID=…, BandCount=…`) and the transaction is rolled back before commit.
 
+### **I3S Scene-Layer Import Endpoints**
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/v1/admin/import/i3s-slpk` | POST | Convert an Esri I3S 3D Object scene-layer package (`.slpk`) into an OGC 3D Tiles tileset and register it through the scene dataset registry. |
+
+`POST /api/v1/admin/import/i3s-slpk` parses a server-local `.slpk`, converts each I3S node's geometry to a glTF 2.0 binary (`.glb`), writes a deterministic `tileset.json` rooted at the configured asset directory, and auto-registers the dataset via `ISceneRegistrationService` so it is served immediately through `/scenes/{datasetId}/tileset.json`. The endpoint is only mapped when the Postgres-backed scene registration service is available; under non-Postgres provider profiles the route is intentionally absent (mirroring the `/api/v1/admin/scenes` guard).
+
+Request body:
+
+| Field | Required | Notes |
+|----------|--------|---------|
+| `slpkPath` | Yes | Absolute server-side filesystem path to the `.slpk` archive. The file must exist before the request is dispatched. |
+| `datasetId` | No | URL slug for the registered scene dataset. Lower-kebab; when omitted, derived from the `.slpk` filename. Validated by the canonical `SceneDatasetValidator`. |
+| `name` | No | Display name override. Defaults to `3dSceneLayer.json`'s `name`, then to the resolved `datasetId`. |
+| `isPublic` | No | Defaults to `true`. When `false`, the registered dataset requires authorization on the hosted serving path. |
+| `editionGate` | No | Optional edition-gate slug forwarded onto the registered scene record. |
+| `dryRun` | No | When `true`, the converter parses the `.slpk`, validates scope, and walks the node tree without writing any files or registering a dataset. |
+| `assetRoot` | No | Explicit per-request output directory override. Rejected with `400` unless `I3sImport:AllowExplicitAssetRoot=true` is set in configuration; when omitted (the default), the resolved output directory is `{I3sImport:AssetRootBase}/{datasetId}`. |
+
+Response body (`application/json`):
+
+| Field | Notes |
+|----------|--------|
+| `success` | `true` for `200 OK`; `false` for `400` validation/conflict failures. |
+| `datasetId` | Resolved URL slug. |
+| `name` | Resolved display name. |
+| `layerType` | Echo of the parsed I3S `layerType` (always `3DObject` on success in the initial slice). |
+| `nodeCount` | Number of I3S nodes that produced a renderable GLB tile. |
+| `tileBytesWritten` | Total bytes written across all per-node `.glb` files. |
+| `assetRoot` | Resolved output directory; `null` when `dryRun=true`. |
+| `duration` | Wall-clock conversion duration. |
+| `warnings` | Non-fatal per-node skip reasons (missing geometry, unsupported buffer layout). Omitted when empty. |
+| `errorMessage` | Populated only when `success=false`. |
+
+Configuration block (`appsettings.json`):
+
+```json
+{
+  "I3sImport": {
+    "AssetRootBase": "/var/lib/honua/scenes-i3s",
+    "AllowExplicitAssetRoot": false
+  }
+}
+```
+
+| Property | Default | Description |
+|----------|---------|-------------|
+| `AssetRootBase` | — (required for non-`dryRun` imports) | Base directory under which each imported scene writes `{datasetId}/tileset.json` and `{datasetId}/nodes/{nodeIndex}.glb`. |
+| `AllowExplicitAssetRoot` | `false` | When true, the request body may supply `assetRoot` to override the configured base. Leave disabled in shared/production deployments. |
+
+Initial-slice scope (rejected otherwise with a structured `errorMessage` on `400 Bad Request`):
+
+- Layer type must be `3DObject`. Point Cloud, Integrated Mesh, Building, and Voxel inputs are rejected.
+- Spatial reference must be WGS-84 (WKID `4326` or `4979`). Non-WGS-84 inputs are rejected without a coordinate-transform fallback.
+- Geometry buffers must use the `PerAttributeArray` FLOAT32 layout. Indexed topology, Draco compression, textures, and per-feature attribute files are deferred and surfaced as per-node skip warnings.
+- Legacy I3S (<1.7, without `nodepages/0.json`) is rejected at the node-tree read.
+
+The registered dataset uses `crs=EPSG:4979`, `datasetType=hosted_tiles`, `tilesetFileName=tileset.json`, and the default scene `cachePolicy`. Hosted serving, access policy enforcement, signed access envelopes, and the `Cache-Control` model documented in [Hosted 3D Tiles Scenes](../gis/scenes-3dtiles.md) apply unchanged.
+
 ---
 
 ## **Layer Style (Minimal Example)**
