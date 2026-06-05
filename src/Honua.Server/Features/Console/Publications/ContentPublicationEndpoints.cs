@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
+using Honua.Ai.ReportGeneration;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Publishing.Content;
 using Honua.Core.Features.Publishing.Content.Abstractions;
@@ -65,6 +67,50 @@ internal static class ContentPublicationEndpoints
             .WithDisplayName("Update Content Publication Policy")
             .WithSummary("Updates server-owned visibility/share/embed/public-link policy and records an audited event.")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Patch }));
+
+        group.MapPost("/generate", HandleGenerateReport)
+            .WithDisplayName("Generate Report Document")
+            .WithSummary("Generate or refine a report document from a natural-language prompt.")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+    }
+
+    private static async Task<IResult> HandleGenerateReport(
+        HttpContext context,
+        [FromServices] IReportGenerationService generation)
+    {
+        GenerateReportContentRequest? request;
+        try
+        {
+            request = await JsonSerializer.DeserializeAsync(
+                context.Request.Body,
+                ReportGenerationApiJsonContext.Default.GenerateReportContentRequest,
+                context.RequestAborted).ConfigureAwait(false);
+        }
+        catch (JsonException)
+        {
+            request = null;
+        }
+
+        if (request is null || string.IsNullOrWhiteSpace(request.Prompt))
+        {
+            var bad = new ReportGenerationResult { Status = "error", Rationale = "A non-empty 'prompt' is required." };
+            return Results.Json(bad, ReportGenerationApiJsonContext.Default.ReportGenerationResult, statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        var result = await generation.GenerateAsync(
+            new ReportGenerationRequest
+            {
+                Prompt = request.Prompt,
+                Provider = request.Provider,
+                Model = request.Model,
+                CurrentDocument = request.Document,
+                Conversation = request.Conversation,
+                Answers = request.Answers
+            },
+            context.RequestAborted).ConfigureAwait(false);
+
+        context.Response.Headers.CacheControl = "no-store";
+        return Results.Json(result, ReportGenerationApiJsonContext.Default.ReportGenerationResult);
     }
 
     private static async Task<IResult> HandlePublish(

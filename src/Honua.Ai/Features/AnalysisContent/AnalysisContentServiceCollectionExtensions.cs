@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Ai.AnalysisGeneration;
 using Honua.Core.Features.AnalysisContent.Abstractions;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -28,6 +29,13 @@ internal static class AnalysisContentServiceCollectionExtensions
         services.TryAddScoped<IAnalysisContentStore>(sp =>
             sp.GetRequiredService<InMemoryAnalysisContentStore>());
         services.TryAddScoped<IAnalysisContentService, AnalysisContentService>();
+
+        // NL -> analysis-package generation. Reuses the workflow-generation provider config + chat
+        // plumbing (registered by AddWorkflowGeneration) and grounds in the geoprocessing process
+        // catalog (IProcessCatalog, registered by AddGeoprocessing) as the analysis-method vocabulary,
+        // gating with the DB-free structural ProcessPlanValidator so generation never requires live
+        // layer metadata or the execution engine.
+        services.TryAddSingleton<IAnalysisGenerationService, AnalysisGenerationService>();
 
         return services;
     }

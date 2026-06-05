@@ -35,6 +35,7 @@ using Honua.Protocols.GeoServices.Sharing;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.NlQuery;
 using Honua.Ai.WorkflowGeneration;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Honua.Protocols.OData;
 using Honua.Protocols.Ogc.Api.Coverages;
 using Honua.Protocols.Ogc.Api.Features;
@@ -132,6 +133,14 @@ internal static class FeatureRegistrationExtensions
         // REST read surface (#1371 → #1243).
         services.AddPortalItemProjection();
         services.AddStudioPackageLifecycle();
+        // NL -> map.package generation. Reuses the workflow-generation provider config + chat plumbing
+        // (registered by AddWorkflowGeneration above) and a self-contained structural validator (no
+        // live metadata DB) so generation never depends on layer/style/source binding (deferred to
+        // publish). Mirrors the form generation service registration.
+        services.TryAddSingleton<Honua.Ai.MapGeneration.IMapGenerationService, Honua.Ai.MapGeneration.MapGenerationService>();
+        // NL -> report.document generation. Reuses the workflow-generation provider config + chat plumbing
+        // and a self-contained structural ReportDocumentValidator (no DB). Mirrors the form/map registration.
+        services.TryAddSingleton<Honua.Ai.ReportGeneration.IReportGenerationService, Honua.Ai.ReportGeneration.ReportGenerationService>();
         // Durable Studio map collaboration: comment threads + activity feed (#1278, slice 1).
         // In-memory store is the default; AddPostgreSqlServices overrides it with durable storage.
         Honua.Core.Features.Console.Collaboration.StudioMapCollaborationServiceCollectionExtensions
