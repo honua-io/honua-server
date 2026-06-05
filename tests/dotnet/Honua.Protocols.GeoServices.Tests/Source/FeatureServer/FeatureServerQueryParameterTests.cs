@@ -25,7 +25,6 @@ public sealed class FeatureServerQueryParameterTests : IAsyncLifetime
     // them would return output that differs from what the client asked for.
     [Theory]
     [InlineData("returnTrueCurves=true", "returnTrueCurves")]
-    [InlineData("returnExceededLimitFeatures=true", "returnExceededLimitFeatures")]
     [InlineData("returnCentroid=true", "returnCentroid")]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
@@ -43,10 +42,15 @@ public sealed class FeatureServerQueryParameterTests : IAsyncLifetime
     // backing service doesn't honor them. Rejecting the request would break
     // out-of-the-box client connections for interop-compat reasons, so these
     // compatibility-oriented knobs are silently accepted (no-ops on the server).
+    // returnExceededLimitFeatures is included here because the ArcGIS Maps SDK for
+    // .NET ServiceFeatureTable.QueryFeaturesAsync always sends it, and its contract
+    // ("return rows beyond maxRecordCount + report exceededTransferLimit") matches
+    // Honua's default behavior, so it is accept-and-ignore (#1460).
     [Theory]
     [InlineData("gdbVersion=sde.DEFAULT")]
     [InlineData("quantizationParameters=1")]
     [InlineData("datumTransformation=4326")]
+    [InlineData("returnExceededLimitFeatures=true")]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
     public async Task Query_WithCompatibilityParameter_AcceptsRequest(string queryParam)
@@ -56,6 +60,61 @@ public sealed class FeatureServerQueryParameterTests : IAsyncLifetime
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+    }
+
+    // BUG A regression: returnExceededLimitFeatures must be accepted (not 400) alongside
+    // other query controls, since the ArcGIS Maps SDK for .NET always sends it.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithReturnExceededLimitFeaturesAndCountOnly_ReturnsOk()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?where=1%3D1&returnCountOnly=true&returnExceededLimitFeatures=true&f=json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().NotContain("Unsupported query parameters");
+    }
+
+    // BUG B regression: resultRecordCount above the layer maxRecordCount is clamped, not 400.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithResultRecordCountAboveMax_ClampsInsteadOfBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?where=1%3D1&resultRecordCount=99999999&f=json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().NotContain("cannot exceed");
+    }
+
+    // BUG B guard: a negative resultRecordCount must still be rejected.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithNegativeResultRecordCount_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?where=1%3D1&resultRecordCount=-5&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    // BUG C regression: an unknown geometryType must be rejected, not coerced to an envelope.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithUnknownGeometryType_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?where=1%3D1&geometry=-122.6,37.4,-122.3,37.9&geometryType=esriGeometryBogus&returnCountOnly=true&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("geometryType");
     }
 
     [IntegrationTest]
