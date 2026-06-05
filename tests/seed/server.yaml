@@ -1212,6 +1212,7 @@ sql:
           (0, 'timestamp', 'DateTime', 4, null, true, 'Timestamp'),
           (0, 'event_date', 'DateTime', 6, null, true, 'Event date'),
           (0, 'created_date', 'Date', 7, null, true, 'Created date'),
+          (0, 'ext_key', 'String', 8, 64, true, 'External relationship key'),
           (0, 'shape', 'Geometry', 5, null, true, 'Geometry'),
           (1, 'objectid', 'Integer', 0, null, false, 'Object ID'),
           (1, 'name', 'String', 1, 255, true, 'Name field'),
@@ -1222,6 +1223,7 @@ sql:
           (2, 'objectid', 'Integer', 0, null, false, 'Object ID'),
           (2, 'name', 'String', 1, 255, true, 'Name field'),
           (2, 'secondary_id', 'Integer', 2, null, true, 'Foreign key to origin layer'),
+          (2, 'ext_key', 'String', 5, 64, true, 'External relationship key'),
           (2, 'type', 'String', 3, 100, true, 'Type field'),
           (2, 'shape', 'Geometry', 4, null, true, 'Geometry')
       ON CONFLICT (layer_id, field_name) DO UPDATE SET
@@ -1243,7 +1245,8 @@ sql:
       )
       VALUES
           (0, 1, 'Test Relationship', 1, 'esriRelRoleOrigin', 'objectid', 'related_id', 'Test relationship between layer 0 and layer 1'),
-          (0, 2, 'Secondary Relationship', 2, 'esriRelRoleOrigin', 'objectid', 'secondary_id', 'Secondary test relationship')
+          (0, 2, 'Secondary Relationship', 2, 'esriRelRoleOrigin', 'objectid', 'secondary_id', 'Secondary test relationship'),
+          (0, 3, 'External Key Relationship', 2, 'esriRelRoleOrigin', 'ext_key', 'ext_key', 'Relationship keyed on a non-objectid origin field')
       ON CONFLICT (layer_id, relationship_id) DO UPDATE SET
           name = EXCLUDED.name,
           related_layer_id = EXCLUDED.related_layer_id,
@@ -1255,7 +1258,7 @@ sql:
       INSERT INTO features (objectid, layer_id, geometry, attributes)
       VALUES
           (1, 0, ST_SetSRID(ST_MakePoint(-122.5, 37.5), 4326),
-              jsonb_build_object('objectid', 1, 'name', 'Test Feature', 'description', 'A test feature for integration tests', 'category', 'test', 'timestamp', '2023-01-02T00:00:00Z', 'event_date', '2024-01-01T00:00:00Z', 'created_date', '2024-06-15')),
+              jsonb_build_object('objectid', 1, 'name', 'Test Feature', 'description', 'A test feature for integration tests', 'category', 'test', 'timestamp', '2023-01-02T00:00:00Z', 'event_date', '2024-01-01T00:00:00Z', 'created_date', '2024-06-15', 'ext_key', 'K-300208')),
           (2, 0, ST_SetSRID(ST_MakePoint(-122.7, 37.7), 4326),
               jsonb_build_object('objectid', 2, 'name', 'Another Feature', 'description', 'Another test feature', 'category', 'sample', 'timestamp', '2023-01-05T12:00:00Z', 'event_date', '2024-06-15T12:00:00Z', 'created_date', '2024-06-14')),
           (3, 0, null,
@@ -1264,6 +1267,11 @@ sql:
               jsonb_build_object('objectid', 4, 'name', 'Fourth Feature', 'description', 'Fourth test feature', 'category', 'sample', 'timestamp', '2022-12-31T23:00:00Z', 'event_date', '2024-10-15T00:00:00Z', 'created_date', '2024-10-15')),
           (5, 0, ST_SetSRID(ST_MakePoint(-122.3, 37.8), 4326),
               jsonb_build_object('objectid', 5, 'name', 'Fifth Feature', 'description', 'Fifth test feature', 'category', 'test', 'timestamp', '2023-01-20T00:00:00Z', 'event_date', null, 'created_date', '2024-08-01')),
+          -- Regression (#1465 related-records): an origin feature with a HIGH object id
+          -- and a child that references it. queryRelatedRecords must resolve related
+          -- records for any origin object-id magnitude, not just the low seeded ids.
+          (300208, 0, ST_SetSRID(ST_MakePoint(-122.35, 37.55), 4326),
+              jsonb_build_object('objectid', 300208, 'name', 'High Oid Feature', 'description', 'High object-id origin for related-records regression', 'category', 'test')),
           (101, 1, ST_SetSRID(ST_MakePoint(-122.4, 37.6), 4326),
               jsonb_build_object('objectid', 101, 'name', 'Related Feature 1', 'related_id', 1, 'description', 'First related feature')),
           (102, 1, ST_SetSRID(ST_MakePoint(-122.6, 37.4), 4326),
@@ -1272,10 +1280,21 @@ sql:
               jsonb_build_object('objectid', 103, 'name', 'Related Feature 3', 'related_id', 2, 'description', 'Third related feature')),
           (104, 1, ST_SetSRID(ST_MakePoint(-122.2, 37.8), 4326),
               jsonb_build_object('objectid', 104, 'name', 'Related Feature 4', 'related_id', 2, 'description', 'Fourth related feature')),
+          -- Child of the high object-id origin (objectid 300208) for the related-records
+          -- magnitude regression. Uses a high child object id to avoid colliding with the
+          -- existing low related rows.
+          (300209, 1, ST_SetSRID(ST_MakePoint(-122.36, 37.56), 4326),
+              jsonb_build_object('objectid', 300209, 'name', 'High Oid Related Feature', 'related_id', 300208, 'description', 'Related row for the high object-id origin')),
           (201, 2, ST_SetSRID(ST_MakePoint(-121.5, 38.5), 4326),
               jsonb_build_object('objectid', 201, 'name', 'Secondary Related Feature 1', 'secondary_id', 1, 'type', 'secondary')),
           (202, 2, ST_SetSRID(ST_MakePoint(-121.7, 38.3), 4326),
-              jsonb_build_object('objectid', 202, 'name', 'Secondary Related Feature 2', 'secondary_id', 1, 'type', 'secondary'))
+              jsonb_build_object('objectid', 202, 'name', 'Secondary Related Feature 2', 'secondary_id', 1, 'type', 'secondary')),
+          -- Child for the external-key relationship (#3): keyed on ext_key, which is NOT
+          -- the origin object id. Origin object id 1 carries ext_key='K-300208'; this row
+          -- must resolve as a related record of origin object id 1 even though its
+          -- destination key value 'K-300208' is not the origin object id.
+          (203, 2, ST_SetSRID(ST_MakePoint(-121.6, 38.4), 4326),
+              jsonb_build_object('objectid', 203, 'name', 'External Key Related Feature', 'ext_key', 'K-300208', 'type', 'external'))
       ON CONFLICT (objectid) DO UPDATE SET
           layer_id = EXCLUDED.layer_id,
           geometry = EXCLUDED.geometry,

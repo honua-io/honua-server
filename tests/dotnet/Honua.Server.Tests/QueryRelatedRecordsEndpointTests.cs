@@ -126,6 +126,72 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.QueryRelatedRecords)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
+    public async Task QueryRelatedRecords_WithHighObjectId_ResolvesRelatedRecords()
+    {
+        // Regression (#1465): queryRelatedRecords must resolve related records for ANY
+        // origin object-id magnitude. The seed adds origin object id 300208 (layer 0)
+        // and a child (related_id=300208, layer 1). Previously related records resolved
+        // only for the low seeded ids; a high origin object id returned an empty group.
+        var response = await GetWithRetryAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=300208&relationshipId={TestRelationshipId}");
+
+        response.Be200Ok();
+
+        var content = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize<QueryRelatedRecordsResponse>(
+            content, FeatureServerJsonContext.Default.QueryRelatedRecordsResponse);
+
+        queryResponse.Should().NotBeNull();
+        queryResponse!.RelatedRecordGroups.Should().HaveCount(1);
+
+        var group = queryResponse.RelatedRecordGroups[0];
+        group.ObjectId.Should().Be(300208L);
+        group.RelatedRecords.Should().NotBeNull();
+        group.RelatedRecords!.Should().NotBeEmpty(
+            "the high object-id origin has a child referencing it");
+        group.RelatedRecords.Should().Contain(r =>
+            r.Attributes.ContainsKey("objectid") &&
+            Convert.ToInt64(r.Attributes["objectid"], System.Globalization.CultureInfo.InvariantCulture) == 300209L);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryRelatedRecords)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
+    public async Task QueryRelatedRecords_WithNonObjectIdOriginKey_ResolvesRelatedRecords()
+    {
+        // Regression (#1465, root cause): when the relationship's origin foreign key is
+        // NOT the object-id field, the related row's destination key differs from the
+        // origin object id. Grouping must map related rows back to their origin object id
+        // via the stamped origin id, not by treating the destination key value as the
+        // origin object id. Relationship 3 keys on ext_key: origin object id 1 carries
+        // ext_key='K-300208' and a layer-2 child references ext_key='K-300208'. Before the
+        // fix this returned an empty group; it must now resolve to the related record.
+        const int ExternalKeyRelationshipId = 3;
+        var response = await GetWithRetryAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1&relationshipId={ExternalKeyRelationshipId}");
+
+        response.Be200Ok();
+
+        var content = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize<QueryRelatedRecordsResponse>(
+            content, FeatureServerJsonContext.Default.QueryRelatedRecordsResponse);
+
+        queryResponse.Should().NotBeNull();
+        queryResponse!.RelatedRecordGroups.Should().HaveCount(1);
+
+        var group = queryResponse.RelatedRecordGroups[0];
+        group.ObjectId.Should().Be(1L);
+        group.RelatedRecords.Should().NotBeNull();
+        group.RelatedRecords!.Should().NotBeEmpty(
+            "the origin's ext_key matches a related row even though it is not the object id");
+        group.RelatedRecords.Should().Contain(r =>
+            r.Attributes.ContainsKey("objectid") &&
+            Convert.ToInt64(r.Attributes["objectid"], System.Globalization.CultureInfo.InvariantCulture) == 203L);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryRelatedRecords)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
     public async Task QueryRelatedRecords_WithSingleObjectId_ReturnsOneGroup()
     {
         // Act
