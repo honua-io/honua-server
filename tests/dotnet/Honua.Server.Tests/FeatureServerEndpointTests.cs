@@ -3366,6 +3366,225 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task ApplyEdits_WithGeometryTypeMismatch_FailsPerFeatureWithoutStoring()
+    {
+        // Bug A regression: a polygon must not be accepted/stored on an esriGeometryPoint layer.
+        var editsRequest = """
+            {
+              "adds": [
+                {
+                  "attributes": { "name": "Polygon on a point layer" },
+                  "geometry": {
+                    "rings": [[[-122, 37], [-122, 38], [-121, 38], [-122, 37]]]
+                  }
+                }
+              ],
+              "f": "json"
+            }
+            """;
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits",
+            new StringContent(editsRequest, Encoding.UTF8, "application/json"));
+
+        // The whole batch is not rejected with a 400; the mismatch is reported per-feature.
+        response.Be200Ok();
+
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.ApplyEditsResponse);
+        result.Should().NotBeNull();
+        result!.Success.Should().BeFalse();
+        result.AddResults.Should().HaveCount(1);
+        result.AddResults![0].Success.Should().BeFalse();
+        result.AddResults[0].Error.Should().NotBeNull();
+        result.AddResults[0].Error!.Description.Should().Contain("esriGeometryPolygon");
+
+        // Confirm nothing was stored for the rejected feature.
+        var countResponse = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?f=json&where=name%3D%27Polygon%20on%20a%20point%20layer%27&returnCountOnly=true");
+        countResponse.Be200Ok();
+        using var countDocument = JsonDocument.Parse(await countResponse.Content.ReadAsStringAsync());
+        countDocument.RootElement.GetProperty("count").GetInt32().Should().Be(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task ApplyEdits_WithMatchingPointGeometry_Succeeds()
+    {
+        // Bug A guard: a valid point geometry must still be accepted on a point layer.
+        var editsRequest = """
+            {
+              "adds": [
+                {
+                  "attributes": { "name": "Point on a point layer" },
+                  "geometry": { "x": -122.4194, "y": 37.7749 }
+                }
+              ],
+              "f": "json"
+            }
+            """;
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits",
+            new StringContent(editsRequest, Encoding.UTF8, "application/json"));
+
+        response.Be200Ok();
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.ApplyEditsResponse);
+        result.Should().NotBeNull();
+        result!.Success.Should().BeTrue();
+        result.AddResults.Should().HaveCount(1);
+        result.AddResults![0].Success.Should().BeTrue();
+        result.AddResults[0].ObjectId.Should().BeGreaterThan(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/applyEdits")]
+    public async Task ApplyEdits_ServiceLevel_WithRollbackOnFailure_RollsBackAllLayerEdits()
+    {
+        // Bug B regression: with rollbackOnFailure=true a valid add must NOT persist when a
+        // sibling edit targeting the same layer fails. The two array elements both target
+        // layer 0; the failing update (objectid that does not exist) must roll back the add.
+        var marker = $"bugB-{Guid.NewGuid():N}";
+        var request = $$"""
+            [
+              {
+                "id": 0,
+                "adds": [
+                  {
+                    "attributes": { "name": "{{marker}}" },
+                    "geometry": { "x": -122, "y": 37 }
+                  }
+                ]
+              },
+              {
+                "id": 0,
+                "updates": [
+                  {
+                    "attributes": { "objectid": 999999999, "name": "{{marker}}" }
+                  }
+                ]
+              }
+            ]
+            """;
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/applyEdits?rollbackOnFailure=true&f=json",
+            new StringContent(request, Encoding.UTF8, "application/json"));
+
+        response.Be200Ok();
+        var responseContent = await response.Content.ReadAsStringAsync();
+        responseContent.Should().Contain("editResults");
+
+        // The add must have been rolled back: no feature with the marker name should exist.
+        var countResponse = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?f=json&where=name%3D%27{marker}%27&returnCountOnly=true");
+        countResponse.Be200Ok();
+        using var countDocument = JsonDocument.Parse(await countResponse.Content.ReadAsStringAsync());
+        countDocument.RootElement.GetProperty("count").GetInt32().Should().Be(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.BulkDelete)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/deleteFeatures")]
+    public async Task DeleteFeatures_WithWhereClauseInBody_DeletesMatchingFeatures()
+    {
+        // Bug C regression: deleteFeatures must honor a where clause (here in the request body)
+        // to select rows, not just explicit objectIds.
+        var marker = $"bugC-where-{Guid.NewGuid():N}";
+        var addPayload = $$"""
+            {
+              "features": [
+                {
+                  "attributes": { "name": "{{marker}}" },
+                  "geometry": { "x": -100, "y": 40 }
+                }
+              ]
+            }
+            """;
+
+        var addResponse = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/addFeatures",
+            new StringContent(addPayload, Encoding.UTF8, "application/json"));
+        addResponse.Be200Ok();
+        var addContent = await addResponse.Content.ReadAsStringAsync();
+        var addResult = JsonSerializer.Deserialize(addContent, FeatureServerJsonContext.Default.ApplyEditsResponse);
+        var objectId = addResult!.AddResults![0].ObjectId!.Value;
+
+        var deletePayload = $$"""
+            {
+              "where": "name = '{{marker}}'",
+              "f": "json"
+            }
+            """;
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/deleteFeatures",
+            new StringContent(deletePayload, Encoding.UTF8, "application/json"));
+
+        response.Be200Ok();
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.ApplyEditsResponse);
+        result.Should().NotBeNull();
+        result!.DeleteResults.Should().HaveCount(1);
+        result.DeleteResults![0].Success.Should().BeTrue();
+        result.DeleteResults[0].ObjectId.Should().Be(objectId);
+
+        var countResponse = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?f=json&where=name%3D%27{marker}%27&returnCountOnly=true");
+        countResponse.Be200Ok();
+        using var countDocument = JsonDocument.Parse(await countResponse.Content.ReadAsStringAsync());
+        countDocument.RootElement.GetProperty("count").GetInt32().Should().Be(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.BulkDelete)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/deleteFeatures")]
+    public async Task DeleteFeatures_WithGeometryFilterInQuery_DeletesMatchingFeatures()
+    {
+        // Bug C regression: deleteFeatures must honor a spatial (geometry) filter for selection.
+        var marker = $"bugC-geom-{Guid.NewGuid():N}";
+        var addPayload = $$"""
+            {
+              "features": [
+                {
+                  "attributes": { "name": "{{marker}}" },
+                  "geometry": { "x": -118.5, "y": 34.0 }
+                }
+              ]
+            }
+            """;
+
+        var addResponse = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/addFeatures",
+            new StringContent(addPayload, Encoding.UTF8, "application/json"));
+        addResponse.Be200Ok();
+        var addContent = await addResponse.Content.ReadAsStringAsync();
+        var addResult = JsonSerializer.Deserialize(addContent, FeatureServerJsonContext.Default.ApplyEditsResponse);
+        var objectId = addResult!.AddResults![0].ObjectId!.Value;
+
+        // Envelope geometry covering the added point, combined with a where to scope to this row.
+        var envelope = "%7B%22xmin%22%3A-119%2C%22ymin%22%3A33%2C%22xmax%22%3A-118%2C%22ymax%22%3A35%7D";
+        var url =
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/deleteFeatures" +
+            $"?where=name%3D%27{marker}%27&geometry={envelope}&geometryType=esriGeometryEnvelope&spatialRel=esriSpatialRelIntersects&inSR=4326&f=json";
+
+        var response = await _fixture.Client.PostAsync(url, content: null);
+
+        response.Be200Ok();
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.ApplyEditsResponse);
+        result.Should().NotBeNull();
+        result!.DeleteResults.Should().HaveCount(1);
+        result.DeleteResults![0].Success.Should().BeTrue();
+        result.DeleteResults[0].ObjectId.Should().Be(objectId);
+    }
+
     private static long ReadObjectIdValue(object? value)
     {
         return value switch

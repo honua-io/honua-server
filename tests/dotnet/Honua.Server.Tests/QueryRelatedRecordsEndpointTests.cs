@@ -126,6 +126,124 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.QueryRelatedRecords)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
+    public async Task QueryRelatedRecords_WithHighObjectId_ResolvesRelatedRecords()
+    {
+        // Regression (#1465): queryRelatedRecords must resolve related records for ANY
+        // origin object-id magnitude, not just the low seeded ids. Build the fixture in
+        // the arrange step against the unmodified shared seed: insert a NEW origin feature
+        // into the editable layer 0 (the server assigns a high auto-incremented object id),
+        // then insert a child into layer 1 whose related_id points at that assigned origin
+        // object id (relationship 1: layer0.objectid -> layer1.related_id). Querying related
+        // records for the freshly assigned (non-low) origin object id exercises the
+        // FeatureDataAccess high-oid SQL/grouping fix end-to-end. The created rows are
+        // cleaned up at the end so the shared seed is unperturbed.
+        long originObjectId = 0;
+        long childObjectId = 0;
+        try
+        {
+            // Arrange: add an origin feature to layer 0; capture the server-assigned oid.
+            originObjectId = await AddFeatureAsync(
+                TestLayerId,
+                attributes: """{ "name": "High Oid Origin" }""",
+                geometry: """{ "x": -122.35, "y": 37.55 }""");
+            originObjectId.Should().BeGreaterThan(0);
+
+            // Arrange: add a child to layer 1 referencing the origin via related_id.
+            childObjectId = await AddFeatureAsync(
+                layerId: 1,
+                attributes: $$"""{ "name": "High Oid Child", "related_id": {{originObjectId}} }""",
+                geometry: """{ "x": -122.36, "y": 37.56 }""");
+            childObjectId.Should().BeGreaterThan(0);
+
+            // Act
+            var response = await GetWithRetryAsync(
+                $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds={originObjectId}&relationshipId={TestRelationshipId}");
+
+            // Assert
+            response.Be200Ok();
+
+            var content = await response.Content.ReadAsStringAsync();
+            var queryResponse = JsonSerializer.Deserialize<QueryRelatedRecordsResponse>(
+                content, FeatureServerJsonContext.Default.QueryRelatedRecordsResponse);
+
+            queryResponse.Should().NotBeNull();
+            queryResponse!.RelatedRecordGroups.Should().HaveCount(1);
+
+            var group = queryResponse.RelatedRecordGroups[0];
+            group.ObjectId.Should().Be(originObjectId);
+            group.RelatedRecords.Should().NotBeNull();
+            group.RelatedRecords!.Should().NotBeEmpty(
+                "the high object-id origin has a child referencing it");
+            group.RelatedRecords.Should().Contain(r =>
+                r.Attributes.ContainsKey("objectid") &&
+                ReadAttributeAsInt64(r.Attributes["objectid"]) == childObjectId);
+        }
+        finally
+        {
+            // Clean up so the shared seed/database state is unperturbed for other tests.
+            if (childObjectId > 0)
+            {
+                await DeleteFeatureAsync(layerId: 1, childObjectId);
+            }
+
+            if (originObjectId > 0)
+            {
+                await DeleteFeatureAsync(TestLayerId, originObjectId);
+            }
+        }
+    }
+
+    private static long ReadAttributeAsInt64(object? value) => value switch
+    {
+        JsonElement element when element.ValueKind == JsonValueKind.Number => element.GetInt64(),
+        JsonElement element when element.ValueKind == JsonValueKind.String &&
+            long.TryParse(element.GetString(), System.Globalization.NumberStyles.Integer,
+                System.Globalization.CultureInfo.InvariantCulture, out var parsed) => parsed,
+        IConvertible convertible => Convert.ToInt64(convertible, System.Globalization.CultureInfo.InvariantCulture),
+        _ => throw new InvalidOperationException($"Unsupported objectid attribute value: {value?.GetType().Name ?? "null"}")
+    };
+
+    private async Task<long> AddFeatureAsync(int layerId, string attributes, string geometry)
+    {
+        var payload = $$"""
+            {
+              "features": [
+                {
+                  "attributes": {{attributes}},
+                  "geometry": {{geometry}}
+                }
+              ]
+            }
+            """;
+
+        using var client = _fixture.CreateClient(c => c.Timeout = _requestTimeout);
+        using var content = new StringContent(payload, Encoding.UTF8, "application/json");
+        var response = await client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{layerId}/addFeatures",
+            content);
+        response.Be200Ok();
+
+        var body = await response.Content.ReadAsStringAsync();
+        using var jsonDoc = JsonDocument.Parse(body);
+        var addResults = jsonDoc.RootElement.GetProperty("addResults");
+        addResults.GetArrayLength().Should().Be(1);
+        var addResult = addResults[0];
+        addResult.GetProperty("success").GetBoolean().Should().BeTrue();
+        return addResult.GetProperty("objectId").GetInt64();
+    }
+
+    private async Task DeleteFeatureAsync(int layerId, long objectId)
+    {
+        using var client = _fixture.CreateClient(c => c.Timeout = _requestTimeout);
+        // Bodyless delete: objectIds is supplied in the query string.
+        await client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{layerId}/deleteFeatures?objectIds={objectId}&f=json",
+            content: null);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryRelatedRecords)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
     public async Task QueryRelatedRecords_WithSingleObjectId_ReturnsOneGroup()
     {
         // Act
