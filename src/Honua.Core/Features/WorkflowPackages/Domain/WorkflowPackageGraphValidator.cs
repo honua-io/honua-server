@@ -19,6 +19,16 @@ public static class WorkflowPackageGraphValidator
         ArgumentNullException.ThrowIfNull(graph);
         ArgumentNullException.ThrowIfNull(nodeDefinitions);
 
+        // A model can emit "nodes": null / "edges": null (System.Text.Json deserializes an omitted or
+        // explicit-null array to null). Normalize to empty so the structural checks below (and the edge
+        // wiring scan) report a clean validation failure instead of throwing NullReferenceException ->
+        // HTTP 500, which would also defeat the bounded repair loop.
+        graph = graph with
+        {
+            Nodes = graph.Nodes ?? [],
+            Edges = graph.Edges ?? []
+        };
+
         var failures = new List<WorkflowPackageValidationFailure>();
         var warnings = new List<string>();
 
