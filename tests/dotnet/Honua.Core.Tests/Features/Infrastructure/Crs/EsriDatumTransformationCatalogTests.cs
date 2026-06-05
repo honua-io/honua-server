@@ -33,8 +33,8 @@ public sealed class EsriDatumTransformationCatalogTests
         selection.FromSrid.Should().Be(Nad83);
         selection.ToSrid.Should().Be(Wgs84);
         selection.EpsgOperationCode.Should().Be(1188);
-        selection.ProjPipeline.Should().NotBeNullOrWhiteSpace();
-        selection.ProjPipeline.Should().Contain("+proj=pipeline");
+        // EPSG 1188 is a null transformation; the pipeline is the exact-identity +proj=noop.
+        selection.ProjPipeline.Should().Be("+proj=noop");
         selection.TransformForward.Should().BeTrue();
     }
 

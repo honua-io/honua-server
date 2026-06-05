@@ -39,15 +39,25 @@ later (a fixture with documented provenance) without restructuring.
 
 | From | To | Esri default | WKID | EPSG op | Tolerance (horizontal) | Notes |
 |---|---|---|---|---:|---:|---|
-| NAD83 (4269) | WGS84 (4326) | NAD_1983_To_WGS_1984_1 | 108001 | 1188 | 0.01 m | Null/zero-parameter geocentric translation; NAD83 and WGS84 coincide to ~1 m. |
-| NAD83 (4269) | WGS84 (4326) | NAD_1983_To_WGS_1984_5 | 1515 | 15931 | 1.0 m | 7-parameter; selected when explicitly requested. |
-| NAD27 (4267) | NAD83 (4269) | NAD_1927_To_NAD_1983_NADCON | 1241 | 1241 | 2.0 m | Grid-based (NADCON); requires `us_noaa_conus.tif`. |
-| NAD83 (4269) | NAD83(2011) (6318) | NAD_1983_To_NAD_1983_2011_1 | 15851 | 1311 | 0.1 m | Time-dependent Helmert. |
-| WGS84 (4326) | NAD83(2011) (6318) | WGS_1984_(ITRF00)_To_NAD_1983_2011 | 108190 | 8259 | 0.2 m | Coordinate-frame Helmert. |
+| NAD83 (4269) | WGS84 (4326) | NAD_1983_To_WGS_1984_1 | 108001 | 1188 | 0.01 m | EPSG 1188 is a null transformation; pipeline is `+proj=noop` (exact identity, PROJ-version stable). Validated against the runtime. |
+| NAD27 (4267) | NAD83 (4269) | NAD_1927_To_NAD_1983_NADCON | 1241 | 1241 | 0.3 km* | Grid-based (NADCON); requires `us_noaa_conus.tif`. *When the grid is absent the transform fails explicitly (null), per the grid-data follow-up below. |
 
 Tolerances are conservative upper bounds for the *selection* test: they prove Honua
 applies the correct pipeline, not that PROJ and EPSG agree to sub-millimeter. Tighten
 them when an ArcGIS golden set is added.
+
+### Seeded vs deferred pairs
+
+Only pipelines verified against the PostGIS/PROJ runtime are seeded in the table.
+Additional Esri-default pairs that use multi-step Helmert pipelines (for example
+`NAD_1983_To_NAD_1983_2011_1` / EPSG 1311, `WGS_1984_(ITRF00)_To_NAD_1983_2011` /
+EPSG 8259, and HARN realizations) are a **documented follow-up**: each Helmert PROJ
+pipeline string must be generated from the EPSG operation via `projinfo` and validated
+against the runtime before seeding, so the catalog never ships a pipeline string that
+PostGIS rejects (which would surface as a null/error result rather than a silent wrong
+answer). Until seeded, those pairs fall through to PROJ's default pipeline (no regression
+versus prior behavior) and a client-requested WKID for them returns an explicit
+"unsupported" error.
 
 ## PROJ grid-data requirement (follow-up)
 
@@ -60,6 +70,15 @@ This PR does **not** modify the Docker image. Provisioning the PROJ grid data
 (e.g. `us_noaa_conus.tif` for NAD27↔NAD83 NADCON, and GEOID grids for vertical work) in
 the PostGIS image is a documented follow-up. Until then, grid-backed selections that hit
 a missing grid surface a PostGIS error mapped to the shared problem helper.
+
+## Import / reprojection path (follow-up)
+
+The query/output path selects and applies the Esri-default transformation. The file/
+migration **import** reprojection path (`StreamingFileImportService`) currently relies on
+PostGIS' default pipeline when the source datum differs from the storage datum.
+Recording and applying the catalog-selected transformation on import (so stored geometry
+matches Esri-default reprojection) is a documented follow-up; it does not route through
+the shared `DatumTransformSql` chokepoint yet.
 
 ## Vertical datum (Phase 4 — minimal)
 

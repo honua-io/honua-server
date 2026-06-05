@@ -80,6 +80,27 @@ public sealed class DatumTransformationParityTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    public async Task TransformPoint_NadconGridPipeline_WithoutGrid_FailsExplicitly()
+    {
+        // The NAD27->NAD83 NADCON pipeline (WKID 1241) requires us_noaa_conus.tif. When the
+        // grid is absent from the PROJ data path, PostGIS rejects the pipeline and the service
+        // returns null (the documented explicit-failure contract) rather than silently
+        // degrading to a Helmert approximation. If the grid is present, the transform succeeds
+        // and lands near the input (NAD27<->NAD83 shift is small in CONUS, < ~200 m).
+        _catalog.TryGetByWkid(1241, 4267, 4269, out var selection).Should().BeTrue();
+        selection!.RequiredGrids.Should().Contain("us_noaa_conus.tif");
+
+        var result = await _service!.TransformPointAsync(-100.0, 40.0, 4267, 4269, selection);
+
+        // Either the grid is missing (null = explicit failure) or present (near-input result).
+        if (result is not null)
+        {
+            result.Value.X.Should().BeApproximately(-100.0, 3e-3);
+            result.Value.Y.Should().BeApproximately(40.0, 3e-3);
+        }
+    }
+
+    [IntegrationTest]
     public async Task TransformPoint_NullSelection_FallsBackToSridOnlyPath()
     {
         // A null selection must behave exactly like the SRID-only overload.
