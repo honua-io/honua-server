@@ -32,7 +32,7 @@ internal static class WorkflowGenerationPrompt
         sb.AppendLine("- Do not invent layout; the server assigns node positions.");
         sb.AppendLine();
 
-        if (request.RepairFailures.Count > 0)
+        if (request.RepairFailures is { Count: > 0 })
         {
             sb.AppendLine("Your previous graph failed server validation. Fix these failures and return a corrected graph:");
             foreach (var failure in request.RepairFailures)
@@ -64,7 +64,7 @@ internal static class WorkflowGenerationPrompt
         var sb = new StringBuilder();
         sb.AppendLine(request.Prompt);
 
-        if (request.Answers.Count > 0)
+        if (request.Answers is { Count: > 0 })
         {
             sb.AppendLine();
             sb.AppendLine("Answers to prior clarifications:");

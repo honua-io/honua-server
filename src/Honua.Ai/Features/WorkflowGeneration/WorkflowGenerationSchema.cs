@@ -19,9 +19,12 @@ internal static class WorkflowGenerationSchema
     /// </summary>
     public static JsonElement Build(IReadOnlyList<WorkflowNodeDefinition> nodes)
     {
+        // Emit each nodeTypeId as a properly-escaped JSON string literal WITHOUT reflection:
+        // the app disables reflection-based serialization, so a bare JsonSerializer.Serialize(string)
+        // throws. JsonEncodedText.Encode does the escaping source-gen-free; wrap in quotes.
         var nodeTypeEnum = nodes.Count == 0
             ? "\"__no_node_types_available__\""
-            : string.Join(",", nodes.Select(n => JsonSerializer.Serialize(n.NodeTypeId)));
+            : string.Join(",", nodes.Select(n => "\"" + JsonEncodedText.Encode(n.NodeTypeId) + "\""));
 
         var schema =
             $$"""
