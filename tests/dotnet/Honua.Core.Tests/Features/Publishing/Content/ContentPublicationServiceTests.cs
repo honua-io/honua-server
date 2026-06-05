@@ -209,6 +209,74 @@ public sealed class ContentPublicationServiceTests
 
     [UnitTest]
     [Operation(Operations.Update)]
+    public async Task UpdatePolicy_OnPolicyWithNullNestedMembers_DoesNotThrow_AndAppliesDeltas()
+    {
+        // Regression for #1239: a publication created from a minimal policy whose nested
+        // members deserialize to null must not NRE on a subsequent policy update. Simulate
+        // the deserialized state (null embed/share/service/publicLink) explicitly.
+        var (service, _) = CreateService();
+        var nullNestedPolicy = new ContentPublicationPolicy
+        {
+            Visibility = ContentPublicationVisibility.Organization,
+            Share = null!,
+            Embed = null!,
+            Service = null!,
+            PublicLink = null!,
+        };
+        var published = await service.PublishAsync(
+            new PublishContentRequest { Kind = ContentPublicationKind.Report, RouteSlug = "rpt-smoke", ContentPayload = "a", Policy = nullNestedPolicy },
+            Actor,
+            null);
+
+        var result = await service.UpdatePolicyAsync(published.Route.PublicationId, new UpdatePublicationPolicyRequest
+        {
+            Visibility = ContentPublicationVisibility.Public,
+            Embed = new ContentEmbedPolicy { AllowEmbedding = false },
+        }, Actor, null);
+
+        result.Detail.Route.Policy.Visibility.Should().Be(ContentPublicationVisibility.Public);
+        result.Detail.Route.Policy.Embed.AllowEmbedding.Should().BeFalse();
+        result.Detail.Route.Policy.PublicLink.Links.Should().BeEmpty();
+        result.CreatedPublicLinkId.Should().BeNull();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Update)]
+    public void Normalize_NullNestedMembers_ReturnsNonNullDefaults()
+    {
+        var normalized = ContentPublicationPolicyNormalizer.Normalize(new ContentPublicationPolicy
+        {
+            Visibility = ContentPublicationVisibility.Organization,
+            Share = null!,
+            Embed = null!,
+            Service = null!,
+            PublicLink = null!,
+        });
+
+        normalized.Visibility.Should().Be(ContentPublicationVisibility.Organization);
+        normalized.Share.Should().NotBeNull();
+        normalized.Embed.Should().NotBeNull();
+        normalized.Service.Should().NotBeNull();
+        normalized.PublicLink.Should().NotBeNull();
+        normalized.PublicLink.Links.Should().NotBeNull().And.BeEmpty();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Update)]
+    public void Normalize_NullPolicy_ReturnsFullyInitializedDefault()
+    {
+        var normalized = ContentPublicationPolicyNormalizer.Normalize(null);
+
+        normalized.Should().NotBeNull();
+        normalized.Share.Should().NotBeNull();
+        normalized.Embed.Should().NotBeNull();
+        normalized.Service.Should().NotBeNull();
+        normalized.PublicLink.Should().NotBeNull();
+        normalized.PublicLink.Links.Should().NotBeNull();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Update)]
     public async Task UpdatePolicy_WithUndefinedVisibility_ThrowsValidation()
     {
         var (service, _) = CreateService();
