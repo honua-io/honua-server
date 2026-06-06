@@ -3,6 +3,7 @@
 
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
+using Honua.Ai.AppGeneration;
 using Honua.Ai.MapGeneration;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
@@ -98,6 +99,52 @@ internal static class StudioPackageEndpoints
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .Accepts<GenerateMapPackageRequest>("application/json")
             .Produces<MapGenerationResult>();
+
+        group.MapPost("/app-packages/generate", HandleGenerateApp)
+            .WithDisplayName("Generate Studio App Package")
+            .WithSummary("Generate or refine a studio-app/v1 app package from a natural-language prompt.")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .Accepts<GenerateAppPackageRequest>("application/json")
+            .Produces<AppGenerationResult>();
+    }
+
+    private static async Task<IResult> HandleGenerateApp(
+        HttpContext context,
+        [FromServices] IAppGenerationService generation)
+    {
+        GenerateAppPackageRequest? request;
+        try
+        {
+            request = await JsonSerializer.DeserializeAsync(
+                context.Request.Body,
+                AppGenerationApiJsonContext.Default.GenerateAppPackageRequest,
+                context.RequestAborted).ConfigureAwait(false);
+        }
+        catch (JsonException)
+        {
+            request = null;
+        }
+
+        if (request is null || string.IsNullOrWhiteSpace(request.Prompt))
+        {
+            var bad = new AppGenerationResult { Status = "error", Rationale = "A non-empty 'prompt' is required." };
+            return Results.Json(bad, AppGenerationApiJsonContext.Default.AppGenerationResult, statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        var result = await generation.GenerateAsync(
+            new AppGenerationRequest
+            {
+                Prompt = request.Prompt,
+                Provider = request.Provider,
+                Model = request.Model,
+                CurrentApp = request.Package,
+                Conversation = request.Conversation,
+                Answers = request.Answers
+            },
+            context.RequestAborted).ConfigureAwait(false);
+
+        context.Response.Headers.CacheControl = "no-store";
+        return Results.Json(result, AppGenerationApiJsonContext.Default.AppGenerationResult);
     }
 
     private static async Task<IResult> HandleGenerateMap(
