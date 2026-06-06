@@ -947,6 +947,13 @@ app.UseSerilogRequestLogging(options =>
 // Add global exception handling middleware after request logging.
 app.UseGlobalExceptionHandling();
 
+// Emit the Esri/GeoServices error envelope for routing-level 404/405 (and
+// 406/415/501) terminations under /rest that would otherwise return a bodyless
+// status. Scoped to GeoServices paths so OGC/STAC/OData/admin contracts are
+// untouched. Runs after global exception handling so thrown exceptions keep their
+// existing protocol shaping and only status-only responses are re-shaped here.
+app.UseRestErrorEnvelope();
+
 // Capture the original gRPC-Web indicator before UseGrpcWeb rewrites Content-Type
 // from application/grpc-web* to application/grpc, so the client-certificate
 // enforcement middleware downstream can still distinguish gRPC-Web from native gRPC
