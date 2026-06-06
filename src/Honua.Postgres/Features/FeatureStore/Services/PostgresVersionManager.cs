@@ -16,17 +16,20 @@ namespace Honua.Postgres.Features.FeatureStore.Services;
 /// slice; this manager provides create/delete/alter/list/resolve so versioned read/edit can be exercised
 /// end to end. A null or DEFAULT resolution always maps to the byte-identical base path.
 /// </summary>
-internal sealed class PostgresVersionManager : IVersionManager
+internal sealed partial class PostgresVersionManager : IVersionManager
 {
     private const string DefaultVersionSentinel = "sde.default";
 
     private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly string? _schemaName;
 
     /// <summary>Initializes the manager with the database connection provider.</summary>
     /// <param name="connectionProvider">Database connection provider.</param>
-    public PostgresVersionManager(IDatabaseConnectionProvider connectionProvider)
+    /// <param name="schemaName">Optional schema hosting the DEFAULT <c>features</c> table; null for the search-path default.</param>
+    public PostgresVersionManager(IDatabaseConnectionProvider connectionProvider, string? schemaName = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
+        _schemaName = schemaName;
     }
 
     /// <inheritdoc />
@@ -156,14 +159,6 @@ internal sealed class PostgresVersionManager : IVersionManager
         var version = await FindByIdentityAsync(gdbVersion.Trim(), cancellationToken).ConfigureAwait(false);
         return version is null ? null : VersionContext.ForVersion(version.Value);
     }
-
-    /// <inheritdoc />
-    public Task<VersionReconcileResult> ReconcileAsync(Guid versionId, CancellationToken cancellationToken = default)
-        => throw new NotSupportedException("Branch-version reconcile is wired in a later slice (#1272).");
-
-    /// <inheritdoc />
-    public Task<VersionPostResult> PostAsync(Guid versionId, CancellationToken cancellationToken = default)
-        => throw new NotSupportedException("Branch-version post is wired in a later slice (#1272).");
 
     private async Task<GdbVersion?> FindByIdentityAsync(string gdbVersion, CancellationToken cancellationToken)
     {
