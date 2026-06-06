@@ -115,11 +115,15 @@ internal static class GeoservicesCatalogEndpoints
                         cancellationToken).ConfigureAwait(false);
                     if (imageServerLayerId.HasValue)
                     {
+                        // The URL uses the service NAME as the route segment (matching every
+                        // other service type and the canonical ArcGIS addressing), not the
+                        // numeric layer id. The probe above only decides whether to advertise.
+                        var escapedImageServerName = Uri.EscapeDataString(service.Metadata.Name);
                         entries.Add(new ServiceDirectoryEntry
                         {
                             Name = service.Metadata.Name,
                             Type = "ImageServer",
-                            Url = $"{baseUrl}/rest/services/{imageServerLayerId.Value}/ImageServer"
+                            Url = $"{baseUrl}/rest/services/{escapedImageServerName}/ImageServer"
                         });
                     }
                 }

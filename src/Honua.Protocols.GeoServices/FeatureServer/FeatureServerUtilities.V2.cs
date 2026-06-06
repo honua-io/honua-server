@@ -323,10 +323,11 @@ internal static partial class FeatureServerEndpoints
             capabilities.Add("Sync");
         }
 
-        if (supportsAttachmentUploads && publications.Any(pair => ResourceSupportsAttachmentsV2(pair.Resource)))
-        {
-            capabilities.Add("Uploads");
-        }
+        // Intentionally do NOT advertise the Esri "Uploads" capability: that token promises
+        // the chunked item-upload protocol (uploads/register, uploads/{itemID}/upload,
+        // uploads/{itemID}), which this server does not implement (those routes 404).
+        // Attachment editing is served by addAttachment/updateAttachment/deleteAttachments
+        // and signaled honestly per layer via hasAttachments (bug hunt — capability honesty).
 
         return string.Join(',', capabilities.Distinct(StringComparer.OrdinalIgnoreCase));
     }
@@ -372,10 +373,9 @@ internal static partial class FeatureServerEndpoints
             capabilities.Add("Sync");
         }
 
-        if (supportsAttachmentUploads && ResourceSupportsAttachmentsV2(resource))
-        {
-            capabilities.Add("Uploads");
-        }
+        // "Uploads" is intentionally not advertised; the Esri chunked item-upload endpoints
+        // are not implemented. Attachment support is signaled via hasAttachments and served
+        // by the addAttachment/updateAttachment/deleteAttachments routes (bug hunt).
 
         return string.Join(',', capabilities.Distinct(StringComparer.OrdinalIgnoreCase));
     }
@@ -701,6 +701,8 @@ internal static partial class FeatureServerEndpoints
                 Name = relationship.Name,
                 RelatedTableId = relatedLayerId,
                 Role = relationship.Role,
+                Cardinality = MapEsriCardinality(relationship.Cardinality),
+                Composite = false,
                 KeyField = relationship.DestinationField,
                 OriginKeyField = relationship.OriginField,
                 DestinationKeyField = relationship.DestinationField,
@@ -710,6 +712,18 @@ internal static partial class FeatureServerEndpoints
 
         return [.. result];
     }
+
+    /// <summary>
+    /// Maps a canonical V2 cardinality string (one-to-one / one-to-many / many-to-many)
+    /// to the Esri <c>esriRelCardinality*</c> enum value.
+    /// </summary>
+    private static string MapEsriCardinality(string? cardinality)
+        => (cardinality ?? string.Empty).Trim().ToLowerInvariant() switch
+        {
+            "one-to-one" => "esriRelCardinalityOneToOne",
+            "many-to-many" => "esriRelCardinalityManyToMany",
+            _ => "esriRelCardinalityOneToMany",
+        };
 
     internal static int StableStringHash(string value)
     {

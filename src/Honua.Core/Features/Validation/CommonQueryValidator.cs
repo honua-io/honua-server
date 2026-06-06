@@ -218,9 +218,17 @@ public sealed class CommonQueryValidator : ICommonQueryValidator
             @"\bOR\b\s+\d+\s*=\s*\d+"
         };
 
+        // Mask the content of balanced single-quoted string literals before the
+        // dangerous-pattern scan. Literal content is bound as a parameter, so "--",
+        // "/* */", ";" or UNION inside a quoted literal (e.g. name='note -- x' or a
+        // LIKE pattern '%/*%') is harmless data and must not be rejected. Real
+        // injection breaks out of the quoting and survives masking (bug hunt).
+        var inspectable = System.Text.RegularExpressions.Regex.Replace(
+            whereClause, @"'(?:[^']|'')*'", "''");
+
         foreach (var pattern in dangerousPatterns)
         {
-            if (System.Text.RegularExpressions.Regex.IsMatch(whereClause, pattern,
+            if (System.Text.RegularExpressions.Regex.IsMatch(inspectable, pattern,
                 System.Text.RegularExpressions.RegexOptions.IgnoreCase))
             {
                 return ValidationResult.Failure("WHERE clause contains potentially dangerous SQL patterns");
