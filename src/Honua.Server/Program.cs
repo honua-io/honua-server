@@ -542,6 +542,12 @@ builder.Services.AddScoped<Honua.Protocols.GeoServices.FeatureServer.IReplicaSto
     new Honua.Protocols.GeoServices.FeatureServer.Services.CachingReplicaStore(
         sp.GetRequiredService<Honua.Protocols.GeoServices.FeatureServer.DistributedReplicaStore>(),
         sp.GetRequiredService<Honua.Core.Features.FeatureStore.Abstractions.IReplicaRepository>()));
+// Canonical replica-upload synchronization pipeline (#1272). Conflict detection runs against the
+// provider's change log; conflict-record writes use the durable conflict store when supported and
+// otherwise fall back to last-write-wins. Available for all providers since IChangeTracker and
+// IReplicaConflictRepository are always registered (read-only providers register no-op stubs).
+builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IReplicaSyncService,
+    Honua.Core.Features.FeatureStore.Services.ReplicaSyncService>();
 
 // ---- Extracted: import/export job managers, migration evidence, tile operations
 //      (Startup/ImportExportTileOperationsRegistration.cs)
