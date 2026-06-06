@@ -1108,6 +1108,8 @@ public static class EndpointRegistry
         new("GET", "/v1/spec/artifact/{hash}"),
 
         // Analysis content HTTP surface (#1182, #1237).
+        new("POST", "/api/v1/analysis/content/generate"),
+        new("POST", "/api/v1/analysis/content/queries/generate"),
         new("POST", "/api/v1/analysis/content/items"),
         new("GET", "/api/v1/analysis/content/items"),
         new("GET", "/api/v1/analysis/content/items/{itemId}"),
