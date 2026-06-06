@@ -2066,7 +2066,13 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
         var requestUri =
             $"{queryEndpoint}?where={Uri.EscapeDataString(whereClause)}&returnCountOnly=true&f=json";
         var json = await GetJsonElementAsync(client, requestUri);
-        return json.GetProperty("count").GetInt32();
+        if (!TryGetPropertyCaseInsensitive(json, "count", out var countProperty) || countProperty.ValueKind != JsonValueKind.Number)
+        {
+            throw new InvalidOperationException(
+                $"Count query '{requestUri}' returned an unexpected response shape (no numeric 'count'): {json}");
+        }
+
+        return countProperty.GetInt32();
     }
 
     private static async Task<IReadOnlyList<Dictionary<string, JsonElement>>> QuerySourceRowsAsync(
@@ -2362,7 +2368,13 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
                          "&inSR=4326" +
                          "&returnCountOnly=true&f=json";
         var json = await GetJsonElementAsync(client, requestUri);
-        return json.GetProperty("count").GetInt32();
+        if (!TryGetPropertyCaseInsensitive(json, "count", out var countProperty) || countProperty.ValueKind != JsonValueKind.Number)
+        {
+            throw new InvalidOperationException(
+                $"Count query '{requestUri}' returned an unexpected response shape (no numeric 'count'): {json}");
+        }
+
+        return countProperty.GetInt32();
     }
 
     private static async Task<Dictionary<string, JsonElement>> QueryStatisticsAttributesAsync(
@@ -2434,7 +2446,13 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
         var requestUri =
             $"{queryEndpoint}?where=1%3D1&time={Uri.EscapeDataString(timeExtent)}&returnCountOnly=true&f=json";
         var json = await GetJsonElementAsync(client, requestUri);
-        return json.GetProperty("count").GetInt32();
+        if (!TryGetPropertyCaseInsensitive(json, "count", out var countProperty) || countProperty.ValueKind != JsonValueKind.Number)
+        {
+            throw new InvalidOperationException(
+                $"Count query '{requestUri}' returned an unexpected response shape (no numeric 'count'): {json}");
+        }
+
+        return countProperty.GetInt32();
     }
 
     private static async Task<GeoJsonQueryPageResult> QueryGeoJsonRowsPageAsync(
