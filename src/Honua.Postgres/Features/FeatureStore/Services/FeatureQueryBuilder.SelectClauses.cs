@@ -65,6 +65,9 @@ internal sealed partial class FeatureQueryBuilder
 
         if (ShouldComputeDistance(spatialFilter))
         {
+            // The runtime distance column requires KNN/spatial parameter ordering the overlay does not yet
+            // thread; versioned distance reads are unsupported in v1. DEFAULT is unaffected.
+            GuardVersionedReadSupported(query, "select-with-distance");
             var geographyOperand = _geometryProcessor.GetGeographyOperand(geometryStorageType, query.SpatialReferenceSrid);
             var distanceParamExpression = BuildDistanceSelectOperand(spatialFilter!.Value, query, isKnnQuery, ref paramIndex, parameters);
             sql.Append(CultureInfo.InvariantCulture,
@@ -72,8 +75,9 @@ internal sealed partial class FeatureQueryBuilder
         }
         else
         {
+            var featureSource = BuildVersionedFeatureSource(query, "features", ref paramIndex, parameters);
             sql.Append(CultureInfo.InvariantCulture,
-                $"SELECT {DatabaseSchema.ObjectIdColumn}, {geometrySelect}, {attributesSelect} AS {DatabaseSchema.AttributesColumn} FROM {_tableName} WHERE {DatabaseSchema.LayerIdColumn} = $1");
+                $"SELECT {DatabaseSchema.ObjectIdColumn}, {geometrySelect}, {attributesSelect} AS {DatabaseSchema.AttributesColumn} FROM {featureSource} WHERE {DatabaseSchema.LayerIdColumn} = $1");
         }
     }
 
@@ -91,6 +95,7 @@ internal sealed partial class FeatureQueryBuilder
 
         if (ShouldComputeDistance(spatialFilter))
         {
+            GuardVersionedReadSupported(query, "select-gml-with-distance");
             var geographyOperand = _geometryProcessor.GetGeographyOperand(geometryStorageType, query.SpatialReferenceSrid);
             var distanceParamExpression = BuildDistanceSelectOperand(spatialFilter!.Value, query, isKnnQuery, ref paramIndex, parameters);
             sql.Append(CultureInfo.InvariantCulture,
@@ -98,8 +103,9 @@ internal sealed partial class FeatureQueryBuilder
         }
         else
         {
+            var featureSource = BuildVersionedFeatureSource(query, "features", ref paramIndex, parameters);
             sql.Append(CultureInfo.InvariantCulture,
-                $"SELECT {DatabaseSchema.ObjectIdColumn}, {geometrySelect} AS geometry, {attributesSelect} AS {DatabaseSchema.AttributesColumn} FROM {_tableName} WHERE {DatabaseSchema.LayerIdColumn} = $1");
+                $"SELECT {DatabaseSchema.ObjectIdColumn}, {geometrySelect} AS geometry, {attributesSelect} AS {DatabaseSchema.AttributesColumn} FROM {featureSource} WHERE {DatabaseSchema.LayerIdColumn} = $1");
         }
     }
 
@@ -117,6 +123,7 @@ internal sealed partial class FeatureQueryBuilder
 
         if (ShouldComputeDistance(spatialFilter))
         {
+            GuardVersionedReadSupported(query, "select-geojson-with-distance");
             var geographyOperand = _geometryProcessor.GetGeographyOperand(geometryStorageType, query.SpatialReferenceSrid);
             var distanceParamExpression = BuildDistanceSelectOperand(spatialFilter!.Value, query, isKnnQuery, ref paramIndex, parameters);
             sql.Append(CultureInfo.InvariantCulture,
@@ -124,8 +131,9 @@ internal sealed partial class FeatureQueryBuilder
         }
         else
         {
+            var featureSource = BuildVersionedFeatureSource(query, "features", ref paramIndex, parameters);
             sql.Append(CultureInfo.InvariantCulture,
-                $"SELECT {DatabaseSchema.ObjectIdColumn}, {geometrySelect} AS geometry, {attributesSelect} AS {DatabaseSchema.AttributesColumn} FROM {_tableName} WHERE {DatabaseSchema.LayerIdColumn} = $1");
+                $"SELECT {DatabaseSchema.ObjectIdColumn}, {geometrySelect} AS geometry, {attributesSelect} AS {DatabaseSchema.AttributesColumn} FROM {featureSource} WHERE {DatabaseSchema.LayerIdColumn} = $1");
         }
     }
 
@@ -143,6 +151,7 @@ internal sealed partial class FeatureQueryBuilder
 
         if (ShouldComputeDistance(spatialFilter))
         {
+            GuardVersionedReadSupported(query, "select-raw-geojson-with-distance");
             var geographyOperand = _geometryProcessor.GetGeographyOperand(geometryStorageType, query.SpatialReferenceSrid);
             var distanceParamExpression = BuildDistanceSelectOperand(spatialFilter!.Value, query, isKnnQuery, ref paramIndex, parameters);
             sql.Append(CultureInfo.InvariantCulture,
@@ -150,8 +159,9 @@ internal sealed partial class FeatureQueryBuilder
         }
         else
         {
+            var featureSource = BuildVersionedFeatureSource(query, "features", ref paramIndex, parameters);
             sql.Append(CultureInfo.InvariantCulture,
-                $"SELECT {DatabaseSchema.ObjectIdColumn}, {geometrySelect} AS geometry, {publicIdSelect} AS public_id, {attributesSelect} AS {DatabaseSchema.AttributesColumn} FROM {_tableName} WHERE {DatabaseSchema.LayerIdColumn} = $1");
+                $"SELECT {DatabaseSchema.ObjectIdColumn}, {geometrySelect} AS geometry, {publicIdSelect} AS public_id, {attributesSelect} AS {DatabaseSchema.AttributesColumn} FROM {featureSource} WHERE {DatabaseSchema.LayerIdColumn} = $1");
         }
     }
 
@@ -169,6 +179,7 @@ internal sealed partial class FeatureQueryBuilder
 
         if (ShouldComputeDistance(spatialFilter))
         {
+            GuardVersionedReadSupported(query, "select-kml-with-distance");
             var geographyOperand = _geometryProcessor.GetGeographyOperand(geometryStorageType, query.SpatialReferenceSrid);
             var distanceParamExpression = BuildDistanceSelectOperand(spatialFilter!.Value, query, isKnnQuery, ref paramIndex, parameters);
             sql.Append(CultureInfo.InvariantCulture,
@@ -176,8 +187,9 @@ internal sealed partial class FeatureQueryBuilder
         }
         else
         {
+            var featureSource = BuildVersionedFeatureSource(query, "features", ref paramIndex, parameters);
             sql.Append(CultureInfo.InvariantCulture,
-                $"SELECT {DatabaseSchema.ObjectIdColumn}, {geometrySelect} AS geometry, {attributesSelect} AS {DatabaseSchema.AttributesColumn} FROM {_tableName} WHERE {DatabaseSchema.LayerIdColumn} = $1");
+                $"SELECT {DatabaseSchema.ObjectIdColumn}, {geometrySelect} AS geometry, {attributesSelect} AS {DatabaseSchema.AttributesColumn} FROM {featureSource} WHERE {DatabaseSchema.LayerIdColumn} = $1");
         }
     }
 

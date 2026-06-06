@@ -163,6 +163,15 @@ public readonly record struct FeatureQuery
     public TopFilter? TopFilter { get; init; }
 
     /// <summary>
+    /// Branch version the read targets (#1272 Track B, ADR-0051). A null value or
+    /// <see cref="VersionContext.IsDefault"/> means the DEFAULT version: the provider must emit the
+    /// byte-identical non-versioned base query. A non-DEFAULT context overlays the version's deltas onto
+    /// the DEFAULT base. Threaded through the shared query pipeline so every protocol adapter can request
+    /// a versioned read without reimplementing data access.
+    /// </summary>
+    public VersionContext? VersionContext { get; init; }
+
+    /// <summary>
     /// Creates a simple WHERE clause query
     /// </summary>
     /// <param name="where">WHERE clause expression</param>

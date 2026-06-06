@@ -20,6 +20,7 @@ internal sealed partial class FeatureQueryBuilder
         FeatureQuery query,
         CoreGeometryStorageType geometryStorageType)
     {
+        GuardVersionedReadSupported(query, "encoded-binary");
         var spatialFilter = query.SpatialFilter;
         var isKnnQuery = spatialFilter.HasValue &&
                          spatialFilter.Value.SpatialRelationship == SpatialRelationship.NearestNeighbor;
@@ -184,10 +185,11 @@ internal sealed partial class FeatureQueryBuilder
                 ? $"{geometrySelect} AS {FeatureQueryEncoding.GeometryColumn}"
                 : geometrySelect;
             var attributesSelect = BuildAttributesSelectExpression(query, ref paramIndex, parameters);
+            var featureSource = BuildVersionedFeatureSource(query, "features", ref paramIndex, parameters);
 
             sql.Append(CultureInfo.InvariantCulture, $@"
                 SELECT {DatabaseSchema.ObjectIdColumn}, {geometryProjection}, {attributesSelect} AS {DatabaseSchema.AttributesColumn}, COUNT(*) OVER() as {FeatureQueryEncoding.InternalTotalCountColumn}
-                FROM {_tableName}
+                FROM {featureSource}
                 WHERE {DatabaseSchema.LayerIdColumn} = $1");
 
             AppendWhereClause(sql, query, ref paramIndex, parameters);

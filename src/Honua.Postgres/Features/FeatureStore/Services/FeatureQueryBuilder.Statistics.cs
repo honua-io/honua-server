@@ -19,6 +19,7 @@ internal sealed partial class FeatureQueryBuilder
         FeatureQuery query,
         CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
     {
+        GuardVersionedReadSupported(query, "statistics");
         if (!query.OutStatistics.HasValue || query.OutStatistics.Value.IsDefaultOrEmpty)
         {
             throw new ArgumentException("OutStatistics must be specified for a statistics query.", nameof(query));
