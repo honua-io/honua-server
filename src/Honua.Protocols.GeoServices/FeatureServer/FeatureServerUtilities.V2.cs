@@ -44,13 +44,15 @@ internal static partial class FeatureServerEndpoints
     /// <param name="queryLimits">Query limits for the service.</param>
     /// <param name="supportsGeobufOutput">Whether the runtime supports geobuf output.</param>
     /// <param name="supportsAttachmentUploads">Whether attachment uploads are wired up.</param>
+    /// <param name="branchVersioningEnabled">Whether branch versioning is available (Postgres + Enterprise entitlement).</param>
     private static FeatureServerResponse MapServiceToResponseV2(
         MetadataV2Service service,
         IReadOnlyList<(MetadataV2Publication Publication, MetadataV2Resource Resource)> publications,
         MetadataV2GraphSnapshot snapshot,
         QueryLimits queryLimits,
         bool supportsGeobufOutput,
-        bool supportsAttachmentUploads)
+        bool supportsAttachmentUploads,
+        bool branchVersioningEnabled)
     {
         ArgumentNullException.ThrowIfNull(service);
         ArgumentNullException.ThrowIfNull(publications);
@@ -92,7 +94,13 @@ internal static partial class FeatureServerEndpoints
             SupportsStatistics = supportsStatistics,
             HasGeometryProperties = hasGeometry,
             AllowGeometryUpdates = supportsEditing,
-            SyncEnabled = ServiceSupportsSyncV2(service)
+            SyncEnabled = ServiceSupportsSyncV2(service),
+            HasVersionedData = branchVersioningEnabled,
+            IsDataVersioned = branchVersioningEnabled,
+            SupportsBranchVersioning = branchVersioningEnabled,
+            VersionManagementServerUrl = branchVersioningEnabled
+                ? $"/rest/services/{service.Metadata.Name}/VersionManagementServer"
+                : null,
         };
     }
 

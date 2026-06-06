@@ -32,6 +32,7 @@ using Honua.Server.Features.Styling;
 using Honua.Protocols.GeoServices.MapServer;
 using Honua.Protocols.GeoServices.NAServer;
 using Honua.Protocols.GeoServices.Sharing;
+using Honua.Protocols.GeoServices.VersionManagementServer;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.NlQuery;
 using Honua.Ai.WorkflowGeneration;
@@ -157,6 +158,7 @@ internal static class FeatureRegistrationExtensions
         ArgumentNullException.ThrowIfNull(endpoints);
 
         endpoints.MapFeatureServerEndpoints();
+        endpoints.MapVersionManagementServerEndpoints();
         endpoints.MapCloudDemoEndpoints();
         endpoints.MapGeocodingEndpoints();
         endpoints.MapFormPackageEndpoints();
