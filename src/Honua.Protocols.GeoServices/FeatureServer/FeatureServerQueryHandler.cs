@@ -647,7 +647,9 @@ internal sealed partial class FeatureServerQueryHandler(
                 var statisticsFeatures = statisticsRows.Select(row => new GeoServicesFeature
                 {
                     Attributes = new Dictionary<string, object?>(row, StringComparer.OrdinalIgnoreCase),
-                    Geometry = null
+                    Geometry = null,
+                    // Aggregate rows have no geometry; omit the geometry key entirely (Esri parity).
+                    IncludeGeometry = false
                 }).ToArray();
 
                 HonuaTelemetry.SetSuccess(featureActivity, statisticsFeatures.Length);
@@ -1602,7 +1604,9 @@ internal sealed partial class FeatureServerQueryHandler(
             var statisticsFeatures = statisticsRows.Select(row => new GeoServicesFeature
             {
                 Attributes = new Dictionary<string, object?>(row, StringComparer.OrdinalIgnoreCase),
-                Geometry = null
+                Geometry = null,
+                // Aggregate rows have no geometry; omit the geometry key entirely (Esri parity).
+                IncludeGeometry = false
             }).ToArray();
 
             return new QueryResponse { Features = statisticsFeatures };

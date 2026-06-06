@@ -693,6 +693,8 @@ internal static partial class FeatureServerEndpoints
                 Name = relationship.Name,
                 RelatedTableId = relatedLayerId,
                 Role = relationship.Role,
+                Cardinality = MapEsriCardinality(relationship.Cardinality),
+                Composite = false,
                 KeyField = relationship.DestinationField,
                 OriginKeyField = relationship.OriginField,
                 DestinationKeyField = relationship.DestinationField,
@@ -702,6 +704,18 @@ internal static partial class FeatureServerEndpoints
 
         return [.. result];
     }
+
+    /// <summary>
+    /// Maps a canonical V2 cardinality string (one-to-one / one-to-many / many-to-many)
+    /// to the Esri <c>esriRelCardinality*</c> enum value.
+    /// </summary>
+    private static string MapEsriCardinality(string? cardinality)
+        => (cardinality ?? string.Empty).Trim().ToLowerInvariant() switch
+        {
+            "one-to-one" => "esriRelCardinalityOneToOne",
+            "many-to-many" => "esriRelCardinalityManyToMany",
+            _ => "esriRelCardinalityOneToMany",
+        };
 
     internal static int StableStringHash(string value)
     {

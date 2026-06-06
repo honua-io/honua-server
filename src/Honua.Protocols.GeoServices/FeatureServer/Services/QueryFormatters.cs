@@ -196,7 +196,7 @@ internal sealed class QueryFormatter : IQueryFormatter
                 suppressObjectId))
             .ToArray();
         var queryFields = BuildQueryFields(resource, outFields, objectIdFieldName, runtimeFields, suppressObjectId);
-        var displayFieldName = ResolveDisplayFieldName(queryFields, objectIdFieldName);
+        var displayFieldName = ResolveDisplayFieldName(resource, queryFields, objectIdFieldName);
         var geometryType = resource.ReadGeometryType();
         var hasGeometry = geometryType != MetadataV2GeometryType.None || resource.FindPrimaryGeometryField() is not null;
         var hasZ = false;
@@ -247,13 +247,10 @@ internal sealed class QueryFormatter : IQueryFormatter
         var response = new GeoJsonFeatureSet
         {
             Features = features,
+            // Emit exceededTransferLimit once at the top level only. The nested
+            // `properties` object is non-standard GeoJSON and duplicated the flag.
             ExceededTransferLimit = exceededTransferLimit,
-            Properties = exceededTransferLimit
-                ? new Dictionary<string, object?>
-                {
-                    ["exceededTransferLimit"] = true
-                }
-                : null
+            Properties = null
         };
 
         return (response, "application/geo+json");
@@ -448,9 +445,10 @@ internal sealed class QueryFormatter : IQueryFormatter
         => new(
             ProjectedProperties: projectedProperties,
             IncludeObjectIdProperty: true,
-            IncludeObjectIdAlias: projectedProperties is null &&
-                                  GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource)
-                                      .Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase),
+            // GeoJSON properties must mirror the f=json attributes, which carry only the
+            // lowercase objectid field. Suppress the synthetic uppercase OBJECTID alias so the
+            // two formats stay faithful (the OID is also exposed via the feature `id`).
+            IncludeObjectIdAlias: false,
             IncludeAdditionalAttributes: true,
             ResolveIdFromProperties: true);
 
@@ -591,8 +589,19 @@ internal sealed class QueryFormatter : IQueryFormatter
         };
     }
 
-    internal static string ResolveDisplayFieldName(IReadOnlyList<GeoServicesFieldInfo> fields, string objectIdFieldName)
+    internal static string ResolveDisplayFieldName(
+        MetadataV2Resource resource,
+        IReadOnlyList<GeoServicesFieldInfo> fields,
+        string objectIdFieldName)
     {
+        // The query response must echo the layer's configured display field (matching the
+        // FeatureServer/{id} descriptor), NOT a field derived from the requested outFields.
+        var configuredDisplayField = resource.Display?.DisplayField;
+        if (!string.IsNullOrWhiteSpace(configuredDisplayField))
+        {
+            return configuredDisplayField;
+        }
+
         if (fields.Count == 0)
         {
             return objectIdFieldName;
@@ -950,7 +959,7 @@ internal sealed class StreamingQueryFormatter
             .Where(static field => field.Type is MetadataV2FieldType.DateTime or MetadataV2FieldType.Date)
             .Select(static field => field.Name)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var displayFieldName = QueryFormatter.ResolveDisplayFieldName(queryFields, objectIdFieldName);
+        var displayFieldName = QueryFormatter.ResolveDisplayFieldName(resource, queryFields, objectIdFieldName);
         var geometryType = resource.ReadGeometryType();
         var hasGeometry = geometryType != MetadataV2GeometryType.None || resource.FindPrimaryGeometryField() is not null;
 
@@ -1079,10 +1088,9 @@ internal sealed class StreamingQueryFormatter
 
         if (hasMoreResults)
         {
+            // Top-level only; the nested `properties` object duplicated this flag and is
+            // not part of the GeoJSON spec.
             writer.WriteBoolean("exceededTransferLimit", true);
-            writer.WriteStartObject("properties");
-            writer.WriteBoolean("exceededTransferLimit", true);
-            writer.WriteEndObject();
         }
 
         writer.WriteEndObject();
