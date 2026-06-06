@@ -315,10 +315,11 @@ internal static partial class FeatureServerEndpoints
             capabilities.Add("Sync");
         }
 
-        if (supportsAttachmentUploads && publications.Any(pair => ResourceSupportsAttachmentsV2(pair.Resource)))
-        {
-            capabilities.Add("Uploads");
-        }
+        // Intentionally do NOT advertise the Esri "Uploads" capability: that token promises
+        // the chunked item-upload protocol (uploads/register, uploads/{itemID}/upload,
+        // uploads/{itemID}), which this server does not implement (those routes 404).
+        // Attachment editing is served by addAttachment/updateAttachment/deleteAttachments
+        // and signaled honestly per layer via hasAttachments (bug hunt — capability honesty).
 
         return string.Join(',', capabilities.Distinct(StringComparer.OrdinalIgnoreCase));
     }
@@ -364,10 +365,9 @@ internal static partial class FeatureServerEndpoints
             capabilities.Add("Sync");
         }
 
-        if (supportsAttachmentUploads && ResourceSupportsAttachmentsV2(resource))
-        {
-            capabilities.Add("Uploads");
-        }
+        // "Uploads" is intentionally not advertised; the Esri chunked item-upload endpoints
+        // are not implemented. Attachment support is signaled via hasAttachments and served
+        // by the addAttachment/updateAttachment/deleteAttachments routes (bug hunt).
 
         return string.Join(',', capabilities.Distinct(StringComparer.OrdinalIgnoreCase));
     }
