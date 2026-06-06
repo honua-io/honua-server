@@ -173,7 +173,25 @@ internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBa
         }
 
         var nullSafe = $"NULLIF({baseExpression}, '')";
+        if (castType is "timestamptz" or "date" or "time")
+        {
+            return BuildEpochAwareTemporalCast(nullSafe, castType);
+        }
+
         return $"{nullSafe}::{castType}";
+    }
+
+    // A date/datetime attribute stored in JSONB may be ISO-8601 text (seeded rows)
+    // or epoch-milliseconds rendered as text (Esri applyEdits). A bare
+    // `::timestamptz`/`::date` cast on epoch-ms text raises SQLSTATE 22008, which
+    // surfaced as HTTP 500 on CQL2 temporal filters. Detect the numeric form and
+    // convert via to_timestamp; otherwise cast the ISO text.
+    private static string BuildEpochAwareTemporalCast(string nullSafeText, string castType)
+    {
+        var timestamp = $"CASE WHEN {nullSafeText} ~ '^-?[0-9]+$' " +
+                        $"THEN to_timestamp({nullSafeText}::double precision / 1000.0) " +
+                        $"ELSE {nullSafeText}::timestamptz END";
+        return castType == "timestamptz" ? timestamp : $"({timestamp})::{castType}";
     }
 
     protected override string TranslateSpatial(SpatialPredicate spatial, FilterTranslationContext context)

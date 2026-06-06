@@ -526,6 +526,11 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             conditions.Add(BuildSpatialFilter(query.SpatialFilter.Value, sql));
         }
 
+        if (query.TemporalFilter.HasValue)
+        {
+            conditions.Add(BuildTemporalFilter(query.TemporalFilter.Value, sql));
+        }
+
         if (conditions.Count == 0)
         {
             return;
@@ -535,6 +540,44 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         sql.Append(
             CultureInfo.InvariantCulture,
             string.Join(" AND ", conditions.Select(static condition => $"({condition})")));
+    }
+
+    // OGC API Features `datetime` (and any temporal query) lands here as a
+    // TemporalFilter. The storage-mapped reader previously dropped it, so the
+    // filter was silently ignored. Row interval is [start, COALESCE(end, start)];
+    // it must intersect the query interval [Start, End].
+    private string BuildTemporalFilter(TemporalFilter filter, SqlBuilder sql)
+    {
+        var startColumn = WrapEpochAwareTimestamp(ResolveColumnExpression(filter.PropertyName));
+        var endColumn = string.IsNullOrWhiteSpace(filter.EndPropertyName)
+            ? startColumn
+            : WrapEpochAwareTimestamp(ResolveColumnExpression(filter.EndPropertyName!));
+        var rowEnd = $"COALESCE({endColumn}, {startColumn})";
+
+        var clauses = new List<string>();
+        if (filter.Start.HasValue)
+        {
+            clauses.Add($"{rowEnd} >= {sql.AddParameter(filter.Start.Value.UtcDateTime)}");
+        }
+
+        if (filter.End.HasValue)
+        {
+            clauses.Add($"{startColumn} <= {sql.AddParameter(filter.End.Value.UtcDateTime)}");
+        }
+
+        return clauses.Count == 0 ? "TRUE" : string.Join(" AND ", clauses);
+    }
+
+    // The same date attribute can be persisted as an ISO-8601 string (seeded rows)
+    // or as epoch-milliseconds rendered as text (Esri applyEdits). A bare
+    // `::timestamptz` cast on epoch-ms text raises SQLSTATE 22008. Detect the
+    // numeric form and convert via to_timestamp; otherwise cast the ISO text.
+    private static string WrapEpochAwareTimestamp(string textExpression)
+    {
+        var trimmed = $"NULLIF({textExpression}, '')";
+        return $"CASE WHEN {trimmed} ~ '^-?[0-9]+$' " +
+               $"THEN to_timestamp({trimmed}::double precision / 1000.0) " +
+               $"ELSE {trimmed}::timestamptz END";
     }
 
     private static string BuildWhereJoiner(SqlBuilder sql)

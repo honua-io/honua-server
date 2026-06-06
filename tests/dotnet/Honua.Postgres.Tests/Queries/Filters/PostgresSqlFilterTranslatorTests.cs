@@ -440,6 +440,34 @@ public class PostgresSqlFilterTranslatorTests
     }
 
     [Fact]
+    public void Translate_TemporalPredicateOnAttributeBackedDateField_EmitsEpochAwareCast()
+    {
+        // Regression (bug hunt): a JSONB-stored date attribute can hold an ISO-8601
+        // string (seeds) OR epoch-milliseconds rendered as text (Esri applyEdits).
+        // A bare ::timestamptz cast on epoch-ms text raised SQLSTATE 22008 -> HTTP
+        // 500 on CQL2 temporal filters despite cql2/temporal being advertised. The
+        // translator must emit an epoch-aware cast: numeric text -> to_timestamp,
+        // ISO text -> ::timestamptz.
+        var jsonTranslator = new PostgresSqlFilterTranslator(useJsonAttributes: true);
+        var resource = CreateResource() with
+        {
+            SchemaFields = [.. CreateResource().SchemaFields, Field("event_date", MetadataV2FieldType.DateTime)],
+        };
+
+        var predicate = new TemporalPredicate(
+            TemporalOperator.After,
+            new PropertyReference("event_date"),
+            new Literal(new DateTimeOffset(2024, 01, 01, 0, 0, 0, TimeSpan.Zero), LiteralType.DateTime));
+
+        var result = jsonTranslator.Translate(predicate, resource);
+
+        result.Sql.Should().Contain("to_timestamp");
+        result.Sql.Should().Contain("::double precision / 1000.0");
+        result.Sql.Should().Contain("::timestamptz");
+        result.Sql.Should().Contain("~ '^-?[0-9]+$'");
+    }
+
+    [Fact]
     public void Translate_TemporalPredicateOnUndefinedField_ThrowsArgumentException()
     {
         // Regression: T_BEFORE(updated_at, ...) on a layer that does not define an
