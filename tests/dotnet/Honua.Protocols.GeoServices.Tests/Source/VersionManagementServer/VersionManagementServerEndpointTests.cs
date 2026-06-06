@@ -23,6 +23,9 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementSer
 [Protocol(TestProtocols.VersionManagementServer)]
 public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
 {
+    // Full literal route prefix. Kept inline (not a single const) at each request site so the
+    // EndpointRegistry coverage scanner — which matches the literal route template inside each
+    // [IntegrationTest] method body — can back every VersionManagementServer endpoint.
     private const string ServiceBase = "/rest/services/" + WebAppFixture.TestServiceId + "/VersionManagementServer";
 
     private readonly WebAppFixture _fixture = new();
@@ -41,7 +44,8 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.VersionManagementServer, "serviceInfo")]
     public async Task ServiceInfo_ReturnsCapabilities()
     {
-        var response = await _fixture.Client.GetAsync($"{ServiceBase}?f=json");
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer?f=json");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -55,7 +59,14 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.VersionManagementServer, "create")]
     public async Task Create_NewVersion_ReturnsVersionInfo()
     {
-        var info = await CreateVersionAsync("admin.create_returns");
+        var response = await PostFormAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/create",
+            ("versionName", "admin.create_returns"), ("accessPermission", "private"), ("f", "json"));
+        response.StatusCode.Should().Be(HttpStatusCode.OK,
+            "create should succeed; body: {0}", await response.Content.ReadAsStringAsync());
+
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var info = doc.RootElement.GetProperty("versionInfo");
 
         info.GetProperty("versionName").GetString().Should().Be("admin.create_returns");
         Guid.TryParse(info.GetProperty("versionGuid").GetString(), out _).Should().BeTrue();
@@ -70,7 +81,8 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
     {
         await CreateVersionAsync("admin.list_versions");
 
-        var response = await _fixture.Client.GetAsync($"{ServiceBase}/versions?f=json");
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions?f=json");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -88,7 +100,8 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
         var created = await CreateVersionAsync("admin.version_info");
         var guid = created.GetProperty("versionGuid").GetString();
 
-        var response = await _fixture.Client.GetAsync($"{ServiceBase}/versions/{guid}?f=json");
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{guid}?f=json");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -105,7 +118,8 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
         var created = await CreateVersionAsync("admin.alter_me");
         var guid = created.GetProperty("versionGuid").GetString();
 
-        var response = await PostFormAsync($"{ServiceBase}/versions/{guid}/alter",
+        var response = await PostFormAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{guid}/alter",
             ("description", "updated"), ("f", "json"));
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -122,7 +136,9 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
         var created = await CreateVersionAsync("admin.start_reading");
         var guid = created.GetProperty("versionGuid").GetString();
 
-        var response = await PostFormAsync($"{ServiceBase}/versions/{guid}/startReading", ("f", "json"));
+        var response = await PostFormAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{guid}/startReading",
+            ("f", "json"));
         await AssertSuccessMomentAsync(response);
     }
 
@@ -135,7 +151,9 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
         var created = await CreateVersionAsync("admin.stop_reading");
         var guid = created.GetProperty("versionGuid").GetString();
 
-        var response = await PostFormAsync($"{ServiceBase}/versions/{guid}/stopReading", ("f", "json"));
+        var response = await PostFormAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{guid}/stopReading",
+            ("f", "json"));
         await AssertSuccessMomentAsync(response);
     }
 
@@ -148,7 +166,9 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
         var created = await CreateVersionAsync("admin.start_editing");
         var guid = created.GetProperty("versionGuid").GetString();
 
-        var response = await PostFormAsync($"{ServiceBase}/versions/{guid}/startEditing", ("f", "json"));
+        var response = await PostFormAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{guid}/startEditing",
+            ("f", "json"));
         await AssertSuccessMomentAsync(response);
     }
 
@@ -161,7 +181,9 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
         var created = await CreateVersionAsync("admin.stop_editing");
         var guid = created.GetProperty("versionGuid").GetString();
 
-        var response = await PostFormAsync($"{ServiceBase}/versions/{guid}/stopEditing", ("f", "json"));
+        var response = await PostFormAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{guid}/stopEditing",
+            ("f", "json"));
         await AssertSuccessMomentAsync(response);
     }
 
@@ -174,7 +196,9 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
         var created = await CreateVersionAsync("admin.reconcile_clean");
         var guid = created.GetProperty("versionGuid").GetString();
 
-        var response = await PostFormAsync($"{ServiceBase}/versions/{guid}/reconcile", ("f", "json"));
+        var response = await PostFormAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{guid}/reconcile",
+            ("f", "json"));
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -191,9 +215,13 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
         var created = await CreateVersionAsync("admin.post_clean");
         var guid = created.GetProperty("versionGuid").GetString();
 
-        await PostFormAsync($"{ServiceBase}/versions/{guid}/reconcile", ("f", "json"));
+        await PostFormAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{guid}/reconcile",
+            ("f", "json"));
 
-        var response = await PostFormAsync($"{ServiceBase}/versions/{guid}/post", ("f", "json"));
+        var response = await PostFormAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{guid}/post",
+            ("f", "json"));
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -209,10 +237,13 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
         var created = await CreateVersionAsync("admin.delete_me");
         var guid = created.GetProperty("versionGuid").GetString();
 
-        var response = await PostFormAsync($"{ServiceBase}/versions/{guid}/delete", ("f", "json"));
+        var response = await PostFormAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{guid}/delete",
+            ("f", "json"));
         await AssertSuccessMomentAsync(response);
 
-        var info = await _fixture.Client.GetAsync($"{ServiceBase}/versions/{guid}?f=json");
+        var info = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{guid}?f=json");
         info.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 

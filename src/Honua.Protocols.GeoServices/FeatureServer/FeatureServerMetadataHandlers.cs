@@ -163,7 +163,21 @@ internal static partial class FeatureServerEndpoints
     /// </summary>
     private static bool IsBranchVersioningAvailable(HttpContext context)
     {
-        var versionManager = context.RequestServices.GetService<IVersionManager>();
+        // Resolve defensively: the IVersionManager registration constructs a provider-specific manager
+        // (e.g. PostgresVersionManager) that itself depends on IDatabaseConnectionProvider. When that
+        // dependency is absent — read-only/non-database test hosts or providers without a connection
+        // provider — the factory throws rather than returning null. Treat any resolution failure as
+        // "versioning unavailable" so the DEFAULT (non-versioned) metadata stays byte-identical.
+        IVersionManager? versionManager;
+        try
+        {
+            versionManager = context.RequestServices.GetService<IVersionManager>();
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
+
         if (versionManager is not { SupportsVersioning: true })
         {
             return false;
