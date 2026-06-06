@@ -112,7 +112,10 @@ public sealed class FeatureServerAccessFilteringTests
 
         using var layerDocument = JsonDocument.Parse(await layerResponse.Content.ReadAsStringAsync());
         var root = layerDocument.RootElement;
-        root.GetProperty("capabilities").GetString().Should().Contain("Uploads");
+        // The Esri "Uploads" service capability is intentionally NOT advertised: it promises
+        // the chunked item-upload protocol (uploads/register, etc.) which is not implemented.
+        // Attachment support is signaled via hasAttachments + the supports* flags below.
+        root.GetProperty("capabilities").GetString().Should().NotContain("Uploads");
         root.GetProperty("hasAttachments").GetBoolean().Should().BeTrue();
 
         // Regression for #1453: when a layer exposes attachments it must also advertise
