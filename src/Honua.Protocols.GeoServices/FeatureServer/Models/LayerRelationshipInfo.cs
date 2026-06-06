@@ -29,6 +29,16 @@ public sealed class LayerRelationshipInfo
     public required string Role { get; init; }
 
     /// <summary>
+    /// Esri relationship cardinality enum (e.g. <c>esriRelCardinalityOneToMany</c>).
+    /// </summary>
+    public string Cardinality { get; init; } = "esriRelCardinalityOneToMany";
+
+    /// <summary>
+    /// Whether this is a composite relationship (lifetime of related rows is bound to origin).
+    /// </summary>
+    public bool Composite { get; init; }
+
+    /// <summary>
     /// Field name used as the relationship key.
     /// </summary>
     public required string KeyField { get; init; }

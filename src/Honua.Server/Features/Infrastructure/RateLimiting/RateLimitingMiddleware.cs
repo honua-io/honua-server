@@ -274,9 +274,9 @@ internal sealed partial class RateLimitingMiddleware
     /// <param name="result">Rate limit result.</param>
     private static void AddRateLimitHeaders(HttpContext context, RateLimitResult result)
     {
-        context.Response.Headers.TryAdd("X-RateLimit-Limit", result.Limit.ToString());
-        context.Response.Headers.TryAdd("X-RateLimit-Remaining", result.RequestsRemaining.ToString());
-        context.Response.Headers.TryAdd("X-RateLimit-Reset", result.WindowReset.ToUnixTimeSeconds().ToString());
+        context.Response.Headers.TryAdd("X-RateLimit-Limit", result.Limit.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        context.Response.Headers.TryAdd("X-RateLimit-Remaining", result.RequestsRemaining.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        context.Response.Headers.TryAdd("X-RateLimit-Reset", result.WindowReset.ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture));
     }
 
     /// <summary>

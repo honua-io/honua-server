@@ -647,7 +647,9 @@ internal sealed partial class FeatureServerQueryHandler(
                 var statisticsFeatures = statisticsRows.Select(row => new GeoServicesFeature
                 {
                     Attributes = new Dictionary<string, object?>(row, StringComparer.OrdinalIgnoreCase),
-                    Geometry = null
+                    Geometry = null,
+                    // Aggregate rows have no geometry; omit the geometry key entirely (Esri parity).
+                    IncludeGeometry = false
                 }).ToArray();
 
                 HonuaTelemetry.SetSuccess(featureActivity, statisticsFeatures.Length);
@@ -871,6 +873,25 @@ internal sealed partial class FeatureServerQueryHandler(
                     HonuaTelemetry.SetSuccess(featureActivity, payload.Length > 0 ? 1 : 0);
 
                     return await CreateCachedBytesResultAsync(payload, "application/geobuf");
+                }
+
+                // PARQUET/ARROW are encoded-export formats with no dedicated block;
+                // without this guard, an unsupported store falls through to the
+                // generic formatter and throws, which surfaced as an HTTP 500 that
+                // leaked a .NET stack trace. Return the same clean 400 as FGB/GEOBUF
+                // when the store cannot emit encoded output (bug hunt).
+                if ((isParquet || isArrow) &&
+                    !await _queryExecutor.SupportsFlatGeobufOutputAsync(
+                        queryLayer.Service,
+                        queryLayer.Resource,
+                        queryLayer.Publication,
+                        queryLayer.StorageLayerId,
+                        cancellationToken).ConfigureAwait(false))
+                {
+                    return StandardErrorHelpers.CreateBadRequest(
+                        context,
+                        "Unsupported output format",
+                        [$"Output format '{format}' is not supported by the configured feature store."]);
                 }
 
                 string[]? outFields;
@@ -1598,7 +1619,9 @@ internal sealed partial class FeatureServerQueryHandler(
             var statisticsFeatures = statisticsRows.Select(row => new GeoServicesFeature
             {
                 Attributes = new Dictionary<string, object?>(row, StringComparer.OrdinalIgnoreCase),
-                Geometry = null
+                Geometry = null,
+                // Aggregate rows have no geometry; omit the geometry key entirely (Esri parity).
+                IncludeGeometry = false
             }).ToArray();
 
             return new QueryResponse { Features = statisticsFeatures };

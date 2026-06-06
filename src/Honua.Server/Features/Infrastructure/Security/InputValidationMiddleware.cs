@@ -30,6 +30,15 @@ internal sealed class InputValidationMiddleware
         @"|(;\s*(?:select|insert|update|delete|drop|create|alter|exec|execute)\b)",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    // Matches a balanced single-quoted SQL string literal, including doubled-quote
+    // ('') escapes. Used to mask literal CONTENT (data, bound as a parameter) in
+    // filter expressions before SQL-injection inspection so harmless in-literal
+    // sequences ("--", "/* */", ";") are not flagged. Unbalanced quotes (the actual
+    // injection vector) do not match and stay visible to the injection pattern.
+    private static readonly Regex _quotedStringLiteralPattern = new(
+        @"'(?:[^']|'')*'",
+        RegexOptions.Compiled);
+
     private static readonly Regex _xssPattern = new(
         @"<script[^>]*>.*?</script>|<iframe[^>]*>.*?</iframe>|javascript:|vbscript:|onload\s*=|onclick\s*=|onerror\s*=" +
         @"|eval\s*\(|expression\s*\(|<object[^>]*>|<embed[^>]*>|<applet[^>]*>",
@@ -121,9 +130,9 @@ internal sealed class InputValidationMiddleware
     private bool ShouldSkipValidation(PathString path)
     {
         var pathValue = path.Value?.ToLowerInvariant();
-        return pathValue?.StartsWith("/health") == true ||
-               pathValue?.StartsWith("/metrics") == true ||
-               pathValue?.StartsWith("/ready") == true ||
+        return pathValue?.StartsWith("/health", StringComparison.Ordinal) == true ||
+               pathValue?.StartsWith("/metrics", StringComparison.Ordinal) == true ||
+               pathValue?.StartsWith("/ready", StringComparison.Ordinal) == true ||
                _options.ExcludedPaths.Any(excluded =>
                    pathValue?.StartsWith(excluded, StringComparison.OrdinalIgnoreCase) == true);
     }
@@ -332,12 +341,39 @@ internal sealed class InputValidationMiddleware
 
     private static string NormalizeForSqlInspection(HttpRequest request, string paramType, string name, string value)
     {
-        if (!IsODataSystemQueryOption(request, paramType, name))
+        if (IsODataSystemQueryOption(request, paramType, name))
         {
-            return value;
+            return _odataSystemOptionPattern.Replace(value, string.Empty);
         }
 
-        return _odataSystemOptionPattern.Replace(value, string.Empty);
+        // For SQL/CQL filter-expression parameters (where/having/$filter/filter),
+        // mask the CONTENT of balanced single-quoted string literals before SQL-
+        // injection inspection. Literal content is bound as a parameter by the
+        // storage layer (it is data, not executable), so sequences like "--",
+        // "/* */" or ";" inside a quoted literal (e.g. where=name='note -- x' or a
+        // LIKE pattern '%/*%') are harmless and must not be rejected. Real injection
+        // breaks OUT of the quoting (unbalanced quotes / structure outside literals)
+        // and remains visible to the pattern after masking (bug hunt).
+        if (IsSqlFilterExpressionParameter(paramType, name))
+        {
+            return _quotedStringLiteralPattern.Replace(value, "''");
+        }
+
+        return value;
+    }
+
+    private static bool IsSqlFilterExpressionParameter(string paramType, string name)
+    {
+        if (!paramType.Equals("form", StringComparison.Ordinal) &&
+            !paramType.Equals("query", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return name.Equals("where", StringComparison.OrdinalIgnoreCase) ||
+               name.Equals("having", StringComparison.OrdinalIgnoreCase) ||
+               name.Equals("$filter", StringComparison.OrdinalIgnoreCase) ||
+               name.Equals("filter", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool ShouldSkipLdapInspection(HttpRequest request, string paramType, string name)

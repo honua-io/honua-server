@@ -217,7 +217,7 @@ internal sealed class ContentSecurityPolicyBuilder
     {
         foreach (var hash in styleHashes)
         {
-            var formattedHash = hash.StartsWith("'sha256-") ? hash : $"'sha256-{hash}'";
+            var formattedHash = hash.StartsWith("'sha256-", StringComparison.Ordinal) ? hash : $"'sha256-{hash}'";
             AddDirective("style-src", formattedHash);
         }
 
@@ -234,7 +234,7 @@ internal sealed class ContentSecurityPolicyBuilder
     {
         foreach (var hash in scriptHashes)
         {
-            var formattedHash = hash.StartsWith("'sha256-") ? hash : $"'sha256-{hash}'";
+            var formattedHash = hash.StartsWith("'sha256-", StringComparison.Ordinal) ? hash : $"'sha256-{hash}'";
             AddDirective("script-src", formattedHash);
         }
 

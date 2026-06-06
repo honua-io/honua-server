@@ -123,24 +123,6 @@ internal static partial class FeatureServerEndpoints
 
         var values = ToCaseInsensitiveDictionary(context.Request.Query);
         var requestedFormat = GetValueString(values, "f");
-        if (!TryValidateOutputFormat(requestedFormat, JsonOnlyFormats, out _, out var formatError))
-        {
-            return StandardErrorHelpers.CreateBadRequest(context,
-                "Invalid query parameters",
-                [formatError ?? "Output format is not supported."]);
-        }
-
-        var queryValues = new Dictionary<string, StringValues>(values, StringComparer.OrdinalIgnoreCase);
-        queryValues.Remove("layerId");
-        queryValues.Remove("layers");
-        queryValues.Remove("layerDefs");
-
-        if (!TryParseQueryParameters(queryValues, out var queryParams, out var parseError))
-        {
-            return StandardErrorHelpers.CreateBadRequest(context,
-                "Invalid query parameters",
-                [parseError ?? "Invalid query parameter."]);
-        }
 
         using var scope = HonuaTelemetryScope.StartFeature(
             "query",
@@ -160,6 +142,27 @@ internal static partial class FeatureServerEndpoints
         if (!serviceValidationResult.IsValid)
         {
             return serviceValidationResult.ErrorResult!;
+        }
+
+        // Validate output format only after the service is confirmed to exist, so a
+        // missing service returns 404 rather than a misleading 400 (e.g. f=html).
+        if (!TryValidateOutputFormat(requestedFormat, JsonOnlyFormats, out _, out var formatError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid query parameters",
+                [formatError ?? "Output format is not supported."]);
+        }
+
+        var queryValues = new Dictionary<string, StringValues>(values, StringComparer.OrdinalIgnoreCase);
+        queryValues.Remove("layerId");
+        queryValues.Remove("layers");
+        queryValues.Remove("layerDefs");
+
+        if (!TryParseQueryParameters(queryValues, out var queryParams, out var parseError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid query parameters",
+                [parseError ?? "Invalid query parameter."]);
         }
 
         var service = serviceValidationResult.Service!;

@@ -264,7 +264,9 @@ builder.Host.UseSerilog((context, services, config) =>
     if (isDevelopment)
     {
         // Development: Human-readable console output
-        config.WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}");
+        config.WriteTo.Console(
+            outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}",
+            formatProvider: System.Globalization.CultureInfo.InvariantCulture);
     }
     else
     {
@@ -951,6 +953,13 @@ app.UseSerilogRequestLogging(options =>
 
 // Add global exception handling middleware after request logging.
 app.UseGlobalExceptionHandling();
+
+// Emit the Esri/GeoServices error envelope for routing-level 404/405 (and
+// 406/415/501) terminations under /rest that would otherwise return a bodyless
+// status. Scoped to GeoServices paths so OGC/STAC/OData/admin contracts are
+// untouched. Runs after global exception handling so thrown exceptions keep their
+// existing protocol shaping and only status-only responses are re-shaped here.
+app.UseRestErrorEnvelope();
 
 // Capture the original gRPC-Web indicator before UseGrpcWeb rewrites Content-Type
 // from application/grpc-web* to application/grpc, so the client-certificate

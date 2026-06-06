@@ -42,12 +42,6 @@ internal static partial class FeatureServerEndpoints
         var requestedFormat = context.Request.Query.TryGetValue("f", out var formatValue)
             ? formatValue.ToString()
             : null;
-        if (!TryValidateOutputFormat(requestedFormat, JsonOnlyFormats, out _, out var formatError))
-        {
-            return StandardErrorHelpers.CreateBadRequest(context,
-                "Invalid query parameters",
-                [formatError ?? "Output format is not supported."]);
-        }
 
         var serviceError = RouteValidationHelpers.ValidateServiceId(context, out string? serviceId);
         if (serviceError is not null)
@@ -70,6 +64,15 @@ internal static partial class FeatureServerEndpoints
         if (!serviceValidationResult.IsValid)
         {
             return serviceValidationResult.ErrorResult!;
+        }
+
+        // Validate output format only after the service is confirmed to exist, so a
+        // missing service returns 404 rather than a misleading 400 (e.g. f=html).
+        if (!TryValidateOutputFormat(requestedFormat, JsonOnlyFormats, out _, out var formatError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid query parameters",
+                [formatError ?? "Output format is not supported."]);
         }
 
         var service = serviceValidationResult.Service!;
