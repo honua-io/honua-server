@@ -1551,6 +1551,23 @@ sql:
               REFERENCES honua.metadata_v2_snapshots(environment, revision)
               ON DELETE RESTRICT
       );
+
+      -- honua-server#1359: per-test compat-compile memoization. The compat snapshot is a
+      -- pure, deterministic function of the v1 compile inputs (honua.services/layers/
+      -- layer_fields/service_layers), which the test seed re-asserts identically on every
+      -- isolated schema. The honua.* catalog + snapshot tables are SHARED across the
+      -- serial Database collection, so the first seeded test compiles the snapshot and
+      -- every subsequent test re-ran the identical 4-environment compile for zero net
+      -- change. This table memoizes a fingerprint of the compile inputs so the function
+      -- can short-circuit when nothing relevant changed (tests that insert new layers --
+      -- e.g. admin-sample/spatial-reference -- shift the fingerprint and force a recompile,
+      -- keeping correctness). Single-row table keyed on a constant.
+      CREATE TABLE IF NOT EXISTS honua.metadata_v2_compat_fingerprint (
+          id                SMALLINT      NOT NULL PRIMARY KEY DEFAULT 1,
+          fingerprint       TEXT          NOT NULL,
+          compiled_at       TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+          CONSTRAINT metadata_v2_compat_fingerprint_singleton CHECK (id = 1)
+      );
   - |
       CREATE OR REPLACE FUNCTION honua.seed_metadata_v2_compat_snapshot()
       RETURNS void
@@ -1560,7 +1577,51 @@ sql:
           target_environment text;
           snapshot_document jsonb;
           snapshot_etag text;
+          current_fingerprint text;
+          stored_fingerprint text;
+          current_env_count integer;
       BEGIN
+          -- honua-server#1359: short-circuit the expensive 4-environment compile when the
+          -- compile inputs are byte-identical to the last compiled run AND every target
+          -- environment already has an activated snapshot. The fingerprint is a cheap md5
+          -- over the ordered compile-input rows; any layer/service/field change moves it
+          -- and forces a full recompile so correctness is preserved.
+          SELECT md5(COALESCE(string_agg(row_signature, '|' ORDER BY row_signature), ''))
+          INTO current_fingerprint
+          FROM (
+              SELECT 's:' || s.service_name || '|' || COALESCE(s.metadata::text, '') AS row_signature
+              FROM honua.services s
+              UNION ALL
+              SELECT 'l:' || l.layer_id::text || '|' || l.layer_name || '|' || l.table_name
+                  || '|' || COALESCE(l.geometry_type, '') || '|' || l.srid::text
+                  || '|' || COALESCE(l.table_schema, '') || '|' || COALESCE(l.primary_key_column, '')
+                  || '|' || COALESCE(l.storage_options::text, '') || '|' || COALESCE(l.metadata::text, '')
+                  || '|' || COALESCE(ST_AsText(l.extent), '') AS row_signature
+              FROM honua.layers l
+              UNION ALL
+              SELECT 'f:' || lf.layer_id::text || '|' || lf.field_name || '|' || COALESCE(lf.field_type, '')
+                  || '|' || lf.field_order::text || '|' || lf.nullable::text
+                  || '|' || COALESCE(lf.description, '') AS row_signature
+              FROM honua.layer_fields lf
+              UNION ALL
+              SELECT 'sl:' || sl.service_name || '|' || sl.layer_id::text || '|' || sl.layer_order::text AS row_signature
+              FROM honua.service_layers sl
+          ) AS compile_inputs;
+
+          SELECT fingerprint INTO stored_fingerprint
+          FROM honua.metadata_v2_compat_fingerprint
+          WHERE id = 1;
+
+          SELECT count(*) INTO current_env_count
+          FROM honua.metadata_v2_current
+          WHERE environment IN ('default', 'Development', 'Test', 'Production');
+
+          IF stored_fingerprint IS NOT NULL
+             AND stored_fingerprint = current_fingerprint
+             AND current_env_count = 4 THEN
+              RETURN;
+          END IF;
+
           FOREACH target_environment IN ARRAY ARRAY['default', 'Development', 'Test', 'Production']
           LOOP
               WITH
@@ -2107,6 +2168,14 @@ sql:
                   etag = EXCLUDED.etag,
                   activated_at = NOW();
           END LOOP;
+
+          -- honua-server#1359: record the fingerprint of the just-compiled inputs so the
+          -- next seeded test that re-asserts identical inputs can skip the recompile.
+          INSERT INTO honua.metadata_v2_compat_fingerprint (id, fingerprint, compiled_at)
+          VALUES (1, current_fingerprint, NOW())
+          ON CONFLICT (id) DO UPDATE SET
+              fingerprint = EXCLUDED.fingerprint,
+              compiled_at = EXCLUDED.compiled_at;
       END;
       $$;
   - "SELECT honua.seed_metadata_v2_compat_snapshot();"
