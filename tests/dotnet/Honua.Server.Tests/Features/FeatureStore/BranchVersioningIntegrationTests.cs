@@ -215,6 +215,94 @@ public sealed class BranchVersioningIntegrationTests : IAsyncLifetime
         (await versionManager.ResolveAsync("sde.Lifecycle", CancellationToken.None)).Should().BeNull();
     }
 
+    [Fact]
+    public async Task Reconcile_NoOverlappingDefaultEdits_IsCleanAndCanPost()
+    {
+        var store = CreateFeatureStore();
+        var versionManager = CreateVersionManager();
+
+        var feature = await store.CreateAsync(PointsLayerId, BuildFeature("Recon-Base", 6.0, 6.0), CancellationToken.None);
+        var version = await versionManager.CreateAsync(
+            new CreateVersionRequest("ReconClean", "sde", VersionAccess.Public), CancellationToken.None);
+
+        await store.ApplyEditsAsync(
+            PointsLayerId,
+            FeatureEditBatch.Create(
+                updates: ImmutableArray.Create(BuildFeature("Recon-Branch", 6.5, 6.5, feature.Id)),
+                versionContext: VersionContext.ForVersion(version)),
+            CancellationToken.None);
+
+        var result = await versionManager.ReconcileAsync(version.VersionId, CancellationToken.None);
+
+        result.CanPost.Should().BeTrue();
+        result.Conflicts.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Reconcile_OverlappingDefaultEdit_DetectsConflictAndBlocksPost()
+    {
+        var store = CreateFeatureStore();
+        var versionManager = CreateVersionManager();
+
+        var feature = await store.CreateAsync(PointsLayerId, BuildFeature("Conflict-Base", 7.0, 7.0), CancellationToken.None);
+        var version = await versionManager.CreateAsync(
+            new CreateVersionRequest("ReconConflict", "sde", VersionAccess.Public), CancellationToken.None);
+
+        // Branch edit then a DEFAULT edit on the same feature since the merge base => conflict.
+        await store.ApplyEditsAsync(
+            PointsLayerId,
+            FeatureEditBatch.Create(
+                updates: ImmutableArray.Create(BuildFeature("Conflict-Branch", 7.5, 7.5, feature.Id)),
+                versionContext: VersionContext.ForVersion(version)),
+            CancellationToken.None);
+        await store.UpdateAsync(PointsLayerId, BuildFeature("Conflict-Default", 7.9, 7.9, feature.Id), CancellationToken.None);
+
+        var reconcile = await versionManager.ReconcileAsync(version.VersionId, CancellationToken.None);
+        reconcile.CanPost.Should().BeFalse();
+        reconcile.Conflicts.Should().ContainSingle(c => c.ObjectId == feature.Id);
+
+        var post = await versionManager.PostAsync(version.VersionId, CancellationToken.None);
+        post.Posted.Should().BeFalse();
+        post.BlockedByConflicts.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Post_CleanVersion_ReflectsBranchEditsInDefault()
+    {
+        var store = CreateFeatureStore();
+        var versionManager = CreateVersionManager();
+
+        var keep = await store.CreateAsync(PointsLayerId, BuildFeature("Keep", 8.0, 8.0), CancellationToken.None);
+        var drop = await store.CreateAsync(PointsLayerId, BuildFeature("Drop", 8.1, 8.1), CancellationToken.None);
+
+        var version = await versionManager.CreateAsync(
+            new CreateVersionRequest("PostClean", "sde", VersionAccess.Public), CancellationToken.None);
+
+        await store.ApplyEditsAsync(
+            PointsLayerId,
+            FeatureEditBatch.Create(
+                creates: ImmutableArray.Create(BuildFeature("Posted-New", 8.2, 8.2)),
+                updates: ImmutableArray.Create(BuildFeature("Keep-Updated", 8.3, 8.3, keep.Id)),
+                deletes: ImmutableArray.Create(drop.Id),
+                versionContext: VersionContext.ForVersion(version)),
+            CancellationToken.None);
+
+        var reconcile = await versionManager.ReconcileAsync(version.VersionId, CancellationToken.None);
+        reconcile.CanPost.Should().BeTrue();
+
+        var post = await versionManager.PostAsync(version.VersionId, CancellationToken.None);
+        post.Posted.Should().BeTrue();
+        post.BlockedByConflicts.Should().BeFalse();
+
+        // DEFAULT now reflects the branch: Drop is gone, Keep-Updated replaces Keep, Posted-New is present.
+        var defaultRows = await store.QueryAsync(PointsLayerId, new FeatureQuery(), CancellationToken.None);
+        var names = defaultRows.Items.Select(NameOf).OrderBy(n => n).ToArray();
+        names.Should().Contain("Keep-Updated");
+        names.Should().Contain("Posted-New");
+        names.Should().NotContain("Drop");
+        names.Should().NotContain("Keep");
+    }
+
     private static string NameOf(Feature feature)
         => feature.Attributes.TryGetValue("name", out var value) ? value?.ToString() ?? string.Empty : string.Empty;
 
@@ -260,7 +348,7 @@ public sealed class BranchVersioningIntegrationTests : IAsyncLifetime
     private PostgresVersionManager CreateVersionManager()
     {
         var connectionProvider = new TestDatabaseConnectionProvider(_fixture.DataSource, () => _schema);
-        return new PostgresVersionManager(connectionProvider);
+        return new PostgresVersionManager(connectionProvider, _schema);
     }
 
     private async Task<NpgsqlConnection> OpenSchemaConnectionAsync()
