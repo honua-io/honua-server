@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -71,6 +72,13 @@ internal static class GeoJsonFeatureBaseBuilder
 
         var declaredAttributeFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var visibleAttributeFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // Date/datetime fields must be emitted as RFC 3339 strings to honor the
+        // GeoJSON/OGC contract (and the collection's queryables schema). Stored
+        // values arrive in different CLR shapes depending on the write path
+        // (epoch-millisecond long from Esri applyEdits vs ISO string from seeds),
+        // so map field name -> whether it is a date-only field and coerce on write.
+        var dateOnlyFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var dateTimeFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var field in resource.SchemaFields)
         {
             if (!IsGeometryField(field))
@@ -79,6 +87,15 @@ internal static class GeoJsonFeatureBaseBuilder
                 if (!field.Hidden)
                 {
                     visibleAttributeFields.Add(field.Name);
+                }
+
+                if (field.Type == MetadataV2FieldType.Date)
+                {
+                    dateOnlyFields.Add(field.Name);
+                }
+                else if (field.Type == MetadataV2FieldType.DateTime)
+                {
+                    dateTimeFields.Add(field.Name);
                 }
             }
         }
@@ -105,7 +122,7 @@ internal static class GeoJsonFeatureBaseBuilder
 
             if (attributes.TryGetValue(fieldName, out var value))
             {
-                properties[fieldName] = value;
+                properties[fieldName] = CoerceProperty(fieldName, value, dateOnlyFields, dateTimeFields);
             }
             else if (isObjectIdField && shouldIncludeObjectId)
             {
@@ -142,7 +159,7 @@ internal static class GeoJsonFeatureBaseBuilder
                     continue;
                 }
 
-                properties[fieldName] = value;
+                properties[fieldName] = CoerceProperty(fieldName, value, dateOnlyFields, dateTimeFields);
             }
         }
 
@@ -167,6 +184,103 @@ internal static class GeoJsonFeatureBaseBuilder
 
     private static bool IsGeometryField(MetadataV2Field field)
         => field.Type is MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography;
+
+    // Normalize date/datetime field values to RFC 3339 for GeoJSON/OGC output.
+    // Stored values arrive as epoch-millisecond longs (Esri applyEdits), numeric
+    // strings, ISO strings (seeds), or CLR date types depending on the write
+    // path; emit one consistent, schema-conformant representation. Non-date
+    // fields and unparseable values pass through unchanged.
+    private static object? CoerceProperty(
+        string fieldName,
+        object? value,
+        HashSet<string> dateOnlyFields,
+        HashSet<string> dateTimeFields)
+    {
+        if (value is null)
+        {
+            return null;
+        }
+
+        if (dateOnlyFields.Contains(fieldName))
+        {
+            return TryCoerceDate(value, out var utc)
+                ? utc.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+                : value;
+        }
+
+        if (dateTimeFields.Contains(fieldName))
+        {
+            return TryCoerceDate(value, out var utc)
+                ? utc.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture)
+                : value;
+        }
+
+        return value;
+    }
+
+    private static bool TryCoerceDate(object value, out DateTimeOffset utc)
+    {
+        switch (value)
+        {
+            case DateTimeOffset dto:
+                utc = dto.ToUniversalTime();
+                return true;
+            case DateTime dt:
+                utc = new DateTimeOffset(DateTime.SpecifyKind(dt, DateTimeKind.Utc));
+                return true;
+            case DateOnly d:
+                utc = new DateTimeOffset(d.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
+                return true;
+            case long epochMs:
+                utc = DateTimeOffset.FromUnixTimeMilliseconds(epochMs);
+                return true;
+            case int epochMsInt:
+                utc = DateTimeOffset.FromUnixTimeMilliseconds(epochMsInt);
+                return true;
+            case double epochMsDouble:
+                utc = DateTimeOffset.FromUnixTimeMilliseconds((long)epochMsDouble);
+                return true;
+            case string text:
+                return TryParseDateText(text, out utc);
+            case JsonElement element when element.ValueKind == JsonValueKind.Number && element.TryGetInt64(out var jsonEpoch):
+                utc = DateTimeOffset.FromUnixTimeMilliseconds(jsonEpoch);
+                return true;
+            case JsonElement element when element.ValueKind == JsonValueKind.String:
+                return TryParseDateText(element.GetString() ?? string.Empty, out utc);
+            default:
+                utc = default;
+                return false;
+        }
+    }
+
+    private static bool TryParseDateText(string text, out DateTimeOffset utc)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            utc = default;
+            return false;
+        }
+
+        // Esri may persist a date as epoch-milliseconds rendered as text.
+        if (long.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var epochMs))
+        {
+            utc = DateTimeOffset.FromUnixTimeMilliseconds(epochMs);
+            return true;
+        }
+
+        if (DateTimeOffset.TryParse(
+            text,
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+            out var parsed))
+        {
+            utc = parsed;
+            return true;
+        }
+
+        utc = default;
+        return false;
+    }
 
     private static object ResolveId(
         Dictionary<string, object?> properties,

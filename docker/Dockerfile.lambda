@@ -61,7 +61,11 @@ WORKDIR /var/task
 COPY --from=build /app /var/task
 COPY docker/cloud/lambda/bootstrap.sh /var/runtime/bootstrap
 
-RUN dnf install -y krb5-libs && \
+# libicu is required because Honua.Server runs with InvariantGlobalization=false:
+# Microsoft.Data.SqlClient and Oracle.ManagedDataAccess throw
+# "Globalization Invariant Mode is not supported" at connect time without ICU.
+# See honua-server#1369.
+RUN dnf install -y krb5-libs libicu && \
     dnf clean all && \
     chmod +x /var/runtime/bootstrap /var/task/Honua.Server
 
@@ -69,6 +73,7 @@ ENV PORT=8080 \
     AWS_LWA_PORT=8080 \
     ASPNETCORE_ENVIRONMENT=Production \
     DOTNET_RUNNING_IN_CONTAINER=true \
+    DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false \
     DOTNET_EnableDiagnostics=0
 
 EXPOSE 8080

@@ -1353,6 +1353,63 @@
       ]
     },
     {
+      "surfaceId": "version-management-server",
+      "displayName": "GeoServices REST VersionManagementServer",
+      "surfaceKind": "http-route-family",
+      "protocol": "GeoServices REST VersionManagementServer",
+      "canonicalIdentifier": "/rest/services/{serviceId}/VersionManagementServer",
+      "parentSurfaceId": "feature-server",
+      "endpointPrefixes": [],
+      "endpointExactMatches": [],
+      "endpointContains": [
+        "/VersionManagementServer"
+      ],
+      "operationKeys": [
+        "VersionManagementServer::serviceInfo",
+        "VersionManagementServer::versions",
+        "VersionManagementServer::versionInfo",
+        "VersionManagementServer::create",
+        "VersionManagementServer::delete",
+        "VersionManagementServer::alter",
+        "VersionManagementServer::startReading",
+        "VersionManagementServer::stopReading",
+        "VersionManagementServer::startEditing",
+        "VersionManagementServer::stopEditing",
+        "VersionManagementServer::reconcile",
+        "VersionManagementServer::post"
+      ],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage and deployed-route drift checks",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "operation-coverage",
+          "proofMechanism": "VersionManagementServer endpoint integration tests cover the branch-version lifecycle (create/delete/alter, read/edit sessions, reconcile/post, version listing) and the gdbVersion isolate-then-merge flow over FeatureServer edits/queries",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/OperationRegistry.cs",
+            "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/VersionManagementServer/VersionManagementServerEndpointTests.cs",
+            "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/VersionManagementServer/FeatureServerGdbVersionFlowTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1272",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
       "surfaceId": "map-server",
       "displayName": "GeoServices REST MapServer",
       "surfaceKind": "http-route-family",

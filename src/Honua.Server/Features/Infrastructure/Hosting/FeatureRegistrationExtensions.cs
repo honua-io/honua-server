@@ -32,9 +32,11 @@ using Honua.Server.Features.Styling;
 using Honua.Protocols.GeoServices.MapServer;
 using Honua.Protocols.GeoServices.NAServer;
 using Honua.Protocols.GeoServices.Sharing;
+using Honua.Protocols.GeoServices.VersionManagementServer;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.NlQuery;
 using Honua.Ai.WorkflowGeneration;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Honua.Protocols.OData;
 using Honua.Protocols.Ogc.Api.Coverages;
 using Honua.Protocols.Ogc.Api.Features;
@@ -132,6 +134,20 @@ internal static class FeatureRegistrationExtensions
         // REST read surface (#1371 → #1243).
         services.AddPortalItemProjection();
         services.AddStudioPackageLifecycle();
+        // NL -> map.package generation. Reuses the workflow-generation provider config + chat plumbing
+        // (registered by AddWorkflowGeneration above) and a self-contained structural validator (no
+        // live metadata DB) so generation never depends on layer/style/source binding (deferred to
+        // publish). Mirrors the form generation service registration.
+        services.TryAddSingleton<Honua.Ai.MapGeneration.IMapGenerationService, Honua.Ai.MapGeneration.MapGenerationService>();
+        // NL -> report.document generation. Reuses the workflow-generation provider config + chat plumbing
+        // and a self-contained structural ReportDocumentValidator (no DB). Mirrors the form/map registration.
+        services.TryAddSingleton<Honua.Ai.ReportGeneration.IReportGenerationService, Honua.Ai.ReportGeneration.ReportGenerationService>();
+        // NL -> dashboard.document generation. Reuses the workflow-generation provider config + chat plumbing
+        // and a self-contained structural DashboardDocumentValidator (no DB). The dashboard is the close
+        // analog of the report (panels/charts/Vega-Lite + bindings/layout) with interactive filter/metric
+        // panels; the console reaches it via the shared /console/publications/generate endpoint with
+        // kind=dashboard. Mirrors the report registration.
+        services.TryAddSingleton<Honua.Ai.DashboardGeneration.IDashboardGenerationService, Honua.Ai.DashboardGeneration.DashboardGenerationService>();
         // Durable Studio map collaboration: comment threads + activity feed (#1278, slice 1).
         // In-memory store is the default; AddPostgreSqlServices overrides it with durable storage.
         Honua.Core.Features.Console.Collaboration.StudioMapCollaborationServiceCollectionExtensions
@@ -157,6 +173,7 @@ internal static class FeatureRegistrationExtensions
         ArgumentNullException.ThrowIfNull(endpoints);
 
         endpoints.MapFeatureServerEndpoints();
+        endpoints.MapVersionManagementServerEndpoints();
         endpoints.MapCloudDemoEndpoints();
         endpoints.MapGeocodingEndpoints();
         endpoints.MapFormPackageEndpoints();

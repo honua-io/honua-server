@@ -222,6 +222,21 @@ public static class MigrationCatalogReconciler
             return;
         }
 
+        // Respect the capture-time coded-value cap (EsriFieldDomainParser.CodedValueDomainCap). A
+        // coded-value domain that exceeded the cap at scan time is captured with its type/name but
+        // NO coded values (DomainValues is null/empty) and is deliberately omitted from the publish
+        // path (it would otherwise materialize as a misleading partial lookup). Reconciling such a
+        // capped domain against the published field would false-fail as DomainMissing/DomainValues-
+        // Mismatch even though the omission is intentional, so skip the missing/values probes for
+        // it. We can only faithfully reconcile a coded-value domain whose values we actually captured.
+        var isCappedCodedValueDomain =
+            string.Equals(inventoryField.DomainType, "codedValue", StringComparison.OrdinalIgnoreCase) &&
+            (inventoryField.DomainValues is null || inventoryField.DomainValues.Length == 0);
+        if (isCappedCodedValueDomain && publishedField.Domain is null)
+        {
+            return;
+        }
+
         if (publishedField.Domain is null)
         {
             findings.Add(new MigrationCatalogReconciliationFinding

@@ -204,6 +204,54 @@ public sealed class ContentPublicationEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/console/publications")]
+    [Endpoint("PATCH /api/v1/console/publications/{publicationId}/policy")]
+    public async Task UpdatePolicy_OnDefaultPolicyRoute_ChangesVisibilityAndEmbed_Returns200()
+    {
+        // Regression for #1239: a publication created with a minimal default policy
+        // ({"visibility":"organization"}) leaves the nested policy members (embed/share/
+        // service/publicLink) absent from the JSON body, so they deserialize to null. A
+        // subsequent minimal policy PATCH that only touches visibility + embed must
+        // succeed (200) rather than NRE while dereferencing those nested members.
+        const string createBody = """
+            {
+              "kind": "report",
+              "routeSlug": "rpt-smoke",
+              "title": "Smoke",
+              "contentPayload": "a",
+              "policy": { "visibility": "organization" }
+            }
+            """;
+
+        var createResponse = await _client.PostAsync("/api/v1/console/publications", JsonContent(createBody));
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = await DeserializeAsync(createResponse, ContentPublicationJsonContext.Default.ContentPublicationDetail);
+        created.Should().NotBeNull();
+        var publicationId = created!.Route.PublicationId;
+
+        const string patchBody = """
+            {
+              "visibility": "public",
+              "embed": { "allowEmbedding": false }
+            }
+            """;
+
+        var patchResponse = await _client.PatchAsync(
+            $"/api/v1/console/publications/{publicationId}/policy",
+            JsonContent(patchBody));
+
+        patchResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await DeserializeAsync(patchResponse, ContentPublicationJsonContext.Default.ContentPublicationPolicyUpdateResponse);
+        result.Should().NotBeNull();
+        result!.Route.RouteSlug.Should().Be("rpt-smoke");
+        result.Route.Policy.Visibility.Should().Be(ContentPublicationVisibility.Public);
+        result.Route.Policy.Embed.AllowEmbedding.Should().BeFalse();
+        // No public link was created or revoked by this update.
+        result.CreatedPublicLinkId.Should().BeNull();
+        result.Route.Policy.PublicLink.Links.Should().BeEmpty();
+    }
+
+    [IntegrationTest]
     [Endpoint("PATCH /api/v1/console/publications/{publicationId}/policy")]
     public async Task UpdatePolicy_WithNumericUndefinedVisibility_ReturnsBadRequest()
     {
@@ -395,6 +443,17 @@ public sealed class ContentPublicationEndpointsTests : IAsyncLifetime
             .ToList();
         codes.Should().Contain("publication.bindings.invalid");
         codes.Should().Contain("publication.panels.invalid");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/console/publications/generate")]
+    public async Task GenerateContent_MissingPrompt_ReachesHandlerAndReturnsBadRequest()
+    {
+        // The generate route validates the prompt before invoking any AI provider, so an empty body
+        // exercises the wired endpoint (non-404) without calling a real LLM.
+        var response = await _client.PostAsync("/api/v1/console/publications/generate", JsonContent("{}"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     private async Task<ContentPublicationDetail> PublishAsync(string slug, ContentPublicationKind kind, string? payload = null)

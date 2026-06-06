@@ -264,7 +264,9 @@ builder.Host.UseSerilog((context, services, config) =>
     if (isDevelopment)
     {
         // Development: Human-readable console output
-        config.WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}");
+        config.WriteTo.Console(
+            outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}",
+            formatProvider: System.Globalization.CultureInfo.InvariantCulture);
     }
     else
     {
@@ -537,11 +539,22 @@ if (replicaProvider != DataProviderNames.DuckDb &&
     builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IChangeTracker>(sp =>
         new Honua.Postgres.Features.FeatureStore.Services.PostgresChangeTracker(
             sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IDatabaseConnectionProvider>()));
+    // Branch-versioning manager (#1272 Track B, ADR-0051) — Postgres-only; read-only/non-Postgres
+    // providers register the NoOp stub (SupportsVersioning=false) in their ServiceCollectionExtensions.
+    builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IVersionManager>(sp =>
+        new Honua.Postgres.Features.FeatureStore.Services.PostgresVersionManager(
+            sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IDatabaseConnectionProvider>()));
 }
 builder.Services.AddScoped<Honua.Protocols.GeoServices.FeatureServer.IReplicaStore>(sp =>
     new Honua.Protocols.GeoServices.FeatureServer.Services.CachingReplicaStore(
         sp.GetRequiredService<Honua.Protocols.GeoServices.FeatureServer.DistributedReplicaStore>(),
         sp.GetRequiredService<Honua.Core.Features.FeatureStore.Abstractions.IReplicaRepository>()));
+// Canonical replica-upload synchronization pipeline (#1272). Conflict detection runs against the
+// provider's change log; conflict-record writes use the durable conflict store when supported and
+// otherwise fall back to last-write-wins. Available for all providers since IChangeTracker and
+// IReplicaConflictRepository are always registered (read-only providers register no-op stubs).
+builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IReplicaSyncService,
+    Honua.Core.Features.FeatureStore.Services.ReplicaSyncService>();
 
 // ---- Extracted: import/export job managers, migration evidence, tile operations
 //      (Startup/ImportExportTileOperationsRegistration.cs)
@@ -940,6 +953,13 @@ app.UseSerilogRequestLogging(options =>
 
 // Add global exception handling middleware after request logging.
 app.UseGlobalExceptionHandling();
+
+// Emit the Esri/GeoServices error envelope for routing-level 404/405 (and
+// 406/415/501) terminations under /rest that would otherwise return a bodyless
+// status. Scoped to GeoServices paths so OGC/STAC/OData/admin contracts are
+// untouched. Runs after global exception handling so thrown exceptions keep their
+// existing protocol shaping and only status-only responses are re-shaped here.
+app.UseRestErrorEnvelope();
 
 // Capture the original gRPC-Web indicator before UseGrpcWeb rewrites Content-Type
 // from application/grpc-web* to application/grpc, so the client-certificate

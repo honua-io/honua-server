@@ -66,7 +66,17 @@ public static class FeatureCatalog
 
         /// <summary>Printing and layout export features.</summary>
         public const string Printing = "Printing";
+
+        /// <summary>Editing features — branch versioning, reconcile/post, multi-user editing.</summary>
+        public const string Editing = "Editing";
     }
+
+    /// <summary>
+    /// Entitlement key for Esri-style branch versioning (named gdb versions, version read/edit
+    /// sessions, reconcile/post). Gates the GeoServices VersionManagementServer surface and
+    /// <c>gdbVersion</c>-scoped FeatureServer editing (#1272, ADR-0051). Postgres-only.
+    /// </summary>
+    public const string BranchVersioningKey = "editing.branch-versioning";
 
     /// <summary>
     /// All edition-gated features in the platform.
@@ -208,5 +218,9 @@ public static class FeatureCatalog
             HonuaEdition.Pro, "Export print jobs as PDF files."),
         new("printing.layout-templates", "Print Layout Templates", Categories.Printing,
             HonuaEdition.Pro, "Use full print layout templates beyond MAP_ONLY."),
+
+        // Editing — Enterprise (Esri-style branch versioning; Postgres-only)
+        new(BranchVersioningKey, "Branch Versioning", Categories.Editing,
+            HonuaEdition.Enterprise, "Named gdb versions with isolated edits, reconcile/post back to DEFAULT, and gdbVersion-scoped editing/querying over the GeoServices VersionManagementServer."),
     ];
 }

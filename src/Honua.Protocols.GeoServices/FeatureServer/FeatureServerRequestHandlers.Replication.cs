@@ -6,6 +6,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Configuration;
 using System.Collections.Immutable;
@@ -806,62 +807,77 @@ internal static partial class FeatureServerEndpoints
 
         var syncDirection = GetValueString(values, "syncDirection") ?? "download";
         var editsJson = GetValueString(values, "edits");
+        var isUploadDirection = !string.Equals(syncDirection, "download", StringComparison.OrdinalIgnoreCase);
 
-        // If upload or bidirectional sync includes edits, apply them
-        if (!string.IsNullOrWhiteSpace(editsJson) &&
-            !string.Equals(syncDirection, "download", StringComparison.OrdinalIgnoreCase))
+        var changeTracker = context.RequestServices.GetRequiredService<IChangeTracker>();
+
+        SynchronizeReplicaConflict[]? conflicts = null;
+        int? appliedAdds = null;
+        int? appliedUpdates = null;
+        int? appliedDeletes = null;
+
+        // Upload/bidirectional sync with edits is applied through the canonical replica-sync
+        // pipeline: it detects server-side conflicts against the replica's base generation, applies
+        // non-conflicting edits via the shared edit pipeline, and writes durable conflict records
+        // when supported. Download-only syncs and empty uploads skip the pipeline entirely (#1272).
+        long uploadServerGen = 0;
+        var didUpload = false;
+        if (isUploadDirection && !string.IsNullOrWhiteSpace(editsJson))
         {
-            GeoServicesFeature[]? features;
-            try
+            if (!TryParseSynchronizeReplicaEdits(editsJson!, replicaLayers, out var layerEdits, out var parseError))
             {
-                features = System.Text.Json.JsonSerializer.Deserialize(
-                    editsJson, FeatureServerJsonContext.Default.GeoServicesFeatureArray);
-            }
-            catch (System.Text.Json.JsonException)
-            {
-                return StandardErrorHelpers.CreateBadRequest(context,
-                    "Invalid edits parameter",
-                    ["edits must be a valid JSON array of features."]);
+                return StandardErrorHelpers.CreateBadRequest(context, "Invalid edits parameter", [parseError!]);
             }
 
-            if (features is { Length: > 0 })
+            if (!layerEdits.IsDefaultOrEmpty)
             {
-                // Apply the incoming edits to the first replica layer
-                var targetLayerId = replicaLayers[0].PublicLayerId;
                 var editsHandler = context.RequestServices.GetRequiredService<FeatureServerEditsHandler>();
                 var limitsOptions = context.RequestServices
                     .GetRequiredService<Microsoft.Extensions.Options.IOptions<Honua.Core.Configuration.LimitsOptions>>();
+                var syncService = context.RequestServices.GetRequiredService<IReplicaSyncService>();
+                var applier = new FeatureServerReplicaEditApplier(editsHandler, limitsOptions.Value.Edits);
 
-                var editRequest = new ApplyEditsRequest { Adds = features, RollbackOnFailure = false };
-                var editResult = await editsHandler.HandleApplyEditsAsync(
-                    serviceId, targetLayerId, editRequest, limitsOptions.Value.Edits, cancellationToken);
+                var syncRequest = new ReplicaSyncRequest(
+                    ReplicaId: replicaId,
+                    ServiceId: serviceId,
+                    Direction: string.Equals(syncDirection, "upload", StringComparison.OrdinalIgnoreCase)
+                        ? ReplicaSyncDirection.Upload
+                        : ReplicaSyncDirection.Bidirectional,
+                    BaseGeneration: replica.LastSyncGeneration,
+                    LayerEdits: layerEdits,
+                    LastWriteWins: true,
+                    SyncOperationId: context.TraceIdentifier);
 
-                // If the edit handler returned an error, pass it through
-                if (editResult is not Microsoft.AspNetCore.Http.HttpResults.JsonHttpResult<ApplyEditsResponse> jsonResult)
-                {
-                    return editResult;
-                }
-
-                if (jsonResult.Value is not { } applyResponse ||
-                    !applyResponse.Success ||
-                    HasFailedEditResult(applyResponse.AddResults) ||
-                    HasFailedEditResult(applyResponse.UpdateResults) ||
-                    HasFailedEditResult(applyResponse.DeleteResults))
+                var report = await syncService.ApplyUploadAsync(syncRequest, applier, cancellationToken);
+                if (!report.Success)
                 {
                     return StandardErrorHelpers.CreateBadRequest(
                         context,
                         "Uploaded replica edits failed to apply.");
                 }
+
+                appliedAdds = report.AppliedAdds;
+                appliedUpdates = report.AppliedUpdates;
+                appliedDeletes = report.AppliedDeletes;
+                conflicts = MapSyncConflicts(report.Conflicts);
+                uploadServerGen = report.ServerGeneration;
+                didUpload = true;
             }
         }
 
-        // Update the last sync time and generation in distributed store.
-        var changeTracker = context.RequestServices.GetRequiredService<IChangeTracker>();
-        var currentGen = await changeTracker.GetCurrentGenerationAsync(cancellationToken);
+        // The server generation cursor recorded for the replica. After an upload we record the
+        // post-apply generation as both the last-sync and upload-base cursor so a subsequent download
+        // delta excludes the client's own just-applied edits. Download-only syncs simply advance the
+        // last-sync cursor to the current generation.
+        var currentGen = didUpload
+            ? uploadServerGen
+            : await changeTracker.GetCurrentGenerationAsync(cancellationToken);
+
         var updated = replica with
         {
             LastSyncTime = DateTimeOffset.UtcNow,
-            LastSyncGeneration = currentGen
+            LastSyncGeneration = currentGen,
+            UploadBaseGeneration = didUpload ? currentGen : replica.UploadBaseGeneration
         };
         await replicaStore.SetAsync(updated, cancellationToken: cancellationToken);
 
@@ -870,15 +886,195 @@ internal static partial class FeatureServerEndpoints
             Success = true,
             ReplicaId = replicaId,
             SyncDirection = syncDirection,
-            ServerGen = currentGen
+            ServerGen = currentGen,
+            AppliedAdds = appliedAdds,
+            AppliedUpdates = appliedUpdates,
+            AppliedDeletes = appliedDeletes,
+            Conflicts = conflicts
         };
 
         return Results.Json(response, FeatureServerJsonContext.Default.SynchronizeReplicaResponse, contentType: "application/json");
     }
 
-    private static bool HasFailedEditResult(EditResult[]? results)
+    /// <summary>
+    /// Maps canonical sync conflicts to the wire conflict summary.
+    /// </summary>
+    private static SynchronizeReplicaConflict[]? MapSyncConflicts(
+        ImmutableArray<ReplicaSyncConflict> conflicts)
     {
-        return results is not null && Array.Exists(results, static result => !result.Success);
+        if (conflicts.IsDefaultOrEmpty)
+        {
+            return null;
+        }
+
+        var result = new SynchronizeReplicaConflict[conflicts.Length];
+        for (var i = 0; i < conflicts.Length; i++)
+        {
+            var conflict = conflicts[i];
+            result[i] = new SynchronizeReplicaConflict
+            {
+                LayerId = conflict.PublicLayerId,
+                ObjectId = conflict.ObjectId,
+                ConflictType = (int)conflict.ConflictType,
+                Applied = conflict.Applied,
+                ConflictId = conflict.ConflictId
+            };
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Parses the <c>synchronizeReplica</c> <c>edits</c> parameter into canonical per-layer upload
+    /// edits. Accepts the ArcGIS per-layer form (a JSON array of
+    /// <c>{ id, adds, updates, deletes }</c> objects) and, for backward compatibility, the legacy flat
+    /// array of features (interpreted as adds against the replica's first layer). Edits referencing a
+    /// layer not in the replica are rejected.
+    /// </summary>
+    private static bool TryParseSynchronizeReplicaEdits(
+        string editsJson,
+        ReplicaLayerV2[] replicaLayers,
+        out ImmutableArray<ReplicaUploadLayerEdits> layerEdits,
+        out string? error)
+    {
+        layerEdits = ImmutableArray<ReplicaUploadLayerEdits>.Empty;
+        error = null;
+
+        var storageByPublicId = replicaLayers
+            .DistinctBy(layer => layer.PublicLayerId)
+            .ToDictionary(layer => layer.PublicLayerId, layer => layer.StorageLayerId);
+
+        var trimmed = editsJson.TrimStart();
+
+        // The per-layer form is an array of objects ("[{...}]"); the legacy flat form is an array of
+        // features which are also objects. Disambiguate by probing for the per-layer "id" shape.
+        SynchronizeReplicaLayerEdits[]? perLayer = null;
+        var parsedPerLayer = false;
+        if (trimmed.StartsWith('['))
+        {
+            try
+            {
+                perLayer = System.Text.Json.JsonSerializer.Deserialize(
+                    editsJson, FeatureServerJsonContext.Default.SynchronizeReplicaLayerEditsArray);
+                parsedPerLayer = perLayer is { Length: > 0 }
+                    && perLayer.All(static entry => entry is not null);
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                parsedPerLayer = false;
+            }
+        }
+
+        var builder = ImmutableArray.CreateBuilder<ReplicaUploadLayerEdits>();
+
+        if (parsedPerLayer && perLayer is not null &&
+            perLayer.Any(static entry =>
+                entry.Adds is { Length: > 0 } ||
+                entry.Updates is { Length: > 0 } ||
+                entry.Deletes is { Length: > 0 }))
+        {
+            foreach (var entry in perLayer)
+            {
+                if (!storageByPublicId.TryGetValue(entry.Id, out var storageLayerId))
+                {
+                    error = $"edits reference layer {entry.Id} which is not part of this replica.";
+                    return false;
+                }
+
+                var edits = ImmutableArray.CreateBuilder<ReplicaUploadEdit>();
+                if (entry.Adds is not null)
+                {
+                    foreach (var add in entry.Adds)
+                    {
+                        edits.Add(new ReplicaUploadEdit(FeatureEditOperationKind.Create, ObjectId: null, Payload: add));
+                    }
+                }
+
+                if (entry.Updates is not null)
+                {
+                    foreach (var update in entry.Updates)
+                    {
+                        edits.Add(new ReplicaUploadEdit(
+                            FeatureEditOperationKind.Update,
+                            ObjectId: TryReadObjectId(update),
+                            Payload: update));
+                    }
+                }
+
+                if (entry.Deletes is not null)
+                {
+                    foreach (var deleteId in entry.Deletes)
+                    {
+                        edits.Add(new ReplicaUploadEdit(FeatureEditOperationKind.Delete, ObjectId: deleteId, Payload: null));
+                    }
+                }
+
+                if (edits.Count > 0)
+                {
+                    builder.Add(new ReplicaUploadLayerEdits(entry.Id, storageLayerId, edits.ToImmutable()));
+                }
+            }
+
+            layerEdits = builder.ToImmutable();
+            return true;
+        }
+
+        // Legacy flat form: an array of features applied as adds to the first replica layer.
+        GeoServicesFeature[]? features;
+        try
+        {
+            features = System.Text.Json.JsonSerializer.Deserialize(
+                editsJson, FeatureServerJsonContext.Default.GeoServicesFeatureArray);
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            error = "edits must be a valid JSON array of features or per-layer edit objects.";
+            return false;
+        }
+
+        if (features is { Length: > 0 })
+        {
+            var firstLayer = replicaLayers[0];
+            var edits = ImmutableArray.CreateBuilder<ReplicaUploadEdit>(features.Length);
+            foreach (var feature in features)
+            {
+                edits.Add(new ReplicaUploadEdit(FeatureEditOperationKind.Create, ObjectId: null, Payload: feature));
+            }
+
+            builder.Add(new ReplicaUploadLayerEdits(firstLayer.PublicLayerId, firstLayer.StorageLayerId, edits.ToImmutable()));
+        }
+
+        layerEdits = builder.ToImmutable();
+        return true;
+    }
+
+    /// <summary>
+    /// Reads the object id attribute from an Esri-JSON update feature for conflict keying. Returns
+    /// null when no recognizable object id attribute is present; conflict detection then treats the
+    /// update as non-conflicting (the shared edit pipeline still rejects updates without an id).
+    /// </summary>
+    private static long? TryReadObjectId(GeoServicesFeature feature)
+    {
+        if (feature.Attributes is null)
+        {
+            return null;
+        }
+
+        foreach (var (key, value) in feature.Attributes)
+        {
+            if (key.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase) ||
+                key.Equals("objectid", StringComparison.OrdinalIgnoreCase) ||
+                key.Equals("oid", StringComparison.OrdinalIgnoreCase) ||
+                key.Equals("fid", StringComparison.OrdinalIgnoreCase))
+            {
+                if (FeatureServerValueParser.TryConvertToLong(value, out var objectId))
+                {
+                    return objectId;
+                }
+            }
+        }
+
+        return null;
     }
 
     private static async Task<IResult> HandleUnRegisterReplica(
@@ -1198,7 +1394,8 @@ internal static partial class FeatureServerEndpoints
         record.CreatedAt)
     {
         LastSyncTime = record.LastSyncTime,
-        LastSyncGeneration = record.LastSyncGeneration
+        LastSyncGeneration = record.LastSyncGeneration,
+        UploadBaseGeneration = record.UploadBaseGeneration
     };
 
     private static async Task<IResult?> RequireReplicaWriteAccessV2Async(

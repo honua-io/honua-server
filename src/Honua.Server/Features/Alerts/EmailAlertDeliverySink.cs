@@ -58,7 +58,7 @@ internal sealed class EmailAlertDeliverySink : IAlertDeliverySink
             };
             message.To.Add(new MailAddress(recipient));
 
-            message.Headers.Add("X-Honua-Alert-Rule", alertEvent.RuleId.ToString());
+            message.Headers.Add("X-Honua-Alert-Rule", alertEvent.RuleId.ToString(System.Globalization.CultureInfo.InvariantCulture));
             message.Headers.Add("X-Honua-Alert-Event", alertEvent.DedupeKey);
 
             using var client = new SmtpClient(emailOptions.SmtpHost, emailOptions.SmtpPort)

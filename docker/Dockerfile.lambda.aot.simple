@@ -69,7 +69,11 @@ COPY --from=public.ecr.aws/awsguru/aws-lambda-adapter:0.9.1 /lambda-adapter /opt
 WORKDIR ${LAMBDA_TASK_ROOT}
 COPY --from=build /app ${LAMBDA_TASK_ROOT}
 
-RUN yum install -y krb5-libs && \
+# libicu is required because Honua.Server runs with InvariantGlobalization=false:
+# Microsoft.Data.SqlClient and Oracle.ManagedDataAccess throw
+# "Globalization Invariant Mode is not supported" at connect time without ICU.
+# See honua-server#1369.
+RUN yum install -y krb5-libs libicu && \
     yum clean all && \
     chmod +x ${LAMBDA_TASK_ROOT}/Honua.Server
 
@@ -77,6 +81,7 @@ ENV PORT=8080 \
     AWS_LWA_PORT=8080 \
     ASPNETCORE_ENVIRONMENT=Production \
     DOTNET_RUNNING_IN_CONTAINER=true \
+    DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false \
     DOTNET_EnableDiagnostics=0
 
 EXPOSE 8080

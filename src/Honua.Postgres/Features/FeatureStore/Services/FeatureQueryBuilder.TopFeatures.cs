@@ -18,6 +18,7 @@ internal sealed partial class FeatureQueryBuilder
         FeatureQuery query,
         CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
     {
+        GuardVersionedReadSupported(query, "top-features");
         if (!query.TopFilter.HasValue)
         {
             throw new ArgumentException("TopFilter must be specified for a top features query.", nameof(query));

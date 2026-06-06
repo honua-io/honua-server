@@ -4,6 +4,8 @@
 using System.Globalization;
 using System.Security.Claims;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Migration.Abstractions;
+using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.Portal.Abstractions;
 using Honua.Core.Features.Portal.Domain;
 using Honua.Core.Features.Security.Abstractions;
@@ -28,6 +30,7 @@ public sealed class PortalItemProjector : IPortalItemProjector
         new(new ClaimsIdentity(authenticationType: "PortalAccessProbe"));
 
     private readonly IAccessPolicyEvaluator _accessPolicyEvaluator;
+    private readonly IEsriConstructCapabilityRegistry _capabilityRegistry;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="PortalItemProjector"/> class.
@@ -38,10 +41,20 @@ public sealed class PortalItemProjector : IPortalItemProjector
     /// through, so the Portal <c>access</c> tier cannot drift from the real RBAC
     /// decision.
     /// </param>
-    public PortalItemProjector(IAccessPolicyEvaluator accessPolicyEvaluator)
+    /// <param name="capabilityRegistry">
+    /// The shared Esri construct capability/fidelity registry (#1382). The facade
+    /// lane resolves the "can this service construct be served through the Portal
+    /// facade?" verdict from the registry instead of a private table, so the
+    /// facade, importer, and GP lanes stay aligned on one source of truth.
+    /// </param>
+    public PortalItemProjector(
+        IAccessPolicyEvaluator accessPolicyEvaluator,
+        IEsriConstructCapabilityRegistry capabilityRegistry)
     {
         ArgumentNullException.ThrowIfNull(accessPolicyEvaluator);
+        ArgumentNullException.ThrowIfNull(capabilityRegistry);
         _accessPolicyEvaluator = accessPolicyEvaluator;
+        _capabilityRegistry = capabilityRegistry;
     }
 
     /// <inheritdoc />
@@ -103,7 +116,15 @@ public sealed class PortalItemProjector : IPortalItemProjector
         ClaimsPrincipal principal,
         string baseUrl)
     {
-        if (!TryMapItemType(service.PrimaryProtocol, out var itemType, out var urlType))
+        if (!TryMapItemType(service.PrimaryProtocol, out var itemType, out var urlType, out var constructKey))
+        {
+            return null;
+        }
+
+        // The facade only serves constructs the shared capability registry marks
+        // as servable. Unknown protocols resolve to the manual-review fallback
+        // (CanServe == false) and are therefore not surfaced as Portal items.
+        if (!_capabilityRegistry.ResolveOrUnknown(constructKey).CanServe)
         {
             return null;
         }
@@ -219,29 +240,39 @@ public sealed class PortalItemProjector : IPortalItemProjector
     }
 
     /// <summary>
-    /// Maps a Metadata v2 primary protocol to the Esri Portal item type and the
-    /// GeoServices URL route segment. Returns <see langword="false"/> for
-    /// non-Esri protocols (OGC API, STAC, OData, …) which are not Portal items.
+    /// Maps a Metadata v2 primary protocol to the Esri Portal item type, the
+    /// GeoServices URL route segment, and the shared capability-registry
+    /// construct key. Returns <see langword="false"/> for non-Esri protocols
+    /// (OGC API, STAC, OData, …) which are never Portal items. The servability
+    /// verdict for the mapped construct is owned by the registry, not this table.
     /// </summary>
-    private static bool TryMapItemType(string? primaryProtocol, out string itemType, out string urlType)
+    private static bool TryMapItemType(
+        string? primaryProtocol,
+        out string itemType,
+        out string urlType,
+        out string constructKey)
     {
         switch (primaryProtocol)
         {
             case ServiceProtocols.FeatureServer:
                 itemType = PortalItemTypes.FeatureService;
                 urlType = ServiceProtocols.FeatureServer;
+                constructKey = EsriConstructCapabilityRegistry.Keys.FacadeFeatureService;
                 return true;
             case ServiceProtocols.MapServer:
                 itemType = PortalItemTypes.MapService;
                 urlType = ServiceProtocols.MapServer;
+                constructKey = EsriConstructCapabilityRegistry.Keys.FacadeMapService;
                 return true;
             case ServiceProtocols.ImageServer:
                 itemType = PortalItemTypes.ImageService;
                 urlType = ServiceProtocols.ImageServer;
+                constructKey = EsriConstructCapabilityRegistry.Keys.FacadeImageService;
                 return true;
             default:
                 itemType = string.Empty;
                 urlType = string.Empty;
+                constructKey = string.Empty;
                 return false;
         }
     }

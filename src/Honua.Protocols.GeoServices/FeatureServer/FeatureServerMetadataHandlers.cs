@@ -5,6 +5,7 @@ using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Validation.Abstractions;
@@ -41,12 +42,6 @@ internal static partial class FeatureServerEndpoints
         var requestedFormat = context.Request.Query.TryGetValue("f", out var formatValue)
             ? formatValue.ToString()
             : null;
-        if (!TryValidateOutputFormat(requestedFormat, JsonOnlyFormats, out _, out var formatError))
-        {
-            return StandardErrorHelpers.CreateBadRequest(context,
-                "Invalid query parameters",
-                [formatError ?? "Output format is not supported."]);
-        }
 
         var serviceError = RouteValidationHelpers.ValidateServiceId(context, out string? serviceId);
         if (serviceError is not null)
@@ -69,6 +64,15 @@ internal static partial class FeatureServerEndpoints
         if (!serviceValidationResult.IsValid)
         {
             return serviceValidationResult.ErrorResult!;
+        }
+
+        // Validate output format only after the service is confirmed to exist, so a
+        // missing service returns 404 rather than a misleading 400 (e.g. f=html).
+        if (!TryValidateOutputFormat(requestedFormat, JsonOnlyFormats, out _, out var formatError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid query parameters",
+                [formatError ?? "Output format is not supported."]);
         }
 
         var service = serviceValidationResult.Service!;
@@ -130,13 +134,15 @@ internal static partial class FeatureServerEndpoints
 
             var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
             var supportsAttachmentUploads = HasAttachmentSurface(context.RequestServices);
+            var branchVersioningEnabled = IsBranchVersioningAvailable(context);
             FeatureServerResponse response = MapServiceToResponseV2(
                 service,
                 publications,
                 snapshot,
                 limits,
                 supportsGeobufOutput: featureReader is IGeobufFeatureStore,
-                supportsAttachmentUploads: supportsAttachmentUploads);
+                supportsAttachmentUploads: supportsAttachmentUploads,
+                branchVersioningEnabled: branchVersioningEnabled);
 
             FeatureServerLog.ServiceMetadataReturned(logger, service.Metadata.Name, response.Layers.Length);
 
@@ -150,6 +156,38 @@ internal static partial class FeatureServerEndpoints
                 context,
                 "Service metadata retrieval failed"));
         }
+    }
+
+    /// <summary>
+    /// Whether branch versioning is available for the current request: the active feature provider
+    /// supports it (Postgres) and the Enterprise branch-versioning entitlement is active (#1272,
+    /// ADR-0051). Drives the service-metadata versioning capability flags so the advertised surface
+    /// matches the runtime-registered VersionManagementServer routes.
+    /// </summary>
+    private static bool IsBranchVersioningAvailable(HttpContext context)
+    {
+        // Resolve defensively: the IVersionManager registration constructs a provider-specific manager
+        // (e.g. PostgresVersionManager) that itself depends on IDatabaseConnectionProvider. When that
+        // dependency is absent — read-only/non-database test hosts or providers without a connection
+        // provider — the factory throws rather than returning null. Treat any resolution failure as
+        // "versioning unavailable" so the DEFAULT (non-versioned) metadata stays byte-identical.
+        IVersionManager? versionManager;
+        try
+        {
+            versionManager = context.RequestServices.GetService<IVersionManager>();
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
+
+        if (versionManager is not { SupportsVersioning: true })
+        {
+            return false;
+        }
+
+        return Honua.Infrastructure.Licensing.LicenseGate.IsEntitlementActive(
+            context.RequestServices, FeatureCatalog.BranchVersioningKey);
     }
 
     /// <summary>

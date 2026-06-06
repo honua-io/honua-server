@@ -79,6 +79,16 @@ internal sealed class PortalOAuthTokenService(
             return PortalOAuthTokenResult.Failure("invalid_grant", "redirect_uri does not match the authorization request.");
         }
 
+        // Hard PKCE requirement (#1484): when enabled, an authorization code that was
+        // issued without a registered code_challenge is rejected outright. Combined
+        // with the authorize-endpoint guard this guarantees every code flow has had
+        // PKCE — closing the authorization-code interception window for native
+        // clients (ArcGIS Pro / Field Maps) that lack a confidential client secret.
+        if (_tokenOptions.OAuth2.RequirePkce && string.IsNullOrWhiteSpace(record.CodeChallenge))
+        {
+            return PortalOAuthTokenResult.Failure("invalid_grant", "PKCE is required: no code_challenge was registered for this authorization code.");
+        }
+
         if (!VerifyPkce(record.CodeChallenge, record.CodeChallengeMethod, request.CodeVerifier))
         {
             return PortalOAuthTokenResult.Failure("invalid_grant", "PKCE verification failed.");
@@ -115,15 +125,23 @@ internal sealed class PortalOAuthTokenService(
             return PortalOAuthTokenResult.Failure("invalid_grant", "Refresh token was issued to a different client.");
         }
 
-        // Refresh returns a fresh access token but reuses the existing refresh token
-        // (no rotation) so an ArcGIS client can keep refreshing for the refresh
-        // token's lifetime, matching ArcGIS behavior.
+        // Refresh-token rotation (#1484): when enabled (the default) the presented
+        // token is revoked and a fresh refresh token is minted and returned, bounding
+        // the replay window of a leaked token to a single use. The old token is
+        // removed before issuing so a concurrent reuse races to a revoked entry. When
+        // rotation is disabled the existing token is reused (legacy ArcGIS behavior).
+        var rotate = _tokenOptions.OAuth2.RotateRefreshTokens;
+        if (rotate)
+        {
+            await _store.RemoveRefreshTokenAsync(request.RefreshToken, cancellationToken).ConfigureAwait(false);
+        }
+
         return await IssueAsync(
             record.ClientId,
             record.Principal,
             requestedMinutes: null,
             requestBinding,
-            includeRefreshToken: false,
+            includeRefreshToken: rotate,
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -190,9 +208,10 @@ internal sealed class PortalOAuthTokenService(
     {
         if (string.IsNullOrWhiteSpace(challenge))
         {
-            // No challenge was registered at authorize time; nothing to verify.
-            // ArcGIS Pro always sends PKCE, so a missing challenge means the client
-            // opted out and we do not require a verifier.
+            // No challenge was registered at authorize time. This branch is only
+            // reachable when OAuth2.RequirePkce is disabled (the default-on hard
+            // requirement, #1484, rejects no-challenge codes before this call); in
+            // that explicit opt-out there is nothing to verify.
             return true;
         }
 

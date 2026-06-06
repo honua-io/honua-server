@@ -44,13 +44,15 @@ internal static partial class FeatureServerEndpoints
     /// <param name="queryLimits">Query limits for the service.</param>
     /// <param name="supportsGeobufOutput">Whether the runtime supports geobuf output.</param>
     /// <param name="supportsAttachmentUploads">Whether attachment uploads are wired up.</param>
+    /// <param name="branchVersioningEnabled">Whether branch versioning is available (Postgres + Enterprise entitlement).</param>
     private static FeatureServerResponse MapServiceToResponseV2(
         MetadataV2Service service,
         IReadOnlyList<(MetadataV2Publication Publication, MetadataV2Resource Resource)> publications,
         MetadataV2GraphSnapshot snapshot,
         QueryLimits queryLimits,
         bool supportsGeobufOutput,
-        bool supportsAttachmentUploads)
+        bool supportsAttachmentUploads,
+        bool branchVersioningEnabled)
     {
         ArgumentNullException.ThrowIfNull(service);
         ArgumentNullException.ThrowIfNull(publications);
@@ -92,7 +94,13 @@ internal static partial class FeatureServerEndpoints
             SupportsStatistics = supportsStatistics,
             HasGeometryProperties = hasGeometry,
             AllowGeometryUpdates = supportsEditing,
-            SyncEnabled = ServiceSupportsSyncV2(service)
+            SyncEnabled = ServiceSupportsSyncV2(service),
+            HasVersionedData = branchVersioningEnabled,
+            IsDataVersioned = branchVersioningEnabled,
+            SupportsBranchVersioning = branchVersioningEnabled,
+            VersionManagementServerUrl = branchVersioningEnabled
+                ? $"/rest/services/{service.Metadata.Name}/VersionManagementServer"
+                : null,
         };
     }
 
@@ -315,10 +323,11 @@ internal static partial class FeatureServerEndpoints
             capabilities.Add("Sync");
         }
 
-        if (supportsAttachmentUploads && publications.Any(pair => ResourceSupportsAttachmentsV2(pair.Resource)))
-        {
-            capabilities.Add("Uploads");
-        }
+        // Intentionally do NOT advertise the Esri "Uploads" capability: that token promises
+        // the chunked item-upload protocol (uploads/register, uploads/{itemID}/upload,
+        // uploads/{itemID}), which this server does not implement (those routes 404).
+        // Attachment editing is served by addAttachment/updateAttachment/deleteAttachments
+        // and signaled honestly per layer via hasAttachments (bug hunt — capability honesty).
 
         return string.Join(',', capabilities.Distinct(StringComparer.OrdinalIgnoreCase));
     }
@@ -364,10 +373,9 @@ internal static partial class FeatureServerEndpoints
             capabilities.Add("Sync");
         }
 
-        if (supportsAttachmentUploads && ResourceSupportsAttachmentsV2(resource))
-        {
-            capabilities.Add("Uploads");
-        }
+        // "Uploads" is intentionally not advertised; the Esri chunked item-upload endpoints
+        // are not implemented. Attachment support is signaled via hasAttachments and served
+        // by the addAttachment/updateAttachment/deleteAttachments routes (bug hunt).
 
         return string.Join(',', capabilities.Distinct(StringComparer.OrdinalIgnoreCase));
     }
@@ -693,6 +701,8 @@ internal static partial class FeatureServerEndpoints
                 Name = relationship.Name,
                 RelatedTableId = relatedLayerId,
                 Role = relationship.Role,
+                Cardinality = MapEsriCardinality(relationship.Cardinality),
+                Composite = false,
                 KeyField = relationship.DestinationField,
                 OriginKeyField = relationship.OriginField,
                 DestinationKeyField = relationship.DestinationField,
@@ -702,6 +712,18 @@ internal static partial class FeatureServerEndpoints
 
         return [.. result];
     }
+
+    /// <summary>
+    /// Maps a canonical V2 cardinality string (one-to-one / one-to-many / many-to-many)
+    /// to the Esri <c>esriRelCardinality*</c> enum value.
+    /// </summary>
+    private static string MapEsriCardinality(string? cardinality)
+        => (cardinality ?? string.Empty).Trim().ToLowerInvariant() switch
+        {
+            "one-to-one" => "esriRelCardinalityOneToOne",
+            "many-to-many" => "esriRelCardinalityManyToMany",
+            _ => "esriRelCardinalityOneToMany",
+        };
 
     internal static int StableStringHash(string value)
     {

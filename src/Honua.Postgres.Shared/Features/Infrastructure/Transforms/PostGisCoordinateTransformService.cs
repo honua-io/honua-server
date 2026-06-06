@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Shared.Models;
 using Microsoft.Extensions.Logging;
 
@@ -65,7 +66,32 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
         }
 
         // Slow path: PostGIS ST_Transform
-        return await TransformPointWithPostGisAsync(x, y, fromSrid, toSrid, cancellationToken)
+        return await TransformPointWithPostGisAsync(x, y, fromSrid, toSrid, selection: null, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<(double X, double Y)?> TransformPointAsync(
+        double x, double y,
+        int fromSrid, int toSrid,
+        DatumTransformationSelection? selection,
+        CancellationToken cancellationToken = default)
+    {
+        // When no explicit pipeline is selected, defer to the SRID-only behavior
+        // (identity / in-memory fast paths + 2-argument ST_Transform).
+        if (selection?.ProjPipeline is not { Length: > 0 })
+        {
+            return await TransformPointAsync(x, y, fromSrid, toSrid, cancellationToken).ConfigureAwait(false);
+        }
+
+        // An explicit pipeline must be honored exactly, so skip in-memory fast paths
+        // (identity is still a no-op, but a selected pipeline implies a real datum shift).
+        if (IsIdentityTransform(fromSrid, toSrid))
+        {
+            return (x, y);
+        }
+
+        return await TransformPointWithPostGisAsync(x, y, fromSrid, toSrid, selection, cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -277,6 +303,7 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
     private async Task<(double X, double Y)?> TransformPointWithPostGisAsync(
         double x, double y,
         int fromSrid, int toSrid,
+        DatumTransformationSelection? selection,
         CancellationToken cancellationToken)
     {
         try
@@ -287,10 +314,17 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
                 .OpenConnectionAsync(cancellationToken)
                 .ConfigureAwait(false);
             await using var command = connection.CreateCommand();
-            command.CommandText = """
+
+            // Honor an explicit datum-transformation pipeline via the 3-argument
+            // ST_Transform overload; otherwise let PROJ pick its default pipeline.
+            var transformExpression = selection?.ProjPipeline is { Length: > 0 }
+                ? "ST_Transform(ST_SetSRID(ST_MakePoint(@x, @y), @fromSrid), @pipeline, @toSrid)"
+                : "ST_Transform(ST_SetSRID(ST_MakePoint(@x, @y), @fromSrid), @toSrid)";
+
+            command.CommandText = $"""
                 SELECT ST_X(geom) AS x, ST_Y(geom) AS y
                 FROM (
-                    SELECT ST_Transform(ST_SetSRID(ST_MakePoint(@x, @y), @fromSrid), @toSrid) AS geom
+                    SELECT {transformExpression} AS geom
                 ) t
                 """;
 
@@ -298,6 +332,10 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
             AddParameter(command, "@y", y);
             AddParameter(command, "@fromSrid", fromSrid);
             AddParameter(command, "@toSrid", toSrid);
+            if (selection?.ProjPipeline is { Length: > 0 } pipeline)
+            {
+                AddParameter(command, "@pipeline", pipeline);
+            }
 
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))

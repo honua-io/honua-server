@@ -48,6 +48,7 @@ internal sealed partial class FeatureQueryBuilder
         ClusterQuery clusterQuery,
         CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
     {
+        GuardVersionedReadSupported(query, "cluster");
         var sql = _stringBuilderPool.Get();
         try
         {
@@ -179,6 +180,7 @@ internal sealed partial class FeatureQueryBuilder
         BufferAggregateQuery bufferQuery,
         CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
     {
+        GuardVersionedReadSupported(query, "buffer-aggregate");
         var sql = _stringBuilderPool.Get();
         try
         {
@@ -286,6 +288,7 @@ internal sealed partial class FeatureQueryBuilder
         DensityQuery densityQuery,
         CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
     {
+        GuardVersionedReadSupported(query, "density");
         var sql = _stringBuilderPool.Get();
         try
         {

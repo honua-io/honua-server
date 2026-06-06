@@ -3,7 +3,11 @@
 
 using System.Security.Claims;
 using FluentAssertions;
+using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Migration.Abstractions;
+using Honua.Core.Features.Migration.Domain;
+using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.Portal.Domain;
 using Honua.Core.Features.Portal.Services;
 using Honua.Core.Features.Security.Abstractions;
@@ -31,7 +35,7 @@ public sealed class PortalItemProjectorTests
         var snapshot = BuildSnapshot(
             BuildService("service.parcels", "Parcels", ServiceProtocols.FeatureServer, publicAccess: true),
             resourceAccess: AnonymousPolicy());
-        var projector = new PortalItemProjector(new FakeAccessPolicyEvaluator());
+        var projector = CreateProjector();
 
         var items = projector.ProjectVisibleItems(snapshot, Anonymous(), ProxyBaseUrl);
 
@@ -52,7 +56,7 @@ public sealed class PortalItemProjectorTests
         var snapshot = BuildSnapshot(
             BuildService("service.basemap", "City Basemap", ServiceProtocols.MapServer, publicAccess: true),
             resourceAccess: AnonymousPolicy());
-        var projector = new PortalItemProjector(new FakeAccessPolicyEvaluator());
+        var projector = CreateProjector();
 
         var items = projector.ProjectVisibleItems(snapshot, Anonymous(), ProxyBaseUrl + "/");
 
@@ -83,7 +87,7 @@ public sealed class PortalItemProjectorTests
         var snapshot = BuildSnapshotWithResource(
             BuildService("service.parcels", "Parcels", ServiceProtocols.FeatureServer, publicAccess: true),
             resource);
-        var projector = new PortalItemProjector(new FakeAccessPolicyEvaluator());
+        var projector = CreateProjector();
 
         var item = projector.ProjectVisibleItems(snapshot, Anonymous(), ProxyBaseUrl).Single();
 
@@ -100,7 +104,7 @@ public sealed class PortalItemProjectorTests
         var snapshot = BuildSnapshot(
             BuildService("service.ogc", "OgcFeatures", ServiceProtocols.OgcFeatures, publicAccess: true),
             resourceAccess: AnonymousPolicy());
-        var projector = new PortalItemProjector(new FakeAccessPolicyEvaluator());
+        var projector = CreateProjector();
 
         var items = projector.ProjectVisibleItems(snapshot, Anonymous(), ProxyBaseUrl);
 
@@ -115,7 +119,7 @@ public sealed class PortalItemProjectorTests
         var snapshot = BuildSnapshot(
             BuildService("service.parcels", "Parcels", ServiceProtocols.FeatureServer, publicAccess: false),
             resourceAccess: new AccessPolicy { AllowAnonymous = false });
-        var projector = new PortalItemProjector(new FakeAccessPolicyEvaluator());
+        var projector = CreateProjector();
 
         var item = projector.ProjectVisibleItems(snapshot, AuthenticatedUser("editor"), ProxyBaseUrl).Single();
 
@@ -129,7 +133,7 @@ public sealed class PortalItemProjectorTests
         var snapshot = BuildSnapshot(
             BuildService("service.parcels", "Parcels", ServiceProtocols.FeatureServer, publicAccess: false),
             resourceAccess: new AccessPolicy { AllowedRoles = ["admin"] });
-        var projector = new PortalItemProjector(new FakeAccessPolicyEvaluator());
+        var projector = CreateProjector();
 
         var item = projector.ProjectVisibleItems(snapshot, AuthenticatedUser("admin"), ProxyBaseUrl).Single();
 
@@ -144,7 +148,7 @@ public sealed class PortalItemProjectorTests
         var snapshot = BuildSnapshot(
             BuildService("service.parcels", "Parcels", ServiceProtocols.FeatureServer, publicAccess: false),
             resourceAccess: new AccessPolicy { AllowedRoles = ["admin"] });
-        var projector = new PortalItemProjector(new FakeAccessPolicyEvaluator());
+        var projector = CreateProjector();
 
         var items = projector.ProjectVisibleItems(snapshot, AuthenticatedUser("viewer"), ProxyBaseUrl);
 
@@ -158,7 +162,7 @@ public sealed class PortalItemProjectorTests
         var snapshot = BuildSnapshot(
             BuildService("service.parcels", "Parcels", ServiceProtocols.FeatureServer, publicAccess: false),
             resourceAccess: new AccessPolicy { AllowedRoles = ["admin"] });
-        var projector = new PortalItemProjector(new FakeAccessPolicyEvaluator());
+        var projector = CreateProjector();
 
         var item = projector.ProjectItem(snapshot, AuthenticatedUser("viewer"), "service.parcels", ProxyBaseUrl);
 
@@ -172,7 +176,7 @@ public sealed class PortalItemProjectorTests
         var snapshot = BuildSnapshot(
             BuildService("service.parcels", "Parcels", ServiceProtocols.FeatureServer, publicAccess: false),
             resourceAccess: new AccessPolicy { AllowedRoles = ["admin"] });
-        var projector = new PortalItemProjector(new FakeAccessPolicyEvaluator());
+        var projector = CreateProjector();
 
         var item = projector.ProjectItem(snapshot, AuthenticatedUser("admin"), "service.parcels", ProxyBaseUrl);
 
@@ -188,10 +192,63 @@ public sealed class PortalItemProjectorTests
         var snapshot = BuildSnapshot(
             BuildService("service.parcels", "Parcels", ServiceProtocols.FeatureServer, publicAccess: true),
             resourceAccess: AnonymousPolicy());
-        var projector = new PortalItemProjector(new FakeAccessPolicyEvaluator());
+        var projector = CreateProjector();
 
         projector.ProjectItem(snapshot, Anonymous(), "service.missing", ProxyBaseUrl).Should().BeNull();
     }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void ProjectVisibleItems_RegistryMarksConstructUnservable_OmitsItem()
+    {
+        // The facade serve decision is sourced from the shared capability
+        // registry (#1382). A registry whose feature-service descriptor is not
+        // servable must omit the item even though the protocol→item-type table
+        // still recognises FeatureServer — proving the verdict comes from the
+        // registry, not the private mapping table.
+        var snapshot = BuildSnapshot(
+            BuildService("service.parcels", "Parcels", ServiceProtocols.FeatureServer, publicAccess: true),
+            resourceAccess: AnonymousPolicy());
+        var projector = new PortalItemProjector(
+            new FakeAccessPolicyEvaluator(),
+            new EsriConstructCapabilityRegistry(NonServableFacadeDescriptors()));
+
+        var items = projector.ProjectVisibleItems(snapshot, Anonymous(), ProxyBaseUrl);
+
+        items.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void ProjectVisibleItems_BuiltInRegistry_ServesAllFacadeServiceTypes()
+    {
+        // Behaviour-preservation guard: every Esri service construct the private
+        // table used to accept is served by the built-in registry descriptors.
+        var registry = new EsriConstructCapabilityRegistry(EsriConstructCapabilityRegistry.BuiltInDescriptors);
+        registry.ResolveOrUnknown(EsriConstructCapabilityRegistry.Keys.FacadeFeatureService).CanServe.Should().BeTrue();
+        registry.ResolveOrUnknown(EsriConstructCapabilityRegistry.Keys.FacadeMapService).CanServe.Should().BeTrue();
+        registry.ResolveOrUnknown(EsriConstructCapabilityRegistry.Keys.FacadeImageService).CanServe.Should().BeTrue();
+    }
+
+    private static PortalItemProjector CreateProjector()
+        => new(
+            new FakeAccessPolicyEvaluator(),
+            new EsriConstructCapabilityRegistry(EsriConstructCapabilityRegistry.BuiltInDescriptors));
+
+    private static EsriConstructCapabilityDescriptor[] NonServableFacadeDescriptors()
+        =>
+        [
+            new EsriConstructCapabilityDescriptor
+            {
+                ConstructKey = EsriConstructCapabilityRegistry.Keys.FacadeFeatureService,
+                AutomationStatus = MigrationFidelityAutomationStatuses.ManualReview,
+                Code = ImportCompatibilityCodes.ManualReview,
+                Reason = "Test override: feature-service facade construct is not servable.",
+                CanTransform = false,
+                CanServe = false,
+                RequiresCheck = true
+            }
+        ];
 
     private static MetadataV2Service BuildService(string id, string name, string protocol, bool publicAccess)
         => new()

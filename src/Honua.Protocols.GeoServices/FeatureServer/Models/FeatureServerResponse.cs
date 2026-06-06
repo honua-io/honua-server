@@ -125,4 +125,28 @@ public sealed class FeatureServerResponse
     /// offline workflows) discover the replication surface the server exposes.
     /// </summary>
     public bool SyncEnabled { get; init; }
+
+    /// <summary>
+    /// Whether the service exposes branch-versioned data. Emitted so Esri clients discover the
+    /// VersionManagementServer surface (#1272, ADR-0051). True only when the active provider supports
+    /// branch versioning (Postgres) and the Enterprise branch-versioning entitlement is active.
+    /// </summary>
+    public bool HasVersionedData { get; init; }
+
+    /// <summary>
+    /// Whether the service's data is branch-versioned. Mirrors Esri's service-level
+    /// <c>isDataVersioned</c> flag; tracks <see cref="HasVersionedData"/>.
+    /// </summary>
+    public bool IsDataVersioned { get; init; }
+
+    /// <summary>
+    /// Whether the service supports Esri-style branch versioning over the VersionManagementServer.
+    /// </summary>
+    public bool SupportsBranchVersioning { get; init; }
+
+    /// <summary>
+    /// Relative URL of the companion VersionManagementServer when branch versioning is available;
+    /// null otherwise. Emitted so Esri clients can locate the version lifecycle surface.
+    /// </summary>
+    public string? VersionManagementServerUrl { get; init; }
 }

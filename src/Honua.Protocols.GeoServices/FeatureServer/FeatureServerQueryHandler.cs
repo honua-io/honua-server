@@ -12,6 +12,7 @@ using Honua.Core.Features.Caching;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Query;
@@ -55,6 +56,7 @@ internal sealed partial class FeatureServerQueryHandler(
     private readonly IQueryProcessor _queryProcessor = dependencies.QueryProcessor;
     private readonly IResponseCache _responseCache = dependencies.ResponseCache;
     private readonly IETagService _etagService = dependencies.ETagService;
+    private readonly IDatumTransformationCatalog _datumTransformationCatalog = dependencies.DatumTransformationCatalog;
     private readonly CacheOptions _cacheOptions = dependencies.CacheOptions;
     private readonly ILogger<FeatureServerQueryHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     private const int StreamingThreshold = 1000;
@@ -645,7 +647,9 @@ internal sealed partial class FeatureServerQueryHandler(
                 var statisticsFeatures = statisticsRows.Select(row => new GeoServicesFeature
                 {
                     Attributes = new Dictionary<string, object?>(row, StringComparer.OrdinalIgnoreCase),
-                    Geometry = null
+                    Geometry = null,
+                    // Aggregate rows have no geometry; omit the geometry key entirely (Esri parity).
+                    IncludeGeometry = false
                 }).ToArray();
 
                 HonuaTelemetry.SetSuccess(featureActivity, statisticsFeatures.Length);
@@ -869,6 +873,25 @@ internal sealed partial class FeatureServerQueryHandler(
                     HonuaTelemetry.SetSuccess(featureActivity, payload.Length > 0 ? 1 : 0);
 
                     return await CreateCachedBytesResultAsync(payload, "application/geobuf");
+                }
+
+                // PARQUET/ARROW are encoded-export formats with no dedicated block;
+                // without this guard, an unsupported store falls through to the
+                // generic formatter and throws, which surfaced as an HTTP 500 that
+                // leaked a .NET stack trace. Return the same clean 400 as FGB/GEOBUF
+                // when the store cannot emit encoded output (bug hunt).
+                if ((isParquet || isArrow) &&
+                    !await _queryExecutor.SupportsFlatGeobufOutputAsync(
+                        queryLayer.Service,
+                        queryLayer.Resource,
+                        queryLayer.Publication,
+                        queryLayer.StorageLayerId,
+                        cancellationToken).ConfigureAwait(false))
+                {
+                    return StandardErrorHelpers.CreateBadRequest(
+                        context,
+                        "Unsupported output format",
+                        [$"Output format '{format}' is not supported by the configured feature store."]);
                 }
 
                 string[]? outFields;
@@ -1195,6 +1218,16 @@ internal sealed partial class FeatureServerQueryHandler(
                 [CreateSpatialReferenceErrorMessage("outSR", validatedParams.OutSr)]));
         }
 
+        // Vertical (geoid/ellipsoidal) datum transformations are not yet supported. When
+        // outSR carries a vertical CS (vcsWkid), fail explicitly rather than silently
+        // ignoring the vertical component and returning horizontally-only reprojected Z.
+        if (VerticalCoordinateSystemHelpers.RequestsVerticalTransform(validatedParams.OutSr))
+        {
+            return (null, null, StandardErrorHelpers.CreateBadRequest(context,
+                "Unsupported vertical transformation",
+                ["outSR specifies a vertical coordinate system (vcsWkid); vertical datum transformations are not supported."]));
+        }
+
         var wgs84Srid = SpatialReference.WGS84.Wkid;
         var requiresGeoJsonOutput = string.Equals(format, "geojson", StringComparison.OrdinalIgnoreCase)
             && !validatedParams.ReturnCountOnly
@@ -1353,7 +1386,108 @@ internal sealed partial class FeatureServerQueryHandler(
             Where = validatedParams.Where,
             PublicIdAttributeName = GeoServicesObjectIdFieldResolver.ResolveObjectIdField(resource)?.Name
         };
+
+        // Resolve gdbVersion to a branch VersionContext (#1272, ADR-0051). Absent / SDE.DEFAULT
+        // resolves to DEFAULT, where the canonical read overlay is a no-op so the query SQL stays
+        // byte-identical (CITE-protected). A named version is Enterprise-gated and Postgres-only.
+        var (versionContext, versionError) = await FeatureServerVersioning.ResolveQueryVersionAsync(
+            context, validatedParams.GdbVersion, cancellationToken).ConfigureAwait(false);
+        if (versionError != null)
+        {
+            return (null, null, versionError);
+        }
+
+        if (versionContext is { IsDefault: false })
+        {
+            query = query with { VersionContext = versionContext };
+        }
+
+        // Resolve the datum transformation that drives the layerSR -> outSR reprojection.
+        // Honors a client-supplied datumTransformation, otherwise applies the Esri default
+        // for the pair; an unknown/unsupported request fails explicitly (never silent).
+        var layerSrid = resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
+        var effectiveOutputSrid = query.OutputSrid ?? outputSrid;
+        if (!TryResolveDatumTransformation(
+                context,
+                validatedParams.DatumTransformation,
+                layerSrid,
+                effectiveOutputSrid,
+                out var datumSelection,
+                out var datumError))
+        {
+            return (null, null, datumError);
+        }
+
+        if (datumSelection is not null)
+        {
+            query = query with { OutputDatumTransformation = datumSelection };
+        }
+
         return (query, outputSrid, null);
+    }
+
+    /// <summary>
+    /// Resolves the datum transformation for a layer-to-output reprojection. Honors a
+    /// client-supplied <c>datumTransformation</c> WKID/composite when present; otherwise
+    /// applies the catalog's Esri default for the SRID pair. An unknown or inapplicable
+    /// client request yields an explicit Esri-style error rather than a silent substitute.
+    /// </summary>
+    private bool TryResolveDatumTransformation(
+        HttpContext context,
+        string? datumTransformationValue,
+        int layerSrid,
+        int? outputSrid,
+        out DatumTransformationSelection? selection,
+        out IResult? error)
+    {
+        selection = null;
+        error = null;
+
+        // No reprojection requested, or output equals the layer's own SRID: nothing to do.
+        if (!outputSrid.HasValue || outputSrid.Value == layerSrid)
+        {
+            return true;
+        }
+
+        if (!DatumTransformationParser.TryParse(datumTransformationValue, out var request, out var parseError))
+        {
+            error = StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid datumTransformation",
+                [parseError]);
+            return false;
+        }
+
+        if (request is { } requested)
+        {
+            // Client explicitly requested a transformation — it must be honored exactly
+            // or rejected; never silently substituted.
+            if (!_datumTransformationCatalog.TryGetByWkid(requested.Wkid, layerSrid, outputSrid.Value, out var resolved))
+            {
+                error = StandardErrorHelpers.CreateBadRequest(context,
+                    "Unsupported datumTransformation",
+                    [$"datumTransformation WKID {requested.Wkid} is not supported for the {layerSrid} -> {outputSrid.Value} reprojection."]);
+                return false;
+            }
+
+            // Respect the requested direction flag relative to the resolved orientation.
+            selection = requested.TransformForward
+                ? resolved
+                : resolved with { TransformForward = !resolved.TransformForward };
+
+            var loggedValue = datumTransformationValue ?? requested.Wkid.ToString(CultureInfo.InvariantCulture);
+            FeatureServerLog.DatumTransformationRequested(_logger, loggedValue);
+            return true;
+        }
+
+        // No client choice: apply the Esri default for the pair when one exists.
+        // When no curated default exists, leave selection null so PostGIS uses its
+        // default pipeline (correct for identity/no-shift pairs).
+        if (_datumTransformationCatalog.TryGetDefault(layerSrid, outputSrid.Value, out var defaultSelection))
+        {
+            selection = defaultSelection;
+        }
+
+        return true;
     }
 
     private static bool ShouldUseInternalObjectIdsFastPath(MetadataV2Resource resource)
@@ -1485,7 +1619,9 @@ internal sealed partial class FeatureServerQueryHandler(
             var statisticsFeatures = statisticsRows.Select(row => new GeoServicesFeature
             {
                 Attributes = new Dictionary<string, object?>(row, StringComparer.OrdinalIgnoreCase),
-                Geometry = null
+                Geometry = null,
+                // Aggregate rows have no geometry; omit the geometry key entirely (Esri parity).
+                IncludeGeometry = false
             }).ToArray();
 
             return new QueryResponse { Features = statisticsFeatures };

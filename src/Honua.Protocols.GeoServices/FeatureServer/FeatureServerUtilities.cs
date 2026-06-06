@@ -319,15 +319,20 @@ internal static partial class FeatureServerEndpoints
         AddSupportedFormat(normalizedFormats, "JSON");
         AddSupportedFormat(normalizedFormats, "GEOJSON");
         AddSupportedFormat(normalizedFormats, "PBF");
-        AddSupportedFormat(normalizedFormats, "FGB");
-        AddSupportedFormat(normalizedFormats, "PARQUET");
 
+        // FGB / GEOBUF / PARQUET / ARROW are encoded-export formats produced by the
+        // same feature-store capability. Only advertise them when the configured
+        // store can actually emit encoded output — otherwise clients that honor
+        // supportedQueryFormats get an HTTP 400 ("not supported by the configured
+        // feature store") for FGB/GEOBUF, or worse a 500 for PARQUET, which has no
+        // runtime guard. Advertising must match real capability (bug hunt).
         if (supportsGeobufOutput)
         {
+            AddSupportedFormat(normalizedFormats, "FGB");
             AddSupportedFormat(normalizedFormats, "GEOBUF");
+            AddSupportedFormat(normalizedFormats, "PARQUET");
+            AddSupportedFormat(normalizedFormats, "ARROW");
         }
-
-        AddSupportedFormat(normalizedFormats, "ARROW");
 
         return [.. normalizedFormats];
     }

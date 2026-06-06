@@ -43,6 +43,16 @@ public readonly record struct FeatureEditBatch
     public bool UseGlobalIds { get; init; } = false;
 
     /// <summary>
+    /// Branch version the edit targets (#1272 Track B, ADR-0051). A null value or
+    /// <see cref="VersionContext.IsDefault"/> means the DEFAULT version: writers must use the
+    /// byte-identical non-versioned base write path (target <c>features</c>, no version GUC). A
+    /// non-DEFAULT context routes the edit to the version overlay, sets the transaction-scoped version
+    /// GUC so the change-tracking trigger tags produced changes, and captures the DEFAULT base image on
+    /// the version's first touch of an <c>(layer_id, objectid)</c>.
+    /// </summary>
+    public VersionContext? VersionContext { get; init; }
+
+    /// <summary>
     /// Initializes a new FeatureEditBatch with default values
     /// </summary>
     public FeatureEditBatch()
@@ -62,6 +72,7 @@ public readonly record struct FeatureEditBatch
     /// <param name="rollbackOnFailure">Whether to rollback all changes on failure</param>
     /// <param name="useGlobalIds">Whether to use global IDs</param>
     /// <param name="operations">Ordered operations to apply when request sequencing must be preserved</param>
+    /// <param name="versionContext">Branch version the edit targets; null/DEFAULT uses the byte-identical base write path</param>
     /// <returns>Edit batch instance</returns>
     public static FeatureEditBatch Create(
         ImmutableArray<Feature> creates = default,
@@ -69,7 +80,8 @@ public readonly record struct FeatureEditBatch
         ImmutableArray<long> deletes = default,
         bool rollbackOnFailure = false,
         bool useGlobalIds = false,
-        ImmutableArray<FeatureEditOperation> operations = default)
+        ImmutableArray<FeatureEditOperation> operations = default,
+        VersionContext? versionContext = null)
         => new()
         {
             Operations = operations.IsDefault ? ImmutableArray<FeatureEditOperation>.Empty : operations,
@@ -77,7 +89,8 @@ public readonly record struct FeatureEditBatch
             Updates = updates.IsDefault ? ImmutableArray<Feature>.Empty : updates,
             Deletes = deletes.IsDefault ? ImmutableArray<long>.Empty : deletes,
             RollbackOnFailure = rollbackOnFailure,
-            UseGlobalIds = useGlobalIds
+            UseGlobalIds = useGlobalIds,
+            VersionContext = versionContext
         };
 
     /// <summary>

@@ -35,6 +35,7 @@ public static class OperationRegistry
     private const string ODataV4 = "OData-v4";
     private const string Grpc = "Grpc";
     private const string Mcp = "Mcp";
+    private const string VersionManagementServer = "VersionManagementServer";
 
     /// <summary>
     /// All public-interface operations that require integration test coverage.
@@ -125,6 +126,20 @@ public static class OperationRegistry
         // gRPC ElevationService methods (geospatial.v1.ElevationService)
         new(Grpc, "geospatial.v1.ElevationService/GetElevation"),
         new(Grpc, "geospatial.v1.ElevationService/GetElevationProfile"),
+
+        // GeoServices VersionManagementServer operations (branch versioning; #1272, ADR-0051)
+        new(VersionManagementServer, "serviceInfo"),
+        new(VersionManagementServer, "versions"),
+        new(VersionManagementServer, "versionInfo"),
+        new(VersionManagementServer, "create"),
+        new(VersionManagementServer, "delete"),
+        new(VersionManagementServer, "alter"),
+        new(VersionManagementServer, "startReading"),
+        new(VersionManagementServer, "stopReading"),
+        new(VersionManagementServer, "startEditing"),
+        new(VersionManagementServer, "stopEditing"),
+        new(VersionManagementServer, "reconcile"),
+        new(VersionManagementServer, "post"),
     ];
 }
 

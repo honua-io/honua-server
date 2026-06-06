@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json;
+using Honua.Ai.MapGeneration;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
@@ -89,6 +91,52 @@ internal static class StudioPackageEndpoints
         group.MapPost("/content-items/{itemId:guid}/rollback-requests", HandleRollback)
             .WithDisplayName("Create Studio Rollback Request")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+
+        group.MapPost("/map-packages/generate", HandleGenerateMap)
+            .WithDisplayName("Generate Studio Map Package")
+            .WithSummary("Generate or refine a map package from a natural-language prompt.")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .Accepts<GenerateMapPackageRequest>("application/json")
+            .Produces<MapGenerationResult>();
+    }
+
+    private static async Task<IResult> HandleGenerateMap(
+        HttpContext context,
+        [FromServices] IMapGenerationService generation)
+    {
+        GenerateMapPackageRequest? request;
+        try
+        {
+            request = await JsonSerializer.DeserializeAsync(
+                context.Request.Body,
+                MapGenerationApiJsonContext.Default.GenerateMapPackageRequest,
+                context.RequestAborted).ConfigureAwait(false);
+        }
+        catch (JsonException)
+        {
+            request = null;
+        }
+
+        if (request is null || string.IsNullOrWhiteSpace(request.Prompt))
+        {
+            var bad = new MapGenerationResult { Status = "error", Rationale = "A non-empty 'prompt' is required." };
+            return Results.Json(bad, MapGenerationApiJsonContext.Default.MapGenerationResult, statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        var result = await generation.GenerateAsync(
+            new MapGenerationRequest
+            {
+                Prompt = request.Prompt,
+                Provider = request.Provider,
+                Model = request.Model,
+                CurrentMap = request.Package,
+                Conversation = request.Conversation,
+                Answers = request.Answers
+            },
+            context.RequestAborted).ConfigureAwait(false);
+
+        context.Response.Headers.CacheControl = "no-store";
+        return Results.Json(result, MapGenerationApiJsonContext.Default.MapGenerationResult);
     }
 
     private static IResult HandleGetPackageFamilies(
