@@ -42,6 +42,44 @@ public sealed record ContentPublicationPolicy
     public ContentPublicLinkPolicy PublicLink { get; init; } = new();
 }
 
+/// <summary>
+/// Normalizes a <see cref="ContentPublicationPolicy"/> so its nested members are
+/// never null. JSON deserialization (including the source-generated path) does not
+/// run record property initializers for members absent from the payload, so a
+/// minimal create body (for example <c>{"visibility":"organization"}</c>) can
+/// produce a policy with null <c>Share</c>/<c>Embed</c>/<c>Service</c>/<c>PublicLink</c>
+/// members. Callers that persist or mutate a policy run it through this normalizer
+/// first so downstream code can dereference nested members safely.
+/// </summary>
+public static class ContentPublicationPolicyNormalizer
+{
+    /// <summary>
+    /// Returns a policy whose nested members are guaranteed non-null, defaulting any
+    /// null member (or the policy itself) to its initialized default.
+    /// </summary>
+    /// <param name="policy">The policy to normalize, or null to produce a default policy.</param>
+    /// <returns>A policy with non-null nested members.</returns>
+    public static ContentPublicationPolicy Normalize(ContentPublicationPolicy? policy)
+    {
+        policy ??= new ContentPublicationPolicy();
+
+        // The nested members are declared non-null, but deserialization can leave them
+        // null when absent from the payload. Read through nullable views so the
+        // null-coalescing below is meaningful rather than a no-op the compiler flags.
+        var publicLink = (ContentPublicLinkPolicy?)policy.PublicLink is { } existingLink
+            ? existingLink with { Links = (IReadOnlyList<ContentPublicLink>?)existingLink.Links ?? [] }
+            : new ContentPublicLinkPolicy();
+
+        return policy with
+        {
+            Share = (ContentSharePolicy?)policy.Share ?? new ContentSharePolicy(),
+            Embed = (ContentEmbedPolicy?)policy.Embed ?? new ContentEmbedPolicy(),
+            Service = (ContentServicePolicy?)policy.Service ?? new ContentServicePolicy(),
+            PublicLink = publicLink,
+        };
+    }
+}
+
 /// <summary>Sharing policy for a published route.</summary>
 public sealed record ContentSharePolicy
 {

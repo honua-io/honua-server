@@ -88,7 +88,9 @@ public sealed class ContentPublicationService : IContentPublicationService
         var publicationId = Guid.NewGuid().ToString("D");
         var versionId = Guid.NewGuid().ToString("D");
         var routePath = RoutePathPrefix + slug;
-        var policy = request.Policy ?? new ContentPublicationPolicy();
+        // Normalize so the persisted policy always has non-null nested members, even
+        // when the create payload only supplies a subset (e.g. {"visibility":"..."}).
+        var policy = ContentPublicationPolicyNormalizer.Normalize(request.Policy);
         var contentHash = ResolveContentHash(request.ContentPayload, request.ContentHash);
 
         var version = new ContentPublicationVersion
@@ -353,7 +355,12 @@ public sealed class ContentPublicationService : IContentPublicationService
         }
 
         var now = _timeProvider.GetUtcNow();
-        var current = route.Policy;
+        // Normalize so nested policy members are never null. A route persisted from a
+        // minimal create payload (e.g. {"visibility":"organization"}) can round-trip
+        // with null nested objects because JSON deserialization does not run the record
+        // property initializers for absent members. Coalesce defensively here so the
+        // delta-apply logic below cannot dereference a null nested member.
+        var current = ContentPublicationPolicyNormalizer.Normalize(route.Policy);
 
         // Apply scalar policy deltas.
         var share = request.Share ?? current.Share;
