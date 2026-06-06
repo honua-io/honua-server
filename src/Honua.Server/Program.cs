@@ -537,6 +537,9 @@ if (replicaProvider != DataProviderNames.DuckDb &&
     builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IChangeTracker>(sp =>
         new Honua.Postgres.Features.FeatureStore.Services.PostgresChangeTracker(
             sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IDatabaseConnectionProvider>()));
+    builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IBranchVersionStore>(sp =>
+        new Honua.Postgres.Features.FeatureStore.Services.PostgresBranchVersionStore(
+            sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IDatabaseConnectionProvider>()));
 }
 builder.Services.AddScoped<Honua.Protocols.GeoServices.FeatureServer.IReplicaStore>(sp =>
     new Honua.Protocols.GeoServices.FeatureServer.Services.CachingReplicaStore(
@@ -1051,6 +1054,7 @@ app.MapAdminLayerFieldConfigurationEndpoints();
 app.MapAdminLayerAuthoringEndpoints();
 app.MapAdminLayerFilterConfigurationEndpoints();
 app.MapReplicaManagementEndpoints();
+app.MapBranchVersionManagementEndpoints();
 app.MapAdminLayerValidationEndpoints();
 app.MapAdminStyleSuggestionEndpoints();
 app.MapAdminSldStyleEndpoints();

@@ -57,6 +57,7 @@ internal sealed partial class FeatureServerQueryHandler
             layerId,
             context,
             FeatureServerProtocol,
+            gdbVersion: null,
             cancellationToken).ConfigureAwait(false);
         if (validationError != null)
         {

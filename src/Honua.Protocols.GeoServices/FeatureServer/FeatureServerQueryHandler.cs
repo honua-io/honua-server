@@ -9,6 +9,7 @@ using System.Text.Json.Serialization.Metadata;
 using System.Text.RegularExpressions;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Caching;
+using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -143,6 +144,7 @@ internal sealed partial class FeatureServerQueryHandler(
         int layerId,
         HttpContext context,
         string? requiredProtocol,
+        string? gdbVersion,
         CancellationToken cancellationToken)
     {
         var resourceValidationResult = await FeatureServerResourceValidationHelpers.ValidateServiceLayerV2Async(
@@ -189,12 +191,38 @@ internal sealed partial class FeatureServerQueryHandler(
                 $"Layer {layerId} is not bound to feature storage."));
         }
 
+        // Branch-versioned reads (#1272): gdbVersion routes the query to the branch's
+        // isolated storage layer id. DEFAULT (null/empty/"DEFAULT"/"sde.DEFAULT") resolves
+        // to the base storage layer id and preserves existing behavior. An unknown named
+        // version is rejected rather than silently served from DEFAULT. Only the storage
+        // layer id is remapped; the resource (schema, fields, CRS) is shared with DEFAULT so
+        // the canonical query pipeline is reused unchanged.
+        var effectiveStorageLayerId = storageLayerId.Value;
+        if (!IBranchVersionStore.IsDefaultVersion(gdbVersion))
+        {
+            var branchVersionStore = context.RequestServices.GetRequiredService<IBranchVersionStore>();
+            var branchLayerId = await branchVersionStore.ResolveBranchLayerIdAsync(
+                serviceId,
+                gdbVersion,
+                storageLayerId.Value,
+                cancellationToken).ConfigureAwait(false);
+            if (branchLayerId is null)
+            {
+                return (null, StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    "Invalid gdbVersion",
+                    [$"Branch version '{gdbVersion}' is not registered for this service."]));
+            }
+
+            effectiveStorageLayerId = branchLayerId.Value;
+        }
+
         return (new QueryLayerContext(
             service,
             publication,
             resource,
             publication.LayerIndex ?? layerId,
-            storageLayerId.Value), null);
+            effectiveStorageLayerId), null);
     }
 
     public async Task<(QueryResponse? Response, IResult? Error)> HandleServiceQueryLayerAsync(
@@ -221,6 +249,7 @@ internal sealed partial class FeatureServerQueryHandler(
                 layerId,
                 context,
                 requiredProtocol,
+                queryParams.GdbVersion,
                 cancellationToken).ConfigureAwait(false);
             if (validationError != null)
             {
@@ -386,6 +415,7 @@ internal sealed partial class FeatureServerQueryHandler(
                 layerId,
                 context,
                 requiredProtocol,
+                queryParams.GdbVersion,
                 cancellationToken).ConfigureAwait(false);
             if (validationError != null)
             {

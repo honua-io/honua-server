@@ -115,6 +115,32 @@ internal sealed class FeatureServerEditsHandler(
                     $"Layer '{resource.Metadata.Name ?? layerId.ToString(CultureInfo.InvariantCulture)}' is not bound to a storage layer.");
             }
 
+            // Branch-versioned editing (#1272): gdbVersion routes the edit to the branch's
+            // isolated storage layer id. DEFAULT (null/empty/"DEFAULT"/"sde.DEFAULT")
+            // resolves to the base storage layer id and preserves existing behavior. An
+            // unknown named version is rejected. Only the storage layer id is remapped; the
+            // resource (schema, fields, validation) is shared with DEFAULT so the canonical
+            // edit/transaction pipeline and change tracking are reused unchanged — branch
+            // edits are recorded in the same feature_changes log under the branch layer id
+            // and so flow through the incremental replication path automatically.
+            if (!IBranchVersionStore.IsDefaultVersion(request.GdbVersion))
+            {
+                var branchVersionStore = httpContext.RequestServices.GetRequiredService<IBranchVersionStore>();
+                var branchLayerId = await branchVersionStore.ResolveBranchLayerIdAsync(
+                    serviceId,
+                    request.GdbVersion,
+                    storageLayerId.Value,
+                    cancellationToken).ConfigureAwait(false);
+                if (branchLayerId is null)
+                {
+                    return StandardErrorHelpers.CreateBadRequest(httpContext,
+                        "Invalid gdbVersion",
+                        [$"Branch version '{request.GdbVersion}' is not registered for this service."]);
+                }
+
+                storageLayerId = branchLayerId.Value;
+            }
+
             // Validate edit limits
             var limitsValidationResult = ValidateEditLimits(request, editLimits, httpContext);
             if (limitsValidationResult != null)

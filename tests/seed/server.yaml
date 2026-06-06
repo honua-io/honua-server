@@ -936,6 +936,23 @@ sql:
       $$ LANGUAGE plpgsql;
   - "DROP TRIGGER IF EXISTS trigger_track_feature_changes ON features;"
   - "CREATE TRIGGER trigger_track_feature_changes AFTER INSERT OR UPDATE OR DELETE ON features FOR EACH ROW EXECUTE FUNCTION honua.track_feature_changes();"
+  # Branch-version registry (mirrors migration 046) for gdbVersion-routed branch-versioned editing.
+  - "CREATE SEQUENCE IF NOT EXISTS honua.branch_layer_id_seq AS INTEGER START WITH 1000000000 INCREMENT BY 1 NO CYCLE;"
+  - |
+      CREATE TABLE IF NOT EXISTS honua.gdb_versions (
+          service_id TEXT NOT NULL,
+          version_name TEXT NOT NULL,
+          version_name_lower TEXT NOT NULL,
+          base_layer_id INT NOT NULL,
+          branch_layer_id INT NOT NULL DEFAULT nextval('honua.branch_layer_id_seq'),
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          PRIMARY KEY (service_id, version_name_lower, base_layer_id),
+          CONSTRAINT gdb_versions_valid_service CHECK (LENGTH(service_id) > 0),
+          CONSTRAINT gdb_versions_valid_name CHECK (LENGTH(version_name) > 0 AND LENGTH(version_name) <= 256),
+          CONSTRAINT gdb_versions_not_default CHECK (LOWER(version_name) NOT IN ('default', 'sde.default')),
+          CONSTRAINT gdb_versions_unique_branch_layer UNIQUE (branch_layer_id)
+      );
+  - "CREATE INDEX IF NOT EXISTS idx_gdb_versions_service ON honua.gdb_versions(service_id);"
   - |
       CREATE TABLE IF NOT EXISTS honua.fieldcollection_features (
           feature_id  TEXT        NOT NULL,

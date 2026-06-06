@@ -472,11 +472,9 @@ internal static partial class FeatureServerEndpoints
                 "returnEditMoment is not supported");
         }
 
-        if (!string.IsNullOrWhiteSpace(request.GdbVersion))
-        {
-            return StandardErrorHelpers.CreateBadRequest(context,
-                "gdbVersion is not supported");
-        }
+        // gdbVersion routing (#1272) is applied inside HandleApplyEditsAsync, which all
+        // edit paths funnel through; DEFAULT and registered named branch versions are
+        // honored there, and unknown named versions are rejected with a clear error.
 
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
         return await editsHandler.HandleApplyEditsAsync(
@@ -580,11 +578,8 @@ internal static partial class FeatureServerEndpoints
                 "returnEditMoment is not supported");
         }
 
-        if (!string.IsNullOrWhiteSpace(sharedOptions.GdbVersion))
-        {
-            return StandardErrorHelpers.CreateBadRequest(context,
-                "gdbVersion is not supported");
-        }
+        // gdbVersion routing (#1272) is applied per layer inside HandleApplyEditsAsync via
+        // the per-layer ApplyEditsRequest below (which carries sharedOptions.GdbVersion).
 
         // Group entries by layer id while preserving first-seen layer order so the response
         // emits one editResults entry per distinct layer (matching ArcGIS), and merge their
@@ -850,11 +845,7 @@ internal static partial class FeatureServerEndpoints
                 "returnEditMoment is not supported");
         }
 
-        if (!string.IsNullOrWhiteSpace(request.GdbVersion))
-        {
-            return StandardErrorHelpers.CreateBadRequest(context,
-                "gdbVersion is not supported");
-        }
+        // gdbVersion routing (#1272) is applied inside HandleApplyEditsAsync.
 
         if (request.Attachments is { Length: > 0 })
         {

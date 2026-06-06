@@ -127,6 +127,10 @@ public static class EndpointRegistry
         new("GET", "/api/v1/admin/services/{serviceId}/replicas/{replicaId}/conflicts/{conflictId}"),
         new("POST", "/api/v1/admin/services/{serviceId}/replicas/{replicaId}/conflicts/{conflictId}/resolve"),
 
+        // v1 admin branch-version management endpoints (#1272)
+        new("GET", "/api/v1/admin/services/{serviceId}/versions"),
+        new("POST", "/api/v1/admin/services/{serviceId}/versions"),
+
         // v1 admin secure connection endpoints
         new("GET", "/api/v1/admin/connections"),
         new("GET", "/api/v1/admin/connections/{id}"),
