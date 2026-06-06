@@ -79,7 +79,7 @@ internal sealed class WebhookAlertDeliverySink : IAlertDeliverySink
             };
             var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture);
             var signature = WebhookDeliveryHelper.ComputeSignature(_options.Dispatch.DefaultWebhookSecret, timestamp, alertEvent.PayloadJson);
-            WebhookDeliveryHelper.AddValidatedHeader(request.Headers, "X-Honua-Alert-Rule", alertEvent.RuleId.ToString());
+            WebhookDeliveryHelper.AddValidatedHeader(request.Headers, "X-Honua-Alert-Rule", alertEvent.RuleId.ToString(CultureInfo.InvariantCulture));
             WebhookDeliveryHelper.AddValidatedHeader(request.Headers, "X-Honua-Alert-Event", alertEvent.DedupeKey);
             WebhookDeliveryHelper.AddValidatedHeader(request.Headers, "X-Honua-Event-Timestamp", timestamp);
             WebhookDeliveryHelper.AddValidatedHeader(request.Headers, "X-Honua-Signature", $"sha256={signature}");

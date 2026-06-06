@@ -68,6 +68,9 @@ COPY --from=public.ecr.aws/awsguru/aws-lambda-adapter:0.9.1@sha256:46d6625e68cbb
 WORKDIR /var/task
 COPY --from=build /app /var/task
 
+# The Debian-based dotnet runtime-deps base already ships ICU, which is required
+# because Honua.Server runs with InvariantGlobalization=false (Microsoft.Data.SqlClient
+# and Oracle.ManagedDataAccess fail to connect without ICU). See honua-server#1369.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends libgssapi-krb5-2 && \
     rm -rf /var/lib/apt/lists/* && \
@@ -77,6 +80,7 @@ ENV PORT=8080 \
     AWS_LWA_PORT=8080 \
     ASPNETCORE_ENVIRONMENT=Production \
     DOTNET_RUNNING_IN_CONTAINER=true \
+    DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false \
     DOTNET_EnableDiagnostics=0
 
 EXPOSE 8080

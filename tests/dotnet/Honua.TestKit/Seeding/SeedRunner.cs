@@ -59,6 +59,13 @@ internal static class SeedRunner
     private const int MaxConcurrencyRetryAttempts = 3;
     private const long SeedApplicationLockKey = 7_893_641_160_553_452_791;
 
+    // honua-server#1359: the serially-seeded Database collections pay a per-test seed
+    // cost. Re-reading and re-parsing the seed YAML from disk on every isolated-schema
+    // creation is pure, deterministic work whose result (an init-only SeedDefinition) is
+    // immutable once loaded, so memoize it keyed by absolute path + last-write time.
+    // This removes a redundant file read + YAML deserialize from every test's seed.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<(string Path, long Ticks), SeedDefinition> _seedCache = new();
+
     public static async Task ApplyAsync(
         NpgsqlDataSource dataSource,
         string seedPath,
@@ -178,6 +185,16 @@ internal static class SeedRunner
     }
 
     private static SeedDefinition LoadSeed(string seedPath)
+    {
+        // Memoize the parsed seed keyed by absolute path + last-write time so a touched
+        // seed file is still picked up, but the common case (same unchanging seed reused
+        // across thousands of per-test schema creations) parses exactly once.
+        var fullPath = Path.GetFullPath(seedPath);
+        var ticks = File.GetLastWriteTimeUtc(fullPath).Ticks;
+        return _seedCache.GetOrAdd((fullPath, ticks), static key => ParseSeed(key.Path));
+    }
+
+    private static SeedDefinition ParseSeed(string seedPath)
     {
         var deserializer = new DeserializerBuilder()
             .WithNamingConvention(UnderscoredNamingConvention.Instance)

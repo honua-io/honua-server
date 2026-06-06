@@ -415,13 +415,13 @@ public sealed class ConfigurationDiscoveryService
         var name = property.Name;
 
         // Generate description based on common patterns
-        if (name.EndsWith("Enabled"))
+        if (name.EndsWith("Enabled", StringComparison.Ordinal))
             return $"Enables or disables {name.Replace("Enabled", "").ToLowerInvariant()}";
 
-        if (name.EndsWith("Timeout"))
+        if (name.EndsWith("Timeout", StringComparison.Ordinal))
             return $"Timeout duration for {name.Replace("Timeout", "").ToLowerInvariant()} operations";
 
-        if (name.EndsWith("MaxSize") || name.EndsWith("MaxLength"))
+        if (name.EndsWith("MaxSize", StringComparison.Ordinal) || name.EndsWith("MaxLength", StringComparison.Ordinal))
             return $"Maximum size limit for {name.Replace("Max", "").Replace("Size", "").Replace("Length", "").ToLowerInvariant()}";
 
         if (name.Contains("Ttl"))

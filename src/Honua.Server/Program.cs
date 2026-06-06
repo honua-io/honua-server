@@ -264,7 +264,9 @@ builder.Host.UseSerilog((context, services, config) =>
     if (isDevelopment)
     {
         // Development: Human-readable console output
-        config.WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}");
+        config.WriteTo.Console(
+            outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}",
+            formatProvider: System.Globalization.CultureInfo.InvariantCulture);
     }
     else
     {

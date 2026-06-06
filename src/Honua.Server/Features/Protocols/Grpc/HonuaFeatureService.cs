@@ -600,7 +600,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         if (spatialReference.LatestWkid > 0)
         {
             return await _spatialReferenceResolver.ResolveSridAsync(
-                spatialReference.LatestWkid.ToString(),
+                spatialReference.LatestWkid.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 geometrySpatialReference: null,
                 cancellationToken).ConfigureAwait(false);
         }
@@ -608,7 +608,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         if (spatialReference.Wkid > 0)
         {
             return await _spatialReferenceResolver.ResolveSridAsync(
-                spatialReference.Wkid.ToString(),
+                spatialReference.Wkid.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 geometrySpatialReference: null,
                 cancellationToken).ConfigureAwait(false);
         }
@@ -645,7 +645,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             activity.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
         }
 
-        activity.SetTag(HonuaTelemetry.Tags.LayerId, layerId.ToString());
+        activity.SetTag(HonuaTelemetry.Tags.LayerId, layerId.ToString(System.Globalization.CultureInfo.InvariantCulture));
     }
 
     private static async Task EnsureWriteAccessAsync(
