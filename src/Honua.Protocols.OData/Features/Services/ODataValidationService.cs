@@ -15,7 +15,7 @@ internal sealed class ODataValidationService
 {
     private readonly ICommonQueryValidator _commonQueryValidator;
     private static readonly PaginationValidationOptions _odataPagination =
-        new(MinOffset: 0, MinLimit: 1, OffsetParameterName: "$skip", LimitParameterName: "$top");
+        new(MinOffset: 0, MinLimit: 0, OffsetParameterName: "$skip", LimitParameterName: "$top");
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ODataValidationService"/> class.

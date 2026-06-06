@@ -696,13 +696,10 @@ internal sealed partial class ODataSearchService
             }
 
             var outputName = expandOptions.Name;
-            var related = ResolveRelatedResource(snapshot, relationship, context);
-            if (related is null)
-            {
-                continue;
-            }
 
-            // Ensure expanded navigation properties are emitted even when no related rows exist.
+            // A declared/expanded navigation property must always appear in the payload
+            // (as an empty collection) even when the related resource is unavailable,
+            // otherwise the expansion is silently dropped from the response.
             foreach (var objectId in objectIds)
             {
                 if (!result.TryGetValue(objectId, out var relationsDict))
@@ -712,6 +709,12 @@ internal sealed partial class ODataSearchService
                 }
 
                 relationsDict.TryAdd(outputName, Array.Empty<object?>());
+            }
+
+            var related = ResolveRelatedResource(snapshot, relationship, context);
+            if (related is null)
+            {
+                continue;
             }
 
             var relatedAxisOrder = await ODataCrsUtilities.ResolveAxisOrderAsync(

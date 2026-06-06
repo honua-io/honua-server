@@ -137,7 +137,7 @@ internal static class ItemEndpoints
             var stacBase = $"{baseUrl}/stac";
             var itemsPath = $"{stacBase}/collections/{collectionId}/items";
             var requestedItemsUrl = $"{baseUrl}{context.Request.Path}{context.Request.QueryString}";
-            var collectionTitle = resource.Metadata.Title ?? resource.Metadata.Name;
+            var collectionTitle = StacMappingService.ResolveDisplayName(publication, resource, layerId);
             var linksBuilder = ImmutableArray.CreateBuilder<Link>();
             linksBuilder.Add(Link.Create(
                 href: requestedItemsUrl,

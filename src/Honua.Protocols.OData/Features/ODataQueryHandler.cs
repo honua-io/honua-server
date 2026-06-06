@@ -530,9 +530,12 @@ internal sealed partial class ODataQueryHandler(
 
             var baseUrl = ODataUtilityService.GetBaseUrl(context.Request);
 
-            // Calculate @odata.nextLink if there are more results
+            // Calculate @odata.nextLink if there are more results. An explicit client
+            // $top is a hard cap on the total result set (OData spec), not a page size,
+            // so it must not be continued via server-driven paging.
             string? nextLink = null;
-            if (ODataUtilityService.ShouldPaginate(result.Length, pagination.Offset, queryResult.TotalCount, pagination.Limit))
+            if (!top.HasValue &&
+                ODataUtilityService.ShouldPaginate(result.Length, pagination.Offset, queryResult.TotalCount, pagination.Limit))
             {
                 var nextSkip = ODataUtilityService.CalculateNextSkip(pagination.Offset, pagination.Limit);
                 nextLink = !string.IsNullOrWhiteSpace(deltatoken)

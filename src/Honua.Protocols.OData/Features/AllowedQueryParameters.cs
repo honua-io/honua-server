@@ -40,6 +40,7 @@ internal static class AllowedQueryParameters
         "$skip",
         "$skiptoken",
         "$count",
+        "$expand",
         "$format");
 
     public static readonly FrozenSet<string> Features = ODataSystemOptions(
