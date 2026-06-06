@@ -261,6 +261,7 @@ public static class EndpointRegistry
 
         // v1 Studio package lifecycle endpoints (#1180)
         new("GET", "/api/v1/studio/package-families"),
+        new("POST", "/api/v1/studio/map-packages/generate"),
         new("POST", "/api/v1/studio/package-drafts"),
         new("GET", "/api/v1/studio/package-drafts/{draftId}"),
         new("PUT", "/api/v1/studio/package-drafts/{draftId}"),
@@ -284,6 +285,7 @@ public static class EndpointRegistry
 
         // v1 content publication registry for Studio-generated artifacts (#1183)
         new("POST", "/api/v1/console/publications"),
+        new("POST", "/api/v1/console/publications/generate"),
         new("GET", "/api/v1/console/publications/{publicationId}"),
         new("GET", "/api/v1/console/publications/{publicationId}/versions/{versionSelector}"),
         new("POST", "/api/v1/console/publications/{publicationId}/republish"),
@@ -514,6 +516,7 @@ public static class EndpointRegistry
         new("POST", "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/validate"),
         new("POST", "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/publish"),
         new("POST", "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/reopen"),
+        new("POST", "/api/v1/admin/forms/packages/generate"),
         new("GET", "/api/v1/forms/packages/{formId}"),
         new("GET", "/api/v1/forms/packages/{formId}/versions/{packageVersion}"),
         new("GET", "/api/v1/forms/packages/{formId}/offline-policy"),
