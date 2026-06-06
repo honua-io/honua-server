@@ -28,6 +28,7 @@ internal sealed partial class FeatureQueryBuilder
         H3AggregationQuery h3Query,
         CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
     {
+        GuardVersionedReadSupported(query, "h3-aggregation");
         var sql = _stringBuilderPool.Get();
         try
         {
@@ -188,6 +189,7 @@ internal sealed partial class FeatureQueryBuilder
         Core.Configuration.TileLimits tileLimits,
         CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
     {
+        GuardVersionedReadSupported(query, "h3-tile");
         var sql = _stringBuilderPool.Get();
         try
         {

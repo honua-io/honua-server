@@ -176,6 +176,13 @@ internal sealed partial class FeatureDataAccess
             return FeatureEditResult.Success(0, 0, 0);
         }
 
+        // Branch-versioned edits route to the overlay write path (#1272 Track B, ADR-0051). DEFAULT
+        // (null/IsDefault) falls through to the byte-identical base write path below, untouched.
+        if (editBatch.VersionContext is { IsDefault: false } version)
+        {
+            return await ApplyVersionedEditsAsync(layerId, editBatch, version, cancellationToken).ConfigureAwait(false);
+        }
+
         DbConnection dbConnection;
         NpgsqlTransaction? transaction;
 
