@@ -252,12 +252,18 @@ jobs:
       - name: Determine diff range
         id: diff
         run: |
+          # Fetch the base branch with FULL history (NOT --depth=1). The filter below
+          # uses a three-dot range (base...head) that needs a merge-base; a shallow
+          # base fetch makes `git diff` fail with "fatal: no merge base", which the
+          # downstream `|| true` silently turned into an empty changed-file list →
+          # build_changes=false → the required build jobs SKIP and the PR is stuck
+          # BLOCKED. checkout already used fetch-depth: 0, so this is a cheap ref update.
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            git fetch origin ${{ github.base_ref }} --depth=1
-            echo "range=origin/${{ github.base_ref }}...${{ github.sha }}" >> $GITHUB_OUTPUT
+            git fetch --no-tags origin "${{ github.base_ref }}"
+            echo "range=origin/${{ github.base_ref }}...${{ github.sha }}" >> "$GITHUB_OUTPUT"
           else
-            git fetch origin trunk --depth=1
-            echo "range=origin/trunk...${{ github.sha }}" >> $GITHUB_OUTPUT
+            git fetch --no-tags origin trunk
+            echo "range=origin/trunk...${{ github.sha }}" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Check for non-test changes
@@ -266,9 +272,25 @@ jobs:
           PR_LABELS_JSON: ${{ toJson(github.event.pull_request.labels.*.name) }}
         run: |
           set -euo pipefail
-          CHANGED_FILES=$(git diff --name-only "${{ steps.diff.outputs.range }}" || true)
           POSTGRES_BASELINE='[{"pg_image":"postgis/postgis:16-3.4","pg_suffix":"16","collect_coverage":true}]'
           POSTGRES_FULL='[{"pg_image":"postgis/postgis:16-3.4","pg_suffix":"16","collect_coverage":true},{"pg_image":"postgis/postgis:17-3.5","pg_suffix":"17","collect_coverage":false},{"pg_image":"postgis/postgis:18-3.6","pg_suffix":"18","collect_coverage":false}]'
+
+          # Fail safe: if the diff range cannot be computed (e.g. no merge-base after a
+          # full base fetch), run the full build/integration lane rather than silently
+          # skipping the required build jobs. A diff failure must NEVER fall through to
+          # build_changes=false (that left PRs stuck BLOCKED with build jobs "skipping").
+          if ! CHANGED_FILES=$(git diff --name-only "${{ steps.diff.outputs.range }}" 2>/dev/null); then
+            echo "::warning::Diff range '${{ steps.diff.outputs.range }}' unavailable (no merge-base); running the full build lane."
+            {
+              echo "build_changes=true"
+              echo "non_test_changes=true"
+              echo "integration_changes=true"
+              echo "integration_reason=diff_range_unavailable"
+              echo "full_ci=false"
+              echo "postgres_matrix=${POSTGRES_BASELINE}"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
           if [ "${{ github.event_name }}" != "pull_request" ]; then
             echo "build_changes=true" >> "$GITHUB_OUTPUT"
@@ -377,7 +399,8 @@ jobs:
           set -euo pipefail
           all_shards_json=$(jq -c '[.shards[].name]' .github/ci-shards.json)
           if [ "${{ github.event_name }}" = "pull_request" ] && [ "${{ needs.changes.outputs.full_ci }}" != "true" ]; then
-            git fetch origin "${{ github.base_ref }}" --depth=1
+            # Full base history (not --depth=1) so the targeted-tests diff has a merge-base.
+            git fetch --no-tags origin "${{ github.base_ref }}"
             descriptor=$(scripts/ci/honua-server-targeted-tests.sh --base "origin/${{ github.base_ref }}")
           else
             reason="scheduled_or_manual_full_ci"
