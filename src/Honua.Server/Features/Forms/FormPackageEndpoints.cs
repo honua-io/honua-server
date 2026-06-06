@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
+using Honua.Ai.FormGeneration;
 using Honua.Core.Features.Forms.Packages;
 using Honua.Infrastructure.Authentication;
 using Microsoft.AspNetCore.Mvc;
@@ -82,6 +84,13 @@ internal static class FormPackageEndpoints
             .WithMetadata(new HttpMethodMetadata([HttpMethods.Post]))
             .Produces<FormPackageVersion>();
 
+        admin.MapPost("/generate", HandleGenerateForm)
+            .WithName("GenerateFormPackage")
+            .WithSummary("Generate or refine a form package from a natural-language prompt.")
+            .WithMetadata(new HttpMethodMetadata([HttpMethods.Post]))
+            .Accepts<GenerateFormPackageRequest>("application/json")
+            .Produces<FormGenerationResult>();
+
         var runtime = endpoints.MapGroup("/api/v{version:apiVersion}/forms/packages")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
@@ -113,6 +122,45 @@ internal static class FormPackageEndpoints
             .Produces<FormSubmissionResponse>();
 
         return endpoints;
+    }
+
+    private static async Task<IResult> HandleGenerateForm(
+        HttpContext context,
+        [FromServices] IFormGenerationService generation)
+    {
+        GenerateFormPackageRequest? request;
+        try
+        {
+            request = await JsonSerializer.DeserializeAsync(
+                context.Request.Body,
+                FormGenerationApiJsonContext.Default.GenerateFormPackageRequest,
+                context.RequestAborted).ConfigureAwait(false);
+        }
+        catch (JsonException)
+        {
+            request = null;
+        }
+
+        if (request is null || string.IsNullOrWhiteSpace(request.Prompt))
+        {
+            var bad = new FormGenerationResult { Status = "error", Rationale = "A non-empty 'prompt' is required." };
+            return Results.Json(bad, FormGenerationApiJsonContext.Default.FormGenerationResult, statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        var result = await generation.GenerateAsync(
+            new FormGenerationRequest
+            {
+                Prompt = request.Prompt,
+                Provider = request.Provider,
+                Model = request.Model,
+                CurrentForm = request.Package,
+                Conversation = request.Conversation,
+                Answers = request.Answers
+            },
+            context.RequestAborted).ConfigureAwait(false);
+
+        context.Response.Headers.CacheControl = "no-store";
+        return Results.Json(result, FormGenerationApiJsonContext.Default.FormGenerationResult);
     }
 
     private static Task<IResult> HandleListPackages(

@@ -30,9 +30,10 @@ internal static class WorkflowGenerationPrompt
         sb.AppendLine("- If the request is not about building a geospatial workflow, return status \"refused\" with a short rationale.");
         sb.AppendLine("- Otherwise return status \"generated\" with the graph and a one-paragraph rationale.");
         sb.AppendLine("- Do not invent layout; the server assigns node positions.");
+        sb.AppendLine("- In the palette below, each node lists its parameters; a trailing * marks a required parameter. Supply every required parameter as a literal in `parameters`, or wire it from an upstream output via a Data edge. A source node that has no required params still needs its data (e.g. provide `inline` or `input`).");
         sb.AppendLine();
 
-        if (request.RepairFailures.Count > 0)
+        if (request.RepairFailures is { Count: > 0 })
         {
             sb.AppendLine("Your previous graph failed server validation. Fix these failures and return a corrected graph:");
             foreach (var failure in request.RepairFailures)
@@ -64,7 +65,7 @@ internal static class WorkflowGenerationPrompt
         var sb = new StringBuilder();
         sb.AppendLine(request.Prompt);
 
-        if (request.Answers.Count > 0)
+        if (request.Answers is { Count: > 0 })
         {
             sb.AppendLine();
             sb.AppendLine("Answers to prior clarifications:");
@@ -87,13 +88,22 @@ internal static class WorkflowGenerationPrompt
 
     private static void AppendNode(StringBuilder sb, WorkflowNodeDefinition node)
     {
-        sb.Append("- ").Append(node.NodeTypeId).Append(" — ").Append(node.Title)
-          .Append(" [").Append(node.Category).Append("]: ").AppendLine(node.Description);
-
-        var required = node.ParameterSchemas.Where(p => p.Required).Select(p => p.Name).ToArray();
-        if (required.Length > 0)
+        // ONE compact line per node so the grounded palette stays small enough for local CPU models to
+        // prefill quickly. The nodeTypeId is self-describing; params are listed by name (a trailing * marks
+        // required) so the model can still satisfy either-or inputs (e.g. source.geojson's inline/input).
+        //
+        // NOTE: an A/B over the 43-case e2e corpus showed that enriching this prefill (per-node Title/
+        // Description sentences) REGRESSED quality on the local 7B CPU model — the larger palette pushed slow
+        // cases past the provider timeout and nudged over-elaboration (under-specified projection nodes
+        // missing 'srid'). The lean baseline measured best (41/43). Teach node usage via the training corpus,
+        // not the runtime prefill. Keep this compact.
+        sb.Append("- ").Append(node.NodeTypeId).Append(" [").Append(node.Category).Append(']');
+        if (node.ParameterSchemas.Count > 0)
         {
-            sb.Append("    required params: ").AppendLine(string.Join(", ", required));
+            sb.Append(" params: ").Append(string.Join(", ",
+                node.ParameterSchemas.Select(p => p.Required ? p.Name + "*" : p.Name)));
         }
+
+        sb.AppendLine();
     }
 }

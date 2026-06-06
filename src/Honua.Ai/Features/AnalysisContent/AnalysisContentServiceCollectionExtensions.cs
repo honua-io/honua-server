@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Ai.AnalysisGeneration;
+using Honua.Ai.QueryGeneration;
 using Honua.Core.Features.AnalysisContent.Abstractions;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -28,6 +30,20 @@ internal static class AnalysisContentServiceCollectionExtensions
         services.TryAddScoped<IAnalysisContentStore>(sp =>
             sp.GetRequiredService<InMemoryAnalysisContentStore>());
         services.TryAddScoped<IAnalysisContentService, AnalysisContentService>();
+
+        // NL -> analysis-package generation. Reuses the workflow-generation provider config + chat
+        // plumbing (registered by AddWorkflowGeneration) and grounds in the geoprocessing process
+        // catalog (IProcessCatalog, registered by AddGeoprocessing) as the analysis-method vocabulary,
+        // gating with the DB-free structural ProcessPlanValidator so generation never requires live
+        // layer metadata or the execution engine.
+        services.TryAddSingleton<IAnalysisGenerationService, AnalysisGenerationService>();
+
+        // NL -> saved-query (spatial/attribute filter) generation. Reuses the workflow-generation
+        // provider config + chat plumbing (registered by AddWorkflowGeneration) and a self-contained
+        // structural QueryGenerationValidationGate (no live metadata DB) that grounds in the filter-plan
+        // operator vocabulary the canonical FilterPlanCompiler accepts, so generation never depends on the
+        // target layer or its field schema (bound at run/preview). Mirrors the analysis/form registration.
+        services.TryAddSingleton<IQueryGenerationService, QueryGenerationService>();
 
         return services;
     }
