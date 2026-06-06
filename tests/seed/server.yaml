@@ -1141,7 +1141,35 @@ sql:
           created_at           TIMESTAMPTZ NOT NULL DEFAULT now()
       );
   - "CREATE INDEX IF NOT EXISTS idx_form_submission_attachments_submission ON honua.form_submission_attachments(submission_id);"
+  - |
+      CREATE TABLE IF NOT EXISTS honua.field_submission_reviews (
+          submission_id  UUID        NOT NULL PRIMARY KEY REFERENCES honua.form_submissions(submission_id) ON DELETE CASCADE,
+          status         TEXT        NOT NULL DEFAULT 'pending',
+          assigned_to    TEXT,
+          decided_by     TEXT,
+          decided_at     TIMESTAMPTZ,
+          decision_note  TEXT,
+          etag           TEXT        NOT NULL,
+          created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+          updated_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+          has_conflict   BOOLEAN     NOT NULL DEFAULT false,
+          CONSTRAINT field_submission_reviews_valid_status CHECK (status IN ('pending', 'in_review', 'changes_requested', 'approved', 'rejected'))
+      );
+  - "CREATE INDEX IF NOT EXISTS idx_field_submission_reviews_status ON honua.field_submission_reviews(status);"
+  - "CREATE INDEX IF NOT EXISTS idx_field_submission_reviews_assigned ON honua.field_submission_reviews(assigned_to) WHERE assigned_to IS NOT NULL;"
+  - |
+      CREATE TABLE IF NOT EXISTS honua.field_review_comments (
+          comment_id         UUID        NOT NULL PRIMARY KEY,
+          submission_id      UUID        NOT NULL REFERENCES honua.form_submissions(submission_id) ON DELETE CASCADE,
+          author             TEXT        NOT NULL,
+          body               TEXT        NOT NULL,
+          correction_request BOOLEAN     NOT NULL DEFAULT false,
+          created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+  - "CREATE INDEX IF NOT EXISTS idx_field_review_comments_submission ON honua.field_review_comments(submission_id, created_at);"
   - "ALTER TABLE IF EXISTS honua.form_package_versions DISABLE TRIGGER USER;"
+  - "DELETE FROM honua.field_review_comments;"
+  - "DELETE FROM honua.field_submission_reviews;"
   - "DELETE FROM honua.form_submission_attachments;"
   - "DELETE FROM honua.form_submissions;"
   - "DELETE FROM honua.form_package_versions;"
