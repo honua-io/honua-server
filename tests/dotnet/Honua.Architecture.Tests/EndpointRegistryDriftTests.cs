@@ -129,7 +129,7 @@ public sealed class EndpointRegistryDriftTests
         Directory.Exists(featuresRoot)
             .Should().BeTrue($"the audited features directory should exist at {featuresRoot}");
 
-        var discovered = ScanFeatureEndpoints(featuresRoot, repoRoot);
+        var discovered = ScanAllModuleEndpoints(repoRoot);
         var registered = BuildRegistrySet();
 
         var enforceable = discovered
@@ -201,9 +201,8 @@ public sealed class EndpointRegistryDriftTests
         // Guards against a regression where the regex or directory layout
         // changes and the scan silently passes because it discovered nothing.
         var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var featuresRoot = Path.Combine(repoRoot, FeaturesRelativePath);
 
-        var discovered = ScanFeatureEndpoints(featuresRoot, repoRoot);
+        var discovered = ScanAllModuleEndpoints(repoRoot);
 
         discovered.Count.Should().BeGreaterThan(200,
             "the scanner should detect well over two hundred Map{Get,Post,...} calls; "
@@ -396,6 +395,32 @@ public sealed class EndpointRegistryDriftTests
         HashSet<string> FullRoutes,
         HashSet<string> GroupPrefixes,
         string CombinedSource);
+
+    /// <summary>
+    /// Forward-scan every <c>Map{Get,Post,Put,Delete,Patch}</c> route across the
+    /// <c>Honua.Server</c> features tree AND every extracted <c>src/Honua.*</c>
+    /// module (Honua.Ai, Honua.Geoprocessing, Honua.Protocols.*, …). As features
+    /// were carved out of <c>Honua.Server</c> their endpoint <c>Map*</c> calls
+    /// moved with them — e.g. the AnalysisContent <c>/generate</c> routes now live
+    /// in <c>Honua.Ai</c> — but every such route still has a registry obligation,
+    /// so the forward drift gate must scan those modules too. Host-wiring
+    /// resolution still anchors against the <c>Honua.Server</c> tree because the
+    /// extension methods are invoked from the server host.
+    /// </summary>
+    private static List<DiscoveredEndpoint> ScanAllModuleEndpoints(string repoRoot)
+    {
+        var featuresRoot = Path.Combine(repoRoot, FeaturesRelativePath);
+        var roots = new List<string> { featuresRoot };
+        roots.AddRange(ExtractedModuleRoots(repoRoot));
+
+        var discovered = new List<DiscoveredEndpoint>();
+        foreach (var root in roots.Where(Directory.Exists).Distinct(System.StringComparer.Ordinal))
+        {
+            discovered.AddRange(ScanFeatureEndpoints(root, repoRoot));
+        }
+
+        return discovered;
+    }
 
     private static List<DiscoveredEndpoint> ScanFeatureEndpoints(string featuresRoot, string repoRoot)
     {

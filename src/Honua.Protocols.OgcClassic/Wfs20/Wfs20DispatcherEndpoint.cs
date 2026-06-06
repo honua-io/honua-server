@@ -417,7 +417,13 @@ internal static class Wfs20DispatcherEndpoint
         var capabilities = await handler.HandleGetCapabilitiesAsync(
             context, acceptVersions, requestedSections, baseUrl, cancellationToken);
 
-        return SerializeXmlResponse(capabilities, "application/xml");
+        // Render the typed capabilities model by hand instead of via XmlSerializer:
+        // XmlSerializer requires runtime code generation, which is unavailable under
+        // PublishAot=true and throws at runtime (HTTP 500) for WfsCapabilities. The
+        // hand-written writer mirrors the exact XmlSerializer output shape (#1505-era
+        // bug hunt: WFS 2.0.0 GetCapabilities 500 in the AOT container only).
+        var xml = BuildCapabilitiesXml(capabilities);
+        return Results.Content(xml, "application/xml", System.Text.Encoding.UTF8);
     }
 
     /// <summary>
@@ -1435,11 +1441,500 @@ internal static class Wfs20DispatcherEndpoint
         => values[key] = value.Trim();
 
     /// <summary>
-    /// Serializes an object to XML and returns as IResult
+    /// Builds the WFS 2.0 GetCapabilities XML by hand from the typed <see cref="WfsCapabilities"/>
+    /// model. Replaces XmlSerializer for this path, which fails under PublishAot=true (no runtime
+    /// code generation). The output mirrors the XmlSerializer rendering: the default (wfs/2.0)
+    /// namespace plus ows/fes/gml/honua/xlink/xsd/xsi declarations, version, updateSequence and
+    /// xsi:schemaLocation attributes, and the same ServiceIdentification / ServiceProvider /
+    /// OperationsMetadata / FeatureTypeList / Filter_Capabilities content the model carries
+    /// (including SECTIONS filtering, already applied upstream by leaving properties null).
     /// </summary>
-    private static IResult SerializeXmlResponse<T>(T obj, string contentType) where T : class
+    private static string BuildCapabilitiesXml(WfsCapabilities capabilities)
     {
-        var xmlContent = XmlResultSerializer.Serialize(obj);
-        return Results.Content(xmlContent, contentType, System.Text.Encoding.UTF8);
+        var settings = new XmlWriterSettings
+        {
+            Indent = true,
+            IndentChars = "  ",
+            NewLineChars = "\n",
+            Encoding = Encoding.UTF8,
+            OmitXmlDeclaration = false
+        };
+
+        using var stringWriter = new Utf8StringWriter();
+        using (var writer = XmlWriter.Create(stringWriter, settings))
+        {
+            writer.WriteStartDocument();
+            writer.WriteStartElement("WFS_Capabilities", Wfs20Utilities.WfsNamespace);
+
+            writer.WriteAttributeString("xmlns", "ows", null, Wfs20Utilities.OwsNamespace);
+            writer.WriteAttributeString("xmlns", "fes", null, Wfs20Utilities.FesNamespace);
+            writer.WriteAttributeString("xmlns", "gml", null, Wfs20Utilities.GmlNamespace);
+            writer.WriteAttributeString("xmlns", "honua", null, "http://honua.io/wfs");
+            writer.WriteAttributeString("xmlns", "xlink", null, Wfs20Utilities.XLinkNamespace);
+            writer.WriteAttributeString("xmlns", "xsd", null, Wfs20Utilities.XsdNamespace);
+            writer.WriteAttributeString("xmlns", "xsi", null, Wfs20Utilities.XsiNamespace);
+
+            writer.WriteAttributeString("version", capabilities.Version);
+            if (!string.IsNullOrEmpty(capabilities.UpdateSequence))
+            {
+                writer.WriteAttributeString("updateSequence", capabilities.UpdateSequence);
+            }
+
+            writer.WriteAttributeString("xsi", "schemaLocation", Wfs20Utilities.XsiNamespace, capabilities.SchemaLocation);
+
+            WriteServiceIdentification(writer, capabilities.ServiceIdentification);
+            WriteServiceProvider(writer, capabilities.ServiceProvider);
+            WriteOperationsMetadata(writer, capabilities.OperationsMetadata);
+            WriteFeatureTypeList(writer, capabilities.FeatureTypeList);
+            WriteFilterCapabilities(writer, capabilities.FilterCapabilities);
+
+            writer.WriteEndElement();
+            writer.WriteEndDocument();
+        }
+
+        return stringWriter.ToString();
+    }
+
+    private static void WriteOwsElement(XmlWriter writer, string localName, string? value)
+    {
+        if (value is null)
+        {
+            return;
+        }
+
+        writer.WriteElementString(localName, Wfs20Utilities.OwsNamespace, value);
+    }
+
+    private static void WriteServiceIdentification(XmlWriter writer, ServiceIdentification? identification)
+    {
+        if (identification is null)
+        {
+            return;
+        }
+
+        writer.WriteStartElement("ServiceIdentification", Wfs20Utilities.OwsNamespace);
+        WriteOwsElement(writer, "Title", identification.Title);
+        WriteOwsElement(writer, "Abstract", identification.Abstract);
+        if (identification.Keywords is { Length: > 0 })
+        {
+            writer.WriteStartElement("Keywords", Wfs20Utilities.OwsNamespace);
+            foreach (var keyword in identification.Keywords)
+            {
+                WriteOwsElement(writer, "Keyword", keyword);
+            }
+
+            writer.WriteEndElement();
+        }
+
+        WriteOwsElement(writer, "ServiceType", identification.ServiceType);
+        foreach (var version in identification.ServiceTypeVersion)
+        {
+            WriteOwsElement(writer, "ServiceTypeVersion", version);
+        }
+
+        WriteOwsElement(writer, "Fees", identification.Fees);
+        WriteOwsElement(writer, "AccessConstraints", identification.AccessConstraints);
+        writer.WriteEndElement();
+    }
+
+    private static void WriteServiceProvider(XmlWriter writer, Models.ServiceProvider? provider)
+    {
+        if (provider is null)
+        {
+            return;
+        }
+
+        writer.WriteStartElement("ServiceProvider", Wfs20Utilities.OwsNamespace);
+        WriteOwsElement(writer, "ProviderName", provider.ProviderName);
+        if (provider.ProviderSite is not null)
+        {
+            writer.WriteStartElement("ProviderSite", Wfs20Utilities.OwsNamespace);
+            writer.WriteAttributeString("href", Wfs20Utilities.XLinkNamespace, provider.ProviderSite.Href);
+            writer.WriteEndElement();
+        }
+
+        if (provider.ServiceContact is { } contact)
+        {
+            writer.WriteStartElement("ServiceContact", Wfs20Utilities.OwsNamespace);
+            WriteOwsElement(writer, "IndividualName", contact.IndividualName);
+            WriteOwsElement(writer, "PositionName", contact.PositionName);
+            if (contact.ContactInfo is { } info)
+            {
+                writer.WriteStartElement("ContactInfo", Wfs20Utilities.OwsNamespace);
+                if (info.Address is { } address)
+                {
+                    writer.WriteStartElement("Address", Wfs20Utilities.OwsNamespace);
+                    WriteOwsElement(writer, "ElectronicMailAddress", address.ElectronicMailAddress);
+                    writer.WriteEndElement();
+                }
+
+                if (info.OnlineResource is { } online)
+                {
+                    writer.WriteStartElement("OnlineResource", Wfs20Utilities.OwsNamespace);
+                    writer.WriteAttributeString("href", Wfs20Utilities.XLinkNamespace, online.Href);
+                    writer.WriteEndElement();
+                }
+
+                writer.WriteEndElement();
+            }
+
+            WriteOwsElement(writer, "Role", contact.Role);
+            writer.WriteEndElement();
+        }
+
+        writer.WriteEndElement();
+    }
+
+    private static void WriteOperationsMetadata(XmlWriter writer, OperationsMetadata? metadata)
+    {
+        if (metadata is null)
+        {
+            return;
+        }
+
+        writer.WriteStartElement("OperationsMetadata", Wfs20Utilities.OwsNamespace);
+        foreach (var operation in metadata.Operations)
+        {
+            writer.WriteStartElement("Operation", Wfs20Utilities.OwsNamespace);
+            writer.WriteAttributeString("name", operation.Name);
+            foreach (var dcp in operation.DCP)
+            {
+                writer.WriteStartElement("DCP", Wfs20Utilities.OwsNamespace);
+                writer.WriteStartElement("HTTP", Wfs20Utilities.OwsNamespace);
+                WriteHttpMethods(writer, "Get", dcp.Http.Get);
+                WriteHttpMethods(writer, "Post", dcp.Http.Post);
+                writer.WriteEndElement();
+                writer.WriteEndElement();
+            }
+
+            WriteParameters(writer, operation.Parameters);
+            WriteConstraints(writer, operation.Constraints);
+            writer.WriteEndElement();
+        }
+
+        WriteParameters(writer, metadata.Parameters);
+        WriteConstraints(writer, metadata.Constraints);
+        writer.WriteEndElement();
+    }
+
+    private static void WriteHttpMethods(XmlWriter writer, string localName, Models.HttpMethod[]? methods)
+    {
+        if (methods is null)
+        {
+            return;
+        }
+
+        foreach (var method in methods)
+        {
+            writer.WriteStartElement(localName, Wfs20Utilities.OwsNamespace);
+            writer.WriteAttributeString("href", Wfs20Utilities.XLinkNamespace, method.Href);
+            writer.WriteEndElement();
+        }
+    }
+
+    private static void WriteParameters(XmlWriter writer, Parameter[]? parameters)
+    {
+        if (parameters is null)
+        {
+            return;
+        }
+
+        foreach (var parameter in parameters)
+        {
+            writer.WriteStartElement("Parameter", Wfs20Utilities.OwsNamespace);
+            writer.WriteAttributeString("name", parameter.Name);
+            WriteAllowedValues(writer, parameter.AllowedValues);
+            if (parameter.AnyValue is not null)
+            {
+                writer.WriteStartElement("AnyValue", Wfs20Utilities.OwsNamespace);
+                writer.WriteEndElement();
+            }
+
+            if (parameter.NoValues is not null)
+            {
+                writer.WriteStartElement("NoValues", Wfs20Utilities.OwsNamespace);
+                writer.WriteEndElement();
+            }
+
+            writer.WriteEndElement();
+        }
+    }
+
+    private static void WriteConstraints(XmlWriter writer, Constraint[]? constraints)
+    {
+        if (constraints is null)
+        {
+            return;
+        }
+
+        foreach (var constraint in constraints)
+        {
+            writer.WriteStartElement("Constraint", Wfs20Utilities.OwsNamespace);
+            writer.WriteAttributeString("name", constraint.Name);
+            WriteAllowedValues(writer, constraint.AllowedValues);
+            if (constraint.AnyValue is not null)
+            {
+                writer.WriteStartElement("AnyValue", Wfs20Utilities.OwsNamespace);
+                writer.WriteEndElement();
+            }
+
+            if (constraint.NoValues is not null)
+            {
+                writer.WriteStartElement("NoValues", Wfs20Utilities.OwsNamespace);
+                writer.WriteEndElement();
+            }
+
+            WriteOwsElement(writer, "DefaultValue", constraint.DefaultValue);
+            writer.WriteEndElement();
+        }
+    }
+
+    private static void WriteAllowedValues(XmlWriter writer, AllowedValues? allowedValues)
+    {
+        if (allowedValues is null)
+        {
+            return;
+        }
+
+        writer.WriteStartElement("AllowedValues", Wfs20Utilities.OwsNamespace);
+        foreach (var value in allowedValues.Values)
+        {
+            WriteOwsElement(writer, "Value", value);
+        }
+
+        writer.WriteEndElement();
+    }
+
+    private static void WriteFeatureTypeList(XmlWriter writer, FeatureTypeList? featureTypeList)
+    {
+        if (featureTypeList is null)
+        {
+            return;
+        }
+
+        writer.WriteStartElement("FeatureTypeList", Wfs20Utilities.WfsNamespace);
+        foreach (var featureType in featureTypeList.FeatureTypes)
+        {
+            writer.WriteStartElement("FeatureType", Wfs20Utilities.WfsNamespace);
+            writer.WriteElementString("Name", Wfs20Utilities.WfsNamespace, featureType.Name);
+            writer.WriteElementString("Title", Wfs20Utilities.WfsNamespace, featureType.Title);
+            if (featureType.Abstract is not null)
+            {
+                writer.WriteElementString("Abstract", Wfs20Utilities.WfsNamespace, featureType.Abstract);
+            }
+
+            if (featureType.Keywords is { Length: > 0 })
+            {
+                writer.WriteStartElement("Keywords", Wfs20Utilities.OwsNamespace);
+                foreach (var keyword in featureType.Keywords)
+                {
+                    WriteOwsElement(writer, "Keyword", keyword);
+                }
+
+                writer.WriteEndElement();
+            }
+
+            writer.WriteElementString("DefaultCRS", Wfs20Utilities.WfsNamespace, featureType.DefaultCRS);
+            if (featureType.OtherCRS is not null)
+            {
+                foreach (var otherCrs in featureType.OtherCRS)
+                {
+                    writer.WriteElementString("OtherCRS", Wfs20Utilities.WfsNamespace, otherCrs);
+                }
+            }
+
+            if (featureType.OutputFormats is { } outputFormats)
+            {
+                writer.WriteStartElement("OutputFormats", Wfs20Utilities.WfsNamespace);
+                foreach (var format in outputFormats.Formats)
+                {
+                    writer.WriteElementString("Format", Wfs20Utilities.WfsNamespace, format);
+                }
+
+                writer.WriteEndElement();
+            }
+
+            if (featureType.WGS84BoundingBox is { } bbox)
+            {
+                writer.WriteStartElement("WGS84BoundingBox", Wfs20Utilities.OwsNamespace);
+                writer.WriteAttributeString("crs", bbox.Crs);
+                WriteOwsElement(writer, "LowerCorner", bbox.LowerCorner);
+                WriteOwsElement(writer, "UpperCorner", bbox.UpperCorner);
+                writer.WriteEndElement();
+            }
+
+            if (featureType.MetadataURLs is not null)
+            {
+                foreach (var metadataUrl in featureType.MetadataURLs)
+                {
+                    writer.WriteStartElement("MetadataURL", Wfs20Utilities.WfsNamespace);
+                    if (metadataUrl.Type is not null)
+                    {
+                        writer.WriteAttributeString("type", metadataUrl.Type);
+                    }
+
+                    if (metadataUrl.Format is not null)
+                    {
+                        writer.WriteAttributeString("format", metadataUrl.Format);
+                    }
+
+                    writer.WriteString(metadataUrl.Href);
+                    writer.WriteEndElement();
+                }
+            }
+
+            writer.WriteEndElement();
+        }
+
+        writer.WriteEndElement();
+    }
+
+    private static void WriteFilterCapabilities(XmlWriter writer, FilterCapabilities? filterCapabilities)
+    {
+        if (filterCapabilities is null)
+        {
+            return;
+        }
+
+        writer.WriteStartElement("Filter_Capabilities", Wfs20Utilities.FesNamespace);
+
+        writer.WriteStartElement("Conformance", Wfs20Utilities.FesNamespace);
+        foreach (var constraint in filterCapabilities.Conformance.Constraints)
+        {
+            writer.WriteStartElement("Constraint", Wfs20Utilities.FesNamespace);
+            writer.WriteAttributeString("name", constraint.Name);
+            WriteAllowedValues(writer, constraint.AllowedValues);
+            if (constraint.AnyValue is not null)
+            {
+                writer.WriteStartElement("AnyValue", Wfs20Utilities.OwsNamespace);
+                writer.WriteEndElement();
+            }
+
+            if (constraint.NoValues is not null)
+            {
+                writer.WriteStartElement("NoValues", Wfs20Utilities.OwsNamespace);
+                writer.WriteEndElement();
+            }
+
+            WriteOwsElement(writer, "DefaultValue", constraint.DefaultValue);
+            writer.WriteEndElement();
+        }
+
+        writer.WriteEndElement();
+
+        if (filterCapabilities.IdCapabilities is { ResourceIdentifiers: { } resourceIdentifiers })
+        {
+            writer.WriteStartElement("Id_Capabilities", Wfs20Utilities.FesNamespace);
+            foreach (var identifier in resourceIdentifiers)
+            {
+                writer.WriteStartElement("ResourceIdentifier", Wfs20Utilities.FesNamespace);
+                writer.WriteAttributeString("name", identifier.Name);
+                writer.WriteEndElement();
+            }
+
+            writer.WriteEndElement();
+        }
+
+        if (filterCapabilities.ScalarCapabilities is { } scalar)
+        {
+            writer.WriteStartElement("Scalar_Capabilities", Wfs20Utilities.FesNamespace);
+            if (scalar.LogicalOperators is not null)
+            {
+                writer.WriteStartElement("LogicalOperators", Wfs20Utilities.FesNamespace);
+                writer.WriteEndElement();
+            }
+
+            if (scalar.ComparisonOperators is { Operators: { } comparisonOperators })
+            {
+                writer.WriteStartElement("ComparisonOperators", Wfs20Utilities.FesNamespace);
+                foreach (var op in comparisonOperators)
+                {
+                    writer.WriteStartElement("ComparisonOperator", Wfs20Utilities.FesNamespace);
+                    writer.WriteAttributeString("name", op.Name);
+                    writer.WriteEndElement();
+                }
+
+                writer.WriteEndElement();
+            }
+
+            writer.WriteEndElement();
+        }
+
+        if (filterCapabilities.SpatialCapabilities is { } spatial)
+        {
+            writer.WriteStartElement("Spatial_Capabilities", Wfs20Utilities.FesNamespace);
+            if (spatial.GeometryOperands is { Operands: { } geometryOperands })
+            {
+                writer.WriteStartElement("GeometryOperands", Wfs20Utilities.FesNamespace);
+                foreach (var operand in geometryOperands)
+                {
+                    writer.WriteStartElement("GeometryOperand", Wfs20Utilities.FesNamespace);
+                    writer.WriteAttributeString("name", FormatQualifiedName(writer, operand.Name));
+                    writer.WriteEndElement();
+                }
+
+                writer.WriteEndElement();
+            }
+
+            if (spatial.SpatialOperators is { Operators: { } spatialOperators })
+            {
+                writer.WriteStartElement("SpatialOperators", Wfs20Utilities.FesNamespace);
+                foreach (var op in spatialOperators)
+                {
+                    writer.WriteStartElement("SpatialOperator", Wfs20Utilities.FesNamespace);
+                    writer.WriteAttributeString("name", op.Name);
+                    writer.WriteEndElement();
+                }
+
+                writer.WriteEndElement();
+            }
+
+            writer.WriteEndElement();
+        }
+
+        if (filterCapabilities.TemporalCapabilities is { } temporal)
+        {
+            writer.WriteStartElement("Temporal_Capabilities", Wfs20Utilities.FesNamespace);
+            if (temporal.TemporalOperands is { Operands: { } temporalOperands })
+            {
+                writer.WriteStartElement("TemporalOperands", Wfs20Utilities.FesNamespace);
+                foreach (var operand in temporalOperands)
+                {
+                    writer.WriteStartElement("TemporalOperand", Wfs20Utilities.FesNamespace);
+                    writer.WriteAttributeString("name", FormatQualifiedName(writer, operand.Name));
+                    writer.WriteEndElement();
+                }
+
+                writer.WriteEndElement();
+            }
+
+            if (temporal.TemporalOperators is { Operators: { } temporalOperators })
+            {
+                writer.WriteStartElement("TemporalOperators", Wfs20Utilities.FesNamespace);
+                foreach (var op in temporalOperators)
+                {
+                    writer.WriteStartElement("TemporalOperator", Wfs20Utilities.FesNamespace);
+                    writer.WriteAttributeString("name", op.Name);
+                    writer.WriteEndElement();
+                }
+
+                writer.WriteEndElement();
+            }
+
+            writer.WriteEndElement();
+        }
+
+        writer.WriteEndElement();
+    }
+
+    private static string FormatQualifiedName(XmlWriter writer, XmlQualifiedName name)
+    {
+        var prefix = writer.LookupPrefix(name.Namespace);
+        return string.IsNullOrEmpty(prefix) ? name.Name : $"{prefix}:{name.Name}";
+    }
+
+    private sealed class Utf8StringWriter : StringWriter
+    {
+        public override Encoding Encoding => Encoding.UTF8;
     }
 }

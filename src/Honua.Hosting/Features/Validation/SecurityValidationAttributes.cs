@@ -238,6 +238,15 @@ public sealed class SafeWhereClauseAttribute : ValidationAttribute
         @"(;\s*(?:DROP|DELETE|UPDATE|INSERT|CREATE|ALTER|EXEC|EXECUTE|DECLARE|xp_|sp_))|(\-\-)|(/\*)|(\*/)|(\bUNION\b)|(\bOR\b\s+\d+\s*=\s*\d+)",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
+    // Balanced single-quoted SQL string literal (with '' escapes). Literal content
+    // is bound as a parameter, so "--", "/* */", ";" or UNION inside a quoted
+    // literal (e.g. name='note -- x' or a LIKE pattern '%/*%') is harmless data and
+    // must not be flagged. Real injection breaks out of the quoting and survives
+    // masking (bug hunt).
+    private static readonly Regex _quotedStringLiteralRegex = new(
+        @"'(?:[^']|'')*'",
+        RegexOptions.Compiled);
+
     protected override DataAnnotationsValidationResult IsValid(object? value, ValidationContext validationContext)
     {
         if (value == null)
@@ -260,7 +269,10 @@ public sealed class SafeWhereClauseAttribute : ValidationAttribute
             return new DataAnnotationsValidationResult("WHERE clause is too long (maximum 4000 characters).");
         }
 
-        if (_dangerousPatternRegex.IsMatch(whereClause))
+        // Mask balanced quoted-literal content before inspecting for dangerous
+        // patterns so harmless in-literal tokens are not rejected (see regex note).
+        var inspectable = _quotedStringLiteralRegex.Replace(whereClause, "''");
+        if (_dangerousPatternRegex.IsMatch(inspectable))
         {
             return new DataAnnotationsValidationResult("WHERE clause contains potentially dangerous SQL patterns.");
         }

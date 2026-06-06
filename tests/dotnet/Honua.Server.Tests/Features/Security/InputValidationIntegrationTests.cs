@@ -69,6 +69,50 @@ public sealed class InputValidationIntegrationTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithSqlCommentTokensInsideStringLiteral_IsAllowed()
+    {
+        // Over-block regression (bug hunt): "--", "/*", "*/" inside a balanced
+        // quoted literal are data (bound as parameters), not SQL comments, and must
+        // not be rejected. Real comment injection OUTSIDE a literal is still blocked
+        // (see Query_WithSqlCommentInjectionOutsideLiteral_ReturnsBadRequest).
+        foreach (var where in new[]
+        {
+            "name = 'audit -- note'",
+            "name LIKE '%/*%'",
+            "name = 'O''Brien -- x'",
+        })
+        {
+            using var request = new HttpRequestMessage(
+                HttpMethod.Get,
+                $"/rest/services/test/FeatureServer/0/query?where={Uri.EscapeDataString(where)}&f=json");
+            request.Headers.Add("X-API-Key", AdminPassword);
+
+            using var response = await _fixture.Client.SendAsync(request);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK, $"'{where}' is a quoted literal, not an injection");
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithSqlCommentInjectionOutsideLiteral_ReturnsBadRequest()
+    {
+        // Masking literals must NOT weaken real injection: a comment token outside a
+        // quoted literal still trips detection.
+        var where = Uri.EscapeDataString("1=1 -- drop");
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"/rest/services/test/FeatureServer/0/query?where={where}&f=json");
+        request.Headers.Add("X-API-Key", AdminPassword);
+
+        using var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("SQL injection attempt detected");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task Query_WithNestedWhereExpression_IsAllowed()
     {
         var where = Uri.EscapeDataString("((name = 'a' OR name = 'b') AND objectid > 0) OR category = 'test'");

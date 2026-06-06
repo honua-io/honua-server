@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
 using System.Security.Claims;
+using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.AnalysisContent;
 using Honua.Core.Features.AnalysisContent.Domain;
@@ -527,6 +528,32 @@ public sealed class AnalysisContentEndpointsTests : IAsyncLifetime
         var first = document.RootElement.GetProperty("errors").EnumerateArray().First();
         Assert.Equal("analysis.content.savedQuery.layerId.range", first.GetProperty("code").GetString());
         Assert.Equal("/savedQuery/layerId", first.GetProperty("path").GetString());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /api/v1/analysis/content/generate")]
+    public async Task GenerateAnalysis_MissingPrompt_ReachesHandlerAndReturnsBadRequest()
+    {
+        // The generate route validates the prompt before invoking any AI provider, so an empty body
+        // exercises the wired endpoint (non-404) without calling a real LLM.
+        var response = await _client.PostAsync(
+            "/api/v1/analysis/content/generate",
+            new StringContent("{}", Encoding.UTF8, "application/json"));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /api/v1/analysis/content/queries/generate")]
+    public async Task GenerateSavedQuery_MissingPrompt_ReachesHandlerAndReturnsBadRequest()
+    {
+        var response = await _client.PostAsync(
+            "/api/v1/analysis/content/queries/generate",
+            new StringContent("{}", Encoding.UTF8, "application/json"));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     private static async Task<T?> ReadJsonAsync<T>(HttpResponseMessage response, HttpStatusCode expectedStatus)

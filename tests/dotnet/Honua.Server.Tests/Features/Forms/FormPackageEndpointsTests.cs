@@ -434,6 +434,20 @@ public sealed class FormPackageEndpointsTests : IAsyncLifetime
         return (long)(await command.ExecuteScalarAsync() ?? 0L);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Configuration)]
+    [Endpoint("POST /api/v1/admin/forms/packages/generate")]
+    public async Task GenerateFormPackage_MissingPrompt_ReachesHandlerAndReturnsBadRequest()
+    {
+        // The generate route validates the prompt before invoking any AI provider, so an empty body
+        // exercises the wired endpoint (non-404) without calling a real LLM.
+        var response = await _fixture.Client.PostAsync(
+            "/api/v1/admin/forms/packages/generate",
+            JsonContent("{}"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
     private async Task<T> GetJsonAsync<T>(string path, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> jsonTypeInfo)
     {
         var response = await _fixture.Client.GetAsync(path);
