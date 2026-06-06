@@ -216,6 +216,12 @@ public static class ProtocolNames
     public const string NAServer = "NAServer";
 
     /// <summary>
+    /// GeoServices VersionManagementServer REST API (branch-version lifecycle:
+    /// create/delete/alter, read/edit sessions, reconcile/post, version listing).
+    /// </summary>
+    public const string VersionManagementServer = "VersionManagementServer";
+
+    /// <summary>
     /// Model Context Protocol operator surface (planning, execution, lifecycle).
     /// </summary>
     public const string Mcp = "Mcp";

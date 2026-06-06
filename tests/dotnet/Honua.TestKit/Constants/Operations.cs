@@ -147,6 +147,9 @@ public static class Operations
     public const string ReplicaConflictDetail = "ReplicaConflictDetail";
     public const string ResolveReplicaConflict = "ResolveReplicaConflict";
 
+    // Branch Versioning Operations (VersionManagementServer)
+    public const string VersionManagement = "VersionManagement";
+
     // Maintenance Operations
     public const string Append = "Append";
     public const string Calculate = "Calculate";

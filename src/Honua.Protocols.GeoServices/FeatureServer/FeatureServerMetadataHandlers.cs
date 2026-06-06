@@ -5,6 +5,7 @@ using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Validation.Abstractions;
@@ -130,13 +131,15 @@ internal static partial class FeatureServerEndpoints
 
             var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
             var supportsAttachmentUploads = HasAttachmentSurface(context.RequestServices);
+            var branchVersioningEnabled = IsBranchVersioningAvailable(context);
             FeatureServerResponse response = MapServiceToResponseV2(
                 service,
                 publications,
                 snapshot,
                 limits,
                 supportsGeobufOutput: featureReader is IGeobufFeatureStore,
-                supportsAttachmentUploads: supportsAttachmentUploads);
+                supportsAttachmentUploads: supportsAttachmentUploads,
+                branchVersioningEnabled: branchVersioningEnabled);
 
             FeatureServerLog.ServiceMetadataReturned(logger, service.Metadata.Name, response.Layers.Length);
 
@@ -150,6 +153,24 @@ internal static partial class FeatureServerEndpoints
                 context,
                 "Service metadata retrieval failed"));
         }
+    }
+
+    /// <summary>
+    /// Whether branch versioning is available for the current request: the active feature provider
+    /// supports it (Postgres) and the Enterprise branch-versioning entitlement is active (#1272,
+    /// ADR-0051). Drives the service-metadata versioning capability flags so the advertised surface
+    /// matches the runtime-registered VersionManagementServer routes.
+    /// </summary>
+    private static bool IsBranchVersioningAvailable(HttpContext context)
+    {
+        var versionManager = context.RequestServices.GetService<IVersionManager>();
+        if (versionManager is not { SupportsVersioning: true })
+        {
+            return false;
+        }
+
+        return Honua.Infrastructure.Licensing.LicenseGate.IsEntitlementActive(
+            context.RequestServices, FeatureCatalog.BranchVersioningKey);
     }
 
     /// <summary>

@@ -1366,6 +1366,21 @@ internal sealed partial class FeatureServerQueryHandler(
             PublicIdAttributeName = GeoServicesObjectIdFieldResolver.ResolveObjectIdField(resource)?.Name
         };
 
+        // Resolve gdbVersion to a branch VersionContext (#1272, ADR-0051). Absent / SDE.DEFAULT
+        // resolves to DEFAULT, where the canonical read overlay is a no-op so the query SQL stays
+        // byte-identical (CITE-protected). A named version is Enterprise-gated and Postgres-only.
+        var (versionContext, versionError) = await FeatureServerVersioning.ResolveQueryVersionAsync(
+            context, validatedParams.GdbVersion, cancellationToken).ConfigureAwait(false);
+        if (versionError != null)
+        {
+            return (null, null, versionError);
+        }
+
+        if (versionContext is { IsDefault: false })
+        {
+            query = query with { VersionContext = versionContext };
+        }
+
         // Resolve the datum transformation that drives the layerSR -> outSR reprojection.
         // Honors a client-supplied datumTransformation, otherwise applies the Esri default
         // for the pair; an unknown/unsupported request fails explicitly (never silent).

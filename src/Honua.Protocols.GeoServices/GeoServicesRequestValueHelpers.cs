@@ -192,6 +192,15 @@ internal static class GeoServicesRequestValueHelpers
         return values.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// Reads a single string value from a parsed request-values dictionary, or null when absent.
+    /// </summary>
+    /// <param name="values">The parsed (query + body) request values.</param>
+    /// <param name="key">The parameter key.</param>
+    /// <returns>The value as a string, or null when not present.</returns>
+    internal static string? GetValueString(IReadOnlyDictionary<string, StringValues> values, string key)
+        => values.TryGetValue(key, out var raw) ? raw.ToString() : null;
+
     internal static CancellationToken GetTimeoutAwareCancellationToken(HttpContext context)
     {
         if (context.Items.TryGetValue(QueryTimeoutTokenKey, out var existing) && existing is CancellationToken cachedToken)

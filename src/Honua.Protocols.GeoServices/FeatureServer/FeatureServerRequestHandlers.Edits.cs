@@ -472,11 +472,9 @@ internal static partial class FeatureServerEndpoints
                 "returnEditMoment is not supported");
         }
 
-        if (!string.IsNullOrWhiteSpace(request.GdbVersion))
-        {
-            return StandardErrorHelpers.CreateBadRequest(context,
-                "gdbVersion is not supported");
-        }
+        // gdbVersion is resolved to a branch VersionContext inside the edits handler (#1272,
+        // ADR-0051): absent/DEFAULT keeps the byte-identical non-versioned path; a named version is
+        // Enterprise-gated and Postgres-only.
 
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
         return await editsHandler.HandleApplyEditsAsync(
@@ -580,11 +578,9 @@ internal static partial class FeatureServerEndpoints
                 "returnEditMoment is not supported");
         }
 
-        if (!string.IsNullOrWhiteSpace(sharedOptions.GdbVersion))
-        {
-            return StandardErrorHelpers.CreateBadRequest(context,
-                "gdbVersion is not supported");
-        }
+        // gdbVersion (when present) flows to each per-layer ApplyEditsRequest below and is resolved
+        // to a branch VersionContext inside the edits handler (#1272, ADR-0051). Absent/DEFAULT keeps
+        // the byte-identical non-versioned path.
 
         // Group entries by layer id while preserving first-seen layer order so the response
         // emits one editResults entry per distinct layer (matching ArcGIS), and merge their
@@ -850,11 +846,8 @@ internal static partial class FeatureServerEndpoints
                 "returnEditMoment is not supported");
         }
 
-        if (!string.IsNullOrWhiteSpace(request.GdbVersion))
-        {
-            return StandardErrorHelpers.CreateBadRequest(context,
-                "gdbVersion is not supported");
-        }
+        // gdbVersion is resolved to a branch VersionContext inside the edits handler (#1272,
+        // ADR-0051): absent/DEFAULT keeps the byte-identical non-versioned path.
 
         if (request.Attachments is { Length: > 0 })
         {

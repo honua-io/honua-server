@@ -122,6 +122,16 @@ internal sealed class FeatureServerEditsHandler(
                 return limitsValidationResult;
             }
 
+            // Resolve the target branch version (#1272, ADR-0051). Absent / SDE.DEFAULT resolves to
+            // VersionContext.Default — the byte-identical non-versioned write path. A named version
+            // is Enterprise-gated and Postgres-only.
+            var (versionContext, versionError) = await FeatureServerVersioning.ResolveEditVersionAsync(
+                httpContext, request.GdbVersion, cancellationToken).ConfigureAwait(false);
+            if (versionError != null)
+            {
+                return versionError;
+            }
+
             var totalCount = (request.Adds?.Length ?? 0) + (request.Updates?.Length ?? 0) + (request.Deletes?.Length ?? 0);
             if (totalCount == 0)
             {
@@ -140,7 +150,7 @@ internal sealed class FeatureServerEditsHandler(
             }
 
             // Execute edits in the database
-            var editResult = await ExecuteEdits(storageLayerId.Value, resource, editContext, request, serviceId, cancellationToken);
+            var editResult = await ExecuteEdits(storageLayerId.Value, resource, editContext, request, serviceId, versionContext, cancellationToken);
 
             if (!editResult.WasRolledBack &&
                 (editResult.CreatedCount + editResult.UpdatedCount + editResult.DeletedCount) > 0)
@@ -417,6 +427,7 @@ internal sealed class FeatureServerEditsHandler(
         EditOperationContext context,
         ApplyEditsRequest request,
         string serviceId,
+        VersionContext? versionContext,
         CancellationToken cancellationToken)
     {
         if (context.CreateFeatures.Count == 0 && context.UpdateFeatures.Count == 0 && context.DeleteIds.Count == 0)
@@ -448,6 +459,14 @@ internal sealed class FeatureServerEditsHandler(
         }
 
         var editBatch = _editProcessor.ToFeatureEditBatch(optimizedEdit, resource);
+
+        // Thread the resolved branch version onto the canonical edit batch. A null/DEFAULT context
+        // leaves the byte-identical non-versioned write path unchanged (#1272, ADR-0051).
+        if (versionContext is { IsDefault: false })
+        {
+            editBatch = editBatch with { VersionContext = versionContext };
+        }
+
         var httpContext = _httpContextAccessor.HttpContext
             ?? throw new InvalidOperationException("HttpContext is required for FeatureServer edit dispatch.");
         // Per-row geometry-change semantics: read the request-intent flags captured by

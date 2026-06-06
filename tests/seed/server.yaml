@@ -968,6 +968,45 @@ sql:
       $$ LANGUAGE plpgsql;
   - "DROP TRIGGER IF EXISTS trigger_track_feature_changes ON features;"
   - "CREATE TRIGGER trigger_track_feature_changes AFTER INSERT OR UPDATE OR DELETE ON features FOR EACH ROW EXECUTE FUNCTION honua.track_feature_changes();"
+  # Branch-versioning overlay (#1272 Track B, ADR-0051 / migration 049_CreateVersionEdits.sql):
+  # branch row values overlaid onto DEFAULT; inert for the DEFAULT path.
+  - |
+      CREATE TABLE IF NOT EXISTS honua.version_edits (
+          version_id UUID NOT NULL REFERENCES honua.gdb_versions(version_id) ON DELETE CASCADE,
+          layer_id INT NOT NULL,
+          objectid BIGINT NOT NULL,
+          operation SMALLINT NOT NULL,
+          geometry GEOMETRY,
+          attributes JSONB,
+          base_geometry GEOMETRY,
+          base_attributes JSONB,
+          branch_gen BIGINT NOT NULL DEFAULT 0,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          modified_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          PRIMARY KEY (version_id, layer_id, objectid),
+          CONSTRAINT version_edits_valid_operation CHECK(operation IN (1, 2, 3))
+      );
+  - "CREATE INDEX IF NOT EXISTS idx_version_edits_version_layer_objectid ON honua.version_edits(version_id, layer_id, objectid);"
+  - "CREATE INDEX IF NOT EXISTS idx_version_edits_geometry ON honua.version_edits USING GIST(geometry);"
+  - "CREATE INDEX IF NOT EXISTS idx_version_edits_deletes ON honua.version_edits(version_id, layer_id, objectid) WHERE operation = 3;"
+  - |
+      CREATE OR REPLACE FUNCTION honua.track_version_edits()
+      RETURNS TRIGGER AS $$
+      DECLARE
+          gen BIGINT;
+      BEGIN
+          IF TG_OP = 'DELETE' THEN
+              RETURN OLD;
+          END IF;
+          gen := nextval('honua.sync_generation');
+          INSERT INTO honua.feature_changes (generation, layer_id, objectid, operation, version_id)
+          VALUES (gen, NEW.layer_id, NEW.objectid, NEW.operation, NEW.version_id);
+          NEW.branch_gen := gen;
+          RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql;
+  - "DROP TRIGGER IF EXISTS trigger_track_version_edits ON honua.version_edits;"
+  - "CREATE TRIGGER trigger_track_version_edits BEFORE INSERT OR UPDATE ON honua.version_edits FOR EACH ROW EXECUTE FUNCTION honua.track_version_edits();"
   - |
       CREATE TABLE IF NOT EXISTS honua.fieldcollection_features (
           feature_id  TEXT        NOT NULL,
