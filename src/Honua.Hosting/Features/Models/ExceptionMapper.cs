@@ -32,9 +32,12 @@ internal static class ExceptionMapper
     {
         var (statusCode, title, safeDetail, details) = MapExceptionCore(exception);
 
-        // Only include exception message in debug details when explicitly enabled
+        // Only include exception message in debug details when explicitly enabled.
+        // Oversized-body exceptions are also suppressed because their framework
+        // messages leak internal limit values (e.g. "Form value length limit
+        // 4194304 exceeded.") that must not reach clients in any environment.
         string? debugInfo = null;
-        if (includeDebugDetails && !IsSafeException(exception))
+        if (includeDebugDetails && !IsSafeException(exception) && !IsOversizedRequestException(exception))
         {
             debugInfo = exception.Message;
         }
@@ -67,6 +70,20 @@ internal static class ExceptionMapper
 
     private static (int StatusCode, string Title, string Detail, IReadOnlyList<string>? Details) MapExceptionCore(Exception exception)
     {
+        // Oversized request bodies / form values surface as framework BadHttpRequestException
+        // (request body too large) or InvalidDataException (form key/value/count limits).
+        // Map them to 413 with a clean, fixed message so the internal limit values are
+        // never leaked to clients.
+        if (IsOversizedRequestException(exception))
+        {
+            return (
+                StatusCodes.Status413PayloadTooLarge,
+                "Payload Too Large",
+                "The request body exceeds the maximum allowed size.",
+                null
+            );
+        }
+
         return exception switch
         {
             // Domain exceptions with safe messages
@@ -193,6 +210,39 @@ internal static class ExceptionMapper
                 null
             )
         };
+    }
+
+    /// <summary>
+    /// Detects exceptions raised when a request body or form value exceeds the configured
+    /// size limits. These are thrown by the ASP.NET Core form/body readers as
+    /// <see cref="BadHttpRequestException"/> (HTTP 413, "Request body too large") or
+    /// <see cref="InvalidDataException"/> ("Form key length limit ... or value length limit
+    /// ... exceeded.", "Form value count limit ... exceeded.", "Multipart body length limit
+    /// ... exceeded."). They are mapped to a clean 413 envelope without leaking the
+    /// internal limit values embedded in the framework message.
+    /// </summary>
+    private static bool IsOversizedRequestException(Exception exception)
+    {
+        // Request body limit (MaxRequestBodySize) surfaces as BadHttpRequestException with
+        // StatusCode 413.
+        if (exception is BadHttpRequestException badRequest &&
+            badRequest.StatusCode == StatusCodes.Status413PayloadTooLarge)
+        {
+            return true;
+        }
+
+        // Form key/value length, value count, and multipart body length limits surface as
+        // InvalidDataException. Match on the framework's "limit ... exceeded" message shape
+        // rather than the exact wording so future framework revisions stay covered.
+        if (exception is InvalidDataException invalidData &&
+            !string.IsNullOrEmpty(invalidData.Message) &&
+            invalidData.Message.Contains("limit", StringComparison.OrdinalIgnoreCase) &&
+            invalidData.Message.Contains("exceeded", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return false;
     }
 
     /// <summary>

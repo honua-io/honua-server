@@ -64,7 +64,8 @@ public static class MigrationCatalogReconciler
                     input.PublishedResource,
                     input.ExpectedRelationships,
                     input.SourceBbox,
-                    input.TargetResourceId);
+                    input.TargetResourceId,
+                    input.ExpectedSubtypes);
             })
             .OrderBy(static outcome => outcome.SourceResourceId, StringComparer.Ordinal)
             .ToArray();
@@ -87,11 +88,12 @@ public static class MigrationCatalogReconciler
         MetadataV2Resource? publishedResource,
         IEnumerable<MigrationManifestRelationshipRecord>? expectedRelationships = null,
         double[]? sourceBbox = null,
-        string? targetResourceId = null)
+        string? targetResourceId = null,
+        MetadataV2Subtypes? expectedSubtypes = null)
     {
         ArgumentNullException.ThrowIfNull(resource);
         var expected = expectedRelationships?.ToArray() ?? [];
-        return ReconcileResourceInternal(resource, publishedResource, expected, sourceBbox, targetResourceId);
+        return ReconcileResourceInternal(resource, publishedResource, expected, sourceBbox, targetResourceId, expectedSubtypes);
     }
 
     private static MigrationCatalogReconciliationResource ReconcileResourceInternal(
@@ -99,7 +101,8 @@ public static class MigrationCatalogReconciler
         MetadataV2Resource? published,
         MigrationManifestRelationshipRecord[] expectedRelationships,
         double[]? sourceBbox,
-        string? targetResourceId)
+        string? targetResourceId,
+        MetadataV2Subtypes? expectedSubtypes)
     {
         if (published is null)
         {
@@ -127,6 +130,8 @@ public static class MigrationCatalogReconciler
         CollectSpatialFindings(resource, published, sourceBbox, findings);
         CollectIdentifierFindings(resource, published, findings);
         CollectRelationshipFindings(expectedRelationships, published, findings);
+        CollectAttachmentFindings(resource, published, findings);
+        CollectSubtypeFindings(expectedSubtypes, published, findings);
 
         var ordered = findings
             .OrderBy(static finding => finding.Code, StringComparer.Ordinal)
@@ -213,6 +218,21 @@ public static class MigrationCatalogReconciler
         var hasInventoryDomain = !string.IsNullOrWhiteSpace(inventoryField.DomainType) || inventoryDomainName is not null || (inventoryField.DomainValues?.Length ?? 0) > 0;
 
         if (!hasInventoryDomain)
+        {
+            return;
+        }
+
+        // Respect the capture-time coded-value cap (EsriFieldDomainParser.CodedValueDomainCap). A
+        // coded-value domain that exceeded the cap at scan time is captured with its type/name but
+        // NO coded values (DomainValues is null/empty) and is deliberately omitted from the publish
+        // path (it would otherwise materialize as a misleading partial lookup). Reconciling such a
+        // capped domain against the published field would false-fail as DomainMissing/DomainValues-
+        // Mismatch even though the omission is intentional, so skip the missing/values probes for
+        // it. We can only faithfully reconcile a coded-value domain whose values we actually captured.
+        var isCappedCodedValueDomain =
+            string.Equals(inventoryField.DomainType, "codedValue", StringComparison.OrdinalIgnoreCase) &&
+            (inventoryField.DomainValues is null || inventoryField.DomainValues.Length == 0);
+        if (isCappedCodedValueDomain && publishedField.Domain is null)
         {
             return;
         }
@@ -447,6 +467,119 @@ public static class MigrationCatalogReconciler
     private static bool IsRelationshipExpectedToPersist(string classification)
         => string.Equals(classification, MigrationManifestRelationshipClassifications.Automated, StringComparison.Ordinal)
         || string.Equals(classification, MigrationManifestRelationshipClassifications.Assisted, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Assert that a source resource advertising attachments was published with attachment support.
+    /// Trunk now imports source attachments (#1257); this collector proves the published catalog
+    /// entry declares attachment support so the imported attachments are actually reachable.
+    /// </summary>
+    /// <param name="resource">Source inventory resource.</param>
+    /// <param name="published">Published Metadata v2 catalog entry.</param>
+    /// <param name="findings">Sink for emitted findings.</param>
+    internal static void CollectAttachmentFindings(
+        MigrationInventoryResource resource,
+        MetadataV2Resource published,
+        List<MigrationCatalogReconciliationFinding> findings)
+    {
+        // Only assert when the source explicitly reported attachment support. A null
+        // HasAttachments means the source did not advertise attachment state, so we cannot
+        // distinguish "no attachments" from "unknown" and must not false-fail.
+        if (resource.HasAttachments != true)
+        {
+            return;
+        }
+
+        if (published.Editing?.SupportsAttachments == true)
+        {
+            return;
+        }
+
+        findings.Add(new MigrationCatalogReconciliationFinding
+        {
+            Code = MigrationCatalogReconciliationCodes.AttachmentMissing,
+            Severity = MigrationCatalogReconciliationSeverities.Fail,
+            Subject = "attachments",
+            Expected = "supportsAttachments=true",
+            Actual = "supportsAttachments=false",
+            Summary = "Source resource advertised attachments but the published catalog entry does not declare attachment support."
+        });
+    }
+
+    /// <summary>
+    /// Assert that a source-captured subtype set was persisted onto the published catalog entry.
+    /// Trunk now persists Esri subtypes (#1378); this collector proves the published resource keeps
+    /// the same subtype field and that every source subtype code is present.
+    /// </summary>
+    /// <param name="expectedSubtypes">Source-captured subtype set, or <c>null</c> to skip.</param>
+    /// <param name="published">Published Metadata v2 catalog entry.</param>
+    /// <param name="findings">Sink for emitted findings.</param>
+    internal static void CollectSubtypeFindings(
+        MetadataV2Subtypes? expectedSubtypes,
+        MetadataV2Resource published,
+        List<MigrationCatalogReconciliationFinding> findings)
+    {
+        if (expectedSubtypes is null || expectedSubtypes.Subtypes.Count == 0)
+        {
+            return;
+        }
+
+        var publishedSubtypes = published.Subtypes;
+        if (publishedSubtypes is null || publishedSubtypes.Subtypes.Count == 0)
+        {
+            findings.Add(new MigrationCatalogReconciliationFinding
+            {
+                Code = MigrationCatalogReconciliationCodes.SubtypeMissing,
+                Severity = MigrationCatalogReconciliationSeverities.Fail,
+                Subject = "subtypes",
+                Expected = expectedSubtypes.SubtypeField,
+                Summary = "Source resource advertised a subtype set but the published catalog entry declares no subtypes."
+            });
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(expectedSubtypes.SubtypeField) &&
+            !string.IsNullOrWhiteSpace(publishedSubtypes.SubtypeField) &&
+            !string.Equals(expectedSubtypes.SubtypeField, publishedSubtypes.SubtypeField, StringComparison.OrdinalIgnoreCase))
+        {
+            findings.Add(new MigrationCatalogReconciliationFinding
+            {
+                Code = MigrationCatalogReconciliationCodes.SubtypeFieldMismatch,
+                Severity = MigrationCatalogReconciliationSeverities.Fail,
+                Subject = "subtypes",
+                Expected = expectedSubtypes.SubtypeField,
+                Actual = publishedSubtypes.SubtypeField,
+                Summary = "Published subtype field differs from the source-captured subtype field."
+            });
+        }
+
+        var publishedCodes = publishedSubtypes.Subtypes
+            .Select(static subtype => CodeToString(subtype.Code))
+            .Where(static code => code is not null)
+            .ToHashSet(StringComparer.Ordinal);
+
+        var missingCodes = expectedSubtypes.Subtypes
+            .Select(static subtype => CodeToString(subtype.Code))
+            .Where(code => code is not null && !publishedCodes.Contains(code))
+            .Select(static code => code!)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(static code => code, StringComparer.Ordinal)
+            .ToArray();
+
+        if (missingCodes.Length > 0)
+        {
+            findings.Add(new MigrationCatalogReconciliationFinding
+            {
+                Code = MigrationCatalogReconciliationCodes.SubtypeCodeMissing,
+                Severity = MigrationCatalogReconciliationSeverities.Fail,
+                Subject = "subtypes",
+                Expected = string.Join(",", expectedSubtypes.Subtypes
+                    .Select(static subtype => CodeToString(subtype.Code))
+                    .Where(static code => code is not null)),
+                Actual = string.Join(",", publishedCodes.OrderBy(static code => code, StringComparer.Ordinal)),
+                Summary = $"Source subtype codes are missing from the published subtype set: {string.Join(",", missingCodes)}."
+            });
+        }
+    }
 
     private static MigrationCatalogReconciliationSummary BuildSummary(
         MigrationCatalogReconciliationResource[] outcomes)

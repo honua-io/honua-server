@@ -537,11 +537,22 @@ if (replicaProvider != DataProviderNames.DuckDb &&
     builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IChangeTracker>(sp =>
         new Honua.Postgres.Features.FeatureStore.Services.PostgresChangeTracker(
             sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IDatabaseConnectionProvider>()));
+    // Branch-versioning manager (#1272 Track B, ADR-0051) — Postgres-only; read-only/non-Postgres
+    // providers register the NoOp stub (SupportsVersioning=false) in their ServiceCollectionExtensions.
+    builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IVersionManager>(sp =>
+        new Honua.Postgres.Features.FeatureStore.Services.PostgresVersionManager(
+            sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IDatabaseConnectionProvider>()));
 }
 builder.Services.AddScoped<Honua.Protocols.GeoServices.FeatureServer.IReplicaStore>(sp =>
     new Honua.Protocols.GeoServices.FeatureServer.Services.CachingReplicaStore(
         sp.GetRequiredService<Honua.Protocols.GeoServices.FeatureServer.DistributedReplicaStore>(),
         sp.GetRequiredService<Honua.Core.Features.FeatureStore.Abstractions.IReplicaRepository>()));
+// Canonical replica-upload synchronization pipeline (#1272). Conflict detection runs against the
+// provider's change log; conflict-record writes use the durable conflict store when supported and
+// otherwise fall back to last-write-wins. Available for all providers since IChangeTracker and
+// IReplicaConflictRepository are always registered (read-only providers register no-op stubs).
+builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IReplicaSyncService,
+    Honua.Core.Features.FeatureStore.Services.ReplicaSyncService>();
 
 // ---- Extracted: import/export job managers, migration evidence, tile operations
 //      (Startup/ImportExportTileOperationsRegistration.cs)
@@ -1146,6 +1157,9 @@ app.MapRasterImportEndpoints();
 
 // Configure Geoservices service import endpoints
 app.MapGeoservicesImportEndpoints();
+
+// Configure footprint-driven batch import orchestration endpoints (issue #1253)
+app.MapMigrationBatchEndpoints();
 
 // Configure GeoServer import endpoints
 app.MapGeoServerImportEndpoints();

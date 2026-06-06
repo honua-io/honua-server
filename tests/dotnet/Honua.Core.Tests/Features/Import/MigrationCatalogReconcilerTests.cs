@@ -437,4 +437,205 @@ public sealed class MigrationCatalogReconcilerTests
             },
             Editing = new MetadataV2ResourceEditing { GlobalIdField = "GLOBALID" }
         };
+
+    [Fact]
+    public void Reconcile_WhenSourceAdvertisesAttachmentsButPublishedDoesNot_EmitsAttachmentMissingFinding()
+    {
+        var inventory = BuildInventoryResource() with { HasAttachments = true };
+        var published = BuildPublishedResource() with
+        {
+            Editing = new MetadataV2ResourceEditing { GlobalIdField = "GLOBALID", SupportsAttachments = false }
+        };
+
+        var outcome = MigrationCatalogReconciler.ReconcileResource(inventory, published);
+
+        outcome.Classification.Should().Be(MigrationCatalogReconciliationClassifications.Fail);
+        outcome.Findings.Should().ContainSingle(f => f.Code == MigrationCatalogReconciliationCodes.AttachmentMissing)
+            .Which.Severity.Should().Be(MigrationCatalogReconciliationSeverities.Fail);
+    }
+
+    [Fact]
+    public void Reconcile_WhenSourceAndPublishedBothSupportAttachments_EmitsNoAttachmentFinding()
+    {
+        var inventory = BuildInventoryResource() with { HasAttachments = true };
+        var published = BuildPublishedResource() with
+        {
+            Editing = new MetadataV2ResourceEditing { GlobalIdField = "GLOBALID", SupportsAttachments = true }
+        };
+
+        var outcome = MigrationCatalogReconciler.ReconcileResource(inventory, published);
+
+        outcome.Findings.Should().NotContain(f => f.Code == MigrationCatalogReconciliationCodes.AttachmentMissing);
+    }
+
+    [Fact]
+    public void Reconcile_WhenSourceDidNotAdvertiseAttachments_DoesNotFalseFailOnMissingAttachmentSupport()
+    {
+        // HasAttachments == null means "source did not report" — must not be treated as a fail.
+        var inventory = BuildInventoryResource() with { HasAttachments = null };
+        var published = BuildPublishedResource() with { Editing = null };
+
+        var outcome = MigrationCatalogReconciler.ReconcileResource(inventory, published);
+
+        outcome.Findings.Should().NotContain(f => f.Code == MigrationCatalogReconciliationCodes.AttachmentMissing);
+    }
+
+    [Fact]
+    public void Reconcile_WhenSourceSubtypesMissingFromPublished_EmitsSubtypeMissingFinding()
+    {
+        var inventory = BuildInventoryResource();
+        var published = BuildPublishedResource() with { Subtypes = null };
+        var expectedSubtypes = BuildSubtypes("STATUS", ("1", "Active"), ("2", "Retired"));
+
+        var outcome = MigrationCatalogReconciler.ReconcileResource(
+            inventory, published, expectedSubtypes: expectedSubtypes);
+
+        outcome.Classification.Should().Be(MigrationCatalogReconciliationClassifications.Fail);
+        outcome.Findings.Should().ContainSingle(f => f.Code == MigrationCatalogReconciliationCodes.SubtypeMissing)
+            .Which.Expected.Should().Be("STATUS");
+    }
+
+    [Fact]
+    public void Reconcile_WhenPublishedSubtypeFieldDiffers_EmitsSubtypeFieldMismatchFinding()
+    {
+        var inventory = BuildInventoryResource();
+        var published = BuildPublishedResource() with
+        {
+            Subtypes = BuildSubtypes("KIND", ("1", "Active"), ("2", "Retired"))
+        };
+        var expectedSubtypes = BuildSubtypes("STATUS", ("1", "Active"), ("2", "Retired"));
+
+        var outcome = MigrationCatalogReconciler.ReconcileResource(
+            inventory, published, expectedSubtypes: expectedSubtypes);
+
+        outcome.Findings.Should().ContainSingle(f => f.Code == MigrationCatalogReconciliationCodes.SubtypeFieldMismatch)
+            .Which.Actual.Should().Be("KIND");
+    }
+
+    [Fact]
+    public void Reconcile_WhenPublishedMissingSubtypeCode_EmitsSubtypeCodeMissingFinding()
+    {
+        var inventory = BuildInventoryResource();
+        var published = BuildPublishedResource() with
+        {
+            Subtypes = BuildSubtypes("STATUS", ("1", "Active"))
+        };
+        var expectedSubtypes = BuildSubtypes("STATUS", ("1", "Active"), ("2", "Retired"));
+
+        var outcome = MigrationCatalogReconciler.ReconcileResource(
+            inventory, published, expectedSubtypes: expectedSubtypes);
+
+        outcome.Findings.Should().ContainSingle(f => f.Code == MigrationCatalogReconciliationCodes.SubtypeCodeMissing)
+            .Which.Summary.Should().Contain("2");
+    }
+
+    [Fact]
+    public void Reconcile_WhenSubtypesMatch_EmitsNoSubtypeFindings()
+    {
+        var inventory = BuildInventoryResource();
+        var subtypes = BuildSubtypes("STATUS", ("1", "Active"), ("2", "Retired"));
+        var published = BuildPublishedResource() with { Subtypes = subtypes };
+
+        var outcome = MigrationCatalogReconciler.ReconcileResource(
+            inventory, published, expectedSubtypes: subtypes);
+
+        outcome.Findings.Should().NotContain(f =>
+            f.Code == MigrationCatalogReconciliationCodes.SubtypeMissing ||
+            f.Code == MigrationCatalogReconciliationCodes.SubtypeFieldMismatch ||
+            f.Code == MigrationCatalogReconciliationCodes.SubtypeCodeMissing);
+    }
+
+    [Fact]
+    public void Reconcile_WhenCappedCodedValueDomainHasNoCapturedValuesAndPublishedOmitsDomain_DoesNotFalseFail()
+    {
+        // A coded-value domain that exceeded the capture cap is captured with its type/name but NO
+        // values (DomainValues == null) and is intentionally omitted from publish. Reconciliation
+        // must not report DomainMissing/DomainValuesMismatch against the omitted published domain.
+        var inventory = BuildInventoryResource() with
+        {
+            Fields =
+            [
+                new MigrationInventoryField { Name = "OBJECTID", FieldType = "esriFieldTypeOID", Nullable = false },
+                new MigrationInventoryField { Name = "GLOBALID", FieldType = "esriFieldTypeGlobalID", Nullable = false },
+                new MigrationInventoryField
+                {
+                    Name = "TYPE",
+                    FieldType = "esriFieldTypeString",
+                    Nullable = true,
+                    DomainType = "codedValue",
+                    DomainName = "HugeParcelType",
+                    DomainValues = null // capped: over the CodedValueDomainCap, no values captured
+                }
+            ]
+        };
+
+        // Published field carries no domain (publish dropped the over-cap domain).
+        var published = BuildPublishedResource() with
+        {
+            SchemaFields = BuildPublishedResource().SchemaFields
+                .Select(field => field.Name == "TYPE" ? field with { Domain = null } : field)
+                .ToArray()
+        };
+
+        var outcome = MigrationCatalogReconciler.ReconcileResource(inventory, published);
+
+        outcome.Findings.Should().NotContain(f =>
+            f.Code == MigrationCatalogReconciliationCodes.DomainMissing ||
+            f.Code == MigrationCatalogReconciliationCodes.DomainValuesMismatch);
+        outcome.Classification.Should().Be(MigrationCatalogReconciliationClassifications.Pass);
+    }
+
+    [Fact]
+    public void Reconcile_WhenCappedCodedValueDomainButPublishedRetainsDomain_StillChecksDomainName()
+    {
+        // When the published field DID retain a domain, a capped (valueless) inventory domain can
+        // still meaningfully reconcile the domain NAME — only the missing/values probes are skipped.
+        var inventory = BuildInventoryResource() with
+        {
+            Fields =
+            [
+                new MigrationInventoryField { Name = "OBJECTID", FieldType = "esriFieldTypeOID", Nullable = false },
+                new MigrationInventoryField { Name = "GLOBALID", FieldType = "esriFieldTypeGlobalID", Nullable = false },
+                new MigrationInventoryField
+                {
+                    Name = "TYPE",
+                    FieldType = "esriFieldTypeString",
+                    Nullable = true,
+                    DomainType = "codedValue",
+                    DomainName = "ParcelType",
+                    DomainValues = null
+                }
+            ]
+        };
+
+        var published = BuildPublishedResource() with
+        {
+            SchemaFields = BuildPublishedResource().SchemaFields
+                .Select(field => field.Name == "TYPE"
+                    ? field with { Domain = field.Domain! with { Name = "RenamedParcelType" } }
+                    : field)
+                .ToArray()
+        };
+
+        var outcome = MigrationCatalogReconciler.ReconcileResource(inventory, published);
+
+        // Missing/values probes skipped, but the name-mismatch warn still fires.
+        outcome.Findings.Should().NotContain(f =>
+            f.Code == MigrationCatalogReconciliationCodes.DomainMissing ||
+            f.Code == MigrationCatalogReconciliationCodes.DomainValuesMismatch);
+        outcome.Findings.Should().ContainSingle(f => f.Code == MigrationCatalogReconciliationCodes.DomainNameMismatch);
+    }
+
+    private static MetadataV2Subtypes BuildSubtypes(string subtypeField, params (string Code, string Name)[] subtypes)
+        => new()
+        {
+            SubtypeField = subtypeField,
+            Subtypes = subtypes
+                .Select(s => new MetadataV2Subtype
+                {
+                    Code = JsonDocument.Parse($"\"{s.Code}\"").RootElement,
+                    Name = s.Name
+                })
+                .ToArray()
+        };
 }

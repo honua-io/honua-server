@@ -404,6 +404,10 @@ public static class EndpointRegistry
         new("POST", "/api/v1/admin/import/geoservices/jobs/{jobId}/cancel"),
         new("GET", "/api/v1/admin/import/geoservices/jobs"),
 
+        // v1 admin footprint-driven batch import orchestration (#1253)
+        new("POST", "/api/v1/admin/import/migrations"),
+        new("GET", "/api/v1/admin/import/migrations/{batchId}"),
+
         // v1 admin import endpoints (Raster)
         new("POST", "/api/v1/admin/import/raster"),
         new("GET", "/api/v1/admin/import/raster/formats"),
@@ -434,6 +438,7 @@ public static class EndpointRegistry
         new("GET", "/api/v1/admin/migration/runs"),
         new("GET", "/api/v1/admin/migration/runs/{runId}"),
         new("GET", "/api/v1/admin/migration/runs/{runId}/evidence-pack"),
+        new("GET", "/api/v1/admin/migration/runs/{runId}/scorecard"),
         new("POST", "/api/v1/admin/migration/runs/{runId}/cancel"),
 
         // v1 admin import endpoints (OGC WMTS tile cache export #1016 slice 4)
@@ -575,6 +580,12 @@ public static class EndpointRegistry
         new("GET", "/sharing/rest/search"),
         new("GET", "/sharing/rest/content/items/{id}"),
         new("GET", "/sharing/rest/content/items/{id}/data"),
+
+        // ArcGIS Portal OAuth2 named-user bridge (#1242).
+        new("GET", "/sharing/rest/oauth2/authorize"),
+        new("GET", "/sharing/rest/oauth2/callback"),
+        new("POST", "/sharing/rest/oauth2/token"),
+        new("GET", "/sharing/rest/oauth2/token"),
 
         new("GET", "/rest/services"),
         new("GET", "/rest/info"),
@@ -765,6 +776,7 @@ public static class EndpointRegistry
 
         new("GET", "/rest/services/{id}/ImageServer"),
         new("POST", "/rest/services/{id}/ImageServer"),
+        new("GET", "/rest/services/{id}/ImageServer/conf.json"),
         new("GET", "/rest/services/{id}/ImageServer/WCS"),
         new("GET", "/rest/services/{id}/ImageServer/exportImage"),
         new("POST", "/rest/services/{id}/ImageServer/exportImage"),
@@ -799,6 +811,7 @@ public static class EndpointRegistry
 
         new("GET", "/rest/services/{serviceId}/ImageServer"),
         new("POST", "/rest/services/{serviceId}/ImageServer"),
+        new("GET", "/rest/services/{serviceId}/ImageServer/conf.json"),
         new("GET", "/rest/services/{serviceId}/ImageServer/exportImage"),
         new("POST", "/rest/services/{serviceId}/ImageServer/exportImage"),
         new("GET", "/rest/services/{serviceId}/ImageServer/identify"),

@@ -18,6 +18,7 @@ internal sealed partial class FeatureQueryBuilder
         BinDefinition binDefinition,
         CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
     {
+        GuardVersionedReadSupported(query, "bins");
         if (!IsValidFieldName(binDefinition.Field))
         {
             throw new ArgumentException($"Invalid bin field name: {binDefinition.Field}", nameof(binDefinition));

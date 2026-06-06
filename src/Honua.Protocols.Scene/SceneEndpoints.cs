@@ -660,14 +660,7 @@ internal static partial class SceneEndpoints
     }
 
     private static string BuildSceneUrl(string baseUrl, string sceneId, string suffix)
-    {
-        var escapedSceneId = Uri.EscapeDataString(sceneId);
-        return string.Concat(
-            baseUrl.AsSpan().TrimEnd('/'),
-            "/scenes/",
-            escapedSceneId.AsSpan(),
-            suffix.AsSpan());
-    }
+        => Honua.Scene.SceneUrls.AbsoluteSceneUrl(baseUrl, sceneId, suffix);
 
     // EventIds 8404-8408 reserved here. 8401-8403 are owned by
     // Honua.Core's MonitoredCacheLog; 8410-8419 are reserved by SceneAccessLog

@@ -170,6 +170,107 @@ public sealed class PointCloudTilesetBuilderTests
             "the dataset-wide colour decision must encode raw 200 as 200>>8 == 0 in every tile");
     }
 
+    [UnitTest]
+    public void Build_InteriorSampleCountZero_InteriorRegionEnclosesDescendantHeights()
+    {
+        // With InteriorSampleCount = 0 every interior node is content-less and is
+        // dropped from the content map; its region vertical extent must still
+        // enclose the [min,max] heights of its content-bearing leaf descendants,
+        // or a conformant 3D Tiles client can cull visible geometry. GridPoints
+        // assigns z = 1 + r + c, so leaf heights vary across the quadtree and a
+        // naive [0,0] interior slab would be detectably wrong.
+        var las = LasFixtureBuilder.BuildFormat3(GridPoints(24, 24), scale: 1e-7);
+        var points = LasPointCloudReader.ReadPoints(las).ToList();
+
+        var result = PointCloudTilesetBuilder.Build(
+            points, IdentityGeo,
+            new PointCloudTilingOptions { MaxPointsPerTile = 30, MaxDepth = 8, InteriorSampleCount = 0 });
+
+        using var json = JsonDocument.Parse(Encoding.UTF8.GetString(result.TilesetJsonBytes));
+        var root = json.RootElement.GetProperty("root");
+
+        // The configuration must actually produce content-less interior nodes.
+        CountContentLessInteriorNodes(root).Should().BeGreaterThan(0);
+
+        AssertRegionEnclosesDescendantHeights(root);
+    }
+
+    private static int CountContentLessInteriorNodes(JsonElement node)
+    {
+        var hasChildren = node.TryGetProperty("children", out var children)
+            && children.GetArrayLength() > 0;
+        var hasContent = node.TryGetProperty("content", out _);
+        var count = hasChildren && !hasContent ? 1 : 0;
+        if (hasChildren)
+        {
+            foreach (var child in children.EnumerateArray())
+            {
+                count += CountContentLessInteriorNodes(child);
+            }
+        }
+        return count;
+    }
+
+    // Returns the union [min,max] height of every content-bearing node in the
+    // subtree (Region layout: [west, south, east, north, minHeight, maxHeight]).
+    private static (bool Found, double Min, double Max) AssertRegionEnclosesDescendantHeights(JsonElement node)
+    {
+        var found = false;
+        var min = double.PositiveInfinity;
+        var max = double.NegativeInfinity;
+
+        var hasContent = node.TryGetProperty("content", out _);
+        if (hasContent)
+        {
+            var region = node.GetProperty("boundingVolume").GetProperty("region");
+            found = true;
+            min = region[4].GetDouble();
+            max = region[5].GetDouble();
+        }
+
+        if (node.TryGetProperty("children", out var children))
+        {
+            foreach (var child in children.EnumerateArray())
+            {
+                var (childFound, childMin, childMax) = AssertRegionEnclosesDescendantHeights(child);
+                if (childFound)
+                {
+                    found = true;
+                    if (childMin < min) min = childMin;
+                    if (childMax > max) max = childMax;
+                }
+            }
+        }
+
+        if (found)
+        {
+            var region = node.GetProperty("boundingVolume").GetProperty("region");
+            region[4].GetDouble().Should().BeLessThanOrEqualTo(
+                min, "the node region floor must enclose every content-bearing descendant");
+            region[5].GetDouble().Should().BeGreaterThanOrEqualTo(
+                max, "the node region ceiling must enclose every content-bearing descendant");
+        }
+
+        return (found, min, max);
+    }
+
+    [UnitTest]
+    public void Build_PointCountOverCap_ThrowsLasFormatException()
+    {
+        // A tiny cap rejects the cloud BEFORE the per-point buffer is allocated,
+        // so a malformed/oversized LAS cannot drive an unbounded allocation.
+        var las = LasFixtureBuilder.BuildFormat3(GridPoints(4, 4), scale: 1e-7);
+        var points = LasPointCloudReader.ReadPoints(las).ToList();
+        points.Count.Should().Be(16);
+
+        var act = () => PointCloudTilesetBuilder.Build(
+            points, IdentityGeo,
+            new PointCloudTilingOptions { MaxPointCount = 8 });
+
+        act.Should().Throw<LasFormatException>()
+            .Which.Code.Should().Be(Honua.Core.Features.Scene.Domain.SceneGenerationErrorCodes.ModelAssetInvalid);
+    }
+
     private static List<(byte R, byte G, byte B)> ExtractRgb(byte[] tile)
     {
         var featureJsonLen = (int)System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(tile.AsSpan(12, 4));

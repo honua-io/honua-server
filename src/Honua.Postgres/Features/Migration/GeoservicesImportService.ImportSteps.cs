@@ -187,7 +187,61 @@ internal sealed partial class GeoservicesImportService
                     "Layer advertises attachments, but no attachment store is registered; attachments were not copied.");
             }
 
+            // Phase 5: Validating — reconcile the published layer against the apply-time source
+            // snapshot before declaring the import complete. A hard finding routes the run to
+            // NeedsReview (issue #1380) instead of Completed; warn findings are recorded but do
+            // not block. Reconciliation runs outside the import transaction (which is already
+            // committed) because it probes the published, queryable layer.
+            ReconciliationGateOutcome reconciliation = ReconciliationGateOutcome.Skipped;
+            if (publishedLayer is not null && _reconciliationService is not null)
+            {
+                ReportProgress(progress, jobId, startedAt, GeoservicesImportStatus.Validating, request,
+                    "Reconciling published layer against source snapshot",
+                    featuresProcessed, featuresProcessed, layerInfo.Name, publishedLayer.LayerId,
+                    attachmentsProcessed: attachmentCount, failedAttachments: failedAttachments);
+
+                reconciliation = await RunReconciliationGateAsync(
+                    request,
+                    jobId,
+                    layerInfo,
+                    publishedLayer,
+                    cancellationToken).ConfigureAwait(false);
+            }
+
             stopwatch.Stop();
+
+            if (reconciliation.NeedsReview)
+            {
+                Log.ReconciliationGateBlocked(_logger, request.TableName, reconciliation.ReviewReason ?? "reconciliation failed");
+
+                ReportProgress(progress, jobId, startedAt, GeoservicesImportStatus.NeedsReview, request,
+                    "Import published but requires operator review (reconciliation gate)",
+                    featuresProcessed,
+                    featuresProcessed,
+                    layerInfo.Name,
+                    publishedLayer?.LayerId,
+                    attachmentsProcessed: attachmentCount,
+                    failedAttachments: failedAttachments,
+                    reconciliationArtifact: reconciliation.Artifact,
+                    catalogReconciliationReport: reconciliation.CatalogReport);
+
+                return GeoservicesImportResult.CreateNeedsReview(
+                    request.TableName,
+                    request.ServiceUrl,
+                    request.LayerId,
+                    featuresProcessed,
+                    failedFeatures,
+                    publishedLayer?.LayerId,
+                    publishedLayer?.ServiceName ?? request.ServiceName,
+                    layerInfo.Name,
+                    stopwatch.Elapsed,
+                    warnings,
+                    attachmentCount,
+                    failedAttachments,
+                    reconciliation.Artifact,
+                    reconciliation.CatalogReport,
+                    reconciliation.ReviewReason ?? "Post-publish reconciliation reported a blocking discrepancy.");
+            }
 
             Log.ImportCompleted(_logger, request.TableName, featuresProcessed, failedFeatures,
                 stopwatch.Elapsed.TotalSeconds);
@@ -200,7 +254,9 @@ internal sealed partial class GeoservicesImportService
                 layerInfo.Name,
                 publishedLayer?.LayerId,
                 attachmentsProcessed: attachmentCount,
-                failedAttachments: failedAttachments);
+                failedAttachments: failedAttachments,
+                reconciliationArtifact: reconciliation.Artifact,
+                catalogReconciliationReport: reconciliation.CatalogReport);
 
             return GeoservicesImportResult.CreateSuccess(
                 request.TableName,
@@ -214,7 +270,9 @@ internal sealed partial class GeoservicesImportService
                 duration: stopwatch.Elapsed,
                 warnings: warnings,
                 attachmentCount: attachmentCount,
-                failedAttachments: failedAttachments);
+                failedAttachments: failedAttachments,
+                reconciliationArtifact: reconciliation.Artifact,
+                catalogReconciliationReport: reconciliation.CatalogReport);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

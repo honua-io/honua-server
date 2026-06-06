@@ -246,9 +246,11 @@ public sealed class GeometryValidationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.ApplyEdits)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
-    public async Task ApplyEdits_WithValidPolygonGeometry_Succeeds()
+    public async Task ApplyEdits_WithPolygonGeometryOnPointLayer_Rejected()
     {
-        // Arrange - Valid polygon with exterior ring
+        // Arrange - a polygon geometry against a point layer (test/0 is esriGeometryPoint).
+        // Esri FeatureServers reject geometry whose type does not match the layer's
+        // geometryType; the edit is rejected per-feature (HTTP 200, success:false).
         var editsRequest = new ApplyEditsRequest
         {
             Adds = new[]
@@ -292,15 +294,17 @@ public sealed class GeometryValidationTests : IAsyncLifetime
 
         applyEditsResponse.Should().NotBeNull();
         applyEditsResponse!.AddResults.Should().HaveCount(1);
-        applyEditsResponse.AddResults![0].Success.Should().BeTrue();
+        applyEditsResponse.AddResults![0].Success.Should().BeFalse(
+            "a polygon cannot be added to a point layer");
     }
 
     [IntegrationTest]
     [Operation(Operations.ApplyEdits)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
-    public async Task ApplyEdits_WithValidLineStringGeometry_Succeeds()
+    public async Task ApplyEdits_WithLineStringGeometryOnPointLayer_Rejected()
     {
-        // Arrange - Valid linestring
+        // Arrange - a linestring geometry against a point layer (test/0 is esriGeometryPoint);
+        // type mismatch is rejected per-feature (HTTP 200, success:false).
         var editsRequest = new ApplyEditsRequest
         {
             Adds = new[]
@@ -342,7 +346,8 @@ public sealed class GeometryValidationTests : IAsyncLifetime
 
         applyEditsResponse.Should().NotBeNull();
         applyEditsResponse!.AddResults.Should().HaveCount(1);
-        applyEditsResponse.AddResults![0].Success.Should().BeTrue();
+        applyEditsResponse.AddResults![0].Success.Should().BeFalse(
+            "a linestring cannot be added to a point layer");
     }
 
     [IntegrationTest]

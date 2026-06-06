@@ -262,16 +262,35 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
 
         foreach (var feature in result.Items)
         {
-            if (feature.Attributes?.TryGetValue(relationship.DestinationField, out object? fkValue) == true &&
-                FeatureServerValueParser.TryConvertToLong(fkValue, out var originId))
+            if (feature.Attributes is null)
             {
-                if (!featuresByOriginId.TryGetValue(originId, out var bucket))
+                continue;
+            }
+
+            // Prefer the origin object id(s) the storage layer stamped onto each related
+            // row. The relationship's foreign key (OriginField → DestinationField) is not
+            // necessarily the object-id field, so grouping by the destination key value
+            // alone only resolves records when the foreign key happens to equal the
+            // object id — which fails for origin object ids whose foreign-key value
+            // differs from their object id (e.g. large/seeded ids). The stamp carries the
+            // true origin object id(s) so the relate resolves for any object id.
+            if (TryReadStampedOriginObjectIds(feature, out var stampedOriginIds))
+            {
+                foreach (var originId in stampedOriginIds)
                 {
-                    bucket = [];
-                    featuresByOriginId[originId] = bucket;
+                    AddToBucket(featuresByOriginId, originId, feature);
                 }
 
-                bucket.Add(feature);
+                continue;
+            }
+
+            // Fallback: derive the origin from the destination foreign-key value. This
+            // preserves behavior for stores/paths that do not stamp the origin id and for
+            // relationships where the foreign key is the object-id field.
+            if (feature.Attributes.TryGetValue(relationship.DestinationField, out object? fkValue) &&
+                FeatureServerValueParser.TryConvertToLong(fkValue, out var fallbackOriginId))
+            {
+                AddToBucket(featuresByOriginId, fallbackOriginId, feature);
             }
         }
 
@@ -374,6 +393,48 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
             spatialReference,
             hasZ,
             hasM);
+    }
+
+    private static void AddToBucket(Dictionary<long, List<Feature>> featuresByOriginId, long originId, Feature feature)
+    {
+        if (!featuresByOriginId.TryGetValue(originId, out var bucket))
+        {
+            bucket = [];
+            featuresByOriginId[originId] = bucket;
+        }
+
+        bucket.Add(feature);
+    }
+
+    /// <summary>
+    /// Reads the origin object id(s) the storage layer stamped onto a related row
+    /// (<see cref="RelatedQuery.OriginObjectIdsAttribute"/>). One foreign-key value can
+    /// resolve to multiple origin object ids, so the stamp is a collection.
+    /// </summary>
+    private static bool TryReadStampedOriginObjectIds(Feature feature, out IReadOnlyList<long> originObjectIds)
+    {
+        if (feature.Attributes.TryGetValue(RelatedQuery.OriginObjectIdsAttribute, out var stamped) &&
+            stamped is not null)
+        {
+            switch (stamped)
+            {
+                case long[] longArray when longArray.Length > 0:
+                    originObjectIds = longArray;
+                    return true;
+                case IEnumerable<long> enumerable:
+                    var materialized = enumerable.ToList();
+                    if (materialized.Count > 0)
+                    {
+                        originObjectIds = materialized;
+                        return true;
+                    }
+
+                    break;
+            }
+        }
+
+        originObjectIds = [];
+        return false;
     }
 
     /// <summary>

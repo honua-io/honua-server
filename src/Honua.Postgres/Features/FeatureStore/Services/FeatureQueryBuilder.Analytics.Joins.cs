@@ -59,6 +59,7 @@ internal sealed partial class FeatureQueryBuilder
         SpatialJoinQuery joinQuery,
         CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
     {
+        GuardVersionedReadSupported(targetQuery, "spatial-join");
         var sql = _stringBuilderPool.Get();
         try
         {

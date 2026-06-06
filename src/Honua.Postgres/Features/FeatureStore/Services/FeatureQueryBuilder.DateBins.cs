@@ -17,6 +17,7 @@ internal sealed partial class FeatureQueryBuilder
         DateBinDefinition dateBin,
         CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
     {
+        GuardVersionedReadSupported(query, "date-bins");
         if (!IsValidFieldName(dateBin.BinField))
         {
             throw new ArgumentException($"Invalid bin field name: {dateBin.BinField}", nameof(dateBin));

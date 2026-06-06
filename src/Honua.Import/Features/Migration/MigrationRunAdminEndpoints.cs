@@ -57,6 +57,10 @@ internal static class MigrationRunAdminEndpoints
             .WithName("GetMigrationRunEvidencePack")
             .WithSummary("Download the slice-4 evidence pack JSON for a migration run");
 
+        _ = group.MapGet("/{runId}/scorecard", HandleGetScorecardAsync)
+            .WithName("GetMigrationRunScorecard")
+            .WithSummary("Download the signed reconciliation scorecard JSON for a migration run");
+
         _ = group.MapPost("/{runId}/cancel", HandleCancelAsync)
             .WithName("CancelMigrationRun")
             .WithSummary("Mark a running migration run as cancelled");
@@ -149,6 +153,50 @@ internal static class MigrationRunAdminEndpoints
             // Quoted ETag per RFC 7232 so HTTP caches treat the fingerprint
             // as opaque rather than weak.
             context.Response.Headers.ETag = $"\"{record.EvidencePackFingerprint}\"";
+        }
+
+        await context.Response.Body.WriteAsync(bytes, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task HandleGetScorecardAsync(HttpContext context)
+    {
+        var cancellationToken = context.RequestAborted;
+        var runId = context.Request.RouteValues["runId"]?.ToString();
+        if (string.IsNullOrWhiteSpace(runId))
+        {
+            await AdminResponseWriter.WriteErrorAsync(context, "Run id is required.", StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        var catalog = context.RequestServices.GetRequiredService<IMigrationRunCatalog>();
+        var record = await catalog.GetAsync(runId, cancellationToken).ConfigureAwait(false);
+        if (record is null)
+        {
+            await AdminResponseWriter.WriteErrorAsync(context, $"Migration run '{runId}' was not found.", StatusCodes.Status404NotFound);
+            return;
+        }
+
+        var body = await catalog.GetScorecardAsync(runId, cancellationToken).ConfigureAwait(false);
+        if (string.IsNullOrEmpty(body))
+        {
+            await AdminResponseWriter.WriteErrorAsync(
+                context,
+                $"Migration run '{runId}' has no reconciliation scorecard persisted yet (status={MigrationRunSerialization.StatusToText(record.Status)}).",
+                StatusCodes.Status404NotFound);
+            return;
+        }
+
+        var bytes = Encoding.UTF8.GetBytes(body);
+        var filename = $"migration-run-{MigrationScannerEndpoints.SanitizeFilenameSlug(record.RunId)}-reconciliation-scorecard.json";
+
+        context.Response.StatusCode = StatusCodes.Status200OK;
+        context.Response.ContentType = "application/json; charset=utf-8";
+        context.Response.Headers["Content-Disposition"] = $"attachment; filename=\"{filename}\"";
+        context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+        if (!string.IsNullOrEmpty(record.ReconciliationScorecardFingerprint))
+        {
+            // Quoted ETag per RFC 7232 so HTTP caches treat the fingerprint as opaque.
+            context.Response.Headers.ETag = $"\"{record.ReconciliationScorecardFingerprint}\"";
         }
 
         await context.Response.Body.WriteAsync(bytes, cancellationToken).ConfigureAwait(false);
@@ -276,7 +324,9 @@ internal static class MigrationRunAdminEndpoints
         EvidencePackRef = record.EvidencePackRef,
         EvidencePackFingerprint = record.EvidencePackFingerprint,
         StatusNote = record.StatusNote,
-        HasEvidencePack = !string.IsNullOrEmpty(record.EvidencePackFingerprint)
+        HasEvidencePack = !string.IsNullOrEmpty(record.EvidencePackFingerprint),
+        ReconciliationScorecardFingerprint = record.ReconciliationScorecardFingerprint,
+        HasReconciliationScorecard = !string.IsNullOrEmpty(record.ReconciliationScorecardFingerprint)
     };
 }
 
@@ -320,6 +370,12 @@ public sealed record MigrationRunDto
 
     /// <summary>True when the evidence pack is available for download.</summary>
     public bool HasEvidencePack { get; init; }
+
+    /// <summary>Fingerprint of the signed reconciliation scorecard (issue #1381), when recorded.</summary>
+    public string? ReconciliationScorecardFingerprint { get; init; }
+
+    /// <summary>True when the reconciliation scorecard is available for download.</summary>
+    public bool HasReconciliationScorecard { get; init; }
 }
 
 /// <summary>

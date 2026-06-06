@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Globalization;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Scene.Domain;
 using Proto = Geospatial.V1;
@@ -224,5 +223,5 @@ internal static class SceneGrpcMapping
     }
 
     private static string BuildTilesetPath(string sceneId)
-        => string.Create(CultureInfo.InvariantCulture, $"/scenes/{sceneId}/tileset.json");
+        => Honua.Scene.SceneUrls.TilesetRelativePath(sceneId);
 }

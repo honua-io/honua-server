@@ -1200,13 +1200,13 @@ internal sealed partial class Wfs20Handler
             writer.WriteElementString("gml", "name", Wfs20Utilities.GmlNamespace, gmlName);
         }
 
-        var geometryField = plan.Descriptor.Resource.FindPrimaryGeometryField();
-        if (geometryField is not null &&
+        var geometryPropertyName = ResolveGeometryPropertyName(plan.Descriptor.Resource);
+        if (geometryPropertyName is not null &&
             !string.IsNullOrWhiteSpace(feature.GeometryGml))
         {
             writer.WriteStartElement(
                 FeatureNamespacePrefix,
-                XmlConvert.EncodeLocalName(geometryField.Name),
+                XmlConvert.EncodeLocalName(geometryPropertyName),
                 FeatureNamespaceUri);
             writer.WriteRaw(feature.GeometryGml);
             writer.WriteEndElement();
@@ -1214,7 +1214,7 @@ internal sealed partial class Wfs20Handler
 
         foreach (var field in GetProjectedAttributeFields(plan.Descriptor.Resource, plan.Query))
         {
-            if (!feature.Attributes.TryGetValue(field.Name, out var value) || value is null)
+            if (!feature.Attributes.TryGetValue(field.Name, out var value) || IsNullValue(value))
             {
                 if (field.Nullable)
                 {
@@ -1633,6 +1633,45 @@ internal sealed partial class Wfs20Handler
     private static bool HasGeometry(MetadataV2Resource resource)
         => resource.FindPrimaryGeometryField() is not null ||
            resource.ReadGeometryType() != MetadataV2GeometryType.None;
+
+    /// <summary>
+    /// Default WFS geometry property local name used when a spatial resource declares a
+    /// geometry type but carries no explicit geometry schema field. Matches the storage
+    /// binding's <c>geometryColumn</c> and the OGC API Features <c>geometry</c> element so
+    /// the same point/line/polygon layer exposes geometry consistently across protocols.
+    /// </summary>
+    private const string DefaultGeometryPropertyName = "geometry";
+
+    /// <summary>
+    /// Resolves the WFS geometry property name for a spatial resource. Prefers the explicit
+    /// primary geometry schema field; falls back to <see cref="DefaultGeometryPropertyName"/>
+    /// when the resource declares a geometry type but no geometry field is registered (for
+    /// example FeatureServer layers seeded with only attribute fields). Returns <c>null</c>
+    /// only for non-spatial resources so callers omit geometry entirely.
+    /// </summary>
+    private static string? ResolveGeometryPropertyName(MetadataV2Resource resource)
+    {
+        var geometryField = resource.FindPrimaryGeometryField();
+        if (geometryField is not null)
+        {
+            return geometryField.Name;
+        }
+
+        return resource.ReadGeometryType() != MetadataV2GeometryType.None
+            ? DefaultGeometryPropertyName
+            : null;
+    }
+
+    /// <summary>
+    /// Determines whether an attribute value represents SQL/JSON null. Treats both a CLR
+    /// <c>null</c> and a <see cref="JsonElement"/> whose kind is <c>Null</c> or <c>Undefined</c>
+    /// as null so a JSONB null in the shared attributes column is surfaced as
+    /// <c>xsi:nil="true"</c> rather than an empty string or the literal text <c>null</c>.
+    /// </summary>
+    private static bool IsNullValue(object? value)
+        => value is null ||
+           (value is JsonElement element &&
+            element.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined);
 
     private static string ConvertToInvariantString(object? value)
     {

@@ -12,6 +12,20 @@ namespace Honua.Core.Features.FeatureStore.Domain;
 public readonly record struct RelatedQuery
 {
     /// <summary>
+    /// Internal attribute key used to stamp each returned related feature with the
+    /// origin object id(s) it belongs to. A related row matches its origin through
+    /// the foreign-key fields (<see cref="OriginForeignKeyField"/> →
+    /// <see cref="DestinationForeignKeyField"/>), which are NOT necessarily the
+    /// origin's object id. Grouping callers must bucket by this stamped origin id
+    /// rather than by the destination key value (the latter only matches the object
+    /// id when the origin foreign key happens to be the object-id field). The value
+    /// is a <c>long[]</c> because a single foreign-key value can resolve to multiple
+    /// origin object ids. The <c>__</c> prefix marks it internal so it is stripped
+    /// from emitted attributes.
+    /// </summary>
+    public const string OriginObjectIdsAttribute = "__honua_related_origin_ids";
+
+    /// <summary>
     /// Object IDs of the origin features to find related records for
     /// </summary>
     public required long[] ObjectIds { get; init; }

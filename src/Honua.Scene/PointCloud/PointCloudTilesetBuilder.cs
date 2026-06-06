@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using Honua.Core.Features.Scene.Domain;
 using Honua.Core.Features.Scene.Generation;
 
@@ -52,15 +53,32 @@ public static class PointCloudTilesetBuilder
             throw new ArgumentException("At least one point is required to build a point-cloud tileset.", nameof(points));
         }
 
+        // Hard cap on total points enforced BEFORE the O(N) ProjectedPoint[]
+        // allocation below, so a malformed/oversized LAS cannot drive an
+        // unbounded multi-GB buffer. Rejected with the stable scene error code
+        // (the same surface LasPointCloudReader uses) rather than an OOM.
+        if (points.Count > options.MaxPointCount)
+        {
+            throw new LasFormatException(
+                SceneGenerationErrorCodes.ModelAssetInvalid,
+                string.Format(
+                    CultureInfo.InvariantCulture,
+                    "Point cloud has {0} points, exceeding the maximum of {1}.",
+                    points.Count,
+                    options.MaxPointCount));
+        }
+
         // Perf follow-up: the builder buffers the whole cloud into a
         // ProjectedPoint[] and the quadtree recursion allocates a fresh
         // List<int> per node plus members.ToArray() per child, so index storage
         // is duplicated at each depth. A bounded improvement would partition a
         // single reusable index buffer in place (range-based (begin,end) splits
-        // with an in-array swap) and stream/spool the source points, capping the
-        // point count to avoid a malformed LAS exhausting memory. Deferred to
-        // avoid destabilizing the current deterministic layout; this method's
-        // IReadOnlyList contract already requires random access.
+        // with an in-array swap) and stream/spool the source points. The total
+        // point count is already capped above (PointCloudTilingOptions.MaxPointCount)
+        // so a malformed LAS cannot exhaust memory; the remaining work is the
+        // in-place index partitioning, deferred to avoid destabilizing the
+        // current deterministic layout (this method's IReadOnlyList contract
+        // already requires random access).
 
         // 1. Project every point once; track the geographic envelope.
         var projected = new ProjectedPoint[points.Count];
@@ -129,7 +147,7 @@ public static class PointCloudTilesetBuilder
         for (var i = 0; i < contentNodes.Count; i++)
         {
             var node = contentNodes[i];
-            var uri = $"points_{i:0000}.pnts";
+            var uri = string.Create(CultureInfo.InvariantCulture, $"points_{i:0000}.pnts");
             var pnts = PntsTileWriter.Build(node.Points, eightBitColor);
             tiles[uri] = pnts;
             content[node.SceneNode] = new SceneTileContent(uri, node.MinHeight, node.MaxHeight);
@@ -393,6 +411,15 @@ public sealed record PointCloudTilingOptions
 
     /// <summary>Representative points carried by each interior node as a coarse LOD.</summary>
     public int InteriorSampleCount { get; init; } = 8_192;
+
+    /// <summary>
+    /// Hard cap on the total number of points the builder will accept. Enforced
+    /// before any per-point buffer is allocated so a malformed or hostile LAS
+    /// cannot drive an unbounded multi-GB allocation; a larger cloud is rejected
+    /// with a stable scene error. The default (250 million) comfortably exceeds
+    /// realistic single-tileset ingests while bounding worst-case memory.
+    /// </summary>
+    public long MaxPointCount { get; init; } = 250_000_000L;
 }
 
 /// <summary>

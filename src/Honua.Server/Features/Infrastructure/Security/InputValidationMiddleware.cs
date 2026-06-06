@@ -235,8 +235,15 @@ internal sealed class InputValidationMiddleware
 
             var sqlValidationValue = NormalizeForSqlInspection(request, paramType, name, value);
 
-            // SQL Injection detection
-            if (_options.DetectSqlInjection && _sqlInjectionPattern.IsMatch(sqlValidationValue))
+            // SQL Injection detection.
+            // Skip feature-edit attribute-data payloads (applyEdits/addFeatures/updateFeatures
+            // adds/updates/deletes/features/edits). Those carry user attribute VALUES that are
+            // bound as SQL parameters (never concatenated into SQL text), so legitimate values
+            // such as "Paris--London" or "note /* internal */ ok" are harmless and must not be
+            // rejected. SQL/where/orderBy/expression contexts are still inspected below.
+            if (_options.DetectSqlInjection &&
+                !ShouldSkipSqlInspection(request, paramType, name) &&
+                _sqlInjectionPattern.IsMatch(sqlValidationValue))
             {
                 return InputValidationResult.Invalid($"SQL injection attempt detected in {paramType} parameter '{name}'");
             }
@@ -283,6 +290,44 @@ internal sealed class InputValidationMiddleware
         }
 
         return InputValidationResult.Valid();
+    }
+
+    // Feature-edit payload fields that carry attribute DATA values rather than SQL/where text.
+    // Values inside these payloads are bound as SQL parameters by the storage layer, so
+    // SQL-injection heuristics over their contents produce false positives (e.g. attribute
+    // values containing "--", "/* */", ";", or quotes). These cover the GeoServices
+    // applyEdits / addFeatures / updateFeatures / deleteFeatures form parameters.
+    private static readonly HashSet<string> _featureEditPayloadFields = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "adds",
+        "updates",
+        "deletes",
+        "features",
+        "edits"
+    };
+
+    private static bool ShouldSkipSqlInspection(HttpRequest request, string paramType, string name)
+        => IsFeatureEditPayloadField(request, paramType, name);
+
+    private static bool IsFeatureEditPayloadField(HttpRequest request, string paramType, string name)
+    {
+        if (!paramType.Equals("form", StringComparison.Ordinal) &&
+            !paramType.Equals("query", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (!_featureEditPayloadFields.Contains(name))
+        {
+            return false;
+        }
+
+        // Restrict to GeoServices FeatureServer edit endpoints so the exemption cannot be
+        // abused on unrelated routes. Edit operations (applyEdits / addFeatures /
+        // updateFeatures / deleteFeatures) all live under a .../FeatureServer/... path,
+        // whether reached via the canonical "/rest/services/{service}/FeatureServer" route
+        // or a friendly service alias such as "/{service}/FeatureServer".
+        return request.Path.Value?.Contains("/FeatureServer", StringComparison.OrdinalIgnoreCase) == true;
     }
 
     private static string NormalizeForSqlInspection(HttpRequest request, string paramType, string name, string value)

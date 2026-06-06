@@ -10,11 +10,13 @@ using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Resilience;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Styling.Domain;
 using Honua.Postgres.Features.Infrastructure;
+using Honua.Postgres.Features.Metadata;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using Honua.Core.Features.Migration.Abstractions;
@@ -42,6 +44,8 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
     private readonly ILayerStyleCatalog? _styleCatalog;
     private readonly IAttachmentStore? _attachmentStore;
     private readonly IMigrationCatalogWriter? _catalogWriter;
+    private readonly ILayerReconciliationService? _reconciliationService;
+    private readonly IMetadataV2GraphWriteBaseReader? _metadataWriteBaseReader;
     private readonly ILogger<GeoservicesImportService> _logger;
     private readonly PostgresSchemaConfiguration _schemaConfiguration;
 
@@ -56,6 +60,8 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         ILayerStyleCatalog? styleCatalog = null,
         IAttachmentStore? attachmentStore = null,
         IMigrationCatalogWriter? catalogWriter = null,
+        ILayerReconciliationService? reconciliationService = null,
+        IMetadataV2GraphStore? metadataGraphStore = null,
         PostgresSchemaConfiguration? schemaConfiguration = null)
     {
         _restClient = restClient ?? throw new ArgumentNullException(nameof(restClient));
@@ -67,6 +73,12 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         _styleCatalog = styleCatalog;
         _attachmentStore = attachmentStore;
         _catalogWriter = catalogWriter;
+        _reconciliationService = reconciliationService;
+        // The catalog-reconciliation read-back (issue #1379) needs the genuinely-persisted current
+        // graph (where AutoPublish materialized res-layer-{layerId}), never the V1-catalog compat
+        // synthesis. The Postgres store implements this seam; a non-implementing test double leaves
+        // the reader null and catalog reconciliation is skipped.
+        _metadataWriteBaseReader = metadataGraphStore as IMetadataV2GraphWriteBaseReader;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _schemaConfiguration = schemaConfiguration ?? new PostgresSchemaConfiguration(
             PostgresSchemaConfiguration.DefaultMetadataSchema,
@@ -359,7 +371,9 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         string? layerName = null,
         int? publishedLayerId = null,
         int attachmentsProcessed = 0,
-        int failedAttachments = 0)
+        int failedAttachments = 0,
+        MigrationReconciliationArtifact? reconciliationArtifact = null,
+        MigrationCatalogReconciliationReport? catalogReconciliationReport = null)
     {
         progress?.Report(new GeoservicesImportProgress
         {
@@ -376,7 +390,9 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
             StartedAt = startedAt,
             CurrentPhase = phase,
             AttachmentsProcessed = attachmentsProcessed,
-            FailedAttachments = failedAttachments
+            FailedAttachments = failedAttachments,
+            ReconciliationArtifact = reconciliationArtifact,
+            CatalogReconciliationReport = catalogReconciliationReport
         });
     }
 
@@ -511,5 +527,13 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
 
         [LoggerMessage(7839, LogLevel.Debug, "Relationship apply skipped: {Reason}")]
         public static partial void RelationshipApplySkipped(ILogger logger, string reason);
+
+        [LoggerMessage(7840, LogLevel.Warning,
+            "Reconciliation gate routed import of table {TableName} to NeedsReview: {Reason}")]
+        public static partial void ReconciliationGateBlocked(ILogger logger, string tableName, string reason);
+
+        [LoggerMessage(7841, LogLevel.Warning,
+            "Reconciliation gate could not run for table {TableName}; import completed without a reconciliation verdict")]
+        public static partial void ReconciliationGateUnavailable(ILogger logger, string tableName, Exception exception);
     }
 }

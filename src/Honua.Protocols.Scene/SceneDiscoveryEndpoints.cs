@@ -442,23 +442,13 @@ internal static partial class SceneDiscoveryEndpoints
             };
 
     private static string BuildSceneApiUrl(string baseUrl, string sceneId)
-        => BuildUrl(baseUrl, "/api/scenes/", sceneId, suffix: null);
+        => Honua.Scene.SceneUrls.AbsoluteSceneApiUrl(baseUrl, sceneId);
 
     private static string BuildSceneResolveUrl(string baseUrl, string sceneId)
-        => BuildUrl(baseUrl, "/api/scenes/", sceneId, "/resolve");
+        => Honua.Scene.SceneUrls.AbsoluteSceneResolveUrl(baseUrl, sceneId);
 
     private static string BuildTilesetUrl(string baseUrl, string sceneId)
-        => BuildUrl(baseUrl, "/scenes/", sceneId, "/tileset.json");
-
-    private static string BuildUrl(string baseUrl, string prefix, string sceneId, string? suffix)
-    {
-        var escapedSceneId = Uri.EscapeDataString(sceneId);
-        return string.Concat(
-            baseUrl.AsSpan().TrimEnd('/'),
-            prefix.AsSpan(),
-            escapedSceneId.AsSpan(),
-            suffix.AsSpan());
-    }
+        => Honua.Scene.SceneUrls.AbsoluteTilesetUrl(baseUrl, sceneId);
 
     private static string[] ParseRequestedCapabilities(string? raw)
         => string.IsNullOrWhiteSpace(raw)

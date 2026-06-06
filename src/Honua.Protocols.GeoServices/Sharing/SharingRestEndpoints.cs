@@ -77,6 +77,7 @@ public static class SharingRestEndpoints
             .Produces(StatusCodes.Status402PaymentRequired);
 
         endpoints.MapSharingRestReadEndpoints();
+        endpoints.MapSharingOAuth2Endpoints();
 
         return endpoints;
     }
@@ -778,6 +779,9 @@ public static class SharingRestEndpoints
         bool FormatValid);
 }
 
-internal sealed class SharingRestLog
+internal sealed partial class SharingRestLog
 {
+    [LoggerMessage(EventId = 7120, Level = LogLevel.Warning,
+        Message = "Portal OAuth authorize rejected: redirect_uri is not registered in the deployment allow-list.")]
+    public static partial void OAuthRedirectUriRejected(ILogger logger);
 }

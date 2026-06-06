@@ -84,7 +84,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         var record = PublishedServiceRecord.CreateFromIntent(
             serviceId: $"scene:{outcome.Result.SceneId}",
             intent: intent,
-            endpoint: $"/scenes/{outcome.Result.SceneId}/tileset.json");
+            endpoint: Honua.Scene.SceneUrls.TilesetRelativePath(outcome.Result.SceneId));
         return record with { Warnings = outcome.Result.Warnings };
     }
 

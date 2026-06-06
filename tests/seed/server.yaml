@@ -861,6 +861,7 @@ sql:
           CONSTRAINT replicas_valid_service CHECK(LENGTH(service_id) > 0),
           CONSTRAINT replicas_valid_sync_model CHECK(sync_model IN ('none', 'perLayer', 'perReplica'))
       );
+  - "ALTER TABLE honua.replicas ADD COLUMN IF NOT EXISTS upload_base_generation BIGINT NOT NULL DEFAULT 0;"
   - |
       CREATE TABLE IF NOT EXISTS honua.feature_changes (
           change_id BIGSERIAL PRIMARY KEY,
@@ -903,6 +904,29 @@ sql:
   - "CREATE INDEX IF NOT EXISTS idx_feature_changes_generation_layer ON honua.feature_changes(generation, layer_id);"
   - "CREATE INDEX IF NOT EXISTS idx_feature_changes_changed_at ON honua.feature_changes(changed_at);"
   - "CREATE INDEX IF NOT EXISTS idx_feature_changes_layer_objectid ON honua.feature_changes(layer_id, objectid, generation);"
+  # Branch-versioning foundation (#1272 Track B): version registry + change-log version dimension.
+  - |
+      CREATE TABLE IF NOT EXISTS honua.gdb_versions (
+          version_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          version_name TEXT NOT NULL,
+          owner TEXT NOT NULL,
+          parent_version UUID REFERENCES honua.gdb_versions(version_id) ON DELETE SET NULL,
+          access SMALLINT NOT NULL DEFAULT 0,
+          state SMALLINT NOT NULL DEFAULT 0,
+          common_ancestor_gen BIGINT NOT NULL DEFAULT 0,
+          branch_gen BIGINT NOT NULL DEFAULT 0,
+          description TEXT,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          modified_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          CONSTRAINT gdb_versions_valid_name CHECK(LENGTH(version_name) > 0 AND LENGTH(version_name) <= 256),
+          CONSTRAINT gdb_versions_valid_owner CHECK(LENGTH(owner) > 0),
+          CONSTRAINT gdb_versions_valid_access CHECK(access BETWEEN 0 AND 2),
+          CONSTRAINT gdb_versions_valid_state CHECK(state BETWEEN 0 AND 3)
+      );
+  - "CREATE UNIQUE INDEX IF NOT EXISTS idx_gdb_versions_owner_name ON honua.gdb_versions(LOWER(owner), LOWER(version_name));"
+  - "CREATE INDEX IF NOT EXISTS idx_gdb_versions_parent ON honua.gdb_versions(parent_version);"
+  - "ALTER TABLE honua.feature_changes ADD COLUMN IF NOT EXISTS version_id UUID;"
+  - "CREATE INDEX IF NOT EXISTS idx_feature_changes_version_generation ON honua.feature_changes(version_id, generation, layer_id);"
   - |
       CREATE OR REPLACE FUNCTION honua.track_feature_changes()
       RETURNS TRIGGER AS $$
@@ -911,6 +935,8 @@ sql:
           lid INT;
           oid BIGINT;
           op SMALLINT;
+          ver TEXT;
+          ver_uuid UUID;
       BEGIN
           gen := nextval('honua.sync_generation');
           IF TG_OP = 'INSERT' THEN
@@ -926,8 +952,14 @@ sql:
               oid := OLD.objectid;
               op := 3;
           END IF;
-          INSERT INTO honua.feature_changes (generation, layer_id, objectid, operation)
-          VALUES (gen, lid, oid, op);
+          ver := current_setting('honua.gdb_version', true);
+          IF ver IS NULL OR ver = '' THEN
+              ver_uuid := NULL;
+          ELSE
+              ver_uuid := ver::UUID;
+          END IF;
+          INSERT INTO honua.feature_changes (generation, layer_id, objectid, operation, version_id)
+          VALUES (gen, lid, oid, op, ver_uuid);
           IF TG_OP = 'DELETE' THEN
               RETURN OLD;
           END IF;

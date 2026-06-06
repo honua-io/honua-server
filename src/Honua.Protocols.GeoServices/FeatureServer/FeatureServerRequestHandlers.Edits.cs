@@ -191,7 +191,7 @@ internal static partial class FeatureServerEndpoints
             return authorizationError;
         }
 
-        var (request, readError, errorResult) = await TryReadDeleteFeaturesRequestAsync(context.Request, cancellationToken);
+        var (request, bodyFilterValues, readError, errorResult) = await TryReadDeleteFeaturesRequestAsync(context.Request, cancellationToken);
         if (request == null)
         {
             if (errorResult != null)
@@ -218,11 +218,15 @@ internal static partial class FeatureServerEndpoints
                 [queryError ?? "Invalid query parameters."]);
         }
 
-        // When no objectIds are provided, check for where/geometry filter parameters
+        // When no objectIds are provided, check for where/geometry filter parameters.
+        // These may arrive in the query string OR the request body (ArcGIS clients commonly
+        // POST them form-encoded), so resolve against a merged value map with the query string
+        // taking precedence over the body for any overlapping key.
         if (request.Deletes == null || request.Deletes.Length == 0)
         {
+            var filterValues = MergeDeleteFilterValues(bodyFilterValues, context.Request.Query);
             var resolveResult = await TryResolveDeleteIdsFromFilterAsync(
-                serviceId, layerId, context, limitsOptions.Value, cancellationToken);
+                serviceId, layerId, context, filterValues, limitsOptions.Value, cancellationToken);
             if (resolveResult.Error != null)
             {
                 return resolveResult.Error;
@@ -230,6 +234,17 @@ internal static partial class FeatureServerEndpoints
 
             if (resolveResult.Ids != null)
             {
+                // A where/geometry filter was supplied and resolved. When it selects no rows the
+                // request is still well-formed (it simply matched nothing), so return an empty
+                // success response rather than the "parameter is required" error below.
+                if (resolveResult.Ids.Length == 0)
+                {
+                    return Results.Json(
+                        new ApplyEditsResponse { DeleteResults = [], Success = true },
+                        FeatureServerJsonContext.Default.ApplyEditsResponse,
+                        contentType: "application/json");
+                }
+
                 request.Deletes = resolveResult.Ids;
             }
         }
@@ -253,14 +268,43 @@ internal static partial class FeatureServerEndpoints
             request);
     }
 
+    /// <summary>
+    /// Merges deleteFeatures filter parameters captured from the request body with those on the
+    /// query string. Query-string values win for any overlapping key, matching how the rest of
+    /// the FeatureServer surface treats query parameters as the canonical override.
+    /// </summary>
+    private static Dictionary<string, StringValues> MergeDeleteFilterValues(
+        IReadOnlyDictionary<string, StringValues>? bodyValues,
+        IQueryCollection query)
+    {
+        var merged = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase);
+        if (bodyValues != null)
+        {
+            foreach (var (key, value) in bodyValues)
+            {
+                merged[key] = value;
+            }
+        }
+
+        foreach (var (key, value) in query)
+        {
+            if (!StringValues.IsNullOrEmpty(value))
+            {
+                merged[key] = value;
+            }
+        }
+
+        return merged;
+    }
+
     private static async Task<(object[]? Ids, IResult? Error)> TryResolveDeleteIdsFromFilterAsync(
         string serviceId,
         int layerId,
         HttpContext context,
+        IReadOnlyDictionary<string, StringValues> values,
         LimitsOptions limits,
         CancellationToken cancellationToken)
     {
-        var values = ToCaseInsensitiveDictionary(context.Request.Query);
         var whereClause = GetValueString(values, "where");
         var geometry = GetValueString(values, "geometry");
 
@@ -498,58 +542,96 @@ internal static partial class FeatureServerEndpoints
         }
 
         var editLimits = limitsOptions.Value.Edits;
-        var results = new ServiceLayerEditResult[layerEdits.Length];
 
-        for (var i = 0; i < layerEdits.Length; i++)
+        // Validate the shared edit options (rollbackOnFailure / f / unsupported flags) once
+        // from the query string before fanning out per layer. Coalescing edits that target the
+        // same layer into a single per-layer batch is what makes rollbackOnFailure=true
+        // atomic: the layer's own ApplyEditsAsync transaction then spans every add/update/delete
+        // for that layer, so a failure in any one of them rolls back the rest. Without this the
+        // handler applied each array element as a separate auto-committing batch, leaving a
+        // successful add committed even when a later edit for the same layer failed.
+        var sharedOptions = new ApplyEditsRequest();
+        if (!TryApplyEditOptionsFromQuery(sharedOptions, context.Request.Query, out var optionsError))
         {
-            var entry = layerEdits[i];
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid service applyEdits request",
+                [optionsError ?? "Invalid query parameters."]);
+        }
+
+        if (!TryValidateOutputFormat(sharedOptions.F, JsonOnlyFormats, out var normalizedFormat, out var formatError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid service applyEdits request",
+                [formatError ?? "Output format is not supported."]);
+        }
+
+        sharedOptions.F = normalizedFormat;
+
+        if (sharedOptions.UseGlobalIds)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "useGlobalIds is not supported",
+                ["Set useGlobalIds to false and supply objectIds in attributes."]);
+        }
+
+        if (sharedOptions.ReturnEditMoment)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "returnEditMoment is not supported");
+        }
+
+        if (!string.IsNullOrWhiteSpace(sharedOptions.GdbVersion))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "gdbVersion is not supported");
+        }
+
+        // Group entries by layer id while preserving first-seen layer order so the response
+        // emits one editResults entry per distinct layer (matching ArcGIS), and merge their
+        // adds/updates/deletes so each layer is applied in a single transaction.
+        var orderedLayerIds = new List<int>();
+        var mergedEdits = new Dictionary<int, ServiceLayerEdits>();
+        foreach (var entry in layerEdits)
+        {
+            if (!mergedEdits.TryGetValue(entry.Id, out var merged))
+            {
+                orderedLayerIds.Add(entry.Id);
+                mergedEdits[entry.Id] = new ServiceLayerEdits
+                {
+                    Id = entry.Id,
+                    Adds = entry.Adds,
+                    Updates = entry.Updates,
+                    Deletes = entry.Deletes
+                };
+                continue;
+            }
+
+            mergedEdits[entry.Id] = new ServiceLayerEdits
+            {
+                Id = entry.Id,
+                Adds = ConcatFeatures(merged.Adds, entry.Adds),
+                Updates = ConcatFeatures(merged.Updates, entry.Updates),
+                Deletes = ConcatDeletes(merged.Deletes, entry.Deletes)
+            };
+        }
+
+        var results = new ServiceLayerEditResult[orderedLayerIds.Count];
+
+        for (var i = 0; i < orderedLayerIds.Count; i++)
+        {
+            var entry = mergedEdits[orderedLayerIds[i]];
             var request = new ApplyEditsRequest
             {
                 Adds = entry.Adds,
                 Updates = entry.Updates,
-                Deletes = entry.Deletes
+                Deletes = entry.Deletes,
+                F = sharedOptions.F,
+                RollbackOnFailure = sharedOptions.RollbackOnFailure,
+                RollbackOnFailureExplicitlySet = sharedOptions.RollbackOnFailureExplicitlySet,
+                UseGlobalIds = sharedOptions.UseGlobalIds,
+                ReturnEditMoment = sharedOptions.ReturnEditMoment,
+                GdbVersion = sharedOptions.GdbVersion
             };
-
-            if (!TryApplyEditOptionsFromQuery(request, context.Request.Query, out var queryError))
-            {
-                return StandardErrorHelpers.CreateBadRequest(context,
-                    "Invalid service applyEdits request",
-                    [queryError ?? "Invalid query parameters."]);
-            }
-
-            if (!TryValidateOutputFormat(request.F, JsonOnlyFormats, out var normalizedFormat, out var formatError))
-            {
-                return StandardErrorHelpers.CreateBadRequest(context,
-                    "Invalid service applyEdits request",
-                    [formatError ?? "Output format is not supported."]);
-            }
-
-            request.F = normalizedFormat;
-
-            if (request.UseGlobalIds)
-            {
-                return StandardErrorHelpers.CreateBadRequest(context,
-                    "useGlobalIds is not supported",
-                    ["Set useGlobalIds to false and supply objectIds in attributes."]);
-            }
-
-            if (request.ReturnEditMoment)
-            {
-                return StandardErrorHelpers.CreateBadRequest(context,
-                    "returnEditMoment is not supported");
-            }
-
-            if (!string.IsNullOrWhiteSpace(request.GdbVersion))
-            {
-                return StandardErrorHelpers.CreateBadRequest(context,
-                    "gdbVersion is not supported");
-            }
-
-            if (request.Attachments is { Length: > 0 })
-            {
-                return StandardErrorHelpers.CreateBadRequest(context,
-                    "attachments edits are not supported");
-            }
 
             var layerResult = await editsHandler.HandleApplyEditsAsync(
                 serviceId,
@@ -579,6 +661,36 @@ internal static partial class FeatureServerEndpoints
 
         var serviceResponse = new ServiceApplyEditsResponse { EditResults = results };
         return Results.Json(serviceResponse, FeatureServerJsonContext.Default.ServiceApplyEditsResponse, contentType: "application/json");
+    }
+
+    private static GeoServicesFeature[]? ConcatFeatures(GeoServicesFeature[]? first, GeoServicesFeature[]? second)
+    {
+        if (first is not { Length: > 0 })
+        {
+            return second;
+        }
+
+        if (second is not { Length: > 0 })
+        {
+            return first;
+        }
+
+        return [.. first, .. second];
+    }
+
+    private static object[]? ConcatDeletes(object[]? first, object[]? second)
+    {
+        if (first is not { Length: > 0 })
+        {
+            return second;
+        }
+
+        if (second is not { Length: > 0 })
+        {
+            return first;
+        }
+
+        return [.. first, .. second];
     }
 
     private static async Task<(ServiceLayerEdits[]? Request, string? Error, IResult? ErrorResult)> TryReadServiceApplyEditsRequestAsync(
@@ -942,7 +1054,23 @@ internal static partial class FeatureServerEndpoints
         }
     }
 
-    private static async Task<(ApplyEditsRequest? Request, string? Error, IResult? ErrorResult)> TryReadDeleteFeaturesRequestAsync(
+    /// <summary>
+    /// Filter parameters an ArcGIS deleteFeatures request may carry to select rows by
+    /// attribute (<c>where</c>) or spatial predicate (<c>geometry</c>) instead of explicit
+    /// objectIds. These can arrive in the request body (form or JSON) as well as the query
+    /// string, so they are captured during body parsing and merged with the query string when
+    /// resolving the objectIds to delete.
+    /// </summary>
+    private static readonly string[] DeleteFilterParameterKeys =
+    [
+        "where",
+        "geometry",
+        "geometryType",
+        "spatialRel",
+        "inSR"
+    ];
+
+    private static async Task<(ApplyEditsRequest? Request, IReadOnlyDictionary<string, StringValues>? BodyValues, string? Error, IResult? ErrorResult)> TryReadDeleteFeaturesRequestAsync(
         HttpRequest request,
         CancellationToken cancellationToken)
     {
@@ -951,17 +1079,23 @@ internal static partial class FeatureServerEndpoints
             var form = await request.ReadFormAsync(cancellationToken);
             var values = form.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
             var parsed = TryParseDeleteFeaturesRequestFromValues(values);
-            return (parsed.Request, parsed.Error, null);
+            return (parsed.Request, ExtractDeleteFilterParameters(values), parsed.Error, null);
         }
 
-        if (request.ContentLength is 0)
+        // A deleteFeatures request may carry no body at all when every selection
+        // parameter (objectIds/where/geometry) is supplied in the query string. ArcGIS
+        // clients commonly POST these as a bodyless request, which arrives with no
+        // Content-Length (null) and no Content-Type. Treat an absent/empty body as an
+        // empty request so the query-string filter can drive row selection, rather than
+        // rejecting it as an unsupported media type.
+        if (request.ContentLength is null or 0 && string.IsNullOrEmpty(request.ContentType))
         {
-            return (new ApplyEditsRequest(), null, null);
+            return (new ApplyEditsRequest(), null, null, null);
         }
 
         if (!TryValidateRequestContentType(request, out var receivedContentType))
         {
-            return (null, null, ValidationErrorHelpers.CreateUnsupportedMediaType(
+            return (null, null, null, ValidationErrorHelpers.CreateUnsupportedMediaType(
                 request.HttpContext,
                 receivedContentType ?? "(missing)",
                 new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -978,16 +1112,66 @@ internal static partial class FeatureServerEndpoints
             using var document = await JsonDocument.ParseAsync(request.Body, cancellationToken: cancellationToken);
             if (document.RootElement.ValueKind != JsonValueKind.Object)
             {
-                return (null, "Invalid JSON payload.", null);
+                return (null, null, "Invalid JSON payload.", null);
             }
 
             var parsed = TryParseDeleteFeaturesRequestFromJson(document.RootElement);
-            return (parsed.Request, parsed.Error, null);
+            return (parsed.Request, ExtractDeleteFilterParametersFromJson(document.RootElement), parsed.Error, null);
         }
         catch (JsonException)
         {
-            return (null, "Invalid JSON payload.", null);
+            return (null, null, "Invalid JSON payload.", null);
         }
+    }
+
+    /// <summary>
+    /// Pulls the recognized deleteFeatures filter parameters out of a form/body value map so
+    /// they can participate in objectId resolution even when supplied in the request body.
+    /// </summary>
+    private static Dictionary<string, StringValues>? ExtractDeleteFilterParameters(
+        IReadOnlyDictionary<string, StringValues> values)
+    {
+        Dictionary<string, StringValues>? filter = null;
+        foreach (var key in DeleteFilterParameterKeys)
+        {
+            if (TryGetValue(values, key, out var raw) && !StringValues.IsNullOrEmpty(raw))
+            {
+                filter ??= new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase);
+                filter[key] = raw;
+            }
+        }
+
+        return filter;
+    }
+
+    /// <summary>
+    /// Pulls the recognized deleteFeatures filter parameters out of a JSON request body object.
+    /// </summary>
+    private static Dictionary<string, StringValues>? ExtractDeleteFilterParametersFromJson(JsonElement root)
+    {
+        Dictionary<string, StringValues>? filter = null;
+        foreach (var key in DeleteFilterParameterKeys)
+        {
+            if (!root.TryGetProperty(key, out var element))
+            {
+                continue;
+            }
+
+            var value = element.ValueKind switch
+            {
+                JsonValueKind.String => element.GetString(),
+                JsonValueKind.Null or JsonValueKind.Undefined => null,
+                _ => element.GetRawText()
+            };
+
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                filter ??= new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase);
+                filter[key] = value;
+            }
+        }
+
+        return filter;
     }
 
     private static (ApplyEditsRequest? Request, string? Error) TryParseApplyEditsRequest(

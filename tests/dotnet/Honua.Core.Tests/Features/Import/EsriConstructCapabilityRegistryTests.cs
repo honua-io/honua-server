@@ -22,6 +22,15 @@ public sealed class EsriConstructCapabilityRegistryTests
     [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceAttachments, MigrationFidelityAutomationStatuses.ManualReview, ImportCompatibilityCodes.ArcGisAttachments, false, false, true)]
     [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceRenderers, MigrationFidelityAutomationStatuses.ManualReview, ImportCompatibilityCodes.ManualReview, false, false, true)]
     [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceTimeMetadata, MigrationFidelityAutomationStatuses.ManualReview, ImportCompatibilityCodes.ArcGisTimeMetadataManualReview, false, false, true)]
+    [InlineData(EsriConstructCapabilityRegistry.Keys.FacadeFeatureService, MigrationFidelityAutomationStatuses.Automated, ImportCompatibilityCodes.Compatible, true, true, false)]
+    [InlineData(EsriConstructCapabilityRegistry.Keys.FacadeMapService, MigrationFidelityAutomationStatuses.Automated, ImportCompatibilityCodes.Compatible, true, true, false)]
+    [InlineData(EsriConstructCapabilityRegistry.Keys.FacadeImageService, MigrationFidelityAutomationStatuses.Automated, ImportCompatibilityCodes.Compatible, true, true, false)]
+    [InlineData(EsriConstructCapabilityRegistry.Keys.GpVectorDeterministic, MigrationFidelityAutomationStatuses.Automated, ImportCompatibilityCodes.Compatible, true, true, false)]
+    [InlineData(EsriConstructCapabilityRegistry.Keys.GpDestructiveDataManagement, MigrationFidelityAutomationStatuses.ManualReview, ImportCompatibilityCodes.ManualReview, false, false, true)]
+    [InlineData(EsriConstructCapabilityRegistry.Keys.GpRasterSurface, MigrationFidelityAutomationStatuses.Assisted, ImportCompatibilityCodes.ManualReview, false, false, false)]
+    [InlineData(EsriConstructCapabilityRegistry.Keys.GpRasterConversion, MigrationFidelityAutomationStatuses.Assisted, ImportCompatibilityCodes.ManualReview, false, false, false)]
+    [InlineData(EsriConstructCapabilityRegistry.Keys.GpDataManagement, MigrationFidelityAutomationStatuses.Assisted, ImportCompatibilityCodes.ManualReview, false, false, false)]
+    [InlineData(EsriConstructCapabilityRegistry.Keys.GpUnsupported, MigrationFidelityAutomationStatuses.Unsupported, ImportCompatibilityCodes.ManualReview, false, false, false)]
     public void ResolveOrUnknown_KnownConstructKey_ReturnsSeededDescriptor(
         string constructKey,
         string expectedAutomationStatus,
@@ -96,7 +105,16 @@ public sealed class EsriConstructCapabilityRegistryTests
             EsriConstructCapabilityRegistry.Keys.ResourceRelationships,
             EsriConstructCapabilityRegistry.Keys.ResourceAttachments,
             EsriConstructCapabilityRegistry.Keys.ResourceRenderers,
-            EsriConstructCapabilityRegistry.Keys.ResourceTimeMetadata
+            EsriConstructCapabilityRegistry.Keys.ResourceTimeMetadata,
+            EsriConstructCapabilityRegistry.Keys.FacadeFeatureService,
+            EsriConstructCapabilityRegistry.Keys.FacadeMapService,
+            EsriConstructCapabilityRegistry.Keys.FacadeImageService,
+            EsriConstructCapabilityRegistry.Keys.GpVectorDeterministic,
+            EsriConstructCapabilityRegistry.Keys.GpDestructiveDataManagement,
+            EsriConstructCapabilityRegistry.Keys.GpRasterSurface,
+            EsriConstructCapabilityRegistry.Keys.GpRasterConversion,
+            EsriConstructCapabilityRegistry.Keys.GpDataManagement,
+            EsriConstructCapabilityRegistry.Keys.GpUnsupported
         ]);
     }
 

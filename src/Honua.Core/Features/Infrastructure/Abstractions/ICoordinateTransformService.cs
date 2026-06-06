@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Infrastructure.Crs;
+
 namespace Honua.Core.Features.Infrastructure.Abstractions;
 
 /// <summary>
@@ -80,4 +82,35 @@ public interface ICoordinateTransformService
         double x, double y,
         int fromSrid, int toSrid,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Transforms a single point using an explicitly selected datum transformation.
+    /// </summary>
+    /// <param name="x">X coordinate (longitude or easting).</param>
+    /// <param name="y">Y coordinate (latitude or northing).</param>
+    /// <param name="fromSrid">Source EPSG SRID.</param>
+    /// <param name="toSrid">Target EPSG SRID.</param>
+    /// <param name="selection">
+    /// The resolved datum transformation. When it carries a PROJ pipeline, the
+    /// authoritative 3-argument <c>ST_Transform</c> is used so the result matches the
+    /// selected (Esri-parity) pipeline. When <see langword="null"/>, behaves like the
+    /// SRID-only overload.
+    /// </param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>
+    /// Transformed point as <c>(X, Y)</c>, or <see langword="null"/> when the transform
+    /// cannot be performed (unknown SRID, missing grid, PostGIS error).
+    /// </returns>
+    /// <remarks>
+    /// Provided as a default interface method so existing implementations remain
+    /// source-compatible; the default ignores the pipeline and delegates to the
+    /// SRID-only overload. The PostGIS implementation overrides this to honor the
+    /// selected pipeline via 3-argument <c>ST_Transform</c>.
+    /// </remarks>
+    ValueTask<(double X, double Y)?> TransformPointAsync(
+        double x, double y,
+        int fromSrid, int toSrid,
+        DatumTransformationSelection? selection,
+        CancellationToken cancellationToken = default)
+        => TransformPointAsync(x, y, fromSrid, toSrid, cancellationToken);
 }

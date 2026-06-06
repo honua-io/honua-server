@@ -117,6 +117,75 @@ public sealed class FeatureServerSpatialReferenceTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithReprojectionAndNoDatumTransformation_AppliesDefault_Returns200(/* #1274 */)
+    {
+        // Reproject the layer (3857) to WGS84 with no client datumTransformation. The
+        // catalog has no curated default for this pair, so the query falls through to the
+        // default pipeline and succeeds — proving the datum resolution path does not break
+        // ordinary reprojection.
+        var requestUri = $"/rest/services/{SpatialReferenceTestLayerCatalog.ServiceId}/FeatureServer/{SpatialReferenceTestLayerCatalog.PointLayerId}/query" +
+                         $"?where=objectid%20%3D%20{_pointObjectId}&outSR=4326&f=json";
+
+        var response = await _fixture.Client.GetAsync(requestUri);
+
+        response.Be200Ok();
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.QueryResponse);
+        result.Should().NotBeNull();
+        result!.SpatialReference!.Wkid.Should().Be(4326);
+        result.Features.Should().HaveCount(1);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithUnknownDatumTransformationWkid_ReturnsExplicitError(/* #1274 */)
+    {
+        // An unknown datumTransformation WKID must produce an explicit error rather than
+        // a silent substitution to PROJ's default pipeline.
+        var requestUri = $"/rest/services/{SpatialReferenceTestLayerCatalog.ServiceId}/FeatureServer/{SpatialReferenceTestLayerCatalog.PointLayerId}/query" +
+                         $"?where=objectid%20%3D%20{_pointObjectId}&outSR=4326&datumTransformation=999999&f=json";
+
+        var response = await _fixture.Client.GetAsync(requestUri);
+
+        response.Be400BadRequest();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithDatumTransformationNotApplicableToReprojection_ReturnsExplicitError(/* #1274 */)
+    {
+        // WKID 108001 connects NAD83<->WGS84; it does not apply to the layer's 3857->4326
+        // reprojection. A known-but-inapplicable WKID must be rejected explicitly rather
+        // than silently ignored.
+        var requestUri = $"/rest/services/{SpatialReferenceTestLayerCatalog.ServiceId}/FeatureServer/{SpatialReferenceTestLayerCatalog.PointLayerId}/query" +
+                         $"?where=objectid%20%3D%20{_pointObjectId}&outSR=4326&datumTransformation=108001&f=json";
+
+        var response = await _fixture.Client.GetAsync(requestUri);
+
+        response.Be400BadRequest();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithVerticalCoordinateSystemOutSr_ReturnsExplicitError(/* #1274 */)
+    {
+        // outSR carrying a vertical CS (vcsWkid) requests a vertical datum transformation,
+        // which is not supported; it must fail explicitly instead of being ignored.
+        var outSr = Uri.EscapeDataString("""{"wkid":4326,"vcsWkid":5703}""");
+        var requestUri = $"/rest/services/{SpatialReferenceTestLayerCatalog.ServiceId}/FeatureServer/{SpatialReferenceTestLayerCatalog.PointLayerId}/query" +
+                         $"?where=objectid%20%3D%20{_pointObjectId}&outSR={outSr}&f=json";
+
+        var response = await _fixture.Client.GetAsync(requestUri);
+
+        response.Be400BadRequest();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task Query_WithGeoJsonFormat_RejectsNonWgs84OutSr()
     {
         var requestUri = $"/rest/services/{SpatialReferenceTestLayerCatalog.ServiceId}/FeatureServer/{SpatialReferenceTestLayerCatalog.PointLayerId}/query" +

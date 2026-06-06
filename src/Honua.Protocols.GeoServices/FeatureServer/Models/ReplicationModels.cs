@@ -423,6 +423,91 @@ public sealed class SynchronizeReplicaResponse
     /// </summary>
     [JsonPropertyName("serverGen")]
     public long ServerGen { get; set; }
+
+    /// <summary>
+    /// Number of uploaded add operations applied during this synchronization. Omitted (null) for
+    /// download-only syncs that carry no upload.
+    /// </summary>
+    [JsonPropertyName("appliedAdds")]
+    public int? AppliedAdds { get; set; }
+
+    /// <summary>
+    /// Number of uploaded update operations applied during this synchronization.
+    /// </summary>
+    [JsonPropertyName("appliedUpdates")]
+    public int? AppliedUpdates { get; set; }
+
+    /// <summary>
+    /// Number of uploaded delete operations applied during this synchronization.
+    /// </summary>
+    [JsonPropertyName("appliedDeletes")]
+    public int? AppliedDeletes { get; set; }
+
+    /// <summary>
+    /// Conflicts detected while applying the uploaded edits, when any. A non-empty list does not by
+    /// itself fail the sync under last-write-wins; durable conflict records are written for review
+    /// when supported (#1287).
+    /// </summary>
+    [JsonPropertyName("conflicts")]
+    public SynchronizeReplicaConflict[]? Conflicts { get; set; }
+}
+
+/// <summary>
+/// Summary of a single conflict detected while applying uploaded replica edits.
+/// </summary>
+public sealed class SynchronizeReplicaConflict
+{
+    /// <summary>Service-local layer id of the conflicting feature.</summary>
+    [JsonPropertyName("layerId")]
+    public int LayerId { get; set; }
+
+    /// <summary>Stable object id of the conflicting feature.</summary>
+    [JsonPropertyName("objectId")]
+    public long ObjectId { get; set; }
+
+    /// <summary>
+    /// Conflict classification ordinal (see <c>ReplicaConflictType</c>): 0=attribute, 1=geometry,
+    /// 2=delete-update, 3=update-delete, 4=duplicate-insert, 5=attachment, 6=relationship.
+    /// </summary>
+    [JsonPropertyName("conflictType")]
+    public int ConflictType { get; set; }
+
+    /// <summary>
+    /// Whether the client edit was still applied (last-write-wins) despite the conflict.
+    /// </summary>
+    [JsonPropertyName("applied")]
+    public bool Applied { get; set; }
+
+    /// <summary>
+    /// Durable conflict-record id when a record was written for review; null when conflict review is
+    /// unsupported by the provider.
+    /// </summary>
+    [JsonPropertyName("conflictId")]
+    public string? ConflictId { get; set; }
+}
+
+/// <summary>
+/// A single layer's uploaded edits within the <c>synchronizeReplica</c> <c>edits</c> parameter. The
+/// ArcGIS sync <c>edits</c> payload is a JSON array of these per-layer objects; each carries Esri-JSON
+/// adds/updates and delete object ids for one layer.
+/// </summary>
+public sealed class SynchronizeReplicaLayerEdits
+{
+    /// <summary>Service-local layer id the edits target.</summary>
+    [JsonPropertyName("id")]
+    public int Id { get; set; }
+
+    /// <summary>Features to add (Esri JSON).</summary>
+    [JsonPropertyName("adds")]
+    public GeoServicesFeature[]? Adds { get; set; }
+
+    /// <summary>Features to update (Esri JSON; each must carry its object id attribute).</summary>
+    [JsonPropertyName("updates")]
+    public GeoServicesFeature[]? Updates { get; set; }
+
+    /// <summary>Object ids to delete.</summary>
+    [JsonPropertyName("deletes")]
+    public long[]? Deletes { get; set; }
 }
 
 /// <summary>

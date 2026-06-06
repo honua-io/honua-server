@@ -54,6 +54,7 @@ This folder contains Architecture Decision Records (ADRs) for the Honua greenfie
 | [0046](0046-audit-c3-database-session-progressive-migration.md) | Audit C3 — Progressive `IDatabaseSession` Migration With Coexistence | Accepted | 2026-05 |
 | [0047](0047-module-dependency-policy.md) | Module Dependency Policy | Accepted | 2026-05 |
 | [0049](0049-single-auth-identity-token-foundation.md) | Single Auth/Identity/Token Foundation Shared by OIDC SSO and ArcGIS OAuth2 | Accepted | 2026-06 |
+| [0051](0051-branch-versioning-storage-model.md) | Branch-Versioning Storage Model (Overlay/Moment Over the Live Base Table) | Accepted | 2026-06 |
 
 ## Template
 

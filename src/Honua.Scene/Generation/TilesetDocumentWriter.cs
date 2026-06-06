@@ -145,14 +145,42 @@ public static class TilesetDocumentWriter
     {
         var hasContent = content.TryGetValue(node, out var nodeContent);
 
+        // 3D Tiles 1.1 requires a tile's boundingVolume to spatially enclose
+        // every descendant's bounding volume. The lon/lat bounds come from the
+        // node envelope (which already encloses its children), but the vertical
+        // extent must too. Derive it from the union of this node's own content
+        // and every content-bearing descendant rather than the node's own
+        // emitted [min,max]: a content-bearing interior node's height comes from
+        // a thinned representative sample of its subtree (SampleFeatures strides
+        // by key order, not height), so the sample can exclude the leaf carrying
+        // the subtree's extreme height — leaving the node's own extent narrower
+        // than its descendants. A content-less interior node (interior sampling
+        // disabled) has no own extent at all. Either way the node's own [min,max]
+        // can fail to enclose descendants and let a conformant client cull
+        // visible geometry, so always union over the whole subtree.
+        double minHeight;
+        double maxHeight;
+        if (TryGetDescendantHeightExtent(node, content, out var subtreeMin, out var subtreeMax))
+        {
+            minHeight = subtreeMin;
+            maxHeight = subtreeMax;
+        }
+        else
+        {
+            // No content anywhere in this subtree; a degenerate [0,0] slab is
+            // the only meaningful vertical extent and encloses nothing real.
+            minHeight = 0.0;
+            maxHeight = 0.0;
+        }
+
         var region = new[]
         {
             node.West * Math.PI / 180.0,
             node.South * Math.PI / 180.0,
             node.East * Math.PI / 180.0,
             node.North * Math.PI / 180.0,
-            hasContent ? nodeContent.MinHeightMeters : 0.0,
-            hasContent ? nodeContent.MaxHeightMeters : 0.0
+            minHeight,
+            maxHeight
         };
 
         List<TileNode>? children = null;
@@ -175,6 +203,44 @@ public static class TilesetDocumentWriter
             Content = hasContent ? new TileContent { Uri = nodeContent.Uri } : null,
             Children = children
         };
+    }
+
+    /// <summary>
+    /// Unions the vertical extent (meters) of every content-bearing node in the
+    /// subtree rooted at <paramref name="node"/>. Returns <c>false</c> when no
+    /// descendant carries content, so callers can fall back to a degenerate
+    /// extent rather than producing an inverted [+inf,-inf] region.
+    /// </summary>
+    private static bool TryGetDescendantHeightExtent(
+        SceneTileNode node,
+        IReadOnlyDictionary<SceneTileNode, SceneTileContent> content,
+        out double minHeight,
+        out double maxHeight)
+    {
+        var found = false;
+        var min = double.PositiveInfinity;
+        var max = double.NegativeInfinity;
+
+        if (content.TryGetValue(node, out var nodeContent))
+        {
+            found = true;
+            min = nodeContent.MinHeightMeters;
+            max = nodeContent.MaxHeightMeters;
+        }
+
+        foreach (var child in node.Children)
+        {
+            if (TryGetDescendantHeightExtent(child, content, out var childMin, out var childMax))
+            {
+                found = true;
+                if (childMin < min) min = childMin;
+                if (childMax > max) max = childMax;
+            }
+        }
+
+        minHeight = found ? min : 0.0;
+        maxHeight = found ? max : 0.0;
+        return found;
     }
 
     /// <summary>

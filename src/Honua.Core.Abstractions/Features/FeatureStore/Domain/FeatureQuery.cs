@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Diagnostics.CodeAnalysis;
+using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
@@ -69,6 +70,15 @@ public readonly record struct FeatureQuery
     /// Optional output SRID for geometry transformation in query results
     /// </summary>
     public int? OutputSrid { get; init; }
+
+    /// <summary>
+    /// Optional datum (geographic) transformation selected for the
+    /// <see cref="SpatialReferenceSrid"/> → <see cref="OutputSrid"/> reprojection.
+    /// When set, providers emit the explicit 3-argument PostGIS
+    /// <c>ST_Transform(geom, '&lt;pipeline&gt;', toSrid)</c> so output geometry matches
+    /// the selected (Esri-parity) pipeline rather than PROJ's implicit default.
+    /// </summary>
+    public DatumTransformationSelection? OutputDatumTransformation { get; init; }
 
     /// <summary>
     /// Optional output axis order for formats that encode coordinates according to CRS axis definitions.
@@ -151,6 +161,15 @@ public readonly record struct FeatureQuery
     /// Top features filter for queryTopFeatures operations (window-function partitioning)
     /// </summary>
     public TopFilter? TopFilter { get; init; }
+
+    /// <summary>
+    /// Branch version the read targets (#1272 Track B, ADR-0051). A null value or
+    /// <see cref="VersionContext.IsDefault"/> means the DEFAULT version: the provider must emit the
+    /// byte-identical non-versioned base query. A non-DEFAULT context overlays the version's deltas onto
+    /// the DEFAULT base. Threaded through the shared query pipeline so every protocol adapter can request
+    /// a versioned read without reimplementing data access.
+    /// </summary>
+    public VersionContext? VersionContext { get; init; }
 
     /// <summary>
     /// Creates a simple WHERE clause query

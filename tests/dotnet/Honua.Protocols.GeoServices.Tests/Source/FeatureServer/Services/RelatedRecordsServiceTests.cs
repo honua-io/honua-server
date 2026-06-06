@@ -261,6 +261,115 @@ public sealed class RelatedRecordsServiceTests
         withoutRecords.RelatedRecords!.Should().BeEmpty();
     }
 
+    // Regression (#1465): when the relationship's origin foreign key is NOT the object-id
+    // field, the related row's destination key value differs from the origin object id.
+    // Grouping must bucket related rows by the origin object id the storage layer stamped
+    // onto each row (RelatedQuery.OriginObjectIdsAttribute), NOT by the destination key
+    // value. Previously the grouping treated the destination key value as the origin
+    // object id, so the relate only resolved when the foreign key happened to equal the
+    // object id — failing for any origin object id whose key differs (e.g. large ids).
+    [Fact]
+    public void GroupRelatedRecords_WithNonObjectIdOriginKey_GroupsByStampedOriginObjectId()
+    {
+        var sut = CreateSut(Substitute.For<IRelationshipStore>());
+
+        var relationship = new MetadataV2Relationship
+        {
+            Id = "rel-1",
+            RelatedResourceId = "child",
+            OriginField = "ext_key",
+            DestinationField = "ext_key"
+        };
+
+        // The related row's destination key ('K-300208') is NOT the origin object id
+        // (300208). Only the stamped origin id ties the row back to its origin.
+        var originIds300208 = new[] { 300208L };
+        var relatedFeature = Feature.Create(
+            10,
+            geometry: null,
+            new Dictionary<string, object?>
+            {
+                ["objectid"] = 10L,
+                ["ext_key"] = "K-300208",
+                ["label"] = "child-a",
+                [RelatedQuery.OriginObjectIdsAttribute] = originIds300208
+            }.ToImmutableDictionary());
+
+        var result = QueryResult<Feature>.Create(1, [relatedFeature]);
+
+        var grouped = sut.GroupRelatedRecords(
+            result,
+            objectIds: [300208],
+            relationship,
+            objectIdFieldName: "objectid",
+            returnGeometry: false,
+            outputSrid: null,
+            returnZ: false,
+            returnM: false,
+            geometryPrecision: null,
+            maxAllowableOffset: null,
+            outFields: null,
+            relatedResource: CreateRelatedResource());
+
+        var group = grouped.Groups.Should().ContainSingle().Which;
+        group.ObjectId.Should().Be(300208L);
+        group.RelatedRecords.Should().NotBeNull();
+        group.RelatedRecords!.Should().ContainSingle();
+        group.RelatedRecords[0].Attributes.Should().ContainKey("label");
+
+        // The internal origin-id stamp must never leak into the emitted attributes.
+        group.RelatedRecords[0].Attributes.Should()
+            .NotContainKey(RelatedQuery.OriginObjectIdsAttribute);
+    }
+
+    // A single foreign-key value can resolve to multiple origin object ids; the related
+    // row must then appear under every matching origin group.
+    [Fact]
+    public void GroupRelatedRecords_WithStampSpanningMultipleOrigins_AppearsInEachGroup()
+    {
+        var sut = CreateSut(Substitute.For<IRelationshipStore>());
+
+        var relationship = new MetadataV2Relationship
+        {
+            Id = "rel-1",
+            RelatedResourceId = "child",
+            OriginField = "ext_key",
+            DestinationField = "ext_key"
+        };
+
+        var originIds7And9 = new[] { 7L, 9L };
+        var relatedFeature = Feature.Create(
+            10,
+            geometry: null,
+            new Dictionary<string, object?>
+            {
+                ["objectid"] = 10L,
+                ["ext_key"] = "shared",
+                ["label"] = "child-a",
+                [RelatedQuery.OriginObjectIdsAttribute] = originIds7And9
+            }.ToImmutableDictionary());
+
+        var result = QueryResult<Feature>.Create(1, [relatedFeature]);
+
+        var grouped = sut.GroupRelatedRecords(
+            result,
+            objectIds: [7, 9],
+            relationship,
+            objectIdFieldName: "objectid",
+            returnGeometry: false,
+            outputSrid: null,
+            returnZ: false,
+            returnM: false,
+            geometryPrecision: null,
+            maxAllowableOffset: null,
+            outFields: null,
+            relatedResource: CreateRelatedResource());
+
+        grouped.Groups.Should().HaveCount(2);
+        grouped.Groups.Single(g => g.ObjectId == 7L).RelatedRecords.Should().ContainSingle();
+        grouped.Groups.Single(g => g.ObjectId == 9L).RelatedRecords.Should().ContainSingle();
+    }
+
     private static MetadataV2Resource CreateRelatedResource()
         => new()
         {

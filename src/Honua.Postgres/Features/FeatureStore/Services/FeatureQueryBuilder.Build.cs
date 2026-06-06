@@ -53,6 +53,7 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
         FeatureQuery query,
         CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
     {
+        GuardVersionedReadSupported(query, "projected-point");
         var sql = _stringBuilderPool.Get();
         try
         {
@@ -70,7 +71,7 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
             else if (query.OutputSrid.HasValue &&
                 (!query.SpatialReferenceSrid.HasValue || query.OutputSrid.Value != query.SpatialReferenceSrid.Value))
             {
-                pointGeometry = $"ST_Transform({pointGeometry}, {query.OutputSrid.Value})";
+                pointGeometry = DatumTransformSql.BuildTransformExpression(pointGeometry, query.OutputSrid.Value, query.OutputDatumTransformation);
             }
 
             if (query.RasterPointGrid is { } pointGrid)
@@ -169,14 +170,15 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
             if (query.OutputSrid.HasValue &&
                 (!query.SpatialReferenceSrid.HasValue || query.OutputSrid.Value != query.SpatialReferenceSrid.Value))
             {
-                pointGeometry = $"ST_Transform({pointGeometry}, {query.OutputSrid.Value})";
+                pointGeometry = DatumTransformSql.BuildTransformExpression(pointGeometry, query.OutputSrid.Value, query.OutputDatumTransformation);
             }
 
             var pointX = BuildPointCoordinateExpression(pointGeometry, "X");
             var pointY = BuildPointCoordinateExpression(pointGeometry, "Y");
             var (publicIdSelect, attributesSelect) = BuildRawAttributeSelectExpressions(query, ref paramIndex, parameters);
+            var featureSource = BuildVersionedFeatureSource(query, "features", ref paramIndex, parameters);
             sql.Append(CultureInfo.InvariantCulture,
-                $"SELECT {DatabaseSchema.ObjectIdColumn}, {publicIdSelect} AS public_id, {attributesSelect} AS {DatabaseSchema.AttributesColumn}, {pointX} AS x, {pointY} AS y FROM {_tableName} WHERE {DatabaseSchema.LayerIdColumn} = $1");
+                $"SELECT {DatabaseSchema.ObjectIdColumn}, {publicIdSelect} AS public_id, {attributesSelect} AS {DatabaseSchema.AttributesColumn}, {pointX} AS x, {pointY} AS y FROM {featureSource} WHERE {DatabaseSchema.LayerIdColumn} = $1");
             AppendWhereClause(sql, query, ref paramIndex, parameters);
             AppendTemporalFilter(sql, query, ref paramIndex, parameters);
             AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
@@ -258,9 +260,11 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
         var sql = _stringBuilderPool.Get();
         try
         {
-            sql.Append(CultureInfo.InvariantCulture, $"SELECT COUNT(*) FROM {_tableName} WHERE {DatabaseSchema.LayerIdColumn} = $1");
             var paramIndex = 2;
             var parameters = new List<object>();
+            var featureSource = BuildVersionedFeatureSource(query, "features", ref paramIndex, parameters);
+
+            sql.Append(CultureInfo.InvariantCulture, $"SELECT COUNT(*) FROM {featureSource} WHERE {DatabaseSchema.LayerIdColumn} = $1");
 
             AppendWhereClause(sql, query, ref paramIndex, parameters);
             AppendTemporalFilter(sql, query, ref paramIndex, parameters);
@@ -286,9 +290,11 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
         var sql = _stringBuilderPool.Get();
         try
         {
-            sql.Append(CultureInfo.InvariantCulture, $"SELECT {DatabaseSchema.ObjectIdColumn} FROM {_tableName} WHERE {DatabaseSchema.LayerIdColumn} = $1");
             var paramIndex = 2;
             var parameters = new List<object>();
+            var featureSource = BuildVersionedFeatureSource(query, "features", ref paramIndex, parameters);
+
+            sql.Append(CultureInfo.InvariantCulture, $"SELECT {DatabaseSchema.ObjectIdColumn} FROM {featureSource} WHERE {DatabaseSchema.LayerIdColumn} = $1");
 
             AppendWhereClause(sql, query, ref paramIndex, parameters);
             AppendTemporalFilter(sql, query, ref paramIndex, parameters);
@@ -364,6 +370,7 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
         FeatureQuery? query,
         CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
     {
+        GuardVersionedReadSupported(query, "extent");
         var effectiveQuery = query ?? new FeatureQuery();
         var extentExpression = _geometryProcessor.GetGeometryOperand(geometryStorageType, null, effectiveQuery.SpatialReferenceSrid);
 
@@ -371,7 +378,7 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
             effectiveQuery.SpatialReferenceSrid.HasValue &&
             effectiveQuery.OutputSrid.Value != effectiveQuery.SpatialReferenceSrid.Value)
         {
-            extentExpression = $"ST_Transform({extentExpression}, {effectiveQuery.OutputSrid.Value})";
+            extentExpression = DatumTransformSql.BuildTransformExpression(extentExpression, effectiveQuery.OutputSrid.Value, effectiveQuery.OutputDatumTransformation);
         }
 
         var sql = _stringBuilderPool.Get();
@@ -448,6 +455,7 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
         TileLimits tileLimits,
         CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
     {
+        GuardVersionedReadSupported(query, "mvt-tile");
         var sql = _stringBuilderPool.Get();
         try
         {
