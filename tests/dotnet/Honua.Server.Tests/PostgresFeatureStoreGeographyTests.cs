@@ -14,7 +14,7 @@ using FeatureStoreStringBuilderPooledObjectPolicy = Honua.Postgres.Features.Feat
 
 namespace Honua.Server.Tests;
 
-[Collection("Database")]
+[Collection("Database.CoreParallel2")]
 public sealed class PostgresFeatureStoreGeographyTests : IAsyncLifetime
 {
     private readonly DatabaseFixtureAdapter _fixture;

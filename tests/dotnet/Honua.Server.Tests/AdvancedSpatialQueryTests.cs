@@ -17,7 +17,7 @@ namespace Honua.Server.Tests;
 /// Tests distance-based queries (ST_DWithin, ST_Distance) and K-Nearest Neighbor (KNN) queries.
 /// </summary>
 [Protocol(TestProtocols.FeatureServer)]
-[Collection("Database")]
+[Collection("Database.CoreParallel3")]
 public sealed class AdvancedSpatialQueryTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();

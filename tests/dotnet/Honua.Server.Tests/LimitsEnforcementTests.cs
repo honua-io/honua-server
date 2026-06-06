@@ -19,7 +19,7 @@ namespace Honua.Server.Tests;
 /// Tests Issue #63 - Shared limits configuration implementation.
 /// </summary>
 [Protocol(TestProtocols.FeatureServer)]
-[Collection("Database")]
+[Collection("Database.CoreParallel4")]
 public sealed class LimitsEnforcementTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();

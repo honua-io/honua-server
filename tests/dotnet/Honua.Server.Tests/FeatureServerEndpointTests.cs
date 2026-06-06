@@ -23,7 +23,7 @@ namespace Honua.Server.Tests;
 /// <summary>
 /// Integration tests for streaming query functionality (Issue #229)
 /// </summary>
-[Collection("Database")]
+[Collection("Database.CoreParallel1")]
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class StreamingFeatureServerEndpointTests : IAsyncLifetime
 {
@@ -245,7 +245,7 @@ public sealed class StreamingFeatureServerEndpointTests : IAsyncLifetime
 }
 
 [Protocol(TestProtocols.FeatureServer)]
-[Collection("Database")]
+[Collection("Database.CoreParallel1")]
 public sealed class FeatureServerEndpointTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();

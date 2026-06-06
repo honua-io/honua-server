@@ -131,8 +131,16 @@ internal static class SeedRunner
         var collectionLookup = BuildCollectionLookup(seed.Collections);
 
         await using var connection = await dataSource.OpenConnectionAsync().ConfigureAwait(false);
-        // Use RepeatableRead for test seeding to ensure consistent data setup
-        await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.RepeatableRead).ConfigureAwait(false);
+        // ReadCommitted (not RepeatableRead): when collections run in parallel, multiple
+        // fixtures seed concurrently. The pg_advisory_xact_lock below already serializes the
+        // seed critical section, so snapshot isolation buys nothing here — but it actively
+        // breaks parallel seeding: pg_advisory_xact_lock is the transaction's first statement,
+        // so a waiting seeder pins its RepeatableRead snapshot before the lock is granted, and
+        // once the prior seeder commits its DELETEs the waiter fails with 40001 "could not
+        // serialize access due to concurrent delete". ReadCommitted re-snapshots per statement,
+        // so the waiter sees the prior seeder's committed state and never hits serialization
+        // failure, while the advisory lock keeps setup consistent.
+        await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted).ConfigureAwait(false);
         await AcquireSeedApplicationLockAsync(connection).ConfigureAwait(false);
 
         if (!string.IsNullOrWhiteSpace(schemaName))

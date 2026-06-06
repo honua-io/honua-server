@@ -19,7 +19,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService;
 /// ArcGIS SDKs invoke that previously returned 404.
 /// </summary>
 [Protocol(TestProtocols.GeometryService)]
-[Collection("Database")]
+[Collection("Database.GeoServicesParallel1")]
 public sealed class GeometryServiceEditOperationsTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();

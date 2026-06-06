@@ -15,7 +15,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 /// <summary>
 /// Tests for ImageServer parameter validation: format variations, geometry parsing, valid parameters.
 /// </summary>
-[Collection("Database")]
+[Collection("Database.GeoServicesParallel3")]
 [Protocol(TestProtocols.ImageServer)]
 public class ImageServerParameterValidationTests : IAsyncLifetime
 {

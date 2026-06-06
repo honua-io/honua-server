@@ -18,7 +18,7 @@ namespace Honua.Server.Tests;
 /// <summary>
 /// Integration tests for PostgresAttachmentStore using real PostgreSQL database.
 /// </summary>
-[Collection("Database")]
+[Collection("Database.CoreParallel2")]
 public class PostgresAttachmentStoreTests : IAsyncLifetime
 {
     private readonly DatabaseFixtureAdapter _fixture;

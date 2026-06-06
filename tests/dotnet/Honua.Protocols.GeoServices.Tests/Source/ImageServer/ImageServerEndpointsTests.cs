@@ -21,7 +21,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 /// route binding, telemetry, JSON formatting, and error handling are all covered
 /// per ADR-0011 API Surface Coverage.
 /// </summary>
-[Collection("Database")]
+[Collection("Database.GeoServicesParallel2")]
 [Protocol(TestProtocols.ImageServer)]
 public class ImageServerEndpointsTests
 {

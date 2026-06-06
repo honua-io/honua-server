@@ -14,7 +14,7 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.Catalog;
 
-[Collection("Database")]
+[Collection("Database.GeoServicesParallel4")]
 [Protocol(TestProtocols.GeoservicesCatalog)]
 public sealed class GeoservicesCatalogEndpointTests : IAsyncLifetime
 {

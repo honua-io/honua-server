@@ -16,7 +16,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService;
 /// handshake fails and no operation request is ever made.
 /// </summary>
 [Protocol(TestProtocols.GeometryService)]
-[Collection("Database")]
+[Collection("Database.GeoServicesParallel1")]
 public sealed class GeometryServiceInfoTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();

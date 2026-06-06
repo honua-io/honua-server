@@ -20,7 +20,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.NAServer;
 /// (see <see cref="TestRoutingProvider"/>) to exercise the full
 /// adapter → provider → Esri response path without a live topology.
 /// </summary>
-[Collection("Database")]
+[Collection("Database.GeoServicesParallel4")]
 [Protocol(TestProtocols.NAServer)]
 public sealed class NAServerEndpointTests : IAsyncLifetime
 {
