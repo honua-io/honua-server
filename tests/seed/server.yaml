@@ -936,7 +936,7 @@ sql:
       $$ LANGUAGE plpgsql;
   - "DROP TRIGGER IF EXISTS trigger_track_feature_changes ON features;"
   - "CREATE TRIGGER trigger_track_feature_changes AFTER INSERT OR UPDATE OR DELETE ON features FOR EACH ROW EXECUTE FUNCTION honua.track_feature_changes();"
-  # Branch-version registry (mirrors migration 046) for gdbVersion-routed branch-versioned editing.
+  # Branch-version registry (mirrors migration 048) for gdbVersion-routed branch-versioned editing.
   - "CREATE SEQUENCE IF NOT EXISTS honua.branch_layer_id_seq AS INTEGER START WITH 1000000000 INCREMENT BY 1 NO CYCLE;"
   - |
       CREATE TABLE IF NOT EXISTS honua.gdb_versions (
