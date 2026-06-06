@@ -12,7 +12,7 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Records;
 /// <summary>
 /// Integration tests for the read-only OGC API Records catalog surface.
 /// </summary>
-[Collection("Database")]
+[Collection("Database.OgcApiData")]
 [Protocol(TestProtocols.OgcApiRecords)]
 public sealed class OgcRecordsEndpointTests : IAsyncLifetime
 {

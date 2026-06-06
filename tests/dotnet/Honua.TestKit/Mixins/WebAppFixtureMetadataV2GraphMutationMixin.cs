@@ -42,6 +42,21 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
     }
 
     /// <summary>
+    /// Reads the current graph snapshot for the fixture's own schema partition (#1359).
+    /// Fixture mutations run outside an HTTP request, so the ambient request schema is not
+    /// populated; passing the fixture's <see cref="WebAppFixture.CurrentSchema"/> explicitly
+    /// keeps read-modify-write cycles scoped to the test's isolated schema and parallel-safe.
+    /// </summary>
+    private static MetadataV2GraphSnapshot ReadCurrent(WebAppFixture fixture, TestMetadataV2GraphProvider provider)
+        => provider.GetCurrentForSchema(fixture.CurrentSchema);
+
+    /// <summary>
+    /// Writes a graph snapshot to the fixture's own schema partition (#1359).
+    /// </summary>
+    private static void WriteGraph(WebAppFixture fixture, TestMetadataV2GraphProvider provider, MetadataV2Graph graph)
+        => provider.SetGraph(graph, etag: null, schema: fixture.CurrentSchema);
+
+    /// <summary>
     /// Updates the canonical resource published at <paramref name="layerIndex"/> with any
     /// of the supplied metadata slots. <see cref="WebAppFixture.UpdateV2ResourceMetadata"/>
     /// is a thin wrapper over this helper. Clearing flags take precedence over value
@@ -63,7 +78,7 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
     {
         var provider = RequireProvider(fixture);
 
-        var snapshot = provider.GetCurrentAsync().AsTask().GetAwaiter().GetResult();
+        var snapshot = ReadCurrent(fixture, provider);
         var pub = snapshot.Graph.Publications.FirstOrDefault(p => p.LayerIndex == layerIndex);
         if (pub is null)
         {
@@ -145,7 +160,7 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
             Resources = resources,
             Revision = snapshot.Graph.Revision + 1,
         };
-        provider.SetGraph(updatedGraph);
+        WriteGraph(fixture, provider, updatedGraph);
     }
 
     /// <summary>
@@ -159,7 +174,7 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
 
         var provider = RequireProvider(fixture);
 
-        var snapshot = provider.GetCurrentAsync().AsTask().GetAwaiter().GetResult();
+        var snapshot = ReadCurrent(fixture, provider);
         var pub = snapshot.Graph.Publications.FirstOrDefault(p => p.LayerIndex == layerIndex);
         if (pub is null)
         {
@@ -194,7 +209,7 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
             Resources = resources,
             Revision = snapshot.Graph.Revision + 1,
         };
-        provider.SetGraph(updatedGraph);
+        WriteGraph(fixture, provider, updatedGraph);
     }
 
     /// <summary>
@@ -207,7 +222,7 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
     {
         var provider = RequireProvider(fixture);
 
-        var snapshot = provider.GetCurrentAsync().AsTask().GetAwaiter().GetResult();
+        var snapshot = ReadCurrent(fixture, provider);
         var pub = snapshot.Graph.Publications.FirstOrDefault(p => p.LayerIndex == layerIndex);
         if (pub is null)
         {
@@ -238,7 +253,7 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
             Resources = resources,
             Revision = snapshot.Graph.Revision + 1,
         };
-        provider.SetGraph(updatedGraph);
+        WriteGraph(fixture, provider, updatedGraph);
     }
 
     /// <summary>
@@ -299,7 +314,7 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
     {
         var provider = RequireProvider(fixture);
 
-        var snapshot = provider.GetCurrentAsync().AsTask().GetAwaiter().GetResult();
+        var snapshot = ReadCurrent(fixture, provider);
         var pub = snapshot.Graph.Publications.FirstOrDefault(p => p.LayerIndex == layerIndex);
         if (pub is null)
         {
@@ -333,7 +348,7 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
             Resources = resources,
             Revision = snapshot.Graph.Revision + 1,
         };
-        provider.SetGraph(updatedGraph);
+        WriteGraph(fixture, provider, updatedGraph);
     }
 
     /// <summary>
@@ -350,7 +365,7 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
     {
         var provider = RequireProvider(fixture);
 
-        var snapshot = provider.GetCurrentAsync().AsTask().GetAwaiter().GetResult();
+        var snapshot = ReadCurrent(fixture, provider);
         var services = snapshot.Graph.Services.ToArray();
         var mutated = false;
         for (var i = 0; i < services.Length; i++)
@@ -388,7 +403,7 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
             Services = services,
             Revision = snapshot.Graph.Revision + 1,
         };
-        provider.SetGraph(updatedGraph);
+        WriteGraph(fixture, provider, updatedGraph);
     }
 
     /// <summary>
@@ -400,7 +415,7 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
     {
         var provider = RequireProvider(fixture);
 
-        var snapshot = provider.GetCurrentAsync().AsTask().GetAwaiter().GetResult();
+        var snapshot = ReadCurrent(fixture, provider);
         var affectedResourceIds = snapshot.Graph.Publications
             .Where(publication => publication.LayerIndex == layerIndex)
             .Select(publication => publication.ResourceId)
@@ -433,7 +448,7 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
                 : publication)
             .ToArray();
 
-        provider.SetGraph(snapshot.Graph with
+        WriteGraph(fixture, provider, snapshot.Graph with
         {
             Resources = resources,
             Publications = publications,
@@ -451,7 +466,7 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
     {
         var provider = RequireProvider(fixture);
 
-        var snapshot = provider.GetCurrentAsync().AsTask().GetAwaiter().GetResult();
+        var snapshot = ReadCurrent(fixture, provider);
         var adminGraph = WebAppFixtureMetadataV2Mixin.BuildAdminSampleMetadataV2Graph();
         var adminResourceIds = adminGraph.Resources
             .Select(static resource => resource.Metadata.Id)
@@ -467,7 +482,7 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
             .ToHashSet(StringComparer.Ordinal);
 
         var graph = snapshot.Graph;
-        provider.SetGraph(graph with
+        WriteGraph(fixture, provider, graph with
         {
             Resources = graph.Resources
                 .Where(resource => !adminResourceIds.Contains(resource.Metadata.Id))
@@ -507,13 +522,13 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
         var seedFile = Path.GetFileName(seedPath);
         if (seedFile.Equals("odata.yaml", StringComparison.OrdinalIgnoreCase))
         {
-            provider.SetGraph(WebAppFixtureMetadataV2Mixin.BuildODataSeedTestGraph());
+            WriteGraph(fixture, provider, WebAppFixtureMetadataV2Mixin.BuildODataSeedTestGraph());
             return;
         }
 
         if (seedFile.Equals("spatial-reference.yaml", StringComparison.OrdinalIgnoreCase))
         {
-            provider.SetGraph(WebAppFixtureMetadataV2Mixin.BuildSpatialReferenceSeedTestGraph());
+            WriteGraph(fixture, provider, WebAppFixtureMetadataV2Mixin.BuildSpatialReferenceSeedTestGraph());
         }
     }
 }

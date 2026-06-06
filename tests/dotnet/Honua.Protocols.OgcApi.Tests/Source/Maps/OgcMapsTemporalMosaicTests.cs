@@ -16,7 +16,7 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps;
 
-[Collection("Database")]
+[Collection("Database.OgcApiTiles")]
 [Protocol(TestProtocols.OgcApiMaps)]
 public sealed class OgcMapsTemporalMosaicTests
 {

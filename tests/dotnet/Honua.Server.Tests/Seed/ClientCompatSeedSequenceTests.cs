@@ -13,7 +13,7 @@ using YamlDotNet.Serialization.NamingConventions;
 
 namespace Honua.Server.Tests.Seed;
 
-[Collection("Database")]
+[Collection("Database.CoreEndpoints")]
 [Protocol(TestProtocols.Infrastructure)]
 public sealed class ClientCompatSeedSequenceTests
 {

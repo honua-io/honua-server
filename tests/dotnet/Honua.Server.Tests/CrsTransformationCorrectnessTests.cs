@@ -18,7 +18,7 @@ namespace Honua.Server.Tests;
 /// Tests critical PostgresCrsRegistry functionality and real-world coordinate scenarios.
 /// </summary>
 [Protocol(TestProtocols.FeatureServer)]
-[Collection("Database")]
+[Collection("Database.CoreSpatial")]
 public sealed class CrsTransformationCorrectnessTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();

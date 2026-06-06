@@ -14,7 +14,7 @@ namespace Honua.Server.Tests;
 /// Tests for database migration functionality using DbUp
 /// </summary>
 [Protocol(TestProtocols.TestQuality)]
-[Collection("Database")]
+[Collection("Database.CoreFeatureStore")]
 public sealed class DatabaseMigrationTests : IAsyncLifetime
 {
     private readonly PostgresFixture _postgres = new();
