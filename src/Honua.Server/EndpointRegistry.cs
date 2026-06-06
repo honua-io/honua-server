@@ -274,6 +274,8 @@ public static class EndpointRegistry
         new("POST", "/api/v1/studio/content-items/{itemId}/versions/{versionId}/publish-requests"),
         new("POST", "/api/v1/studio/content-items/{itemId}/versions/{versionId}/reopen"),
         new("POST", "/api/v1/studio/content-items/{itemId}/rollback-requests"),
+        // NL-assisted map package generation (#1180).
+        new("POST", "/api/v1/studio/map-packages/generate"),
 
         // v1 Studio map collaboration: comment threads + activity feed (#1278, slice 1)
         new("GET", "/api/v1/console/maps/{mapId}/collab/comments"),
@@ -289,6 +291,8 @@ public static class EndpointRegistry
         new("POST", "/api/v1/console/publications/{publicationId}/republish"),
         new("POST", "/api/v1/console/publications/{publicationId}/rollback"),
         new("PATCH", "/api/v1/console/publications/{publicationId}/policy"),
+        // NL-assisted report/dashboard content generation (#1183).
+        new("POST", "/api/v1/console/publications/generate"),
 
         // Temporal data history (slice 1 of #1166): capability discovery + as-of read.
         new("GET", "/api/v1/temporal/services/{serviceId}/layers/{layerId}/capabilities"),
@@ -514,6 +518,8 @@ public static class EndpointRegistry
         new("POST", "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/validate"),
         new("POST", "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/publish"),
         new("POST", "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/reopen"),
+        // NL-assisted form package generation (#1184).
+        new("POST", "/api/v1/admin/forms/packages/generate"),
         new("GET", "/api/v1/forms/packages/{formId}"),
         new("GET", "/api/v1/forms/packages/{formId}/versions/{packageVersion}"),
         new("GET", "/api/v1/forms/packages/{formId}/offline-policy"),
@@ -1105,6 +1111,9 @@ public static class EndpointRegistry
         new("GET", "/v1/spec/artifact/{hash}"),
 
         // Analysis content HTTP surface (#1182, #1237).
+        // NL-assisted analysis-package and saved-query generation.
+        new("POST", "/api/v1/analysis/content/generate"),
+        new("POST", "/api/v1/analysis/content/queries/generate"),
         new("POST", "/api/v1/analysis/content/items"),
         new("GET", "/api/v1/analysis/content/items"),
         new("GET", "/api/v1/analysis/content/items/{itemId}"),
