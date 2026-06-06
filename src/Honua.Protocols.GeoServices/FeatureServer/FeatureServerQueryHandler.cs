@@ -873,6 +873,25 @@ internal sealed partial class FeatureServerQueryHandler(
                     return await CreateCachedBytesResultAsync(payload, "application/geobuf");
                 }
 
+                // PARQUET/ARROW are encoded-export formats with no dedicated block;
+                // without this guard, an unsupported store falls through to the
+                // generic formatter and throws, which surfaced as an HTTP 500 that
+                // leaked a .NET stack trace. Return the same clean 400 as FGB/GEOBUF
+                // when the store cannot emit encoded output (bug hunt).
+                if ((isParquet || isArrow) &&
+                    !await _queryExecutor.SupportsFlatGeobufOutputAsync(
+                        queryLayer.Service,
+                        queryLayer.Resource,
+                        queryLayer.Publication,
+                        queryLayer.StorageLayerId,
+                        cancellationToken).ConfigureAwait(false))
+                {
+                    return StandardErrorHelpers.CreateBadRequest(
+                        context,
+                        "Unsupported output format",
+                        [$"Output format '{format}' is not supported by the configured feature store."]);
+                }
+
                 string[]? outFields;
                 if (string.IsNullOrEmpty(validatedParams.OutFields))
                 {
