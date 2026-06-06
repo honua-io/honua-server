@@ -117,11 +117,12 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
     }
 
     [IntegrationTest]
-    public async Task ImportFileAsync_WhenImportFunctionMissing_SurfacesUnderlyingPostgresMessage()
+    public async Task ImportFileAsync_WhenImportFunctionMissing_ReturnsSanitizedActionableError()
     {
         // No EnsureImportFunctionsAsync() call: honua.create_import_table is absent, so the
-        // staging-table creation raises a PostgresException. The service must surface the
-        // server message instead of collapsing to the generic "Import failed.".
+        // staging-table creation raises a PostgresException. The service must return a
+        // sanitized, SQLSTATE-coded message instead of relaying the raw server message
+        // (which leaks relation/function/schema names) or collapsing to "Import failed.".
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(StreamingFileImportStagingTableTests));
         try
         {
@@ -149,9 +150,17 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
             result.Success.Should().BeFalse();
             result.ErrorMessage.Should().StartWith("Import failed:");
             result.ErrorMessage.Should().NotBe("Import failed.");
+            // The sanitized message must not leak provider internals.
+            result.ErrorMessage.Should().NotContain("honua.create_import_table");
+            result.ErrorMessage.Should().NotContain("does not exist");
+            // But it must include the standardized SQLSTATE so operators can correlate.
+            result.ErrorMessage.Should().Contain("SQL state");
         }
         finally
         {
+            // Restore the shared import functions so later tests in the Database
+            // collection are unaffected, then drop the isolated schema.
+            await EnsureImportFunctionsAsync();
             await fixture.DropSchemaAsync(schema);
         }
     }

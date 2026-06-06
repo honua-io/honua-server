@@ -534,13 +534,13 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         }
         catch (Npgsql.PostgresException ex)
         {
-            // Surface the underlying PostgreSQL server message (e.g. a missing staging
-            // table or a constraint violation) instead of collapsing to the generic
-            // "Import failed." MessageText is the server-supplied message and never
-            // includes the connection string, SQL text, or a managed stack trace, so it
-            // is safe to relay to the operator while remaining actionable.
+            // Keep the full server message (which can include relation/function/schema/
+            // constraint names) in the server log, but never relay it to the client. The
+            // client-facing message maps the standardized SQLSTATE to a short, friendly
+            // explanation and includes the SQL state code so operators can correlate
+            // without leaking provider internals.
             ImportLog.ImportFailedWithException(_logger, ex, jobId, request.TableName);
-            errorMessage = $"Import failed: {ex.MessageText}";
+            errorMessage = $"Import failed: {DescribePostgresError(ex.SqlState)} (SQL state {ex.SqlState}).";
             result = ImportResult.CreateFailure(
                 request.TableName,
                 format ?? SupportedFileFormat.GeoJson,
@@ -604,4 +604,15 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             }
         }
     }
+
+    private static string DescribePostgresError(string? sqlState) => sqlState switch
+    {
+        "42P01" => "a required staging table was not available",
+        "42883" => "a required database function was not available",
+        "23505" => "a record with a conflicting key already exists",
+        "23502" => "a required value was missing",
+        "23503" => "a referenced record was missing",
+        "22P02" or "22P04" or "22023" => "the data could not be parsed for the target columns",
+        _ => "an unexpected database error occurred",
+    };
 }
