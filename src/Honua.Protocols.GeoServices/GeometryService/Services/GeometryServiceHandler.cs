@@ -2069,6 +2069,14 @@ internal sealed class GeometryServiceHandler(
     // dividing the area. Returns the original geometry unchanged when no cut occurs.
     private static Geometry[] CutGeometry(Geometry target, Geometry cutter)
     {
+        // Esri /cut returns no pieces (and no cutIndexes) when the cutter does not actually
+        // cut the target. ST_Crosses mirrors PostGIS ST_Split semantics: a cutter that only
+        // touches or misses the target produces no cut (avoids the false-positive cutIndex).
+        if (!target.Crosses(cutter))
+        {
+            return Array.Empty<Geometry>();
+        }
+
         if (target is IPolygonal)
         {
             var boundary = target.Boundary;
@@ -2079,7 +2087,7 @@ internal sealed class GeometryServiceHandler(
                 .Cast<Geometry>()
                 .Where(p => target.Contains(p.InteriorPoint))
                 .ToArray();
-            return pieces.Length > 1 ? pieces : new[] { target };
+            return pieces.Length > 1 ? pieces : Array.Empty<Geometry>();
         }
 
         if (target is ILineal)
@@ -2096,10 +2104,10 @@ internal sealed class GeometryServiceHandler(
             var pieces = merged
                 .Where(piece => target.Buffer(target.Length * 1e-9 + 1e-12).Contains(piece))
                 .ToArray();
-            return pieces.Length > 1 ? pieces : new[] { target };
+            return pieces.Length > 1 ? pieces : Array.Empty<Geometry>();
         }
 
-        return new[] { target };
+        return Array.Empty<Geometry>();
     }
 
     private IResult ExecuteTrimExtend(TrimExtendParameters parameters, HonuaTelemetryScope scope)
@@ -2208,10 +2216,13 @@ internal sealed class GeometryServiceHandler(
             else
             {
                 // OffsetCurve produces a line offset to one side of the input line(s),
-                // which is the polyline semantics ArcGIS exposes for offset.
+                // which is the polyline semantics ArcGIS exposes for offset. NTS (like
+                // PostGIS ST_OffsetCurve) treats a positive distance as the LEFT side of the
+                // line direction; Esri treats a positive offsetDistance as the RIGHT side, so
+                // negate to match the GeoServices contract.
                 offset = NetTopologySuite.Operation.Buffer.OffsetCurve.GetCurve(
                     geometry,
-                    distance,
+                    -distance,
                     NetTopologySuite.Operation.Buffer.BufferParameters.DefaultQuadrantSegments,
                     joinStyle,
                     Math.Max(parameters.BevelRatio, NetTopologySuite.Operation.Buffer.BufferParameters.DefaultMitreLimit));
