@@ -33,6 +33,11 @@ public sealed class EndpointAuthorizationGuardTests
         "RequireRole",
         "RequireScope",
         "AllowAnonymous",
+        // Temporal history (honua-server#1166) auth helpers wrap RequireAuthorization with a distinct
+        // policy per surface (history read, diff read, rollback execute); recognize them explicitly.
+        "RequireTemporalHistoryRead",
+        "RequireTemporalDiffRead",
+        "RequireTemporalRollbackExecute",
     };
 
     private static readonly Regex MapMutationRegex = new(

@@ -89,11 +89,13 @@ public sealed class TemporalHistoryEndpointsTests : IAsyncLifetime
         root.GetProperty("cursorKind").GetString().Should().Be("Generation");
         root.GetProperty("currentGeneration").GetInt64().Should().Be(42);
 
+        // Slices 2-5 are implemented: a history-capable layer now advertises diff/timeline/attribution/
+        // rollback support through the (formerly deferred) capability flags.
         var deferred = root.GetProperty("deferred");
-        deferred.GetProperty("supportsDiff").GetBoolean().Should().BeFalse();
-        deferred.GetProperty("supportsTimeline").GetBoolean().Should().BeFalse();
-        deferred.GetProperty("supportsAttribution").GetBoolean().Should().BeFalse();
-        deferred.GetProperty("supportsRollback").GetBoolean().Should().BeFalse();
+        deferred.GetProperty("supportsDiff").GetBoolean().Should().BeTrue();
+        deferred.GetProperty("supportsTimeline").GetBoolean().Should().BeTrue();
+        deferred.GetProperty("supportsAttribution").GetBoolean().Should().BeTrue();
+        deferred.GetProperty("supportsRollback").GetBoolean().Should().BeTrue();
     }
 
     [IntegrationTest]

@@ -294,6 +294,12 @@ public static class EndpointRegistry
         new("GET", "/api/v1/temporal/services/{serviceId}/layers/{layerId}/capabilities"),
         new("GET", "/api/v1/temporal/services/{serviceId}/layers/{layerId}/as-of"),
 
+        // Temporal data history (slices 2-5 of #1166): diff, feature timeline, governed rollback.
+        new("GET", "/api/v1/temporal/services/{serviceId}/layers/{layerId}/diff"),
+        new("GET", "/api/v1/temporal/services/{serviceId}/layers/{layerId}/features/{featureId}/timeline"),
+        new("POST", "/api/v1/temporal/services/{serviceId}/layers/{layerId}/rollback/plan"),
+        new("POST", "/api/v1/temporal/services/{serviceId}/layers/{layerId}/rollback"),
+
         new("GET", "/api/v1/published/{*routeSlug}"),
 
         // v1 admin metadata resource CRUD endpoints removed in #1035 cutover.

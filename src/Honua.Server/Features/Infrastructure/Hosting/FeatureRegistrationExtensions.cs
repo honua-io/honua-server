@@ -218,6 +218,7 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapGPServerEndpoints();
         endpoints.MapAnalysisContentEndpoints();
         endpoints.MapTemporalHistoryEndpoints();
+        endpoints.MapTemporalHistorySliceEndpoints();
         endpoints.MapAnalysisReporting();
         endpoints.MapCapabilityManifestEndpoints();
         endpoints.MapMcpOperatorSurface();
