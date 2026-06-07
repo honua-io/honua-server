@@ -35,3 +35,15 @@ public sealed class TemporalValidationException : Exception
     {
     }
 }
+
+/// <summary>
+/// Thrown when a governed rollback is requested but its plan is not in a runnable state, or required
+/// approval was not supplied (slice 5 of honua-server#1166).
+/// </summary>
+public sealed class TemporalRollbackNotPermittedException : Exception
+{
+    /// <summary>Creates the exception with the given message.</summary>
+    public TemporalRollbackNotPermittedException(string message) : base(message)
+    {
+    }
+}

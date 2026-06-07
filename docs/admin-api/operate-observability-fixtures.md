@@ -4,6 +4,17 @@ Honua Server exposes an explicit Development/Test seed facility for Console
 Testcontainers that need live Operate observability data from a real
 honua-server plus PostgreSQL runtime.
 
+This is the supported, non-production seed path that satisfies
+[honua-server#1229](https://github.com/honua-io/honua-server/issues/1229): it lets
+a downstream Console Testcontainers fixture create deterministic **active alert**
+and **durable job** records (plus related telemetry/log/event/investigation rows
+for cross-surface links) against a real honua-server image without reaching into
+PostgreSQL tables. The seeded records are visible only through the same
+public/admin observability read APIs Console consumes, and the path is disabled
+or fails fast in normal production configuration. This unblocks
+[honua-console#24](https://github.com/honua-io/honua-console/issues/24)'s final
+live alert/job evidence.
+
 The fixture is disabled by default. When enabled it is rejected outside
 `Development` and `Test` environments and requires the PostgreSQL provider; both
 checks fail fast at startup (`OptionsValidationException`) rather than serving
@@ -20,6 +31,21 @@ OperateObservabilityFixture__Enabled=true
 OperateObservabilityFixture__Profile=console-testcontainers-v1
 OperateObservabilityFixture__SeedOnStartup=false
 ```
+
+CI and Testcontainers can instead use the single flat alias
+`HONUA_ENABLE_OBSERVABILITY_TEST_SEED` (mirroring `HONUA_DEV_AUTH`). It is
+equivalent to the nested `OperateObservabilityFixture__Enabled=true` key and is
+the recommended switch for Console's Testcontainers fixture:
+
+```bash
+ASPNETCORE_ENVIRONMENT=Test
+HONUA_ENABLE_OBSERVABILITY_TEST_SEED=true
+```
+
+The flat alias can only enable the feature; it never disables an explicit
+`OperateObservabilityFixture__Enabled=true`. Like the nested key, it is rejected
+outside `Development`/`Test` (startup fails with `OptionsValidationException`), so
+setting it in production does not expose the seed path.
 
 The container must use PostgreSQL. The fixture does not support DuckDB, MySQL,
 or MariaDB providers.
@@ -160,6 +186,23 @@ Fixed identifiers:
 The alert zone polygon is a small Honolulu Harbor footprint declared in
 WGS84/EPSG:4326 and validated through the same geometry path as the production
 alert-zone admin API.
+
+## #1229 acceptance criteria
+
+| Criterion | How this path satisfies it |
+| --- | --- |
+| Start a real container with documented test/dev config and seed deterministic alert + job data | `ASPNETCORE_ENVIRONMENT=Test` + `HONUA_ENABLE_OBSERVABILITY_TEST_SEED=true` (or `OperateObservabilityFixture__Enabled=true`), then `POST /api/v1/admin/dev/fixtures/operate-observability/console-testcontainers-v1` with `X-API-Key`. |
+| Seeded records visible through public/admin observability APIs, not private tables | Alerts via `GET /api/v1/admin/observability/alerts?serviceId=operate-fixture-console`; jobs via `GET /api/v1/admin/jobs?correlationId=corr-operate-fixture-001`. The seeder writes through `IAlertEventStore`/`IExecutionJobStore`, the same stores the read APIs use. |
+| Seed path disabled/inaccessible in normal production | Disabled by default (endpoint returns `404`); enabling it under a non-Development/Test environment fails startup with `OptionsValidationException`. |
+| Documentation names env vars, auth, and expected record IDs/names | This document — see **Enable**, **Seed**, and the **Fixed identifiers** table. |
+| Console#24 can replace skipped/partial live alert + job evidence | The `alerts`/`jobs` keys in the response `links` map return the exact filtered read URLs to assert against. |
+
+The deterministic identifiers Console asserts by (auth: `X-API-Key` admin key):
+
+- Active (open) alert: lifecycle `open`, severity `Warning`, `serviceId=operate-fixture-console`, dedupe key `console-testcontainers-v1:alert-open`.
+- Resolved alert: lifecycle `resolved`, severity `Critical`, dedupe key `console-testcontainers-v1:alert-resolved`.
+- Durable jobs: `operate-fixture-job-succeeded` (Succeeded) and `operate-fixture-job-failed` (Failed).
+- Investigation: `inv-operate-fixture-console`.
 
 ## Notes
 

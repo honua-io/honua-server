@@ -115,6 +115,13 @@ internal static class FormPackageEndpoints
             .WithMetadata(new HttpMethodMetadata([HttpMethods.Get]))
             .Produces<FormOfflinePolicyResponse>();
 
+        runtime.MapGet("/{formId}/compatibility", HandleGetCompatibility)
+            .WithName("GetFormPackageCompatibility")
+            .WithSummary("Get the offline compatibility and migration manifest for a published package version.")
+            .WithMetadata(new HttpMethodMetadata([HttpMethods.Get]))
+            .Produces<FormCompatibilityManifest>()
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
         runtime.MapPost("/{formId}/submissions", HandleSubmit)
             .WithName("SubmitFormPackage")
             .WithSummary("Submit field data and optional attachments for a published package.")
@@ -232,6 +239,13 @@ internal static class FormPackageEndpoints
         string formId,
         int packageVersion)
         => service.GetRuntimeVersionAsync(context, formId, packageVersion);
+
+    private static Task<IResult> HandleGetCompatibility(
+        HttpContext context,
+        [FromServices] FormPackageLifecycleService service,
+        string formId,
+        [FromQuery] int? clientVersion)
+        => service.GetCompatibilityAsync(context, formId, clientVersion);
 
     private static Task<IResult> HandleGetOfflinePolicy(
         HttpContext context,

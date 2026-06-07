@@ -368,12 +368,18 @@ jobs:
             exit 1
           fi
 
-          if docker exec honua-runtime-test touch /test-write 2>/dev/null; then
-            echo "Container filesystem is writable; expected read-only."
+          if ! docker exec honua-runtime-test sh -c 'touch /test-write' 2>/dev/null; then
+            : # expected — read-only filesystem rejects the write
+          else
+            echo "::error::Container filesystem is writable; expected read-only."
             exit 1
           fi
 
-          user="$(docker exec honua-runtime-test whoami)"
+          if ! user="$(docker exec honua-runtime-test whoami 2>&1)"; then
+            echo "::error::Failed to query container user (container may have exited): $user"
+            docker logs honua-runtime-test || true
+            exit 1
+          fi
           if [ "$user" != "honua" ]; then
             echo "Container not running as expected user: $user"
             exit 1

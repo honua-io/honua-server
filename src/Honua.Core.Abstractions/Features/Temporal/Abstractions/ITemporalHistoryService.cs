@@ -53,4 +53,80 @@ public interface ITemporalHistoryService
         int layerId,
         TemporalAsOfRequest request,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Computes the diff between two checkpoints for a layer (slice 2 of honua-server#1166): summary
+    /// counts plus a page of classified feature changes (added/removed/attribute-changed/geometry-changed)
+    /// with field-level detail and geometry indicators.
+    /// </summary>
+    /// <param name="serviceId">Metadata v2 service id.</param>
+    /// <param name="layerId">Service-local layer index.</param>
+    /// <param name="request">Normalized diff request with base and target checkpoints.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The diff result for the resolved checkpoints.</returns>
+    /// <exception cref="TemporalLayerNotFoundException">Thrown when the service/layer does not resolve.</exception>
+    /// <exception cref="TemporalNotSupportedException">Thrown when the layer does not support history reads.</exception>
+    /// <exception cref="TemporalValidationException">Thrown when the request or a checkpoint is invalid.</exception>
+    Task<TemporalDiffResult> DiffAsync(
+        string serviceId,
+        int layerId,
+        TemporalDiffRequest request,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reads a single feature's revision timeline across history (slice 3 of honua-server#1166): ordered
+    /// revisions with generation, timestamp, operation, and attribution, subject to the masking policy.
+    /// </summary>
+    /// <param name="serviceId">Metadata v2 service id.</param>
+    /// <param name="layerId">Service-local layer index.</param>
+    /// <param name="request">Normalized timeline request.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The feature's timeline.</returns>
+    /// <exception cref="TemporalLayerNotFoundException">Thrown when the service/layer does not resolve.</exception>
+    /// <exception cref="TemporalNotSupportedException">Thrown when the layer does not support history reads.</exception>
+    /// <exception cref="TemporalValidationException">Thrown when the request is invalid.</exception>
+    Task<TemporalTimeline> GetTimelineAsync(
+        string serviceId,
+        int layerId,
+        TemporalTimelineRequest request,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Plans a governed rollback to a target checkpoint (slice 5 of honua-server#1166): reports the
+    /// rollback state, affected counts, validation/compatibility findings, and approval requirement.
+    /// Planning never mutates data.
+    /// </summary>
+    /// <param name="serviceId">Metadata v2 service id.</param>
+    /// <param name="layerId">Service-local layer index.</param>
+    /// <param name="request">Normalized rollback planning request.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The rollback plan.</returns>
+    /// <exception cref="TemporalLayerNotFoundException">Thrown when the service/layer does not resolve.</exception>
+    /// <exception cref="TemporalNotSupportedException">Thrown when the layer does not support history reads.</exception>
+    /// <exception cref="TemporalValidationException">Thrown when the request or checkpoint is invalid.</exception>
+    Task<TemporalRollbackPlan> PlanRollbackAsync(
+        string serviceId,
+        int layerId,
+        TemporalRollbackPlanRequest request,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Executes an approved governed rollback by submitting a NEW forward corrective operation through the
+    /// job runner (slice 5 of honua-server#1166). Never deletes history; the corrective job creates a new
+    /// checkpoint. Returns a job handle for polling.
+    /// </summary>
+    /// <param name="serviceId">Metadata v2 service id.</param>
+    /// <param name="layerId">Service-local layer index.</param>
+    /// <param name="request">Normalized rollback execution request.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A handle to the submitted corrective job.</returns>
+    /// <exception cref="TemporalLayerNotFoundException">Thrown when the service/layer does not resolve.</exception>
+    /// <exception cref="TemporalNotSupportedException">Thrown when the layer does not support history reads.</exception>
+    /// <exception cref="TemporalValidationException">Thrown when the request or checkpoint is invalid.</exception>
+    /// <exception cref="TemporalRollbackNotPermittedException">Thrown when the plan is not runnable or approval is missing.</exception>
+    Task<TemporalRollbackJobHandle> ExecuteRollbackAsync(
+        string serviceId,
+        int layerId,
+        TemporalRollbackExecuteRequest request,
+        CancellationToken cancellationToken = default);
 }

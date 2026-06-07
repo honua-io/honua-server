@@ -32,6 +32,7 @@ internal static class JsonContextRegistration
                 Honua.Server.Features.Admin.Models.MetadataPrevalidationJsonContext.Default,
                 Honua.Core.Features.Publishing.Content.Domain.ContentPublicationJsonContext.Default,
                 Honua.Server.Features.Temporal.TemporalHistoryApiJsonContext.Default,
+                Honua.Server.Features.Temporal.TemporalHistorySlicesJsonContext.Default,
                 Honua.Server.Features.Admin.Models.DeployControlJsonContext.Default,
                 Honua.Infrastructure.Monitoring.MetricsJsonContext.Default,
                 Honua.Import.FileImport.ImportJsonContext.Default,

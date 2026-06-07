@@ -298,6 +298,12 @@ public static class EndpointRegistry
         new("GET", "/api/v1/temporal/services/{serviceId}/layers/{layerId}/capabilities"),
         new("GET", "/api/v1/temporal/services/{serviceId}/layers/{layerId}/as-of"),
 
+        // Temporal data history (slices 2-5 of #1166): diff, feature timeline, governed rollback.
+        new("GET", "/api/v1/temporal/services/{serviceId}/layers/{layerId}/diff"),
+        new("GET", "/api/v1/temporal/services/{serviceId}/layers/{layerId}/features/{featureId}/timeline"),
+        new("POST", "/api/v1/temporal/services/{serviceId}/layers/{layerId}/rollback/plan"),
+        new("POST", "/api/v1/temporal/services/{serviceId}/layers/{layerId}/rollback"),
+
         new("GET", "/api/v1/published/{*routeSlug}"),
 
         // v1 admin metadata resource CRUD endpoints removed in #1035 cutover.
@@ -523,7 +529,15 @@ public static class EndpointRegistry
         new("GET", "/api/v1/forms/packages/{formId}"),
         new("GET", "/api/v1/forms/packages/{formId}/versions/{packageVersion}"),
         new("GET", "/api/v1/forms/packages/{formId}/offline-policy"),
+        new("GET", "/api/v1/forms/packages/{formId}/compatibility"),
         new("POST", "/api/v1/forms/packages/{formId}/submissions"),
+
+        // Back-office field data review & QA (#1159)
+        new("GET", "/api/v1/admin/field-workflows/submissions"),
+        new("GET", "/api/v1/admin/field-workflows/submissions/{submissionId}"),
+        new("POST", "/api/v1/admin/field-workflows/submissions/{submissionId}/assignment"),
+        new("POST", "/api/v1/admin/field-workflows/submissions/{submissionId}/decision"),
+        new("POST", "/api/v1/admin/field-workflows/submissions/{submissionId}/comments"),
 
         new("POST", "/api/v1/admin/tile-operations/jobs"),
         new("GET", "/api/v1/admin/tile-operations/jobs/{jobId}"),

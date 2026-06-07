@@ -224,6 +224,18 @@ public static class OidcAuthenticationExtensions
                 AuthenticationExtensions.TemporalHistoryReadPolicy,
                 adminRoles,
                 schemes);
+
+            UpdateRolePolicy(
+                authzOptions,
+                AuthenticationExtensions.TemporalDiffReadPolicy,
+                adminRoles,
+                schemes);
+
+            UpdateRolePolicy(
+                authzOptions,
+                AuthenticationExtensions.TemporalRollbackExecutePolicy,
+                adminRoles,
+                schemes);
         });
 
         return services;
