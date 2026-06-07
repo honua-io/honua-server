@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Frozen;
+
 namespace Honua.Protocols.Stac.Models;
 
 /// <summary>
@@ -60,21 +62,23 @@ internal static class StacConstants
     /// </summary>
     internal static class AllowedQueryParameters
     {
-        public static readonly HashSet<string> Catalog = new(StringComparer.OrdinalIgnoreCase) { "f" };
+        // Frozen (immutable) so these process-wide lookup tables cannot be mutated by any request handler.
+        public static readonly FrozenSet<string> Catalog =
+            new[] { "f" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
-        public static readonly HashSet<string> Collections = new(StringComparer.OrdinalIgnoreCase) { "f" };
+        public static readonly FrozenSet<string> Collections =
+            new[] { "f" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
-        public static readonly HashSet<string> Items = new(StringComparer.OrdinalIgnoreCase)
-        {
-            "f", "limit", "offset", "bbox", "datetime"
-        };
+        public static readonly FrozenSet<string> Items =
+            new[] { "f", "limit", "offset", "bbox", "datetime" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
-        public static readonly HashSet<string> Item = new(StringComparer.OrdinalIgnoreCase) { "f" };
+        public static readonly FrozenSet<string> Item =
+            new[] { "f" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
-        public static readonly HashSet<string> SearchGet = new(StringComparer.OrdinalIgnoreCase)
+        public static readonly FrozenSet<string> SearchGet = new[]
         {
             "f", "limit", "offset", "bbox", "datetime", "collections", "ids",
             "intersects", "fields", "sortby", "filter", "filter-lang", "filter-crs"
-        };
+        }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
     }
 }

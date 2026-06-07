@@ -300,6 +300,11 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
     {
         var prefix = CloudStoragePath.BuildPrefix(folder, _options.KeyPrefix);
         var results = new List<CloudFile>();
+        if (maxResults <= 0)
+        {
+            return results;
+        }
+
         string? continuationToken = null;
 
         do

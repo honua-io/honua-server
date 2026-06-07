@@ -167,41 +167,6 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
             ExtentSampleSegmentsPerEdge);
     }
 
-    private static IEnumerable<(double X, double Y)> EnumerateSampledExtentPoints(
-        double minX, double minY, double maxX, double maxY)
-    {
-        foreach (var point in WebMercatorMath.EnumerateSampledExtentPoints(
-                     minX,
-                     minY,
-                     maxX,
-                     maxY,
-                     ExtentSampleSegmentsPerEdge))
-        {
-            yield return point;
-        }
-    }
-
-    private static double InterpolateLongitude(double minX, double maxX, double t)
-        => WebMercatorMath.InterpolateLongitude(minX, maxX, t);
-
-    private static bool IsAntimeridianCrossing(double minX, double maxX)
-        => WebMercatorMath.IsAntimeridianCrossing(minX, maxX);
-
-    private static string BuildLongitudeSampleExpression(string minX, string maxX, string t)
-    {
-        return $$"""
-            CASE
-                WHEN {{maxX}} >= {{minX}} THEN {{minX}} + (({{maxX}} - {{minX}}) * {{t}})
-                ELSE
-                    CASE
-                        WHEN {{minX}} + ((({{maxX}} + 360.0) - {{minX}}) * {{t}}) > 180.0
-                            THEN {{minX}} + ((({{maxX}} + 360.0) - {{minX}}) * {{t}}) - 360.0
-                        ELSE {{minX}} + ((({{maxX}} + 360.0) - {{minX}}) * {{t}})
-                    END
-            END
-            """;
-    }
-
     private async Task<(double MinX, double MinY, double MaxX, double MaxY)?> TransformExtentWithPostGisAsync(
         double minX, double minY, double maxX, double maxY,
         int fromSrid, int toSrid,
