@@ -199,6 +199,30 @@ public sealed class ImportDatumTransformationTests(PostgresFixture fixture)
         }
     }
 
+    [IntegrationTest]
+    public async Task ImportFileAsync_ReverseDirectionSelection_FallsBackToDefaultPath()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(ImportDatumTransformationTests));
+        try
+        {
+            await EnsureImportFunctionsAsync();
+
+            // A reverse-direction selection (TransformForward = false) carries the forward pipeline,
+            // which must NOT be applied in reverse (it would corrupt coordinates). The import must skip
+            // the explicit pipeline and use PROJ's default 2-argument path — so even though the catalog
+            // hands back a syntactically invalid pipeline, the import succeeds because it is never used.
+            var service = CreateService(schema, new ReverseDirectionPipelineCatalog());
+            var result = await ImportPointAsync(service, schema, "datum_reverse", sourceSrid: 4269, targetSrid: 4326);
+
+            result.Success.Should().BeTrue(result.ErrorMessage);
+            result.FeatureCount.Should().Be(1);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
     private StreamingFileImportService CreateService(string schema, IDatumTransformationCatalog? datumTransformationCatalog)
     {
         var provider = new TestConnectionProvider(fixture.DataSource, schema);
@@ -266,6 +290,33 @@ public sealed class ImportDatumTransformationTests(PostgresFixture fixture)
                 FromSrid = fromSrid,
                 ToSrid = toSrid,
                 ProjPipeline = "+proj=pipeline +step +proj=honua_not_a_real_operation",
+            };
+            return true;
+        }
+
+        public bool TryGetByWkid(int wkid, int fromSrid, int toSrid, [NotNullWhen(true)] out DatumTransformationSelection? selection)
+        {
+            selection = null;
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// A catalog that returns a reverse-direction selection (<c>TransformForward = false</c>) carrying a
+    /// forward (and here deliberately invalid) pipeline, used to prove the import path does NOT apply the
+    /// forward pipeline in reverse but falls back to PROJ's default path.
+    /// </summary>
+    private sealed class ReverseDirectionPipelineCatalog : IDatumTransformationCatalog
+    {
+        public bool TryGetDefault(int fromSrid, int toSrid, [NotNullWhen(true)] out DatumTransformationSelection? selection)
+        {
+            selection = new DatumTransformationSelection
+            {
+                Name = "Honua_Test_Reverse_Pipeline",
+                FromSrid = fromSrid,
+                ToSrid = toSrid,
+                ProjPipeline = "+proj=pipeline +step +proj=honua_not_a_real_operation",
+                TransformForward = false,
             };
             return true;
         }

@@ -93,6 +93,11 @@ Details and guarantees:
   applied per row **only** when the row's source SRID matches that pair. Rows carrying a
   different per-feature SRID (e.g. mixed-CRS FileGDB layers) fall back to PROJ's default
   pipeline; per-feature pipeline selection for heterogeneous-CRS imports is a follow-up.
+- Only **forward** selections are applied. The catalog synthesizes reverse directions with
+  `TransformForward = false` but keeps the forward pipeline; applying that forward pipeline to
+  reverse-direction input (e.g. a NAD27→NAD83 NADCON shift on NAD83 coordinates) would corrupt
+  the result, so reverse-direction imports fall back to PROJ's default path until inverse
+  pipelines are emitted.
 - Grid-gated selections (NADCON/NTv2/GEOID) follow the same explicit-failure contract as
   the query path: a missing grid surfaces as a PostGIS error (mapped to the shared problem
   helper) rather than a silent Helmert approximation. Provisioning the grid data in the
