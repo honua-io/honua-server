@@ -561,9 +561,15 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
         }
         var formatName = format.ToString();
 
+        // The unified progress store overwrites by id rather than rejecting duplicates, so a failure
+        // here is a real store error, not an id collision. Retry a bounded number of times for transient
+        // resilience, then propagate instead of spinning forever allocating job ids.
+        const int maxStoreAttempts = 3;
         string jobId;
+        var storeAttempt = 0;
         while (true)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             jobId = Guid.NewGuid().ToString("N")[..8];
             var progress = ImportProgress.CreateInitial(
                 jobId,
@@ -582,11 +588,9 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
                 await _progressStore.SetProgressAsync(jobId, progress, TimeSpan.FromDays(1), cancellationToken);
                 break;
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException && ++storeAttempt < maxStoreAttempts)
             {
                 UniversalImportJobLog.ProgressUpdateFailed(_logger, jobId, ex);
-                // Try with a different job ID
-                continue;
             }
         }
 
