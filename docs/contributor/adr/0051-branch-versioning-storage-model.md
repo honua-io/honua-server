@@ -213,19 +213,37 @@ only**; the durable `sync_generation` sequence as the "moment."
 
 ### As-built divergences and open risks (tracked in #1511)
 
-- **Post does not use `IFeatureWriter` literally.** This ADR specified post replays
-  via the shared `IFeatureWriter`; as built, `PostAsync` uses direct parameterized
-  SQL on `features` (in one transaction, through the same change-tracking trigger)
-  because `IFeatureWriter`'s `Feature` model auto-assigns objectids and round-trips
-  attributes through a typed dictionary — which would drop branch-created OIDs and
-  JSONB fidelity. A future transaction-scoped / explicit-OID `IFeatureWriter` overload
-  would let post use the shared writer as intended.
-- **Overlay read at scale is unvalidated.** The version read
-  (`base WHERE objectid NOT IN (overlay OIDs) UNION ALL overlay`) under spatial
-  predicates has not been measured on a large, highly-divergent version; the GIST
-  plan across the UNION/anti-join is the risk. Mitigation is hybrid promotion
-  (Approach 4) or LIST-partitioning `version_edits` by `version_id`, deferred until
-  measured. The DEFAULT path is unaffected.
+- **Post does not use `IFeatureWriter` literally — retained divergence (#1511, won't-fix).**
+  This ADR originally specified post replays via the shared `IFeatureWriter`; as built,
+  `PostAsync` uses direct parameterized SQL on `features` (in one transaction, through the
+  same change-tracking trigger) because `IFeatureWriter`'s `Feature` model auto-assigns
+  objectids and round-trips attributes through a typed dictionary — which would drop
+  branch-created OIDs and JSONB fidelity. On review (#1511) this divergence is **kept by
+  decision**, not as a stopgap: the replay is three set-based statements
+  (`DELETE`/`UPDATE … FROM`/`INSERT … SELECT`) that join `version_edits` against `features`
+  entirely server-side. Routing it through the per-`Feature` writer would either force a
+  DB→C#→DB materialization of every overlay row (strictly more work, and worse on a large,
+  highly-divergent version) or couple the generic writer to `version_edits` internals (a
+  layering violation). The divergence is documented here and covered by the post tests
+  (`BranchVersioningIntegrationTests.Post_*`), which the project's adapter rules permit. A
+  transaction-scoped / explicit-OID writer primitive is no longer considered a desirable
+  follow-up for post.
+- **Overlay read at scale — validated (#1511).** The version read
+  (`(base minus shadowed OIDs) UNION ALL overlay`) under a spatial predicate is exercised by
+  `BranchVersioningOverlayReadScaleTests` on a large DEFAULT table (~20k rows) and a
+  highly-divergent version (~2k overlay edits). Findings: (1) **correctness** — a bbox read
+  overlays correctly (branch inserts/moves-in appear, deletes/moves-out disappear, the
+  predicate evaluates against the overlay geometry, no duplicates from the anti-join +
+  `UNION ALL`); (2) **plan** — the bbox predicate is pushed into the base branch of the
+  `UNION`, so the GIST geometry index (`idx_features_geometry*`) is used and the read scales
+  with the query window, not the table size. The overlay branch is likewise index-eligible:
+  `version_edits` carries a covering btree on `(version_id, layer_id, objectid)` and its own
+  `GIST(geometry)`, so the `version_id`-filtered overlay scan is bounded by the version's
+  edit count. **Promotion threshold:** hybrid promotion (Approach 4) / `LIST`-partitioning
+  `version_edits` by `version_id` remains deferred and is only warranted if a single version
+  accumulates an overlay so large (order ~10⁶ edits, or many concurrent giant versions
+  bloating the shared overlay) that the `version_id`-filtered index selectivity degrades. No
+  such workload is in scope; the DEFAULT path is unaffected either way.
 - **Single global generation sequence serializes posts.** Accepted for v1; per-layer
   generation streams are a future option if concurrent multi-version post throughput
   becomes a bottleneck.
