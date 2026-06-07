@@ -462,10 +462,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
             reader.GetInt32(8).Should().Be(4326);
         }
 
-        using var featureClient = _fixture.CreateClient(client =>
-            client.DefaultRequestHeaders.Remove("X-Honua-Test-Schema"));
-
-        var queryResponse = await featureClient.GetAsync(
+        var queryResponse = await _client.GetAsync(
             $"/rest/services/{_serviceName}/FeatureServer/{_layerId}/query?where=1%3D1&f=json");
 
         queryResponse.Be200Ok();
@@ -480,7 +477,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
             attributes.GetProperty("population").GetInt32().Should().Be(100);
         }
 
-        var metadataResponse = await featureClient.GetAsync(
+        var metadataResponse = await _client.GetAsync(
             $"/rest/services/{_serviceName}/FeatureServer/{_layerId}");
 
         metadataResponse.Be200Ok();

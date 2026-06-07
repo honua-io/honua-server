@@ -18,7 +18,7 @@ namespace Honua.Server.Tests;
 /// <summary>
 /// Integration tests for PostgresFeatureStore using real PostgreSQL database.
 /// </summary>
-[Collection("Database")]
+[Collection("Database.CoreFeatureStore")]
 public class PostgresFeatureStoreTests : IAsyncLifetime
 {
     private readonly DatabaseFixtureAdapter _fixture;

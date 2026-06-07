@@ -21,7 +21,7 @@ namespace Honua.Server.Tests;
 /// Based on Round 1 spatial bug findings - tests actual query behavior and data corruption potential.
 /// </summary>
 [Protocol(TestProtocols.FeatureServer)]
-[Collection("Database")]
+[Collection("Database.CoreSpatial")]
 public sealed class SpatialCorrectnessTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();

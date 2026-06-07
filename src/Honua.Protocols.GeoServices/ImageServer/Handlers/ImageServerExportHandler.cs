@@ -92,12 +92,6 @@ internal sealed class ImageServerExportHandler
                 return editionError;
             }
 
-            if (!TryValidateMosaicRule(request.MosaicRule, out var mosaicRuleError))
-            {
-                ImageServerLog.InvalidExportParameters(_logger, layerId, mosaicRuleError);
-                return StandardErrorHelpers.CreateNotImplemented(context, mosaicRuleError);
-            }
-
             var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, request.MosaicRule);
             var selectionQuery = new RasterSelectionQuery
             {
@@ -111,6 +105,12 @@ internal sealed class ImageServerExportHandler
             {
                 ImageServerLog.NoRastersFound(_logger, layerId);
                 return StandardErrorHelpers.CreateNotFound(context, "No rasters found for layer.");
+            }
+
+            if (!TryValidateMosaicRule(request.MosaicRule, selectedRasters.Length > 1, out var mosaicRuleError))
+            {
+                ImageServerLog.InvalidExportParameters(_logger, layerId, mosaicRuleError);
+                return StandardErrorHelpers.CreateNotImplemented(context, mosaicRuleError);
             }
 
             var aggregateExtent = ImageServerMosaicHelpers.ComputeAggregateExtent(selectedRasters);
@@ -528,10 +528,9 @@ internal sealed class ImageServerExportHandler
     // A mosaicRule is honored only to the extent of its mergeStrategy/operation token
     // (mapped to a RasterMergeStrategy). Esri mosaicRules that select a mosaicMethod honua
     // does not implement (e.g. esriMosaicNadir, esriMosaicLockRaster, esriMosaicSeamline)
-    // were silently ignored; reject them with a clean 501 rather than no-op. A bare
-    // esriMosaicNone / esriMosaicAttribute is accepted because it does not change pixel
-    // selection here.
-    private static bool TryValidateMosaicRule(string? mosaicRule, out string error)
+    // are rejected with a clean 501 when multiple rasters would need true mosaic ordering.
+    // With a single selected raster, the method cannot affect pixel selection and is accepted.
+    private static bool TryValidateMosaicRule(string? mosaicRule, bool affectsMosaicSelection, out string error)
     {
         error = string.Empty;
         if (string.IsNullOrWhiteSpace(mosaicRule))
@@ -561,6 +560,11 @@ internal sealed class ImageServerExportHandler
                     !value.Equals("esriMosaicNone", StringComparison.OrdinalIgnoreCase) &&
                     !value.Equals("esriMosaicAttribute", StringComparison.OrdinalIgnoreCase))
                 {
+                    if (!affectsMosaicSelection)
+                    {
+                        return true;
+                    }
+
                     error = $"mosaicRule mosaicMethod '{value}' is not implemented on this service.";
                     return false;
                 }

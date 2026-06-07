@@ -2606,15 +2606,18 @@ internal sealed class GeometryServiceHandler(
             {
                 var wkb = _geometryConverter.ConvertGeoServicesJsonToWkb(geometryJson);
 
-                // Project to bufferSR if needed before buffering (non-geodesic only)
-                if (!parameters.Geodesic && bufferSrid != parameters.InSR)
+                if (parameters.Geodesic && parameters.InSR != 4326)
+                {
+                    wkb = await _operationService.ProjectAsync(wkb, parameters.InSR, 4326, ct).ConfigureAwait(false);
+                }
+                else if (!parameters.Geodesic && bufferSrid != parameters.InSR)
                 {
                     wkb = await _operationService.ProjectAsync(wkb, parameters.InSR, bufferSrid, ct).ConfigureAwait(false);
                 }
 
                 var result = await _operationService.BufferAsync(
                     wkb,
-                    parameters.Geodesic ? parameters.InSR : bufferSrid,
+                    parameters.Geodesic ? 4326 : bufferSrid,
                     distance,
                     parameters.Geodesic,
                     ct).ConfigureAwait(false);

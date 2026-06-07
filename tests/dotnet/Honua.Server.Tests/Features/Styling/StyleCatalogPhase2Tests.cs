@@ -4,7 +4,6 @@
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Server.Features.Admin.Models;
@@ -53,8 +52,7 @@ public sealed class StyleCatalogPhase2Tests : IAsyncLifetime
         styleId.Should().Be($"style-layer-{WebAppFixture.TestLayerId}");
 
         // The canonical graph references it via StyleResourceIds → a real Type=Style resource.
-        var graphProvider = scope.ServiceProvider.GetRequiredService<IMetadataV2GraphProvider>();
-        var snapshot = await graphProvider.GetCurrentAsync();
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
 
         snapshot.Index.ResourcesByStorageLayerId.TryGetValue(WebAppFixture.TestLayerId, out var dataResource)
             .Should().BeTrue();

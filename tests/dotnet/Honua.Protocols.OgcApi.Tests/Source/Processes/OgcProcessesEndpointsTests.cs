@@ -21,7 +21,7 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes;
 /// Integration tests for OGC API Processes endpoints.
 /// Tests the adapter layer over the canonical geoprocessing runtime.
 /// </summary>
-[Collection("Database")]
+[Collection("Database.OgcApiData")]
 [Protocol(TestProtocols.OgcApiProcesses)]
 public sealed class OgcProcessesEndpointsTests : IAsyncLifetime
 {

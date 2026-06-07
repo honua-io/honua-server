@@ -17,7 +17,7 @@ namespace Honua.Server.Tests;
 /// Tests Issue #14 - Related records query functionality implementation.
 /// </summary>
 [Protocol(TestProtocols.FeatureServer)]
-[Collection("Database")]
+[Collection("Database.CoreFeatureStore")]
 public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();

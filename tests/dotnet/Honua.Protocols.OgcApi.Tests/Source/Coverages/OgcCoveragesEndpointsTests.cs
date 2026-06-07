@@ -16,7 +16,7 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages;
 
-[Collection("Database")]
+[Collection("Database.OgcApiData")]
 [Protocol(TestProtocols.OgcApiCoverages)]
 public sealed class OgcCoveragesEndpointsTests : IAsyncLifetime
 {

@@ -75,6 +75,7 @@ internal static class WebAppFixturePostgresWiringMixin
             ["Geocoding:Nominatim:BaseUrl"] = StableTestGeocodingBaseUrl,
             ["Geocoding:Providers:Nominatim:BaseUrl"] = StableTestGeocodingBaseUrl,
             ["HONUA_SKIP_MIGRATIONS"] = "true",
+            ["HONUA_TEST_SCHEMA_HEADERS"] = "true",
             ["Limits:Connections:RequestTimeout"] = "00:05:00",
             ["Limits:Query:QueryTimeout"] = "00:02:00",
             ["FileStorage:Provider"] = "Local",
@@ -131,6 +132,7 @@ internal static class WebAppFixturePostgresWiringMixin
         var settings = new Dictionary<string, string?>
         {
             ["ConnectionStrings:DefaultConnection"] = connectionString,
+            ["HONUA_TEST_SCHEMA_HEADERS"] = "true",
             ["Limits:Connections:RequestTimeout"] = "00:05:00",
             ["Limits:Query:QueryTimeout"] = "00:02:00",
             ["Security:ConnectionEncryption:MasterKey"] = TestEncryptionMasterKey,

@@ -275,6 +275,7 @@ public static class EndpointRegistry
         new("POST", "/api/v1/studio/content-items/{itemId}/versions/{versionId}/reopen"),
         new("POST", "/api/v1/studio/content-items/{itemId}/rollback-requests"),
         // NL-assisted map package generation (#1180).
+        new("POST", "/api/v1/studio/app-packages/generate"),
         new("POST", "/api/v1/studio/map-packages/generate"),
 
         // v1 Studio map collaboration: comment threads + activity feed (#1278, slice 1)

@@ -14,7 +14,7 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes;
 /// Authorization tests for OGC API Processes protected endpoints.
 /// Verifies that protected routes return 401 when dev-auth is disabled.
 /// </summary>
-[Collection("Database")]
+[Collection("Database.OgcApiData")]
 [Protocol(TestProtocols.OgcApiProcesses)]
 public sealed class OgcProcessesAuthorizationTests : IAsyncLifetime
 {

@@ -22,7 +22,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 /// surface coverage. Endpoint coverage is consolidated onto a small number of methods
 /// (multiple <c>[Endpoint]</c> attributes per method) to keep the fixture-init count low.
 /// </summary>
-[Collection("Database")]
+[Collection("Database.GeoServicesRaster")]
 [Protocol(TestProtocols.ImageServer)]
 public class ImageServerRasterMetadataTests
 {

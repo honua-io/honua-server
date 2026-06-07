@@ -17,7 +17,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService;
 /// operations (MGRS / USNG grid reference conversion).
 /// </summary>
 [Protocol(TestProtocols.GeometryService)]
-[Collection("Database")]
+[Collection("Database.GeoServicesRaster")]
 public sealed class GeometryServiceGeoCoordinateStringTests : IAsyncLifetime
 {
 

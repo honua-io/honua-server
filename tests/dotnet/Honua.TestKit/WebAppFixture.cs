@@ -101,6 +101,8 @@ public sealed class WebAppFixture : IAsyncLifetime
 
     public string? CurrentSchema => _currentSchema;
 
+    internal string? MetadataGraphSchema => _useSharedServer ? _currentSchema : null;
+
     /// <summary>
     /// Gets the database connection provider for test scenarios.
     /// </summary>
@@ -171,6 +173,7 @@ public sealed class WebAppFixture : IAsyncLifetime
             _currentSchema = await _postgres.CreateIsolatedSchemaAsync(nameof(WebAppFixture));
             await SeedSchemaAsync(_currentSchema);
         }
+        ApplyCurrentSchemaHeader(Client);
 
         ApplySeedSpecificMetadataV2Graph();
 
@@ -233,6 +236,12 @@ public sealed class WebAppFixture : IAsyncLifetime
             clearTemporal,
             clearPermanentFilter,
             clearExtrusion);
+
+    /// <summary>
+    /// Reads the current Metadata v2 graph snapshot for this fixture's graph partition.
+    /// </summary>
+    public MetadataV2GraphSnapshot GetCurrentV2GraphSnapshot()
+        => Honua.TestKit.Mixins.WebAppFixtureMetadataV2GraphMutationMixin.GetCurrentSnapshot(this);
 
     /// <summary>
     /// Adds or replaces a Metadata v2 schema field on the resource published at
@@ -532,10 +541,7 @@ public sealed class WebAppFixture : IAsyncLifetime
     {
         var client = ActiveFactory.CreateClient();
         client.Timeout = _defaultTestClientTimeout;
-        if (_useSharedServer && !string.IsNullOrWhiteSpace(_currentSchema))
-        {
-            client.DefaultRequestHeaders.Add("X-Honua-Test-Schema", _currentSchema);
-        }
+        ApplyCurrentSchemaHeader(client);
         configure?.Invoke(client);
         return client;
     }
@@ -553,10 +559,7 @@ public sealed class WebAppFixture : IAsyncLifetime
             AllowAutoRedirect = allowAutoRedirect,
         });
         client.Timeout = _defaultTestClientTimeout;
-        if (_useSharedServer && !string.IsNullOrWhiteSpace(_currentSchema))
-        {
-            client.DefaultRequestHeaders.Add("X-Honua-Test-Schema", _currentSchema);
-        }
+        ApplyCurrentSchemaHeader(client);
 
         return client;
     }
@@ -583,13 +586,19 @@ public sealed class WebAppFixture : IAsyncLifetime
         }
 
         var client = CreateClient();
-        if (_useSharedServer && !string.IsNullOrWhiteSpace(schemaName))
-        {
-            client.DefaultRequestHeaders.Remove("X-Honua-Test-Schema");
-            client.DefaultRequestHeaders.Add("X-Honua-Test-Schema", schemaName);
-        }
 
         return client;
+    }
+
+    private void ApplyCurrentSchemaHeader(HttpClient client)
+    {
+        if (string.IsNullOrWhiteSpace(_currentSchema))
+        {
+            return;
+        }
+
+        client.DefaultRequestHeaders.Remove("X-Honua-Test-Schema");
+        client.DefaultRequestHeaders.Add("X-Honua-Test-Schema", _currentSchema);
     }
 
 }

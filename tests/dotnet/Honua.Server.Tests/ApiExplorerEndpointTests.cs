@@ -14,7 +14,7 @@ namespace Honua.Server.Tests;
 /// Integration tests for the interactive API explorer (Scalar) at /docs.
 /// </summary>
 [Protocol(TestProtocols.Infrastructure)]
-[Collection("Database")]
+[Collection("Database.CoreEndpoints")]
 public sealed class ApiExplorerEndpointTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new WebAppFixture()

@@ -131,8 +131,12 @@ internal static class SeedRunner
         var collectionLookup = BuildCollectionLookup(seed.Collections);
 
         await using var connection = await dataSource.OpenConnectionAsync().ConfigureAwait(false);
-        // Use RepeatableRead for test seeding to ensure consistent data setup
-        await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.RepeatableRead).ConfigureAwait(false);
+        // ReadCommitted (not RepeatableRead): the advisory lock below already serializes
+        // seed application. Under parallel collection runs, a waiting RepeatableRead
+        // transaction pins its snapshot before the lock is granted and can fail with
+        // 40001 once the prior seeder commits its deletes. ReadCommitted re-snapshots
+        // per statement while the lock preserves deterministic setup.
+        await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted).ConfigureAwait(false);
         await AcquireSeedApplicationLockAsync(connection).ConfigureAwait(false);
 
         if (!string.IsNullOrWhiteSpace(schemaName))

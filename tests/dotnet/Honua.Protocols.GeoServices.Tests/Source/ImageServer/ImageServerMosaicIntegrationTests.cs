@@ -17,7 +17,7 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
-[Collection("Database")]
+[Collection("Database.GeoServicesRaster")]
 [Protocol(TestProtocols.ImageServer)]
 public sealed class ImageServerMosaicIntegrationTests
 {

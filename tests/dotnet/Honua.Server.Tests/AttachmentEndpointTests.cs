@@ -20,7 +20,7 @@ namespace Honua.Server.Tests;
 /// Tests Issue #13 - Attachment CRUD operations implementation.
 /// </summary>
 [Protocol(TestProtocols.FeatureServer)]
-[Collection("Database")]
+[Collection("Database.CoreFeatureStore")]
 public sealed class AttachmentEndpointTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();

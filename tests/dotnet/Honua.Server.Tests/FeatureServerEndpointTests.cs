@@ -23,7 +23,7 @@ namespace Honua.Server.Tests;
 /// <summary>
 /// Integration tests for streaming query functionality (Issue #229)
 /// </summary>
-[Collection("Database")]
+[Collection("Database.CoreEndpoints")]
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class StreamingFeatureServerEndpointTests : IAsyncLifetime
 {
@@ -245,7 +245,7 @@ public sealed class StreamingFeatureServerEndpointTests : IAsyncLifetime
 }
 
 [Protocol(TestProtocols.FeatureServer)]
-[Collection("Database")]
+[Collection("Database.CoreEndpoints")]
 public sealed class FeatureServerEndpointTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();
@@ -2229,14 +2229,11 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
 
         geoJsonResponse.Should().NotBeNull();
         geoJsonResponse!.ExceededTransferLimit.Should().BeTrue();
-        geoJsonResponse.Properties.Should().NotBeNull();
-        var exceededValue = geoJsonResponse.Properties!["exceededTransferLimit"];
-        exceededValue.Should().BeOfType<JsonElement>();
-        ((JsonElement)exceededValue).GetBoolean().Should().BeTrue();
+        geoJsonResponse.Properties.Should().BeNull();
 
         using var jsonDoc = JsonDocument.Parse(content);
         jsonDoc.RootElement.GetProperty("exceededTransferLimit").GetBoolean().Should().BeTrue();
-        jsonDoc.RootElement.GetProperty("properties").GetProperty("exceededTransferLimit").GetBoolean().Should().BeTrue();
+        jsonDoc.RootElement.TryGetProperty("properties", out _).Should().BeFalse();
     }
 
     /// <summary>

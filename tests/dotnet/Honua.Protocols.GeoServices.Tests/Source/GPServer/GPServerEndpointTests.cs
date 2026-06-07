@@ -30,7 +30,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 /// Integration tests for GPServer REST endpoints operating as a protocol adapter
 /// over the canonical process runtime.
 /// </summary>
-[Collection("Database")]
+[Collection("Database.GeoServicesRaster")]
 [Protocol(TestProtocols.GPServer)]
 public sealed class GPServerEndpointTests : IAsyncLifetime
 {

@@ -14,7 +14,7 @@ using Honua.TestKit.Extensions;
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService;
 
 [Protocol(TestProtocols.GeometryService)]
-[Collection("Database")]
+[Collection("Database.GeoServicesRaster")]
 public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();

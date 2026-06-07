@@ -24,7 +24,7 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes;
 /// <summary>
 /// Integration coverage for OGC API Processes result evidence.
 /// </summary>
-[Collection("Database")]
+[Collection("Database.OgcApiData")]
 [Protocol(TestProtocols.OgcApiProcesses)]
 public sealed class OgcProcessesJobResultsTests : IAsyncLifetime
 {
