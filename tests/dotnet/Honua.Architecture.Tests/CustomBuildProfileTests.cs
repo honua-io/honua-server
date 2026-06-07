@@ -115,6 +115,22 @@ public sealed class CustomBuildProfileTests
         }
     }
 
+    [ArchitectureTest]
+    public void AlertEditionPolicy_ShouldGateCloudChannelConfigurationBehindBuildProfileConstants()
+    {
+        var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        var source = File.ReadAllText(Path.Combine(
+            repositoryRoot, "src", "Honua.Server", "Features", "Alerts", "AlertEditionPolicy.cs"));
+
+        // In no-cloud / slim builds the AWS / Azure channels are backed only by
+        // UnsupportedAlertDeliverySink, so IsChannelConfigured must report them unconfigured even when
+        // legacy AlertDelivery:Dispatch:* settings are present — otherwise the pipeline would dispatch to
+        // (and the admin API would advertise) a channel whose every delivery fails immediately. Guard the
+        // compile-time exclusion so the gate is not accidentally removed.
+        source.Should().Contain("#if HONUA_EXCLUDE_AWS");
+        source.Should().Contain("#if HONUA_EXCLUDE_AZURE");
+    }
+
     private static Dictionary<string, string> GetMsBuildProperties(
         string propertyNames,
         params string[] msbuildArguments)
