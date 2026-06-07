@@ -2,8 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Import.Abstractions;
-using Honua.Core.Features.Migration.Abstractions;
-using Honua.Core.Features.FileImport.Abstractions;
 
 namespace Honua.Postgres.Features.Infrastructure.Coordination;
 
@@ -15,7 +13,7 @@ internal sealed class NoOpDistributedLeaderElection : IDistributedLeaderElection
 {
     private readonly string _instanceId;
 
-    public NoOpDistributedLeaderElection(string key)
+    public NoOpDistributedLeaderElection()
     {
         _instanceId = Environment.MachineName + "_" + Environment.ProcessId;
     }

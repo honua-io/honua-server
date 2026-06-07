@@ -88,10 +88,18 @@ internal sealed class SemaphoreReleasingConnection : DbConnection
                 // Dispose the inner connection FIRST so its final
                 // StateChange(Closed) event can relay through the wrapper,
                 // then unsubscribe to avoid rooting the wrapper from the
-                // pooled connection's event list.
-                _inner.Dispose();
-                _inner.StateChange -= OnInnerStateChange;
-                _releaseAction();
+                // pooled connection's event list. The unsubscribe + gate-slot
+                // release run in a finally so a throwing inner Dispose cannot
+                // leak a MaxConcurrentQueries slot.
+                try
+                {
+                    _inner.Dispose();
+                }
+                finally
+                {
+                    _inner.StateChange -= OnInnerStateChange;
+                    _releaseAction();
+                }
             }
         }
 
@@ -103,9 +111,15 @@ internal sealed class SemaphoreReleasingConnection : DbConnection
         if (!_disposed)
         {
             _disposed = true;
-            await _inner.DisposeAsync().ConfigureAwait(false);
-            _inner.StateChange -= OnInnerStateChange;
-            _releaseAction();
+            try
+            {
+                await _inner.DisposeAsync().ConfigureAwait(false);
+            }
+            finally
+            {
+                _inner.StateChange -= OnInnerStateChange;
+                _releaseAction();
+            }
         }
 
         await base.DisposeAsync().ConfigureAwait(false);

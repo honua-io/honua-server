@@ -245,13 +245,16 @@ internal sealed class ArcGisRestFeatureStore : IFeatureDataProvider, IFeatureRea
             ?? throw new InvalidOperationException(
                 "ArcGIS REST provider reads require a Metadata v2 provider binding; route requests through FeatureProviderQueryRouter.");
 
+        // Validate the configured connection/URL first so a misconfigured endpoint is reported even
+        // when the requested layer also mismatches.
+        var location = ArcGisRestServiceLocator.Resolve(binding.Connection);
+
         if (binding.StorageLayerId != layerId)
         {
             throw new InvalidOperationException(
                 $"ArcGIS REST provider binding targets storage layer {binding.StorageLayerId}, not requested layer {layerId}.");
         }
 
-        var location = ArcGisRestServiceLocator.Resolve(binding.Connection);
         var arcGisLayerId = ResolveArcGisLayerId(binding, layerId);
         return new ResolvedBinding(location, arcGisLayerId, binding.Resource);
     }

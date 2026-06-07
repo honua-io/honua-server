@@ -131,7 +131,11 @@ internal static class ArcGisRestQueryParameters
             || spatial.EnvelopeMaxX is not double maxX
             || spatial.EnvelopeMaxY is not double maxY)
         {
-            return;
+            // IsSimpleEnvelope guarantees the four coordinates are populated. If one is missing the
+            // filter is malformed; fail fast rather than silently dropping the spatial constraint,
+            // which would return features outside the requested envelope.
+            throw new InvalidOperationException(
+                "Simple-envelope spatial filter is missing one or more envelope coordinates.");
         }
 
         var geometry = string.Create(CultureInfo.InvariantCulture, $"{minX},{minY},{maxX},{maxY}");

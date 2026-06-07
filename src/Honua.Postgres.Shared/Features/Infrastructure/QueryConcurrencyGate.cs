@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
+using System.Linq;
 using Honua.Core.Configuration;
 
 namespace Honua.Postgres.Features.Infrastructure;
@@ -90,6 +91,7 @@ internal sealed class QueryConcurrencyGate : IDisposable
         {
             if (waiter.Completion.TrySetCanceled(CancellationToken.None))
             {
+                RemoveWaiter(waiter);
                 return false;
             }
 
@@ -102,7 +104,38 @@ internal sealed class QueryConcurrencyGate : IDisposable
                 return await waiter.Completion.Task.ConfigureAwait(false);
             }
 
+            RemoveWaiter(waiter);
             throw new OperationCanceledException(cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Removes a timed-out/cancelled waiter from the queue so its abandoned slot request
+    /// no longer inflates <c>_waiters.Count</c> (which drives adaptive-concurrency pressure
+    /// decisions and telemetry) or blocks the fast-path admission check. A no-op if a
+    /// concurrent drain already dequeued it. Cancellations are rare, so the O(n) rebuild
+    /// of the FIFO queue is acceptable.
+    /// </summary>
+    private void RemoveWaiter(QueuedWaiter waiter)
+    {
+        lock (_sync)
+        {
+            if (_waiters.Count == 0)
+            {
+                return;
+            }
+
+            var retained = _waiters.Where(w => !ReferenceEquals(w, waiter)).ToArray();
+            if (retained.Length == _waiters.Count)
+            {
+                return;
+            }
+
+            _waiters.Clear();
+            foreach (var w in retained)
+            {
+                _waiters.Enqueue(w);
+            }
         }
     }
 

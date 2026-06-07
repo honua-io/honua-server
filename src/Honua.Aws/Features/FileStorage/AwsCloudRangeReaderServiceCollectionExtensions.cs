@@ -46,12 +46,22 @@ internal static class AwsCloudRangeReaderServiceCollectionExtensions
 
             var config = new AmazonS3Config
             {
-                RegionEndpoint = RegionEndpoint.GetBySystemName(s3Options.Region),
                 ForcePathStyle = s3Options.ForcePathStyle
             };
+            if (!string.IsNullOrWhiteSpace(s3Options.Region))
+            {
+                config.RegionEndpoint = RegionEndpoint.GetBySystemName(s3Options.Region);
+            }
             if (!string.IsNullOrWhiteSpace(s3Options.ServiceUrl))
             {
                 config.ServiceURL = s3Options.ServiceUrl;
+            }
+            else if (string.IsNullOrWhiteSpace(s3Options.Region))
+            {
+                // Fail fast with a clear message rather than letting GetBySystemName produce an
+                // "unknown" endpoint that surfaces as an opaque error on the first range request.
+                throw new InvalidOperationException(
+                    "AWS S3 range reader requires 'FileStorage:AwsS3:Region' or 'FileStorage:AwsS3:ServiceUrl' to be configured.");
             }
 
             IAmazonS3 client;

@@ -45,7 +45,9 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
     private readonly ConcurrentDictionary<(string ConnectionId, string StatementHash), CachedStatement> _cache = new();
     private readonly ConcurrentDictionary<string, int> _connectionCounts = new();
     private readonly Timer _cleanupTimer;
-    private bool? _prepareSupported;
+    // Tri-state cached across threads: 0 = unknown, 1 = supported, 2 = unsupported. An int
+    // (vs bool?) so reads/writes are atomic and cannot tear under concurrent IsPreparationSupported.
+    private int _prepareSupported;
     private volatile bool _disposed;
 
     /// <summary>
@@ -529,22 +531,25 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
 
     private bool IsPreparationSupported(NpgsqlConnection connection)
     {
-        if (_prepareSupported.HasValue)
+        var cached = Volatile.Read(ref _prepareSupported);
+        if (cached != 0)
         {
-            return _prepareSupported.Value;
+            return cached == 1;
         }
 
+        bool supported;
         try
         {
             var builder = new NpgsqlConnectionStringBuilder(connection.ConnectionString);
-            _prepareSupported = !builder.Multiplexing;
+            supported = !builder.Multiplexing;
         }
         catch
         {
-            _prepareSupported = false;
+            supported = false;
         }
 
-        return _prepareSupported.Value;
+        Volatile.Write(ref _prepareSupported, supported ? 1 : 2);
+        return supported;
     }
 
     private static async Task<NpgsqlCommand> CreatePreparedStatementAsync(

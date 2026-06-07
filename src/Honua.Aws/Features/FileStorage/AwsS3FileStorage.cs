@@ -138,7 +138,7 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
 
             await _client.PutObjectAsync(putRequest, linkedCancellationSource.Token);
 
-            var sizeBytes = await ResolveSizeAsync(objectKey, request, cancellationToken);
+            var sizeBytes = await ResolveSizeAsync(objectKey, request, linkedCancellationSource.Token);
             var cloudFile = new CloudFile
             {
                 FileId = objectKey,

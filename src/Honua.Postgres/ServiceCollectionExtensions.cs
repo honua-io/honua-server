@@ -316,8 +316,7 @@ internal static class ServiceCollectionExtensions
         {
             // Use the no-op implementation here; distributed leader election is only enabled
             // when the Server composition root supplies a real coordinator.
-            return new Honua.Postgres.Features.Infrastructure.Coordination.NoOpDistributedLeaderElection(
-                "honua:leader:crs-warmup");
+            return new Honua.Postgres.Features.Infrastructure.Coordination.NoOpDistributedLeaderElection();
         });
 
         services.AddSingleton<PostgresCrsWarmupService>(serviceProvider =>
