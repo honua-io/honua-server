@@ -370,7 +370,7 @@ internal static partial class FeatureServerEndpoints
                 }
 
                 var addFeatures = result.Items
-                    .Select(f => ConvertFeatureToGeoServices(f))
+                    .Select(f => ConvertFeatureToGeoServices(f, layer.Resource))
                     .ToArray();
 
                 layerChanges.Add(new LayerChanges
@@ -435,7 +435,7 @@ internal static partial class FeatureServerEndpoints
                         var query = new FeatureQuery { ObjectIds = ImmutableArray.Create(insertIds) };
                         var result = await featureReader.QueryAsync(layer.StorageLayerId, query, cancellationToken);
                         addFeatures = result.Items
-                            .Select(f => ConvertFeatureToGeoServices(f))
+                            .Select(f => ConvertFeatureToGeoServices(f, layer.Resource))
                             .ToArray();
                     }
 
@@ -445,7 +445,7 @@ internal static partial class FeatureServerEndpoints
                         var query = new FeatureQuery { ObjectIds = ImmutableArray.Create(updateIds) };
                         var result = await featureReader.QueryAsync(layer.StorageLayerId, query, cancellationToken);
                         updateFeatures = result.Items
-                            .Select(f => ConvertFeatureToGeoServices(f))
+                            .Select(f => ConvertFeatureToGeoServices(f, layer.Resource))
                             .ToArray();
                     }
 
@@ -618,7 +618,7 @@ internal static partial class FeatureServerEndpoints
                         layer.StorageLayerId,
                         new FeatureQuery { ObjectIds = ImmutableArray.Create(insertIds) },
                         cancellationToken);
-                    addFeatures = result.Items.Select(f => ConvertFeatureToGeoServices(f)).ToArray();
+                    addFeatures = result.Items.Select(f => ConvertFeatureToGeoServices(f, layer.Resource)).ToArray();
                 }
 
                 if (updateIds.Length > 0)
@@ -627,7 +627,7 @@ internal static partial class FeatureServerEndpoints
                         layer.StorageLayerId,
                         new FeatureQuery { ObjectIds = ImmutableArray.Create(updateIds) },
                         cancellationToken);
-                    updateFeatures = result.Items.Select(f => ConvertFeatureToGeoServices(f)).ToArray();
+                    updateFeatures = result.Items.Select(f => ConvertFeatureToGeoServices(f, layer.Resource)).ToArray();
                 }
             }
 
@@ -1450,14 +1450,22 @@ internal static partial class FeatureServerEndpoints
 
     /// <summary>
     /// Converts a domain Feature to a GeoServicesFeature for replication responses.
+    /// esriFieldTypeDate attributes are coerced to epoch-ms integers uniformly across rows
+    /// (JSONB stores dates as ISO strings from seeds or epoch-ms longs from applyEdits) via the
+    /// shared GeoServices date convention, matching the query/identify serialization.
     /// </summary>
-    private static GeoServicesFeature ConvertFeatureToGeoServices(Feature feature)
+    private static GeoServicesFeature ConvertFeatureToGeoServices(Feature feature, MetadataV2Resource resource)
     {
+        var attributes = feature.Attributes
+            .Where(kvp => !FeatureAttributeVisibility.IsInternalAttribute(kvp.Key))
+            .ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.OrdinalIgnoreCase);
+        GeoServicesFieldConventions.CoerceDateAttributes(
+            attributes,
+            GeoServicesFieldConventions.ResolveDateFieldNames(resource));
+
         return new GeoServicesFeature
         {
-            Attributes = feature.Attributes
-                .Where(kvp => !FeatureAttributeVisibility.IsInternalAttribute(kvp.Key))
-                .ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
+            Attributes = attributes,
             Geometry = GeoServicesGeometryConverter.ConvertWkbToGeoServicesGeometry(
                 feature.Geometry, null, null, false, false)
         };

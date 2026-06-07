@@ -122,12 +122,26 @@ internal sealed partial class FeatureQueryBuilder
             MetadataV2FieldType.Float => $"NULLIF({attributeValue}, '')::real",
             MetadataV2FieldType.Double => $"NULLIF({attributeValue}, '')::double precision",
             MetadataV2FieldType.Boolean => $"NULLIF({attributeValue}, '')::boolean",
-            MetadataV2FieldType.DateTime => $"NULLIF({attributeValue}, '')::timestamptz",
-            MetadataV2FieldType.Date => $"NULLIF({attributeValue}, '')::date",
+            MetadataV2FieldType.DateTime => BuildEpochAwareOrderByCast(attributeValue, "timestamptz"),
+            MetadataV2FieldType.Date => BuildEpochAwareOrderByCast(attributeValue, "date"),
             MetadataV2FieldType.Time => $"NULLIF({attributeValue}, '')::time",
             MetadataV2FieldType.Uuid => $"NULLIF({attributeValue}, '')::uuid",
             MetadataV2FieldType.String => attributeValue,
             _ => attributeValue
         };
+    }
+
+    // A date/datetime attribute stored in JSONB may be ISO-8601 text (seeded rows) or
+    // epoch-milliseconds rendered as text (Esri applyEdits). A bare ::timestamptz/::date
+    // cast on epoch-ms text raises SQLSTATE 22008 (HTTP 500) — the same hazard the
+    // CQL2 filter translator already guards via BuildEpochAwareTemporalCast. Detect the
+    // numeric form and convert via to_timestamp; otherwise cast the ISO text.
+    private static string BuildEpochAwareOrderByCast(string attributeValue, string castType)
+    {
+        var nullSafe = $"NULLIF({attributeValue}, '')";
+        var timestamp = $"CASE WHEN {nullSafe} ~ '^-?[0-9]+$' " +
+                        $"THEN to_timestamp({nullSafe}::double precision / 1000.0) " +
+                        $"ELSE {nullSafe}::timestamptz END";
+        return castType == "timestamptz" ? timestamp : $"({timestamp})::{castType}";
     }
 }

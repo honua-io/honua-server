@@ -103,9 +103,9 @@ internal static class GeoservicesCatalogEndpoints
 
             if (string.Equals(directoryType, "ImageServer", StringComparison.Ordinal))
             {
-                // ImageServer entries use the layer id in the URL (not the service name);
-                // probe the raster store to find the first publication that actually has
-                // raster data registered, mirroring the v1 behaviour.
+                // ImageServer is advertised only when a publication actually has raster data
+                // registered; probe the raster store to find the first such publication,
+                // mirroring the v1 behaviour. The URL itself is service-name scoped (see below).
                 try
                 {
                     var imageServerLayerId = await GetImageServerLayerIdAsync(

@@ -118,6 +118,12 @@ internal sealed partial class FeatureDataAccess
         {
             null => DBNull.Value,
             DateTimeOffset dateTimeOffset => dateTimeOffset.ToUniversalTime(),
+            // DateTimeOffset.UtcDateTime (used by temporal filters) yields a Kind=Unspecified
+            // DateTime, which Npgsql refuses to bind to a timestamptz column -> HTTP 500 on
+            // datetime-filtered tiles/extents. Force a UTC kind.
+            DateTime dateTime => DateTime.SpecifyKind(
+                dateTime.Kind == DateTimeKind.Local ? dateTime.ToUniversalTime() : dateTime,
+                DateTimeKind.Utc),
             _ => value
         };
     }

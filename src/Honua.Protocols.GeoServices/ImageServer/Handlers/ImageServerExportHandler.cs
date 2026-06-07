@@ -92,6 +92,12 @@ internal sealed class ImageServerExportHandler
                 return editionError;
             }
 
+            if (!TryValidateMosaicRule(request.MosaicRule, out var mosaicRuleError))
+            {
+                ImageServerLog.InvalidExportParameters(_logger, layerId, mosaicRuleError);
+                return StandardErrorHelpers.CreateNotImplemented(context, mosaicRuleError);
+            }
+
             var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, request.MosaicRule);
             var selectionQuery = new RasterSelectionQuery
             {
@@ -518,6 +524,56 @@ internal sealed class ImageServerExportHandler
 
     private static bool WantsInlineImageResponse(string? format)
         => string.Equals(format, InlineImageFormat, StringComparison.OrdinalIgnoreCase);
+
+    // A mosaicRule is honored only to the extent of its mergeStrategy/operation token
+    // (mapped to a RasterMergeStrategy). Esri mosaicRules that select a mosaicMethod honua
+    // does not implement (e.g. esriMosaicNadir, esriMosaicLockRaster, esriMosaicSeamline)
+    // were silently ignored; reject them with a clean 501 rather than no-op. A bare
+    // esriMosaicNone / esriMosaicAttribute is accepted because it does not change pixel
+    // selection here.
+    private static bool TryValidateMosaicRule(string? mosaicRule, out string error)
+    {
+        error = string.Empty;
+        if (string.IsNullOrWhiteSpace(mosaicRule))
+        {
+            return true;
+        }
+
+        var trimmed = mosaicRule.Trim();
+        if (!trimmed.StartsWith('{'))
+        {
+            return true;
+        }
+
+        try
+        {
+            using var document = System.Text.Json.JsonDocument.Parse(trimmed);
+            if (document.RootElement.ValueKind != System.Text.Json.JsonValueKind.Object)
+            {
+                return true;
+            }
+
+            if (document.RootElement.TryGetProperty("mosaicMethod", out var method) &&
+                method.ValueKind == System.Text.Json.JsonValueKind.String)
+            {
+                var value = method.GetString();
+                if (!string.IsNullOrWhiteSpace(value) &&
+                    !value.Equals("esriMosaicNone", StringComparison.OrdinalIgnoreCase) &&
+                    !value.Equals("esriMosaicAttribute", StringComparison.OrdinalIgnoreCase))
+                {
+                    error = $"mosaicRule mosaicMethod '{value}' is not implemented on this service.";
+                    return false;
+                }
+            }
+
+            return true;
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            error = "mosaicRule contains invalid JSON.";
+            return false;
+        }
+    }
 
     private readonly record struct ExportParameterParseError(string Detail, bool IsNotImplemented = false);
 }

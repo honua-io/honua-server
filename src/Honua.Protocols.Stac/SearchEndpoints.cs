@@ -602,15 +602,21 @@ internal static class SearchEndpoints
                 return false;
             }
 
+            // Carry the schema field type so numeric properties sort numerically rather
+            // than lexicographically (FeatureQueryBuilder only casts when FieldType is set).
+            var fieldType = availableFields.TryGetValue(normalizedField, out var schemaField)
+                ? schemaField.Type
+                : (MetadataV2FieldType?)null;
+
             if (string.Equals(sort.Direction, "desc", StringComparison.OrdinalIgnoreCase))
             {
-                orderByBuilder.Add(OrderByClause.Desc(normalizedField));
+                orderByBuilder.Add(new OrderByClause(normalizedField, ascending: false, fieldType));
                 continue;
             }
 
             if (string.Equals(sort.Direction, "asc", StringComparison.OrdinalIgnoreCase))
             {
-                orderByBuilder.Add(OrderByClause.Asc(normalizedField));
+                orderByBuilder.Add(new OrderByClause(normalizedField, ascending: true, fieldType));
                 continue;
             }
 
