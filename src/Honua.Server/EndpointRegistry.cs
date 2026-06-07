@@ -100,6 +100,7 @@ public static class EndpointRegistry
         new("GET", "/api/v1/admin/metadata/environments/{environment}/inventory"),
         new("POST", "/api/v1/admin/metadata/environment-bindings/query"),
         new("POST", "/api/v1/admin/metadata/release-packages"),
+        new("GET", "/api/v1/admin/metadata/release-packages"),
         new("GET", "/api/v1/admin/metadata/release-packages/{packageId}"),
         new("GET", "/api/v1/admin/metadata/release-packages/{packageId}/gitops-manifest"),
         new("GET", "/api/v1/admin/metadata/releases/{packageId}/operation"),
