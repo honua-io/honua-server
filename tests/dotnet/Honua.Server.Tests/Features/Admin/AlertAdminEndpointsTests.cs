@@ -659,6 +659,134 @@ public sealed class AlertAdminEndpointsTests : IAsyncLifetime
             expectedStatus: "unconfigured");
     }
 
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/alerts/rules/{ruleId}/events")]
+    public async Task ListRuleEvents_WithStatusAndLimit_ReturnsPagedTriggersAndPassesFilter()
+    {
+        var store = new StubAlertAdminStore();
+        store.Rules[77] = new AlertRuleDefinition
+        {
+            RuleId = 77,
+            ServiceId = "svc",
+            LayerId = 1,
+            RuleName = "Webhook Rule",
+            TriggerType = AlertTriggerType.Threshold,
+            ConditionsJson = "{\"field\":\"speedKmh\",\"operator\":\">\",\"value\":30}",
+            CooldownSeconds = 30,
+            Severity = AlertSeverity.Warning,
+            EditionRequired = AlertEdition.Pro,
+            Channels = ImmutableArray.Create(AlertChannelType.Webhook),
+            IsActive = true
+        };
+
+        var query = new StubAlertEventQuery
+        {
+            Page = new AlertEventPage
+            {
+                Items = new[]
+                {
+                    new AlertEventSummary
+                    {
+                        EventId = 202,
+                        RuleId = 77,
+                        ServiceId = "svc",
+                        LayerId = 1,
+                        ObjectId = 9,
+                        TriggerType = AlertTriggerType.Threshold,
+                        Severity = AlertSeverity.Warning,
+                        OccurredAt = DateTimeOffset.UtcNow,
+                        IncidentStatus = AlertIncidentStatus.Started,
+                        IncidentDurationMs = 0,
+                        LifecycleStatus = AlertLifecycleStatus.Acknowledged
+                    }
+                },
+                NextCursor = "cursor-next"
+            }
+        };
+
+        var fixture = CreateStubbedFixture(store, new CapturingAuditLog(), query);
+
+        try
+        {
+            await fixture.InitializeAsync();
+            using var client = fixture.CreateAdminClient();
+
+            var response = await client.GetAsync(
+                "/api/v1/admin/alerts/rules/77/events?status=acknowledged&limit=5&before=cursor-prev");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var data = document.RootElement.GetProperty("data");
+            data.GetProperty("ruleId").GetInt64().Should().Be(77);
+            data.GetProperty("nextCursor").GetString().Should().Be("cursor-next");
+            var items = data.GetProperty("items");
+            items.GetArrayLength().Should().Be(1);
+            items[0].GetProperty("eventId").GetInt64().Should().Be(202);
+            items[0].GetProperty("lifecycleStatus").GetString().Should().Be("acknowledged");
+            items[0].GetProperty("resourceRef").GetString().Should().Be("alert/202");
+
+            query.LastFilter.Should().NotBeNull();
+            query.LastFilter!.RuleId.Should().Be(77);
+            query.LastFilter.PageSize.Should().Be(5);
+            query.LastFilter.Cursor.Should().Be("cursor-prev");
+            query.LastFilter.LifecycleStatuses.Should().ContainSingle()
+                .Which.Should().Be(AlertLifecycleStatus.Acknowledged);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/alerts/rules/{ruleId}/events")]
+    public async Task ListRuleEvents_WithUnknownStatus_Returns400()
+    {
+        var store = new StubAlertAdminStore();
+        store.Rules[78] = new AlertRuleDefinition
+        {
+            RuleId = 78,
+            ServiceId = "svc",
+            LayerId = 1,
+            RuleName = "Webhook Rule",
+            TriggerType = AlertTriggerType.Threshold,
+            ConditionsJson = "{\"field\":\"speedKmh\",\"operator\":\">\",\"value\":30}",
+            CooldownSeconds = 30,
+            Severity = AlertSeverity.Warning,
+            EditionRequired = AlertEdition.Pro,
+            Channels = ImmutableArray.Create(AlertChannelType.Webhook),
+            IsActive = true
+        };
+
+        var fixture = CreateStubbedFixture(store, new CapturingAuditLog(), new StubAlertEventQuery());
+
+        try
+        {
+            await fixture.InitializeAsync();
+            using var client = fixture.CreateAdminClient();
+
+            var response = await client.GetAsync("/api/v1/admin/alerts/rules/78/events?status=bogus");
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            document.RootElement.GetProperty("success").GetBoolean().Should().BeFalse();
+            document.RootElement.GetProperty("message").GetString().Should().Contain("bogus");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/alerts/rules/{ruleId}/events")]
+    public async Task ListRuleEvents_NonexistentRuleId_Returns404()
+    {
+        var response = await _client.GetAsync("/api/v1/admin/alerts/rules/999999999/events");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
     private async Task<long> CreateZoneAsync(string serviceId)
     {
         var payload = new
@@ -868,8 +996,13 @@ public sealed class AlertAdminEndpointsTests : IAsyncLifetime
     {
         public AlertEventPage Page { get; set; } = new() { Items = Array.Empty<AlertEventSummary>() };
 
+        public AlertEventFilter? LastFilter { get; private set; }
+
         public Task<AlertEventPage> ListAsync(AlertEventFilter filter, CancellationToken cancellationToken = default)
-            => Task.FromResult(Page);
+        {
+            LastFilter = filter;
+            return Task.FromResult(Page);
+        }
 
         public Task<AlertEventSummary?> GetAsync(long eventId, CancellationToken cancellationToken = default)
             => Task.FromResult<AlertEventSummary?>(Page.Items.FirstOrDefault(item => item.EventId == eventId));

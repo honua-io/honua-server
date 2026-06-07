@@ -338,6 +338,7 @@ public static class EndpointRegistry
         new("PUT", "/api/v1/admin/alerts/rules/{ruleId}"),
         new("PUT", "/api/v1/admin/alerts/rules/{ruleId}/enabled"),
         new("GET", "/api/v1/admin/alerts/rules/{ruleId}/health"),
+        new("GET", "/api/v1/admin/alerts/rules/{ruleId}/events"),
         new("DELETE", "/api/v1/admin/alerts/rules/{ruleId}"),
 
         // v1 admin import endpoints (primary)
@@ -518,6 +519,7 @@ public static class EndpointRegistry
         // Forms package lifecycle, offline policy, and submissions (#1184)
         new("GET", "/api/v1/admin/forms/packages"),
         new("POST", "/api/v1/admin/forms/packages"),
+        new("POST", "/api/v1/admin/forms/packages/generate"),
         new("GET", "/api/v1/admin/forms/packages/{formId}"),
         new("GET", "/api/v1/admin/forms/packages/{formId}/versions"),
         new("GET", "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}"),
