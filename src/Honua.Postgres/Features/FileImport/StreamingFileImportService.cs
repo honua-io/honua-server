@@ -532,6 +532,23 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 warnings);
             return result;
         }
+        catch (Npgsql.PostgresException ex)
+        {
+            // Keep the full server message (which can include relation/function/schema/
+            // constraint names) in the server log, but never relay it to the client. The
+            // client-facing message maps the standardized SQLSTATE to a short, friendly
+            // explanation and includes the SQL state code so operators can correlate
+            // without leaking provider internals.
+            ImportLog.ImportFailedWithException(_logger, ex, jobId, request.TableName);
+            errorMessage = $"Import failed: {DescribePostgresError(ex.SqlState)} (SQL state {ex.SqlState}).";
+            result = ImportResult.CreateFailure(
+                request.TableName,
+                format ?? SupportedFileFormat.GeoJson,
+                errorMessage,
+                stopwatch.Elapsed,
+                warnings);
+            return result;
+        }
         catch (Exception ex)
         {
             ImportLog.ImportFailedWithException(_logger, ex, jobId, request.TableName);
@@ -587,4 +604,15 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             }
         }
     }
+
+    private static string DescribePostgresError(string? sqlState) => sqlState switch
+    {
+        "42P01" => "a required staging table was not available",
+        "42883" => "a required database function was not available",
+        "23505" => "a record with a conflicting key already exists",
+        "23502" => "a required value was missing",
+        "23503" => "a referenced record was missing",
+        "22P02" or "22P04" or "22023" => "the data could not be parsed for the target columns",
+        _ => "an unexpected database error occurred",
+    };
 }

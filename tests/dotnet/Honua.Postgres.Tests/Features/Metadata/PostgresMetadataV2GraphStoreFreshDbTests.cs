@@ -98,6 +98,91 @@ public sealed class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFixture fix
         }
     }
 
+    [IntegrationTest]
+    public async Task SaveAsync_OnBootstrapWithOrphanedServiceSidecarRows_ReconcilesInsteadOf23505()
+    {
+        // honua-server#1395: a shared/partially-written DB can carry orphaned
+        // metadata_v2_services_idx rows with NO activated metadata_v2_current row. The
+        // publish path then bootstraps from an empty graph and forces a first write at
+        // revision 1; without reconciliation the new service-name insert collided with
+        // the unique idx_metadata_v2_services_name and surfaced a raw Postgres 23505.
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataV2GraphStoreFreshDbTests));
+        try
+        {
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var store = new PostgresMetadataV2GraphStore(provider, environment: "Test", schemaName: schema);
+
+            // First, write a real snapshot at revision 1 so the schema + sidecar rows exist.
+            var firstGraph = new MetadataV2Graph
+            {
+                Environment = "Test",
+                Revision = 1,
+                GeneratedAt = DateTimeOffset.UtcNow,
+                Services =
+                [
+                    new MetadataV2Service
+                    {
+                        Metadata = new MetadataV2ObjectMetadata { Id = "svc-orphan", Name = "Shared Service" },
+                        Protocols = ["ogc-api-features"],
+                    },
+                ],
+            };
+            await store.SaveAsync(firstGraph, expectedEtag: null);
+
+            // Now corrupt the store into the inconsistent state from the issue: the
+            // services sidecar rows remain at revision 1 but no current snapshot is
+            // activated. (DELETE current only; the snapshot + sidecar rows survive.)
+            await using (var corrupt = await fixture.DataSource.OpenConnectionAsync())
+            {
+                await using var cmd = corrupt.CreateCommand();
+                cmd.CommandText = $"""
+                    DELETE FROM "{schema}".metadata_v2_current WHERE environment = 'Test';
+                    """;
+                await cmd.ExecuteNonQueryAsync();
+            }
+
+            // A fresh store instance (no in-memory cache) bootstrapping from empty and
+            // forcing a first write at revision 1 again — the colliding scenario.
+            var freshStore = new PostgresMetadataV2GraphStore(provider, environment: "Test", schemaName: schema);
+            var bootstrapGraph = new MetadataV2Graph
+            {
+                Environment = "Test",
+                Revision = 1,
+                GeneratedAt = DateTimeOffset.UtcNow,
+                Services =
+                [
+                    new MetadataV2Service
+                    {
+                        // Same case-insensitive name as the orphaned row.
+                        Metadata = new MetadataV2ObjectMetadata { Id = "svc-new", Name = "shared service" },
+                        Protocols = ["ogc-api-features"],
+                    },
+                ],
+            };
+
+            var act = () => freshStore.SaveAsync(bootstrapGraph, expectedEtag: null);
+
+            await act.Should().NotThrowAsync(
+                "bootstrap must clear stale environment sidecar rows instead of colliding with idx_metadata_v2_services_name");
+
+            var current = await freshStore.GetCurrentAsync();
+            current.Graph.Services.Should().ContainSingle(service => service.Metadata.Id == "svc-new");
+
+            // Exactly one services row remains for the environment — the orphan was cleared.
+            await using var connection = await fixture.DataSource.OpenConnectionAsync();
+            await using var countCmd = connection.CreateCommand();
+            countCmd.CommandText = $"""
+                SELECT COUNT(*)::int FROM "{schema}".metadata_v2_services_idx WHERE environment = 'Test';
+                """;
+            var servicesCount = (int)(await countCmd.ExecuteScalarAsync())!;
+            servicesCount.Should().Be(1, "the orphaned sidecar row must be reconciled away on bootstrap");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
     private sealed class TestConnectionProvider(NpgsqlDataSource dataSource, string schemaName) : IDatabaseConnectionProvider
     {
         public string GetConnectionString() => dataSource.ConnectionString;
