@@ -51,7 +51,7 @@ public class ArcGisRestQueryParametersTests
     }
 
     [Fact]
-    public void BuildFeatureQueryUrl_EnvelopeSpatialFilter_EmitsEnvelopeGeometryAndIntersectsRel()
+    public void BuildFeatureQueryUrl_EnvelopeSpatialFilter_EmitsEnvelopeGeometryAndMappedSpatialRel()
     {
         var spatial = SpatialFilter.Create(
             geometry: [],
@@ -69,8 +69,29 @@ public class ArcGisRestQueryParametersTests
 
         Assert.Contains("geometry=" + Uri.EscapeDataString("-10,-20,30,40"), url, StringComparison.Ordinal);
         Assert.Contains("geometryType=" + Uri.EscapeDataString("esriGeometryEnvelope"), url, StringComparison.Ordinal);
-        Assert.Contains("spatialRel=" + Uri.EscapeDataString("esriSpatialRelIntersects"), url, StringComparison.Ordinal);
+        // The requested SpatialRelationship is honored rather than always forced to Intersects.
+        Assert.Contains("spatialRel=" + Uri.EscapeDataString("esriSpatialRelEnvelopeIntersects"), url, StringComparison.Ordinal);
         Assert.Contains("inSR=4326", url, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildFeatureQueryUrl_IntersectsEnvelopeFilter_EmitsIntersectsRel()
+    {
+        var spatial = SpatialFilter.Create(
+            geometry: [],
+            spatialRelationship: SpatialRelationship.Intersects,
+            srid: 4326,
+            isSimpleEnvelope: true,
+            allowEnvelopeOnly: true,
+            envelopeMinX: -10,
+            envelopeMinY: -20,
+            envelopeMaxX: 30,
+            envelopeMaxY: 40);
+        var query = new FeatureQuery { SpatialFilter = spatial };
+
+        var url = ArcGisRestQueryParameters.BuildFeatureQueryUrl(ServiceUrl, 0, query, token: null);
+
+        Assert.Contains("spatialRel=" + Uri.EscapeDataString("esriSpatialRelIntersects"), url, StringComparison.Ordinal);
     }
 
     [Fact]
