@@ -164,6 +164,10 @@ internal static class ServiceCollectionExtensions
         // Register Forms package store (#1184)
         services.AddScoped<IFormPackageStore, PostgresFormPackageStore>();
 
+        // Register back-office field review store (#1159)
+        services.AddScoped<Honua.Core.Features.FieldWorkflows.Review.IFieldReviewStore,
+            Features.FieldWorkflows.PostgresFieldReviewStore>();
+
         // Register Metadata v2 graph store (Postgres-backed JSONB + sidecar indexes)
         services.AddScoped<IMetadataV2GraphStore>(serviceProvider =>
             new Features.Metadata.PostgresMetadataV2GraphStore(

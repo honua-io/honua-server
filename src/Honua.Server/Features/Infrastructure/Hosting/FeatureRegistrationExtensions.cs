@@ -20,6 +20,8 @@ using Honua.Server.Features.Protocols.Zarr;
 using Honua.Protocols.GeoServices.FeatureServer;
 using Honua.Server.Features.Geocoding;
 using Honua.Server.Features.Forms;
+using Honua.Server.Features.FieldWorkflows;
+using Honua.Server.Features.FieldWorkflows.Review;
 using Honua.Ai.Grounding.Spec;
 using Honua.Protocols.GeoServices.GeometryService;
 using Honua.Geoprocessing;
@@ -83,6 +85,7 @@ internal static class FeatureRegistrationExtensions
         services.AddCloudDemoServices(configuration);
         services.AddGeocoding(configuration);
         services.AddForms(configuration);
+        services.AddFieldWorkflows();
         services.AddCogServices(configuration);
         services.AddMultidimensionalCoverageServices();
         services.AddZarrServices();
@@ -139,6 +142,11 @@ internal static class FeatureRegistrationExtensions
         // live metadata DB) so generation never depends on layer/style/source binding (deferred to
         // publish). Mirrors the form generation service registration.
         services.TryAddSingleton<Honua.Ai.MapGeneration.IMapGenerationService, Honua.Ai.MapGeneration.MapGenerationService>();
+        // NL -> studio-app/v1 app.package generation. Reuses the workflow-generation provider config + chat
+        // plumbing and a self-contained DB-free structural validator (the app body is the console's opaque
+        // studio-app/v1 envelope; content bindings resolve at publish, not generation). Mirrors the map
+        // generation service registration.
+        services.TryAddSingleton<Honua.Ai.AppGeneration.IAppGenerationService, Honua.Ai.AppGeneration.AppGenerationService>();
         // NL -> report.document generation. Reuses the workflow-generation provider config + chat plumbing
         // and a self-contained structural ReportDocumentValidator (no DB). Mirrors the form/map registration.
         services.TryAddSingleton<Honua.Ai.ReportGeneration.IReportGenerationService, Honua.Ai.ReportGeneration.ReportGenerationService>();
@@ -177,6 +185,7 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapCloudDemoEndpoints();
         endpoints.MapGeocodingEndpoints();
         endpoints.MapFormPackageEndpoints();
+        endpoints.MapFieldReviewEndpoints();
         endpoints.MapCogEndpoints();
         endpoints.MapMultidimensionalCoverageEndpoints();
         endpoints.MapZarrEndpoints();
@@ -218,6 +227,7 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapGPServerEndpoints();
         endpoints.MapAnalysisContentEndpoints();
         endpoints.MapTemporalHistoryEndpoints();
+        endpoints.MapTemporalHistorySliceEndpoints();
         endpoints.MapAnalysisReporting();
         endpoints.MapCapabilityManifestEndpoints();
         endpoints.MapMcpOperatorSurface();

@@ -21,6 +21,10 @@ internal static class OperateObservabilityFixtureServiceCollectionExtensions
         services
             .AddOptions<OperateObservabilityFixtureOptions>()
             .Bind(configuration.GetSection(OperateObservabilityFixtureOptions.SectionName))
+            // Honour the flat HONUA_ENABLE_OBSERVABILITY_TEST_SEED alias everywhere the bound
+            // options are consumed (endpoint mapping, validator, startup seed service) (#1229).
+            .PostConfigure(opts => opts.Enabled =
+                OperateObservabilityFixtureOptions.ResolveEnabled(configuration, opts.Enabled))
             .ValidateOnStart();
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IValidateOptions<OperateObservabilityFixtureOptions>,
@@ -28,6 +32,7 @@ internal static class OperateObservabilityFixtureServiceCollectionExtensions
 
         var options = new OperateObservabilityFixtureOptions();
         configuration.GetSection(OperateObservabilityFixtureOptions.SectionName).Bind(options);
+        options.Enabled = OperateObservabilityFixtureOptions.ResolveEnabled(configuration, options.Enabled);
         var validation = new OperateObservabilityFixtureOptionsValidator(environment, configuration).Validate(null, options);
         if (validation.Failed)
         {

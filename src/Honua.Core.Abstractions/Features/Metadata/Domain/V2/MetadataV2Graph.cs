@@ -140,6 +140,7 @@ public sealed record MetadataV2Resource
     private IReadOnlyList<string>? _policyIds;
     private IReadOnlyList<MetadataV2Relationship>? _relationships;
     private IReadOnlyList<string>? _styleResourceIds;
+    private IReadOnlyList<MetadataV2AttributeRule>? _attributeRules;
     private IReadOnlyDictionary<string, JsonElement>? _extensions;
 
     /// <summary>
@@ -252,6 +253,20 @@ public sealed record MetadataV2Resource
     /// </summary>
     [JsonPropertyName("subtypes")]
     public MetadataV2Subtypes? Subtypes { get; init; }
+
+    /// <summary>
+    /// Esri-style attribute rules (calculation / constraint / validation) attached to
+    /// this resource. Imported alongside domains and subtypes from an Esri source layer
+    /// and enforced on the shared edit path: calculation rules populate their target
+    /// field before write, constraint/validation rules reject violating edits. Empty for
+    /// resources with no attribute rules.
+    /// </summary>
+    [JsonPropertyName("attributeRules")]
+    public IReadOnlyList<MetadataV2AttributeRule> AttributeRules
+    {
+        get => _attributeRules ?? Array.Empty<MetadataV2AttributeRule>();
+        init => _attributeRules = value;
+    }
 
     /// <summary>
     /// Optional extrusion metadata used by FeatureServer layer metadata and 3D Tiles generation.

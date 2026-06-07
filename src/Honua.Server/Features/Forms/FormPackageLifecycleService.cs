@@ -179,6 +179,151 @@ internal sealed class FormPackageLifecycleService
         return WriteVersion(context, draft, noStore: true);
     }
 
+    /// <summary>
+    /// Computes the offline compatibility and migration manifest for a published
+    /// form package. Offline clients call this with their locally-cached version
+    /// (<paramref name="clientVersion"/>) to learn whether pending offline edits
+    /// can be submitted against the current published version, whether a refresh
+    /// is recommended, or whether migration is required before submitting.
+    /// </summary>
+    public async Task<IResult> GetCompatibilityAsync(HttpContext context, string formId, int? clientVersion)
+    {
+        using var activity = HonuaTelemetry.ActivitySource.StartActivity("Forms.GetCompatibility");
+        activity?.SetTag("honua.protocol", "forms");
+        activity?.SetTag("honua.operation", "get-compatibility");
+        activity?.SetTag("honua.form_id", formId);
+
+        var current = await _store.GetCurrentVersionAsync(formId, FormPackageStatus.Published, context.RequestAborted).ConfigureAwait(false);
+        if (current is null)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status404NotFound, $"Published form package '{formId}' was not found.");
+        }
+
+        FormPackageVersion? client = null;
+        if (clientVersion is { } requested && requested != current.Version)
+        {
+            client = await _store.GetVersionAsync(formId, requested, context.RequestAborted).ConfigureAwait(false);
+        }
+
+        var manifest = BuildCompatibilityManifest(formId, clientVersion, current, client);
+        activity?.SetTag("honua.compatibility", manifest.Compatibility);
+        ApplyNoStore(context.Response);
+        return Results.Json(manifest, FormPackageJsonContext.Default.FormCompatibilityManifest);
+    }
+
+    private static FormCompatibilityManifest BuildCompatibilityManifest(
+        string formId,
+        int? clientVersion,
+        FormPackageVersion current,
+        FormPackageVersion? client)
+    {
+        // No client version supplied, or the client is already on the current
+        // published version: nothing to migrate.
+        if (clientVersion is null || clientVersion == current.Version)
+        {
+            return new FormCompatibilityManifest
+            {
+                FormId = formId,
+                ClientVersion = clientVersion,
+                CurrentPublishedVersion = current.Version,
+                Compatibility = FormCompatibilityLevel.Current,
+                OfflineEditsSubmittable = true,
+                RefreshRecommended = false,
+                MigrationRequired = false,
+                ClientContentHash = current.ContentHash,
+                CurrentContentHash = current.ContentHash,
+                ClientPolicyHash = current.PolicyHash,
+                CurrentPolicyHash = current.PolicyHash,
+                MigrationSignals = []
+            };
+        }
+
+        // The client references a version the server no longer knows (purged,
+        // never existed, or never published): clients must re-provision.
+        if (client is null)
+        {
+            return new FormCompatibilityManifest
+            {
+                FormId = formId,
+                ClientVersion = clientVersion,
+                CurrentPublishedVersion = current.Version,
+                Compatibility = FormCompatibilityLevel.Unknown,
+                OfflineEditsSubmittable = false,
+                RefreshRecommended = true,
+                MigrationRequired = true,
+                CurrentContentHash = current.ContentHash,
+                CurrentPolicyHash = current.PolicyHash,
+                MigrationSignals =
+                [
+                    new FormMigrationSignal
+                    {
+                        Code = "versionUnknown",
+                        Severity = "breaking",
+                        Message = $"Version {clientVersion} is unknown or no longer available; re-provision the form before submitting."
+                    }
+                ]
+            };
+        }
+
+        var signals = new List<FormMigrationSignal>();
+
+        var targetChanged =
+            !string.Equals(client.Package.Target?.ServiceId, current.Package.Target?.ServiceId, StringComparison.Ordinal)
+            || (client.Package.Target?.LayerId ?? -1) != (current.Package.Target?.LayerId ?? -1);
+        if (targetChanged)
+        {
+            signals.Add(new FormMigrationSignal
+            {
+                Code = "targetChanged",
+                Severity = "breaking",
+                Message = "The submission target service/layer changed; offline edits may be rejected."
+            });
+        }
+
+        var policyChanged = !string.Equals(client.PolicyHash, current.PolicyHash, StringComparison.Ordinal);
+        if (policyChanged)
+        {
+            signals.Add(new FormMigrationSignal
+            {
+                Code = "policyChanged",
+                Severity = "breaking",
+                Message = "Submit, attachment, privacy, or offline policy changed; re-validate offline edits before submitting."
+            });
+        }
+
+        var contentChanged = !string.Equals(client.ContentHash, current.ContentHash, StringComparison.Ordinal);
+        if (contentChanged && !policyChanged && !targetChanged)
+        {
+            signals.Add(new FormMigrationSignal
+            {
+                Code = "contentChanged",
+                Severity = "info",
+                Message = "Form fields or layout changed without affecting submission policy; refresh when convenient."
+            });
+        }
+
+        var breaking = targetChanged || policyChanged;
+        var compatibility = breaking
+            ? FormCompatibilityLevel.Breaking
+            : FormCompatibilityLevel.Compatible;
+
+        return new FormCompatibilityManifest
+        {
+            FormId = formId,
+            ClientVersion = clientVersion,
+            CurrentPublishedVersion = current.Version,
+            Compatibility = compatibility,
+            OfflineEditsSubmittable = !breaking,
+            RefreshRecommended = true,
+            MigrationRequired = breaking,
+            ClientContentHash = client.ContentHash,
+            CurrentContentHash = current.ContentHash,
+            ClientPolicyHash = client.PolicyHash,
+            CurrentPolicyHash = current.PolicyHash,
+            MigrationSignals = signals.ToArray()
+        };
+    }
+
     public async Task<IResult> GetRuntimeCurrentAsync(HttpContext context, string formId)
     {
         var version = await _store.GetCurrentVersionAsync(formId, FormPackageStatus.Published, context.RequestAborted).ConfigureAwait(false);

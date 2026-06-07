@@ -300,6 +300,41 @@ public sealed class OperateObservabilityFixtureOptionsTests
         result.Failures.Should().Contain(failure => failure.Contains("Development or Test", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public void ResolveEnabled_WhenFlatEnvAliasIsTrue_EnablesFixture()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["HONUA_ENABLE_OBSERVABILITY_TEST_SEED"] = "true"
+            })
+            .Build();
+
+        OperateObservabilityFixtureOptions.ResolveEnabled(configuration, boundEnabled: false)
+            .Should()
+            .BeTrue();
+    }
+
+    [Fact]
+    public void ResolveEnabled_WithNoFlagSet_StaysDisabled()
+    {
+        var configuration = new ConfigurationBuilder().Build();
+
+        OperateObservabilityFixtureOptions.ResolveEnabled(configuration, boundEnabled: false)
+            .Should()
+            .BeFalse();
+    }
+
+    [Fact]
+    public void ResolveEnabled_WhenNestedKeyIsTrue_StaysEnabledRegardlessOfAlias()
+    {
+        var configuration = new ConfigurationBuilder().Build();
+
+        OperateObservabilityFixtureOptions.ResolveEnabled(configuration, boundEnabled: true)
+            .Should()
+            .BeTrue();
+    }
+
     private sealed class FakeHostEnvironment(string environmentName) : IHostEnvironment
     {
         public string EnvironmentName { get; set; } = environmentName;
@@ -339,5 +374,70 @@ public sealed class OperateObservabilityFixtureDisabledEndpointTests : IAsyncLif
         var response = await _client.PostAsync(SeedRoute, content: null);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+}
+
+/// <summary>
+/// Verifies the flat <c>HONUA_ENABLE_OBSERVABILITY_TEST_SEED</c> env-var alias enables the seed
+/// endpoint and produces the same deterministic alert + job records Console asserts (#1229).
+/// </summary>
+[Collection("Database")]
+[Protocol(TestProtocols.Admin)]
+[Operation(Operations.Configuration)]
+public sealed class OperateObservabilityFixtureEnvAliasEndpointTests : IAsyncLifetime
+{
+    private const string SeedRoute = "/api/v1/admin/dev/fixtures/operate-observability/console-testcontainers-v1";
+    private const string SucceededJobId = "operate-fixture-job-succeeded";
+    private const string FailedJobId = "operate-fixture-job-failed";
+
+    private readonly WebAppFixture _fixture;
+    private HttpClient _client = null!;
+
+    public OperateObservabilityFixtureEnvAliasEndpointTests()
+    {
+        // Enable only via the flat HONUA_ENABLE_OBSERVABILITY_TEST_SEED alias; the nested
+        // OperateObservabilityFixture:Enabled key is intentionally left unset.
+        _fixture = new WebAppFixture()
+            .ConfigureWebHost(builder => builder.UseSetting("HONUA_ENABLE_OBSERVABILITY_TEST_SEED", "true"));
+    }
+
+    public async Task InitializeAsync()
+    {
+        await _fixture.InitializeAsync();
+        _client = _fixture.CreateAdminClient();
+    }
+
+    public Task DisposeAsync() => _fixture.DisposeAsync();
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/dev/fixtures/operate-observability/{profile}")]
+    public async Task SeedOperateObservabilityFixture_EnabledViaFlatEnvAlias_SeedsAlertsAndJobs()
+    {
+        var seedResponse = await _client.PostAsync(SeedRoute, content: null);
+
+        var seedBody = await seedResponse.Content.ReadAsStringAsync();
+        seedResponse.StatusCode.Should().Be(HttpStatusCode.OK, seedBody);
+        using var seed = JsonDocument.Parse(seedBody);
+        var openAlertId = seed.RootElement.GetProperty("alerts").GetProperty("openAlertEventId").GetInt64();
+
+        var alerts = await _client.GetAsync("/api/v1/admin/observability/alerts?serviceId=operate-fixture-console&pageSize=20");
+        alerts.StatusCode.Should().Be(HttpStatusCode.OK);
+        using (var doc = JsonDocument.Parse(await alerts.Content.ReadAsStringAsync()))
+        {
+            doc.RootElement.GetProperty("items").EnumerateArray()
+                .Should()
+                .Contain(alert =>
+                    alert.GetProperty("eventId").GetInt64() == openAlertId &&
+                    alert.GetProperty("lifecycleStatus").GetString() == "open");
+        }
+
+        var jobs = await _client.GetAsync("/api/v1/admin/jobs?correlationId=corr-operate-fixture-001&limit=10");
+        jobs.StatusCode.Should().Be(HttpStatusCode.OK);
+        using (var doc = JsonDocument.Parse(await jobs.Content.ReadAsStringAsync()))
+        {
+            var items = doc.RootElement.GetProperty("items").EnumerateArray().ToArray();
+            items.Should().Contain(job => job.GetProperty("jobId").GetString() == SucceededJobId);
+            items.Should().Contain(job => job.GetProperty("jobId").GetString() == FailedJobId);
+        }
     }
 }

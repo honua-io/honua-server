@@ -187,7 +187,11 @@ internal sealed partial class ArcGisRestClient
             Subtypes = EsriSubtypeParser.Parse(
                 layerResponse.SubtypeField,
                 layerResponse.DefaultSubtypeCode,
-                layerResponse.Subtypes).Subtypes
+                layerResponse.Subtypes).Subtypes,
+            // Persisted through publish so calculation/constraint/validation rules survive
+            // to the served FeatureServer surface and fire on applyEdits. An over-cap rule
+            // set is reported via the inventory warning path and intentionally not persisted.
+            AttributeRules = EsriAttributeRuleParser.Parse(layerResponse.AttributeRules).Rules
         };
     }
 
@@ -1081,6 +1085,9 @@ internal sealed record ArcGisLayerResponse
 
     [JsonPropertyName("subtypes")]
     public JsonElement? Subtypes { get; init; }
+
+    [JsonPropertyName("attributeRules")]
+    public JsonElement? AttributeRules { get; init; }
 }
 
 internal sealed record ArcGisSpatialReference

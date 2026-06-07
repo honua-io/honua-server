@@ -251,6 +251,14 @@ public sealed class WebAppFixture : IAsyncLifetime
         => Honua.TestKit.Mixins.WebAppFixtureMetadataV2GraphMutationMixin.UpdateResourceSubtypes(this, layerIndex, subtypes);
 
     /// <summary>
+    /// Sets (or clears with <c>null</c>) the Esri attribute-rule set on the resource
+    /// published at <paramref name="layerIndex"/>. Delegates to
+    /// <see cref="Mixins.WebAppFixtureMetadataV2GraphMutationMixin"/>.
+    /// </summary>
+    public void UpdateV2ResourceAttributeRules(int layerIndex, IReadOnlyList<MetadataV2AttributeRule>? attributeRules)
+        => Honua.TestKit.Mixins.WebAppFixtureMetadataV2GraphMutationMixin.UpdateResourceAttributeRules(this, layerIndex, attributeRules);
+
+    /// <summary>
     /// V2-aware helper that renames the canonical resource bound to the publication with
     /// <paramref name="layerIndex"/>. Delegates to
     /// <see cref="Mixins.WebAppFixtureMetadataV2GraphMutationMixin"/>.
