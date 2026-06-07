@@ -106,7 +106,7 @@ public sealed class GeoservicesCatalogEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /rest/services")]
-    public async Task GetServicesDirectory_ImageServerEntriesUseNumericLayerUrls()
+    public async Task GetServicesDirectory_ImageServerEntriesUseServiceScopedUrls()
     {
         var rasterStore = Substitute.For<IRasterStore>();
         rasterStore.ListRastersAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
@@ -147,9 +147,11 @@ public sealed class GeoservicesCatalogEndpointTests : IAsyncLifetime
                 .ToArray();
 
             imageServerUrls.Should().NotBeEmpty();
+            // ImageServer URLs are service-name scoped (canonical ArcGIS addressing,
+            // matching every other service type), not numeric-layer-id scoped.
             imageServerUrls.Should().OnlyContain(url =>
                 !string.IsNullOrWhiteSpace(url) &&
-                System.Text.RegularExpressions.Regex.IsMatch(url, @".*/rest/services/\d+/ImageServer$"));
+                System.Text.RegularExpressions.Regex.IsMatch(url, @".*/rest/services/[^/]+/ImageServer$"));
         }
         finally
         {
