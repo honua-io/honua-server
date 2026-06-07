@@ -207,6 +207,98 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/metadata/release-packages")]
+    [Endpoint("GET /api/v1/admin/metadata/release-packages")]
+    public async Task ListReleasePackages_ReturnsSeededSummaries_NewestFirstAndSecretSafe()
+    {
+        var firstBody = JsonSerializer.Serialize(
+            new CreateMetadataReleasePackageRequest
+            {
+                Title = "Promote parcels",
+                SourceEnvironment = "dev",
+                TargetEnvironments = ["staging"],
+                SemanticIds = ["res.parcels"],
+            },
+            MetadataReleaseJsonContext.Default.CreateMetadataReleasePackageRequest);
+        var secondBody = JsonSerializer.Serialize(
+            new CreateMetadataReleasePackageRequest
+            {
+                Title = "Promote parcel APN",
+                SourceEnvironment = "dev",
+                TargetEnvironments = ["staging"],
+                SemanticIds = ["field.parcels.apn"],
+            },
+            MetadataReleaseJsonContext.Default.CreateMetadataReleasePackageRequest);
+
+        var firstCreate = await _client.PostAsync(
+            "/api/v1/admin/metadata/release-packages",
+            new StringContent(firstBody, Encoding.UTF8, "application/json"));
+        firstCreate.StatusCode.Should().Be(HttpStatusCode.Created);
+        var firstCreated = JsonSerializer.Deserialize(
+            await firstCreate.Content.ReadAsStringAsync(),
+            MetadataReleaseJsonContext.Default.MetadataReleasePackage)!;
+
+        var secondCreate = await _client.PostAsync(
+            "/api/v1/admin/metadata/release-packages",
+            new StringContent(secondBody, Encoding.UTF8, "application/json"));
+        secondCreate.StatusCode.Should().Be(HttpStatusCode.Created);
+        var secondCreated = JsonSerializer.Deserialize(
+            await secondCreate.Content.ReadAsStringAsync(),
+            MetadataReleaseJsonContext.Default.MetadataReleasePackage)!;
+
+        var listResponse = await _client.GetAsync(
+            "/api/v1/admin/metadata/release-packages?sourceEnvironment=dev&targetEnvironment=staging");
+        listResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var listPayload = await listResponse.Content.ReadAsStringAsync();
+        listPayload.Should().NotContain("super-secret-password");
+        listPayload.Should().NotContain("\"entries\"");
+
+        var list = JsonSerializer.Deserialize(
+            listPayload,
+            MetadataReleaseJsonContext.Default.MetadataReleasePackageListResponse);
+        list.Should().NotBeNull();
+        list!.Count.Should().Be(list.Items.Count);
+        list.Items.Should().HaveCountGreaterThanOrEqualTo(2);
+        list.Items.Should().Contain(item => item.PackageId == firstCreated.PackageId);
+        list.Items.Should().Contain(item => item.PackageId == secondCreated.PackageId);
+
+        var summary = list.Items.Should().ContainSingle(item => item.PackageId == firstCreated.PackageId).Subject;
+        summary.SourceEnvironment.Should().Be("dev");
+        summary.SourceRevision.Should().Be(41);
+        summary.TargetEnvironments.Should().ContainSingle().Which.Should().Be("staging");
+        summary.EntryCount.Should().Be(1);
+        summary.Status.Should().Be(MetadataReleasePackageStatus.Draft);
+        summary.CreatedBy.Should().NotBeNullOrEmpty();
+
+        // Newest first: the second-created package must precede the first in the ordering.
+        var firstIndex = IndexOfPackage(list.Items, firstCreated.PackageId);
+        var secondIndex = IndexOfPackage(list.Items, secondCreated.PackageId);
+        secondIndex.Should().BeLessThan(firstIndex);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/metadata/release-packages")]
+    public async Task ListReleasePackages_WithUnsupportedStatusFilter_ReturnsBadRequest()
+    {
+        var response = await _client.GetAsync(
+            "/api/v1/admin/metadata/release-packages?status=not-a-status");
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    private static int IndexOfPackage(IReadOnlyList<MetadataReleasePackageSummary> items, Guid packageId)
+    {
+        for (var index = 0; index < items.Count; index++)
+        {
+            if (items[index].PackageId == packageId)
+            {
+                return index;
+            }
+        }
+
+        return -1;
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/metadata/release-packages")]
     [Endpoint("GET /api/v1/admin/metadata/release-packages/{packageId}/gitops-manifest")]
     public async Task ReleasePackageEndpoints_WithFieldAndMissingTarget_ExportsSourceFieldIdentity()
     {
@@ -972,5 +1064,10 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
             Guid packageId,
             CancellationToken cancellationToken = default)
             => _inner.GetAsync(packageId, cancellationToken);
+
+        public Task<IReadOnlyList<MetadataReleasePackageSummary>> ListAsync(
+            MetadataReleasePackageListFilter filter,
+            CancellationToken cancellationToken = default)
+            => _inner.ListAsync(filter, cancellationToken);
     }
 }

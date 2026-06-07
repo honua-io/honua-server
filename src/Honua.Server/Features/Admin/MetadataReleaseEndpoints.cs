@@ -45,6 +45,12 @@ internal static class MetadataReleaseEndpoints
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .Produces<MetadataReleasePackage>(StatusCodes.Status201Created);
 
+        group.MapGet("/release-packages", HandleListReleasePackages)
+            .WithDisplayName("List Metadata Release Packages")
+            .WithSummary("Returns release-package summaries for the GitOps releases surface, newest first.")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
+            .Produces<MetadataReleasePackageListResponse>();
+
         group.MapGet("/release-packages/{packageId:guid}", HandleGetReleasePackage)
             .WithDisplayName("Get Metadata Release Package")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
@@ -156,6 +162,42 @@ internal static class MetadataReleaseEndpoints
         }
     }
 
+    private static async Task<IResult> HandleListReleasePackages(
+        [FromServices] IMetadataReleaseService releaseService,
+        HttpContext context,
+        [FromQuery] string? sourceEnvironment = null,
+        [FromQuery] string? targetEnvironment = null,
+        [FromQuery] string? status = null,
+        [FromQuery] int? limit = null,
+        [FromQuery] int? offset = null)
+    {
+        if (!TryParsePackageStatus(status, out var statusFilter, out var statusError))
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, statusError!);
+        }
+
+        if (limit is < 0 || offset is < 0)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                context,
+                StatusCodes.Status400BadRequest,
+                "limit and offset must be non-negative.");
+        }
+
+        var filter = new MetadataReleasePackageListFilter
+        {
+            Limit = limit ?? 50,
+            Offset = offset ?? 0,
+            SourceEnvironment = sourceEnvironment,
+            TargetEnvironment = targetEnvironment,
+            Status = statusFilter,
+        };
+
+        var response = await releaseService.ListReleasePackagesAsync(filter, context.RequestAborted)
+            .ConfigureAwait(false);
+        return Results.Json(response, MetadataReleaseJsonContext.Default.MetadataReleasePackageListResponse);
+    }
+
     private static async Task<IResult> HandleGetReleasePackage(
         Guid packageId,
         [FromServices] IMetadataReleaseService releaseService,
@@ -198,6 +240,32 @@ internal static class MetadataReleaseEndpoints
         {
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, ex.Message);
         }
+    }
+
+    private static bool TryParsePackageStatus(
+        string? raw,
+        out MetadataReleasePackageStatus? value,
+        out string? error)
+    {
+        value = null;
+        error = null;
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return true;
+        }
+
+        value = raw.Trim().ToLowerInvariant() switch
+        {
+            "draft" => MetadataReleasePackageStatus.Draft,
+            "ready" => MetadataReleasePackageStatus.Ready,
+            "staged" => MetadataReleasePackageStatus.Staged,
+            "superseded" => MetadataReleasePackageStatus.Superseded,
+            "cancelled" => MetadataReleasePackageStatus.Cancelled,
+            _ => null,
+        };
+
+        error = value is null ? $"Unsupported status filter '{raw}'." : null;
+        return value is not null;
     }
 
     private static bool TryParseArtifactKind(

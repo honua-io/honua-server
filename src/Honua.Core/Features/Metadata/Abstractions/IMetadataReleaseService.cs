@@ -41,6 +41,13 @@ public interface IMetadataReleaseService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Lists release-package summaries (newest first) for the GitOps releases surface.
+    /// </summary>
+    Task<MetadataReleasePackageListResponse> ListReleasePackagesAsync(
+        MetadataReleasePackageListFilter filter,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Exports a persisted metadata release package as a GitOps-safe manifest.
     /// </summary>
     Task<GitOpsMetadataReleaseManifest?> GetGitOpsManifestAsync(
