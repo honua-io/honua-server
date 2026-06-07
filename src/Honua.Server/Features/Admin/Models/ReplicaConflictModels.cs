@@ -85,6 +85,18 @@ public sealed class ReplicaConflictDetail
     /// <summary>Current server feature state. Opaque feature object.</summary>
     public System.Text.Json.JsonElement? ServerState { get; init; }
 
+    /// <summary>
+    /// Whether the geometry differs between the client and server states. Null when geometry change
+    /// cannot be determined (e.g. one side carries no captured geometry).
+    /// </summary>
+    public bool? GeometryChanged { get; init; }
+
+    /// <summary>
+    /// Per-attribute comparison across the base/client/server states, limited to the fields that
+    /// diverge. Empty when the client/server states are not both available to compare.
+    /// </summary>
+    public ReplicaConflictFieldChange[]? FieldChanges { get; init; }
+
     /// <summary>Timestamp (UTC) when the conflict was first recorded.</summary>
     public required DateTimeOffset DetectedAt { get; init; }
 
@@ -99,6 +111,38 @@ public sealed class ReplicaConflictDetail
 
     /// <summary>Server generation produced by the resolution, when a new committed server state was created.</summary>
     public long? ResolvedServerGeneration { get; init; }
+}
+
+/// <summary>
+/// A single attribute's value across the base, client, and server states of a conflict, with flags
+/// indicating where it diverged from the common ancestor. Powers the field-level comparison the
+/// Console conflict reviewer renders (#1287).
+/// </summary>
+public sealed class ReplicaConflictFieldChange
+{
+    /// <summary>Attribute (field) name.</summary>
+    public required string Field { get; init; }
+
+    /// <summary>Value in the base/common-ancestor state, when a base state was captured.</summary>
+    public System.Text.Json.JsonElement? BaseValue { get; init; }
+
+    /// <summary>Value in the incoming client state.</summary>
+    public System.Text.Json.JsonElement? ClientValue { get; init; }
+
+    /// <summary>Value in the current server state.</summary>
+    public System.Text.Json.JsonElement? ServerValue { get; init; }
+
+    /// <summary>
+    /// Whether the client value diverged. When a base is present this is client≠base; without a base
+    /// it means client and server disagree.
+    /// </summary>
+    public required bool ChangedOnClient { get; init; }
+
+    /// <summary>
+    /// Whether the server value diverged. When a base is present this is server≠base; without a base
+    /// it means client and server disagree.
+    /// </summary>
+    public required bool ChangedOnServer { get; init; }
 }
 
 /// <summary>

@@ -470,28 +470,38 @@ internal static class ReplicaManagementEndpoints
         DetectedAt = record.DetectedAt,
     };
 
-    private static ReplicaConflictDetail ToConflictDetail(ReplicaConflictRecord record) => new()
+    private static ReplicaConflictDetail ToConflictDetail(ReplicaConflictRecord record)
     {
-        ConflictId = record.ConflictId,
-        ReplicaId = record.ReplicaId,
-        ServiceId = record.ServiceId,
-        LayerId = record.LayerId,
-        ObjectId = record.ObjectId,
-        ConflictType = ConflictTypeToString(record.ConflictType),
-        Status = StatusToString(record.Status),
-        SyncOperationId = record.SyncOperationId,
-        DeviceId = record.DeviceId,
-        UserId = record.UserId,
-        ServerGeneration = record.ServerGeneration,
-        BaseState = ParseStateJson(record.BaseStateJson),
-        ClientState = ParseStateJson(record.ClientStateJson),
-        ServerState = ParseStateJson(record.ServerStateJson),
-        DetectedAt = record.DetectedAt,
-        ResolutionAction = record.ResolutionAction is null ? null : ActionToString(record.ResolutionAction.Value),
-        ResolvedBy = record.ResolvedBy,
-        ResolvedAt = record.ResolvedAt,
-        ResolvedServerGeneration = record.ResolvedServerGeneration,
-    };
+        var baseState = ParseStateJson(record.BaseStateJson);
+        var clientState = ParseStateJson(record.ClientStateJson);
+        var serverState = ParseStateJson(record.ServerStateJson);
+        var (geometryChanged, fieldChanges) = ReplicaConflictDiff.Compute(baseState, clientState, serverState);
+
+        return new ReplicaConflictDetail
+        {
+            ConflictId = record.ConflictId,
+            ReplicaId = record.ReplicaId,
+            ServiceId = record.ServiceId,
+            LayerId = record.LayerId,
+            ObjectId = record.ObjectId,
+            ConflictType = ConflictTypeToString(record.ConflictType),
+            Status = StatusToString(record.Status),
+            SyncOperationId = record.SyncOperationId,
+            DeviceId = record.DeviceId,
+            UserId = record.UserId,
+            ServerGeneration = record.ServerGeneration,
+            BaseState = baseState,
+            ClientState = clientState,
+            ServerState = serverState,
+            GeometryChanged = geometryChanged,
+            FieldChanges = fieldChanges.Length > 0 ? fieldChanges : null,
+            DetectedAt = record.DetectedAt,
+            ResolutionAction = record.ResolutionAction is null ? null : ActionToString(record.ResolutionAction.Value),
+            ResolvedBy = record.ResolvedBy,
+            ResolvedAt = record.ResolvedAt,
+            ResolvedServerGeneration = record.ResolvedServerGeneration,
+        };
+    }
 
     private static JsonElement? ParseStateJson(string? json)
     {

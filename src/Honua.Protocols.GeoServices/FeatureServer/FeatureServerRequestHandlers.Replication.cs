@@ -837,6 +837,13 @@ internal static partial class FeatureServerEndpoints
                 var syncService = context.RequestServices.GetRequiredService<IReplicaSyncService>();
                 var applier = new FeatureServerReplicaEditApplier(editsHandler, limitsOptions.Value.Edits);
 
+                // Snapshot the pre-apply server state of every uploaded update/delete target so durable
+                // conflict records can carry the server side of the comparison for the review API
+                // (#1287). Captured before apply because last-write-wins overwrites the conflicting row.
+                var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
+                var serverConflictStates = await CaptureServerConflictStatesAsync(
+                    featureReader, layerEdits, cancellationToken);
+
                 var syncRequest = new ReplicaSyncRequest(
                     ReplicaId: replicaId,
                     ServiceId: serviceId,
@@ -862,6 +869,16 @@ internal static partial class FeatureServerEndpoints
                 conflicts = MapSyncConflicts(report.Conflicts);
                 uploadServerGen = report.ServerGeneration;
                 didUpload = true;
+
+                // Attach the client (uploaded) and pre-apply server state snapshots to the durable
+                // conflict records the sync service wrote, so the operator conflict-review API can
+                // render the field/geometry comparison (#1287).
+                if (!report.Conflicts.IsDefaultOrEmpty)
+                {
+                    var conflictRepository = context.RequestServices.GetRequiredService<IReplicaConflictRepository>();
+                    await AttachConflictStatesAsync(
+                        conflictRepository, report.Conflicts, layerEdits, serverConflictStates, cancellationToken);
+                }
             }
         }
 
@@ -922,6 +939,124 @@ internal static partial class FeatureServerEndpoints
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Reads the current server state of every uploaded update/delete target, keyed by
+    /// (public layer id, object id), as a <c>{"attributes": {...}}</c> envelope. Must run before the
+    /// edits are applied so the captured server side is the pre-conflict state, not the just-applied
+    /// client value (#1287). A target the server has already deleted yields no entry.
+    /// </summary>
+    private static async Task<Dictionary<(int PublicLayerId, long ObjectId), string>> CaptureServerConflictStatesAsync(
+        IFeatureReader featureReader,
+        ImmutableArray<ReplicaUploadLayerEdits> layerEdits,
+        CancellationToken cancellationToken)
+    {
+        var states = new Dictionary<(int, long), string>();
+        foreach (var layer in layerEdits)
+        {
+            var edits = layer.Edits.IsDefault ? ImmutableArray<ReplicaUploadEdit>.Empty : layer.Edits;
+            foreach (var edit in edits)
+            {
+                if (edit.Kind == FeatureEditOperationKind.Create || edit.ObjectId is not { } objectId)
+                {
+                    continue;
+                }
+
+                var key = (layer.PublicLayerId, objectId);
+                if (states.ContainsKey(key))
+                {
+                    continue;
+                }
+
+                var feature = await featureReader
+                    .GetAsync(layer.StorageLayerId, objectId, cancellationToken)
+                    .ConfigureAwait(false);
+                if (feature is { } found)
+                {
+                    states[key] = SerializeStateEnvelope(found.Attributes);
+                }
+            }
+        }
+
+        return states;
+    }
+
+    /// <summary>
+    /// Updates the durable conflict records written by the sync service with the client (uploaded) and
+    /// pre-apply server state snapshots, so the conflict-review detail API can compute the field- and
+    /// geometry-level comparison (#1287). Conflicts whose record cannot be loaded, or for which neither
+    /// side has a captured state (e.g. delete-vs-delete), are left unchanged.
+    /// </summary>
+    private static async Task AttachConflictStatesAsync(
+        IReplicaConflictRepository conflictRepository,
+        ImmutableArray<ReplicaSyncConflict> conflicts,
+        ImmutableArray<ReplicaUploadLayerEdits> layerEdits,
+        Dictionary<(int PublicLayerId, long ObjectId), string> serverStates,
+        CancellationToken cancellationToken)
+    {
+        var clientStates = BuildClientConflictStates(layerEdits);
+        foreach (var conflict in conflicts)
+        {
+            if (conflict.ConflictId is not { Length: > 0 } conflictId)
+            {
+                continue;
+            }
+
+            var key = (conflict.PublicLayerId, conflict.ObjectId);
+            clientStates.TryGetValue(key, out var clientState);
+            serverStates.TryGetValue(key, out var serverState);
+            if (clientState is null && serverState is null)
+            {
+                continue;
+            }
+
+            var record = await conflictRepository.GetAsync(conflictId, cancellationToken).ConfigureAwait(false);
+            if (record is not { } existing)
+            {
+                continue;
+            }
+
+            await conflictRepository.UpsertAsync(
+                existing with { ClientStateJson = clientState, ServerStateJson = serverState },
+                cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Builds the client (uploaded) state envelopes for update edits, keyed by (public layer id, object
+    /// id). Delete edits carry no client attributes and are omitted.
+    /// </summary>
+    private static Dictionary<(int PublicLayerId, long ObjectId), string> BuildClientConflictStates(
+        ImmutableArray<ReplicaUploadLayerEdits> layerEdits)
+    {
+        var states = new Dictionary<(int, long), string>();
+        foreach (var layer in layerEdits)
+        {
+            var edits = layer.Edits.IsDefault ? ImmutableArray<ReplicaUploadEdit>.Empty : layer.Edits;
+            foreach (var edit in edits)
+            {
+                if (edit.ObjectId is { } objectId && edit.Payload is GeoServicesFeature feature)
+                {
+                    states[(layer.PublicLayerId, objectId)] = SerializeStateEnvelope(feature.Attributes);
+                }
+            }
+        }
+
+        return states;
+    }
+
+    /// <summary>
+    /// Serializes a feature's attributes into the conflict-state envelope
+    /// <c>{"attributes": {...}}</c> consumed by the conflict-review diff, AOT-safely via the
+    /// source-generated dictionary serializer.
+    /// </summary>
+    private static string SerializeStateEnvelope(IReadOnlyDictionary<string, object?> attributes)
+    {
+        var attributeMap = attributes as Dictionary<string, object?> ?? new Dictionary<string, object?>(attributes);
+        var attributesJson = System.Text.Json.JsonSerializer.Serialize(
+            attributeMap, FeatureServerJsonContext.Default.DictionaryStringObject);
+        return $"{{\"attributes\":{attributesJson}}}";
     }
 
     /// <summary>
