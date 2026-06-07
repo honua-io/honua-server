@@ -2229,14 +2229,11 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
 
         geoJsonResponse.Should().NotBeNull();
         geoJsonResponse!.ExceededTransferLimit.Should().BeTrue();
-        geoJsonResponse.Properties.Should().NotBeNull();
-        var exceededValue = geoJsonResponse.Properties!["exceededTransferLimit"];
-        exceededValue.Should().BeOfType<JsonElement>();
-        ((JsonElement)exceededValue).GetBoolean().Should().BeTrue();
+        geoJsonResponse.Properties.Should().BeNull();
 
         using var jsonDoc = JsonDocument.Parse(content);
         jsonDoc.RootElement.GetProperty("exceededTransferLimit").GetBoolean().Should().BeTrue();
-        jsonDoc.RootElement.GetProperty("properties").GetProperty("exceededTransferLimit").GetBoolean().Should().BeTrue();
+        jsonDoc.RootElement.TryGetProperty("properties", out _).Should().BeFalse();
     }
 
     /// <summary>
