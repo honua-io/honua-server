@@ -138,6 +138,20 @@ public sealed class FeatureServerReplicaSyncTests : IAsyncLifetime
         record.Value.ObjectId.Should().Be(objectId);
         record.Value.Status.Should().Be(ReplicaConflictStatus.Pending);
 
+        // The record now carries the client (uploaded) and pre-apply server state snapshots (#1287),
+        // so the conflict-review detail API can compute the field-level comparison. The server snapshot
+        // must be the pre-conflict value, not the just-applied client value (last-write-wins).
+        record.Value.ClientStateJson.Should().NotBeNullOrWhiteSpace();
+        record.Value.ServerStateJson.Should().NotBeNullOrWhiteSpace();
+        using (var clientState = JsonDocument.Parse(record.Value.ClientStateJson!))
+        using (var serverState = JsonDocument.Parse(record.Value.ServerStateJson!))
+        {
+            clientState.RootElement.GetProperty("attributes").GetProperty("name").GetString()
+                .Should().Be("client-wins");
+            serverState.RootElement.GetProperty("attributes").GetProperty("name").GetString()
+                .Should().Be("server-wins-attempt");
+        }
+
         // Last-write-wins: the client's value is the committed server state.
         var serverName = await ReadFeatureNameAsync(objectId);
         serverName.Should().Be("client-wins");
