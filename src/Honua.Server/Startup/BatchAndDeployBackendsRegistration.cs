@@ -18,14 +18,18 @@ internal static class BatchAndDeployBackendsRegistration
     public static IServiceCollection AddHonuaBatchAndDeployBackends(this IServiceCollection services)
     {
         // Cloud SDK adapter clients used by deploy + batch backends below.
+#if !HONUA_EXCLUDE_AWS
         services.AddSingleton<IAwsLambdaAliasClient, AwsSdkLambdaAliasClient>();
         services.AddSingleton<IAwsAlbClient, AwsSdkAlbClient>();
         services.AddSingleton<IAwsEcsClient, AwsSdkEcsClient>();
+#endif
+#if !HONUA_EXCLUDE_AZURE
         services.AddSingleton<IAzureFunctionsSlotClient, AzureManagementFunctionsSlotClient>();
         services.AddSingleton<IAzureContainerAppsRevisionClient, AzureManagementContainerAppsRevisionClient>();
         services.AddSingleton<IAzureBatchClient, AzureBatchDataPlaneClient>();
         services.AddSingleton<AzureBatchComputeBackend>();
         services.AddSingleton<IBatchComputeBackend>(sp => sp.GetRequiredService<AzureBatchComputeBackend>());
+#endif
 
         services.AddSingleton<IDeployTargetRegistry, ConfigurationDeployTargetRegistry>();
         services.AddSingleton<IExecutionJobDefinitionRegistry, ConfigurationExecutionJobDefinitionRegistry>();
@@ -35,19 +39,35 @@ internal static class BatchAndDeployBackendsRegistration
         // Deploy backend concrete singletons. Order matters for the IEnumerable<IDeployBackend>
         // resolution below — keep the existing K8s/AWS/Azure ordering.
         services.AddSingleton<KubernetesGitOpsDeployBackend>();
+#if !HONUA_EXCLUDE_AWS
         services.AddSingleton<AwsEcsGitOpsDeployBackend>();
         services.AddSingleton<AwsEcsAlbDeployBackend>();
+#endif
+#if !HONUA_EXCLUDE_AZURE
         services.AddSingleton<AzureContainerAppsGitOpsDeployBackend>();
         services.AddSingleton<AzureContainerAppsRevisionDeployBackend>();
+#endif
+#if !HONUA_EXCLUDE_AWS
         services.AddSingleton<AwsLambdaGitOpsDeployBackend>();
+#endif
+#if !HONUA_EXCLUDE_AZURE
         services.AddSingleton<AzureFunctionsGitOpsDeployBackend>();
+#endif
         services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<KubernetesGitOpsDeployBackend>());
+#if !HONUA_EXCLUDE_AWS
         services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AwsEcsGitOpsDeployBackend>());
         services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AwsEcsAlbDeployBackend>());
+#endif
+#if !HONUA_EXCLUDE_AZURE
         services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AzureContainerAppsGitOpsDeployBackend>());
         services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AzureContainerAppsRevisionDeployBackend>());
+#endif
+#if !HONUA_EXCLUDE_AWS
         services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AwsLambdaGitOpsDeployBackend>());
+#endif
+#if !HONUA_EXCLUDE_AZURE
         services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AzureFunctionsGitOpsDeployBackend>());
+#endif
 
         // Batch backends. Local fallback is registered first so it sits earlier in the enumerable.
         services.AddSingleton<LocalBatchComputeBackend>();
@@ -59,9 +79,11 @@ internal static class BatchAndDeployBackendsRegistration
         // overrides) are carried on each ExecutionJobSpec.Parameters entry via ControlPlane:ExecutionWorkloads,
         // so the adapter has no global options section it depends on. Registering unconditionally keeps
         // the backend visible to the reconciler whenever an operator targets Backend=honua-aws-batch.
+#if !HONUA_EXCLUDE_AWS
         services.AddSingleton<IAwsBatchJobClient, AwsSdkBatchJobClient>();
         services.AddSingleton<AwsBatchComputeBackend>();
         services.AddSingleton<IBatchComputeBackend>(sp => sp.GetRequiredService<AwsBatchComputeBackend>());
+#endif
 
         services.AddSingleton<IKubernetesJobClient, KubernetesJobClient>();
         services.AddSingleton<KubernetesJobBatchComputeBackend>();

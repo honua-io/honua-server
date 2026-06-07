@@ -75,12 +75,20 @@ public static class FileStorageServiceCollectionExtensions
                 break;
 
             case CloudStorageProvider.AwsS3:
+#if HONUA_EXCLUDE_AWS
+                throw CreateUnavailableProviderException("AWS S3", "HonuaIncludeAws");
+#else
                 services.AddSingleton<ICloudFileStorage, AwsS3FileStorage>();
                 break;
+#endif
 
             case CloudStorageProvider.AzureBlob:
+#if HONUA_EXCLUDE_AZURE
+                throw CreateUnavailableProviderException("Azure Blob", "HonuaIncludeAzure");
+#else
                 services.AddSingleton<ICloudFileStorage, AzureBlobFileStorage>();
                 break;
+#endif
 
             default:
                 throw new InvalidOperationException($"Unknown storage provider: {providerName}");
@@ -135,12 +143,20 @@ public static class FileStorageServiceCollectionExtensions
                 break;
 
             case CloudStorageProvider.AwsS3:
+#if HONUA_EXCLUDE_AWS
+                throw CreateUnavailableProviderException("AWS S3", "HonuaIncludeAws");
+#else
                 services.AddSingleton<ICloudFileStorage, AwsS3FileStorage>();
                 break;
+#endif
 
             case CloudStorageProvider.AzureBlob:
+#if HONUA_EXCLUDE_AZURE
+                throw CreateUnavailableProviderException("Azure Blob", "HonuaIncludeAzure");
+#else
                 services.AddSingleton<ICloudFileStorage, AzureBlobFileStorage>();
                 break;
+#endif
 
             default:
                 throw new InvalidOperationException($"Unknown storage provider: {options.Provider}");
@@ -211,4 +227,11 @@ public static class FileStorageServiceCollectionExtensions
             return new InMemoryUploadProgressStore();
         });
     }
+
+    private static InvalidOperationException CreateUnavailableProviderException(
+        string providerName,
+        string includeProperty)
+        => new(
+            $"{providerName} file storage is not available in this Honua build. " +
+            $"Rebuild with -p:{includeProperty}=true or use HonuaBuildProfile=full.");
 }
