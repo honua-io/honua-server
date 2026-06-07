@@ -326,6 +326,17 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/app-packages/generate")]
+    public async Task GenerateAppPackage_MissingPrompt_ReachesHandlerAndReturnsBadRequest()
+    {
+        // The generate route validates the prompt before invoking any AI provider, so an empty body
+        // exercises the wired endpoint (non-404) without calling a real LLM.
+        var response = await _client.PostAsync("/api/v1/studio/app-packages/generate", EmptyJson());
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
     private async Task<HttpResponseMessage> PostAsync<T>(string path, T body, JsonTypeInfo<T> typeInfo)
         => await _client.PostAsync(path, JsonContent(body, typeInfo));
 
