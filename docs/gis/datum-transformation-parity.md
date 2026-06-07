@@ -71,14 +71,40 @@ This PR does **not** modify the Docker image. Provisioning the PROJ grid data
 the PostGIS image is a documented follow-up. Until then, grid-backed selections that hit
 a missing grid surface a PostGIS error mapped to the shared problem helper.
 
-## Import / reprojection path (follow-up)
+## Import / reprojection path
 
-The query/output path selects and applies the Esri-default transformation. The file/
-migration **import** reprojection path (`StreamingFileImportService`) currently relies on
-PostGIS' default pipeline when the source datum differs from the storage datum.
-Recording and applying the catalog-selected transformation on import (so stored geometry
-matches Esri-default reprojection) is a documented follow-up; it does not route through
-the shared `DatumTransformSql` chokepoint yet.
+The file/migration **import** reprojection path (`StreamingFileImportService`) now honors
+the same auditable Esri-default selection as the query path (#1501). When a feature is
+reprojected on import (`sourceSrid → targetSrid`), the service resolves the catalog's
+Esri-default pipeline via `IDatumTransformationCatalog.TryGetDefault` and applies it
+through the explicit 3-argument `ST_Transform(geom, '<pipeline>', toSrid)` form of
+`honua.insert_import_feature` — the same shape `DatumTransformSql.BuildTransformExpression`
+emits for the query path.
+
+Details and guarantees:
+
+- The reprojection executes server-side inside `honua.insert_import_feature`. Migration
+  `053_AddImportDatumTransformation.sql` adds an additive 7-argument overload that takes
+  the resolved PROJ pipeline; the legacy 6-argument overload is unchanged, and the import
+  service calls the 7-argument form **only** when a pipeline is actually resolved. Imports
+  with no curated default for the pair therefore keep PROJ's default (2-argument) behavior
+  byte-for-byte.
+- The pipeline is resolved for the request-level `(sourceSrid → targetSrid)` pair and is
+  applied per row **only** when the row's source SRID matches that pair. Rows carrying a
+  different per-feature SRID (e.g. mixed-CRS FileGDB layers) fall back to PROJ's default
+  pipeline; per-feature pipeline selection for heterogeneous-CRS imports is a follow-up.
+- Only **forward** selections are applied. The catalog synthesizes reverse directions with
+  `TransformForward = false` but keeps the forward pipeline; applying that forward pipeline to
+  reverse-direction input (e.g. a NAD27→NAD83 NADCON shift on NAD83 coordinates) would corrupt
+  the result, so reverse-direction imports fall back to PROJ's default path until inverse
+  pipelines are emitted.
+- Grid-gated selections (NADCON/NTv2/GEOID) follow the same explicit-failure contract as
+  the query path: a missing grid surfaces as a PostGIS error (mapped to the shared problem
+  helper) rather than a silent Helmert approximation. Provisioning the grid data in the
+  PostGIS image remains the separate follow-up above.
+- The legacy bulk helpers in `BulkImportExtensions` (`bulk_insert_import_features`, COPY)
+  are not on the live import path (no production callers) and are not yet routed; if they
+  are ever re-wired they must adopt the same overload.
 
 ## Vertical datum (Phase 4 — minimal)
 
