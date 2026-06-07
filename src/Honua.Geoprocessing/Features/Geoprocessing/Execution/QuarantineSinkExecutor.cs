@@ -58,6 +58,11 @@ internal sealed class QuarantineSinkExecutor(IOptionsMonitor<GeoprocessingExecut
             return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: {pathError}");
         }
 
+        if (!SinkPathResolver.TryResolve(_options.CurrentValue.SinkRootDirectory, path, out path, out var containmentError))
+        {
+            return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: 'path' {containmentError}");
+        }
+
         if (!FeatureCollectionArtifact.TryParseDataUri(inputUri, out var source, out var parseError))
         {
             return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: 'input' {parseError}");

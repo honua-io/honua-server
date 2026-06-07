@@ -32,4 +32,13 @@ internal sealed class GeoprocessingExecutorOptions
     /// </summary>
     [Range(typeof(TimeSpan), "00:01:00", "30.00:00:00", ErrorMessage = "ResultRetention must be between 1 minute and 30 days")]
     public TimeSpan ResultRetention { get; set; } = TimeSpan.FromDays(7);
+
+    /// <summary>
+    /// Optional containment root for file-writing sinks (<c>sink.geojson-file</c>,
+    /// <c>sink.quarantine</c>). When set, a sink's caller-supplied <c>path</c> is resolved within this
+    /// directory and any path that escapes it (via traversal or an absolute path) is rejected, bounding
+    /// where an operator-submitted plan can write. When left unset, sink paths are used as-is
+    /// (operator-trusted behavior); set this to defend in depth on hardened or multi-tenant deployments.
+    /// </summary>
+    public string? SinkRootDirectory { get; set; }
 }
