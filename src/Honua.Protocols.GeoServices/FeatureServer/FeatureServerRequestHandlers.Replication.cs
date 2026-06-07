@@ -369,9 +369,7 @@ internal static partial class FeatureServerEndpoints
                         [$"Layer {layer.PublicLayerId} returned more than {queryLimits.MaxRecordCount} features."]);
                 }
 
-                var addFeatures = result.Items
-                    .Select(f => ConvertFeatureToGeoServices(f, layer.Resource))
-                    .ToArray();
+                var addFeatures = ConvertFeaturesToGeoServices(result.Items, layer.Resource);
 
                 layerChanges.Add(new LayerChanges
                 {
@@ -434,9 +432,7 @@ internal static partial class FeatureServerEndpoints
                     {
                         var query = new FeatureQuery { ObjectIds = ImmutableArray.Create(insertIds) };
                         var result = await featureReader.QueryAsync(layer.StorageLayerId, query, cancellationToken);
-                        addFeatures = result.Items
-                            .Select(f => ConvertFeatureToGeoServices(f, layer.Resource))
-                            .ToArray();
+                        addFeatures = ConvertFeaturesToGeoServices(result.Items, layer.Resource);
                     }
 
                     GeoServicesFeature[]? updateFeatures = null;
@@ -444,9 +440,7 @@ internal static partial class FeatureServerEndpoints
                     {
                         var query = new FeatureQuery { ObjectIds = ImmutableArray.Create(updateIds) };
                         var result = await featureReader.QueryAsync(layer.StorageLayerId, query, cancellationToken);
-                        updateFeatures = result.Items
-                            .Select(f => ConvertFeatureToGeoServices(f, layer.Resource))
-                            .ToArray();
+                        updateFeatures = ConvertFeaturesToGeoServices(result.Items, layer.Resource);
                     }
 
                     layerChanges.Add(new LayerChanges
@@ -618,7 +612,7 @@ internal static partial class FeatureServerEndpoints
                         layer.StorageLayerId,
                         new FeatureQuery { ObjectIds = ImmutableArray.Create(insertIds) },
                         cancellationToken);
-                    addFeatures = result.Items.Select(f => ConvertFeatureToGeoServices(f, layer.Resource)).ToArray();
+                    addFeatures = ConvertFeaturesToGeoServices(result.Items, layer.Resource);
                 }
 
                 if (updateIds.Length > 0)
@@ -627,7 +621,7 @@ internal static partial class FeatureServerEndpoints
                         layer.StorageLayerId,
                         new FeatureQuery { ObjectIds = ImmutableArray.Create(updateIds) },
                         cancellationToken);
-                    updateFeatures = result.Items.Select(f => ConvertFeatureToGeoServices(f, layer.Resource)).ToArray();
+                    updateFeatures = ConvertFeaturesToGeoServices(result.Items, layer.Resource);
                 }
             }
 
@@ -1449,19 +1443,28 @@ internal static partial class FeatureServerEndpoints
     }
 
     /// <summary>
+    /// Converts a batch of features for replication, resolving the resource's date field names once
+    /// for the whole batch instead of recomputing them per feature.
+    /// </summary>
+    private static GeoServicesFeature[] ConvertFeaturesToGeoServices(
+        IEnumerable<Feature> features, MetadataV2Resource resource)
+    {
+        var dateFieldNames = GeoServicesFieldConventions.ResolveDateFieldNames(resource);
+        return features.Select(f => ConvertFeatureToGeoServices(f, dateFieldNames)).ToArray();
+    }
+
+    /// <summary>
     /// Converts a domain Feature to a GeoServicesFeature for replication responses.
     /// esriFieldTypeDate attributes are coerced to epoch-ms integers uniformly across rows
     /// (JSONB stores dates as ISO strings from seeds or epoch-ms longs from applyEdits) via the
     /// shared GeoServices date convention, matching the query/identify serialization.
     /// </summary>
-    private static GeoServicesFeature ConvertFeatureToGeoServices(Feature feature, MetadataV2Resource resource)
+    private static GeoServicesFeature ConvertFeatureToGeoServices(Feature feature, HashSet<string> dateFieldNames)
     {
         var attributes = feature.Attributes
             .Where(kvp => !FeatureAttributeVisibility.IsInternalAttribute(kvp.Key))
             .ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.OrdinalIgnoreCase);
-        GeoServicesFieldConventions.CoerceDateAttributes(
-            attributes,
-            GeoServicesFieldConventions.ResolveDateFieldNames(resource));
+        GeoServicesFieldConventions.CoerceDateAttributes(attributes, dateFieldNames);
 
         return new GeoServicesFeature
         {

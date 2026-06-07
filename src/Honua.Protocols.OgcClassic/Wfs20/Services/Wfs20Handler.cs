@@ -158,7 +158,8 @@ internal sealed partial class Wfs20Handler
 
             if (remainingOffset >= layerMatched)
             {
-                remainingOffset -= (int)Math.Min(remainingOffset, layerMatched);
+                // This whole layer is skipped by the offset; layerMatched <= remainingOffset (an int) here.
+                remainingOffset -= (int)layerMatched;
                 continue;
             }
 

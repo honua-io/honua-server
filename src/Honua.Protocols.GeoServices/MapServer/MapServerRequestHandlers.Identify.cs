@@ -393,7 +393,9 @@ internal static partial class MapServerEndpoints
 
                 foreach (var feature in queryResult.Items)
                 {
-                    var attributes = new Dictionary<string, object?>();
+                    // Case-insensitive to match the query/replication date-coercion path so
+                    // CoerceDateAttributes resolves date field names regardless of attribute casing.
+                    var attributes = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
                     foreach (var kvp in feature.Attributes)
                     {
                         if (FeatureAttributeVisibility.IsInternalAttribute(kvp.Key))
