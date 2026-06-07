@@ -169,7 +169,8 @@ internal static partial class SqlServerFeatureQueryBuilder
 
         foreach (var column in columns)
         {
-            SqlServerIdentifier.EnsureValid(column, "attribute column");
+            // SqlServerIdentifier.Quote validates the identifier internally, so no separate
+            // EnsureValid call is needed here.
             sb.Append(", ").Append(SqlServerIdentifier.Quote(column));
         }
     }

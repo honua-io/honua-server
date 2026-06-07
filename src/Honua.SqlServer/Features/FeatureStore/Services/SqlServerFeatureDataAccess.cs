@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Data;
 using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -156,7 +157,17 @@ internal sealed class SqlServerFeatureDataAccess
         {
             var name = "@p" + i.ToString(CultureInfo.InvariantCulture);
             var value = query.WhereParameters[i] ?? DBNull.Value;
-            command.Parameters.AddWithValue(name, value);
+            if (value is string text)
+            {
+                // Bind strings with an explicit size (their actual length) instead of letting
+                // AddWithValue infer NVARCHAR(MAX), which prevents index seeks on bounded
+                // (N)VARCHAR(n) columns.
+                command.Parameters.Add(name, SqlDbType.NVarChar, Math.Max(1, text.Length)).Value = text;
+            }
+            else
+            {
+                command.Parameters.AddWithValue(name, value);
+            }
         }
 
         SqlServerFeatureLog.QueryPrepared(_logger, query.Sql, query.WhereParameters.Count);

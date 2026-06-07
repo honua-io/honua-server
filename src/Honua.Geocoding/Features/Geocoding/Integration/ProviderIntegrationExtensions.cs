@@ -63,7 +63,10 @@ public static class ProviderIntegrationExtensions
             {
                 var config = serviceProvider.GetRequiredService<IOptionsMonitor<NominatimProviderConfiguration>>().CurrentValue;
                 var httpClientFactory = serviceProvider.GetRequiredService<IHttpClientFactory>();
-                var httpClient = httpClientFactory.CreateClient(typeof(NominatimGeocodeProvider).FullName ?? nameof(NominatimGeocodeProvider));
+                // AddResilientHttpClient<NominatimGeocodeProvider> registers the resilient client
+                // under the simple type name, so resolve it by nameof (not FullName) — otherwise the
+                // provider would silently fall back to a default client with no resilience policy.
+                var httpClient = httpClientFactory.CreateClient(nameof(NominatimGeocodeProvider));
 
                 return new NominatimGeocodeProvider(config, httpClient);
             });
@@ -127,7 +130,9 @@ public static class ProviderIntegrationExtensions
             {
                 var config = serviceProvider.GetRequiredService<IOptionsMonitor<AzureMapsProviderConfiguration>>().CurrentValue;
                 var httpClientFactory = serviceProvider.GetRequiredService<IHttpClientFactory>();
-                var httpClient = httpClientFactory.CreateClient(typeof(AzureMapsGeocodeProvider).FullName ?? nameof(AzureMapsGeocodeProvider));
+                // Resolve by the simple type name AddResilientHttpClient<AzureMapsGeocodeProvider>
+                // registered under, so the configured resilience policy actually applies.
+                var httpClient = httpClientFactory.CreateClient(nameof(AzureMapsGeocodeProvider));
 
                 return new AzureMapsGeocodeProvider(config, httpClient);
             });

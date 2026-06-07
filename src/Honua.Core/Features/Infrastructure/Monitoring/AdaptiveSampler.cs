@@ -34,6 +34,7 @@ public sealed partial class AdaptiveSampler : IAdaptiveSampler, IDisposable
     private readonly PredictiveLoadForecaster _loadForecaster;
     private readonly MLSamplingDecisionEngine _mlEngine;
     private readonly ConcurrentDictionary<string, OperationPattern> _operationPatterns;
+    private const int MaxOperationPatterns = 1000;
 
     /// <summary>
     /// Initializes a new adaptive sampler with configuration and metrics collection.
@@ -373,7 +374,7 @@ public sealed partial class AdaptiveSampler : IAdaptiveSampler, IDisposable
     /// </summary>
     private void RecordOperationPattern(string operationName, double samplingRate, bool wasSampled)
     {
-        var pattern = _operationPatterns.AddOrUpdate(operationName,
+        _operationPatterns.AddOrUpdate(operationName,
             _ => new OperationPattern
             {
                 OperationName = operationName,
@@ -393,6 +394,31 @@ public sealed partial class AdaptiveSampler : IAdaptiveSampler, IDisposable
                 existing.AverageSamplingRate = ((existing.AverageSamplingRate * priorCount) + samplingRate) / existing.TotalInvocations;
                 return existing;
             });
+
+        EvictStaleOperationPatternsIfNeeded();
+    }
+
+    /// <summary>
+    /// Operation names are normally a low-cardinality set, but guard against unbounded growth if a
+    /// caller ever supplies high-cardinality names (e.g. names containing ids) by evicting the
+    /// least-recently-seen entries once the dictionary exceeds <see cref="MaxOperationPatterns"/>.
+    /// </summary>
+    private void EvictStaleOperationPatternsIfNeeded()
+    {
+        if (_operationPatterns.Count <= MaxOperationPatterns)
+        {
+            return;
+        }
+
+        var evictCount = _operationPatterns.Count - MaxOperationPatterns;
+        foreach (var key in _operationPatterns
+                     .OrderBy(kvp => kvp.Value.LastSeen)
+                     .Take(evictCount)
+                     .Select(kvp => kvp.Key)
+                     .ToList())
+        {
+            _operationPatterns.TryRemove(key, out _);
+        }
     }
 
     /// <summary>
