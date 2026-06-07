@@ -5,6 +5,8 @@ using System.Collections.Concurrent;
 using System.Data.Common;
 using Honua.Core.Features.GeometryService.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using NetTopologySuite.Geometries;
+using NetTopologySuite.IO;
 using Npgsql;
 
 namespace Honua.Postgres.Features.GeometryService;
@@ -119,39 +121,9 @@ internal sealed class PostgresGeometryOperationService(
         await using var connection = await _connectionProvider.OpenConnectionAsync(ct).ConfigureAwait(false);
         await using var cmd = connection.CreateCommand();
 
-        // Web Mercator (EPSG:3857 and aliases) is only defined within ±85.0511° latitude; at the
-        // poles ST_Transform produces ±Infinity and ST_AsBinary then fails, crashing the request
-        // with HTTP 500. ArcGIS clamps latitude to the valid range (finite northing ~±20037508 m).
-        // When projecting from WGS84 (degrees) to Web Mercator, snap every vertex's latitude into
-        // range before transforming so polar inputs stay finite (bug hunt).
         if (fromSrid == 4326 && IsWebMercatorSrid(toSrid))
         {
-            cmd.CommandText = """
-                SELECT ST_AsBinary(
-                    ST_Transform(
-                        ST_SetSRID(
-                            ST_GeometryN(
-                                ST_Collect(
-                                    ST_MakePoint(
-                                        ST_X(p.geom),
-                                        GREATEST($4, LEAST($5, ST_Y(p.geom)))
-                                    )
-                                ),
-                                1
-                            ),
-                            $2),
-                        $3))
-                FROM (SELECT (ST_DumpPoints(ST_SetSRID($1::geometry, $2))).geom) AS p
-                """;
-
-            cmd.Parameters.Add(new NpgsqlParameter { Value = wkb });
-            cmd.Parameters.Add(new NpgsqlParameter { Value = fromSrid });
-            cmd.Parameters.Add(new NpgsqlParameter { Value = toSrid });
-            cmd.Parameters.Add(new NpgsqlParameter { Value = -WebMercatorMaxAbsoluteLatitudeDegrees });
-            cmd.Parameters.Add(new NpgsqlParameter { Value = WebMercatorMaxAbsoluteLatitudeDegrees });
-
-            var clampedResult = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
-            return clampedResult as byte[] ?? throw new InvalidOperationException("PostGIS project returned null.");
+            wkb = ClampWebMercatorLatitudes(wkb, fromSrid);
         }
 
         cmd.CommandText = "SELECT ST_AsBinary(ST_Transform(ST_SetSRID($1::geometry, $2), $3))";
@@ -166,6 +138,43 @@ internal sealed class PostgresGeometryOperationService(
 
     private static bool IsWebMercatorSrid(int srid)
         => srid is 3857 or 900913 or 102100 or 102113 or 3785;
+
+    private static byte[] ClampWebMercatorLatitudes(byte[] wkb, int srid)
+    {
+        var geometry = new WKBReader().Read(wkb);
+        var filter = new WebMercatorLatitudeClampFilter();
+        geometry.Apply(filter);
+        if (!filter.GeometryChanged)
+        {
+            return wkb;
+        }
+
+        geometry.SRID = srid;
+        return new WKBWriter().Write(geometry);
+    }
+
+    private sealed class WebMercatorLatitudeClampFilter : ICoordinateSequenceFilter
+    {
+        public bool Done => false;
+
+        public bool GeometryChanged { get; private set; }
+
+        public void Filter(CoordinateSequence seq, int i)
+        {
+            var latitude = seq.GetY(i);
+            var clamped = Math.Clamp(
+                latitude,
+                -WebMercatorMaxAbsoluteLatitudeDegrees,
+                WebMercatorMaxAbsoluteLatitudeDegrees);
+            if (clamped.Equals(latitude))
+            {
+                return;
+            }
+
+            seq.SetOrdinate(i, Ordinate.Y, clamped);
+            GeometryChanged = true;
+        }
+    }
 
     public async Task<byte[]> MakeValidAsync(byte[] wkb, int srid, CancellationToken ct = default)
     {
