@@ -45,8 +45,8 @@
          extensions used by AnalysisContent and Spec grounding endpoints.
          Mirrors the Server csproj's existing reference. -->
     <PackageReference Include="Asp.Versioning.Http" />
-    <!-- StackExchange.Redis is required by InMemoryAnalysisContentStore and
-         by GroundingService for distributed-cache helpers. -->
+    <!-- StackExchange.Redis is required by AnalysisContentService for its
+         distributed-cache (IConnectionMultiplexer) integration. -->
     <PackageReference Include="StackExchange.Redis" />
   </ItemGroup>
 

@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Threading.Channels;
 using Honua.Infrastructure.Abstractions;
 using Microsoft.Extensions.Options;
 using Honua.Core.Features.Import.Abstractions;
@@ -25,13 +24,11 @@ namespace Honua.Import.FileImport;
 /// </summary>
 internal sealed class StreamingFileUploadService : IDisposable, IUploadQueueMetricsProvider
 {
-    private readonly Channel<FileUploadJob> _uploadQueue;
-    private readonly ChannelWriter<FileUploadJob> _writer;
-    private readonly ChannelReader<FileUploadJob> _reader;
     private readonly ILogger<StreamingFileUploadService> _logger;
     private readonly FileUploadOptions _options;
     private readonly SemaphoreSlim _processingSlot;
     private readonly CancellationTokenSource _cancellationTokenSource;
+    private int _inFlight;
     private int _disposed;
 
     /// <summary>
@@ -47,19 +44,8 @@ internal sealed class StreamingFileUploadService : IDisposable, IUploadQueueMetr
         _logger = logger;
         _cancellationTokenSource = new CancellationTokenSource();
 
-        // Create bounded channel for upload queue
-        var channelOptions = new BoundedChannelOptions(_options.MaxConcurrentUploads)
-        {
-            FullMode = BoundedChannelFullMode.Wait,
-            SingleReader = false,
-            SingleWriter = false
-        };
-
-        _uploadQueue = Channel.CreateBounded<FileUploadJob>(channelOptions);
-        _writer = _uploadQueue.Writer;
-        _reader = _uploadQueue.Reader;
-
-        // Limit concurrent upload processing
+        // Uploads are processed inline (there is no background consumer), so the semaphore is the sole
+        // concurrency/backpressure control and an in-flight counter bounds queued + processing requests.
         _processingSlot = new SemaphoreSlim(_options.MaxConcurrentUploads, _options.MaxConcurrentUploads);
     }
 
@@ -77,10 +63,12 @@ internal sealed class StreamingFileUploadService : IDisposable, IUploadQueueMetr
             cancellationToken,
             _cancellationTokenSource.Token);
 
+        // Count this request against the queued/in-flight budget up front; the finally always releases it.
+        Interlocked.Increment(ref _inFlight);
         try
         {
-            // Check queue capacity
-            if (_uploadQueue.Reader.Count >= _options.MaxQueuedUploads)
+            // Reject when too many requests are already queued or processing.
+            if (Volatile.Read(ref _inFlight) > _options.MaxQueuedUploads)
             {
                 StreamingFileUploadLog.UploadQueueFull(_logger, uploadJob.FileName);
                 return FileUploadResult.Failure("Upload queue is full. Please try again later.");
@@ -95,10 +83,7 @@ internal sealed class StreamingFileUploadService : IDisposable, IUploadQueueMetr
 
             try
             {
-                // Add to upload queue
-                await _writer.WriteAsync(uploadJob, combinedToken.Token);
-
-                // Process the upload
+                // Process the upload inline.
                 return await ProcessFileUploadAsync(uploadJob, combinedToken.Token);
             }
             finally
@@ -115,6 +100,10 @@ internal sealed class StreamingFileUploadService : IDisposable, IUploadQueueMetr
         {
             StreamingFileUploadLog.FileUploadProcessingFailed(_logger, uploadJob.FileName, ex);
             return FileUploadResult.Failure("Upload processing failed.");
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _inFlight);
         }
     }
 
@@ -251,10 +240,12 @@ internal sealed class StreamingFileUploadService : IDisposable, IUploadQueueMetr
     /// <inheritdoc />
     public UploadQueueSnapshot GetQueueSnapshot()
     {
+        var active = _options.MaxConcurrentUploads - _processingSlot.CurrentCount;
+        var queued = Math.Max(0, Volatile.Read(ref _inFlight) - active);
         return new UploadQueueSnapshot(
-            _uploadQueue.Reader.Count,
+            queued,
             _options.MaxQueuedUploads,
-            _options.MaxConcurrentUploads - _processingSlot.CurrentCount,
+            active,
             _options.MaxConcurrentUploads);
     }
 
@@ -277,7 +268,6 @@ internal sealed class StreamingFileUploadService : IDisposable, IUploadQueueMetr
             // Host teardown can race repeated disposal across test fixtures.
         }
 
-        _writer.TryComplete();
         _processingSlot.Dispose();
         _cancellationTokenSource.Dispose();
     }

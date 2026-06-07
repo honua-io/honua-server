@@ -47,6 +47,11 @@ internal sealed class AzureBlobRangeReader : ICloudRangeReader
     /// <inheritdoc />
     public async Task<Stream> ReadRangeStreamAsync(string bucket, string key, long offset, int length, CancellationToken cancellationToken = default)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(bucket);
+        ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        ArgumentOutOfRangeException.ThrowIfNegative(offset);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(length);
+
         var blobClient = _serviceClient.GetBlobContainerClient(bucket).GetBlobClient(key);
         var range = new HttpRange(offset, length);
 
@@ -60,7 +65,16 @@ internal sealed class AzureBlobRangeReader : ICloudRangeReader
         // of the AWS sibling AwsS3RangeReader.ReadRangeStreamAsync.
         using var result = response.Value;
         var buffer = new MemoryStream(length);
-        await result.Content.CopyToAsync(buffer, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await result.Content.CopyToAsync(buffer, cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            await buffer.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
+
         buffer.Position = 0;
         return buffer;
     }

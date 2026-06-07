@@ -121,7 +121,7 @@ internal sealed class GroundingService : IGroundingService
         // authorization ranking (see docs/developer/GROUNDING.md).
         var processes = _processCatalog.ListProcesses();
         var processCandidates = _engine.ScoreProcesses(request, processes);
-        processCandidates = _authorizationFilter.Filter(principal, processCandidates);
+        processCandidates = await _authorizationFilter.FilterAsync(principal, processCandidates, cancellationToken).ConfigureAwait(false);
         processCandidates = ClarificationAnswerResolver.ApplyPin(
             processCandidates, applied.PinnedProcessId, "process.selection", appliedIds);
         processCandidates = ApplyBandsAndCap(processCandidates);
@@ -134,7 +134,7 @@ internal sealed class GroundingService : IGroundingService
         // both run before the shortlist cap for the same reasons as
         // processes above.
         var datasetCandidates = await RankDatasetsAsync(request, cancellationToken).ConfigureAwait(false);
-        datasetCandidates = _authorizationFilter.Filter(principal, datasetCandidates);
+        datasetCandidates = await _authorizationFilter.FilterAsync(principal, datasetCandidates, cancellationToken).ConfigureAwait(false);
         datasetCandidates = ClarificationAnswerResolver.ApplyPin(
             datasetCandidates, applied.PinnedDatasetId, "dataset.selection", appliedIds);
         datasetCandidates = ApplyBandsAndCap(datasetCandidates);

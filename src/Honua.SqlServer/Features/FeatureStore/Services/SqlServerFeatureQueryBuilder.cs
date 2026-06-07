@@ -501,6 +501,13 @@ internal static partial class SqlServerFeatureQueryBuilder
             return valueToken[1..^1].Replace("''", "'", StringComparison.Ordinal);
         }
 
+        // Bind integral literals as long so comparisons against integer key columns stay sargable:
+        // a decimal parameter forces an implicit conversion of the column that defeats index seeks.
+        if (long.TryParse(valueToken, NumberStyles.Integer, CultureInfo.InvariantCulture, out var integral))
+        {
+            return integral;
+        }
+
         if (decimal.TryParse(valueToken, NumberStyles.Float, CultureInfo.InvariantCulture, out var num))
         {
             return num;

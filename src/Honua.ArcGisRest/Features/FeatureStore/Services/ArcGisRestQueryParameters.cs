@@ -137,13 +137,30 @@ internal static class ArcGisRestQueryParameters
         var geometry = string.Create(CultureInfo.InvariantCulture, $"{minX},{minY},{maxX},{maxY}");
         AppendEncoded(builder, "geometry", geometry);
         AppendEncoded(builder, "geometryType", "esriGeometryEnvelope");
-        AppendEncoded(builder, "spatialRel", "esriSpatialRelIntersects");
+        AppendEncoded(builder, "spatialRel", MapSpatialRel(spatial.SpatialRelationship));
 
         if (spatial.Srid is int srid && srid > 0)
         {
             AppendEncoded(builder, "inSR", srid.ToString(CultureInfo.InvariantCulture));
         }
     }
+
+    /// <summary>
+    /// Maps the requested <see cref="SpatialRelationship"/> to the ArcGIS REST <c>spatialRel</c>
+    /// token. Relationships with no envelope-meaningful ArcGIS equivalent (distance/nearest, disjoint,
+    /// equals) fall back to <c>esriSpatialRelIntersects</c>, which is the server default for an
+    /// envelope query.
+    /// </summary>
+    private static string MapSpatialRel(SpatialRelationship relationship) => relationship switch
+    {
+        SpatialRelationship.Within => "esriSpatialRelWithin",
+        SpatialRelationship.Contains => "esriSpatialRelContains",
+        SpatialRelationship.EnvelopeIntersects => "esriSpatialRelEnvelopeIntersects",
+        SpatialRelationship.Crosses => "esriSpatialRelCrosses",
+        SpatialRelationship.Touches => "esriSpatialRelTouches",
+        SpatialRelationship.Overlaps => "esriSpatialRelOverlaps",
+        _ => "esriSpatialRelIntersects",
+    };
 
     private static void AppendOutFields(StringBuilder builder, FeatureQuery query)
     {
