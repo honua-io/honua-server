@@ -364,6 +364,13 @@ internal static class ServiceCollectionExtensions
             return limits;
         });
 
+        // The datum-transformation catalog is the auditable source of truth for which PROJ
+        // pipeline a (sourceSrid -> targetSrid) reprojection uses. It is also registered by
+        // the GeoServices query slice; TryAdd keeps this idempotent so the import path can
+        // resolve it even when GeoServices is not composed (#1501).
+        services.TryAddSingleton<Honua.Core.Features.Infrastructure.Crs.IDatumTransformationCatalog>(
+            static _ => Honua.Core.Features.Infrastructure.Crs.EsriDatumTransformationCatalog.Create());
+
         // Register streaming file import service with memory-efficient batch processing
         services.AddScoped<IFileImportService>(serviceProvider =>
         {
@@ -380,7 +387,8 @@ internal static class ServiceCollectionExtensions
                 logger,
                 limits,
                 cloudStorage,
-                serviceProvider.GetRequiredService<PostgresSchemaConfiguration>());
+                serviceProvider.GetRequiredService<PostgresSchemaConfiguration>(),
+                serviceProvider.GetService<Honua.Core.Features.Infrastructure.Crs.IDatumTransformationCatalog>());
         });
 
         // Register universal import job service using unified progress store

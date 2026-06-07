@@ -122,16 +122,34 @@ internal sealed partial class StreamingFileImportService
             properties[i] = BuildPropertiesJson(feature);
         }
 
-        const string sql = """
-            SELECT honua.insert_import_feature(
-                @schema_name,
-                @table_name,
-                payload.wkb,
-                payload.source_srid,
-                @target_srid,
-                payload.properties)
-            FROM unnest(@wkbs, @source_srids, @properties) AS payload(wkb, source_srid, properties)
-            """;
+        // Honor the auditable Esri-default datum pipeline for the request-level
+        // (sourceSrid -> targetSrid) pair (#1501). The pipeline is applied only to rows
+        // whose source SRID matches the resolved pair; rows carrying a different per-feature
+        // SRID (e.g. mixed-CRS FileGDB layers) keep PROJ's default pipeline via a NULL.
+        var datumPipeline = ResolveImportDatumPipeline(sourceSrid, targetSrid);
+
+        var sql = datumPipeline is null
+            ? """
+                SELECT honua.insert_import_feature(
+                    @schema_name,
+                    @table_name,
+                    payload.wkb,
+                    payload.source_srid,
+                    @target_srid,
+                    payload.properties)
+                FROM unnest(@wkbs, @source_srids, @properties) AS payload(wkb, source_srid, properties)
+                """
+            : """
+                SELECT honua.insert_import_feature(
+                    @schema_name,
+                    @table_name,
+                    payload.wkb,
+                    payload.source_srid,
+                    @target_srid,
+                    payload.properties,
+                    CASE WHEN payload.source_srid = @datum_source_srid THEN @datum_pipeline ELSE NULL END)
+                FROM unnest(@wkbs, @source_srids, @properties) AS payload(wkb, source_srid, properties)
+                """;
 
         await using var command = new NpgsqlCommand(sql, connection)
         {
@@ -143,6 +161,11 @@ internal sealed partial class StreamingFileImportService
         command.Parameters.Add("wkbs", NpgsqlDbType.Array | NpgsqlDbType.Bytea).Value = wkbs;
         command.Parameters.Add("source_srids", NpgsqlDbType.Array | NpgsqlDbType.Integer).Value = sourceSrids;
         command.Parameters.Add("properties", NpgsqlDbType.Array | NpgsqlDbType.Jsonb).Value = properties;
+        if (datumPipeline is not null)
+        {
+            command.Parameters.Add("datum_source_srid", NpgsqlDbType.Integer).Value = sourceSrid;
+            command.Parameters.Add("datum_pipeline", NpgsqlDbType.Text).Value = datumPipeline;
+        }
 
         var imported = 0;
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -168,7 +191,14 @@ internal sealed partial class StreamingFileImportService
         var imported = 0;
         var failed = 0;
 
-        await using var command = new NpgsqlCommand(InsertImportFeatureSql, connection)
+        // Honor the auditable Esri-default datum pipeline for the request-level
+        // (sourceSrid -> targetSrid) pair (#1501), applied per feature only when the
+        // feature's source SRID matches the resolved pair.
+        var datumPipeline = ResolveImportDatumPipeline(sourceSrid, targetSrid);
+
+        await using var command = new NpgsqlCommand(
+            datumPipeline is null ? InsertImportFeatureSql : InsertImportFeatureWithDatumSql,
+            connection)
         {
             Transaction = transaction
         };
@@ -179,6 +209,9 @@ internal sealed partial class StreamingFileImportService
         sourceSridParameter.Value = sourceSrid;
         command.Parameters.Add("target_srid", NpgsqlDbType.Integer).Value = targetSrid;
         var propertiesParameter = command.Parameters.Add("properties", NpgsqlDbType.Jsonb);
+        var datumPipelineParameter = datumPipeline is null
+            ? null
+            : command.Parameters.Add("datum_pipeline", NpgsqlDbType.Text);
 
         foreach (var feature in features)
         {
@@ -188,7 +221,14 @@ internal sealed partial class StreamingFileImportService
             {
                 wkbParameter.Value = CreateWkb(feature, wkbWriter) ?? (object)DBNull.Value;
                 var featureSrid = feature.Geometry?.SRID;
-                sourceSridParameter.Value = featureSrid is > 0 ? featureSrid.Value : sourceSrid;
+                var effectiveSourceSrid = featureSrid is > 0 ? featureSrid.Value : sourceSrid;
+                sourceSridParameter.Value = effectiveSourceSrid;
+                if (datumPipelineParameter is not null)
+                {
+                    datumPipelineParameter.Value = effectiveSourceSrid == sourceSrid
+                        ? datumPipeline!
+                        : (object)DBNull.Value;
+                }
                 propertiesParameter.Value = BuildPropertiesJson(feature);
                 await command.ExecuteNonQueryAsync(cancellationToken);
                 imported++;

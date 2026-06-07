@@ -8,6 +8,7 @@ using System.Text.RegularExpressions;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Shared.Models;
 using Honua.Postgres.Features.Infrastructure;
@@ -40,9 +41,11 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     private readonly ILogger<StreamingFileImportService> _logger;
     private readonly Honua.Core.Features.Infrastructure.Abstractions.ICloudFileStorage? _cloudStorage;
     private readonly PostgresSchemaConfiguration _schemaConfiguration;
+    private readonly IDatumTransformationCatalog? _datumTransformationCatalog;
 
     private const string CreateImportTableSql = "SELECT honua.create_import_table(@schema_name, @table_name, @target_srid)";
     private const string InsertImportFeatureSql = "SELECT honua.insert_import_feature(@schema_name, @table_name, @wkb, @source_srid, @target_srid, @properties)";
+    private const string InsertImportFeatureWithDatumSql = "SELECT honua.insert_import_feature(@schema_name, @table_name, @wkb, @source_srid, @target_srid, @properties, @datum_pipeline)";
     private const int CrsDetectionHeaderSize = 8192;
     private const long DefaultMaxArchiveEntryBytes = 500L * 1024 * 1024;
     private const long DefaultMaxArchiveExtractedBytes = 1024L * 1024 * 1024;
@@ -77,7 +80,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         ILogger<StreamingFileImportService> logger,
         ImportLimits? limits = null,
         Honua.Core.Features.Infrastructure.Abstractions.ICloudFileStorage? cloudStorage = null,
-        PostgresSchemaConfiguration? schemaConfiguration = null)
+        PostgresSchemaConfiguration? schemaConfiguration = null,
+        IDatumTransformationCatalog? datumTransformationCatalog = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _crsDetectionService = crsDetectionService ?? throw new ArgumentNullException(nameof(crsDetectionService));
@@ -91,6 +95,31 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             PostgresSchemaConfiguration.DefaultMetadataSchema,
             PostgresSchemaConfiguration.DefaultDataSchema,
             [PostgresSchemaConfiguration.DefaultDataSchema, "public"]);
+        _datumTransformationCatalog = datumTransformationCatalog;
+    }
+
+    /// <summary>
+    /// Resolves the Esri-default datum-transformation PROJ pipeline for the
+    /// <paramref name="sourceSrid"/> -&gt; <paramref name="targetSrid"/> import reprojection,
+    /// so the import path honors the same auditable geotransformation the query path uses
+    /// (#1501). Returns <see langword="null"/> when no transform is needed (equal SRIDs),
+    /// no catalog is wired, or the catalog has no curated default for the pair — in every
+    /// such case the import keeps PROJ's default (2-argument <c>ST_Transform</c>) behavior.
+    /// </summary>
+    private string? ResolveImportDatumPipeline(int sourceSrid, int targetSrid)
+    {
+        if (sourceSrid == targetSrid || _datumTransformationCatalog is null)
+        {
+            return null;
+        }
+
+        if (_datumTransformationCatalog.TryGetDefault(sourceSrid, targetSrid, out var selection)
+            && selection.ProjPipeline is { Length: > 0 } pipeline)
+        {
+            return pipeline;
+        }
+
+        return null;
     }
 
     /// <inheritdoc/>
