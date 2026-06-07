@@ -529,7 +529,15 @@ public static class EndpointRegistry
         new("GET", "/api/v1/forms/packages/{formId}"),
         new("GET", "/api/v1/forms/packages/{formId}/versions/{packageVersion}"),
         new("GET", "/api/v1/forms/packages/{formId}/offline-policy"),
+        new("GET", "/api/v1/forms/packages/{formId}/compatibility"),
         new("POST", "/api/v1/forms/packages/{formId}/submissions"),
+
+        // Back-office field data review & QA (#1159)
+        new("GET", "/api/v1/admin/field-workflows/submissions"),
+        new("GET", "/api/v1/admin/field-workflows/submissions/{submissionId}"),
+        new("POST", "/api/v1/admin/field-workflows/submissions/{submissionId}/assignment"),
+        new("POST", "/api/v1/admin/field-workflows/submissions/{submissionId}/decision"),
+        new("POST", "/api/v1/admin/field-workflows/submissions/{submissionId}/comments"),
 
         new("POST", "/api/v1/admin/tile-operations/jobs"),
         new("GET", "/api/v1/admin/tile-operations/jobs/{jobId}"),
