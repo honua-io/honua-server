@@ -61,16 +61,52 @@ internal sealed class OracleConnectionFactory : IOracleConnectionFactory
 
     private async Task<string?> ResolveConnectionStringAsync(DataConnection? dataConnection, CancellationToken cancellationToken)
     {
-        if (dataConnection is { ConnectionId: var id } && id != Guid.Empty && _connectionResolver is not null)
+        // No per-layer connection: use the configured global default.
+        if (dataConnection is null)
         {
-            return await _connectionResolver.ResolveConnectionStringAsync(id, cancellationToken).ConfigureAwait(false);
+            return _options.Value.ConnectionString;
         }
 
-        if (dataConnection is { ConnectionString.Length: > 0 } provided && !provided.IsEncrypted)
+        // A per-layer DataConnection was supplied. It must resolve to that layer's intended
+        // connection; we must NOT fall back to the global default, which would silently route the
+        // read to the wrong (possibly unsecured) database. Fail loudly on any unresolvable case.
+        if (dataConnection.ConnectionId != Guid.Empty)
         {
-            return provided.ConnectionString;
+            if (_connectionResolver is null)
+            {
+                throw new InvalidOperationException(
+                    $"Oracle DataConnection '{dataConnection.ConnectionId}' requires secure resolution, but no ISecureConnectionResolver is registered. " +
+                    "Register a resolver instead of allowing a fallback to the default Oracle connection.");
+            }
+
+            var resolved = await _connectionResolver.ResolveConnectionStringAsync(dataConnection.ConnectionId, cancellationToken).ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(resolved))
+            {
+                throw new InvalidOperationException(
+                    $"Oracle DataConnection '{dataConnection.ConnectionId}' resolved to an empty connection string. " +
+                    "Refusing to fall back to the default Oracle connection to avoid routing the read to the wrong database.");
+            }
+
+            return resolved;
         }
 
-        return _options.Value.ConnectionString;
+        // ConnectionId is empty, so the only usable source is the inline plaintext string.
+        // An encrypted connection with no ConnectionId cannot be decrypted here and must not be
+        // silently downgraded to the global default.
+        if (dataConnection.IsEncrypted)
+        {
+            throw new InvalidOperationException(
+                "Oracle DataConnection is encrypted but carries no ConnectionId for secure resolution. " +
+                "Refusing to fall back to the default Oracle connection to avoid routing the read to the wrong database.");
+        }
+
+        if (string.IsNullOrWhiteSpace(dataConnection.ConnectionString))
+        {
+            throw new InvalidOperationException(
+                "Oracle DataConnection carries neither a ConnectionId nor a usable plaintext connection string. " +
+                "Refusing to fall back to the default Oracle connection to avoid routing the read to the wrong database.");
+        }
+
+        return dataConnection.ConnectionString;
     }
 }

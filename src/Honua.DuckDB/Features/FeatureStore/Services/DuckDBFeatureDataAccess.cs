@@ -253,8 +253,17 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
     public async Task<Feature?> GetFeatureAsync(int layerId, long featureId, CancellationToken cancellationToken)
     {
         var mapping = _layerRegistry.GetRequiredMapping(layerId);
-        var columnsExpr = string.Join(", ", mapping.AttributeColumns.Select(c => $"\"{c}\""));
-        var selectCols = $"{mapping.QuotedObjectIdColumn}, ST_AsWKB({mapping.QuotedGeometryColumn})";
+
+        // Reuse the query builder's column/geometry expression helpers so the
+        // single-feature read path cannot drift from the list/select path
+        // (identifier quoting + ST_AsWKB/ST_Transform encoding). A default
+        // FeatureQuery selects all attribute columns with no SRID transform,
+        // matching the previous behaviour of this method.
+        var defaultQuery = new FeatureQuery();
+        var geometryExpr = DuckDBFeatureQueryBuilder.BuildGeometryWkbExpression(mapping, defaultQuery);
+        var columnsExpr = DuckDBFeatureQueryBuilder.BuildAttributeColumnsExpression(mapping, defaultQuery);
+
+        var selectCols = $"{mapping.QuotedObjectIdColumn}, {geometryExpr}";
         if (!string.IsNullOrEmpty(columnsExpr))
         {
             selectCols += $", {columnsExpr}";
@@ -490,7 +499,8 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
             }
         }
 
-        return (byte[])value;
+        throw new InvalidOperationException(
+            $"BLOB column at ordinal {ordinal} returned an unexpected runtime type '{value.GetType().FullName}'; expected byte[] or Stream.");
     }
 
     private static ImmutableDictionary<string, object?> ReadAttributesFromColumns(

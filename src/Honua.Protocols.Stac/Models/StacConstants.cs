@@ -69,6 +69,8 @@ internal static class StacConstants
             "f", "limit", "offset", "bbox", "datetime"
         };
 
+        public static readonly HashSet<string> Item = new(StringComparer.OrdinalIgnoreCase) { "f" };
+
         public static readonly HashSet<string> SearchGet = new(StringComparer.OrdinalIgnoreCase)
         {
             "f", "limit", "offset", "bbox", "datetime", "collections", "ids",

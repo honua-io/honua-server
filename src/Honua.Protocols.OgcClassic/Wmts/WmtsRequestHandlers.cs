@@ -20,6 +20,7 @@ using Honua.Infrastructure.Models;
 using Honua.Protocols.Ogc.Api.Features;
 using Honua.Infrastructure.Rendering;
 using Honua.Protocols.Ogc.Classic;
+using Honua.Protocols.Ogc.Classic.Wms;
 using Honua.Protocols.Ogc.Common;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Configuration;
@@ -906,11 +907,10 @@ internal static class WmtsRequestHandlers
 
         var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
         var spatialFilter = CreateBboxSpatialFilter(clickExtent, serviceSrid);
-        var remaining = Math.Min(featureCount, 1000);
+        var remaining = Math.Min(featureCount, MaxFeatureInfoCount);
 
         var plainText = new StringBuilder();
-        var jsonText = new StringBuilder();
-        var hasJsonFeature = false;
+        var jsonFeatures = new List<WmsFeatureInfoFeature>();
         var layerName = GetWmsLayerName(layer.Resource, layer.Publication);
 
         var featureQuery = new FeatureQuery
@@ -937,44 +937,42 @@ internal static class WmtsRequestHandlers
             remaining--;
             if (string.Equals(infoFormat, JsonMimeType, StringComparison.OrdinalIgnoreCase))
             {
-                if (!hasJsonFeature)
-                {
-                    jsonText.Append("{\"type\":\"FeatureInfoResponse\",\"features\":[");
-                    hasJsonFeature = true;
-                }
-                else
-                {
-                    jsonText.Append(',');
-                }
-
-                jsonText.Append("{\"layer\":");
-                AppendJsonString(jsonText, layerName);
-                jsonText.Append(",\"attributes\":{");
-
-                var isFirstAttribute = true;
+                // Mirror WMS GetFeatureInfo: hide internal (__-prefixed) bookkeeping
+                // columns and normalize values so WMTS FeatureInfo matches every other
+                // protocol surface (OgcApi/Stac/WMS) instead of leaking raw attributes.
+                // Reuse the WMS model + OgcClassicJsonContext so numeric/boolean/null
+                // attribute values keep their JSON type fidelity instead of being
+                // stringified, keeping WMTS and WMS FeatureInfo JSON consistent.
+                var attributes = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
                 foreach (var attribute in item.Attributes.OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase))
                 {
-                    if (!isFirstAttribute)
+                    if (FeatureAttributeVisibility.IsInternalAttribute(attribute.Key))
                     {
-                        jsonText.Append(',');
+                        continue;
                     }
 
-                    isFirstAttribute = false;
-                    AppendJsonString(jsonText, attribute.Key);
-                    jsonText.Append(':');
-                    AppendJsonString(jsonText, FormatFeatureInfoValue(attribute.Value));
+                    attributes[attribute.Key] = FeatureAttributeValueNormalizer.Normalize(attribute.Value);
                 }
 
-                jsonText.Append("}}");
+                jsonFeatures.Add(new WmsFeatureInfoFeature
+                {
+                    Layer = layerName,
+                    Attributes = attributes
+                });
                 continue;
             }
 
             plainText.Append("Layer=").Append(layerName).AppendLine();
             foreach (var attribute in item.Attributes.OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase))
             {
+                if (FeatureAttributeVisibility.IsInternalAttribute(attribute.Key))
+                {
+                    continue;
+                }
+
                 plainText.Append(attribute.Key)
                     .Append('=')
-                    .Append(FormatFeatureInfoValue(attribute.Value))
+                    .Append(FormatFeatureInfoValue(FeatureAttributeValueNormalizer.Normalize(attribute.Value)))
                     .AppendLine();
             }
 
@@ -983,13 +981,12 @@ internal static class WmtsRequestHandlers
 
         if (string.Equals(infoFormat, JsonMimeType, StringComparison.OrdinalIgnoreCase))
         {
-            if (!hasJsonFeature)
+            var payload = new WmsFeatureInfoResponse
             {
-                return Results.Content("{\"type\":\"FeatureInfoResponse\",\"features\":[]}", JsonMimeType);
-            }
+                Features = [.. jsonFeatures]
+            };
 
-            jsonText.Append("]}");
-            return Results.Content(jsonText.ToString(), JsonMimeType);
+            return Results.Json(payload, OgcClassicJsonContext.Default.WmsFeatureInfoResponse, contentType: JsonMimeType);
         }
 
         var body = plainText.Length > 0
@@ -2288,20 +2285,36 @@ internal static class WmtsRequestHandlers
 
     private static void ApplyWmtsSyntheticQuery(HttpContext context, IReadOnlyDictionary<string, string?> values)
     {
+        // Preserve a stable parameter order so the rebuilt query string is deterministic
+        // (request logs/telemetry, and any future order-sensitive consumer). Emit the
+        // original query parameters in arrival order first, overlaying synthetic values,
+        // then append synthetic keys that weren't already present.
         var merged = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        var ordered = new List<string>();
         foreach (var item in context.Request.Query)
         {
+            if (!merged.ContainsKey(item.Key))
+            {
+                ordered.Add(item.Key);
+            }
+
             merged[item.Key] = item.Value.ToString();
         }
 
         foreach (var (key, value) in values)
         {
+            if (!merged.ContainsKey(key))
+            {
+                ordered.Add(key);
+            }
+
             merged[key] = value;
         }
 
         var sb = new StringBuilder();
-        foreach (var (key, value) in merged)
+        foreach (var key in ordered)
         {
+            var value = merged[key];
             if (sb.Length == 0)
             {
                 sb.Append('?');
@@ -2428,55 +2441,6 @@ internal static class WmtsRequestHandlers
             "xml" => "application/xml",
             _ => extension
         };
-    }
-
-    private static void AppendJsonString(StringBuilder sb, string? value)
-    {
-        sb.Append('\"');
-        if (value is not null)
-        {
-            foreach (var ch in value)
-            {
-                switch (ch)
-                {
-                    case '\\':
-                        sb.Append("\\\\");
-                        break;
-                    case '\"':
-                        sb.Append("\\\"");
-                        break;
-                    case '\b':
-                        sb.Append("\\b");
-                        break;
-                    case '\f':
-                        sb.Append("\\f");
-                        break;
-                    case '\n':
-                        sb.Append("\\n");
-                        break;
-                    case '\r':
-                        sb.Append("\\r");
-                        break;
-                    case '\t':
-                        sb.Append("\\t");
-                        break;
-                    default:
-                        if (ch < 32)
-                        {
-                            sb.Append("\\u");
-                            sb.Append(((int)ch).ToString("x4", CultureInfo.InvariantCulture));
-                        }
-                        else
-                        {
-                            sb.Append(ch);
-                        }
-
-                        break;
-                }
-            }
-        }
-
-        sb.Append('\"');
     }
 
     private readonly record struct WmtsDimensionDefinition(

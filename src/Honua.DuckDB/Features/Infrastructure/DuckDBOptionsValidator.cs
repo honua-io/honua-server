@@ -126,12 +126,6 @@ internal static class DuckDBOptionsValidator
                 $"Layer {layerId} external source format '{source.Format}' is not supported. Use Parquet or GeoParquet."));
         }
 
-        if (!string.IsNullOrWhiteSpace(source.Path) && source.Paths is { Length: > 0 })
-        {
-            errors.Add(FormattableString.Invariant(
-                $"Layer {layerId} external source must configure either Path or Paths, not both."));
-        }
-
         var paths = DuckDBExternalSourceSql.GetConfiguredPaths(source);
         if (paths.Count == 0)
         {

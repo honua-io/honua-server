@@ -311,7 +311,11 @@ public static class FilterPlanCompiler
             return element.ValueKind switch
             {
                 JsonValueKind.String => new Literal(element.GetString(), LiteralType.Text),
-                JsonValueKind.Number => new Literal(element.GetDouble(), LiteralType.Number),
+                // Preserve integral JSON numbers as long so id-style comparisons
+                // against int64 keys beyond 2^53 do not silently lose precision.
+                JsonValueKind.Number => element.TryGetInt64(out var longValue)
+                    ? new Literal(longValue, LiteralType.Number)
+                    : new Literal(element.GetDouble(), LiteralType.Number),
                 JsonValueKind.True => new Literal(true, LiteralType.Boolean),
                 JsonValueKind.False => new Literal(false, LiteralType.Boolean),
                 JsonValueKind.Null => new Literal(null, LiteralType.Null),
@@ -323,8 +327,9 @@ public static class FilterPlanCompiler
         {
             string s => new Literal(s, LiteralType.Text),
             bool b => new Literal(b, LiteralType.Boolean),
-            int i => new Literal((double)i, LiteralType.Number),
-            long l => new Literal((double)l, LiteralType.Number),
+            // Keep integral CLR values as integers to avoid losing int64 precision.
+            int i => new Literal(i, LiteralType.Number),
+            long l => new Literal(l, LiteralType.Number),
             float f => new Literal((double)f, LiteralType.Number),
             double d => new Literal(d, LiteralType.Number),
             _ => new Literal(value.ToString(), LiteralType.Text)

@@ -171,6 +171,17 @@ internal sealed class StreamingGeoJsonReader
                 {
                     break;
                 }
+
+                // Guard against an infinite loop on a truncated upload: at EOF the
+                // stream returns 0 bytes forever, and if the leftover fragment is an
+                // incomplete, unparseable token the reader consumes nothing, so the
+                // same bytes would be re-processed every iteration (CPU-spin DoS).
+                // Once the stream is exhausted and we made no forward progress, the
+                // trailing fragment is malformed/truncated; stop and discard it.
+                if (bytesRead == 0 && consumed == 0)
+                {
+                    break;
+                }
             }
         }
         finally

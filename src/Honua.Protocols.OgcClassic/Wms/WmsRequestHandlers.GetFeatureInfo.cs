@@ -168,7 +168,7 @@ internal static partial class WmsRequestHandlers
             mapY + toleranceY);
 
         var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
-        var remaining = Math.Min(featureCount, 1000);
+        var remaining = Math.Min(featureCount, MaxFeatureInfoCount);
 
         var plainText = new StringBuilder();
         var jsonFeatures = new List<WmsFeatureInfoFeature>();

@@ -623,7 +623,9 @@ internal sealed partial class DefaultPerformanceMonitor : IPerformanceMonitor, I
             lock (_lock)
             {
                 var nextIndex = Interlocked.Increment(ref _index);
-                _samples[nextIndex % SampleSize] = latencyMs;
+                // Cast through uint so the slot stays non-negative after _index overflows int.MaxValue
+                // (int.MinValue % 100 would otherwise be negative and throw IndexOutOfRangeException).
+                _samples[(int)((uint)nextIndex % SampleSize)] = latencyMs;
             }
         }
 
@@ -670,42 +672,42 @@ internal sealed partial class DefaultPerformanceMonitor : IPerformanceMonitor, I
         private const int CriticalPressureThreshold = 90;
         private const int ConsecutiveHighPressureLimit = 3;
 
-        private readonly Queue<double> _recentMeasurements = new(10);
+        private readonly object _lock = new();
         private int _consecutiveHighPressure;
         private DateTime _lastAlertTime = DateTime.MinValue;
         private readonly TimeSpan _alertCooldown = TimeSpan.FromMinutes(5);
 
         public bool RecordPressure(double pressurePercent)
         {
-            _recentMeasurements.Enqueue(pressurePercent);
-            if (_recentMeasurements.Count > 10)
+            // DefaultPerformanceMonitor is a singleton and RecordMemoryPressure is part of the public
+            // IPerformanceMonitor surface, so this can be invoked concurrently. Guard the mutable counters
+            // and alert timestamp so concurrent callers cannot tear reads or race the cooldown.
+            lock (_lock)
             {
-                _recentMeasurements.Dequeue();
+                var isHighPressure = pressurePercent >= HighPressureThreshold;
+
+                if (isHighPressure)
+                {
+                    _consecutiveHighPressure++;
+                }
+                else
+                {
+                    _consecutiveHighPressure = 0;
+                }
+
+                // Trigger alert if we have sustained high pressure and haven't alerted recently
+                var shouldAlert = (_consecutiveHighPressure >= ConsecutiveHighPressureLimit ||
+                                  pressurePercent >= CriticalPressureThreshold) &&
+                                 DateTime.UtcNow - _lastAlertTime > _alertCooldown;
+
+                if (shouldAlert)
+                {
+                    _lastAlertTime = DateTime.UtcNow;
+                    return true;
+                }
+
+                return false;
             }
-
-            var isHighPressure = pressurePercent >= HighPressureThreshold;
-
-            if (isHighPressure)
-            {
-                _consecutiveHighPressure++;
-            }
-            else
-            {
-                _consecutiveHighPressure = 0;
-            }
-
-            // Trigger alert if we have sustained high pressure and haven't alerted recently
-            var shouldAlert = (_consecutiveHighPressure >= ConsecutiveHighPressureLimit ||
-                              pressurePercent >= CriticalPressureThreshold) &&
-                             DateTime.UtcNow - _lastAlertTime > _alertCooldown;
-
-            if (shouldAlert)
-            {
-                _lastAlertTime = DateTime.UtcNow;
-                return true;
-            }
-
-            return false;
         }
     }
 

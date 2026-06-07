@@ -44,10 +44,12 @@ internal static class SearchEndpoints
             .Produces<StacItemCollection>(200, MediaTypes.GeoJson)
             .Produces(400);
 
-        // Read-only OGC/STAC search surface; anonymous by design. The POST form
-        // mirrors the GET search semantics — the body just carries the same
-        // filter parameters as a JSON document — and is gated downstream by the
-        // per-publication access policy via StacV2Lookups.ResolveVisibleStacPublicationsAsync.
+        // Read-only OGC/STAC search surface. The POST form mirrors the GET search
+        // semantics — the body just carries the same filter parameters as a JSON
+        // document. Both verbs rely on the per-publication access policy enforced
+        // downstream via StacV2Lookups.ResolveVisibleStacPublicationsAsync, matching
+        // the sibling catalog/collection read endpoints (neither verb opts out of the
+        // ambient authorization policy with AllowAnonymous, so they stay symmetric).
         endpoints.MapPost("/stac/search", HandleSearchPost)
             .WithDisplayName("STAC Search (POST)")
             .WithName("StacSearchPost")
@@ -55,7 +57,6 @@ internal static class SearchEndpoints
             .WithDescription("Searches STAC items across collections with a JSON request body")
             .WithTags("STAC")
             .Accepts<StacSearchRequest>(MediaTypes.Json)
-            .AllowAnonymous()
             .Produces<StacItemCollection>(200, MediaTypes.GeoJson)
             .Produces(400);
 
@@ -310,7 +311,7 @@ internal static class SearchEndpoints
                     geometryService,
                     filterProcessor,
                     defaultFilterLangIsText,
-                    cancellationToken);
+                    cancellationToken).ConfigureAwait(false);
                 if (!layerQueryResult.IsSuccess)
                 {
                     StacTelemetry.SetFailed(activity, "invalid_search_parameters");
@@ -321,57 +322,78 @@ internal static class SearchEndpoints
                 var projection = layerQueryResult.Projection;
                 var layerId = target.LayerIndex;
 
-                if (remainingSkip > 0)
+                // Per-publication resilience: a storage query for one target can fail in
+                // isolation (e.g. the request bbox cannot be transformed into this
+                // publication's CRS). Skip the offending publication and continue the
+                // multi-collection walk rather than failing the entire search with a 500.
+                try
                 {
-                    var layerCount = await featureReader.CountAsync(layerId, query, cancellationToken);
-                    totalMatched += layerCount;
-
-                    if (remainingSkip >= layerCount)
+                    if (remainingSkip > 0)
                     {
-                        remainingSkip -= (int)Math.Min(layerCount, int.MaxValue);
-                        continue;
+                        var layerCount = await featureReader.CountAsync(layerId, query, cancellationToken)
+                            .ConfigureAwait(false);
+                        totalMatched += layerCount;
+
+                        if (remainingSkip >= layerCount)
+                        {
+                            remainingSkip -= (int)Math.Min(layerCount, int.MaxValue);
+                            continue;
+                        }
+
+                        var remaining = effectiveLimit - allItems.Count;
+                        query = query with { Offset = remainingSkip, Limit = remaining };
+                        remainingSkip = 0;
+
+                        var result = await featureReader.QueryAsync(layerId, query, cancellationToken)
+                            .ConfigureAwait(false);
+                        allItems.AddRange(result.Features
+                            .Select(f => ApplyFieldProjection(
+                                StacMappingService.MapFeatureToItem(
+                                    f,
+                                    target.Resource,
+                                    target.Publication,
+                                    layerId,
+                                    baseUrl,
+                                    projection?.SelectedProperties,
+                                    geometrySrid: Wgs84Srid),
+                                projection)));
                     }
+                    else if (allItems.Count < effectiveLimit)
+                    {
+                        var remaining = effectiveLimit - allItems.Count;
+                        query = query with { Limit = remaining };
 
-                    var remaining = effectiveLimit - allItems.Count;
-                    query = query with { Offset = remainingSkip, Limit = remaining };
-                    remainingSkip = 0;
+                        var result = await featureReader.QueryAsync(layerId, query, cancellationToken)
+                            .ConfigureAwait(false);
+                        totalMatched += result.TotalCount;
 
-                    var result = await featureReader.QueryAsync(layerId, query, cancellationToken);
-                    allItems.AddRange(result.Features
-                        .Select(f => ApplyFieldProjection(
-                            StacMappingService.MapFeatureToItem(
-                                f,
-                                target.Resource,
-                                target.Publication,
-                                layerId,
-                                baseUrl,
-                                projection?.SelectedProperties,
-                                geometrySrid: Wgs84Srid),
-                            projection)));
+                        allItems.AddRange(result.Features
+                            .Select(f => ApplyFieldProjection(
+                                StacMappingService.MapFeatureToItem(
+                                    f,
+                                    target.Resource,
+                                    target.Publication,
+                                    layerId,
+                                    baseUrl,
+                                    projection?.SelectedProperties,
+                                    geometrySrid: Wgs84Srid),
+                                projection)));
+                    }
+                    else
+                    {
+                        totalMatched += await featureReader.CountAsync(layerId, query, cancellationToken)
+                            .ConfigureAwait(false);
+                    }
                 }
-                else if (allItems.Count < effectiveLimit)
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
-                    var remaining = effectiveLimit - allItems.Count;
-                    query = query with { Limit = remaining };
-
-                    var result = await featureReader.QueryAsync(layerId, query, cancellationToken);
-                    totalMatched += result.TotalCount;
-
-                    allItems.AddRange(result.Features
-                        .Select(f => ApplyFieldProjection(
-                            StacMappingService.MapFeatureToItem(
-                                f,
-                                target.Resource,
-                                target.Publication,
-                                layerId,
-                                baseUrl,
-                                projection?.SelectedProperties,
-                                geometrySrid: Wgs84Srid),
-                            projection)));
+                    // Caller-driven cancellation/timeout is not a per-publication fault;
+                    // let it propagate to the outer handler so the request fails fast.
+                    throw;
                 }
-                else
+                catch (Exception ex)
                 {
-                    totalMatched += await featureReader.CountAsync(layerId, query, cancellationToken);
+                    StacLog.SearchPublicationSkipped(logger, layerId, ex);
                 }
             }
 

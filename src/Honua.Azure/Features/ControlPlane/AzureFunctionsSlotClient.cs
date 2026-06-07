@@ -42,12 +42,27 @@ internal interface IAzureFunctionsSlotClient
         CancellationToken cancellationToken = default);
 }
 
-internal sealed class AzureManagementFunctionsSlotClient(IHttpClientFactory httpClientFactory) : IAzureFunctionsSlotClient
+internal sealed class AzureManagementFunctionsSlotClient : IAzureFunctionsSlotClient
 {
     private const string ApiVersion = "2024-11-01";
     private static readonly Uri ManagementScope = new("https://management.azure.com/.default");
     private static readonly JsonSerializerOptions JsonSerializerOptions = new(JsonSerializerDefaults.Web);
-    private readonly TokenCredential _credential = new DefaultAzureCredential();
+
+    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly TokenCredential _credential;
+
+    public AzureManagementFunctionsSlotClient(IHttpClientFactory httpClientFactory)
+        : this(httpClientFactory, new DefaultAzureCredential())
+    {
+    }
+
+    internal AzureManagementFunctionsSlotClient(
+        IHttpClientFactory httpClientFactory,
+        TokenCredential credential)
+    {
+        _httpClientFactory = httpClientFactory;
+        _credential = credential;
+    }
 
     public async Task<AzureFunctionsSiteConfigState> GetSiteConfigAsync(
         string subscriptionId,
@@ -63,7 +78,7 @@ internal sealed class AzureManagementFunctionsSlotClient(IHttpClientFactory http
                 cancellationToken)
             .ConfigureAwait(false);
 
-        using var client = httpClientFactory.CreateClient("control-plane-azure");
+        using var client = _httpClientFactory.CreateClient("control-plane-azure");
         using var response = await client.SendAsync(request, cancellationToken).ConfigureAwait(false);
         await EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
 
@@ -96,7 +111,7 @@ internal sealed class AzureManagementFunctionsSlotClient(IHttpClientFactory http
                 cancellationToken)
             .ConfigureAwait(false);
 
-        using var client = httpClientFactory.CreateClient("control-plane-azure");
+        using var client = _httpClientFactory.CreateClient("control-plane-azure");
         using var response = await client.SendAsync(request, cancellationToken).ConfigureAwait(false);
         await EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
 

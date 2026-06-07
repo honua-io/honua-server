@@ -119,6 +119,15 @@ internal sealed class ArcGisRestFeatureStore : IFeatureDataProvider, IFeatureRea
         }
 
         var built = items.ToImmutable();
+
+        // This federated read-through provider reports the size of the returned
+        // page as TotalCount rather than the true matching total. ArcGIS does not
+        // return the matching total alongside a feature page, and computing it
+        // would require an extra returnCountOnly=true round-trip per query. The
+        // accurate matching total is available on demand via CountAsync, and
+        // HasMoreResults (mapped from exceededTransferLimit) gives consumers the
+        // signal they need to page, so paging UIs that rely on more-results rather
+        // than an exact total work correctly without that extra round-trip.
         return QueryResult<Feature>.Create(built.Length, built, response.ExceededTransferLimit);
     }
 

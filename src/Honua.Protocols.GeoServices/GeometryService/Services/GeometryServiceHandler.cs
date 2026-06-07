@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Honua.Core.Configuration;
 using Honua.Core.Features.GeometryService.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -20,7 +21,7 @@ namespace Honua.Protocols.GeoServices.GeometryService.Services;
 /// <summary>
 /// Orchestrates geometry service operations: parse input, invoke PostGIS, format output.
 /// </summary>
-internal sealed class GeometryServiceHandler(
+internal sealed partial class GeometryServiceHandler(
     IGeometryOperationService operationService,
     IGeometryConverter geometryConverter,
     SpatialReferenceResolver spatialReferenceResolver,
@@ -2991,10 +2992,7 @@ internal sealed class GeometryServiceHandler(
 
     private static double ResolveMetersPerNativeUnit(string? wkt, bool isGeographic)
     {
-        var unitMatches = System.Text.RegularExpressions.Regex.Matches(
-            wkt ?? string.Empty,
-            @"(?:UNIT|LENGTHUNIT)\s*\[[^,\]]+,\s*([0-9.eE+-]+)",
-            System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+        var unitMatches = WktUnitFactorRegex().Matches(wkt ?? string.Empty);
         if (unitMatches.Count > 0)
         {
             var matchIndex = isGeographic ? 0 : unitMatches.Count - 1;
@@ -3013,6 +3011,14 @@ internal sealed class GeometryServiceHandler(
 
         return isGeographic ? MeanEarthRadiusMeters * (Math.PI / 180d) : 1.0;
     }
+
+    // Captures the conversion-factor argument of a WKT UNIT/LENGTHUNIT clause.
+    // Cached/generated to match the module's regex idiom and avoid re-parsing
+    // the pattern on this geometry-service hot path.
+    [GeneratedRegex(
+        @"(?:UNIT|LENGTHUNIT)\s*\[[^,\]]+,\s*([0-9.eE+-]+)",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex WktUnitFactorRegex();
 
     private static (MeasurementCalculationType CalculationType, string? Error) ResolveMeasurementCalculationType(
         IReadOnlyDictionary<string, StringValues> values)

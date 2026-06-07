@@ -3,6 +3,7 @@
 
 using System.Collections.Concurrent;
 using Honua.Core.Features.Security.Domain;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace Honua.Oracle.Features.FeatureStore.Services;
@@ -17,6 +18,10 @@ namespace Honua.Oracle.Features.FeatureStore.Services;
 /// once per binding and caches the result for subsequent reads.</para>
 /// <para>The cache key is the storage layer identifier; this is safe because schema metadata
 /// is stable for the lifetime of a deployment. There is no TTL.</para>
+/// <para>The guard is registered as a singleton so the cache spans the deployment. Because the
+/// metadata probe (and its connection factory) are scoped, the singleton resolves a fresh probe
+/// from a per-call DI scope rather than capturing a scoped dependency, avoiding a captive
+/// dependency. A directly-injected probe (used by tests) takes precedence when supplied.</para>
 /// </remarks>
 internal sealed class OracleSpatialGuard
 {
@@ -33,11 +38,28 @@ internal sealed class OracleSpatialGuard
         "SDE_STATE_ID"
     ];
 
-    private readonly IOracleSpatialMetadataProbe _probe;
+    private readonly IOracleSpatialMetadataProbe? _probe;
+    private readonly IServiceScopeFactory? _scopeFactory;
     private readonly ILogger<OracleSpatialGuard> _logger;
     private readonly ConcurrentDictionary<int, Task<GuardResult>> _cache = new();
 
-    public OracleSpatialGuard(IOracleSpatialMetadataProbe probe, ILogger<OracleSpatialGuard> logger)
+    /// <summary>
+    /// Singleton DI constructor. The guard caches probe results for the deployment lifetime, so it
+    /// resolves a scoped <see cref="IOracleSpatialMetadataProbe"/> from a fresh scope per probe to
+    /// avoid capturing a scoped dependency in a singleton.
+    /// </summary>
+    public OracleSpatialGuard(IServiceScopeFactory scopeFactory, ILogger<OracleSpatialGuard> logger)
+    {
+        _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    /// <summary>
+    /// Direct-probe constructor for tests and callers that own the probe lifetime themselves.
+    /// Intentionally <c>internal</c> so the DI container selects the singleton-safe
+    /// <see cref="IServiceScopeFactory"/> constructor unambiguously.
+    /// </summary>
+    internal OracleSpatialGuard(IOracleSpatialMetadataProbe probe, ILogger<OracleSpatialGuard> logger)
     {
         _probe = probe ?? throw new ArgumentNullException(nameof(probe));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -54,11 +76,18 @@ internal sealed class OracleSpatialGuard
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(mapping);
+        cancellationToken.ThrowIfCancellationRequested();
 
+        // The probe result is cached per layer and shared across concurrent callers, so the cached
+        // task must not be bound to the first caller's CancellationToken: a second request awaiting
+        // the same task would otherwise fail with the first caller's OperationCanceledException even
+        // though its own token is still live. Run the probe with CancellationToken.None and enforce
+        // each caller's own token after the await. The probe is a short, cached metadata lookup, so
+        // it is acceptable for it to run to completion even if the originating caller cancels.
         var resultTask = _cache.GetOrAdd(
             mapping.LayerId,
-            static (_, state) => state.Self.ProbeAsync(state.Mapping, state.DataConnection, state.Token),
-            (Self: this, Mapping: mapping, DataConnection: dataConnection, Token: cancellationToken));
+            static (_, state) => state.Self.ProbeAsync(state.Mapping, state.DataConnection, CancellationToken.None),
+            (Self: this, Mapping: mapping, DataConnection: dataConnection));
 
         GuardResult result;
         try
@@ -70,6 +99,8 @@ internal sealed class OracleSpatialGuard
             _cache.TryRemove(mapping.LayerId, out _);
             throw;
         }
+
+        cancellationToken.ThrowIfCancellationRequested();
 
         if (!result.IsSdoGeometry)
         {
@@ -99,8 +130,27 @@ internal sealed class OracleSpatialGuard
         DataConnection? dataConnection,
         CancellationToken cancellationToken)
     {
-        var dataType = await _probe.GetGeometryColumnTypeAsync(mapping, dataConnection, cancellationToken).ConfigureAwait(false);
-        var versioning = await _probe.GetArcSdeVersioningColumnsAsync(mapping, dataConnection, cancellationToken).ConfigureAwait(false);
+        // A directly-injected probe (tests / non-DI callers) owns its own lifetime. Otherwise the
+        // singleton creates a fresh DI scope so the scoped probe and connection factory resolve
+        // correctly instead of being captured by the singleton.
+        if (_probe is not null)
+        {
+            return await RunProbeAsync(_probe, mapping, dataConnection, cancellationToken).ConfigureAwait(false);
+        }
+
+        await using var scope = _scopeFactory!.CreateAsyncScope();
+        var probe = scope.ServiceProvider.GetRequiredService<IOracleSpatialMetadataProbe>();
+        return await RunProbeAsync(probe, mapping, dataConnection, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<GuardResult> RunProbeAsync(
+        IOracleSpatialMetadataProbe probe,
+        OracleLayerMapping mapping,
+        DataConnection? dataConnection,
+        CancellationToken cancellationToken)
+    {
+        var dataType = await probe.GetGeometryColumnTypeAsync(mapping, dataConnection, cancellationToken).ConfigureAwait(false);
+        var versioning = await probe.GetArcSdeVersioningColumnsAsync(mapping, dataConnection, cancellationToken).ConfigureAwait(false);
 
         var isSdo = string.Equals(dataType, SdoGeometryDataType, StringComparison.OrdinalIgnoreCase);
         return new GuardResult(isSdo, dataType, versioning);

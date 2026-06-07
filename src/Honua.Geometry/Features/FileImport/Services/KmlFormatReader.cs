@@ -173,13 +173,10 @@ internal static class KmlFormatReader
 
                 if (reader.NodeType == XmlNodeType.Element && reader.LocalName == "value")
                 {
+                    // ReadElementContentAsStringAsync leaves the reader positioned past
+                    // the </value> element, so it can never be on </Data> here; the
+                    // outer while-loop's EndElement/Data check terminates the element.
                     value = await reader.ReadElementContentAsStringAsync();
-                    if (reader.NodeType == XmlNodeType.EndElement &&
-                        reader.Depth == dataDepth &&
-                        reader.LocalName == "Data")
-                    {
-                        break;
-                    }
                 }
                 else if (reader.NodeType is XmlNodeType.Text or XmlNodeType.CDATA && value == null)
                 {

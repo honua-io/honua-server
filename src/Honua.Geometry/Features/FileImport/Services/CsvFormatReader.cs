@@ -487,7 +487,13 @@ internal static class CsvFormatReader
             return string.Empty;
         }
 
-        Span<char> buffer = stackalloc char[value.Length];
+        // Cap the stack allocation: CSV header fields are only bounded by the
+        // 10 MB record-size limit, so a single very long header cell could request
+        // a multi-megabyte stackalloc and overflow the stack (an uncatchable crash).
+        // Fall back to the heap for unusually long header names.
+        const int MaxStackAllocChars = 256;
+        char[]? rented = value.Length > MaxStackAllocChars ? new char[value.Length] : null;
+        Span<char> buffer = rented ?? stackalloc char[value.Length];
         var count = 0;
         foreach (var ch in value)
         {

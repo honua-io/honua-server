@@ -112,7 +112,15 @@ internal sealed class AzureBlobFileStorage : CloudFileStorageBase
                         CurrentPhase = "Uploading"
                     };
 
-                    _ = ProgressStore.SetProgressAsync(uploadId, progress, TimeSpan.FromHours(1), CancellationToken.None);
+                    // Fire-and-forget for the throttled in-flight update, but observe the Task so a
+                    // progress-store outage is logged rather than silently dropped (the awaited
+                    // completed/failed writes already surface their own errors).
+                    _ = ProgressStore.SetProgressAsync(uploadId, progress, TimeSpan.FromHours(1), CancellationToken.None)
+                        .ContinueWith(
+                            t => FileStorageLog.ProgressUpdateFailed(Logger, t.Exception!, uploadId),
+                            CancellationToken.None,
+                            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+                            TaskScheduler.Default);
                     request.Progress.Report(progress);
                     lastProgressUpdate = now;
                 });

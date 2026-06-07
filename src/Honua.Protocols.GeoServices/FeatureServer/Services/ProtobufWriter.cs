@@ -223,15 +223,21 @@ internal ref struct ProtobufWriter
 
         // Write to a temp buffer to get the byte length
         var inner = new ProtobufWriter(values.Length * 5);
-        foreach (uint v in values)
-            inner.WriteRawVarint(v);
+        try
+        {
+            foreach (uint v in values)
+                inner.WriteRawVarint(v);
 
-        WriteTag(fieldNumber, 2);
-        WriteRawVarint((uint)inner.Position);
-        EnsureCapacity(inner.Position);
-        inner.WrittenMemory.Span.CopyTo(_buffer.AsSpan(_position));
-        _position += inner.Position;
-        inner.Dispose();
+            WriteTag(fieldNumber, 2);
+            WriteRawVarint((uint)inner.Position);
+            EnsureCapacity(inner.Position);
+            inner.WrittenMemory.Span.CopyTo(_buffer.AsSpan(_position));
+            _position += inner.Position;
+        }
+        finally
+        {
+            inner.Dispose();
+        }
     }
 
     /// <summary>Writes a packed repeated sint64 field.</summary>
@@ -241,15 +247,21 @@ internal ref struct ProtobufWriter
             return;
 
         var inner = new ProtobufWriter(values.Length * 10);
-        foreach (long v in values)
-            inner.WriteRawVarint(ZigZagEncode64(v));
+        try
+        {
+            foreach (long v in values)
+                inner.WriteRawVarint(ZigZagEncode64(v));
 
-        WriteTag(fieldNumber, 2);
-        WriteRawVarint((uint)inner.Position);
-        EnsureCapacity(inner.Position);
-        inner.WrittenMemory.Span.CopyTo(_buffer.AsSpan(_position));
-        _position += inner.Position;
-        inner.Dispose();
+            WriteTag(fieldNumber, 2);
+            WriteRawVarint((uint)inner.Position);
+            EnsureCapacity(inner.Position);
+            inner.WrittenMemory.Span.CopyTo(_buffer.AsSpan(_position));
+            _position += inner.Position;
+        }
+        finally
+        {
+            inner.Dispose();
+        }
     }
 
     // ── Sub-message support ───────────────────────────────────

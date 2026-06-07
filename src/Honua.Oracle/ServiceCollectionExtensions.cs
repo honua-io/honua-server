@@ -46,7 +46,11 @@ public static class ServiceCollectionExtensions
 
         services.AddScoped<IOracleConnectionFactory, OracleConnectionFactory>();
         services.AddScoped<IOracleSpatialMetadataProbe, OracleSpatialMetadataProbe>();
-        services.AddScoped<OracleSpatialGuard>();
+
+        // Singleton so the guard's per-layer probe cache spans the deployment (schema metadata is
+        // stable; see OracleSpatialGuard remarks). The guard resolves the scoped probe from a fresh
+        // DI scope per probe via IServiceScopeFactory, so it never captures a scoped dependency.
+        services.AddSingleton<OracleSpatialGuard>();
         services.AddScoped<OracleFeatureDataAccess>();
         services.AddScoped<OracleFeatureStore>();
 

@@ -1,14 +1,26 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Net;
+
 namespace Honua.ArcGisRest.Features.FeatureStore.Services;
 
 /// <summary>
 /// Validates and normalizes outbound ArcGIS REST service URLs. Mirrors the
 /// surface the import-side <c>ArcGisRestClient</c> uses so federated read-through
-/// queries cannot resolve to embedded credentials, loopback hosts, or non-service
-/// URLs.
+/// queries cannot resolve to embedded credentials, loopback/private/link-local
+/// hosts, or non-service URLs.
 /// </summary>
+/// <remarks>
+/// Validation here is the first of two layers. This method rejects HTTP, embedded
+/// credentials, loopback/localhost hosts, and any host supplied as an IP literal
+/// in a private/reserved range. The second layer — full DNS resolution with
+/// connect-time re-validation against the address allow-list — is enforced by
+/// <see cref="ArcGisRestOutboundGuard.CreatePinnedDnsHttpMessageHandler"/>, which
+/// also defends against DNS-rebinding and redirect-based bypasses. Hostnames that
+/// resolve to disallowed addresses are therefore blocked at connect time rather
+/// than here, keeping this normalization step synchronous.
+/// </remarks>
 internal static class ArcGisRestUrlValidator
 {
     private const string InvalidServiceRootUrlMessage =
@@ -21,8 +33,9 @@ internal static class ArcGisRestUrlValidator
     /// <param name="url">Configured ArcGIS service URL.</param>
     /// <returns>Canonical FeatureServer/MapServer service URL (no trailing slash).</returns>
     /// <exception cref="ArgumentException">Thrown when the URL is malformed,
-    /// non-HTTPS, contains embedded credentials, targets a loopback host, or
-    /// does not point at a FeatureServer/MapServer service root.</exception>
+    /// non-HTTPS, contains embedded credentials, targets a loopback host, is an IP
+    /// literal in a private/link-local/reserved range, or does not point at a
+    /// FeatureServer/MapServer service root.</exception>
     public static string NormalizeServiceRootUrl(string url)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(url);
@@ -48,11 +61,31 @@ internal static class ArcGisRestUrlValidator
                 nameof(url));
         }
 
-        if (uri.IsLoopback || IsLocalhostHostName(uri.Host))
+        if (uri.IsLoopback || ArcGisRestOutboundGuard.IsLocalhostHostName(uri.Host))
         {
             throw new ArgumentException(
                 "ArcGIS service URL must not target a loopback host.",
                 nameof(url));
+        }
+
+        // When the host is supplied as an IP literal we can reject private /
+        // link-local / reserved ranges synchronously. Hostnames are resolved and
+        // re-validated at connect time by the pinned-DNS handler (see class remarks).
+        if (IPAddress.TryParse(uri.DnsSafeHost, out _))
+        {
+            try
+            {
+                _ = ArcGisRestOutboundGuard.ResolveAllowedAddressesAsync(
+                        uri.DnsSafeHost,
+                        static (_, _) => throw new InvalidOperationException("IP literals are validated without DNS resolution."),
+                        CancellationToken.None)
+                    .GetAwaiter()
+                    .GetResult();
+            }
+            catch (ArgumentException ex)
+            {
+                throw new ArgumentException(ex.Message, nameof(url));
+            }
         }
 
         var normalized = uri.GetLeftPart(UriPartial.Path).TrimEnd('/');
@@ -76,8 +109,4 @@ internal static class ArcGisRestUrlValidator
         return tail.Equals("FeatureServer", StringComparison.OrdinalIgnoreCase)
             || tail.Equals("MapServer", StringComparison.OrdinalIgnoreCase);
     }
-
-    private static bool IsLocalhostHostName(string host)
-        => string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase)
-           || host.EndsWith(".localhost", StringComparison.OrdinalIgnoreCase);
 }

@@ -646,11 +646,6 @@ public sealed class EditProcessor : IEditProcessor
         return false;
     }
 
-    private static bool RequiresGeometry(MetadataV2Resource resource)
-    {
-        return resource.Spatial?.GeometryType is { } gt && gt != MetadataV2GeometryType.None;
-    }
-
     private int ResolveStorageLayerIdForLog(MetadataV2Resource resource)
     {
         if (_v2GraphProvider is null)
@@ -659,8 +654,15 @@ public sealed class EditProcessor : IEditProcessor
         }
         try
         {
-            var snapshot = _v2GraphProvider.GetCurrentAsync().AsTask().GetAwaiter().GetResult();
-            return snapshot.ResolveStorageLayerId(resource) ?? 0;
+            // Runs on a synchronous logging path; do not block a thread-pool thread on the async provider.
+            // Only read an already-completed (cached) snapshot, otherwise fall back to 0.
+            var pending = _v2GraphProvider.GetCurrentAsync();
+            if (!pending.IsCompletedSuccessfully)
+            {
+                return 0;
+            }
+
+            return pending.Result.ResolveStorageLayerId(resource) ?? 0;
         }
         catch
         {

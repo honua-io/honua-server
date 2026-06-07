@@ -27,6 +27,11 @@ internal sealed class AzureBlobRangeReader : ICloudRangeReader
     /// <inheritdoc />
     public async Task<byte[]> ReadRangeAsync(string bucket, string key, long offset, int length, CancellationToken cancellationToken = default)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(bucket);
+        ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        ArgumentOutOfRangeException.ThrowIfNegative(offset);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(length);
+
         var blobClient = _serviceClient.GetBlobContainerClient(bucket).GetBlobClient(key);
         var range = new HttpRange(offset, length);
 
@@ -49,7 +54,15 @@ internal sealed class AzureBlobRangeReader : ICloudRangeReader
             new BlobDownloadOptions { Range = range },
             cancellationToken).ConfigureAwait(false);
 
-        return response.Value.Content;
+        // Buffer the range into memory and dispose the BlobDownloadStreamingResult (which owns the
+        // underlying HTTP response/network resources) before returning. This makes the returned
+        // stream leak-proof regardless of caller disposal behavior, matching the buffering semantics
+        // of the AWS sibling AwsS3RangeReader.ReadRangeStreamAsync.
+        using var result = response.Value;
+        var buffer = new MemoryStream(length);
+        await result.Content.CopyToAsync(buffer, cancellationToken).ConfigureAwait(false);
+        buffer.Position = 0;
+        return buffer;
     }
 
     /// <inheritdoc />

@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Queries.Filters;
 
 namespace Honua.SqlServer.Features.FeatureStore.Services;
 
@@ -114,6 +115,14 @@ internal static partial class SqlServerFeatureQueryBuilder
         var xProperty = isGeography ? "Long" : "STX";
         var yProperty = isGeography ? "Lat" : "STY";
 
+        // EnvelopeAggregate returns a 5-point rectangle ring for an area extent: STPointN(1) is the
+        // lower-left corner and STPointN(3) the upper-right. For a degenerate aggregate (a layer whose
+        // only geometry is a single point, or whose geometries are all collinear) the result collapses
+        // to a Point/LineString and STPointN(3) is NULL. The data-access layer treats a NULL max corner
+        // as "no extent" (see SqlServerFeatureDataAccess.ExecuteExtentAsync), so such a layer reports no
+        // extent rather than a zero-area extent. That edge case is accepted here so the emitted SQL
+        // stays a plain corner projection; callers needing a point layer's extent should derive it from
+        // the feature geometry directly.
         sb.Append("SELECT ");
         sb.Append("envelope.STPointN(1).").Append(xProperty).Append(" AS [min_x], ");
         sb.Append("envelope.STPointN(1).").Append(yProperty).Append(" AS [min_y], ");
@@ -167,11 +176,22 @@ internal static partial class SqlServerFeatureQueryBuilder
 
     private static void AppendWhereClause(StringBuilder sb, FeatureQuery query, List<object> parameters)
     {
-        // Prefer the canonical Where text. SqlFilter on FeatureQuery is produced by the shared
-        // ISqlFilterTranslator pipeline, which only registers a Postgres translator today. Passing
-        // a Postgres-emitted fragment through here would yield invalid T-SQL (JSON path operators,
-        // unquoted identifiers, dollar-sign placeholders), so we re-parse Where using this provider's
-        // own SQL Server-aware parser whenever it is supplied.
+        // The provider-enforced filter (a layer's permanent / row-restricting predicate) is applied
+        // first, ahead of every caller-supplied filter, so it can never be widened by the caller. It
+        // is a programmatically built SqlFragment that already uses @p0, @p1, ... placeholders.
+        if (query.EnforcedSqlFilter is { } enforcedFilter)
+        {
+            AppendSqlFragment(sb, enforcedFilter, parameters);
+        }
+
+        // Caller-supplied filter precedence on this provider intentionally diverges from the generic
+        // "SqlFilter takes precedence over Where" contract, because the only registered
+        // ISqlFilterTranslator emits Postgres dialect. FeatureServer always sets the canonical Where
+        // text alongside that Postgres-styled SqlFilter, so pasting the fragment into T-SQL would emit
+        // invalid SQL (JSON path operators, dollar-sign placeholders). We therefore re-parse Where
+        // with this provider's own SQL Server-aware parser whenever it is present, and only consume a
+        // SqlFilter directly when no Where accompanies it (the direct-programmatic-caller path, where
+        // the fragment is trusted to already be SQL Server-styled with @p0, @p1, ... placeholders).
         if (!string.IsNullOrWhiteSpace(query.Where))
         {
             var parameterized = ParseAndParameterizeWhereClause(query.Where!.Trim(), parameters);
@@ -181,16 +201,23 @@ internal static partial class SqlServerFeatureQueryBuilder
 
         if (query.SqlFilter is { } sqlFilter)
         {
-            // Direct programmatic callers may construct a SqlFragment without a canonical Where; in
-            // that case we trust the fragment is SQL Server-styled. Caller-provided fragments are
-            // expected to use @p0, @p1, ... placeholders; re-bind them to the next available index
-            // range so they line up with the rest of the query parameters.
-            var rebound = RebindNamedParameters(sqlFilter.Sql, parameters.Count);
-            sb.Append(" AND (").Append(rebound).Append(')');
-            foreach (var param in sqlFilter.Parameters)
-            {
-                parameters.Add(param ?? DBNull.Value);
-            }
+            AppendSqlFragment(sb, sqlFilter, parameters);
+        }
+    }
+
+    /// <summary>
+    /// Appends a programmatically built <see cref="SqlFragment"/> as an ANDed conjunct, re-binding its
+    /// <c>@pN</c> placeholders to the command's next available parameter indices so caller and provider
+    /// parameters never collide.
+    /// </summary>
+    private static void AppendSqlFragment(StringBuilder sb, SqlFragment fragment, List<object> parameters)
+    {
+        var startIndex = parameters.Count;
+        var rebound = RebindNamedParameters(fragment.Sql, startIndex, fragment.Parameters.Count);
+        sb.Append(" AND (").Append(rebound).Append(')');
+        foreach (var param in fragment.Parameters)
+        {
+            parameters.Add(param ?? DBNull.Value);
         }
     }
 
@@ -317,10 +344,36 @@ internal static partial class SqlServerFeatureQueryBuilder
         }
     }
 
-    private static string RebindNamedParameters(string sql, int startIndex)
+    /// <summary>
+    /// Re-binds the <c>@pN</c> placeholders of a caller-supplied SQL fragment onto the command's next
+    /// available parameter indices. Each distinct original index maps to a single new index, so a
+    /// placeholder reused multiple times in the fragment (e.g. <c>@p0 BETWEEN @p0 AND @p1</c>) keeps
+    /// referring to the same value rather than fanning out into extra parameter names that have no bound
+    /// value. The original indices must be the contiguous range <c>0..parameterCount-1</c>, matching the
+    /// values the caller supplies alongside the fragment.
+    /// </summary>
+    /// <param name="sql">Fragment SQL using <c>@p0</c>, <c>@p1</c>, ... placeholders.</param>
+    /// <param name="startIndex">First free parameter index in the surrounding command.</param>
+    /// <param name="parameterCount">Number of values supplied with the fragment.</param>
+    private static string RebindNamedParameters(string sql, int startIndex, int parameterCount)
     {
-        var current = startIndex;
-        return NamedParameterRegex().Replace(sql, _ => "@p" + (current++).ToString(CultureInfo.InvariantCulture));
+        // The caller appends fragment values in original index order (value i -> command parameter
+        // startIndex + i), so each original @pN maps deterministically to @p(startIndex + N). Mapping
+        // by original index (rather than allocating a fresh sequential name per occurrence) means a
+        // placeholder reused several times keeps referring to the same bound value and the emitted
+        // parameter-name count never exceeds the supplied value count.
+        return NamedParameterRegex().Replace(sql, match =>
+        {
+            var original = int.Parse(match.Groups[1].Value, NumberStyles.Integer, CultureInfo.InvariantCulture);
+            if (original < 0 || original >= parameterCount)
+            {
+                throw new ArgumentException(
+                    $"SQL fragment references parameter @p{original} but only {parameterCount} parameter value(s) were supplied.",
+                    nameof(sql));
+            }
+
+            return "@p" + (startIndex + original).ToString(CultureInfo.InvariantCulture);
+        });
     }
 
     private static string ParseAndParameterizeWhereClause(string whereClause, List<object> parameters)
@@ -406,7 +459,7 @@ internal static partial class SqlServerFeatureQueryBuilder
                 }
             }
             else if (!inQuotes && i + 3 <= whereClause.Length &&
-                     whereClause.Substring(i, 3).Equals("AND", StringComparison.OrdinalIgnoreCase) &&
+                     string.Compare(whereClause, i, "AND", 0, 3, StringComparison.OrdinalIgnoreCase) == 0 &&
                      (i == 0 || !char.IsLetterOrDigit(whereClause[i - 1])) &&
                      (i + 3 >= whereClause.Length || !char.IsLetterOrDigit(whereClause[i + 3])))
             {

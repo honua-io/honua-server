@@ -39,7 +39,6 @@ internal sealed class OracleFeatureDataAccess
     public async Task<ImmutableArray<Feature>> ExecuteSelectAsync(
         OracleLayerMapping mapping,
         ParameterizedQuery query,
-        IReadOnlyList<string> attributeColumns,
         DataConnection? dataConnection,
         CancellationToken cancellationToken)
     {
@@ -55,18 +54,31 @@ internal sealed class OracleFeatureDataAccess
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            var id = reader.IsDBNull(0) ? 0L : Convert.ToInt64(reader.GetValue(0), CultureInfo.InvariantCulture);
+            if (reader.IsDBNull(0))
+            {
+                // Ordinal 0 is the configured primary-key/object-id column. A NULL here means the
+                // mapped PrimaryKeyColumn is not a true key (or is mis-mapped); silently coercing
+                // to id 0 would collapse every such row onto a single feature id and hide the
+                // misconfiguration. Surface it instead.
+                throw new InvalidOperationException(
+                    $"Oracle layer {mapping.LayerId} returned a NULL primary key for column '{mapping.PrimaryKeyColumn}'; " +
+                    "the configured PrimaryKeyColumn must map to a non-nullable identifier.");
+            }
+
+            var id = Convert.ToInt64(reader.GetValue(0), CultureInfo.InvariantCulture);
             var wkb = reader.IsDBNull(1) ? null : ReadWkb(reader, 1);
 
             var attrs = ImmutableDictionary<string, object?>.Empty.ToBuilder();
             for (var i = 2; i < reader.FieldCount; i++)
             {
+                // The builder emits attribute columns as double-quoted (case-preserving)
+                // identifiers, so reader.GetName(i) returns the exact configured column name
+                // for the column actually projected at this ordinal. A positional remap onto
+                // the full attributeColumns list would mis-key values whenever OutFields
+                // restricts the projection to a subset: the builder skips non-requested
+                // columns (preserving order), so the SQL column at ordinal i and
+                // attributeColumns[i-2] would refer to different columns.
                 var name = reader.GetName(i);
-                if (i - 2 < attributeColumns.Count)
-                {
-                    name = attributeColumns[i - 2];
-                }
-
                 attrs[name] = reader.IsDBNull(i) ? null : reader.GetValue(i);
             }
 

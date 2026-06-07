@@ -16,6 +16,8 @@ namespace Honua.ArcGisRest.Features.FeatureStore.Services;
 /// <remarks>
 /// The HttpClient itself is registered through <see cref="ArcGisRestServiceClientName"/>
 /// in the DI composition root and managed by <see cref="System.Net.Http.IHttpClientFactory"/>.
+/// The primary handler pins DNS and disables automatic redirects so a configured or
+/// redirected service URL cannot reach private/loopback/metadata addresses (SSRF).
 /// </remarks>
 internal interface IArcGisRestFeatureClient
 {
@@ -31,7 +33,16 @@ internal interface IArcGisRestFeatureClient
     /// <summary>Fetches an object-id list from the remote layer.</summary>
     Task<ArcGisRestObjectIdsResponse> QueryObjectIdsAsync(string url, CancellationToken cancellationToken);
 
-    /// <summary>Fetches the layer metadata document for the remote layer.</summary>
+    /// <summary>
+    /// Fetches the layer metadata document for the remote layer.
+    /// </summary>
+    /// <remarks>
+    /// Reserved for future use. The feature store currently resolves the
+    /// object-id field name and geometry type from the canonical Metadata v2
+    /// resource, so this is not yet exercised on a live path. It is retained so
+    /// metadata discovery (e.g. back-filling <c>objectIdFieldName</c> when the
+    /// query response omits it) can be wired up without a public-surface change.
+    /// </remarks>
     Task<ArcGisRestLayerResponse> GetLayerMetadataAsync(string url, CancellationToken cancellationToken);
 }
 

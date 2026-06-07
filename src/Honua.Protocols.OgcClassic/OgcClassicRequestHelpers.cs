@@ -10,6 +10,14 @@ internal static class OgcClassicRequestHelpers
 {
     internal const int DefaultFeatureInfoCount = 1;
     internal const int DefaultFeatureInfoTolerancePixels = 3;
+
+    /// <summary>
+    /// Upper bound applied to a client-supplied FEATURE_COUNT for GetFeatureInfo
+    /// across WMS and WMTS. Caps the number of features read/returned per request
+    /// as a denial-of-service guard, regardless of how large a positive FEATURE_COUNT
+    /// the client requests.
+    /// </summary>
+    internal const int MaxFeatureInfoCount = 1000;
     internal const string PngMimeType = "image/png";
     internal const string PlainTextMimeType = "text/plain";
     internal const string JsonMimeType = "application/json";

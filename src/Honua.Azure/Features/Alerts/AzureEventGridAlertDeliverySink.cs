@@ -67,7 +67,9 @@ internal sealed class AzureEventGridAlertDeliverySink : IAlertDeliverySink
                 return new AlertDeliveryResult { Succeeded = true, Retryable = false };
             }
 
-            var retryable = response.Status >= 500 || response.Status == 429;
+            // Only retry transient failures Event Grid actually returns; permanent 5xx
+            // (e.g. 501 Not Implemented) would otherwise loop on a request that can never succeed.
+            var retryable = response.Status is 500 or 502 or 503 or 504 or 429;
             return new AlertDeliveryResult
             {
                 Succeeded = false,

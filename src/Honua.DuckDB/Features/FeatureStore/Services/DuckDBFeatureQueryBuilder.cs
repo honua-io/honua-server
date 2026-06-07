@@ -301,7 +301,7 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
 
         if (!query.OutStatistics.HasValue || query.OutStatistics.Value.IsDefaultOrEmpty)
         {
-            return new ParameterizedQuery($"SELECT 1 WHERE FALSE", []);
+            return new ParameterizedQuery("SELECT 1 WHERE FALSE", []);
         }
 
         var statisticColumnsExpr = BuildStatisticColumns(query.OutStatistics);
@@ -676,13 +676,13 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         return mapping.QuotedGeometryColumn;
     }
 
-    private static string BuildGeometryWkbExpression(DuckDBLayerMapping mapping, FeatureQuery query)
+    internal static string BuildGeometryWkbExpression(DuckDBLayerMapping mapping, FeatureQuery query)
     {
         var geomExpr = BuildTransformedGeometryExpression(mapping, query);
         return $"ST_AsWKB({geomExpr})";
     }
 
-    private static string BuildAttributeColumnsExpression(DuckDBLayerMapping mapping, FeatureQuery query)
+    internal static string BuildAttributeColumnsExpression(DuckDBLayerMapping mapping, FeatureQuery query)
     {
         if (query.ExcludeAttributes)
         {
@@ -710,6 +710,21 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         ref int paramIndex,
         List<object> parameters)
     {
+        // Provider-enforced filter (e.g. row-level security / tenancy) is a
+        // row-restricting predicate that MUST be applied before caller-supplied
+        // filters, matching the Postgres and SQL Server providers. Dropping it
+        // would silently over-return rows.
+        if (query.EnforcedSqlFilter != null)
+        {
+            sb.Append(CultureInfo.InvariantCulture,
+                $" AND ({ConvertNamedParametersToPositional(query.EnforcedSqlFilter.Sql, ref paramIndex)})");
+
+            foreach (var param in query.EnforcedSqlFilter.Parameters)
+            {
+                parameters.Add(param ?? DBNull.Value);
+            }
+        }
+
         if (query.SqlFilter != null)
         {
             sb.Append(CultureInfo.InvariantCulture,

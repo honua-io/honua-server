@@ -8,6 +8,8 @@ using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
 using Honua.SqlServer.Features.FeatureStore.Services;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.SqlServer.Features.FeatureStore;
 
@@ -43,19 +45,27 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
     };
 
     private readonly SqlServerFeatureDataAccess _dataAccess;
+    private readonly ILogger<SqlServerFeatureStore> _logger;
     private readonly FeatureProviderBinding? _binding;
     private readonly DataConnection? _boundConnection;
 
     public SqlServerFeatureStore(SqlServerFeatureDataAccess dataAccess)
-        : this(dataAccess, binding: null)
+        : this(dataAccess, NullLogger<SqlServerFeatureStore>.Instance, binding: null)
+    {
+    }
+
+    public SqlServerFeatureStore(SqlServerFeatureDataAccess dataAccess, ILogger<SqlServerFeatureStore> logger)
+        : this(dataAccess, logger, binding: null)
     {
     }
 
     private SqlServerFeatureStore(
         SqlServerFeatureDataAccess dataAccess,
+        ILogger<SqlServerFeatureStore> logger,
         FeatureProviderBinding? binding)
     {
         _dataAccess = dataAccess ?? throw new ArgumentNullException(nameof(dataAccess));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _binding = binding;
         _boundConnection = binding?.Connection;
     }
@@ -77,7 +87,7 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
     {
         ArgumentNullException.ThrowIfNull(binding);
 
-        return new SqlServerFeatureStore(_dataAccess, binding);
+        return new SqlServerFeatureStore(_dataAccess, _logger, binding);
     }
 
     /// <inheritdoc />
@@ -213,6 +223,21 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
                 $"SQL Server provider binding targets storage layer {binding.StorageLayerId}, not requested layer {layerId}.");
         }
 
+        // Fail closed on row-restricting permanent filters. A layer's PermanentFilter (tenant
+        // scoping, soft-delete masks, row-level security) must be ANDed into every query before
+        // results are returned. This read-only slice has no T-SQL filter translator wired up, so
+        // there is no way to honor the filter here. Returning the unfiltered row set would leak the
+        // rows the filter exists to hide; throw so the request fails instead of silently exposing data.
+        var permanentFilter = binding.Resource.PermanentFilter;
+        if (permanentFilter is not null && !string.IsNullOrWhiteSpace(permanentFilter.Expression))
+        {
+            SqlServerFeatureLog.OperationRejected(_logger, "PermanentFilter", layerId);
+            throw new NotSupportedException(
+                $"Layer {layerId} has a permanent (row-restricting) filter configured, which the SQL Server " +
+                "provider does not support in this slice. Route this layer through a provider that can enforce " +
+                "the permanent filter (for example, PostgreSQL) rather than returning unfiltered rows.");
+        }
+
         var mapping = SqlServerLayerMapping.FromStorage(layerId, binding.StorageMapping);
         var attributeColumns = binding.Resource.SchemaFields
             .Where(f => f.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography)
@@ -223,6 +248,12 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
         return Task.FromResult<(SqlServerLayerMapping, IReadOnlyList<string>)>((mapping, attributeColumns));
     }
 
-    private static NotSupportedException NotSupported(string operation, int layerId)
-        => new($"SQL Server provider does not support '{operation}' for layer {layerId} in this slice.");
+    private NotSupportedException NotSupported(string operation, int layerId)
+    {
+        // Surface rejected operations in telemetry before throwing so callers can observe which
+        // unsupported capabilities are being requested against the SQL Server slice.
+        SqlServerFeatureLog.OperationRejected(_logger, operation, layerId);
+        return new NotSupportedException(
+            $"SQL Server provider does not support '{operation}' for layer {layerId} in this slice.");
+    }
 }

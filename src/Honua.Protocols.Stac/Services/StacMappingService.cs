@@ -20,7 +20,7 @@ namespace Honua.Protocols.Stac.Services;
 /// <summary>
 /// Maps Honua catalog entities (layers, services, features) to STAC representations.
 /// </summary>
-internal sealed class StacMappingService
+internal static class StacMappingService
 {
     [ThreadStatic]
     private static GeoJsonWriter? _geoJsonWriter;

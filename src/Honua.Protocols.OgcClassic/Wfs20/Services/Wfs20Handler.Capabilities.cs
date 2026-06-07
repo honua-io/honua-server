@@ -799,25 +799,4 @@ internal sealed partial class Wfs20Handler
             </xsd:schema>
             """;
     }
-
-
-    private static string GenerateEmptySchemaForTypes(IReadOnlyList<string> requestedTypes)
-    {
-        var requested = string.Join(", ", requestedTypes);
-        return $$"""
-            <?xml version="1.0" encoding="UTF-8"?>
-            <xsd:schema
-                xmlns:xsd="http://www.w3.org/2001/XMLSchema"
-                xmlns:gml="{{Wfs20Utilities.GmlNamespace}}"
-                xmlns:{{FeatureNamespacePrefix}}="{{FeatureNamespaceUri}}"
-                targetNamespace="{{FeatureNamespaceUri}}"
-                elementFormDefault="qualified"
-                version="1.0.0">
-              <xsd:import namespace="{{Wfs20Utilities.GmlNamespace}}" schemaLocation="http://schemas.opengis.net/gml/3.2.1/gml.xsd"/>
-              <xsd:annotation>
-                <xsd:documentation>Requested feature types were not found: {{XmlEscape(requested)}}</xsd:documentation>
-              </xsd:annotation>
-            </xsd:schema>
-            """;
-    }
 }

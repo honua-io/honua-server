@@ -45,17 +45,17 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
 
         foreach (var provider in providers)
         {
+            if (!provider.Capabilities.SupportsForwardGeocode)
+            {
+                GeocodeCoordinatorLog.CapabilityNotSupported(_logger, provider.Name, "forward geocoding");
+                continue;
+            }
+
             attemptedProviders.Add(provider.Name);
             var stopwatch = Stopwatch.StartNew();
 
             try
             {
-                if (!provider.Capabilities.SupportsForwardGeocode)
-                {
-                    GeocodeCoordinatorLog.CapabilityNotSupported(_logger, provider.Name, "forward geocoding");
-                    continue;
-                }
-
                 var results = await provider.ForwardGeocodeAsync(request, cancellationToken).ConfigureAwait(false);
                 stopwatch.Stop();
 
@@ -71,6 +71,10 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
 
                 return GeocodeResults.Success<IReadOnlyList<GeocodeCandidate>>(
                     results, provider.Name, stopwatch.Elapsed.TotalMilliseconds);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {
@@ -125,17 +129,17 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
 
         foreach (var provider in providers)
         {
+            if (!provider.Capabilities.SupportsReverseGeocode)
+            {
+                GeocodeCoordinatorLog.CapabilityNotSupported(_logger, provider.Name, "reverse geocoding");
+                continue;
+            }
+
             attemptedProviders.Add(provider.Name);
             var stopwatch = Stopwatch.StartNew();
 
             try
             {
-                if (!provider.Capabilities.SupportsReverseGeocode)
-                {
-                    GeocodeCoordinatorLog.CapabilityNotSupported(_logger, provider.Name, "reverse geocoding");
-                    continue;
-                }
-
                 var result = await provider.ReverseGeocodeAsync(request, cancellationToken).ConfigureAwait(false);
                 stopwatch.Stop();
 
@@ -151,6 +155,10 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
 
                 return GeocodeResults.Success<ReverseGeocodeMatch?>(
                     result, provider.Name, stopwatch.Elapsed.TotalMilliseconds);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {
@@ -195,23 +203,27 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        using var activity = GeocodingTelemetry.Source.StartActivity("geocoding.suggest");
+        activity?.SetTag("honua.geocoding.operation", "suggest");
+        activity?.SetTag("honua.geocoding.preferred_provider", providerName);
+
         var providers = GetProvidersToTry(providerName);
         var attemptedProviders = new List<string>();
         Exception? lastException = null;
 
         foreach (var provider in providers)
         {
+            if (!provider.Capabilities.SupportsSuggest)
+            {
+                GeocodeCoordinatorLog.CapabilityNotSupported(_logger, provider.Name, "suggest");
+                continue;
+            }
+
             attemptedProviders.Add(provider.Name);
             var stopwatch = Stopwatch.StartNew();
 
             try
             {
-                if (!provider.Capabilities.SupportsSuggest)
-                {
-                    GeocodeCoordinatorLog.CapabilityNotSupported(_logger, provider.Name, "suggest");
-                    continue;
-                }
-
                 var results = await provider.SuggestAsync(request, cancellationToken).ConfigureAwait(false);
                 stopwatch.Stop();
 
@@ -222,8 +234,15 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
                     stopwatch.Elapsed.TotalMilliseconds,
                     results.Count);
 
+                activity?.SetTag("honua.geocoding.provider", provider.Name);
+                activity?.SetTag("honua.geocoding.result_count", results.Count);
+
                 return GeocodeResults.Success<IReadOnlyList<GeocodeSuggestion>>(
                     results, provider.Name, stopwatch.Elapsed.TotalMilliseconds);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {
@@ -253,6 +272,10 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
             string.Join(", ", attemptedProviders),
             lastException);
 
+        activity?.SetTag("honua.geocoding.provider", failedProviderName);
+        activity?.SetTag("honua.geocoding.result_count", 0);
+        activity?.SetStatus(ActivityStatusCode.Error, errorMessage);
+
         return GeocodeResults.Failure<IReadOnlyList<GeocodeSuggestion>>(
             errorMessage, failedProviderName, attemptedProviders: attemptedProviders);
     }
@@ -264,23 +287,27 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        using var activity = GeocodingTelemetry.Source.StartActivity("geocoding.batchGeocode");
+        activity?.SetTag("honua.geocoding.operation", "batch");
+        activity?.SetTag("honua.geocoding.preferred_provider", providerName);
+
         var providers = GetProvidersToTry(providerName);
         var attemptedProviders = new List<string>();
         Exception? lastException = null;
 
         foreach (var provider in providers)
         {
+            if (!provider.Capabilities.SupportsBatch)
+            {
+                GeocodeCoordinatorLog.CapabilityNotSupported(_logger, provider.Name, "batch geocoding");
+                continue;
+            }
+
             attemptedProviders.Add(provider.Name);
             var stopwatch = Stopwatch.StartNew();
 
             try
             {
-                if (!provider.Capabilities.SupportsBatch)
-                {
-                    GeocodeCoordinatorLog.CapabilityNotSupported(_logger, provider.Name, "batch geocoding");
-                    continue;
-                }
-
                 var results = await provider.BatchGeocodeAsync(request, cancellationToken).ConfigureAwait(false);
                 stopwatch.Stop();
 
@@ -291,8 +318,15 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
                     stopwatch.Elapsed.TotalMilliseconds,
                     results.Count);
 
+                activity?.SetTag("honua.geocoding.provider", provider.Name);
+                activity?.SetTag("honua.geocoding.result_count", results.Count);
+
                 return GeocodeResults.Success<IReadOnlyList<GeocodeCandidate>>(
                     results, provider.Name, stopwatch.Elapsed.TotalMilliseconds);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {
@@ -321,6 +355,10 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
             "batch geocoding",
             string.Join(", ", attemptedProviders),
             lastException);
+
+        activity?.SetTag("honua.geocoding.provider", failedProviderName);
+        activity?.SetTag("honua.geocoding.result_count", 0);
+        activity?.SetStatus(ActivityStatusCode.Error, errorMessage);
 
         return GeocodeResults.Failure<IReadOnlyList<GeocodeCandidate>>(
             errorMessage, failedProviderName, attemptedProviders: attemptedProviders);

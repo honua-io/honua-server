@@ -61,16 +61,47 @@ internal sealed class SqlServerConnectionFactory : ISqlServerConnectionFactory
 
     private async Task<string?> ResolveConnectionStringAsync(DataConnection? dataConnection, CancellationToken cancellationToken)
     {
-        if (dataConnection is { ConnectionId: var id } && id != Guid.Empty && _connectionResolver is not null)
-        {
-            return await _connectionResolver.ResolveConnectionStringAsync(id, cancellationToken).ConfigureAwait(false);
-        }
-
+        // Prefer a usable inline plaintext connection string so it is never routed to the secure
+        // resolver. A registry-backed connection (encrypted bytes / secret reference) has no usable
+        // inline string and must be resolved by ID through ISecureConnectionResolver.
         if (dataConnection is { ConnectionString.Length: > 0 } provided && !provided.IsEncrypted)
         {
             return provided.ConnectionString;
         }
 
+        if (dataConnection is not null && IsRegistryBacked(dataConnection))
+        {
+            // ConnectionId guards against default-constructed connections being routed to the
+            // resolver: although the domain default is Guid.NewGuid(), a connection materialized
+            // without an assigned identity may carry Guid.Empty, which the resolver cannot look up.
+            if (dataConnection.ConnectionId == Guid.Empty)
+            {
+                throw new InvalidOperationException(
+                    "A registry-backed SQL Server DataConnection was supplied without a ConnectionId; " +
+                    "the secure connection cannot be resolved.");
+            }
+
+            if (_connectionResolver is null)
+            {
+                // Fail closed: a secret/encrypted connection must never silently fall back to the
+                // global default database, which could route the query to the wrong database.
+                throw new InvalidOperationException(
+                    "A secure (registry-backed) SQL Server DataConnection was requested but no " +
+                    "ISecureConnectionResolver is registered to resolve it.");
+            }
+
+            return await _connectionResolver.ResolveConnectionStringAsync(dataConnection.ConnectionId, cancellationToken).ConfigureAwait(false);
+        }
+
         return _options.Value.ConnectionString;
     }
+
+    /// <summary>
+    /// Determines whether the connection's credentials live in the secure registry (encrypted bytes
+    /// or an external secret reference) rather than being available as inline plaintext.
+    /// </summary>
+    private static bool IsRegistryBacked(DataConnection dataConnection)
+        => dataConnection.IsEncrypted
+            || dataConnection.ConnectionStringEncrypted is { Length: > 0 }
+            || !string.IsNullOrWhiteSpace(dataConnection.SecretRef);
 }

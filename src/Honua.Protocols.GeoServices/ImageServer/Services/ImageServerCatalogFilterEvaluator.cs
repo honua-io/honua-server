@@ -173,7 +173,13 @@ internal sealed class ImageServerCatalogFilterEvaluator : IImageServerCatalogFil
         var pattern = right.ToString() ?? string.Empty;
         var input = left.ToString() ?? string.Empty;
 
-        // Translate SQL LIKE wildcards into a simple comparison.
+        // Translate SQL LIKE wildcards into a simple comparison. The literal portion is
+        // Regex.Escape'd and a 50ms timeout guards against pathological backtracking.
+        // Limitation: the SQL "LIKE ... ESCAPE 'c'" clause is not supported, so '%' and
+        // '_' always act as wildcards and cannot be matched as literal characters. The
+        // shared filter parser/expression model that would need to carry the escape
+        // character lives outside this module, so full Esri LIKE ESCAPE parity would
+        // require changes there. This is acceptable for the small in-memory raster catalog.
         var regexPattern = "^" + System.Text.RegularExpressions.Regex.Escape(pattern)
             .Replace("%", ".*", StringComparison.Ordinal)
             .Replace("_", ".", StringComparison.Ordinal) + "$";

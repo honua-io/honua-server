@@ -79,6 +79,18 @@ internal sealed class MemoryResponseCache : IResponseCache, IDisposable
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// Returns the cached value for <paramref name="key"/>, invoking
+    /// <paramref name="factory"/> to produce and cache it on a miss.
+    /// </summary>
+    /// <remarks>
+    /// This method provides <b>at-least-once</b> factory semantics, not single-flight:
+    /// N concurrent misses for the same key may each invoke <paramref name="factory"/>
+    /// (the last write wins). This is an intentional trade-off for a response cache,
+    /// where factories are expected to be inexpensive and idempotent. Callers with
+    /// expensive or non-idempotent factories must coordinate single-flight execution
+    /// themselves (e.g. their own per-key lock) before calling this method.
+    /// </remarks>
     public async Task<T> GetOrCreateAsync<T>(
         string key,
         Func<Task<T>> factory,

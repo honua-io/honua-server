@@ -91,6 +91,12 @@ internal static class ArcGisRestQueryParameters
     /// Builds the layer-metadata URL used to discover ObjectId field name and
     /// extent at startup time.
     /// </summary>
+    /// <remarks>
+    /// Reserved for future use alongside
+    /// <see cref="IArcGisRestFeatureClient.GetLayerMetadataAsync"/>. The feature
+    /// store resolves the object-id field name and geometry type from the
+    /// canonical Metadata v2 resource today, so this is not yet on a live path.
+    /// </remarks>
     public static string BuildLayerMetadataUrl(string serviceUrl, int layerId, string? token)
     {
         var builder = new StringBuilder();
@@ -191,6 +197,13 @@ internal static class ArcGisRestQueryParameters
 
     private static void AppendOutSr(StringBuilder builder, FeatureQuery query)
     {
+        // outSR drives the upstream reprojection: when the caller requests an
+        // OutputSrid the server returns geometry/envelopes already projected into
+        // that SRID. On the extent path, ArcGisRestFeatureStore.ResolveSrid simply
+        // echoes the spatialReference the server reports for the (already
+        // reprojected) extent, so the requested SRID and the reported SRID cannot
+        // diverge. The count path deliberately omits outSR because a count carries
+        // no geometry to reproject.
         if (query.OutputSrid is int outSrid && outSrid > 0)
         {
             AppendEncoded(builder, "outSR", outSrid.ToString(CultureInfo.InvariantCulture));

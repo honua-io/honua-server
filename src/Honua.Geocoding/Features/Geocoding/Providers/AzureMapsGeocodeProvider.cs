@@ -129,8 +129,11 @@ internal sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
                 ErrorCode = GeocodeErrorCodes.NetworkTimeout
             };
         }
-        catch (TaskCanceledException ex)
+        catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
+            // HttpClient throws TaskCanceledException for its internal timeout as well as for caller
+            // cancellation. The guard ensures genuine caller cancellation propagates as
+            // OperationCanceledException; only the HttpClient timeout is reported as NetworkTimeout.
             throw new GeocodeProviderException($"Azure Maps request timed out: {ex.Message}", ex)
             {
                 ProviderName = Name,
@@ -191,8 +194,11 @@ internal sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
                 ErrorCode = GeocodeErrorCodes.NetworkTimeout
             };
         }
-        catch (TaskCanceledException ex)
+        catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
+            // HttpClient throws TaskCanceledException for its internal timeout as well as for caller
+            // cancellation. The guard ensures genuine caller cancellation propagates as
+            // OperationCanceledException; only the HttpClient timeout is reported as NetworkTimeout.
             throw new GeocodeProviderException($"Azure Maps request timed out: {ex.Message}", ex)
             {
                 ProviderName = Name,
@@ -250,8 +256,11 @@ internal sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
                 ErrorCode = GeocodeErrorCodes.NetworkTimeout
             };
         }
-        catch (TaskCanceledException ex)
+        catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
+            // HttpClient throws TaskCanceledException for its internal timeout as well as for caller
+            // cancellation. The guard ensures genuine caller cancellation propagates as
+            // OperationCanceledException; only the HttpClient timeout is reported as NetworkTimeout.
             throw new GeocodeProviderException($"Azure Maps request timed out: {ex.Message}", ex)
             {
                 ProviderName = Name,

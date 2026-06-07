@@ -160,12 +160,26 @@ internal interface IAzureContainerAppsRevisionClient
 /// <summary>
 /// ARM REST API client for Azure Container Apps using direct HTTP calls to management.azure.com.
 /// </summary>
-internal sealed class AzureManagementContainerAppsRevisionClient(IHttpClientFactory httpClientFactory)
-    : IAzureContainerAppsRevisionClient
+internal sealed class AzureManagementContainerAppsRevisionClient : IAzureContainerAppsRevisionClient
 {
     private const string ApiVersion = "2024-03-01";
     private static readonly Uri ManagementScope = new("https://management.azure.com/.default");
-    private readonly TokenCredential _credential = new DefaultAzureCredential();
+
+    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly TokenCredential _credential;
+
+    public AzureManagementContainerAppsRevisionClient(IHttpClientFactory httpClientFactory)
+        : this(httpClientFactory, new DefaultAzureCredential())
+    {
+    }
+
+    internal AzureManagementContainerAppsRevisionClient(
+        IHttpClientFactory httpClientFactory,
+        TokenCredential credential)
+    {
+        _httpClientFactory = httpClientFactory;
+        _credential = credential;
+    }
 
     public async Task<AzureContainerAppsTrafficState> GetTrafficStateAsync(
         string subscriptionId, string resourceGroupName, string appName,
@@ -178,7 +192,7 @@ internal sealed class AzureManagementContainerAppsRevisionClient(IHttpClientFact
                 cancellationToken)
             .ConfigureAwait(false);
 
-        using var client = httpClientFactory.CreateClient("control-plane-azure");
+        using var client = _httpClientFactory.CreateClient("control-plane-azure");
         using var appResponse = await client.SendAsync(appRequest, cancellationToken).ConfigureAwait(false);
         await EnsureSuccessAsync(appResponse, cancellationToken).ConfigureAwait(false);
 
@@ -220,7 +234,7 @@ internal sealed class AzureManagementContainerAppsRevisionClient(IHttpClientFact
                 cancellationToken)
             .ConfigureAwait(false);
 
-        using var client = httpClientFactory.CreateClient("control-plane-azure");
+        using var client = _httpClientFactory.CreateClient("control-plane-azure");
         using var response = await client.SendAsync(request, cancellationToken).ConfigureAwait(false);
         await EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
 
@@ -243,7 +257,7 @@ internal sealed class AzureManagementContainerAppsRevisionClient(IHttpClientFact
                 cancellationToken)
             .ConfigureAwait(false);
 
-        using var client = httpClientFactory.CreateClient("control-plane-azure");
+        using var client = _httpClientFactory.CreateClient("control-plane-azure");
         using var response = await client.SendAsync(request, cancellationToken).ConfigureAwait(false);
         await EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
 
@@ -264,7 +278,7 @@ internal sealed class AzureManagementContainerAppsRevisionClient(IHttpClientFact
                 cancellationToken)
             .ConfigureAwait(false);
 
-        using var client = httpClientFactory.CreateClient("control-plane-azure");
+        using var client = _httpClientFactory.CreateClient("control-plane-azure");
         using var response = await client.SendAsync(request, cancellationToken).ConfigureAwait(false);
         await EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
     }

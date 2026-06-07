@@ -8,6 +8,8 @@ using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
 using Honua.Oracle.Features.FeatureStore.Services;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Oracle.Features.FeatureStore;
 
@@ -49,21 +51,35 @@ internal sealed class OracleFeatureStore : IFeatureDataProvider, IFeatureReader,
 
     private readonly OracleFeatureDataAccess _dataAccess;
     private readonly OracleSpatialGuard _spatialGuard;
+    private readonly ILogger<OracleFeatureStore> _logger;
     private readonly FeatureProviderBinding? _binding;
     private readonly DataConnection? _boundConnection;
 
+    public OracleFeatureStore(
+        OracleFeatureDataAccess dataAccess,
+        OracleSpatialGuard spatialGuard,
+        ILogger<OracleFeatureStore> logger)
+        : this(dataAccess, spatialGuard, logger, binding: null)
+    {
+    }
+
+    // Logger-less convenience overload that defaults to a no-op logger. DI always selects the
+    // greediest satisfiable constructor (the ILogger<> one above, which is registered), so this
+    // is used only by direct construction that does not need operation-rejection telemetry.
     public OracleFeatureStore(OracleFeatureDataAccess dataAccess, OracleSpatialGuard spatialGuard)
-        : this(dataAccess, spatialGuard, binding: null)
+        : this(dataAccess, spatialGuard, NullLogger<OracleFeatureStore>.Instance, binding: null)
     {
     }
 
     private OracleFeatureStore(
         OracleFeatureDataAccess dataAccess,
         OracleSpatialGuard spatialGuard,
+        ILogger<OracleFeatureStore> logger,
         FeatureProviderBinding? binding)
     {
         _dataAccess = dataAccess ?? throw new ArgumentNullException(nameof(dataAccess));
         _spatialGuard = spatialGuard ?? throw new ArgumentNullException(nameof(spatialGuard));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _binding = binding;
         _boundConnection = binding?.Connection;
     }
@@ -85,7 +101,7 @@ internal sealed class OracleFeatureStore : IFeatureDataProvider, IFeatureReader,
     {
         ArgumentNullException.ThrowIfNull(binding);
 
-        return new OracleFeatureStore(_dataAccess, _spatialGuard, binding);
+        return new OracleFeatureStore(_dataAccess, _spatialGuard, _logger, binding);
     }
 
     /// <inheritdoc />
@@ -99,7 +115,7 @@ internal sealed class OracleFeatureStore : IFeatureDataProvider, IFeatureReader,
         };
 
         var sql = OracleFeatureQueryBuilder.BuildSelectQuery(mapping, query, attributeColumns);
-        var features = await _dataAccess.ExecuteSelectAsync(mapping, sql, attributeColumns, _boundConnection, cancellationToken).ConfigureAwait(false);
+        var features = await _dataAccess.ExecuteSelectAsync(mapping, sql, _boundConnection, cancellationToken).ConfigureAwait(false);
         return features.Length == 0 ? null : features[0];
     }
 
@@ -116,7 +132,7 @@ internal sealed class OracleFeatureStore : IFeatureDataProvider, IFeatureReader,
             : query;
 
         var sql = OracleFeatureQueryBuilder.BuildSelectQuery(mapping, probeQuery, attributeColumns);
-        var features = await _dataAccess.ExecuteSelectAsync(mapping, sql, attributeColumns, _boundConnection, cancellationToken).ConfigureAwait(false);
+        var features = await _dataAccess.ExecuteSelectAsync(mapping, sql, _boundConnection, cancellationToken).ConfigureAwait(false);
 
         var hasMore = false;
         if (requestedLimit.HasValue && features.Length > requestedLimit.Value)
@@ -235,6 +251,10 @@ internal sealed class OracleFeatureStore : IFeatureDataProvider, IFeatureReader,
         return (mapping, attributeColumns);
     }
 
-    private static NotSupportedException NotSupported(string operation, int layerId)
-        => new($"Oracle provider does not support '{operation}' for layer {layerId} in this slice.");
+    private NotSupportedException NotSupported(string operation, int layerId)
+    {
+        OracleFeatureLog.OperationRejected(_logger, operation, layerId);
+        return new NotSupportedException(
+            $"Oracle provider does not support '{operation}' for layer {layerId} in this slice.");
+    }
 }

@@ -734,8 +734,17 @@ public sealed class QueryProcessor : IQueryProcessor
         }
         try
         {
-            var snapshot = _v2GraphProvider.GetCurrentAsync().AsTask().GetAwaiter().GetResult();
-            return snapshot.ResolveStorageLayerId(resource);
+            // BuildCacheKey is a synchronous hot path. Never block a thread-pool thread on the async
+            // provider (a DB-backed implementation would otherwise risk threadpool starvation/deadlock):
+            // only read the snapshot when it is already cached/completed, otherwise skip this optional
+            // cache-key refinement (ResourceId still disambiguates the key).
+            var pending = _v2GraphProvider.GetCurrentAsync();
+            if (!pending.IsCompletedSuccessfully)
+            {
+                return null;
+            }
+
+            return pending.Result.ResolveStorageLayerId(resource);
         }
         catch
         {

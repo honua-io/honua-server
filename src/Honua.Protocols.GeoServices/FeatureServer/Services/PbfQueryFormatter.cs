@@ -279,6 +279,9 @@ internal sealed class PbfQueryFormatter
                 writer.WriteDouble(3, d);       // double_value
                 break;
             case int i:
+                // A value of 0 emits only the field tag: this intentionally relies on
+                // proto3 default-omission (absent sint_value decodes back to 0). An
+                // explicit SQL NULL is never routed here; it is carried by field 10.
                 writer.WriteSInt32(4, i);       // sint_value
                 break;
             case uint u:
@@ -294,6 +297,7 @@ internal sealed class PbfQueryFormatter
                 writer.WriteBool(9, b);         // bool_value
                 break;
             case short s:
+                // As with int above, 0 relies on proto3 default-omission; NULL is field 10.
                 writer.WriteSInt32(4, s);
                 break;
             case decimal d:

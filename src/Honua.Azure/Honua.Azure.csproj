@@ -10,9 +10,9 @@
       Honua.Azure is the carved-out Azure SDK surface (Identity, Storage.Blobs,
       Messaging.EventGrid, Messaging.EventHubs) extracted from Honua.Server so
       that cloud-neutral consumers do not pull the heavy Azure.* surface
-      transitively. Namespaces preserved (Honua.Server.Features.*) so cross-
-      module references in the Server orchestration layer keep compiling
-      without a using-clause sweep.
+      transitively. Types live under the feature namespaces Honua.Alerts,
+      Honua.ControlPlane, and Honua.FileStorage; the Server orchestration layer
+      references them through those namespaces.
     -->
     <NoWarn>$(NoWarn);CS1591;IL2104;IL2026;IL3002;IL3050;CA1041;CA1000;CA1862;IDE0051;IDE0052;IDE0005;CA1844;IL2075</NoWarn>
     <RootNamespace>Honua.Azure</RootNamespace>

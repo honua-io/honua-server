@@ -43,8 +43,22 @@ namespace Honua.Protocols.Ogc.Classic.Wfs20.Services;
 /// </summary>
 internal sealed partial class Wfs20Handler
 {
+    /// <summary>
+    /// Process-global store of user-created WFS-T stored queries. This store is deliberately
+    /// ephemeral and process-wide: entries are not persisted and are shared across every request
+    /// (the WFS dispatcher is a single global <c>/wfs</c> endpoint), so they are lost on restart.
+    /// Mutations are gated by <see cref="RequireStoredQueryWriteAccessAsync"/> and the store is
+    /// bounded by <see cref="MaxManagedStoredQueries"/> to prevent unbounded memory growth.
+    /// </summary>
     private static readonly ConcurrentDictionary<string, StoredQueryDefinition> ManagedStoredQueries =
         new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Upper bound on the number of user-created stored queries retained in <see cref="ManagedStoredQueries"/>.
+    /// CreateStoredQuery rejects further additions once this limit is reached, bounding the memory held
+    /// by retained filter XML and preventing a single global endpoint from growing without limit.
+    /// </summary>
+    private const int MaxManagedStoredQueries = 256;
 
     public async Task<IResult> HandleListStoredQueriesAsync(
         HttpContext context,
@@ -95,8 +109,19 @@ internal sealed partial class Wfs20Handler
     }
 
 
-    public static IResult HandleCreateStoredQuery(HttpContext context)
+    public static async Task<IResult> HandleCreateStoredQuery(
+        HttpContext context,
+        CancellationToken cancellationToken = default)
     {
+        // CreateStoredQuery mutates the process-global stored-query store, so gate it with the same
+        // write-access RBAC check used by WFS-T Transaction (admin / global data editor / WFS
+        // service-scoped data-editor role) before accepting any definition.
+        var accessDenied = await RequireStoredQueryWriteAccessAsync(context, cancellationToken).ConfigureAwait(false);
+        if (accessDenied is not null)
+        {
+            return accessDenied;
+        }
+
         var document = GetParsedStoredQueryRequestDocument(context);
         if (document?.Root is null ||
             !string.Equals(document.Root.Name.LocalName, Wfs20Utilities.Operations.CreateStoredQuery, StringComparison.OrdinalIgnoreCase))
@@ -139,6 +164,15 @@ internal sealed partial class Wfs20Handler
                 "DuplicateStoredQueryIdValue",
                 $"Stored query '{id}' already exists.",
                 id);
+        }
+
+        if (ManagedStoredQueries.Count >= MaxManagedStoredQueries)
+        {
+            return Wfs20ErrorResults.CreateBadRequest(
+                context,
+                "OperationProcessingFailed",
+                $"The stored query limit of {MaxManagedStoredQueries} has been reached. Drop an existing stored query before creating a new one.",
+                "StoredQueryDefinition");
         }
 
         var queryExpressionText = definitionElement.Elements()
@@ -242,10 +276,19 @@ internal sealed partial class Wfs20Handler
     }
 
 
-    public static IResult HandleDropStoredQuery(
+    public static async Task<IResult> HandleDropStoredQuery(
         HttpContext context,
-        string? storedQueryId)
+        string? storedQueryId,
+        CancellationToken cancellationToken = default)
     {
+        // DropStoredQuery mutates the process-global stored-query store, so apply the same
+        // write-access RBAC gate as CreateStoredQuery and WFS-T Transaction.
+        var accessDenied = await RequireStoredQueryWriteAccessAsync(context, cancellationToken).ConfigureAwait(false);
+        if (accessDenied is not null)
+        {
+            return accessDenied;
+        }
+
         if (string.IsNullOrWhiteSpace(storedQueryId))
         {
             storedQueryId = GetParsedStoredQueryRequestDocument(context)
@@ -612,6 +655,22 @@ internal sealed partial class Wfs20Handler
     private static bool IsSupportedStoredQueryLanguage(string? language)
         => string.Equals(language, WfsQueryExpressionLanguage, StringComparison.OrdinalIgnoreCase) ||
            string.Equals(language, LegacyWfsQueryExpressionLanguage, StringComparison.OrdinalIgnoreCase);
+
+
+    /// <summary>
+    /// Authorizes a mutation of the process-global stored-query store. Stored queries are not scoped
+    /// to a specific layer or catalog service (the WFS dispatcher is a single global <c>/wfs</c>
+    /// endpoint), so the gate mirrors WFS-T Transaction's write-access RBAC by requiring an
+    /// authenticated admin, global data editor, or WFS service-scoped data-editor role. Returns a
+    /// denied <see cref="IResult"/> when the caller is not authorized; otherwise <see langword="null"/>.
+    /// </summary>
+    private static Task<IResult?> RequireStoredQueryWriteAccessAsync(
+        HttpContext context,
+        CancellationToken cancellationToken)
+        => ServiceDataEditorAuthorization.RequireServiceDataEditorAsync(
+            context,
+            Wfs20Utilities.ServiceType,
+            cancellationToken);
 
 
     private static XDocument? GetParsedStoredQueryRequestDocument(HttpContext context)

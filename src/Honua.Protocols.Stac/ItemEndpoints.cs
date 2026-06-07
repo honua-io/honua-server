@@ -128,7 +128,8 @@ internal static class ItemEndpoints
             }
 
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
-            var result = await featureReader.QueryAsync(layerId, query, cancellationToken);
+            var result = await featureReader.QueryAsync(layerId, query, cancellationToken)
+                .ConfigureAwait(false);
 
             var items = result.Features
                 .Select(f => StacMappingService.MapFeatureToItem(f, resource, publication, layerId, baseUrl, geometrySrid: Wgs84Srid))
@@ -212,6 +213,14 @@ internal static class ItemEndpoints
             collectionId,
             itemId);
         StacLog.ItemRequested(logger, collectionId, itemId);
+
+        var validationError = OgcCommonUtilities.ValidateQueryParameters(
+            context.Request, StacConstants.AllowedQueryParameters.Item);
+        if (validationError is not null)
+        {
+            StacTelemetry.SetFailed(activity, "invalid_query_parameters");
+            return StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
+        }
 
         try
         {
@@ -300,18 +309,34 @@ internal static class ItemEndpoints
                 [itemId])
         };
 
-        var objectIds = await featureReader.QueryObjectIdsAsync(layerId, query, cancellationToken);
+        var objectIds = await featureReader.QueryObjectIdsAsync(layerId, query, cancellationToken)
+            .ConfigureAwait(false);
+        if (objectIds.IsDefaultOrEmpty)
+        {
+            return null;
+        }
+
+        // Fetch every matching candidate in a single batched query rather than
+        // issuing one round trip per objectId. Ambiguous item ids (multiple rows
+        // matching stac_id/item_id/id) are resolved by ranking the materialized
+        // features in memory below, preserving the canonical stac_id > item_id > id
+        // precedence without the N+1 query pattern.
+        var batchQuery = new FeatureQuery
+        {
+            ObjectIds = objectIds,
+            SpatialReferenceSrid = layerSrid,
+            OutputSrid = Wgs84Srid,
+            Limit = objectIds.Length
+        };
+
+        var result = await featureReader.QueryAsync(layerId, batchQuery, cancellationToken)
+            .ConfigureAwait(false);
+
         Feature? bestMatch = null;
         var bestRank = int.MaxValue;
 
-        foreach (var objectId in objectIds)
+        foreach (var feature in result.Features)
         {
-            var feature = await TryGetFeatureByObjectIdAsStacAsync(
-                featureReader,
-                layerId,
-                layerSrid,
-                objectId,
-                cancellationToken);
             var matchRank = GetCanonicalItemMatchRank(feature, itemId);
             if (!matchRank.HasValue)
             {
@@ -348,7 +373,8 @@ internal static class ItemEndpoints
             Limit = 1
         };
 
-        var result = await featureReader.QueryAsync(layerId, query, cancellationToken);
+        var result = await featureReader.QueryAsync(layerId, query, cancellationToken)
+            .ConfigureAwait(false);
         foreach (var feature in result.Features)
         {
             return feature;

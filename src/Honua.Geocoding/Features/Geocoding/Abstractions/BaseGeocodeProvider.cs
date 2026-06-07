@@ -125,6 +125,19 @@ internal abstract class BaseGeocodeProvider : IGeocodeProvider
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        // Honor the provider's advertised batch limit so a single request cannot trigger an
+        // unbounded sequential fan-out of outbound calls (risking rate-limit bans against
+        // public services). A MaxBatchSize of 0 means "no explicit limit".
+        var maxBatchSize = Capabilities.MaxBatchSize;
+        if (maxBatchSize > 0 && request.Queries.Count > maxBatchSize)
+        {
+            throw new GeocodeRequestException(
+                $"Batch size {request.Queries.Count} exceeds the maximum supported by provider '{Name}' ({maxBatchSize}).")
+            {
+                ParameterName = nameof(request.Queries)
+            };
+        }
+
         var results = new List<GeocodeCandidate>(request.Queries.Count);
 
         foreach (var query in request.Queries)

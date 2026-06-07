@@ -234,22 +234,50 @@ internal sealed class ApiKeyAuthenticationHandler(
     /// </remarks>
     private bool IsDevelopmentBypassEnabled()
     {
-        // SECURITY: Never allow bypass in production or any non-Test environment.
-        // We rely on the environment name captured at startup via
-        // builder.Environment.EnvironmentName (immutable options binding). Reading
-        // the live process env var was a footgun: ASP.NET hosting can configure
-        // its environment via UseEnvironment(...) without touching the OS env,
-        // so a process-env read would disagree with the captured option in tests.
-        var startupEnvironment = _authOptions.EnvironmentName;
-        if (string.Equals(startupEnvironment, "Production", StringComparison.OrdinalIgnoreCase))
+        // SECURITY: Never allow bypass in production. This is the only branch that
+        // emits a log line, because production is the one configuration where an
+        // attempted bypass is security-relevant and worth surfacing.
+        if (string.Equals(_authOptions.EnvironmentName, "Production", StringComparison.OrdinalIgnoreCase))
         {
             AuthenticationLog.DevelopmentBypassBlockedInProduction(Logger);
             return false;
         }
 
+        if (!IsDevBypassConfigured())
+        {
+            return false;
+        }
+
+        AuthenticationLog.DevelopmentBypassEnabled(Logger);
+        return true;
+    }
+
+    /// <summary>
+    /// Pure, side-effect-free predicate that reports whether the development bypass
+    /// is configured to be active for the captured startup environment. Unlike
+    /// <see cref="IsDevelopmentBypassEnabled"/> this performs no logging, so it is
+    /// safe to call solely to phrase challenge-response text without emitting a
+    /// spurious "bypass enabled" log line.
+    /// </summary>
+    /// <remarks>
+    /// SECURITY: The bypass is gated by several independent conditions and is only
+    /// active when all of them are satisfied. Any deployment that does not match
+    /// every condition - including Staging, QA, Production, or any other custom
+    /// environment - falls through to normal API-key authentication.
+    /// We rely on the environment name captured at startup via
+    /// builder.Environment.EnvironmentName (immutable options binding). Reading
+    /// the live process env var was a footgun: ASP.NET hosting can configure
+    /// its environment via UseEnvironment(...) without touching the OS env,
+    /// so a process-env read would disagree with the captured option in tests.
+    /// </remarks>
+    private bool IsDevBypassConfigured()
+    {
+        var startupEnvironment = _authOptions.EnvironmentName;
+
+        // Only "Test" is allowed - Development, Staging, QA, Production, and any
+        // other custom environment fall through to standard API-key auth.
         if (!IsAllowedBypassEnvironment(startupEnvironment))
         {
-            // Staging, QA, custom envs, anything other than Test/Development must fall through.
             return false;
         }
 
@@ -270,7 +298,6 @@ internal sealed class ApiKeyAuthenticationHandler(
             return false;
         }
 
-        AuthenticationLog.DevelopmentBypassEnabled(Logger);
         return true;
     }
 
@@ -399,10 +426,12 @@ internal sealed class ApiKeyAuthenticationHandler(
 
         // Check if there's a specific failure message from authentication
         string? failureMessage = Context.Items[AuthFailureMessageKey] as string;
-        bool devBypassEnabled = IsDevelopmentBypassEnabled();
+        // Use the pure, non-logging predicate here: this branch only phrases the
+        // 401 detail string and must not emit a "bypass enabled" log side effect.
+        bool devBypassConfigured = IsDevBypassConfigured();
         var detail = !string.IsNullOrEmpty(failureMessage)
             ? failureMessage
-            : devBypassEnabled
+            : devBypassConfigured
                 ? "API key required. Development bypass is enabled but this request still requires authentication."
                 : "API key required. Provide a valid API key in the X-API-Key header.";
 

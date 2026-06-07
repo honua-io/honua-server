@@ -384,10 +384,13 @@ public sealed partial class AdaptiveSampler : IAdaptiveSampler, IDisposable
             },
             (_, existing) =>
             {
-                existing.TotalInvocations++;
+                // Incremental mean: newAvg = (oldAvg * oldCount + sample) / newCount.
+                // Weight by the count BEFORE this invocation, then divide by the new count.
+                var priorCount = existing.TotalInvocations;
+                existing.TotalInvocations = priorCount + 1;
                 if (wasSampled) existing.SampledCount++;
                 existing.LastSeen = DateTime.UtcNow;
-                existing.AverageSamplingRate = ((existing.AverageSamplingRate * existing.TotalInvocations) + samplingRate) / (existing.TotalInvocations + 1);
+                existing.AverageSamplingRate = ((existing.AverageSamplingRate * priorCount) + samplingRate) / existing.TotalInvocations;
                 return existing;
             });
     }

@@ -378,27 +378,6 @@ internal sealed partial class Wfs20Handler
         sb.AppendLine("  </ogc:Filter_Capabilities>");
     }
 
-    private static void AppendLegacyFilterCapabilities(StringBuilder sb, string prefix)
-    {
-        sb.Append("  <").Append(prefix).AppendLine(":Filter_Capabilities>");
-        sb.Append("    <").Append(prefix).AppendLine(":Spatial_Capabilities>");
-        sb.Append("      <").Append(prefix).AppendLine(":Spatial_Operators>");
-        sb.Append("        <").Append(prefix).AppendLine(":BBOX/>");
-        sb.Append("        <").Append(prefix).AppendLine(":Intersects/>");
-        sb.Append("      </").Append(prefix).AppendLine(":Spatial_Operators>");
-        sb.Append("    </").Append(prefix).AppendLine(":Spatial_Capabilities>");
-        sb.Append("    <").Append(prefix).AppendLine(":Scalar_Capabilities>");
-        sb.Append("      <").Append(prefix).AppendLine(":Logical_Operators/>");
-        sb.Append("      <").Append(prefix).AppendLine(":Comparison_Operators>");
-        sb.Append("        <").Append(prefix).AppendLine(":Simple_Comparisons/>");
-        sb.Append("        <").Append(prefix).AppendLine(":Like/>");
-        sb.Append("        <").Append(prefix).AppendLine(":Between/>");
-        sb.Append("        <").Append(prefix).AppendLine(":NullCheck/>");
-        sb.Append("      </").Append(prefix).AppendLine(":Comparison_Operators>");
-        sb.Append("    </").Append(prefix).AppendLine(":Scalar_Capabilities>");
-        sb.Append("  </").Append(prefix).AppendLine(":Filter_Capabilities>");
-    }
-
     private static void AppendWfs11FilterCapabilities(StringBuilder sb)
     {
         sb.AppendLine("  <ogc:Filter_Capabilities>");

@@ -196,8 +196,31 @@ internal sealed class GdbGeometryReader
             var remaining = numPoints;
             for (var p = 0; p < numParts - 1; p++)
             {
-                partPointCounts[p] = (int)GdbVarInt.ReadVarUInt(blob, ref offset);
+                var partCount = GdbVarInt.ReadVarUInt(blob, ref offset);
+
+                // Bound each part count to the already-validated numPoints budget.
+                // A malicious varint can encode billions of points; without this
+                // check BuildPolygon/BuildPolyline would attempt a huge allocation
+                // (OutOfMemoryException) or, on int overflow, corrupt the running
+                // remainder. Routing through InvalidDataException keeps the malformed
+                // blob on the existing catch -> null path in ReadGeometry.
+                if (partCount == 0 || partCount > (ulong)remaining)
+                {
+                    throw new InvalidDataException(
+                        "FileGDB geometry contains an out-of-range part point count.");
+                }
+
+                partPointCounts[p] = (int)partCount;
                 remaining -= partPointCounts[p];
+            }
+
+            // The final part consumes whatever points are left. Because every prior
+            // part count was bounded by the shrinking remainder, this is guaranteed
+            // to be >= 1 here; assert it to be safe against future changes.
+            if (remaining <= 0)
+            {
+                throw new InvalidDataException(
+                    "FileGDB geometry leaves no points for its final part.");
             }
 
             partPointCounts[numParts - 1] = remaining;

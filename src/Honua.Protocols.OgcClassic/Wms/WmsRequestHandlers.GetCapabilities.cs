@@ -359,8 +359,8 @@ internal static partial class WmsRequestHandlers
         sb.AppendLine("    <Layer>");
         sb.Append("      <Title>").Append(EscapeXml(serviceTitle)).AppendLine("</Title>");
         sb.Append("      <Abstract>").Append(EscapeXml(service.Metadata.Description ?? "Honua WMS root layer")).AppendLine("</Abstract>");
-        sb.Append("      <").Append(crsElementName).AppendLine(">EPSG:4326</" + crsElementName + ">");
-        sb.Append("      <").Append(crsElementName).AppendLine(">EPSG:3857</" + crsElementName + ">");
+        sb.Append("      <").Append(crsElementName).Append(">EPSG:4326</").Append(crsElementName).Append('>').AppendLine();
+        sb.Append("      <").Append(crsElementName).Append(">EPSG:3857</").Append(crsElementName).Append('>').AppendLine();
         if (!isWms111)
         {
             sb.AppendLine("      <CRS>CRS:84</CRS>");
@@ -390,8 +390,8 @@ internal static partial class WmsRequestHandlers
             sb.AppendLine("        <KeywordList>");
             sb.Append("          <Keyword>").Append(EscapeXml(layerName)).AppendLine("</Keyword>");
             sb.AppendLine("        </KeywordList>");
-            sb.Append("        <").Append(crsElementName).AppendLine(">EPSG:4326</" + crsElementName + ">");
-            sb.Append("        <").Append(crsElementName).AppendLine(">EPSG:3857</" + crsElementName + ">");
+            sb.Append("        <").Append(crsElementName).Append(">EPSG:4326</").Append(crsElementName).Append('>').AppendLine();
+            sb.Append("        <").Append(crsElementName).Append(">EPSG:3857</").Append(crsElementName).Append('>').AppendLine();
             if (!isWms111)
             {
                 sb.AppendLine("        <CRS>CRS:84</CRS>");

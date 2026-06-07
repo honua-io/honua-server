@@ -171,6 +171,20 @@ internal static partial class OracleFeatureQueryBuilder
 
     private static void AppendWhereClause(StringBuilder sb, FeatureQuery query, List<object> parameters)
     {
+        // Fail closed on a provider-enforced security filter. EnforcedSqlFilter carries row-level /
+        // tenant security and is applied before any caller-supplied filter; it must never be silently
+        // dropped (the ArcGIS REST provider throws for the same reason, Postgres applies it). It is a
+        // parameterized, Postgres-flavored SqlFragment that Oracle cannot execute, so the correct
+        // behavior here is to refuse rather than return the full dataset. AppendWhereClause is the
+        // single chokepoint every Build* entry point runs through, so the guard belongs here.
+        if (query.EnforcedSqlFilter is not null)
+        {
+            throw new NotSupportedException(
+                "A provider-enforced FeatureQuery.EnforcedSqlFilter (row-level/tenant security) cannot be honored by the Oracle provider in this slice. " +
+                "The shared ISqlFilterTranslator pipeline emits Postgres-flavored SQL, which is not valid Oracle SQL, and a security-enforced filter must never be silently dropped. " +
+                "The Oracle provider therefore fails closed instead of returning the full dataset; honoring this path requires translating the enforced fragment to Oracle SQL.");
+        }
+
         // Only the canonical Where text is consumed here. The shared ISqlFilterTranslator
         // pipeline registers a PostgreSQL translator (FeatureQuery.SqlFilter is therefore
         // Postgres-flavored: JSONB ->> operators, ::casts, ST_* calls). Pasting that through
@@ -296,12 +310,23 @@ internal static partial class OracleFeatureQueryBuilder
         }
     }
 
+    // The 'query'/'WHERE' wording routes through ExceptionMapper.IsQueryParameterException so the
+    // failure surfaces as a 400 Bad Request (invalid client input) rather than a generic 500.
+    // Only AND-separated simple comparisons (field <op> literal) and IS [NOT] NULL are accepted;
+    // OR, parenthesized grouping, and IN-lists are intentionally out of scope for this slice.
+    private const string UnsupportedWhereClauseMessage =
+        "Unsupported WHERE clause in feature query. Only AND-separated simple comparisons " +
+        "(e.g. name = 'value', age > 18) and IS [NOT] NULL are supported.";
+
+    private static ArgumentException UnsupportedWhereClause(string fragment)
+        => new($"{UnsupportedWhereClauseMessage} Offending fragment: '{fragment}'.");
+
     private static string ParseAndParameterizeWhereClause(string whereClause, List<object> parameters)
     {
         var expressions = SplitOnAnd(whereClause);
         if (expressions.Count == 0)
         {
-            throw new ArgumentException("WHERE clause format not supported.");
+            throw UnsupportedWhereClause(whereClause);
         }
 
         var rendered = new List<string>(expressions.Count);
@@ -310,7 +335,7 @@ internal static partial class OracleFeatureQueryBuilder
             var trimmed = raw.Trim();
             if (trimmed.Length == 0)
             {
-                throw new ArgumentException("WHERE clause format not supported.");
+                throw UnsupportedWhereClause(whereClause);
             }
 
             if (trimmed.Equals("1=1", StringComparison.Ordinal) ||
@@ -345,7 +370,7 @@ internal static partial class OracleFeatureQueryBuilder
                 continue;
             }
 
-            throw new ArgumentException("WHERE clause format not supported.");
+            throw UnsupportedWhereClause(trimmed);
         }
 
         return string.Join(" AND ", rendered);
@@ -426,7 +451,11 @@ internal static partial class OracleFeatureQueryBuilder
             return num;
         }
 
-        return valueToken;
+        // Unreachable from the current ComparisonRegex, whose <value> group only matches a
+        // single-quoted string (handled above) or a numeric literal (handled above). Throwing
+        // rather than returning the raw token keeps the parameterization contract explicit: an
+        // unparameterized bareword must never flow into the generated SQL.
+        throw new ArgumentException($"Unsupported WHERE value token: {valueToken}");
     }
 
     [GeneratedRegex(

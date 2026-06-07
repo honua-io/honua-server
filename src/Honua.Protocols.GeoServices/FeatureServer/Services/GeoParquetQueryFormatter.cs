@@ -494,6 +494,11 @@ internal sealed class GeoParquetQueryFormatter
         var builder = new BinaryArray.Builder();
         var anyHasZ = false;
 
+        // Per-feature WKB dimensionality is intentional: each value is encoded as 2D or 3D
+        // based on that geometry's own Z presence (WKB self-describes dimensionality per value).
+        // When a result set mixes 2D and 3D geometries the column legitimately contains both
+        // encodings, while geometry_types advertises the union (Z) dimension via the returned
+        // anyHasZ flag. This is permitted by GeoParquet 1.1.0 §4.1 and is not an inconsistency.
         foreach (var feature in features)
         {
             var (wkb, hasZ) = ProcessGeometryCore(feature.Geometry, outputSrid, geometryLimits, returnZ, returnM, feature.Id, logger);

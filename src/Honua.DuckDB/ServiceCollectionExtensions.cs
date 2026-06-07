@@ -181,7 +181,11 @@ internal static class ServiceCollectionExtensions
             PrepareSchemaDiscoveryConnection(connection, options, layerOpt);
 
             using var cmd = connection.CreateCommand();
-            cmd.CommandText = $"PRAGMA table_info({DuckDBExternalSourceSql.QuoteLiteral(layerOpt.Table)})";
+            // Quote the table as an identifier (double-quoted) to match how every
+            // runtime query references it via QuoteIdentifier. Using a string
+            // literal here could resolve differently for case-sensitive or
+            // special-character table/view names, diverging discovery from queries.
+            cmd.CommandText = $"PRAGMA table_info({DuckDBExternalSourceSql.QuoteIdentifier(layerOpt.Table)})";
             using var reader = cmd.ExecuteReader();
 
             var columns = new List<string>();
