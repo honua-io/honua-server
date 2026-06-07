@@ -23,6 +23,16 @@ namespace Honua.Protocols.GeoServices.Tests;
 // per-class — so they exist only to give xUnit distinct, parallelizable collection names.
 
 /// <summary>
+/// Legacy database collection for shared-catalog GeoServices tests that have not been
+/// proven schema-parallel safe.
+/// </summary>
+[CollectionDefinition("Database", DisableParallelization = true)]
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1711:Identifiers should not have incorrect suffix", Justification = "This is an xUnit collection definition which requires the Collection suffix")]
+public class DatabaseGeoServicesSerialCollection
+{
+}
+
+/// <summary>
 /// Database-backed collection for ImageServer / GPServer / GeometryService tests.
 /// </summary>
 [CollectionDefinition("Database.GeoServicesRaster")]

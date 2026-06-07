@@ -19,7 +19,7 @@ namespace Honua.Server.Tests.Seed;
 /// <summary>
 /// Verifies the admin sample seed can be registered through the layer publishing API.
 /// </summary>
-[Collection("Database.CoreEndpoints")]
+[Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class AdminSampleSeedPublishThroughAdminApiTests : IAsyncLifetime
