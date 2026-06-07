@@ -599,7 +599,9 @@ public sealed class FeatureServerQueryExecutorTests
         feature.GetProperty("id").GetInt64().Should().Be(42);
         var properties = feature.GetProperty("properties");
         properties.GetProperty("objectid").GetInt64().Should().Be(42);
-        properties.GetProperty("OBJECTID").GetInt64().Should().Be(42);
+        // GeoJSON properties mirror the f=json attributes (lowercase objectid only);
+        // the synthetic uppercase OBJECTID alias is intentionally suppressed (#1518).
+        properties.TryGetProperty("OBJECTID", out _).Should().BeFalse();
         properties.GetProperty("name").GetString().Should().Be("alpha");
     }
 
