@@ -42,19 +42,30 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
     }
 
     /// <summary>
-    /// Reads the current graph snapshot for the fixture's own schema partition (#1359).
-    /// Fixture mutations run outside an HTTP request, so the ambient request schema is not
-    /// populated; passing the fixture's <see cref="WebAppFixture.CurrentSchema"/> explicitly
-    /// keeps read-modify-write cycles scoped to the test's isolated schema and parallel-safe.
+    /// Reads the current graph snapshot for the fixture's graph partition (#1359).
+    /// Shared-server fixture mutations run outside an HTTP request, so the ambient request
+    /// schema is not populated; passing the fixture's schema explicitly keeps
+    /// read-modify-write cycles scoped to the test's isolated schema and parallel-safe.
+    /// Isolated fixtures own their provider instance, so they intentionally use the baseline
+    /// partition.
     /// </summary>
     private static MetadataV2GraphSnapshot ReadCurrent(WebAppFixture fixture, TestMetadataV2GraphProvider provider)
-        => provider.GetCurrentForSchema(fixture.CurrentSchema);
+        => provider.GetCurrentForSchema(fixture.MetadataGraphSchema);
 
     /// <summary>
-    /// Writes a graph snapshot to the fixture's own schema partition (#1359).
+    /// Reads the current Metadata v2 graph snapshot for the fixture's graph partition.
+    /// </summary>
+    internal static MetadataV2GraphSnapshot GetCurrentSnapshot(WebAppFixture fixture)
+    {
+        var provider = RequireProvider(fixture);
+        return ReadCurrent(fixture, provider);
+    }
+
+    /// <summary>
+    /// Writes a graph snapshot to the fixture's graph partition (#1359).
     /// </summary>
     private static void WriteGraph(WebAppFixture fixture, TestMetadataV2GraphProvider provider, MetadataV2Graph graph)
-        => provider.SetGraph(graph, etag: null, schema: fixture.CurrentSchema);
+        => provider.SetGraph(graph, etag: null, schema: fixture.MetadataGraphSchema);
 
     /// <summary>
     /// Updates the canonical resource published at <paramref name="layerIndex"/> with any
