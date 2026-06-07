@@ -464,6 +464,30 @@ internal sealed class AlertRuleRecentTriggerResponse
 }
 
 /// <summary>
+/// Paged events-by-rule listing for the rule's full trigger drill-down
+/// (honua-server#1169 §5.2). The bounded recent-trigger set on
+/// <see cref="AlertRuleHealthResponse"/> is capped at the health window; this
+/// endpoint pages the full trigger history for a single rule.
+/// </summary>
+internal sealed class AlertRuleEventPageResponse
+{
+    /// <summary>
+    /// Rule identifier the events belong to.
+    /// </summary>
+    public required long RuleId { get; init; }
+
+    /// <summary>
+    /// Trigger events for this rule, newest-first.
+    /// </summary>
+    public required AlertRuleRecentTriggerResponse[] Items { get; init; }
+
+    /// <summary>
+    /// Continuation cursor for the next page, or null when there are no more rows.
+    /// </summary>
+    public string? NextCursor { get; init; }
+}
+
+/// <summary>
 /// Audit details emitted for alert admin changes.
 /// </summary>
 internal sealed class AlertAdminAuditDetails
@@ -514,6 +538,7 @@ internal sealed class AlertAdminAuditDetails
 [JsonSerializable(typeof(AlertRuleDeliveryHealthResponse[]))]
 [JsonSerializable(typeof(AlertRuleRecentTriggerResponse))]
 [JsonSerializable(typeof(AlertRuleRecentTriggerResponse[]))]
+[JsonSerializable(typeof(AlertRuleEventPageResponse))]
 [JsonSerializable(typeof(AlertAdminAuditDetails))]
 [JsonSerializable(typeof(ApiResponse<AlertZoneResponse>))]
 [JsonSerializable(typeof(ApiResponse<AlertZoneResponse[]>))]
@@ -521,6 +546,7 @@ internal sealed class AlertAdminAuditDetails
 [JsonSerializable(typeof(ApiResponse<AlertRuleResponse[]>))]
 [JsonSerializable(typeof(ApiResponse<AlertRuleTestResponse>))]
 [JsonSerializable(typeof(ApiResponse<AlertRuleHealthResponse>))]
+[JsonSerializable(typeof(ApiResponse<AlertRuleEventPageResponse>))]
 [JsonSerializable(typeof(ApiResponse<object>))]
 internal sealed partial class AlertAdminJsonContext : JsonSerializerContext
 {

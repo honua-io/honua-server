@@ -24,6 +24,8 @@ public sealed class MetadataReleaseService(
     private const int MaxBindingEnvironments = 10;
     private const int MaxBindingSemanticIds = 500;
     private const int MaxPackageEntries = 1000;
+    private const int DefaultListLimit = 50;
+    private const int MaxListLimit = 500;
     private const string ContentVersionAnnotation = "honua.io/content-version-id";
     private const string ContentVersionCamelAnnotation = "contentVersionId";
     private const string ProvenanceAnnotation = "honua.io/provenance-ref";
@@ -258,6 +260,35 @@ public sealed class MetadataReleaseService(
         }
 
         return packageStore.GetAsync(packageId, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<MetadataReleasePackageListResponse> ListReleasePackagesAsync(
+        MetadataReleasePackageListFilter filter,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(filter);
+
+        var limit = Math.Clamp(filter.Limit <= 0 ? DefaultListLimit : filter.Limit, 1, MaxListLimit);
+        var offset = Math.Max(0, filter.Offset);
+        var normalizedFilter = filter with { Limit = limit, Offset = offset };
+
+        using var activity = ActivitySource.StartActivity("honua.metadata.release.package.list", ActivityKind.Internal);
+        activity?.SetTag("metadata.list.limit", limit);
+        activity?.SetTag("metadata.list.offset", offset);
+
+        var items = await packageStore.ListAsync(normalizedFilter, cancellationToken).ConfigureAwait(false);
+        activity?.SetTag("metadata.list.count", items.Count);
+        MetadataReleaseServiceLog.PackagesListed(logger, items.Count, limit, offset);
+
+        return new MetadataReleasePackageListResponse
+        {
+            GeneratedAt = _timeProvider.GetUtcNow(),
+            Items = items,
+            Count = items.Count,
+            Limit = limit,
+            Offset = offset,
+        };
     }
 
     /// <inheritdoc />
@@ -958,4 +989,14 @@ internal static partial class MetadataReleaseServiceLog
         ILogger logger,
         Guid packageId,
         int entryCount);
+
+    [LoggerMessage(
+        EventId = 116304,
+        Level = LogLevel.Information,
+        Message = "Metadata release packages listed: {Count} summaries (limit {Limit}, offset {Offset}).")]
+    public static partial void PackagesListed(
+        ILogger logger,
+        int count,
+        int limit,
+        int offset);
 }
