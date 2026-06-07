@@ -121,27 +121,21 @@ internal sealed class PostgresGeometryOperationService(
 
         // Web Mercator (EPSG:3857 and aliases) is only defined within ±85.0511° latitude; at the
         // poles ST_Transform produces ±Infinity and ST_AsBinary then fails, crashing the request
-        // with HTTP 500. ArcGIS clamps latitude to the valid range (finite northing ~±20037508 m).
-        // When projecting from WGS84 (degrees) to Web Mercator, snap every vertex's latitude into
-        // range before transforming so polar inputs stay finite (bug hunt).
+        // with HTTP 500. When projecting from WGS84 (degrees) to Web Mercator, clip the geometry to
+        // the valid latitude band before transforming so polar inputs stay finite. ST_Intersection
+        // preserves topology — it is a no-op for the common case (geometry already within the band)
+        // and clips polar geometry to the band edge, matching the ArcGIS Web Mercator extent. The
+        // longitude bounds are intentionally wide (±360°) so only latitude is constrained (bug hunt).
         if (fromSrid == 4326 && IsWebMercatorSrid(toSrid))
         {
             cmd.CommandText = """
                 SELECT ST_AsBinary(
                     ST_Transform(
-                        ST_SetSRID(
-                            ST_GeometryN(
-                                ST_Collect(
-                                    ST_MakePoint(
-                                        ST_X(p.geom),
-                                        GREATEST($4, LEAST($5, ST_Y(p.geom)))
-                                    )
-                                ),
-                                1
-                            ),
-                            $2),
+                        ST_Intersection(
+                            ST_SetSRID($1::geometry, $2),
+                            ST_MakeEnvelope(-360, $4, 360, $5, $2)
+                        ),
                         $3))
-                FROM (SELECT (ST_DumpPoints(ST_SetSRID($1::geometry, $2))).geom) AS p
                 """;
 
             cmd.Parameters.Add(new NpgsqlParameter { Value = wkb });

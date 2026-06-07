@@ -59,6 +59,47 @@ public sealed class GeometryServiceProjectTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Project)]
     [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/project")]
+    public async Task Project_Wgs84ToWebMercator_PolygonPreservesTopology()
+    {
+        // Regression: the 4326 -> Web Mercator latitude-clamp path must preserve polygon topology.
+        // A prior implementation dumped the geometry to points and kept only the first, collapsing
+        // every polygon/line to a single point.
+        var body = """
+        {
+            "geometries": {
+                "geometryType": "esriGeometryPolygon",
+                "geometries": [{
+                    "rings": [[[-10, -10], [10, -10], [10, 10], [-10, 10], [-10, -10]]],
+                    "spatialReference": {"wkid": 4326}
+                }]
+            },
+            "inSR": "4326",
+            "outSR": "3857"
+        }
+        """;
+        var content = new StringContent(body, Encoding.UTF8, "application/json");
+
+        var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/project", content);
+
+        response.Be200Ok();
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize<GeometryServiceResponse>(
+            responseContent, GeometryServiceJsonContext.Default.GeometryServiceResponse);
+
+        result.Should().NotBeNull();
+        result!.GeometryType.Should().Be("esriGeometryPolygon", "projection must not change the geometry type");
+        result.Geometries.Should().HaveCount(1);
+
+        var geom = result.Geometries![0];
+        geom.TryGetProperty("rings", out var rings).Should().BeTrue("projected polygon must retain rings, not collapse to a point");
+        rings.GetArrayLength().Should().Be(1);
+        rings[0].GetArrayLength().Should().BeGreaterThanOrEqualTo(4, "all polygon vertices must survive projection");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Project)]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/project")]
     public async Task Project_SameSrid_ReturnsUnchanged()
     {
         var body = """
