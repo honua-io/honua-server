@@ -15,6 +15,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Npgsql;
 
 namespace Honua.TestKit.Mixins;
@@ -119,6 +120,49 @@ internal static class WebAppFixturePostgresWiringMixin
     }
 
     /// <summary>
+    /// Timer-based background DB pollers/reconcilers that should not run in the test host.
+    /// Matched by implementation-type name to avoid the TestKit referencing internal host types.
+    /// </summary>
+    /// <remarks>
+    /// Limited to <c>MigrationBatchBackgroundService</c>: its logic is exercised directly by
+    /// <c>MigrationBatchEndpointTests</c> via a recording orchestrator, so nothing depends on the
+    /// timer loop, and it was the confirmed source of the cross-schema
+    /// <c>honua.migration_batch_runs</c> "relation does not exist" noise. The Deploy/ExecutionJob/
+    /// FeatureChange reconcilers are intentionally NOT disabled — ControlPlane integration tests
+    /// submit work and wait for those background loops to advance it, so removing them hangs the
+    /// "Infra and Security" shard. Gating additional pollers requires per-poller verification.
+    /// </remarks>
+    private static readonly HashSet<string> _disabledTestHostPollers = new(StringComparer.Ordinal)
+    {
+        "MigrationBatchBackgroundService",
+    };
+
+    /// <summary>
+    /// Removes the timer-based background DB pollers/reconcilers from the test host. Under the
+    /// parallelized schema-isolated test shards (#1359/#1532) these poll the database every few
+    /// seconds from outside any request scope — so they cannot pick up the per-test schema —
+    /// producing cross-schema "relation does not exist" log noise and background DB contention
+    /// multiplied across every parallel test server. Their reconciliation logic is exercised
+    /// directly by dedicated tests (e.g. <c>MigrationBatchEndpointTests</c> via a recording
+    /// orchestrator, and the ControlPlane/Events reconciler unit tests), so the timer wrapper
+    /// serves no purpose in the WebAppFixture host.
+    /// </summary>
+    internal static void RemoveBackgroundPollers(IServiceCollection services)
+    {
+        var pollers = services
+            .Where(descriptor =>
+                descriptor.ServiceType == typeof(IHostedService) &&
+                descriptor.ImplementationType is { } implementation &&
+                _disabledTestHostPollers.Contains(implementation.Name))
+            .ToList();
+
+        foreach (var descriptor in pollers)
+        {
+            services.Remove(descriptor);
+        }
+    }
+
+    /// <summary>
     /// Builds the minimal in-memory <see cref="IConfiguration"/> that
     /// <c>Honua.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices</c> reads to
     /// re-register the PostgreSQL-backed services. The optional
@@ -204,6 +248,7 @@ internal static class WebAppFixturePostgresWiringMixin
         IEnumerable<Action<IServiceCollection>> userConfigurations)
     {
         RemovePostgresBackedServices(services);
+        RemoveBackgroundPollers(services);
 
         var testConfiguration = BuildPostgresTestConfiguration(connectionString);
         Honua.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices(services, testConfiguration);
@@ -235,6 +280,7 @@ internal static class WebAppFixturePostgresWiringMixin
         IDictionary<string, string?>? extraConfiguration = null)
     {
         RemovePostgresBackedServices(services);
+        RemoveBackgroundPollers(services);
 
         var testConfiguration = BuildPostgresTestConfiguration(connectionString, extraConfiguration);
         Honua.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices(services, testConfiguration);
