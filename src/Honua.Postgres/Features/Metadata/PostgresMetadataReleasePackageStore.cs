@@ -145,14 +145,14 @@ internal sealed class PostgresMetadataReleasePackageStore : IMetadataReleasePack
                    package_metadata ->> 'description' AS summary,
                    created_by, created_at, updated_at
             FROM {_packagesTable}
-            WHERE (@source_environment IS NULL OR LOWER(source_environment) = LOWER(@source_environment))
-              AND (@status IS NULL OR status = @status)
+            WHERE (@source_environment::text IS NULL OR LOWER(source_environment) = LOWER(@source_environment::text))
+              AND (@status::text IS NULL OR status = @status::text)
               AND (
-                    @target_environment IS NULL
+                    @target_environment::text IS NULL
                     OR EXISTS (
                         SELECT 1
                         FROM jsonb_array_elements_text(target_environments) AS target(value)
-                        WHERE LOWER(target.value) = LOWER(@target_environment)
+                        WHERE LOWER(target.value) = LOWER(@target_environment::text)
                     )
                   )
             ORDER BY created_at DESC, package_id DESC

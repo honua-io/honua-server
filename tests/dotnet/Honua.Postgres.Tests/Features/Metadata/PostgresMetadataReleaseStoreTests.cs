@@ -150,6 +150,52 @@ public sealed class PostgresMetadataReleaseStoreTests(PostgresFixture fixture)
         }
     }
 
+    [IntegrationTest]
+    public async Task ReleasePackageStore_ListAsync_WithNullAndPopulatedFilters_DoesNotThrow()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataReleaseStoreTests));
+        try
+        {
+            await EnsureTablesAsync(schema);
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var store = new PostgresMetadataReleasePackageStore(provider, schema);
+            await store.CreateAsync(BuildPackage(Guid.NewGuid(), "promote-parcels", "ops"));
+
+            // All filters null exercises the nullable-parameter path that previously
+            // triggered Postgres 42P08 (ambiguous parameter type) for untyped nulls.
+            var allNull = await store.ListAsync(new MetadataReleasePackageListFilter());
+            allNull.Should().ContainSingle(summary => summary.PackageKey == "promote-parcels");
+
+            var bySource = await store.ListAsync(new MetadataReleasePackageListFilter
+            {
+                SourceEnvironment = "dev",
+            });
+            bySource.Should().ContainSingle(summary => summary.PackageKey == "promote-parcels");
+
+            var byTarget = await store.ListAsync(new MetadataReleasePackageListFilter
+            {
+                TargetEnvironment = "staging",
+            });
+            byTarget.Should().ContainSingle(summary => summary.PackageKey == "promote-parcels");
+
+            var byStatus = await store.ListAsync(new MetadataReleasePackageListFilter
+            {
+                Status = MetadataReleasePackageStatus.Draft,
+            });
+            byStatus.Should().ContainSingle(summary => summary.PackageKey == "promote-parcels");
+
+            var noMatch = await store.ListAsync(new MetadataReleasePackageListFilter
+            {
+                SourceEnvironment = "prod",
+            });
+            noMatch.Should().BeEmpty();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
     private async Task EnsureTablesAsync(string schema)
     {
         await using var connection = await fixtureConnection(schema).ConfigureAwait(false);
