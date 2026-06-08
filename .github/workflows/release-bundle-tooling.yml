@@ -1,0 +1,41 @@
+name: Release Bundle Tooling
+
+# Verifies the release-bundle tooling (manifest generator, evidence collector,
+# dispatch helper, suite registry) — the deterministic, locally-runnable core of
+# the release-bundle orchestrator. The orchestrator workflow itself
+# (release-bundle.yml) is exercised by real release runs, not here.
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/release/**'
+      - 'release/bundle-suites.json'
+      - '.github/workflows/release-bundle*.yml'
+  push:
+    branches: [trunk]
+    paths:
+      - 'scripts/release/**'
+      - 'release/bundle-suites.json'
+      - '.github/workflows/release-bundle*.yml'
+  workflow_dispatch:
+
+jobs:
+  tooling:
+    name: Release tooling smokes
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Bash syntax check
+        run: |
+          for f in scripts/release/*.sh; do bash -n "$f"; done
+
+      - name: Suite registry is valid JSON
+        run: jq -e '.integration and .sdk and .repositoryLanes' release/bundle-suites.json
+
+      - name: Manifest generator smoke
+        run: ./scripts/release/smoke-build-release-manifest.sh
+
+      - name: Release-bundle pipeline smoke
+        run: ./scripts/release/smoke-release-bundle-pipeline.sh

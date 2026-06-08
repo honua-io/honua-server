@@ -1,0 +1,305 @@
+name: Release Bundle (Compatibility Train)
+
+# Foundation-first release-train orchestrator (honua-devops#41 follow-on).
+#
+# Builds ONE Native AOT release-candidate image, runs the integration/conformance
+# and Esri-SDK evidence against that exact image digest, cuts every SDK against
+# the same candidate (dry-run by default), then assembles the release-train
+# manifest and runs the honua-devops validator to emit the release-train
+# scoreboard. Actual package/image publication is a separate, gated promote.
+#
+# Evidence-first: with promote=false (default) nothing is published — the run
+# produces the manifest + evidence bundle and stops. Suites not yet wired to the
+# prebuilt image (release/bundle-suites.json -> refactorPending) are reported as
+# not-yet-gated rather than silently skipped; widen coverage by flipping those.
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_id:
+        description: 'Release id, e.g. honua-2026-06-preview'
+        required: true
+      channel:
+        description: 'Release channel'
+        type: choice
+        options: [preview, rc, ga]
+        default: preview
+      server_ref:
+        description: 'Server commit/branch for the candidate (default: this ref)'
+        required: false
+        default: ''
+      run_integration:
+        description: 'Run the integration/conformance evidence lanes'
+        type: boolean
+        default: true
+      run_sdk:
+        description: 'Cut the SDKs (dry-run) and collect their compat evidence'
+        type: boolean
+        default: true
+      promote:
+        description: 'Promote: publish SDKs (real) + retag the RC image. Requires a green validator verdict.'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  packages: write
+  actions: read
+
+concurrency:
+  group: release-bundle-${{ github.event.inputs.release_id }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY_GHCR: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  # Cross-repo dispatch needs a PAT with actions:write on the SDK/esri repos;
+  # falls back to the repo-scoped token for same-repo dispatch.
+  GH_TOKEN: ${{ secrets.RELEASE_BUNDLE_TOKEN || secrets.GITHUB_TOKEN }}
+
+jobs:
+  rc-image:
+    name: Build & publish RC AOT image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image_ref: ${{ steps.ref.outputs.image_ref }}
+      image_tag: ${{ steps.ref.outputs.image_tag }}
+      image_digest: ${{ steps.build.outputs.digest }}
+      server_sha: ${{ steps.ref.outputs.server_sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.inputs.server_ref || github.sha }}
+
+      - name: Compute immutable RC tag
+        id: ref
+        run: |
+          set -euo pipefail
+          server_sha="$(git rev-parse HEAD)"
+          short="$(git rev-parse --short HEAD)"
+          tag="rc-${{ github.event.inputs.release_id }}-${short}"
+          echo "server_sha=${server_sha}" >> "$GITHUB_OUTPUT"
+          echo "image_tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "image_ref=${REGISTRY_GHCR}/${IMAGE_NAME}:${tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY_GHCR }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push Native AOT image (immutable RC tag)
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/Dockerfile.aot
+          platforms: linux/amd64
+          push: true
+          provenance: true
+          sbom: true
+          tags: ${{ steps.ref.outputs.image_ref }}
+          secrets: |
+            github_actor=${{ github.actor }}
+            github_token=${{ secrets.GITHUB_TOKEN }}
+
+      - name: Record image digest
+        run: |
+          echo "RC image: ${{ steps.ref.outputs.image_ref }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Digest:   ${{ steps.build.outputs.digest }}" >> "$GITHUB_STEP_SUMMARY"
+
+  integration:
+    name: Integration & conformance evidence
+    needs: rc-image
+    if: ${{ github.event.inputs.run_integration != 'false' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Run integration lanes against the RC image
+        run: |
+          set -euo pipefail
+          ref='${{ needs.rc-image.outputs.image_ref }}'
+          digest='${{ needs.rc-image.outputs.image_digest }}'
+          image="${ref}@${digest}"
+          : > integration-evidence.ndjson
+          # Each server-* integration suite from the registry, run against the RC image.
+          jq -c '.integration[]' release/bundle-suites.json | while read -r entry; do
+            id="$(jq -r '.id' <<<"$entry")"
+            repo="$(jq -r '.owningRepo' <<<"$entry")"
+            wf="$(jq -r '.workflow // ""' <<<"$entry")"
+            mode="$(jq -r '.mode' <<<"$entry")"
+            input="$(jq -r '.imageInput // ""' <<<"$entry")"
+            pending="$(jq -r '.refactorPending // false' <<<"$entry")"
+            if [ "$pending" = "true" ] || [ "$mode" = "build-own-image" ] || [ "$mode" = "trunk-status" ]; then
+              echo "[skip] $id ($mode, refactorPending=$pending) — reported as not-yet-gated"
+              continue
+            fi
+            args=(--id "$id" --repo "$repo" --workflow "$(basename "$wf")" --ref "${{ github.sha }}")
+            [ -n "$input" ] && args+=(--input "${input}=${image}")
+            ./scripts/release/dispatch-and-wait.sh "${args[@]}" >> integration-evidence.ndjson || true
+          done
+          echo "Collected integration evidence:"; cat integration-evidence.ndjson || true
+      - name: Upload integration evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-evidence
+          path: integration-evidence.ndjson
+          if-no-files-found: warn
+
+  sdk-cut:
+    name: SDK cut (dry-run) & compat evidence
+    needs: rc-image
+    if: ${{ github.event.inputs.run_sdk != 'false' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Cut SDKs (dry-run) and collect compat evidence vs the RC image
+        run: |
+          set -euo pipefail
+          ref='${{ needs.rc-image.outputs.image_ref }}'
+          digest='${{ needs.rc-image.outputs.image_digest }}'
+          image="${ref}@${digest}"
+          : > sdk-evidence.ndjson
+          jq -c '.sdk[]' release/bundle-suites.json | while read -r entry; do
+            id="$(jq -r '.id' <<<"$entry")"
+            repo="$(jq -r '.owningRepo' <<<"$entry")"
+            pub="$(jq -r '.publishWorkflow // ""' <<<"$entry")"
+            compat="$(jq -r '.compatWorkflow // ""' <<<"$entry")"
+            input="$(jq -r '.imageInput // ""' <<<"$entry")"
+            pending="$(jq -r '.refactorPending // false' <<<"$entry")"
+            # Always exercise the package build in dry-run (no publish).
+            if [ -n "$pub" ]; then
+              ./scripts/release/dispatch-and-wait.sh --id "${id}-publish" --repo "$repo" \
+                --workflow "$pub" --ref trunk --input dry_run=true > /dev/null || true
+            fi
+            # Compat evidence pinned to the RC image, when the suite supports it.
+            if [ -n "$compat" ] && [ "$pending" != "true" ]; then
+              args=(--id "$id" --repo "$repo" --workflow "$compat" --ref trunk)
+              [ -n "$input" ] && args+=(--input "${input}=${image}")
+              ./scripts/release/dispatch-and-wait.sh "${args[@]}" >> sdk-evidence.ndjson || true
+            else
+              echo "[skip] $id compat ($compat, refactorPending=$pending) — reported as not-yet-gated"
+            fi
+          done
+          echo "Collected SDK evidence:"; cat sdk-evidence.ndjson || true
+      - name: Upload SDK evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdk-evidence
+          path: sdk-evidence.ndjson
+          if-no-files-found: warn
+
+  aggregate:
+    name: Assemble manifest & validate train
+    needs: [rc-image, integration, sdk-cut]
+    if: ${{ always() && needs.rc-image.result == 'success' }}
+    runs-on: ubuntu-24.04
+    outputs:
+      verdict: ${{ steps.validate.outputs.verdict }}
+    steps:
+      - name: Checkout honua-server
+        uses: actions/checkout@v5
+      - name: Checkout honua-devops (validator)
+        uses: actions/checkout@v5
+        with:
+          repository: honua-io/honua-devops
+          path: .honua-devops
+          token: ${{ secrets.RELEASE_BUNDLE_TOKEN || secrets.GITHUB_TOKEN }}
+      - name: Download integration evidence
+        uses: actions/download-artifact@v4
+        with: { name: integration-evidence, path: ev }
+        continue-on-error: true
+      - name: Download SDK evidence
+        uses: actions/download-artifact@v4
+        with: { name: sdk-evidence, path: ev }
+        continue-on-error: true
+      - name: Assemble evidence -> manifest -> scoreboard bundle
+        id: validate
+        run: |
+          set -euo pipefail
+          observed="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          ./scripts/release/collect-evidence.sh \
+            --registry release/bundle-suites.json \
+            --integration ev/integration-evidence.ndjson \
+            --sdk ev/sdk-evidence.ndjson \
+            --output evidence.json
+          base_arg=()
+          [ -f "release/${{ github.event.inputs.release_id }}.json" ] && base_arg=(--base "release/${{ github.event.inputs.release_id }}.json")
+          ./scripts/release/build-release-manifest.sh \
+            --evidence evidence.json \
+            --release-id '${{ github.event.inputs.release_id }}' \
+            --channel '${{ github.event.inputs.channel }}' \
+            --server-ref '${{ needs.rc-image.outputs.server_sha }}' \
+            --ref-source '${{ github.event.inputs.server_ref || github.ref_name }}' \
+            --image-repository "${REGISTRY_GHCR}/${IMAGE_NAME}" \
+            --image-tag '${{ needs.rc-image.outputs.image_tag }}' \
+            --image-digest '${{ needs.rc-image.outputs.image_digest }}' \
+            --observed-at "$observed" \
+            "${base_arg[@]}" \
+            --output "release/${{ github.event.inputs.release_id }}.json"
+          chmod +x .honua-devops/scripts/compat-train-release-validation.sh
+          COMPAT_TRAIN_MODE=advisory \
+          COMPAT_TRAIN_BUNDLE_OUTPUT="release-validation-bundle.json" \
+            .honua-devops/scripts/compat-train-release-validation.sh \
+            "release/${{ github.event.inputs.release_id }}.json" || true
+          verdict="$(jq -r '.verdict' release-validation-bundle.json)"
+          echo "verdict=${verdict}" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Release-train scoreboard — ${{ github.event.inputs.release_id }}"
+            echo "Verdict: **${verdict}**"
+            echo '```'
+            jq -r '.followUps[] | "- " + (.url // "(no issue yet)") + " — " + .reason' release-validation-bundle.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload manifest + scoreboard bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-train-evidence
+          path: |
+            release/${{ github.event.inputs.release_id }}.json
+            release-validation-bundle.json
+      - name: Fail if promoting on a non-green train
+        if: ${{ github.event.inputs.promote == 'true' && steps.validate.outputs.verdict != 'pass' }}
+        run: |
+          echo "::error::Cannot promote ${{ github.event.inputs.release_id }} — validator verdict is '${{ steps.validate.outputs.verdict }}', not 'pass'."
+          exit 1
+
+  promote:
+    name: Promote (publish SDKs + retag image)
+    needs: [rc-image, aggregate]
+    if: ${{ github.event.inputs.promote == 'true' && needs.aggregate.outputs.verdict == 'pass' }}
+    runs-on: ubuntu-24.04
+    environment: release-promote
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Publish SDKs (real) and retag the RC image as release
+        run: |
+          set -euo pipefail
+          echo "Promoting ${{ github.event.inputs.release_id }} (verdict=pass)."
+          # Real SDK publishes (dry_run=false) — gated behind the protected environment.
+          jq -c '.sdk[]' release/bundle-suites.json | while read -r entry; do
+            repo="$(jq -r '.owningRepo' <<<"$entry")"
+            pub="$(jq -r '.publishWorkflow // ""' <<<"$entry")"
+            [ -n "$pub" ] && gh workflow run "$pub" -R "$repo" --ref trunk -f dry_run=false || true
+          done
+          # Retag the immutable RC image to the channel + latest-aot.
+          ref='${{ needs.rc-image.outputs.image_ref }}'
+          digest='${{ needs.rc-image.outputs.image_digest }}'
+          docker buildx imagetools create \
+            --tag "${REGISTRY_GHCR}/${IMAGE_NAME}:${{ github.event.inputs.channel }}-aot" \
+            --tag "${REGISTRY_GHCR}/${IMAGE_NAME}:latest-aot" \
+            "${ref}@${digest}"

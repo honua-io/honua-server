@@ -2,6 +2,13 @@
 
 Use this checklist for every MVP release.
 
+> **Automated path:** the [Release Bundle orchestrator](release-bundle.md)
+> (`.github/workflows/release-bundle.yml`) now builds the RC image, runs the
+> integration/SDK evidence against it, and **generates** the release-train
+> manifest + scoreboard for you (`promote: false` publishes nothing). Prefer it
+> over hand-editing the manifest below; this checklist remains the reference for
+> what the train asserts and for surfaces not yet automated.
+
 ## Core Release Gates
 
 - [ ] CI green on `trunk`
