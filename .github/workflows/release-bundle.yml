@@ -133,7 +133,7 @@ jobs:
           digest='${{ needs.rc-image.outputs.image_digest }}'
           image="${ref}@${digest}"
           : > integration-evidence.ndjson
-          # Each server-* integration suite from the registry, run against the RC image.
+          # Each dispatchable integration suite from the registry, run against the RC image.
           jq -c '.integration[]' release/bundle-suites.json | while read -r entry; do
             id="$(jq -r '.id' <<<"$entry")"
             repo="$(jq -r '.owningRepo' <<<"$entry")"
@@ -145,7 +145,12 @@ jobs:
               echo "[skip] $id ($mode, refactorPending=$pending) — reported as not-yet-gated"
               continue
             fi
-            args=(--id "$id" --repo "$repo" --workflow "$(basename "$wf")" --ref "${{ github.sha }}")
+            # --ref names the branch/tag holding the workflow IN THE TARGET REPO.
+            # Same-repo suites use the candidate SHA; cross-repo suites must use the
+            # target repo's default branch (the candidate is pinned via the image input).
+            dispatch_ref="trunk"
+            [ "$repo" = "${{ github.repository }}" ] && dispatch_ref="${{ github.sha }}"
+            args=(--id "$id" --repo "$repo" --workflow "$(basename "$wf")" --ref "$dispatch_ref")
             [ -n "$input" ] && args+=(--input "${input}=${image}")
             ./scripts/release/dispatch-and-wait.sh "${args[@]}" >> integration-evidence.ndjson || true
           done
@@ -286,6 +291,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+      - name: Log in to GHCR (retag needs registry write auth)
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY_GHCR }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - name: Publish SDKs (real) and retag the RC image as release
         run: |
           set -euo pipefail
