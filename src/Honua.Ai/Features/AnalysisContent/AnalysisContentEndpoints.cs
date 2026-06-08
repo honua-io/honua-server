@@ -137,7 +137,8 @@ internal static partial class AnalysisContentEndpoints
                 Model = request.Model,
                 CurrentAnalysis = request.Analysis,
                 Conversation = request.Conversation,
-                Answers = request.Answers
+                Answers = request.Answers,
+                AvailableSources = request.AvailableSources
             },
             context.RequestAborted).ConfigureAwait(false);
 

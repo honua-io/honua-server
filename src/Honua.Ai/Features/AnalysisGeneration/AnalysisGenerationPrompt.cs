@@ -59,6 +59,30 @@ internal static class AnalysisGenerationPrompt
             sb.AppendLine();
         }
 
+        if (request.AvailableSources is { Count: > 0 })
+        {
+            sb.AppendLine("REAL published layers available in this workspace. When the analysis reads one of these as an");
+            sb.AppendLine("input, you MUST set that input's layerId to its EXACT numeric id below (not 0) and its serviceId to");
+            sb.AppendLine("the EXACT service id shown, and pick any field names ONLY from its field list:");
+            foreach (var source in request.AvailableSources)
+            {
+                sb.Append("- layerId=").Append(source.LayerId).Append(" serviceId=\"").Append(source.ServiceId).Append('"');
+                if (!string.IsNullOrWhiteSpace(source.Name))
+                {
+                    sb.Append(" name=\"").Append(source.Name).Append('"');
+                }
+
+                if (source.Fields is { Length: > 0 } fields)
+                {
+                    sb.Append(" fields=[").Append(string.Join(", ", fields)).Append(']');
+                }
+
+                sb.AppendLine();
+            }
+
+            sb.AppendLine();
+        }
+
         sb.AppendLine("Available analysis methods (processId — Title [category]: description; parameters):");
         AppendMethodCatalog(sb, catalog);
         return sb.ToString();
@@ -151,4 +175,5 @@ internal sealed record AnalysisGenerationProviderRequest
     public IReadOnlyList<AnalysisGenerationAnswer> Answers { get; init; } = [];
     public AnalysisPackageContent? CurrentAnalysis { get; init; }
     public IReadOnlyList<GeoprocessingValidationFailure> RepairFailures { get; init; } = [];
+    public IReadOnlyList<AnalysisGenerationSource> AvailableSources { get; init; } = [];
 }

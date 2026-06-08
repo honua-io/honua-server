@@ -61,7 +61,8 @@ public sealed class AnalysisGenerationService : IAnalysisGenerationService
             ModelOverride = request.Model,
             Conversation = request.Conversation,
             Answers = request.Answers,
-            CurrentAnalysis = request.CurrentAnalysis
+            CurrentAnalysis = request.CurrentAnalysis,
+            AvailableSources = request.AvailableSources
         };
 
         var proposal = await CallModelAsync(providerRequest, options, providerId, model, cancellationToken).ConfigureAwait(false);

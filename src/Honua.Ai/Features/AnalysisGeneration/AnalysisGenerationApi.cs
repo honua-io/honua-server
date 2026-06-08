@@ -28,6 +28,23 @@ public sealed record AnalysisGenerationRequest
     public AnalysisPackageContent? CurrentAnalysis { get; init; }
     public IReadOnlyList<AnalysisGenerationConversationTurn> Conversation { get; init; } = [];
     public IReadOnlyList<AnalysisGenerationAnswer> Answers { get; init; } = [];
+    public IReadOnlyList<AnalysisGenerationSource> AvailableSources { get; init; } = [];
+}
+
+/// <summary>One real, published layer the analysis model may bind directly as an input (catalog grounding).</summary>
+public sealed record AnalysisGenerationSource
+{
+    [JsonPropertyName("serviceId")]
+    public string ServiceId { get; init; } = string.Empty;
+
+    [JsonPropertyName("layerId")]
+    public string LayerId { get; init; } = string.Empty;
+
+    [JsonPropertyName("name")]
+    public string? Name { get; init; }
+
+    [JsonPropertyName("fields")]
+    public string[]? Fields { get; init; }
 }
 
 /// <summary>
@@ -111,6 +128,9 @@ public sealed record GenerateAnalysisContentRequest
 
     [JsonPropertyName("answers")]
     public AnalysisGenerationAnswer[] Answers { get; init => field = value ?? []; } = [];
+
+    [JsonPropertyName("availableSources")]
+    public AnalysisGenerationSource[] AvailableSources { get; init => field = value ?? []; } = [];
 }
 
 public sealed record AnalysisGenerationConversationTurn
