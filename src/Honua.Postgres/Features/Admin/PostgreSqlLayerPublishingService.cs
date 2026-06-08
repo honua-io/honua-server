@@ -94,7 +94,17 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                 l.geometry_type,
                 l.srid,
                 l.enabled,
-                COUNT(f.field_name)::int AS field_count
+                COUNT(f.field_name)::int AS field_count,
+                -- Cached extent reprojected to EPSG:4326 so clients can frame the data without
+                -- guessing the CRS. NULL when the layer has no stored extent or an unknown SRID.
+                CASE WHEN l.extent IS NOT NULL AND ST_SRID(l.extent) <> 0
+                    THEN ST_XMin(ST_Transform(l.extent, 4326)) END AS ext_min_x,
+                CASE WHEN l.extent IS NOT NULL AND ST_SRID(l.extent) <> 0
+                    THEN ST_YMin(ST_Transform(l.extent, 4326)) END AS ext_min_y,
+                CASE WHEN l.extent IS NOT NULL AND ST_SRID(l.extent) <> 0
+                    THEN ST_XMax(ST_Transform(l.extent, 4326)) END AS ext_max_x,
+                CASE WHEN l.extent IS NOT NULL AND ST_SRID(l.extent) <> 0
+                    THEN ST_YMax(ST_Transform(l.extent, 4326)) END AS ext_max_y
             FROM honua.layers l
             INNER JOIN honua.service_layers sl
                 ON sl.layer_id = l.layer_id
@@ -110,7 +120,8 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                 l.primary_key_column,
                 l.geometry_type,
                 l.srid,
-                l.enabled
+                l.enabled,
+                l.extent
             ORDER BY l.layer_id;
             """;
 
@@ -132,7 +143,16 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                 Srid = reader.GetInt32(7),
                 Enabled = reader.GetBoolean(8),
                 FieldCount = reader.GetInt32(9),
-                ServiceName = normalizedService
+                ServiceName = normalizedService,
+                Extent = reader.IsDBNull(10) || reader.IsDBNull(11) || reader.IsDBNull(12) || reader.IsDBNull(13)
+                    ? null
+                    : new LayerExtentBounds
+                    {
+                        MinX = reader.GetDouble(10),
+                        MinY = reader.GetDouble(11),
+                        MaxX = reader.GetDouble(12),
+                        MaxY = reader.GetDouble(13)
+                    }
             });
         }
 

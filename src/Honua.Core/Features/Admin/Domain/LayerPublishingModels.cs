@@ -377,6 +377,31 @@ public sealed class PublishedLayerSummary
     /// Name of the service this layer belongs to.
     /// </summary>
     public required string ServiceName { get; init; }
+
+    /// <summary>
+    /// Cached spatial extent of the layer in EPSG:4326 (longitude/latitude), recomputed whenever the
+    /// layer is published or its extent is refreshed. Null when the layer has no stored extent yet
+    /// (e.g. an empty table). Lets clients frame a map preview on the data instead of the whole world.
+    /// </summary>
+    public LayerExtentBounds? Extent { get; init; }
+}
+
+/// <summary>
+/// Axis-aligned bounding box of a layer's data in EPSG:4326 (longitude/latitude degrees).
+/// </summary>
+public sealed class LayerExtentBounds
+{
+    /// <summary>Minimum longitude (west).</summary>
+    public required double MinX { get; init; }
+
+    /// <summary>Minimum latitude (south).</summary>
+    public required double MinY { get; init; }
+
+    /// <summary>Maximum longitude (east).</summary>
+    public required double MaxX { get; init; }
+
+    /// <summary>Maximum latitude (north).</summary>
+    public required double MaxY { get; init; }
 }
 
 /// <summary>
