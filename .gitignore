@@ -5,6 +5,10 @@
 [Rr]eleases/
 !/release/
 !/release/*.json
+# scripts/release holds release-bundle tooling, not build output — keep it tracked
+# despite the [Rr]elease/ build-artifact rule above.
+!/scripts/release/
+!/scripts/release/**
 x64/
 x86/
 [Ww][Ii][Nn]32/
