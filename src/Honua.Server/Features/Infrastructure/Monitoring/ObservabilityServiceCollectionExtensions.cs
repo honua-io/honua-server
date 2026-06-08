@@ -24,7 +24,20 @@ internal static class ObservabilityServiceCollectionExtensions
         services.AddETags();
         services.TryAddSingleton<ISystemMetricsCollector, SystemMetricsCollector>();
         services.AddPerformanceMonitoring();
-        services.TryAddSingleton<ConnectionPoolMetrics>();
+        // Seed the pool size from the configured Npgsql "Maximum Pool Size" so utilization
+        // (active / max) is actually reported instead of "unavailable". Without this, the pool
+        // size stays 0 and TryGetPoolUtilization always returns false.
+        var maxPoolSize = ResolveMaxPoolSize(configuration);
+        services.TryAddSingleton<ConnectionPoolMetrics>(sp =>
+        {
+            var metrics = new ConnectionPoolMetrics(sp.GetRequiredService<IActiveDbConnectionTracker>());
+            if (maxPoolSize > 0)
+            {
+                metrics.UpdatePoolSize(maxPoolSize);
+            }
+
+            return metrics;
+        });
         services.AddSingleton<ProductionMetricsCollector>();
         services.Configure<RecentErrorBufferOptions>(
             configuration.GetSection(RecentErrorBufferOptions.SectionName));
@@ -553,6 +566,40 @@ internal static class ObservabilityServiceCollectionExtensions
                 options.InstanceName = $"{cacheKeyPrefix}outputcache:";
             });
         }
+    }
+
+    // Resolves the effective Npgsql connection pool maximum from the DefaultConnection string so
+    // connection-pool utilization can be reported as active/max. Npgsql's default when the key is
+    // absent is 100. Parsed manually to avoid taking a direct Npgsql dependency in this layer.
+    private static int ResolveMaxPoolSize(IConfiguration configuration)
+    {
+        const int npgsqlDefaultMaxPoolSize = 100;
+
+        var connectionString = configuration.GetConnectionString("DefaultConnection");
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            return npgsqlDefaultMaxPoolSize;
+        }
+
+        foreach (var part in connectionString.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var separator = part.IndexOf('=', StringComparison.Ordinal);
+            if (separator <= 0)
+            {
+                continue;
+            }
+
+            var key = part[..separator].Trim().Replace(" ", string.Empty, StringComparison.Ordinal);
+            if ((key.Equals("MaximumPoolSize", StringComparison.OrdinalIgnoreCase)
+                    || key.Equals("MaxPoolSize", StringComparison.OrdinalIgnoreCase))
+                && int.TryParse(part[(separator + 1)..].Trim(), out var parsed)
+                && parsed > 0)
+            {
+                return parsed;
+            }
+        }
+
+        return npgsqlDefaultMaxPoolSize;
     }
 
     // Configure response compression for GeoJSON and JSON responses

@@ -46,13 +46,17 @@ public class DatabasePerformanceEndpointsTests : IClassFixture<WebAppFixture>
     [Endpoint("GET /monitoring/health/comprehensive")]
     [Endpoint("GET /monitoring/metrics/connection-pool")]
     [Endpoint("GET /monitoring/metrics/database-resilience")]
-    public async Task ConnectionTimeouts_KeepDatabaseHealthGreenButMarkPoolTelemetryUnknown()
+    public async Task ConnectionTimeouts_KeepDatabaseHealthGreenAndReportPoolUtilization()
     {
+        // The pool size is seeded from the configured Npgsql "Maximum Pool Size", so connection-pool
+        // utilization (active / max) is reported as available rather than "unavailable". A connection
+        // timeout does not, by itself, make the pool telemetry unknown.
         using (var scope = _fixture.Services.CreateScope())
         {
             var metricsCollector = scope.ServiceProvider.GetRequiredService<ProductionMetricsCollector>();
             var connectionPoolMetrics = scope.ServiceProvider.GetRequiredService<ConnectionPoolMetrics>();
-            connectionPoolMetrics.TryGetPoolUtilization(out _).Should().BeFalse();
+            connectionPoolMetrics.TryGetPoolUtilization(out var seededUtilization).Should().BeTrue();
+            seededUtilization.Should().BeInRange(0.0, 1.0);
             var initialTimeouts = connectionPoolMetrics.GetTotalTimeouts();
 
             connectionPoolMetrics.RecordConnectionTimeout();
@@ -64,8 +68,8 @@ public class DatabasePerformanceEndpointsTests : IClassFixture<WebAppFixture>
 
             directHealthMetrics.ConnectionAcquisitionTimeouts.Should().Be(expectedTimeouts);
             directHealthMetrics.ConnectionAcquisitionFailures.Should().Be(0);
-            directHealthMetrics.HasDatabaseConnectionPoolUtilization.Should().BeFalse();
-            directHealthMetrics.DatabaseConnectionPoolUtilization.Should().Be(0);
+            directHealthMetrics.HasDatabaseConnectionPoolUtilization.Should().BeTrue();
+            directHealthMetrics.DatabaseConnectionPoolUtilization.Should().BeInRange(0.0, 1.0);
 
             using var adminClient = _fixture.CreateAdminClient();
 
@@ -76,12 +80,12 @@ public class DatabasePerformanceEndpointsTests : IClassFixture<WebAppFixture>
             {
                 var root = document.RootElement;
                 root.GetProperty("totalTimeouts").GetInt64().Should().Be(expectedTimeouts);
-                root.GetProperty("isHealthy").GetBoolean().Should().BeFalse();
-                root.GetProperty("healthStatus").GetString().Should().Be("Unknown");
-                root.GetProperty("hasUtilizationData").GetBoolean().Should().BeFalse();
-                root.GetProperty("utilization").GetDouble().Should().Be(0);
-                root.GetProperty("utilizationStatus").GetString().Should().Be("unavailable");
-                root.GetProperty("utilizationPercentage").GetString().Should().Be("unavailable");
+                // Utilization telemetry is now available; the value is a real active/max ratio.
+                root.GetProperty("hasUtilizationData").GetBoolean().Should().BeTrue();
+                root.GetProperty("utilization").GetDouble().Should().BeInRange(0.0, 1.0);
+                root.GetProperty("utilizationStatus").GetString().Should().Be("available");
+                root.GetProperty("utilizationPercentage").GetString().Should().NotBe("unavailable");
+                root.GetProperty("healthStatus").GetString().Should().NotBe("Unknown");
             }
 
             var resilienceResponse = await adminClient.GetAsync("/monitoring/metrics/database-resilience");
@@ -89,15 +93,15 @@ public class DatabasePerformanceEndpointsTests : IClassFixture<WebAppFixture>
 
             using var resilienceDocument = JsonDocument.Parse(await resilienceResponse.Content.ReadAsStringAsync());
             var pool = resilienceDocument.RootElement.GetProperty("connectionPool");
-            pool.GetProperty("isHealthy").GetBoolean().Should().BeFalse();
-            pool.GetProperty("healthStatus").GetString().Should().Be("Unknown");
-            pool.GetProperty("hasUtilizationData").GetBoolean().Should().BeFalse();
+            pool.GetProperty("hasUtilizationData").GetBoolean().Should().BeTrue();
+            pool.GetProperty("healthStatus").GetString().Should().NotBe("Unknown");
+            // The "telemetry is unavailable" warning must no longer be raised now that it is available.
             resilienceDocument.RootElement
                 .GetProperty("alerts")
                 .EnumerateArray()
                 .Select(static alert => alert.GetString())
                 .Should()
-                .Contain("Warning: Database connection pool utilization telemetry is unavailable.");
+                .NotContain("Warning: Database connection pool utilization telemetry is unavailable.");
 
 
             var healthResponse = await adminClient.GetAsync("/monitoring/health/comprehensive");
@@ -111,7 +115,7 @@ public class DatabasePerformanceEndpointsTests : IClassFixture<WebAppFixture>
             var data = databaseEntry.GetProperty("data");
             data.GetProperty("connectionTimeouts").GetInt64().Should().Be(expectedTimeouts);
             data.GetProperty("connectionFailures").GetInt64().Should().Be(0);
-            data.GetProperty("poolUtilization").GetDouble().Should().Be(0);
+            data.GetProperty("poolUtilization").GetDouble().Should().BeInRange(0.0, 1.0);
         }
     }
 
