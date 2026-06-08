@@ -7,6 +7,7 @@ using Honua.Core.Features.AttributeRules;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
@@ -19,6 +20,7 @@ using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Events;
+using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Validation;
 using Honua.ServiceDefaults;
@@ -60,6 +62,17 @@ internal sealed class FeatureServerEditsHandler(
         CancellationToken cancellationToken = default)
     {
         var httpContext = _httpContextAccessor.HttpContext!;
+
+        // Multi-user feature editing is a Pro entitlement (#1548). All FeatureServer write
+        // entrypoints (applyEdits/add/update/delete and service-level applyEdits) funnel through
+        // this shared handler, so the gate is enforced once here for the whole GeoServices surface.
+        var editsGate = LicenseGate.RequireEntitlement(
+            httpContext, FeatureCatalog.FeatureEditsKey, "Feature editing", _logger);
+        if (editsGate is not null)
+        {
+            return editsGate;
+        }
+
         using var scope = HonuaTelemetryScope.StartFeature(
             "applyEdits",
             HonuaTelemetry.Protocols.FeatureServer,

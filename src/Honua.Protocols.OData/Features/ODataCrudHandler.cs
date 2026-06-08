@@ -4,12 +4,14 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Events;
+using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Validation;
 using Honua.Protocols.OData.Models;
 using Honua.Protocols.OData.Services;
@@ -38,6 +40,16 @@ internal sealed class ODataCrudHandler(
     private readonly ODataValidationService _validationService = validationService ?? throw new ArgumentNullException(nameof(validationService));
     private readonly Honua.Infrastructure.Caching.IETagService _etagService = etagService ?? throw new ArgumentNullException(nameof(etagService));
     private readonly FeatureMutationEventService _mutationEventService = mutationEventService ?? throw new ArgumentNullException(nameof(mutationEventService));
+
+    /// <summary>
+    /// Gates feature mutations behind the Pro <c>editing.feature-edits</c> entitlement (#1548).
+    /// Direct OData CRUD and <c>$batch</c> write sub-requests both funnel through the terminal
+    /// create/update/delete methods, so the gate is enforced there for the whole OData write
+    /// surface while read-only <c>$batch</c> sub-requests stay ungated. Returns an HTTP 402
+    /// result when the entitlement is inactive, otherwise <c>null</c>.
+    /// </summary>
+    private static IResult? RequireFeatureEditsEntitlement(HttpContext context)
+        => LicenseGate.RequireEntitlement(context, FeatureCatalog.FeatureEditsKey, "Feature editing");
 
     /// <summary>
     /// Handles getting a single feature by ID
@@ -274,6 +286,12 @@ internal sealed class ODataCrudHandler(
         [FromBody] ODataFeatureRequest request,
         CancellationToken cancellationToken = default)
     {
+        var editsGate = RequireFeatureEditsEntitlement(context);
+        if (editsGate is not null)
+        {
+            return editsGate;
+        }
+
         var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
 
         var queryValidation = ODataRequestValidation.ValidateAllowedParameters(
@@ -493,6 +511,12 @@ internal sealed class ODataCrudHandler(
         bool replace,
         CancellationToken cancellationToken)
     {
+        var editsGate = RequireFeatureEditsEntitlement(context);
+        if (editsGate is not null)
+        {
+            return editsGate;
+        }
+
         var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
 
         var queryValidation = ODataRequestValidation.ValidateAllowedParameters(
@@ -654,6 +678,12 @@ internal sealed class ODataCrudHandler(
         if (!layerValidation.IsValid)
         {
             return layerValidation.ErrorResult!;
+        }
+
+        var editsGate = RequireFeatureEditsEntitlement(context);
+        if (editsGate is not null)
+        {
+            return editsGate;
         }
 
         using var activity = HonuaTelemetry.ActivitySource.StartActivity(
