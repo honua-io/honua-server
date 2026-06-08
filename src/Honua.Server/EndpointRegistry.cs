@@ -241,6 +241,9 @@ public static class EndpointRegistry
         new("GET", "/api/v1/console/catalog-endpoints/{workspaceId}"),
         new("GET", "/api/v1/console/catalog-endpoints/{workspaceId}/{endpointKey}"),
         new("GET", "/api/v1/console/catalog-endpoints/{workspaceId}/{endpointKey}/items/{itemId}"),
+        // v1 Console Access (RBAC) workspace-scoped roles + members read API (#1162)
+        new("GET", "/api/v1/console/access/{workspaceId}/roles"),
+        new("GET", "/api/v1/console/access/{workspaceId}/members"),
         new("POST", "/api/v1/admin/packages/validate"),
         new("POST", "/api/v1/admin/packages/preview"),
         new("GET", "/api/v1/console/workflow-node-registry"),

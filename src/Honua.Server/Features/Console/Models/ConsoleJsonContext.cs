@@ -55,6 +55,11 @@ namespace Honua.Server.Features.Console.Models;
 [JsonSerializable(typeof(CatalogDiscoveryRegistry))]
 [JsonSerializable(typeof(CatalogEndpointDetail))]
 [JsonSerializable(typeof(CatalogItem))]
+// Console Access (RBAC) workspace-scoped read API (projects global admin roles; #1162).
+[JsonSerializable(typeof(ApiResponse<ConsoleRbacOverview>))]
+[JsonSerializable(typeof(ApiResponse<ConsoleTeamMembership>))]
+[JsonSerializable(typeof(ConsoleRbacOverview))]
+[JsonSerializable(typeof(ConsoleTeamMembership))]
 [JsonSerializable(typeof(CreateConsoleContentItemRequest))]
 [JsonSerializable(typeof(UpdateConsoleContentItemRequest))]
 [JsonSerializable(typeof(PatchConsoleContentItemRequest))]

@@ -1122,6 +1122,8 @@ app.MapConsoleActionEndpoints();
 // Console Share access public-link + embed API (#1215)
 app.MapConsoleShareEndpoints();
 app.MapCatalogDiscoveryEndpoints();
+// Console Access (RBAC) workspace-scoped roles + members read API (#1162)
+app.MapConsoleAccessEndpoints();
 app.MapConsoleSharePublicEndpoints();
 // Console open-data DCAT + STAC publication API (#1214)
 app.MapConsoleOpenDataEndpoints();
