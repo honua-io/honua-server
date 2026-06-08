@@ -108,7 +108,8 @@ public sealed class FeatureCatalogTests
             "temporal.filtering",
             "temporal.extent-discovery",
             "identity.portal-token",
-            "identity.portal-sharing"
+            "identity.portal-sharing",
+            "import.file"
         ]);
     }
 
