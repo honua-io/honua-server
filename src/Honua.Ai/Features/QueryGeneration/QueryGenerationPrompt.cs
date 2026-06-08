@@ -66,6 +66,30 @@ internal static class QueryGenerationPrompt
             sb.AppendLine();
         }
 
+        if (request.AvailableSources is { Count: > 0 })
+        {
+            sb.AppendLine("REAL published layers available in this workspace. When the request matches one, you MUST set");
+            sb.AppendLine("layerId to its EXACT numeric id below (not 0), and choose property/outFields names ONLY from its");
+            sb.AppendLine("field list:");
+            foreach (var source in request.AvailableSources)
+            {
+                sb.Append("- layerId=").Append(source.LayerId).Append(" service=\"").Append(source.ServiceId).Append('"');
+                if (!string.IsNullOrWhiteSpace(source.Name))
+                {
+                    sb.Append(" name=\"").Append(source.Name).Append('"');
+                }
+
+                if (source.Fields is { Length: > 0 } fields)
+                {
+                    sb.Append(" fields=[").Append(string.Join(", ", fields)).Append(']');
+                }
+
+                sb.AppendLine();
+            }
+
+            sb.AppendLine();
+        }
+
         return sb.ToString();
     }
 
@@ -111,4 +135,5 @@ internal sealed record QueryGenerationProviderRequest
     public IReadOnlyList<QueryGenerationAnswer> Answers { get; init; } = [];
     public SavedQueryContent? CurrentQuery { get; init; }
     public IReadOnlyList<QueryStructuralFailure> RepairFailures { get; init; } = [];
+    public IReadOnlyList<QueryGenerationSource> AvailableSources { get; init; } = [];
 }

@@ -57,7 +57,8 @@ public sealed class QueryGenerationService : IQueryGenerationService
             ModelOverride = request.Model,
             Conversation = request.Conversation,
             Answers = request.Answers,
-            CurrentQuery = request.CurrentQuery
+            CurrentQuery = request.CurrentQuery,
+            AvailableSources = request.AvailableSources
         };
 
         var proposal = await CallModelAsync(providerRequest, options, providerId, model, cancellationToken).ConfigureAwait(false);

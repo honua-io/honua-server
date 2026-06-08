@@ -28,6 +28,29 @@ public sealed record QueryGenerationRequest
     public SavedQueryContent? CurrentQuery { get; init; }
     public IReadOnlyList<QueryGenerationConversationTurn> Conversation { get; init; } = [];
     public IReadOnlyList<QueryGenerationAnswer> Answers { get; init; } = [];
+
+    /// <summary>
+    /// Real published layers the caller knows about (catalog grounding). When the prompt matches one, the
+    /// model binds its real numeric layerId and picks outFields from the real field list instead of using
+    /// layerId 0 / guessing field names. Empty means "no catalog" — the model falls back to the placeholder.
+    /// </summary>
+    public IReadOnlyList<QueryGenerationSource> AvailableSources { get; init; } = [];
+}
+
+/// <summary>One real, published layer the query model may bind directly (catalog grounding).</summary>
+public sealed record QueryGenerationSource
+{
+    [JsonPropertyName("serviceId")]
+    public string ServiceId { get; init; } = string.Empty;
+
+    [JsonPropertyName("layerId")]
+    public string LayerId { get; init; } = string.Empty;
+
+    [JsonPropertyName("name")]
+    public string? Name { get; init; }
+
+    [JsonPropertyName("fields")]
+    public string[]? Fields { get; init; }
 }
 
 /// <summary>
@@ -111,6 +134,10 @@ public sealed record GenerateSavedQueryRequest
 
     [JsonPropertyName("answers")]
     public QueryGenerationAnswer[] Answers { get; init => field = value ?? []; } = [];
+
+    /// <summary>Catalog grounding: real published layers the model may bind directly (see QueryGenerationSource).</summary>
+    [JsonPropertyName("availableSources")]
+    public QueryGenerationSource[] AvailableSources { get; init => field = value ?? []; } = [];
 }
 
 public sealed record QueryGenerationConversationTurn
