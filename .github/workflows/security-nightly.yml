@@ -21,6 +21,9 @@ env:
   DOTNET_NOLOGO: true
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  # Authenticate the Trivy installer's GitHub release lookup so it is not throttled by the
+  # unauthenticated API rate limit (the cause of intermittent "unable to find tag" install failures).
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 concurrency:
   group: security-nightly-${{ github.ref }}
@@ -333,13 +336,22 @@ jobs:
             postgis/postgis:16-3.4
 
           echo "Waiting for PostGIS to accept connections..."
+          ready=false
           for _ in $(seq 1 60); do
             if docker exec honua-runtime-db pg_isready -U honua -d honua >/dev/null 2>&1; then
+              ready=true
               break
             fi
             sleep 2
           done
-          docker exec honua-runtime-db pg_isready -U honua -d honua
+          # The readiness loop is authoritative. A bare `pg_isready` here under `set -e` previously
+          # aborted the whole step when PostGIS's first-boot initdb bounced the server between the
+          # loop's success and this check; the app container has its own connection retries + a sleep.
+          if [ "$ready" != true ]; then
+            echo "::error::PostGIS did not become ready in time"
+            docker logs honua-runtime-db || true
+            exit 1
+          fi
 
           docker run -d \
             --name honua-runtime-test \
