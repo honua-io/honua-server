@@ -187,7 +187,12 @@ public sealed class MapGenerationService : IMapGenerationService
                 return ErrorProposal("Provider returned an empty response.");
             }
 
-            var proposal = JsonSerializer.Deserialize(content, MapGenerationJsonContext.Default.MapGenerationModelProposal);
+            // The server owns map.createdAt / map.status / map.format (Normalize forces canonical values),
+            // so a small local model emitting a non-canonical value for any of them must not fail the parse.
+            // Strip those server-owned fields from the model JSON before deserializing; they default and are
+            // then overwritten. Best-effort: if sanitization fails, deserialize the original content.
+            var sanitized = SanitizeServerOwnedMapFields(content);
+            var proposal = JsonSerializer.Deserialize(sanitized, MapGenerationJsonContext.Default.MapGenerationModelProposal);
             return proposal ?? ErrorProposal("Failed to deserialize the map proposal from the provider response.");
         }
         catch (TaskCanceledException ex) when (ex.InnerException is TimeoutException)
@@ -206,6 +211,32 @@ public sealed class MapGenerationService : IMapGenerationService
         {
             return ErrorProposal($"Failed to parse provider response: {ex.Message}");
         }
+    }
+
+    // The server owns map.createdAt (Normalize forces format/status, but createdAt is a required typed
+    // DateTimeOffset). A small local model often emits a non-parseable createdAt (e.g. a date-only or
+    // templated value), which fails the strict deserialize before the server can override it. Replace it
+    // with a valid placeholder so the parse succeeds; the package's real timestamp is set server-side.
+    // Best-effort: returns the original content on any failure so the caller surfaces a clear error.
+    private static string SanitizeServerOwnedMapFields(string content)
+    {
+        try
+        {
+            var node = System.Text.Json.Nodes.JsonNode.Parse(content);
+            if (node is System.Text.Json.Nodes.JsonObject root
+                && root.TryGetPropertyValue("map", out var mapNode)
+                && mapNode is System.Text.Json.Nodes.JsonObject map)
+            {
+                map["createdAt"] = "2000-01-01T00:00:00+00:00";
+                return root.ToJsonString();
+            }
+        }
+        catch (JsonException)
+        {
+            // Fall through to the original content; the caller's deserialize will surface a clear error.
+        }
+
+        return content;
     }
 
     private static MapGenerationResult Unsupported(string reason) => new()
