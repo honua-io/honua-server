@@ -19,6 +19,14 @@ public interface IStudioPackageStore
     /// <summary>Gets a mutable package draft by identifier.</summary>
     Task<StudioPackageDraft?> GetDraftAsync(Guid draftId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Enumerates secret-safe package-draft summaries matching the supplied filter, ordered by most-recent
+    /// update first. Returns an empty list when no drafts match.
+    /// </summary>
+    Task<IReadOnlyList<StudioPackageDraftSummary>> ListDraftsAsync(
+        StudioPackageDraftFilter filter,
+        CancellationToken cancellationToken = default);
+
     /// <summary>Updates a mutable package draft.</summary>
     Task<StudioPackageDraft?> UpdateDraftAsync(StudioPackageDraft draft, CancellationToken cancellationToken = default);
 
@@ -87,6 +95,11 @@ public interface IStudioPackageLifecycleService
 
     /// <summary>Gets a mutable package draft.</summary>
     Task<StudioPackageDraft?> GetDraftAsync(Guid draftId, CancellationToken cancellationToken = default);
+
+    /// <summary>Enumerates secret-safe package-draft summaries matching the supplied filter (newest first).</summary>
+    Task<IReadOnlyList<StudioPackageDraftSummary>> ListDraftsAsync(
+        StudioPackageDraftFilter filter,
+        CancellationToken cancellationToken = default);
 
     /// <summary>Updates a mutable package draft.</summary>
     Task<StudioPackageDraft?> UpdateDraftAsync(Guid draftId, UpdateStudioPackageDraftCommand command, CancellationToken cancellationToken = default);

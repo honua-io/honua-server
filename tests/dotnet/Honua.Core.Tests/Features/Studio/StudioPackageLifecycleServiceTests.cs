@@ -519,6 +519,11 @@ public sealed class StudioPackageLifecycleServiceTests
             return null;
         }
 
+        public Task<IReadOnlyList<StudioPackageDraftSummary>> ListDraftsAsync(
+            StudioPackageDraftFilter filter,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<StudioPackageDraftSummary>>([]);
+
         public Task<StudioPackageDraft?> UpdateDraftAsync(
             StudioPackageDraft draft,
             CancellationToken cancellationToken = default)

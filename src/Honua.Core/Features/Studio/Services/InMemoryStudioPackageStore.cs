@@ -56,6 +56,32 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
     }
 
     /// <inheritdoc />
+    public Task<IReadOnlyList<StudioPackageDraftSummary>> ListDraftsAsync(
+        StudioPackageDraftFilter filter,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(filter);
+        cancellationToken.ThrowIfCancellationRequested();
+        var normalized = filter.Normalize();
+
+        lock (_gate)
+        {
+            IReadOnlyList<StudioPackageDraftSummary> summaries = _drafts.Values
+                .Where(draft => normalized.Family is null || draft.Family == normalized.Family)
+                .Where(draft => normalized.Status is null || draft.Validation.Status == normalized.Status)
+                .Where(draft => normalized.WorkspaceId is null
+                    || string.Equals(draft.WorkspaceId, normalized.WorkspaceId, StringComparison.Ordinal))
+                .OrderByDescending(static draft => draft.UpdatedAt)
+                .ThenByDescending(static draft => draft.CreatedAt)
+                .Skip(normalized.Offset)
+                .Take(normalized.Limit)
+                .Select(StudioPackageDraftSummary.FromDraft)
+                .ToArray();
+            return Task.FromResult(summaries);
+        }
+    }
+
+    /// <inheritdoc />
     public Task<StudioPackageDraft?> UpdateDraftAsync(StudioPackageDraft draft, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(draft);

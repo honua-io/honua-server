@@ -139,6 +139,70 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
             : null;
     }
 
+    public async Task<IReadOnlyList<StudioPackageDraftSummary>> ListDraftsAsync(
+        StudioPackageDraftFilter filter,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(filter);
+        var normalized = filter.Normalize();
+
+        var conditions = new List<string>();
+        if (normalized.Family is not null)
+        {
+            conditions.Add("family = @family");
+        }
+
+        if (normalized.WorkspaceId is not null)
+        {
+            conditions.Add("workspace_id = @workspace_id");
+        }
+
+        if (normalized.Status is not null)
+        {
+            conditions.Add("validation->>'status' = @status");
+        }
+
+        var whereClause = conditions.Count == 0 ? string.Empty : "WHERE " + string.Join(" AND ", conditions);
+        var sql = $"""
+            SELECT draft_id, item_id, package_key, workspace_id, owner_id, family,
+                   validation, base_version_id, generation,
+                   created_by, updated_by, created_at, updated_at
+            FROM {_draftsTable}
+            {whereClause}
+            ORDER BY updated_at DESC, created_at DESC
+            LIMIT @limit OFFSET @offset
+            """;
+
+        await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, lease.Connection);
+        if (normalized.Family is { } family)
+        {
+            command.Parameters.AddWithValue("@family", ToDbFamily(family));
+        }
+
+        if (normalized.WorkspaceId is { } workspaceId)
+        {
+            command.Parameters.AddWithValue("@workspace_id", workspaceId);
+        }
+
+        if (normalized.Status is { } status)
+        {
+            command.Parameters.AddWithValue("@status", ToDbValidationStatus(status));
+        }
+
+        command.Parameters.AddWithValue("@limit", normalized.Limit);
+        command.Parameters.AddWithValue("@offset", normalized.Offset);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        var summaries = new List<StudioPackageDraftSummary>();
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            summaries.Add(ReadDraftSummary(reader));
+        }
+
+        return summaries;
+    }
+
     public async Task<StudioPackageDraft?> UpdateDraftAsync(
         StudioPackageDraft draft,
         CancellationToken cancellationToken = default)
@@ -820,6 +884,31 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         };
     }
 
+    private static StudioPackageDraftSummary ReadDraftSummary(NpgsqlDataReader reader)
+    {
+        var validation = JsonSerializer.Deserialize(
+                reader.GetString(6),
+                StudioJsonContext.Default.StudioValidationSummary)
+            ?? StudioValidationSummary.NotValidated;
+
+        return new StudioPackageDraftSummary
+        {
+            DraftId = reader.GetGuid(0),
+            ItemId = reader.GetGuid(1),
+            PackageKey = reader.GetString(2),
+            WorkspaceId = reader.IsDBNull(3) ? null : reader.GetString(3),
+            OwnerId = reader.IsDBNull(4) ? null : reader.GetString(4),
+            Family = FromDbFamily(reader.GetString(5)),
+            ValidationStatus = validation.Status,
+            BaseVersionId = reader.IsDBNull(7) ? null : reader.GetGuid(7),
+            Generation = reader.GetInt64(8),
+            CreatedBy = reader.IsDBNull(9) ? null : reader.GetString(9),
+            UpdatedBy = reader.IsDBNull(10) ? null : reader.GetString(10),
+            CreatedAt = reader.GetFieldValue<DateTimeOffset>(11),
+            UpdatedAt = reader.GetFieldValue<DateTimeOffset>(12),
+        };
+    }
+
     private static StudioContentVersion ReadVersion(NpgsqlDataReader reader)
     {
         var envelope = JsonSerializer.Deserialize(
@@ -909,6 +998,15 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         "gp" => StudioPackageFamily.Geoprocessing,
         "etl" => StudioPackageFamily.Etl,
         _ => throw new InvalidDataException("Unsupported Studio package family in storage."),
+    };
+
+    private static string ToDbValidationStatus(StudioPackageValidationStatus status) => status switch
+    {
+        StudioPackageValidationStatus.NotValidated => "not-validated",
+        StudioPackageValidationStatus.Valid => "valid",
+        StudioPackageValidationStatus.Warning => "warning",
+        StudioPackageValidationStatus.Invalid => "invalid",
+        _ => throw new ArgumentException("Unsupported Studio validation status.", nameof(status)),
     };
 
     private static string ToDbPublicationStatus(StudioPublicationRequestStatus status) => status switch

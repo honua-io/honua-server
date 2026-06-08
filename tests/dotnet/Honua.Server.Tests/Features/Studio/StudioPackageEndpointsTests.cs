@@ -208,6 +208,70 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/studio/package-drafts")]
+    public async Task ListDrafts_WithNoDrafts_ReturnsEmptyOk()
+    {
+        var response = await _client.GetAsync("/api/v1/studio/package-drafts");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var list = await ReadAsync<StudioPackageDraftListResponse>(
+            response,
+            StudioApiJsonContext.Default.ApiResponseStudioPackageDraftListResponse);
+        list.Drafts.Should().BeEmpty();
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/package-drafts")]
+    [Endpoint("GET /api/v1/studio/package-drafts")]
+    public async Task ListDrafts_AfterCreate_ReturnsSummariesAndHonoursFilters()
+    {
+        var createResponse = await PostAsync(
+            "/api/v1/studio/package-drafts",
+            new CreateStudioPackageDraftRequest
+            {
+                PackageKey = "listable-query",
+                WorkspaceId = "studio",
+                Envelope = BuildEnvelope("1=1"),
+            },
+            StudioApiJsonContext.Default.CreateStudioPackageDraftRequest);
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var draft = await ReadAsync<StudioPackageDraft>(
+            createResponse,
+            StudioApiJsonContext.Default.ApiResponseStudioPackageDraft);
+
+        // Unfiltered list surfaces the new draft as a secret-safe summary (no envelope body).
+        var listResponse = await _client.GetAsync("/api/v1/studio/package-drafts");
+        listResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var list = await ReadAsync<StudioPackageDraftListResponse>(
+            listResponse,
+            StudioApiJsonContext.Default.ApiResponseStudioPackageDraftListResponse);
+        list.Drafts.Should().ContainSingle(summary => summary.DraftId == draft.DraftId);
+        var summary = list.Drafts.Single(item => item.DraftId == draft.DraftId);
+        summary.PackageKey.Should().Be("listable-query");
+        summary.Family.Should().Be(StudioPackageFamily.Query);
+        summary.ValidationStatus.Should().Be(StudioPackageValidationStatus.Valid);
+
+        // A matching family filter keeps the draft.
+        var matchingFamily = await _client.GetAsync("/api/v1/studio/package-drafts?family=query");
+        matchingFamily.StatusCode.Should().Be(HttpStatusCode.OK);
+        var matched = await ReadAsync<StudioPackageDraftListResponse>(
+            matchingFamily,
+            StudioApiJsonContext.Default.ApiResponseStudioPackageDraftListResponse);
+        matched.Drafts.Should().Contain(item => item.DraftId == draft.DraftId);
+
+        // A non-matching family filter excludes it; an unknown family is rejected.
+        var otherFamily = await _client.GetAsync("/api/v1/studio/package-drafts?family=map");
+        otherFamily.StatusCode.Should().Be(HttpStatusCode.OK);
+        var other = await ReadAsync<StudioPackageDraftListResponse>(
+            otherFamily,
+            StudioApiJsonContext.Default.ApiResponseStudioPackageDraftListResponse);
+        other.Drafts.Should().NotContain(item => item.DraftId == draft.DraftId);
+
+        var badFamily = await _client.GetAsync("/api/v1/studio/package-drafts?family=not-a-family");
+        badFamily.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/studio/package-families")]
     public async Task StudioPackageLifecycleEndpoints_WithoutAdmin_ReturnsUnauthorized()
     {

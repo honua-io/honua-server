@@ -23,6 +23,7 @@ namespace Honua.Core.Features.Studio.Domain;
 [JsonSerializable(typeof(StudioPackageFamilyDescriptor))]
 [JsonSerializable(typeof(StudioPackageFamilyCapabilities))]
 [JsonSerializable(typeof(StudioPackageDraft))]
+[JsonSerializable(typeof(StudioPackageDraftSummary))]
 [JsonSerializable(typeof(StudioContentVersion))]
 [JsonSerializable(typeof(StudioContentItemPointers))]
 [JsonSerializable(typeof(StudioPublicationRequest))]

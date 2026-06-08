@@ -95,6 +95,22 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
     }
 
     /// <inheritdoc />
+    public async Task<IReadOnlyList<StudioPackageDraftSummary>> ListDraftsAsync(
+        StudioPackageDraftFilter filter,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(filter);
+        using var activity = ActivitySource.StartActivity("studio.package.draft.list");
+        var normalized = filter.Normalize();
+        if (normalized.Family is { } family)
+        {
+            activity?.SetTag("studio.family", family.ToString());
+        }
+
+        return await _store.ListDraftsAsync(normalized, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
     public async Task<StudioPackageDraft?> UpdateDraftAsync(
         Guid draftId,
         UpdateStudioPackageDraftCommand command,

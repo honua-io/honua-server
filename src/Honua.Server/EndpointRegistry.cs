@@ -265,6 +265,7 @@ public static class EndpointRegistry
 
         // v1 Studio package lifecycle endpoints (#1180)
         new("GET", "/api/v1/studio/package-families"),
+        new("GET", "/api/v1/studio/package-drafts"),
         new("POST", "/api/v1/studio/package-drafts"),
         new("GET", "/api/v1/studio/package-drafts/{draftId}"),
         new("PUT", "/api/v1/studio/package-drafts/{draftId}"),

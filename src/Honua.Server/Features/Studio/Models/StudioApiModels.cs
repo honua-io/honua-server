@@ -132,6 +132,16 @@ public sealed class CreateStudioRollbackRequest
 }
 
 /// <summary>
+/// Response body for listing Studio package-draft summaries.
+/// </summary>
+public sealed class StudioPackageDraftListResponse
+{
+    /// <summary>Secret-safe package-draft summaries, ordered by most-recent update first.</summary>
+    [JsonPropertyName("drafts")]
+    public required IReadOnlyList<StudioPackageDraftSummary> Drafts { get; init; }
+}
+
+/// <summary>
 /// Response body for listing immutable content versions.
 /// </summary>
 public sealed class StudioContentVersionListResponse

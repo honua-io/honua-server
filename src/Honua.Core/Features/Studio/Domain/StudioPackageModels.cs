@@ -350,6 +350,121 @@ public sealed record StudioPackageDraft
 }
 
 /// <summary>
+/// Secret-safe summary of a Studio package draft for enumeration. Carries identity, family, the package
+/// key, validation status, generation, and timestamps, but never the full package graph (no envelope
+/// bindings/body), so listing existing packages never leaks credentialed binding details.
+/// </summary>
+public sealed record StudioPackageDraftSummary
+{
+    /// <summary>Draft identifier.</summary>
+    [JsonPropertyName("draftId")]
+    public required Guid DraftId { get; init; }
+
+    /// <summary>Content item identifier owned by the Studio lifecycle.</summary>
+    [JsonPropertyName("itemId")]
+    public required Guid ItemId { get; init; }
+
+    /// <summary>Machine-friendly package key.</summary>
+    [JsonPropertyName("packageKey")]
+    public required string PackageKey { get; init; }
+
+    /// <summary>Workspace identifier.</summary>
+    [JsonPropertyName("workspaceId")]
+    public string? WorkspaceId { get; init; }
+
+    /// <summary>Owner principal identifier.</summary>
+    [JsonPropertyName("ownerId")]
+    public string? OwnerId { get; init; }
+
+    /// <summary>Package family.</summary>
+    [JsonPropertyName("family")]
+    public required StudioPackageFamily Family { get; init; }
+
+    /// <summary>Last known validation status for the draft.</summary>
+    [JsonPropertyName("validationStatus")]
+    public required StudioPackageValidationStatus ValidationStatus { get; init; }
+
+    /// <summary>Version this draft was reopened from, when applicable.</summary>
+    [JsonPropertyName("baseVersionId")]
+    public Guid? BaseVersionId { get; init; }
+
+    /// <summary>Optimistic concurrency generation.</summary>
+    [JsonPropertyName("generation")]
+    public long Generation { get; init; }
+
+    /// <summary>Identifier of the actor that created the draft.</summary>
+    [JsonPropertyName("createdBy")]
+    public string? CreatedBy { get; init; }
+
+    /// <summary>Identifier of the actor that last updated the draft.</summary>
+    [JsonPropertyName("updatedBy")]
+    public string? UpdatedBy { get; init; }
+
+    /// <summary>Timestamp when the draft was created.</summary>
+    [JsonPropertyName("createdAt")]
+    public required DateTimeOffset CreatedAt { get; init; }
+
+    /// <summary>Timestamp when the draft was last updated.</summary>
+    [JsonPropertyName("updatedAt")]
+    public required DateTimeOffset UpdatedAt { get; init; }
+
+    /// <summary>Projects a draft to its secret-safe summary.</summary>
+    public static StudioPackageDraftSummary FromDraft(StudioPackageDraft draft)
+    {
+        ArgumentNullException.ThrowIfNull(draft);
+        return new StudioPackageDraftSummary
+        {
+            DraftId = draft.DraftId,
+            ItemId = draft.ItemId,
+            PackageKey = draft.PackageKey,
+            WorkspaceId = draft.WorkspaceId,
+            OwnerId = draft.OwnerId,
+            Family = draft.Family,
+            ValidationStatus = draft.Validation.Status,
+            BaseVersionId = draft.BaseVersionId,
+            Generation = draft.Generation,
+            CreatedBy = draft.CreatedBy,
+            UpdatedBy = draft.UpdatedBy,
+            CreatedAt = draft.CreatedAt,
+            UpdatedAt = draft.UpdatedAt,
+        };
+    }
+}
+
+/// <summary>
+/// Optional filters for enumerating Studio package drafts. All filters are optional; an unfiltered query
+/// returns every draft. Paging is applied after filtering and ordering (newest update first).
+/// </summary>
+public sealed record StudioPackageDraftFilter
+{
+    /// <summary>Maximum number of drafts that may be returned by a single list query.</summary>
+    public const int MaxLimit = 200;
+
+    /// <summary>Optional package-family filter.</summary>
+    public StudioPackageFamily? Family { get; init; }
+
+    /// <summary>Optional validation-status filter.</summary>
+    public StudioPackageValidationStatus? Status { get; init; }
+
+    /// <summary>Optional workspace filter.</summary>
+    public string? WorkspaceId { get; init; }
+
+    /// <summary>Maximum number of drafts to return (clamped to <see cref="MaxLimit"/>).</summary>
+    public int Limit { get; init; } = MaxLimit;
+
+    /// <summary>Number of drafts to skip for paging.</summary>
+    public int Offset { get; init; }
+
+    /// <summary>Clamps the limit/offset to safe bounds.</summary>
+    public StudioPackageDraftFilter Normalize() => this with
+    {
+        Limit = Limit <= 0 ? MaxLimit : Math.Min(Limit, MaxLimit),
+        Offset = Offset < 0 ? 0 : Offset,
+        WorkspaceId = string.IsNullOrWhiteSpace(WorkspaceId) ? null : WorkspaceId.Trim(),
+    };
+}
+
+/// <summary>
 /// Immutable Studio content version.
 /// </summary>
 public sealed record StudioContentVersion

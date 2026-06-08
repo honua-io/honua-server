@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.ComponentModel.DataAnnotations;
+using System.Globalization;
 using System.Text.Json;
 using Honua.Ai.AppGeneration;
 using Honua.Ai.MapGeneration;
@@ -37,6 +38,11 @@ internal static class StudioPackageEndpoints
         group.MapGet("/package-families", HandleGetPackageFamilies)
             .WithDisplayName("List Studio Package Families")
             .WithSummary("Returns Studio package family capability descriptors for Console authoring.")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+
+        group.MapGet("/package-drafts", HandleListDrafts)
+            .WithDisplayName("List Studio Package Drafts")
+            .WithSummary("Lists secret-safe Studio package-draft summaries, optionally filtered by family/status/workspace.")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
         group.MapPost("/package-drafts", HandleCreateDraft)
@@ -195,6 +201,137 @@ internal static class StudioPackageEndpoints
         return Results.Json(
             ApiResponse<StudioPackageFamilyCapabilities>.CreateSuccess(capabilities),
             StudioApiJsonContext.Default.ApiResponseStudioPackageFamilyCapabilities);
+    }
+
+    private static async Task<IResult> HandleListDrafts(
+        [FromServices] IStudioPackageLifecycleService service,
+        [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
+        HttpContext context)
+    {
+        var query = context.Request.Query;
+
+        // `family` is the canonical filter; `packageType` is accepted as an alias for the same wire value so
+        // a console surface that thinks in terms of "package type" can bind without translation.
+        var familyToken = FirstNonEmpty(query["family"], query["packageType"]);
+        StudioPackageFamily? family = null;
+        if (familyToken is not null)
+        {
+            if (!TryParseFamily(familyToken, out var parsedFamily))
+            {
+                return BadRequest(context, $"family '{familyToken}' is not a supported Studio package family.");
+            }
+
+            family = parsedFamily;
+        }
+
+        var statusToken = FirstNonEmpty(query["status"]);
+        StudioPackageValidationStatus? status = null;
+        if (statusToken is not null)
+        {
+            if (!TryParseStatus(statusToken, out var parsedStatus))
+            {
+                return BadRequest(context, $"status '{statusToken}' is not a supported Studio validation status.");
+            }
+
+            status = parsedStatus;
+        }
+
+        var filter = new StudioPackageDraftFilter
+        {
+            Family = family,
+            Status = status,
+            WorkspaceId = FirstNonEmpty(query["workspaceId"]),
+            Limit = ParseInt(query["limit"], StudioPackageDraftFilter.MaxLimit),
+            Offset = ParseInt(query["offset"], 0),
+        };
+
+        try
+        {
+            var drafts = await service.ListDraftsAsync(filter, context.RequestAborted).ConfigureAwait(false);
+            return Results.Json(
+                ApiResponse<StudioPackageDraftListResponse>.CreateSuccess(new StudioPackageDraftListResponse
+                {
+                    Drafts = drafts,
+                }),
+                StudioApiJsonContext.Default.ApiResponseStudioPackageDraftListResponse);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            StudioEndpointsLog.EndpointFailed(logger, "draft.list", ex);
+            return ServerError(context, "Studio package drafts could not be listed.");
+        }
+    }
+
+    private static string? FirstNonEmpty(params Microsoft.Extensions.Primitives.StringValues[] values)
+    {
+        foreach (var value in values)
+        {
+            var candidate = value.ToString();
+            if (!string.IsNullOrWhiteSpace(candidate))
+            {
+                return candidate.Trim();
+            }
+        }
+
+        return null;
+    }
+
+    private static int ParseInt(Microsoft.Extensions.Primitives.StringValues value, int fallback)
+        => int.TryParse(value.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : fallback;
+
+    private static bool TryParseFamily(string? token, out StudioPackageFamily family)
+    {
+        family = default;
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            return false;
+        }
+
+        family = token.Trim().ToLowerInvariant() switch
+        {
+            "query" => StudioPackageFamily.Query,
+            "analysis" => StudioPackageFamily.Analysis,
+            "map" => StudioPackageFamily.Map,
+            "dashboard" => StudioPackageFamily.Dashboard,
+            "report" => StudioPackageFamily.Report,
+            "form" => StudioPackageFamily.Form,
+            "app" => StudioPackageFamily.App,
+            "workflow" => StudioPackageFamily.Workflow,
+            "gp" => StudioPackageFamily.Geoprocessing,
+            "etl" => StudioPackageFamily.Etl,
+            _ => (StudioPackageFamily)(-1),
+        };
+
+        return StudioPackageEnumHelpers.IsDefined(family);
+    }
+
+    private static bool TryParseStatus(string? token, out StudioPackageValidationStatus status)
+    {
+        status = default;
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            return false;
+        }
+
+        switch (token.Trim().ToLowerInvariant())
+        {
+            case "not-validated":
+                status = StudioPackageValidationStatus.NotValidated;
+                return true;
+            case "valid":
+                status = StudioPackageValidationStatus.Valid;
+                return true;
+            case "warning":
+                status = StudioPackageValidationStatus.Warning;
+                return true;
+            case "invalid":
+                status = StudioPackageValidationStatus.Invalid;
+                return true;
+            default:
+                return false;
+        }
     }
 
     private static async Task<IResult> HandleCreateDraft(
