@@ -26,9 +26,13 @@ internal static class CogServiceCollectionExtensions
         // Register the tile resolver
         services.AddScoped<ICogTileResolver, CogTileResolver>();
 
-        // Register range readers based on available provider configurations
+        // Register range readers based on available provider configurations.
+#if !HONUA_EXCLUDE_AWS
         services.AddAwsCloudRangeReader(configuration);
+#endif
+#if !HONUA_EXCLUDE_AZURE
         services.AddAzureCloudRangeReader(configuration);
+#endif
 
         return services;
     }

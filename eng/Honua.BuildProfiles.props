@@ -1,0 +1,35 @@
+<Project>
+  <PropertyGroup>
+    <HonuaBuildProfile Condition="'$(HonuaBuildProfile)' == ''">full</HonuaBuildProfile>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(HonuaBuildProfile)' == 'no-cloud'">
+    <HonuaIncludeAws Condition="'$(HonuaIncludeAws)' == ''">false</HonuaIncludeAws>
+    <HonuaIncludeAzure Condition="'$(HonuaIncludeAzure)' == ''">false</HonuaIncludeAzure>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(HonuaBuildProfile)' == 'slim'">
+    <HonuaIncludeAws Condition="'$(HonuaIncludeAws)' == ''">false</HonuaIncludeAws>
+    <HonuaIncludeAzure Condition="'$(HonuaIncludeAzure)' == ''">false</HonuaIncludeAzure>
+    <HonuaIncludeOracle Condition="'$(HonuaIncludeOracle)' == ''">false</HonuaIncludeOracle>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <HonuaIncludeAws Condition="'$(HonuaIncludeAws)' == ''">true</HonuaIncludeAws>
+    <HonuaIncludeAzure Condition="'$(HonuaIncludeAzure)' == ''">true</HonuaIncludeAzure>
+    <HonuaIncludeOracle Condition="'$(HonuaSkipOracleForAotVerification)' == 'true'">false</HonuaIncludeOracle>
+    <HonuaIncludeOracle Condition="'$(HonuaIncludeOracle)' == ''">true</HonuaIncludeOracle>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <DefineConstants Condition="'$(HonuaIncludeAws)' != 'true'">$(DefineConstants);HONUA_EXCLUDE_AWS</DefineConstants>
+    <DefineConstants Condition="'$(HonuaIncludeAzure)' != 'true'">$(DefineConstants);HONUA_EXCLUDE_AZURE</DefineConstants>
+    <DefineConstants Condition="'$(HonuaIncludeOracle)' != 'true'">$(DefineConstants);HONUA_SKIP_ORACLE;HONUA_EXCLUDE_ORACLE</DefineConstants>
+  </PropertyGroup>
+
+  <Target Name="ValidateHonuaBuildProfile" BeforeTargets="PrepareForBuild;Restore">
+    <Error
+      Condition="'$(HonuaBuildProfile)' != 'full' and '$(HonuaBuildProfile)' != 'no-cloud' and '$(HonuaBuildProfile)' != 'slim'"
+      Text="Unsupported HonuaBuildProfile '$(HonuaBuildProfile)'. Supported profiles: full, no-cloud, slim." />
+  </Target>
+</Project>

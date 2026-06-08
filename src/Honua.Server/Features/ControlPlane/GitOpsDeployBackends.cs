@@ -39,6 +39,7 @@ internal sealed class AzureContainerAppsGitOpsDeployBackend(ILogger<AzureContain
     public override DeployTargetKind TargetKind => DeployTargetKind.AzureContainerApps;
 }
 
+#if !HONUA_EXCLUDE_AZURE
 /// <summary>
 /// Direct Azure Container Apps revision traffic backend that manages revision traffic splitting
 /// through the ARM REST API without requiring an external GitOps controller.
@@ -459,7 +460,9 @@ internal sealed partial class AzureContainerAppsRevisionDeployBackend(
         public static partial void StateLookupFailed(ILogger logger, string operationId, string targetId, string errorMessage);
     }
 }
+#endif
 
+#if !HONUA_EXCLUDE_AZURE
 /// <summary>
 /// Built-in GitOps deploy backend for Azure Functions targets managed by Honua.
 /// </summary>
@@ -870,6 +873,7 @@ internal sealed partial class AzureFunctionsGitOpsDeployBackend(
         public static partial void StateLookupFailed(ILogger logger, string operationId, string targetId, string errorMessage);
     }
 }
+#endif
 
 /// <summary>
 /// Shared Azure resource ID parser for ARM-based deploy backends.

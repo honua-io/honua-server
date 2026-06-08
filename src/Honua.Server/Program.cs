@@ -292,7 +292,9 @@ if (!isTestEnvironment || registerInfrastructureInTestEnvironment)
 Honua.Postgres.Features.Security.PostgresConnectionDriverServiceCollectionExtensions.AddPostgresConnectionDriver(builder.Services);
 Honua.MySql.Features.Security.MySqlConnectionDriverServiceCollectionExtensions.AddMySqlConnectionDriver(builder.Services);
 Honua.SqlServer.Features.Security.SqlServerConnectionDriverServiceCollectionExtensions.AddSqlServerConnectionDriver(builder.Services);
+#if !HONUA_SKIP_ORACLE
 Honua.Oracle.Features.Security.OracleConnectionDriverServiceCollectionExtensions.AddOracleConnectionDriver(builder.Services);
+#endif
 builder.Services.AddSingleton<Honua.Core.Features.Security.Abstractions.IConnectionDriverRegistry, Honua.Core.Features.Security.Abstractions.ConnectionDriverRegistry>();
 
 // IGeometryService is a pure NTS-backed compute service (its only dependency is
@@ -378,10 +380,12 @@ builder.Services.AddResilientHttpClient(
     configureHandler: () => KubernetesJobClient.CreatePrimaryHandler(
         kubernetesInClusterAutoDetect,
         kubernetesCaBundlePath));
+#if !HONUA_EXCLUDE_AZURE
 builder.Services.AddResilientHttpClient(
     AzureBatchDataPlaneClient.HttpClientName,
     "control-plane-azure-batch",
     HttpResiliencePolicies.FastApiDefaults);
+#endif
 // ---- Extracted: control-plane deploy + batch-compute backends (Startup/BatchAndDeployBackendsRegistration.cs)
 builder.Services.AddHonuaBatchAndDeployBackends();
 // ---- End extracted block

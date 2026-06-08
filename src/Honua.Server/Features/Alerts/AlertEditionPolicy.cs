@@ -64,13 +64,29 @@ internal sealed class AlertEditionPolicy : IAlertEditionPolicy
             AlertChannelType.Email => _deliveryOptions.Dispatch.Email is { SmtpHost.Length: > 0, FromAddress.Length: > 0, DefaultRecipient.Length: > 0 },
             AlertChannelType.Digest => !string.IsNullOrWhiteSpace(_options.Dispatch.Digest.WebhookUrl)
                 && !string.IsNullOrWhiteSpace(_options.Dispatch.Digest.WebhookSecret),
-            AlertChannelType.AwsSns => !string.IsNullOrWhiteSpace(_deliveryOptions.Dispatch.AwsSns?.TopicArn),
-            AlertChannelType.AzureEventGrid => !string.IsNullOrWhiteSpace(_deliveryOptions.Dispatch.AzureEventGrid?.TopicEndpoint),
             AlertChannelType.Slack => !string.IsNullOrWhiteSpace(_deliveryOptions.Dispatch.Slack?.WebhookUrl),
             AlertChannelType.MicrosoftTeams => !string.IsNullOrWhiteSpace(_deliveryOptions.Dispatch.Teams?.WebhookUrl),
+
+            // AWS / Azure channels are only deliverable when the build includes their cloud SDK. In
+            // no-cloud / slim builds they are backed solely by UnsupportedAlertDeliverySink, so they
+            // must report as unconfigured regardless of any leftover AlertDelivery:Dispatch:* settings —
+            // otherwise AlertPipeline would route to (and AlertAdminEndpoints would advertise) a channel
+            // whose every delivery fails immediately with the unsupported sink.
+#if HONUA_EXCLUDE_AWS
+            AlertChannelType.AwsSns => false,
+            AlertChannelType.AwsSqs => false,
+#else
+            AlertChannelType.AwsSns => !string.IsNullOrWhiteSpace(_deliveryOptions.Dispatch.AwsSns?.TopicArn),
             AlertChannelType.AwsSqs => !string.IsNullOrWhiteSpace(_deliveryOptions.Dispatch.AwsSqs?.QueueUrl),
+#endif
+#if HONUA_EXCLUDE_AZURE
+            AlertChannelType.AzureEventGrid => false,
+            AlertChannelType.AzureEventHub => false,
+#else
+            AlertChannelType.AzureEventGrid => !string.IsNullOrWhiteSpace(_deliveryOptions.Dispatch.AzureEventGrid?.TopicEndpoint),
             AlertChannelType.AzureEventHub => !string.IsNullOrWhiteSpace(_deliveryOptions.Dispatch.AzureEventHub?.ConnectionString)
                 && !string.IsNullOrWhiteSpace(_deliveryOptions.Dispatch.AzureEventHub?.EventHubName),
+#endif
             _ => false
         };
     }

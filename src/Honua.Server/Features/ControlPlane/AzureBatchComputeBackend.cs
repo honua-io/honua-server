@@ -6,6 +6,7 @@ using System.Net;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 
+#if !HONUA_EXCLUDE_AZURE
 namespace Honua.ControlPlane;
 
 /// <summary>
@@ -547,3 +548,4 @@ internal sealed partial class AzureBatchComputeBackend(
         public static partial void JobAlreadyExists(ILogger logger, string operationId, string jobId, string poolId);
     }
 }
+#endif
