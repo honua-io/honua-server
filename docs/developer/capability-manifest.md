@@ -101,7 +101,7 @@ Example response excerpt, with required sections such as `packages` and `limits`
       {
         "key": "import.file",
         "active": true,
-        "minimumEdition": "Pro"
+        "minimumEdition": "Community"
       }
     ],
     "authorizationNotice": "Manifest availability is informational only; operation endpoints remain the source of truth for authorization, tenant, environment, license, and resource checks."

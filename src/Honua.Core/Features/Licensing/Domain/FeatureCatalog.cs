@@ -145,9 +145,9 @@ public static class FeatureCatalog
         new("caching.redis", "Redis Distributed Cache", Categories.Caching,
             HonuaEdition.Pro, "Redis-backed distributed cache for multi-node deployments."),
 
-        // Import — Pro
+        // Import — Community (one-shot file import ships in Community; see docs/features/README.md)
         new("import.file", "File Import", Categories.Import,
-            HonuaEdition.Pro, "Import geospatial data from file uploads (GeoJSON, Shapefile, GeoPackage)."),
+            HonuaEdition.Community, "Import geospatial data from file uploads (GeoJSON, Shapefile, GeoPackage)."),
 
         // Streaming — Pro
         new("streaming.feature-subscriptions", "Real-Time Feature Streams", Categories.Streaming,
