@@ -19,8 +19,12 @@ namespace Honua.Protocols.GeoServices.VersionManagementServer.Models;
 [JsonSerializable(typeof(VersionListResponse))]
 [JsonSerializable(typeof(CreateVersionResponse))]
 [JsonSerializable(typeof(VersionMomentResponse))]
+[JsonSerializable(typeof(VersionConflictFieldDiffInfo))]
+[JsonSerializable(typeof(VersionConflictFieldDiffInfo[]))]
 [JsonSerializable(typeof(VersionConflictInfo))]
 [JsonSerializable(typeof(VersionConflictInfo[]))]
 [JsonSerializable(typeof(ReconcileResponse))]
+[JsonSerializable(typeof(InspectConflictsResponse))]
+[JsonSerializable(typeof(ResolveConflictsResponse))]
 [JsonSerializable(typeof(PostResponse))]
 internal sealed partial class VersionManagementJsonContext : System.Text.Json.Serialization.JsonSerializerContext;
