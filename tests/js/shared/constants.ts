@@ -89,6 +89,8 @@ export const VALID_ESRI_GEOMETRY_TYPES = [
   'esriGeometryPolyline',
   'esriGeometryPolygon',
   'esriGeometryEnvelope',
+  // Honua reports Mixed / None / GeometryCollection layers' geometryType as esriGeometryNull.
+  'esriGeometryNull',
 ] as const;
 
 // =============================================================================

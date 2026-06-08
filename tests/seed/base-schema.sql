@@ -951,8 +951,11 @@ INSERT INTO honua.layers (
     geometry_type, srid, extent, default_visibility
 )
 VALUES (
+    -- 'Mixed' so the heterogeneous JS geometry round-trip suite (point + line + polygon on one
+    -- layer) is accepted by the edit-time geometry-type enforcement. A 'Point' layer rejects
+    -- polyline/polygon adds. Mirrors the same fix applied to the local seed in tests/python/shared/postgis.py.
     0, 'Test Layer', 'Default layer for integration tests',
-    'features', 'Point', 4326,
+    'features', 'Mixed', 4326,
     ST_MakeEnvelope(-122.5, 37.7, -122.35, 37.84, 4326), true
 )
 ON CONFLICT (layer_id) DO UPDATE SET
