@@ -59,6 +59,43 @@ internal static class MapGenerationPrompt
             sb.AppendLine();
         }
 
+        if (request.AvailableSources is { Count: > 0 })
+        {
+            sb.AppendLine();
+            sb.AppendLine("REAL published sources available in this workspace. When the request matches one of these,");
+            sb.AppendLine("you MUST bind it directly: set the sourceBinding locator.serviceId and locator.layerId to the EXACT");
+            sb.AppendLine("values below (use the layerId verbatim), and prefer its protocol. Do NOT use a placeholder url when a");
+            sb.AppendLine("real source matches. Set initialView.bbox to the matched source's extent so the data is in view:");
+            foreach (var source in request.AvailableSources)
+            {
+                sb.Append("- serviceId=\"").Append(source.ServiceId).Append("\" layerId=\"").Append(source.LayerId).Append('"');
+                if (!string.IsNullOrWhiteSpace(source.Name))
+                {
+                    sb.Append(" name=\"").Append(source.Name).Append('"');
+                }
+
+                if (!string.IsNullOrWhiteSpace(source.GeometryType))
+                {
+                    sb.Append(" geometry=").Append(source.GeometryType);
+                }
+
+                if (!string.IsNullOrWhiteSpace(source.Protocol))
+                {
+                    sb.Append(" protocol=").Append(source.Protocol);
+                }
+
+                if (source.Bbox is { Length: 4 } bbox)
+                {
+                    sb.Append(" extent=[").Append(bbox[0]).Append(", ").Append(bbox[1]).Append(", ")
+                      .Append(bbox[2]).Append(", ").Append(bbox[3]).Append(']');
+                }
+
+                sb.AppendLine();
+            }
+
+            sb.AppendLine();
+        }
+
         sb.Append("Allowed source protocols: ").AppendLine(string.Join(", ", SourceProtocols));
         sb.Append("Suggested basemaps: ").AppendLine(string.Join(", ", Basemaps));
         return sb.ToString();
@@ -103,4 +140,5 @@ internal sealed record MapGenerationProviderRequest
     public IReadOnlyList<MapGenerationAnswer> Answers { get; init; } = [];
     public MapPackage? CurrentMap { get; init; }
     public IReadOnlyList<MapValidationIssue> RepairFailures { get; init; } = [];
+    public IReadOnlyList<MapGenerationSource> AvailableSources { get; init; } = [];
 }

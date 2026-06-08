@@ -184,7 +184,8 @@ internal static class StudioPackageEndpoints
                 Model = request.Model,
                 CurrentMap = request.Package,
                 Conversation = request.Conversation,
-                Answers = request.Answers
+                Answers = request.Answers,
+                AvailableSources = request.AvailableSources
             },
             context.RequestAborted).ConfigureAwait(false);
 

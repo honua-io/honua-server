@@ -57,7 +57,8 @@ public sealed class MapGenerationService : IMapGenerationService
             ModelOverride = request.Model,
             Conversation = request.Conversation,
             Answers = request.Answers,
-            CurrentMap = request.CurrentMap
+            CurrentMap = request.CurrentMap,
+            AvailableSources = request.AvailableSources
         };
 
         var proposal = await CallModelAsync(providerRequest, options, providerId, model, cancellationToken).ConfigureAwait(false);

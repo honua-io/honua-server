@@ -27,6 +27,36 @@ public sealed record MapGenerationRequest
     public MapPackage? CurrentMap { get; init; }
     public IReadOnlyList<MapGenerationConversationTurn> Conversation { get; init; } = [];
     public IReadOnlyList<MapGenerationAnswer> Answers { get; init; } = [];
+
+    /// <summary>
+    /// Real, already-published layers the caller knows about (catalog grounding). When the prompt matches one,
+    /// the model binds its real serviceId/layerId/extent instead of inventing a placeholder, so the generated
+    /// map renders real data. Empty means "no catalog" — the model falls back to placeholder bindings.
+    /// </summary>
+    public IReadOnlyList<MapGenerationSource> AvailableSources { get; init; } = [];
+}
+
+/// <summary>One real, published source the model may bind directly (catalog grounding).</summary>
+public sealed record MapGenerationSource
+{
+    [JsonPropertyName("serviceId")]
+    public string ServiceId { get; init; } = string.Empty;
+
+    [JsonPropertyName("layerId")]
+    public string LayerId { get; init; } = string.Empty;
+
+    [JsonPropertyName("name")]
+    public string? Name { get; init; }
+
+    [JsonPropertyName("geometryType")]
+    public string? GeometryType { get; init; }
+
+    [JsonPropertyName("protocol")]
+    public string? Protocol { get; init; }
+
+    /// <summary>Layer extent [minLng, minLat, maxLng, maxLat] in EPSG:4326, for a correct initialView.</summary>
+    [JsonPropertyName("bbox")]
+    public double[]? Bbox { get; init; }
 }
 
 /// <summary>
@@ -83,6 +113,10 @@ public sealed record GenerateMapPackageRequest
 
     [JsonPropertyName("answers")]
     public MapGenerationAnswer[] Answers { get; init => field = value ?? []; } = [];
+
+    /// <summary>Catalog grounding: real published layers the model may bind directly (see MapGenerationSource).</summary>
+    [JsonPropertyName("availableSources")]
+    public MapGenerationSource[] AvailableSources { get; init => field = value ?? []; } = [];
 }
 
 public sealed record MapGenerationConversationTurn
