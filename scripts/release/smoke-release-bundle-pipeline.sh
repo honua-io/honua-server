@@ -42,7 +42,7 @@ echo "Validating: collect-evidence merges registry + results with consistent cou
 exp_gates="$(jq -r '[.integration[] | select(.id|startswith("server-"))] | length' "$REGISTRY")"
 got_gates="$(jq -r '.releaseGates | length' "$W/evidence.json")"
 [[ "$exp_gates" == "$got_gates" ]] || { echo "[ERROR] releaseGates count $got_gates != registry server-* $exp_gates" >&2; exit 1; }
-exp_lanes="$(jq -r '(.sdk|length) + (.repositoryLanes|length)' "$REGISTRY")"
+exp_lanes="$(jq -r '(.sdk|length) + (.repositoryLanes|length) + ([.integration[]|select(.id|startswith("server-")|not)]|length)' "$REGISTRY")"
 got_lanes="$(jq -r '.repositoryLanes | length' "$W/evidence.json")"
 [[ "$exp_lanes" == "$got_lanes" ]] || { echo "[ERROR] repositoryLanes count $got_lanes != registry sdk+lanes $exp_lanes" >&2; exit 1; }
 echo "[OK] evidence merged (gates=$got_gates lanes=$got_lanes)"

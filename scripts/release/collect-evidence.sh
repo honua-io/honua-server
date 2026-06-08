@@ -88,11 +88,14 @@ jq -n \
     } | with_entries(select(.value != null));
 
   {
+    # server-* integration suites are release gates; other dispatched integration
+    # suites (e.g. the console admin lane) are repository lanes.
     releaseGates: [
       $reg.integration[] | select(.id | startswith("server-")) | merge(.; $intByeId[.id])
     ],
     repositoryLanes: (
-      [ $reg.sdk[] | merge(.; $sdkById[.id]) ]
+      [ $reg.integration[] | select(.id | startswith("server-") | not) | merge(.; $intByeId[.id]) ]
+      + [ $reg.sdk[] | merge(.; $sdkById[.id]) ]
       + [ $reg.repositoryLanes[] | merge(.; null) ]
     ),
     releaseLaneCriteria: [

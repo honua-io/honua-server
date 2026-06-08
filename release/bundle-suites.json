@@ -31,13 +31,18 @@
       "owningRepo": "honua-io/honua-server", "tier": "ci",
       "workflow": ".github/workflows/ci.yml",
       "mode": "trunk-status", "imageInput": null, "refactorPending": false,
-      "requirement": "ci.yml integration/protocol test suite green on the candidate ref (branch protection prerequisite)." }
+      "requirement": "ci.yml integration/protocol test suite green on the candidate ref (branch protection prerequisite)." },
+    { "id": "console-admin-integration", "name": "Console live integration (admin surface)",
+      "owningRepo": "honua-io/honua-console", "tier": "nightly",
+      "workflow": ".github/workflows/console-nightly.yml",
+      "mode": "dispatch-cross-repo", "imageInput": "server_image", "refactorPending": false,
+      "requirement": "Honua Console live integration (Studio/Operate/Catalog) green against the RC image. Non-server id, so it lands as a repository lane on the admin surface; supersedes the archived honua-server-admin admin-docs lane." }
   ],
   "sdk": [
     { "id": "sdk-dotnet", "name": ".NET SDK", "owningRepo": "honua-io/honua-sdk-dotnet",
       "publishWorkflow": "publish-dotnet-sdk.yml", "compatWorkflow": "conformance.yml",
       "tagPrefix": "dotnet-sdk-v", "registry": "github-packages",
-      "imageInput": "HONUA_SERVER_IMAGE", "refactorPending": true,
+      "imageInput": "server_image", "refactorPending": false,
       "requirement": "Dotnet SDK conformance green against the RC image; package builds (dry-run)." },
     { "id": "sdk-js", "name": "JS SDK", "owningRepo": "honua-io/honua-sdk-js",
       "publishWorkflow": "publish-js-sdk.yml", "compatWorkflow": "integration.yml",
@@ -47,7 +52,7 @@
     { "id": "sdk-python", "name": "Python SDK", "owningRepo": "honua-io/honua-sdk-python",
       "publishWorkflow": "publish-python-sdk.yml", "compatWorkflow": "conformance.yml",
       "tagPrefix": "python-sdk-v", "registry": "pypi",
-      "imageInput": "HONUA_SERVER_IMAGE", "refactorPending": true,
+      "imageInput": "server_image", "refactorPending": false,
       "requirement": "Python SDK conformance green against the RC image; package builds (dry-run). Closes the local-fallback gap (honua-sdk-python#50)." },
     { "id": "mobile-dotnet-sdk-train", "name": "Mobile SDK train", "owningRepo": "honua-io/honua-mobile",
       "publishWorkflow": "publish-dotnet-mobile.yml", "compatWorkflow": "live-server-integration.yml",
@@ -61,9 +66,6 @@
       "requirement": "Proto contract package builds (dry-run); conformance fixtures versioned with the schema." }
   ],
   "repositoryLanes": [
-    { "id": "admin-docs", "name": "Console/admin docs", "owningRepo": "honua-io/honua-console",
-      "surface": "admin", "requirement": "Admin/console docs distinguish supported surfaces from stubs.",
-      "mode": "manual", "refactorPending": true },
     { "id": "helm-rc-metadata", "name": "Helm chart RC metadata", "owningRepo": "honua-io/honua-helm",
       "surface": "helm", "requirement": "Chart appVersion + image metadata point at the RC image.",
       "mode": "manual", "refactorPending": true },
