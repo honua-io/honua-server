@@ -951,11 +951,11 @@ INSERT INTO honua.layers (
     geometry_type, srid, extent, default_visibility
 )
 VALUES (
-    -- 'Mixed' so the heterogeneous JS geometry round-trip suite (point + line + polygon on one
-    -- layer) is accepted by the edit-time geometry-type enforcement. A 'Point' layer rejects
-    -- polyline/polygon adds. Mirrors the same fix applied to the local seed in tests/python/shared/postgis.py.
+    -- Layer 0 is a Point layer: esri-leaflet's FeatureLayer (and other consumers) require a concrete
+    -- geometryType to render. The heterogeneous JS geometry round-trip suite uses the dedicated
+    -- 'Mixed' layer 1 seeded below instead, so it isn't constrained to a single geometry family.
     0, 'Test Layer', 'Default layer for integration tests',
-    'features', 'Mixed', 4326,
+    'features', 'Point', 4326,
     ST_MakeEnvelope(-122.5, 37.7, -122.35, 37.84, 4326), true
 )
 ON CONFLICT (layer_id) DO UPDATE SET
@@ -1004,6 +1004,47 @@ ON CONFLICT (layer_id, field_name) DO NOTHING;
 -- Bind layer 0 to test_service
 INSERT INTO honua.service_layers (service_name, layer_id, layer_order)
 VALUES ('test_service', 0, 0)
+ON CONFLICT (service_name, layer_id) DO NOTHING;
+
+-- Dedicated 'Mixed' layer (layer 1) for the heterogeneous JS geometry round-trip suite. The edit-time
+-- geometry-type enforcement treats a Mixed layer as unconstrained, so point/line/polygon adds all
+-- succeed here without forcing layer 0 (a Point layer that esri-leaflet's FeatureLayer needs) to drop
+-- its concrete geometryType. The seed_metadata_v2_compat_snapshot() call below picks this layer up.
+INSERT INTO honua.layers (
+    layer_id, layer_name, description, table_name,
+    geometry_type, srid, extent, default_visibility
+)
+VALUES (
+    1, 'Mixed Geometry Test Layer', 'Heterogeneous-geometry layer for JS round-trip tests',
+    'features', 'Mixed', 4326,
+    ST_MakeEnvelope(-122.5, 37.7, -122.35, 37.84, 4326), true
+)
+ON CONFLICT (layer_id) DO UPDATE SET
+    layer_name = EXCLUDED.layer_name,
+    description = EXCLUDED.description,
+    table_name = EXCLUDED.table_name,
+    geometry_type = EXCLUDED.geometry_type,
+    srid = EXCLUDED.srid,
+    extent = EXCLUDED.extent,
+    default_visibility = EXCLUDED.default_visibility;
+
+UPDATE honua.layers
+SET metadata = jsonb_build_object('accessPolicy', jsonb_build_object('allowAnonymous', true))
+WHERE layer_id = 1;
+
+INSERT INTO honua.layer_fields (
+    layer_id, field_name, field_type, field_order,
+    max_length, nullable, default_value, description
+)
+VALUES
+    (1, 'objectid', 'Integer', 0, NULL, false, NULL, 'Object ID'),
+    (1, 'name', 'String', 1, 255, true, NULL, 'Name'),
+    (1, 'description', 'String', 2, 1024, true, NULL, 'Description'),
+    (1, 'shape', 'Geometry', 3, NULL, true, NULL, 'Geometry')
+ON CONFLICT (layer_id, field_name) DO NOTHING;
+
+INSERT INTO honua.service_layers (service_name, layer_id, layer_order)
+VALUES ('test_service', 1, 1)
 ON CONFLICT (service_name, layer_id) DO NOTHING;
 
 -- Deterministic feature rows for CI lanes that only apply base-schema.sql.
