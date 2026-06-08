@@ -9,32 +9,52 @@ namespace Honua.Server.Tests.Features.Console;
 
 /// <summary>
 /// Unit tests for <see cref="ConfigCatalogDiscoveryRegistryStore"/> (honua-server#1279,
-/// #1283 follow-up): an unconfigured store fabricates nothing, and configured seeds are
-/// projected verbatim. The store no longer ships hard-coded synthetic dialect endpoints.
+/// #1283 follow-up): an unconfigured store fabricates nothing but still returns an
+/// empty-but-valid registry projection for any workspace (so the Console renders an
+/// honest empty state instead of misreading 404 as "contract not bound"), and configured
+/// seeds are projected verbatim. The store no longer ships hard-coded synthetic dialect
+/// endpoints.
 /// </summary>
 public sealed class ConfigCatalogDiscoveryRegistryStoreTests
 {
     [UnitTest]
-    public async Task GetRegistry_WhenUnconfigured_ReturnsNullForEveryWorkspace()
+    public async Task GetRegistry_WhenUnconfigured_ReturnsEmptyRegistryForEveryWorkspace()
     {
-        // No seeds supplied: an unconfigured deployment must publish no discovery
-        // endpoints rather than fabricated sample data (no-fabrication principle).
+        // No seeds supplied. The registry read returns an empty-but-valid
+        // projection for any workspace (so the Console renders an honest empty
+        // state instead of misreading 404 as "contract not bound") while still
+        // fabricating nothing: zero endpoints, zero aggregate counts. Drill-down
+        // sub-resources keyed by endpointKey/itemId still return null (→ 404).
         var store = new ConfigCatalogDiscoveryRegistryStore();
 
-        Assert.Null(await store.GetRegistryAsync("default"));
-        Assert.Null(await store.GetRegistryAsync("any-workspace"));
+        var defaultRegistry = await store.GetRegistryAsync("default");
+        Assert.NotNull(defaultRegistry);
+        Assert.Equal("default", defaultRegistry!.WorkspaceId);
+        Assert.Empty(defaultRegistry.Endpoints);
+        Assert.Equal(0, defaultRegistry.AutoDefaultCount);
+        Assert.Equal(0, defaultRegistry.OptInCount);
+
+        var arbitraryRegistry = await store.GetRegistryAsync("any-workspace");
+        Assert.NotNull(arbitraryRegistry);
+        Assert.Equal("any-workspace", arbitraryRegistry!.WorkspaceId);
+        Assert.Empty(arbitraryRegistry.Endpoints);
+
+        // Sub-resources reference specific named keys: an unknown key is genuinely
+        // not-found, not "empty", so these still return null.
         Assert.Null(await store.GetEndpointAsync("default", "ogc"));
         Assert.Null(await store.GetItemAsync("default", "esri", "parcels"));
     }
 
     [UnitTest]
-    public async Task GetRegistry_WithEmptySeedList_ReturnsNoWorkspaces()
+    public async Task GetRegistry_WithEmptySeedList_ReturnsEmptyRegistry()
     {
         // An explicit empty seed list is still "configured but with nothing" — no
-        // synthetic fallback may slip in.
+        // synthetic fallback may slip in, but the read is an empty 200, not null.
         var store = new ConfigCatalogDiscoveryRegistryStore(Array.Empty<CatalogDiscoveryWorkspaceSeed>());
 
-        Assert.Null(await store.GetRegistryAsync("default"));
+        var registry = await store.GetRegistryAsync("default");
+        Assert.NotNull(registry);
+        Assert.Empty(registry!.Endpoints);
     }
 
     [UnitTest]

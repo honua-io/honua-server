@@ -48,8 +48,22 @@ public sealed class ConfigCatalogDiscoveryRegistryStore : ICatalogDiscoveryRegis
     /// <inheritdoc />
     public Task<CatalogDiscoveryRegistry?> GetRegistryAsync(string workspaceId, CancellationToken cancellationToken = default)
     {
-        _registriesByWorkspace.TryGetValue(workspaceId, out var registry);
-        return Task.FromResult(registry);
+        // The discovery-endpoints registry is a workspace-scoped projection of a
+        // server-wide concern: "which discovery dialects does this workspace
+        // publish?". The honest answer for a workspace that has none configured
+        // (including a fresh/unseeded deployment, where no workspace is seeded)
+        // is an empty registry, not "workspace unknown". Returning an empty-but-
+        // valid 200 lets the Console render an honest empty state instead of
+        // misreading a 404 as "contract not bound". We therefore synthesise an
+        // empty registry for any workspace that has no configured endpoints
+        // rather than returning null. (Drill-down sub-resources keyed by
+        // endpointKey/itemId still return null/404 for genuinely unknown keys.)
+        if (!_registriesByWorkspace.TryGetValue(workspaceId, out var registry))
+        {
+            registry = new CatalogDiscoveryRegistry { WorkspaceId = workspaceId };
+        }
+
+        return Task.FromResult<CatalogDiscoveryRegistry?>(registry);
     }
 
     /// <inheritdoc />

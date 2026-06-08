@@ -17,9 +17,14 @@ namespace Honua.Server.Features.Console.Services;
 public interface ICatalogDiscoveryRegistryStore
 {
     /// <summary>
-    /// Returns the discovery-endpoints registry for a workspace, or <c>null</c>
-    /// when the workspace is unknown. A known workspace with no published
-    /// dialects returns a registry with an empty endpoint list.
+    /// Returns the discovery-endpoints registry for a workspace. A workspace
+    /// with no published dialects — including a fresh/unconfigured deployment —
+    /// returns a registry with an empty endpoint list (and zero aggregate
+    /// counts) rather than <c>null</c>: "which dialects does this workspace
+    /// publish?" has the honest answer "none", which the Console renders as an
+    /// empty state. The nullable return is retained for implementations that
+    /// genuinely cannot resolve the workspace, but the config-backed projection
+    /// never returns <c>null</c> here.
     /// </summary>
     Task<CatalogDiscoveryRegistry?> GetRegistryAsync(string workspaceId, CancellationToken cancellationToken = default);
 

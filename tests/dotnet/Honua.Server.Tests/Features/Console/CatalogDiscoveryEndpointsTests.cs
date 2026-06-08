@@ -193,10 +193,23 @@ public sealed class CatalogDiscoveryEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/console/catalog-endpoints/{workspaceId}")]
-    public async Task GetRegistry_ForUnknownWorkspace_ReturnsNotFound()
+    public async Task GetRegistry_ForUnconfiguredWorkspace_ReturnsEmptyRegistryNot404()
     {
-        var response = await _adminClient.GetAsync("/api/v1/console/catalog-endpoints/does-not-exist");
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        // A workspace with no configured discovery endpoints — including a
+        // fresh/unseeded deployment where no workspace is seeded at all — is not
+        // an error: the honest answer to "which dialects does this workspace
+        // publish?" is "none". The registry read returns an empty-but-valid 200
+        // so the Console renders an honest empty state instead of misreading a
+        // 404 as "contract not bound". (Drill-down sub-resources still 404.)
+        const string unconfiguredWorkspace = "never-seeded";
+        var response = await _adminClient.GetAsync($"/api/v1/console/catalog-endpoints/{unconfiguredWorkspace}");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var registry = await ReadDataAsync<CatalogDiscoveryRegistry>(response);
+        Assert.Equal(unconfiguredWorkspace, registry.WorkspaceId);
+        Assert.Empty(registry.Endpoints);
+        Assert.Equal(0, registry.AutoDefaultCount);
+        Assert.Equal(0, registry.OptInCount);
     }
 
     [IntegrationTest]
