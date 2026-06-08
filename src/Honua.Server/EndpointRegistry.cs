@@ -244,6 +244,11 @@ public static class EndpointRegistry
         // v1 Console Access (RBAC) workspace-scoped roles + members read API (#1162)
         new("GET", "/api/v1/console/access/{workspaceId}/roles"),
         new("GET", "/api/v1/console/access/{workspaceId}/members"),
+        // Console Access (RBAC) role authoring + audit (#1162).
+        new("GET", "/api/v1/console/access/{workspaceId}/roles/audit"),
+        new("POST", "/api/v1/console/access/{workspaceId}/roles"),
+        new("PUT", "/api/v1/console/access/{workspaceId}/roles/{roleId}"),
+        new("DELETE", "/api/v1/console/access/{workspaceId}/roles/{roleId}"),
         new("POST", "/api/v1/admin/packages/validate"),
         new("POST", "/api/v1/admin/packages/preview"),
         new("GET", "/api/v1/console/workflow-node-registry"),

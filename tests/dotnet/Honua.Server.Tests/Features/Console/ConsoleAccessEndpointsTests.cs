@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Net.Http.Json;
 using System.Text.Json;
 using Honua.Server.Features.Console.Models;
 using Honua.Infrastructure.Models;
@@ -134,6 +135,74 @@ public sealed class ConsoleAccessEndpointsTests : IAsyncLifetime
 
         var membersResponse = await _anonymousClient.GetAsync($"/api/v1/console/access/{WorkspaceId}/members");
         Assert.Equal(HttpStatusCode.Unauthorized, membersResponse.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/console/access/{workspaceId}/roles")]
+    [Endpoint("PUT /api/v1/console/access/{workspaceId}/roles/{roleId}")]
+    [Endpoint("GET /api/v1/console/access/{workspaceId}/roles/audit")]
+    [Endpoint("DELETE /api/v1/console/access/{workspaceId}/roles/{roleId}")]
+    public async Task CustomRole_CreateUpdateAuditDelete_Lifecycle()
+    {
+        // Create a custom role from the console permission columns.
+        var createRequest = new ConsoleRoleWriteRequest
+        {
+            Name = "console-access-lifecycle-role",
+            Description = "Created by ConsoleAccessEndpointsTests",
+            Grants =
+            [
+                new ConsoleRbacGrant { Permission = "view", Grant = "granted" },
+                new ConsoleRbacGrant { Permission = "manage-content", Grant = "granted" },
+                new ConsoleRbacGrant { Permission = "manage-roles", Grant = "not-granted" },
+            ],
+        };
+
+        var createResponse = await _adminClient.PostAsJsonAsync(
+            $"/api/v1/console/access/{WorkspaceId}/roles", createRequest, JsonOptions);
+        Assert.Equal(HttpStatusCode.Created, createResponse.StatusCode);
+        var created = await ReadDataAsync<ConsoleRbacRole>(createResponse);
+        Assert.True(created.IsCustom);
+        Assert.Equal(createRequest.Name, created.Name);
+        // The granted columns fold back into grants; "view" is granted, "manage-roles" is not.
+        Assert.Contains(created.Grants, g => g.Permission == "view" && g.Grant != "not-granted");
+        Assert.Contains(created.Grants, g => g.Permission == "manage-roles" && g.Grant == "not-granted");
+
+        // Update the role's description and grants.
+        var updateRequest = new ConsoleRoleWriteRequest
+        {
+            Name = created.Name,
+            Description = "Updated by ConsoleAccessEndpointsTests",
+            Grants = [new ConsoleRbacGrant { Permission = "view", Grant = "granted" }],
+        };
+        var updateResponse = await _adminClient.PutAsJsonAsync(
+            $"/api/v1/console/access/{WorkspaceId}/roles/{created.Id}", updateRequest, JsonOptions);
+        Assert.Equal(HttpStatusCode.OK, updateResponse.StatusCode);
+        var updated = await ReadDataAsync<ConsoleRbacRole>(updateResponse);
+        Assert.Equal(created.Id, updated.Id);
+
+        // The role-change audit trail is queryable and returns an empty-or-populated page (audit writes are
+        // best-effort/asynchronous, so we assert the route works and the page shape is valid, not timing).
+        var auditResponse = await _adminClient.GetAsync(
+            $"/api/v1/console/access/{WorkspaceId}/roles/audit?pageSize=20");
+        Assert.Equal(HttpStatusCode.OK, auditResponse.StatusCode);
+        var auditPage = await ReadDataAsync<ConsoleRoleAuditPage>(auditResponse);
+        Assert.NotNull(auditPage.Entries);
+
+        // Delete the custom role.
+        var deleteResponse = await _adminClient.DeleteAsync(
+            $"/api/v1/console/access/{WorkspaceId}/roles/{created.Id}");
+        Assert.Equal(HttpStatusCode.OK, deleteResponse.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/console/access/{workspaceId}/roles")]
+    public async Task CreateRole_WithBlankName_ReturnsBadRequest()
+    {
+        var response = await _adminClient.PostAsJsonAsync(
+            $"/api/v1/console/access/{WorkspaceId}/roles",
+            new ConsoleRoleWriteRequest { Name = "   " },
+            JsonOptions);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     private static async Task<T> ReadDataAsync<T>(HttpResponseMessage response)

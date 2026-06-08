@@ -200,3 +200,55 @@ public sealed record ConsoleTeamMembership
     /// <summary>Whether the caller may issue invitations.</summary>
     public bool CanInvite { get; init; }
 }
+
+/// <summary>
+/// Request body to create or update a custom Console Access role (honua-server#1162).
+/// The grants use the same fixed console permission columns the overview exposes; each non-"not-granted"
+/// grant is folded into a wildcard service/layer permission grant for the mapped admin operation.
+/// </summary>
+public sealed record ConsoleRoleWriteRequest
+{
+    /// <summary>Role display name (required).</summary>
+    public required string Name { get; init; }
+
+    /// <summary>Optional role description.</summary>
+    public string? Description { get; init; }
+
+    /// <summary>Per-permission grants for the role.</summary>
+    public IReadOnlyList<ConsoleRbacGrant> Grants { get; init; } = [];
+}
+
+/// <summary>One role-change audit entry projected from the server audit log (resourceType "role").</summary>
+public sealed record ConsoleRoleAuditEntry
+{
+    /// <summary>Audit row id.</summary>
+    public required long Id { get; init; }
+
+    /// <summary>ISO-8601 timestamp of the change.</summary>
+    public required string Timestamp { get; init; }
+
+    /// <summary>Actor who made the change (user id, api-key, or "anonymous").</summary>
+    public required string Actor { get; init; }
+
+    /// <summary>Dotted action (e.g. "role.create", "role.update", "role.delete").</summary>
+    public required string Action { get; init; }
+
+    /// <summary>Optional role id the change targeted.</summary>
+    public string? RoleId { get; init; }
+
+    /// <summary>Outcome: "Success", "Failure", or "Denied".</summary>
+    public required string Outcome { get; init; }
+
+    /// <summary>Optional pre-sanitized JSON detail blob.</summary>
+    public string? Details { get; init; }
+}
+
+/// <summary>A page of role-change audit entries, newest first.</summary>
+public sealed record ConsoleRoleAuditPage
+{
+    /// <summary>The audit entries.</summary>
+    public IReadOnlyList<ConsoleRoleAuditEntry> Entries { get; init; } = [];
+
+    /// <summary>Opaque cursor for the next page, or null when there are no more.</summary>
+    public string? NextCursor { get; init; }
+}

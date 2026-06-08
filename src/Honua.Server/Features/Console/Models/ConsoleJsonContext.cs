@@ -60,6 +60,13 @@ namespace Honua.Server.Features.Console.Models;
 [JsonSerializable(typeof(ApiResponse<ConsoleTeamMembership>))]
 [JsonSerializable(typeof(ConsoleRbacOverview))]
 [JsonSerializable(typeof(ConsoleTeamMembership))]
+// Console Access (RBAC) role authoring + audit write/read API (#1162).
+[JsonSerializable(typeof(ConsoleRoleWriteRequest))]
+[JsonSerializable(typeof(ApiResponse<ConsoleRbacRole>))]
+[JsonSerializable(typeof(ApiResponse<ConsoleRoleAuditPage>))]
+[JsonSerializable(typeof(ConsoleRbacRole))]
+[JsonSerializable(typeof(ConsoleRoleAuditPage))]
+[JsonSerializable(typeof(ConsoleRoleAuditEntry))]
 [JsonSerializable(typeof(CreateConsoleContentItemRequest))]
 [JsonSerializable(typeof(UpdateConsoleContentItemRequest))]
 [JsonSerializable(typeof(PatchConsoleContentItemRequest))]
