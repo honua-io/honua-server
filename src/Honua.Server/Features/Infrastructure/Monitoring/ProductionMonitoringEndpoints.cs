@@ -24,6 +24,16 @@ namespace Honua.Infrastructure.Monitoring;
 internal static class ProductionMonitoringEndpoints
 {
     /// <summary>
+    /// Serializer options used solely for sanitizing scalar health-check data values into
+    /// <see cref="JsonElement"/> instances. The server runs with reflection-based serialization
+    /// disabled globally (source-gen only), so these <see cref="JsonSerializer.SerializeToElement{TValue}(TValue, JsonSerializerOptions?)"/>
+    /// calls must supply an explicit reflection resolver rather than relying on the global default.
+    /// Only primitives/strings/null are serialized here, so a default reflection resolver is safe.
+    /// </summary>
+    private static readonly System.Text.Json.JsonSerializerOptions SanitizeJsonOptions =
+        new() { TypeInfoResolver = new System.Text.Json.Serialization.Metadata.DefaultJsonTypeInfoResolver() };
+
+    /// <summary>
     /// Maps production monitoring endpoints.
     /// </summary>
     /// <param name="app">The web application.</param>
@@ -467,7 +477,7 @@ internal static class ProductionMonitoringEndpoints
         foreach (var (key, value) in data)
         {
             sanitized[key] = IsSensitiveHealthKey(key)
-                ? JsonSerializer.SerializeToElement("[redacted]")
+                ? JsonSerializer.SerializeToElement("[redacted]", SanitizeJsonOptions)
                 : SanitizeHealthValue(value);
         }
 
@@ -494,21 +504,21 @@ internal static class ProductionMonitoringEndpoints
     private static JsonElement SanitizeHealthValue(object? value)
         => value switch
         {
-            null => JsonSerializer.SerializeToElement((string?)null),
-            string stringValue => JsonSerializer.SerializeToElement(stringValue),
-            bool boolValue => JsonSerializer.SerializeToElement(boolValue),
-            byte byteValue => JsonSerializer.SerializeToElement(byteValue),
-            sbyte sbyteValue => JsonSerializer.SerializeToElement(sbyteValue),
-            short shortValue => JsonSerializer.SerializeToElement(shortValue),
-            ushort ushortValue => JsonSerializer.SerializeToElement(ushortValue),
-            int intValue => JsonSerializer.SerializeToElement(intValue),
-            uint uintValue => JsonSerializer.SerializeToElement(uintValue),
-            long longValue => JsonSerializer.SerializeToElement(longValue),
-            ulong ulongValue => JsonSerializer.SerializeToElement(ulongValue),
-            float floatValue => JsonSerializer.SerializeToElement(floatValue),
-            double doubleValue => JsonSerializer.SerializeToElement(doubleValue),
-            decimal decimalValue => JsonSerializer.SerializeToElement(decimalValue),
-            _ => JsonSerializer.SerializeToElement(value.ToString())
+            null => JsonSerializer.SerializeToElement((string?)null, SanitizeJsonOptions),
+            string stringValue => JsonSerializer.SerializeToElement(stringValue, SanitizeJsonOptions),
+            bool boolValue => JsonSerializer.SerializeToElement(boolValue, SanitizeJsonOptions),
+            byte byteValue => JsonSerializer.SerializeToElement(byteValue, SanitizeJsonOptions),
+            sbyte sbyteValue => JsonSerializer.SerializeToElement(sbyteValue, SanitizeJsonOptions),
+            short shortValue => JsonSerializer.SerializeToElement(shortValue, SanitizeJsonOptions),
+            ushort ushortValue => JsonSerializer.SerializeToElement(ushortValue, SanitizeJsonOptions),
+            int intValue => JsonSerializer.SerializeToElement(intValue, SanitizeJsonOptions),
+            uint uintValue => JsonSerializer.SerializeToElement(uintValue, SanitizeJsonOptions),
+            long longValue => JsonSerializer.SerializeToElement(longValue, SanitizeJsonOptions),
+            ulong ulongValue => JsonSerializer.SerializeToElement(ulongValue, SanitizeJsonOptions),
+            float floatValue => JsonSerializer.SerializeToElement(floatValue, SanitizeJsonOptions),
+            double doubleValue => JsonSerializer.SerializeToElement(doubleValue, SanitizeJsonOptions),
+            decimal decimalValue => JsonSerializer.SerializeToElement(decimalValue, SanitizeJsonOptions),
+            _ => JsonSerializer.SerializeToElement(value.ToString(), SanitizeJsonOptions)
         };
 }
 
