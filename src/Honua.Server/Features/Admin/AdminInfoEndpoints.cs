@@ -53,16 +53,29 @@ internal static class AdminInfoEndpoints
 
     private static IResult HandleGetCapabilities()
     {
+        var serverVersion = GetServerVersion();
         var response = new AdminCapabilitiesResponse
         {
             MetadataApiVersion = MetadataV2Constants.ApiVersion,
             MetadataSchemaVersion = MetadataV2Constants.SchemaVersion,
-            ServerVersion = GetServerVersion()
+            ServerVersion = serverVersion,
+            // The generated JS/Python/.NET admin SDKs parse this `compatibility` contract from the
+            // capabilities response (serverVersion is required by all three; the admin API major lets
+            // the .NET SDK's CheckCompatibilityAsync confirm the server speaks admin API v1).
+            Compatibility = new AdminCompatibility
+            {
+                ServerVersion = serverVersion,
+                AdminApiMajor = AdminApiMajor,
+                MetadataApiVersion = MetadataV2Constants.ApiVersion,
+                MetadataSchemaVersion = MetadataV2Constants.SchemaVersion
+            }
         };
         return Results.Json(
             ApiResponse<AdminCapabilitiesResponse>.CreateSuccess(response),
             AdminInfoJsonContext.Default.ApiResponseAdminCapabilitiesResponse);
     }
+
+    private const string AdminApiMajor = "v1";
 
     private static string GetServerVersion()
     {
@@ -97,6 +110,27 @@ public sealed record AdminCapabilitiesResponse
 
     [JsonPropertyName("serverVersion")]
     public string ServerVersion { get; init; } = string.Empty;
+
+    [JsonPropertyName("compatibility")]
+    public AdminCompatibility Compatibility { get; init; } = new();
+}
+
+/// <summary>
+/// Compatibility contract consumed by the generated admin SDKs to confirm they can talk to this server.
+/// </summary>
+public sealed record AdminCompatibility
+{
+    [JsonPropertyName("serverVersion")]
+    public string ServerVersion { get; init; } = string.Empty;
+
+    [JsonPropertyName("adminApiMajor")]
+    public string AdminApiMajor { get; init; } = string.Empty;
+
+    [JsonPropertyName("metadataApiVersion")]
+    public string MetadataApiVersion { get; init; } = string.Empty;
+
+    [JsonPropertyName("metadataSchemaVersion")]
+    public string MetadataSchemaVersion { get; init; } = string.Empty;
 }
 
 [JsonSerializable(typeof(ApiResponse<AdminVersionResponse>))]
