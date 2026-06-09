@@ -706,6 +706,32 @@ Kubernetes integration is Console-driven promotion with the GitOps manifest as
 the declarative artifact, not an autonomous pull-from-git reconciler. See the
 [Upgrade and Rollback Runbook](runbooks/UPGRADE_AND_ROLLBACK.md) for per-backend
 configuration and required parameters.
+#### Progressive multi-step canary ramp
+
+Deploy plan/create requests accept an optional progressive canary ramp through
+the operation `parameters` map. When present, the deploy advances the canary
+through a sequence of increasing traffic weights with a telemetry gate between
+every step and automatic rollback at any step; when absent, the deploy keeps the
+default single-step bake-then-promote behavior (no regression). The ramp stays
+behind the existing deploy backend and telemetry-gate abstractions, so the
+operation lifecycle and Console flow are unchanged.
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `deployment.canary_ramp.step_weights` | yes (to enable) | Comma-separated, strictly increasing whole percentages in `1-100`; the final value must be `100` (for example `5,25,50,100`). Presence enables the ramp. |
+| `deployment.canary_ramp.step_bake_seconds` | no | Per-step bake duration before each telemetry gate; defaults to `120`. |
+| `telemetry.connection` | yes | Telemetry connection used for the per-step gate. |
+
+Each step's canary share is driven through the backend-neutral
+`deployment.canary_weight_percentage` parameter that the weighted-traffic
+backends (AWS ECS + ALB, AWS Lambda, Azure Container Apps) already read; the
+plan endpoint blocks submission with a `Progressive canary ramp is invalid…`
+blocking reason when the ramp is configured but malformed. The gate uses
+absolute per-step thresholds (canary-vs-baseline delta comparison is not part of
+this ramp). The operation's `currentPhase` reports the active step, its weight,
+and the bake countdown. See the
+[Progressive Multi-Step Canary Ramp](runbooks/UPGRADE_AND_ROLLBACK.md#progressive-multi-step-canary-ramp)
+runbook section for the full lifecycle and operator notes.
 
 ### **Alert Management Endpoints**
 

@@ -9,6 +9,8 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Hosting;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Security;
 
@@ -49,7 +51,7 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
 
     public SecurityComplianceTests()
     {
-        _fixture = new WebAppFixture()
+        _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
             .UseSeed("tests/seed/server.yaml")
             .ConfigureWebHost(builder =>
             {

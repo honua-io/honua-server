@@ -547,6 +547,30 @@ Honua reads and writes only the named `Rollout`; the controller owns ReplicaSet 
         }
       }
     ]
+## Progressive Multi-Step Canary Ramp
+
+By default a canary deploy bakes at a single canary weight and then promotes to 100% (or rolls back) — one telemetry gate, one promotion. Targets that support weighted traffic shifting (AWS ECS + ALB, AWS Lambda, Azure Container Apps revisions) can instead ramp the canary through a sequence of increasing weights with a telemetry gate between every step and automatic rollback at any step. The ramp is optional and additive: omit the ramp parameters and the deploy keeps the single-step behavior unchanged.
+
+### How it works
+
+1. The first ramp step weight is pinned onto the deploy at submission, so the backend serves the configured starting canary share immediately.
+2. The reconciler bakes the current step for `step_bake_seconds` before evaluating the per-step telemetry gate. The bake window is enforced per step, independent of the operation-wide telemetry warmup.
+3. If the gate passes and the step is not the terminal step, the reconciler re-applies the deploy at the next step weight (through the backend's normal apply path) and resets the bake clock — the operation stays `Reconciling`.
+4. At the terminal step (weight `100`) the reconciler promotes the deploy to full traffic, settling the operation to `Succeeded`.
+5. If the telemetry gate breaches at **any** step, the reconciler requests rollback through the backend exactly as the single-step path does; the operation moves to `RollbackRequested` and never promotes.
+
+The ramp runs entirely behind the existing `IDeployBackend` / `IDeployTelemetrySignalEvaluator` abstractions and the `WorkflowOperationRecord` lifecycle, so the Console-driven promotion flow is unchanged. Each step's canary share is driven through the backend-neutral `deployment.canary_weight_percentage` parameter that the weighted-traffic backends already read.
+
+### Configuration
+
+Add the ramp parameters to the deploy target (or to per-operation parameter overrides):
+
+```json
+{
+  "Parameters": {
+    "deployment.canary_ramp.step_weights": "5,25,50,100",
+    "deployment.canary_ramp.step_bake_seconds": "300",
+    "telemetry.connection": "prod-prom"
   }
 }
 ```
@@ -569,6 +593,19 @@ Honua reads and writes only the named `Rollout`; the controller owns ReplicaSet 
 ### GitOps passthrough alternative
 
 Operators who manage Kubernetes through a pure out-of-band GitOps hand-off (Flux/Argo CD, or Flagger) can use the `honua-gitops-kubernetes` backend instead. That backend delegates all state observation to the external controller and returns `ManualInterventionRequired` for observation.
+| Parameter | Required | Notes |
+|---|---|---|
+| `deployment.canary_ramp.step_weights` | yes (to enable the ramp) | Comma-separated, strictly increasing whole percentages in `1-100`. The final value must be `100`. Presence of this key enables the ramp. |
+| `deployment.canary_ramp.step_bake_seconds` | no | Per-step bake duration before each telemetry gate. Defaults to `120` (2 minutes) when omitted. |
+| `telemetry.connection` | yes | Telemetry connection used for the per-step gate. The same per-step gate and preset selection described in each target's *Health-gate behavior* section applies at every ramp step. |
+
+A configured-but-malformed ramp (empty, non-increasing, out of range, or missing a terminal `100`) blocks submission at plan time with a `Progressive canary ramp is invalid…` blocking reason rather than silently falling back to single-step promotion.
+
+### Operator notes
+
+- The ramp re-uses the canary telemetry preset already selected for the target; absolute per-step thresholds satisfy the gate. Canary-vs-baseline delta comparison is **not** part of this ramp — the gate evaluates canary-only absolute thresholds at each step.
+- `WorkflowOperationRecord.CurrentPhase` reports the active step, its weight, and the bake countdown (for example `Canary ramp baking step 2 of 4 at 25% (180s remaining before the telemetry gate).`), then the advance and promotion phases, so operators can follow the ramp without consulting the provider directly.
+- Rollback semantics, manual-intervention scenarios, and limitations are identical to the single-step canary path for the same target; consult that target's section above.
 
 ---
 

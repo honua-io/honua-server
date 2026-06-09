@@ -3,7 +3,9 @@
 
 using System.Collections.Immutable;
 using System.Data;
+using System.Diagnostics;
 using System.Text.Json;
+using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Postgres.Features.Infrastructure;
 using Npgsql;
@@ -12,6 +14,24 @@ namespace Honua.Postgres.Features.FeatureStore.Services;
 
 internal sealed partial class PostgresVersionManager
 {
+    // Telemetry source name "Honua" matches the registered OTel source so reconcile/post spans are
+    // collected alongside the rest of the platform (#1553).
+    private static readonly ActivitySource VersioningActivitySource = new("Honua", "1.0.0");
+
+    /// <summary>
+    /// Acquires the durable (service, version) maintenance lock so a reconcile, post, or conflicting
+    /// resolve runs exclusively for a version (#1553). Throws <see cref="VersionLockedException"/> when
+    /// the lock is already held by another in-flight reconcile/post, so the caller can surface a clear
+    /// in-progress (409) response or record an async job as lock-contended.
+    /// </summary>
+    private async Task<IVersionLockHandle> AcquireVersionLockAsync(Guid versionId, CancellationToken cancellationToken)
+    {
+        var handle = await _versionLock
+            .TryAcquireAsync(_lockScope, versionId, MaintenanceLockLease, cancellationToken)
+            .ConfigureAwait(false);
+        return handle ?? throw new VersionLockedException(versionId);
+    }
+
     // Reconcile/post core (#1272 Track B Slice 2, ADR-0051; conflict-resolution layer #371). Reconcile
     // diffs DEFAULT feature_changes since the version's merge base against the version's tagged overlay
     // edits. For overlapping (layer_id, objectid) pairs it loads the three-way base/DEFAULT/version
@@ -33,9 +53,13 @@ internal sealed partial class PostgresVersionManager
     // against the same base `features` table (and its change-tracking trigger), preserving objectid and
     // the raw JSONB image, inside a single transaction. Read/edit still flow through the shared pipeline.
     //
-    // Deferred (out of scope for this slice, see PR): the Redis-backed version lock + Honua.Jobs async
-    // execution wrapper (ADR-0051 / #1511). The reconcile/post engine here is synchronous; the job
-    // wrapper will later call it under a lock.
+    // Production hardening (#1553): reconcile/post (and a conflicting resolve) run under a durable
+    // (service, version) lock (IVersionLock) so concurrent maintenance for the same version is
+    // serialized; a contended lock surfaces VersionLockedException for a clear in-progress 409. The
+    // clean-reconcile conflict-clear + common-ancestor advance commit in one transaction so a crash
+    // cannot desync the durable conflict set from the cursor, and a re-run recomputes the same set from
+    // the durable overlay (idempotent/resumable). The synchronous engine here is the fast path; the
+    // canonical async wrapper (IVersionJobRunner) calls these same methods on a durable, pollable job.
 
     /// <inheritdoc />
     public async Task<VersionReconcileResult> ReconcileAsync(
@@ -43,6 +67,15 @@ internal sealed partial class PostgresVersionManager
         VersionReconcilePolicy policy = VersionReconcilePolicy.None,
         CancellationToken cancellationToken = default)
     {
+        // The (service, version) lock serializes reconcile/post/resolve for the version (#1553); a
+        // competing in-flight reconcile/post throws VersionLockedException for a clear in-progress 409.
+        await using var lockHandle = await AcquireVersionLockAsync(versionId, cancellationToken).ConfigureAwait(false);
+
+        using var activity = VersioningActivitySource.StartActivity("Version.Reconcile", ActivityKind.Internal);
+        activity?.SetTag("honua.version.id", versionId.ToString());
+        activity?.SetTag("honua.version.service", _lockScope);
+        activity?.SetTag("honua.version.policy", policy.ToString());
+
         var version = await LoadVersionAsync(versionId, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException($"Version {versionId} does not exist.");
 
@@ -73,25 +106,27 @@ internal sealed partial class PostgresVersionManager
                 unresolved.Add(conflict.ToReport());
             }
 
-            // Persist the unresolved set (manual review) and clear any stale pending rows that were
-            // auto-merged or auto-resolved this run, so inspect/post see the current pending set.
-            await PersistPendingConflictsAsync(versionId, unresolved, cancellationToken).ConfigureAwait(false);
+            // Persist the unresolved set and advance the merge base atomically in one transaction so a
+            // crash mid-reconcile cannot leave the durable conflict set and the common-ancestor cursor
+            // disagreeing (#1553). A re-run after a restart recomputes from the durable overlay +
+            // feature_changes and rewrites the same pending set, so reconcile is idempotent/resumable.
+            var canPost = unresolved.Count == 0;
+            await PersistConflictsAndAdvanceAsync(
+                versionId,
+                unresolved,
+                canPost ? currentGeneration : (long?)null,
+                cancellationToken).ConfigureAwait(false);
 
-            if (unresolved.Count == 0)
-            {
-                // Clean (or fully auto-resolved) reconcile: advance the merge base to current DEFAULT.
-                await AdvanceCommonAncestorAsync(versionId, currentGeneration, cancellationToken).ConfigureAwait(false);
-                return new VersionReconcileResult(
-                    ImmutableArray<VersionReconcileConflict>.Empty,
-                    CanPost: true,
-                    NewCommonAncestorGeneration: currentGeneration,
-                    AutoResolvedCount: autoResolved);
-            }
+            activity?.SetTag("honua.version.conflict_count", unresolved.Count);
+            activity?.SetTag("honua.version.auto_resolved_count", autoResolved);
+            activity?.SetTag("honua.version.can_post", canPost);
+            activity?.SetTag("honua.version.outcome", canPost ? "clean" : "conflicts");
+            activity?.SetStatus(ActivityStatusCode.Ok);
 
             return new VersionReconcileResult(
-                unresolved.ToImmutable(),
-                CanPost: false,
-                NewCommonAncestorGeneration: version.CommonAncestorGeneration,
+                canPost ? ImmutableArray<VersionReconcileConflict>.Empty : unresolved.ToImmutable(),
+                CanPost: canPost,
+                NewCommonAncestorGeneration: canPost ? currentGeneration : version.CommonAncestorGeneration,
                 AutoResolvedCount: autoResolved);
         }
         finally
@@ -145,6 +180,10 @@ internal sealed partial class PostgresVersionManager
     {
         ArgumentNullException.ThrowIfNull(resolutions);
 
+        // A manual resolve rewrites the overlay, so it must not race a reconcile/post for the same
+        // version; it takes the same lock (#1553).
+        await using var lockHandle = await AcquireVersionLockAsync(versionId, cancellationToken).ConfigureAwait(false);
+
         var resolved = 0;
         foreach (var resolution in resolutions)
         {
@@ -161,6 +200,14 @@ internal sealed partial class PostgresVersionManager
     /// <inheritdoc />
     public async Task<VersionPostResult> PostAsync(Guid versionId, CancellationToken cancellationToken = default)
     {
+        // Post takes the same (service, version) lock as reconcile so a post is serialized against any
+        // concurrent reconcile/post for the version (#1553); contention surfaces as VersionLockedException.
+        await using var lockHandle = await AcquireVersionLockAsync(versionId, cancellationToken).ConfigureAwait(false);
+
+        using var activity = VersioningActivitySource.StartActivity("Version.Post", ActivityKind.Internal);
+        activity?.SetTag("honua.version.id", versionId.ToString());
+        activity?.SetTag("honua.version.service", _lockScope);
+
         var version = await LoadVersionAsync(versionId, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException($"Version {versionId} does not exist.");
 
@@ -169,6 +216,9 @@ internal sealed partial class PostgresVersionManager
         var pending = await CountPendingConflictsAsync(versionId, cancellationToken).ConfigureAwait(false);
         if (pending > 0)
         {
+            activity?.SetTag("honua.version.conflict_count", pending);
+            activity?.SetTag("honua.version.outcome", "blocked_by_conflicts");
+            activity?.SetStatus(ActivityStatusCode.Ok);
             return new VersionPostResult(Posted: false, AppliedChanges: 0, ServerGeneration: 0, BlockedByConflicts: true);
         }
 
@@ -177,6 +227,10 @@ internal sealed partial class PostgresVersionManager
         {
             var (applied, serverGeneration) = await ReplayOverlayOntoDefaultAsync(versionId, cancellationToken).ConfigureAwait(false);
             await AdvanceCommonAncestorAsync(versionId, serverGeneration, cancellationToken).ConfigureAwait(false);
+            activity?.SetTag("honua.version.applied_changes", applied);
+            activity?.SetTag("honua.version.server_generation", serverGeneration);
+            activity?.SetTag("honua.version.outcome", "posted");
+            activity?.SetStatus(ActivityStatusCode.Ok);
             return new VersionPostResult(Posted: true, AppliedChanges: applied, ServerGeneration: serverGeneration, BlockedByConflicts: false);
         }
         finally
@@ -584,18 +638,33 @@ internal sealed partial class PostgresVersionManager
     }
 
     /// <summary>
-    /// Replaces the version's persisted pending conflict set with the supplied unresolved conflicts:
-    /// clears stale pending rows (auto-merged / auto-resolved this run) and inserts the current set.
+    /// Replaces the version's persisted pending conflict set with the supplied unresolved conflicts and,
+    /// when the reconcile is clean, advances the common-ancestor cursor — all in one transaction (#1553).
+    /// Clearing stale pending rows (auto-merged / auto-resolved this run), inserting the current set, and
+    /// advancing the merge base commit atomically, so a crash cannot leave the durable conflict set and
+    /// the cursor disagreeing. The operation is naturally idempotent: a re-run recomputes the same set
+    /// from the durable overlay and rewrites it.
     /// </summary>
-    private async Task PersistPendingConflictsAsync(
+    /// <param name="versionId">Version being reconciled.</param>
+    /// <param name="conflicts">Unresolved conflicts to persist as pending.</param>
+    /// <param name="advanceToGeneration">When non-null, advance the merge base to this generation (clean reconcile).</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    private async Task PersistConflictsAndAdvanceAsync(
         Guid versionId,
         IReadOnlyCollection<VersionReconcileConflict> conflicts,
+        long? advanceToGeneration,
         CancellationToken cancellationToken)
     {
-        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var (txConnection, dbTransaction) = await _connectionProvider
+            .OpenTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken).ConfigureAwait(false);
+        await using var _ = txConnection;
+        var connection = txConnection.RequireNpgsqlConnection();
+        var transaction = (NpgsqlTransaction)dbTransaction;
+        await using var __ = transaction;
 
         await using (var clear = new NpgsqlCommand(
-            "DELETE FROM honua.version_conflicts WHERE version_id = @version AND status = 0", connection))
+            "DELETE FROM honua.version_conflicts WHERE version_id = @version AND status = 0", connection)
+        { Transaction = transaction })
         {
             clear.Parameters.AddWithValue("version", versionId);
             await clear.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
@@ -611,7 +680,8 @@ internal sealed partial class PostgresVersionManager
                 VALUES (@version, @layer, @objectid, @type, 0,
                         @base_attrs::jsonb, @default_attrs::jsonb, @version_attrs::jsonb,
                         @base_geom, @default_geom, @version_geom, @field_diffs::jsonb)
-                """, connection);
+                """, connection)
+            { Transaction = transaction };
             insert.Parameters.AddWithValue("version", versionId);
             insert.Parameters.AddWithValue("layer", conflict.LayerId);
             insert.Parameters.AddWithValue("objectid", conflict.ObjectId);
@@ -628,6 +698,19 @@ internal sealed partial class PostgresVersionManager
             insert.Parameters.AddWithValue("field_diffs", (object?)fieldDiffsJson ?? DBNull.Value);
             await insert.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
+
+        if (advanceToGeneration is { } generation)
+        {
+            await using var advance = new NpgsqlCommand(
+                "UPDATE honua.gdb_versions SET common_ancestor_gen = @gen, modified_at = now() WHERE version_id = @id",
+                connection)
+            { Transaction = transaction };
+            advance.Parameters.AddWithValue("gen", generation);
+            advance.Parameters.AddWithValue("id", versionId);
+            await advance.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<int> CountPendingConflictsAsync(Guid versionId, CancellationToken cancellationToken)

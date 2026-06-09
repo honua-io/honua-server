@@ -9,6 +9,8 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests;
 
@@ -20,7 +22,7 @@ namespace Honua.Server.Tests;
 [Collection("Database.CoreFeatureStore")]
 public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
     private const string TestServiceId = "test";
     private const int TestLayerId = 0;
     private const int TestRelationshipId = 1;
