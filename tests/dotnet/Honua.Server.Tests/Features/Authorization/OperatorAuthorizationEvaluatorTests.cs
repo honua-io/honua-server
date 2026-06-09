@@ -5,6 +5,7 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.TestKit.Attributes;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -19,9 +20,31 @@ public sealed class OperatorAuthorizationEvaluatorTests
     {
         var rbacOptions = Options.Create(new RbacOptions { RoleClaimType = "roles" });
         _evaluator = new OperatorAuthorizationEvaluator(
-            _roleStore,
+            new SingleStoreScopeFactory(_roleStore),
             rbacOptions,
             NullLogger<OperatorAuthorizationEvaluator>.Instance);
+    }
+
+    [UnitTest]
+    public void Evaluator_AsSingleton_BuildsWithScopedRoleStore_NoCaptiveDependency()
+    {
+        // Regression for #1575: the evaluator is registered as a singleton, but a durable
+        // IRoleStore (PostgresRoleStore) is scoped. ValidateOnBuild + ValidateScopes would
+        // throw "Cannot consume scoped service from singleton" if the evaluator captured the
+        // store directly — it resolves it per call via IServiceScopeFactory instead.
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IOptions<RbacOptions>>(Options.Create(new RbacOptions()));
+        services.AddScoped<IRoleStore>(_ => new TestRoleStore());
+        services.AddSingleton<IOperatorAuthorizationEvaluator, OperatorAuthorizationEvaluator>();
+
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions
+        {
+            ValidateScopes = true,
+            ValidateOnBuild = true,
+        });
+
+        provider.GetRequiredService<IOperatorAuthorizationEvaluator>().Should().NotBeNull();
     }
 
     [UnitTest]
@@ -580,6 +603,23 @@ public sealed class OperatorAuthorizationEvaluatorTests
 
         var identity = new ClaimsIdentity(claims, "TestScheme");
         return new ClaimsPrincipal(identity);
+    }
+
+    // Minimal scope factory that hands out the supplied role store, mirroring how the
+    // evaluator resolves IRoleStore from a per-call scope without a full DI container.
+    private sealed class SingleStoreScopeFactory(IRoleStore store)
+        : IServiceScopeFactory, IServiceScope, IServiceProvider
+    {
+        public IServiceScope CreateScope() => this;
+
+        public IServiceProvider ServiceProvider => this;
+
+        public object? GetService(Type serviceType)
+            => serviceType == typeof(IRoleStore) ? store : null;
+
+        public void Dispose()
+        {
+        }
     }
 
     private sealed class TestRoleStore : IRoleStore

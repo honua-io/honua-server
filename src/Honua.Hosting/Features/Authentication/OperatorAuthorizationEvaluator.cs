@@ -3,6 +3,7 @@ using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using AccessDecision = Honua.Core.Features.Security.Domain.AccessDecision;
 
@@ -13,7 +14,7 @@ namespace Honua.Infrastructure.Authentication;
 /// the existing <see cref="IRoleStore"/> permission grants.
 /// </summary>
 internal sealed class OperatorAuthorizationEvaluator(
-    IRoleStore roleStore,
+    IServiceScopeFactory scopeFactory,
     IOptions<RbacOptions> rbacOptions,
     ILogger<OperatorAuthorizationEvaluator> logger) : IOperatorAuthorizationEvaluator
 {
@@ -119,11 +120,17 @@ internal sealed class OperatorAuthorizationEvaluator(
             return AccessDecision.Forbidden("No operator-eligible roles assigned.");
         }
 
-        // IRoleStore is singleton (InMemoryRoleStore) and returns completed tasks.
-        // When a persistent store is introduced (#498), a per-request caching layer
-        // should resolve permissions once and pass them through scoped context.
-        var effective = await roleStore.GetEffectivePermissionsAsync(
-            userId ?? string.Empty, roleNames, cancellationToken).ConfigureAwait(false);
+        // This evaluator is a singleton, but IRoleStore may be a scoped durable provider
+        // (PostgresRoleStore depends on the scoped connection provider). Resolve it within a
+        // fresh scope per evaluation so the singleton never captures a scoped dependency
+        // (#1575). EffectivePermissions is fully materialised before the scope is disposed.
+        EffectivePermissions effective;
+        using (var scope = scopeFactory.CreateScope())
+        {
+            var roleStore = scope.ServiceProvider.GetRequiredService<IRoleStore>();
+            effective = await roleStore.GetEffectivePermissionsAsync(
+                userId ?? string.Empty, roleNames, cancellationToken).ConfigureAwait(false);
+        }
 
         var permissions = effective.Permissions;
         for (var i = 0; i < permissions.Count; i++)
