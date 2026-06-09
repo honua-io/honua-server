@@ -293,6 +293,52 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.VersionManagement)]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/reconcile")]
+    [InterfaceOperation(TestProtocols.VersionManagementServer, "reconcile")]
+    public async Task Reconcile_Async_Returns202WithPollableJob()
+    {
+        var created = await CreateVersionAsync("admin.reconcile_async");
+        var guid = created.GetProperty("versionGuid").GetString();
+
+        // async=true starts a durable, pollable job and returns 202 with a job handle (#1553).
+        var response = await PostFormAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{guid}/reconcile",
+            ("async", "true"), ("f", "json"));
+        response.StatusCode.Should().Be(HttpStatusCode.Accepted,
+            "async reconcile should be accepted; body: {0}", await response.Content.ReadAsStringAsync());
+
+        string jobId;
+        string statusUrl;
+        using (var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync()))
+        {
+            doc.RootElement.GetProperty("kind").GetString().Should().Be("reconcile");
+            jobId = doc.RootElement.GetProperty("jobId").GetString()!;
+            jobId.Should().NotBeNullOrWhiteSpace();
+            statusUrl = doc.RootElement.GetProperty("statusUrl").GetString()!;
+            statusUrl.Should().Contain(jobId);
+        }
+
+        // Poll the job-status endpoint until the job reaches a terminal state.
+        var terminal = await PollJobStatusAsync(statusUrl);
+        terminal.GetProperty("status").GetString().Should().BeOneOf("succeeded", "running", "pending");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.VersionManagement)]
+    [Endpoint("GET /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/jobs/{jobId}")]
+    [InterfaceOperation(TestProtocols.VersionManagementServer, "jobStatus")]
+    public async Task JobStatus_UnknownJob_ReturnsNotFound()
+    {
+        var created = await CreateVersionAsync("admin.job_status");
+        var guid = created.GetProperty("versionGuid").GetString();
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{guid}/jobs/{Guid.NewGuid()}?f=json");
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.VersionManagement)]
     [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/delete")]
     [InterfaceOperation(TestProtocols.VersionManagementServer, "delete")]
     public async Task Delete_RemovesVersion()
@@ -329,6 +375,29 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
             "operation should succeed; body: {0}", await response.Content.ReadAsStringAsync());
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         doc.RootElement.GetProperty("success").GetBoolean().Should().BeTrue();
+    }
+
+    private async Task<JsonElement> PollJobStatusAsync(string statusUrl)
+    {
+        for (var attempt = 0; attempt < 50; attempt++)
+        {
+            var response = await _fixture.Client.GetAsync($"{statusUrl}?f=json");
+            response.StatusCode.Should().Be(HttpStatusCode.OK,
+                "job-status poll should succeed; body: {0}", await response.Content.ReadAsStringAsync());
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var status = doc.RootElement.GetProperty("status").GetString();
+            if (status is not ("pending" or "running"))
+            {
+                return doc.RootElement.Clone();
+            }
+
+            await Task.Delay(50);
+        }
+
+        // The job is durable and pollable even if not yet terminal; return the last observed state.
+        var last = await _fixture.Client.GetAsync($"{statusUrl}?f=json");
+        using var lastDoc = JsonDocument.Parse(await last.Content.ReadAsStringAsync());
+        return lastDoc.RootElement.Clone();
     }
 
     private Task<HttpResponseMessage> PostFormAsync(string url, params (string Key, string Value)[] fields)

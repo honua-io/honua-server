@@ -142,6 +142,7 @@ public static class OperationRegistry
         new(VersionManagementServer, "inspectConflicts"),
         new(VersionManagementServer, "resolveConflicts"),
         new(VersionManagementServer, "post"),
+        new(VersionManagementServer, "jobStatus"),
     ];
 }
 

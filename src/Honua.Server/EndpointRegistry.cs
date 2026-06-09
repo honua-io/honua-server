@@ -666,6 +666,7 @@ public static class EndpointRegistry
         new("GET", "/rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/inspectConflicts"),
         new("POST", "/rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/resolveConflicts"),
         new("POST", "/rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/post"),
+        new("GET", "/rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/jobs/{jobId}"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/append"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/append"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/calculate"),

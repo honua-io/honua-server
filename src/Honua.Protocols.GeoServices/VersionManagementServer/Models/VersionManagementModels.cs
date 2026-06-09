@@ -220,3 +220,51 @@ public sealed class PostResponse
     /// <summary>True when the post was refused because unresolved conflicts remain.</summary>
     public bool BlockedByConflicts { get; init; }
 }
+
+/// <summary>
+/// Response for an asynchronous <c>reconcile</c>/<c>post</c> job (#1553). Returned with HTTP 202 when a
+/// caller requests async execution, and from the job-status poll endpoint. Carries the job handle and,
+/// once the job is terminal, the same outcome fields the synchronous reconcile/post responses report.
+/// </summary>
+public sealed class VersionJobResponse
+{
+    /// <summary>Always true: the job was accepted/queried successfully (job outcome is in <see cref="Status"/>).</summary>
+    public bool Success { get; init; } = true;
+
+    /// <summary>Stable job identifier; poll the job-status endpoint with this id.</summary>
+    public required string JobId { get; init; }
+
+    /// <summary>Whether the job reconciles or posts: <c>reconcile</c> or <c>post</c>.</summary>
+    public required string Kind { get; init; }
+
+    /// <summary>
+    /// Lifecycle status: <c>pending</c>, <c>running</c>, <c>succeeded</c>, <c>failed</c>, or
+    /// <c>lockContended</c> (another reconcile/post for the version is in progress).
+    /// </summary>
+    public required string Status { get; init; }
+
+    /// <summary>Relative URL to poll for this job's status.</summary>
+    public required string StatusUrl { get; init; }
+
+    /// <summary>Unresolved conflicts after a reconcile (0 until a reconcile job completes).</summary>
+    public int ConflictCount { get; init; }
+
+    /// <summary>Conflicts a reconcile policy auto-resolved.</summary>
+    public int AutoResolvedCount { get; init; }
+
+    /// <summary>True when a reconcile left the version clear to post.</summary>
+    public bool CanPost { get; init; }
+
+    /// <summary>Net feature changes a post replayed onto DEFAULT.</summary>
+    public int AppliedChanges { get; init; }
+
+    /// <summary>DEFAULT generation produced by a post (or reconciled-to generation).</summary>
+    public long ServerGeneration { get; init; }
+
+    /// <summary>True when a post was refused because unresolved conflicts remain.</summary>
+    public bool BlockedByConflicts { get; init; }
+
+    /// <summary>Sanitized error message when the job failed; null otherwise.</summary>
+    public string? Error { get; init; }
+}
+
