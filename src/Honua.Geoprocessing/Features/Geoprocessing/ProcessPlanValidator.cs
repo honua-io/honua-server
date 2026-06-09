@@ -189,6 +189,12 @@ internal static partial class ProcessPlanValidator
                 }
 
                 unknownInputs.Add(inputName);
+                if (string.Equals(step.ProcessId, "sink.external-postgis", StringComparison.Ordinal)
+                    && string.Equals(inputName, "connectionString", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
                 violations.Add(new GeoprocessingValidationFailure
                 {
                     Code = "UNKNOWN_PARAMETER",
@@ -388,8 +394,7 @@ internal static partial class ProcessPlanValidator
         AnalysisPlanStep step,
         List<GeoprocessingValidationFailure> violations)
     {
-        if (step.Inputs.TryGetValue("connectionString", out var rawConnectionString)
-            && !string.IsNullOrWhiteSpace(rawConnectionString))
+        if (step.Inputs.ContainsKey("connectionString"))
         {
             AddRangeViolationIfNew(step, "connectionString",
                 "inline connection strings are not accepted; use connectionName or connectionId", violations);

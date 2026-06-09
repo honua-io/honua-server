@@ -679,6 +679,7 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
         int? failedFeatures = null;
         string? errorMessage = null;
         var stream = request.FileStream;
+        SerializedImportProgressWriter? progressWriter = null;
 
         try
         {

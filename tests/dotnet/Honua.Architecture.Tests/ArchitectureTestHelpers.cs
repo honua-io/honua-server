@@ -15,14 +15,10 @@ internal static class ArchitectureTestHelpers
     private const BindingFlags TestMemberFlags =
         BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static;
 
-    private static readonly Type[] IntegrationAttributeTypes =
+    private static readonly Type[] ApiCoverageAttributeTypes =
     [
         typeof(IntegrationTestAttribute),
-        typeof(CloudTestAttribute),
-        typeof(EmulatorTestAttribute),
-        typeof(ExternalServiceTestAttribute),
-        typeof(RoutingTestAttribute),
-        typeof(ScaleTestAttribute)
+        typeof(Honua.Worker.Gdal.Tests.GdalCliFactAttribute)
     ];
 
     /// <summary>
@@ -99,17 +95,17 @@ internal static class ArchitectureTestHelpers
 
     /// <summary>
     /// Returns true when the method or its declaring test class carries one of
-    /// the test attributes that emits <c>Category=Integration</c>.
+    /// the test attributes that participates in API/operation coverage checks.
     /// </summary>
     internal static bool IsIntegrationTestMethod(Type type, MethodInfo method)
-        => HasIntegrationAttribute(type) || HasIntegrationAttribute(method);
+        => HasApiCoverageAttribute(type) || HasApiCoverageAttribute(method);
 
     /// <summary>
     /// Returns true when the type or any of its test methods carries one of the
-    /// test attributes that emits <c>Category=Integration</c>.
+    /// test attributes that participates in API/operation coverage checks.
     /// </summary>
     internal static bool IsIntegrationTestClass(Type type)
-        => HasIntegrationAttribute(type) ||
+        => HasApiCoverageAttribute(type) ||
            type.GetMethods(TestMemberFlags).Any(method => IsIntegrationTestMethod(type, method));
 
     /// <summary>
@@ -136,9 +132,9 @@ internal static class ArchitectureTestHelpers
         }
     }
 
-    private static bool HasIntegrationAttribute(MemberInfo member)
+    private static bool HasApiCoverageAttribute(MemberInfo member)
         => member.CustomAttributes.Any(attribute =>
-            IntegrationAttributeTypes.Any(type => attribute.AttributeType == type));
+            ApiCoverageAttributeTypes.Any(type => attribute.AttributeType == type));
 
     /// <summary>
     /// Resolves the repository root by walking upward until Honua.sln is found.

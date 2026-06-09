@@ -253,7 +253,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 {
                     layer = ResolveSingleGeoPackageImportLayer(layers);
                 }
-                catch (InvalidDataException ex)
+                catch (InvalidDataException)
                 {
                     errorMessage = "Invalid GeoPackage import request.";
                     result = ImportResult.CreateFailure(

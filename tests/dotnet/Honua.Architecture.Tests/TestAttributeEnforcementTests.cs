@@ -3,6 +3,7 @@
 
 using System.Reflection;
 using FluentAssertions;
+using Honua.Server;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Xunit;

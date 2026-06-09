@@ -299,7 +299,6 @@ public sealed class GdalSurfaceExecutorTests
     }
 
     [GdalCliFact("gdaldem")]
-    [IntegrationTest]
     [Protocol(ProtocolNames.TestQuality)]
     [Operation(Operations.TestInfrastructure)]
     public async Task Slope_WithRealGdaldem_ProducesGeoTiff_AndReconcilesAgainstSource()

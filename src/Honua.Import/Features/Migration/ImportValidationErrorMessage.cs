@@ -47,13 +47,19 @@ internal static class ImportValidationErrorMessage
     }
 
     private static int SelectNextUrlIndex(int httpIndex, int httpsIndex)
-        => (httpIndex, httpsIndex) switch
+    {
+        if (httpIndex < 0)
         {
-            (< 0, < 0) => -1,
-            (< 0, _) => httpsIndex,
-            (_, < 0) => httpIndex,
-            _ => Math.Min(httpIndex, httpsIndex)
-        };
+            return httpsIndex;
+        }
+
+        if (httpsIndex < 0)
+        {
+            return httpIndex;
+        }
+
+        return Math.Min(httpIndex, httpsIndex);
+    }
 
     private static bool IsUrlTerminator(char character)
         => char.IsWhiteSpace(character)

@@ -2,9 +2,12 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text;
+using Honua.TestKit.Constants;
 using Honua.Worker.Gdal.Execution;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
+using Xunit.Abstractions;
+using Xunit.Sdk;
 
 namespace Honua.Worker.Gdal.Tests;
 
@@ -127,13 +130,39 @@ internal static class GdalCli
     }
 }
 
-internal sealed class GdalCliFactAttribute : FactAttribute
+/// <summary>
+/// Fact attribute for real-GDAL integration tests that skip when the requested
+/// GDAL CLI tool is not available on the host.
+/// </summary>
+[TraitDiscoverer("Honua.Worker.Gdal.Tests.GdalCliFactDiscoverer", "Honua.Worker.Gdal.Tests")]
+public sealed class GdalCliFactAttribute : FactAttribute, ITraitAttribute
 {
+    /// <summary>
+    /// Initializes a new instance of the <see cref="GdalCliFactAttribute"/> class.
+    /// </summary>
+    /// <param name="tool">The GDAL CLI tool required by the test.</param>
     public GdalCliFactAttribute(string tool)
     {
         if (!GdalCli.Available(tool))
         {
             Skip = $"GDAL CLI tool '{tool}' is not available on PATH.";
         }
+    }
+}
+
+/// <summary>
+/// Emits integration-test traits for <see cref="GdalCliFactAttribute"/>.
+/// </summary>
+public sealed class GdalCliFactDiscoverer : ITraitDiscoverer
+{
+    /// <inheritdoc />
+    public IEnumerable<KeyValuePair<string, string>> GetTraits(IAttributeInfo traitAttribute)
+    {
+        return
+        [
+            new KeyValuePair<string, string>("Category", "Integration"),
+            new KeyValuePair<string, string>("Category", "GDAL"),
+            new KeyValuePair<string, string>("Tier", Tiers.Integration)
+        ];
     }
 }

@@ -78,7 +78,7 @@ internal abstract class BaseGeocodeProvider : IGeocodeProvider
                 ResponseTimeMs = stopwatch.Elapsed.TotalMilliseconds
             };
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             stopwatch.Stop();
 

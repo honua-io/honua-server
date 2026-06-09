@@ -261,7 +261,6 @@ public sealed class GdalWorkerExecutorTests
     // -------------------------------------------------------------------------
 
     [GdalCliFact("ogr2ogr")]
-    [IntegrationTest]
     [Protocol(ProtocolNames.TestQuality)]
     [Operation(Operations.TestInfrastructure)]
     public async Task VectorConvert_WithRealOgr2Ogr_ConvertsGeoJsonToCsv()
