@@ -8,8 +8,11 @@ using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 using Npgsql;
 using Honua.Core.Features.Infrastructure.Monitoring;
+using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Abstractions;
 using Honua.Infrastructure.Monitoring;
+using Honua.Plugins;
 
 namespace Honua.Server.Features.HealthCheck;
 
@@ -24,6 +27,7 @@ internal static class ProductionHealthChecks
     private static readonly string[] ExternalServiceTags = ["external", "http"];
     private static readonly string[] MetricsTags = ["metrics", "monitoring"];
     private static readonly string[] OutboxTags = ["outbox", "events"];
+    private static readonly string[] PluginTags = ["plugins", "extensibility"];
 
     /// <summary>
     /// Adds production health checks to the service collection.
@@ -81,6 +85,13 @@ internal static class ProductionHealthChecks
             "feature-change-outbox",
             HealthStatus.Degraded,
             OutboxTags);
+
+        // Plugin/extension SDK (#347): reports loaded plugins and whether the Enterprise
+        // entitlement is active. Always healthy — plugins are optional.
+        healthChecksBuilder.AddCheck<PluginHealthCheck>(
+            "plugins",
+            HealthStatus.Healthy,
+            PluginTags);
 
         return services;
     }
@@ -492,5 +503,50 @@ internal sealed class ProductionMetricsHealthCheck : IHealthCheck
                     ["errorType"] = ex.GetType().Name
                 });
         }
+    }
+}
+
+/// <summary>
+/// Health check for the plugin/extension SDK (#347). Reports the registered plugins and whether
+/// the Enterprise <c>plugin.sdk</c> entitlement is active. Always healthy: plugins are optional.
+/// </summary>
+internal sealed class PluginHealthCheck : IHealthCheck
+{
+    private readonly PluginCatalog _catalog;
+    private readonly ILicenseEntitlementService _licensing;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="PluginHealthCheck"/> class.
+    /// </summary>
+    /// <param name="catalog">The registered plugin manifest catalog.</param>
+    /// <param name="licensing">The runtime license entitlement service.</param>
+    public PluginHealthCheck(PluginCatalog catalog, ILicenseEntitlementService licensing)
+    {
+        _catalog = catalog;
+        _licensing = licensing;
+    }
+
+    /// <inheritdoc/>
+    public Task<HealthCheckResult> CheckHealthAsync(
+        HealthCheckContext context,
+        CancellationToken cancellationToken = default)
+    {
+        var entitled = _licensing.CheckEntitlement(FeatureCatalog.PluginSdkKey).IsActive;
+        var plugins = _catalog.Plugins;
+
+        var data = new Dictionary<string, object>
+        {
+            ["pluginCount"] = plugins.Count,
+            ["entitled"] = entitled,
+            ["plugins"] = plugins.Select(p => $"{p.Id}@{p.Version}").ToArray()
+        };
+
+        var description = plugins.Count == 0
+            ? "No plugins registered"
+            : entitled
+                ? $"{plugins.Count} plugin(s) active"
+                : $"{plugins.Count} plugin(s) registered but inactive (Enterprise plugin.sdk entitlement required)";
+
+        return Task.FromResult(HealthCheckResult.Healthy(description, data));
     }
 }

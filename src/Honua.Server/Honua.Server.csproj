@@ -91,6 +91,8 @@
 
     <ProjectReference Include="..\Honua.Protocols.GeoServices\Honua.Protocols.GeoServices.csproj" />
 
+    <ProjectReference Include="..\Honua.Plugins\Honua.Plugins.csproj" />
+
     <ProjectReference Include="..\Honua.Scene\Honua.Scene.csproj" />
   </ItemGroup>
 
