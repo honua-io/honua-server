@@ -16,6 +16,10 @@ namespace Honua.Ai.FormGeneration;
 public interface IFormGenerationService
 {
     Task<FormGenerationResult> GenerateAsync(FormGenerationRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>Reports whether NL form generation is enabled + the configured providers (drives the console's
+    /// from-prompt availability). Mirrors the workflow-generation providers contract.</summary>
+    Task<FormGenerationProviders> GetProvidersAsync(CancellationToken cancellationToken = default);
 }
 
 /// <summary>Service-level request to generate or refine a form from a prompt.</summary>
@@ -146,8 +150,39 @@ public sealed record FormGenerationCapabilityState
     public string? Reason { get; init; }
 }
 
+/// <summary>Result of <c>GET /api/v1/admin/forms/packages/generation/providers</c>: whether NL form
+/// generation is enabled on this server, the default provider, and the configured providers — so the console
+/// can show the from-prompt builder as available (mirrors the workflow-generation providers contract).</summary>
+public sealed record FormGenerationProviders
+{
+    [JsonPropertyName("enabled")]
+    public bool Enabled { get; init; }
+
+    [JsonPropertyName("defaultProvider")]
+    public string? DefaultProvider { get; init; }
+
+    [JsonPropertyName("providers")]
+    public IReadOnlyList<FormGenerationProviderInfo> Providers { get; init; } = [];
+}
+
+public sealed record FormGenerationProviderInfo
+{
+    [JsonPropertyName("id")]
+    public string Id { get; init; } = string.Empty;
+
+    [JsonPropertyName("label")]
+    public string Label { get; init; } = string.Empty;
+
+    [JsonPropertyName("available")]
+    public bool Available { get; init; }
+
+    [JsonPropertyName("detail")]
+    public string? Detail { get; init; }
+}
+
 /// <summary>Source-generated JSON context for the form-generation HTTP request/response DTOs.</summary>
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(GenerateFormPackageRequest))]
 [JsonSerializable(typeof(FormGenerationResult))]
+[JsonSerializable(typeof(FormGenerationProviders))]
 public sealed partial class FormGenerationApiJsonContext : JsonSerializerContext;

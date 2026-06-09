@@ -91,6 +91,12 @@ internal static class FormPackageEndpoints
             .Accepts<GenerateFormPackageRequest>("application/json")
             .Produces<FormGenerationResult>();
 
+        admin.MapGet("/generation/providers", HandleGetFormGenerationProviders)
+            .WithName("GetFormGenerationProviders")
+            .WithSummary("List the configured natural-language form generation providers (availability).")
+            .WithMetadata(new HttpMethodMetadata([HttpMethods.Get]))
+            .Produces<FormGenerationProviders>();
+
         var runtime = endpoints.MapGroup("/api/v{version:apiVersion}/forms/packages")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
@@ -129,6 +135,14 @@ internal static class FormPackageEndpoints
             .Produces<FormSubmissionResponse>();
 
         return endpoints;
+    }
+
+    private static async Task<IResult> HandleGetFormGenerationProviders(
+        [FromServices] IFormGenerationService generation,
+        CancellationToken cancellationToken)
+    {
+        var providers = await generation.GetProvidersAsync(cancellationToken).ConfigureAwait(false);
+        return Results.Json(providers, FormGenerationApiJsonContext.Default.FormGenerationProviders);
     }
 
     private static async Task<IResult> HandleGenerateForm(

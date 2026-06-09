@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Linq;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -36,6 +37,33 @@ public sealed class FormGenerationService : IFormGenerationService
         // Generation-only validator: a stub target resolver runs the DB-free structural checks and
         // defers target binding to publish (so generation does not require a live metadata database).
         _validator = new FormPackageValidator(new GenerationFormTargetResolver(), limitsOptions);
+    }
+
+    /// <inheritdoc />
+    public Task<FormGenerationProviders> GetProvidersAsync(CancellationToken cancellationToken = default)
+    {
+        if (!_configuration.Enabled)
+        {
+            return Task.FromResult(new FormGenerationProviders { Enabled = false });
+        }
+
+        var providers = _configuration.Providers
+            .Where(kv => !string.IsNullOrWhiteSpace(kv.Value.Endpoint) && !string.IsNullOrWhiteSpace(kv.Value.Model))
+            .Select(kv => new FormGenerationProviderInfo
+            {
+                Id = kv.Key,
+                Label = kv.Key,
+                Available = true,
+                Detail = $"{kv.Value.Model}",
+            })
+            .ToArray();
+
+        return Task.FromResult(new FormGenerationProviders
+        {
+            Enabled = providers.Length > 0,
+            DefaultProvider = _configuration.DefaultProvider,
+            Providers = providers,
+        });
     }
 
     /// <inheritdoc />
