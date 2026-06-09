@@ -13,6 +13,8 @@ using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.OData.Client;
 using Xunit;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.OData;
 
@@ -323,6 +325,7 @@ public sealed class ODataClientCertificationFixture : IAsyncLifetime
     public ODataClientCertificationFixture()
     {
         WebApp = new WebAppFixture()
+            .WithTestLicense(HonuaEdition.Pro)
             .ConfigureWebHost(builder =>
             {
                 // Disable the dev-auth bypass so the CERT-AUTH-01 probe sees

@@ -12,6 +12,8 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security;
 using Honua.Core.Features.Security.Abstractions;
@@ -24,6 +26,7 @@ using Honua.Infrastructure.Events;
 using Honua.Infrastructure.Services;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Helpers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -1152,6 +1155,13 @@ public sealed class GrpcFeatureServiceTests
         {
             opts.DataEditorRoles = ["data-editor"];
         });
+
+        // #1548: gRPC ApplyEdits is gated behind the Pro editing.feature-edits entitlement,
+        // enforced via the call's RequestServices. Register a Pro license so these unit tests
+        // reach the write/RBAC seams instead of failing fast with FailedPrecondition.
+        var proLicense = new TestLicenseEntitlementService(HonuaEdition.Pro);
+        services.AddSingleton<ILicenseEntitlementService>(proLicense);
+        services.AddSingleton<ILicenseStatusProvider>(proLicense);
 
         // Register the per-operation resolver (#1376) so the gRPC read/write seams
         // consult grants first; when no grant matches they fall back to the coarse
