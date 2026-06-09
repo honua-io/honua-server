@@ -14,7 +14,7 @@ public sealed class KubernetesJobClientTests
     [Fact]
     public void CombineApiServerUri_WithRootBase_PrefixesRelativePath()
     {
-        var combined = KubernetesJobClient.CombineApiServerUri(
+        var combined = KubernetesApiRequestFactory.CombineApiServerUri(
             new Uri("https://cluster.example"),
             "/apis/batch/v1/namespaces/honua/jobs");
 
@@ -24,7 +24,7 @@ public sealed class KubernetesJobClientTests
     [Fact]
     public void CombineApiServerUri_WithTrailingSlashOnBase_ProducesSinglePathSeparator()
     {
-        var combined = KubernetesJobClient.CombineApiServerUri(
+        var combined = KubernetesApiRequestFactory.CombineApiServerUri(
             new Uri("https://cluster.example/"),
             "/apis/batch/v1/namespaces/honua/jobs");
 
@@ -34,7 +34,7 @@ public sealed class KubernetesJobClientTests
     [Fact]
     public void CombineApiServerUri_WithPathPrefix_PreservesBasePath()
     {
-        var combined = KubernetesJobClient.CombineApiServerUri(
+        var combined = KubernetesApiRequestFactory.CombineApiServerUri(
             new Uri("https://proxy.example/k8s"),
             "/apis/batch/v1/namespaces/honua/jobs");
 
@@ -44,7 +44,7 @@ public sealed class KubernetesJobClientTests
     [Fact]
     public void CombineApiServerUri_WithTrailingSlashOnPathPrefix_ProducesSingleSeparator()
     {
-        var combined = KubernetesJobClient.CombineApiServerUri(
+        var combined = KubernetesApiRequestFactory.CombineApiServerUri(
             new Uri("https://proxy.example/k8s/"),
             "/apis/batch/v1/namespaces/honua/jobs");
 
@@ -54,7 +54,7 @@ public sealed class KubernetesJobClientTests
     [Fact]
     public void CombineApiServerUri_DropsBaseQueryAndFragment()
     {
-        var combined = KubernetesJobClient.CombineApiServerUri(
+        var combined = KubernetesApiRequestFactory.CombineApiServerUri(
             new Uri("https://proxy.example/k8s?leak=yes#frag"),
             "/apis/batch/v1/namespaces/honua/jobs");
 
