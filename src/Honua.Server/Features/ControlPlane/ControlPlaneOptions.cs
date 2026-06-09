@@ -190,8 +190,19 @@ internal sealed class DeployTelemetryConnectionOptions
 {
     public string ConnectionId { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Metrics backend that executes this connection's deploy-gate queries. Supported values:
+    /// <c>prometheus</c> (default) and <c>cloudwatch</c>. An unsupported value disables
+    /// auto-rollback signals for the connection and is logged at startup-evaluation time.
+    /// </summary>
     public string Provider { get; set; } = "prometheus";
 
+    /// <summary>
+    /// For <c>prometheus</c>, the HTTPS base URL of the query API. For cloud providers such as
+    /// <c>cloudwatch</c>, the regional endpoint (for example
+    /// <c>https://monitoring.us-east-1.amazonaws.com</c>) used only to infer the region when
+    /// <see cref="Region"/> is not set.
+    /// </summary>
     public string BaseUrl { get; set; } = string.Empty;
 
     public string QueryPath { get; set; } = "/api/v1/query";
@@ -199,6 +210,13 @@ internal sealed class DeployTelemetryConnectionOptions
     public string? AuthHeaderName { get; set; }
 
     public string? AuthHeaderValue { get; set; }
+
+    /// <summary>
+    /// Optional AWS region (for example <c>us-east-1</c>) for the <c>cloudwatch</c> provider.
+    /// When unset the region is inferred from <see cref="BaseUrl"/>; failing that the AWS SDK's
+    /// default region resolution applies. Ignored by the <c>prometheus</c> provider.
+    /// </summary>
+    public string? Region { get; set; }
 
     public int TimeoutSeconds { get; set; } = 10;
 }

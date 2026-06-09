@@ -117,9 +117,73 @@ That rehearsal:
 - routes a weighted subset of traffic through Nginx
 - supports a forced canary header (`X-Honua-Canary: always`) for targeted verification
 - triggers rollback automatically when the canary lane degrades
-- can use a configured Prometheus-compatible telemetry connection as the real rollback signal source in non-local environments
+- can use a configured telemetry connection (Prometheus or CloudWatch; see "Deploy Telemetry Gate Providers" below) as the real rollback signal source in non-local environments
 
 `./scripts/cloud/deploy-canary.sh` remains a cluster-specific helper for environments that already have an external traffic-splitting substrate, but the scale-test path above is the canary flow validated in-repo for `#388`.
+
+---
+
+## Deploy Telemetry Gate Providers
+
+The deploy telemetry gate that drives automatic promote/rollback reads its signals from a named
+telemetry connection configured under `ControlPlane.TelemetryConnections`. A deploy operation
+selects the connection with the `telemetry.connection` parameter; the connection's `Provider`
+selects which metrics backend executes the error-rate / latency / sample-count queries.
+
+| Provider | `Provider` value | Query dialect | Notes |
+|---|---|---|---|
+| Prometheus (default) | `prometheus` | PromQL | Reference provider. The `honua-http`, `aws-alb-canary`, `aws-lambda-canary`, and `azure-aca-canary` presets synthesize PromQL automatically. |
+| Amazon CloudWatch | `cloudwatch` | CloudWatch metric-math | Requires explicit `telemetry.error_rate.query` / `telemetry.latency_p95.query` / `telemetry.sample_count.query` metric-math expressions — the built-in presets only emit PromQL. Available when the server is built with the AWS surface (not `HONUA_EXCLUDE_AWS`). |
+
+Thresholds, warmup, the minimum-sample gate, and the promote/rollback/wait decision are shared
+across providers, so only the query dialect differs.
+
+**Unsupported / unconfigured providers.** If a connection's `Provider` does not match a registered
+evaluator (for example `datadog`, or a typo), the gate does **not** stall silently. It emits a
+`WaitForMoreTelemetry` decision with an explicit message and logs a warning identifying the
+connection, the unsupported provider, and the providers that are supported. Auto-rollback stays
+disabled for that operation until a supported provider is configured.
+
+### CloudWatch telemetry connection
+
+```json
+{
+  "ControlPlane": {
+    "TelemetryConnections": [
+      {
+        "ConnectionId": "prod-cw",
+        "Provider": "cloudwatch",
+        "BaseUrl": "https://monitoring.us-east-1.amazonaws.com",
+        "Region": "us-east-1",
+        "TimeoutSeconds": 10
+      }
+    ]
+  }
+}
+```
+
+- `Region` is optional; when omitted the region is inferred from a regional `BaseUrl`
+  (`https://monitoring.<region>.amazonaws.com`), and failing that the AWS SDK's default region
+  resolution applies.
+- Credentials are resolved by the AWS SDK's standard credential chain (environment, shared config,
+  instance/task role). No secrets are stored on the connection — keep IAM scoped to
+  `cloudwatch:GetMetricData`.
+- Supply CloudWatch metric-math expressions per signal, for example:
+
+```json
+{
+  "telemetry.connection": "prod-cw",
+  "telemetry.sample_count.query": "SELECT COUNT(request_count) FROM SCHEMA(\"Honua/Http\", canary)",
+  "telemetry.sample_count.minimum": "10",
+  "telemetry.error_rate.query": "errors / requests",
+  "telemetry.error_rate.threshold": "0.05",
+  "telemetry.latency_p95.query": "p95_latency_ms",
+  "telemetry.latency_p95.threshold_ms": "2000"
+}
+```
+
+`BaseUrl` is required and must be HTTPS for every connection (validated at startup); for CloudWatch
+it doubles as the region hint.
 
 ---
 
