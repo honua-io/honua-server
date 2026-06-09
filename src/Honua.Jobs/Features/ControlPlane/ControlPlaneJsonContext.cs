@@ -11,6 +11,7 @@ namespace Honua.ControlPlane;
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(WorkflowOperationRecord))]
+[JsonSerializable(typeof(CanaryRampSpec))]
 [JsonSerializable(typeof(MetadataReleaseContext))]
 [JsonSerializable(typeof(MetadataRollbackPlan))]
 [JsonSerializable(typeof(MetadataEvidenceRef))]
