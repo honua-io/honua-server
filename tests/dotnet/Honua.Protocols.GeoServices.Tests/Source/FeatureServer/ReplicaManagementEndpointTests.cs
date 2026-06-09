@@ -11,6 +11,8 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
@@ -22,7 +24,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 [Protocol(TestProtocols.Admin)]
 public sealed class ReplicaManagementEndpointTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
 
     public Task InitializeAsync() => _fixture.InitializeAsync();
 
@@ -123,7 +125,7 @@ public sealed class ReplicaManagementEndpointTests : IAsyncLifetime
         // Disable the dev-auth bypass (which the default shared fixture enables) so the
         // authorization requirement is actually enforced, while staying in the Test
         // environment so configuration validation still passes.
-        var fixture = new WebAppFixture().ConfigureWebHost(builder =>
+        var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro).ConfigureWebHost(builder =>
         {
             builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "false");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
@@ -194,7 +196,7 @@ public sealed class ReplicaManagementEndpointTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/services/{serviceId}/replicas/{replicaId}")]
     public async Task GetReplica_WithoutAdminAuthorization_IsRejected()
     {
-        var fixture = new WebAppFixture().ConfigureWebHost(builder =>
+        var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro).ConfigureWebHost(builder =>
         {
             builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "false");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);

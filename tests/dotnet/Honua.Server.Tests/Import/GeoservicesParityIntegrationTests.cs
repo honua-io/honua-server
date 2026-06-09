@@ -16,6 +16,8 @@ using Honua.Core.Features.Shared.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Import;
 
@@ -129,7 +131,7 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
             NumericField: "pop2000")
     ];
 
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
     private readonly HttpClient _sourceClient = new() { Timeout = TimeSpan.FromMinutes(2) };
     private readonly List<string> _importedTables = [];
     private readonly List<ParityScorecardEntry> _scorecardEntries = [];

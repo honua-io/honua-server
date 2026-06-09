@@ -14,6 +14,7 @@ using Honua.TestKit;
 using Honua.TestKit.Helpers;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.Core.Features.Licensing.Domain;
 
 namespace Honua.Server.Tests.Features.Protocols.OData;
 
@@ -28,7 +29,7 @@ namespace Honua.Server.Tests.Features.Protocols.OData;
 [Protocol(TestProtocols.ODataV4)]
 public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
     private const int TestLayerId = 0;
 
     public async Task InitializeAsync()
@@ -683,7 +684,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     public async Task Batch_WithNonAtomicCreate_PublishesSingleMutationEvent()
     {
         var publisher = new RecordingFeatureChangeEventPublisher();
-        await using var fixture = new WebAppFixture()
+        await using var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
             .UseSeed(Path.Combine("tests", "seed", "odata.yaml"))
             .ReplaceService<IFeatureChangeEventPublisher>(publisher);
         await fixture.InitializeAsync();

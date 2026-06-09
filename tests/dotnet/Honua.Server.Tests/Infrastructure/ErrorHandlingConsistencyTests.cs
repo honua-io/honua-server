@@ -7,13 +7,15 @@ using FluentAssertions;
 using Honua.Infrastructure.Models;
 using Honua.Protocols.OData.Models;
 using Honua.TestKit;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Infrastructure;
 
 [Collection("Database")]
 public class ErrorHandlingConsistencyTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
 
     public async Task InitializeAsync()
     {

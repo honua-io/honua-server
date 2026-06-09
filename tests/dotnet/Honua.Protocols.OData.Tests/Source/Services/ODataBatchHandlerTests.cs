@@ -30,6 +30,9 @@ using Microsoft.Extensions.Options;
 using System.Security.Claims;
 using NSubstitute;
 using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
+using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.OData.Services;
 
@@ -175,6 +178,13 @@ public sealed class ODataBatchHandlerTests
         services.AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>();
         services.AddSingleton<IOptions<RbacOptions>>(Options.Create(new RbacOptions()));
         services.AddSingleton<IMetadataV2GraphProvider>(CreateMetadataProvider());
+
+        // #1548: atomic $batch change-set writes are gated behind the Pro editing.feature-edits
+        // entitlement via RequestServices. Register a Pro license so these handler unit tests
+        // exercise the batch write path instead of short-circuiting with 402.
+        var proLicense = new TestLicenseEntitlementService(HonuaEdition.Pro);
+        services.AddSingleton<ILicenseEntitlementService>(proLicense);
+        services.AddSingleton<ILicenseStatusProvider>(proLicense);
 
         var context = new DefaultHttpContext
         {

@@ -94,6 +94,34 @@ public sealed class FeatureCatalogTests
     }
 
     [Fact]
+    public void All_FeatureEditingIsProTier()
+    {
+        // Ticket #1548: multi-user feature editing across the shared edit pipeline
+        // (FeatureServer applyEdits/add/update/delete, OGC API Features mutations,
+        // WFS-T, OData CRUD, gRPC edits) is a Pro entitlement. Community remains
+        // read + serve + one-shot file import. This is the catalog-side counterpart
+        // to FeatureEditsEditionGateTests on the protocol handlers.
+        var feature = FeatureCatalog.All.SingleOrDefault(f => f.Key == FeatureCatalog.FeatureEditsKey);
+
+        feature.Should().NotBeNull("feature catalog must define multi-user editing for ticket #1548");
+        feature!.Key.Should().Be("editing.feature-edits");
+        feature.Category.Should().Be(FeatureCatalog.Categories.Editing);
+        feature.MinimumEdition.Should().Be(HonuaEdition.Pro);
+    }
+
+    [Fact]
+    public void All_BranchVersioningIsEnterpriseTier()
+    {
+        // Branch versioning stays an Enterprise entitlement, distinct from the Pro
+        // multi-user editing gate added in #1548.
+        var feature = FeatureCatalog.All.SingleOrDefault(f => f.Key == FeatureCatalog.BranchVersioningKey);
+
+        feature.Should().NotBeNull("feature catalog must define branch versioning");
+        feature!.Category.Should().Be(FeatureCatalog.Categories.Editing);
+        feature.MinimumEdition.Should().Be(HonuaEdition.Enterprise);
+    }
+
+    [Fact]
     public void All_CommunityFeaturesAreExpected()
     {
         // Community features are explicitly tracked — adding one requires updating this test
