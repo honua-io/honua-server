@@ -17,6 +17,8 @@ using Honua.TestKit.Constants;
 using Microsoft.Extensions.DependencyInjection;
 using System.Text.Json;
 using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
 
@@ -25,7 +27,7 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
 public sealed class Wfs20EndpointsTests : IAsyncLifetime
 {
     private const string GetFeatureByIdStoredQueryId = "urn:ogc:def:query:OGC-WFS::GetFeatureById";
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
 
     public async Task InitializeAsync() => await _fixture.InitializeAsync();
 
@@ -124,7 +126,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Wfs20, "GetCapabilities")]
     public async Task Wfs_GetCapabilities_WithProjectedExtent_UsesTransformFallbackForWgs84BoundingBox()
     {
-        var fixture = new WebAppFixture()
+        var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
             .ReplaceService<IMetadataV2GraphProvider>(BuildProjectedMetadataProvider());
 
         try
@@ -275,7 +277,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Wfs20, "DescribeFeatureType")]
     public async Task Wfs_DescribeFeatureType_LayerWithGeometryTypeButNoGeometryField_IncludesGeometryElement()
     {
-        var fixture = new WebAppFixture()
+        var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
             .ReplaceService<IMetadataV2GraphProvider>(BuildGeometryFromTypeMetadataProvider());
 
         try
@@ -306,7 +308,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
     public async Task Wfs_GetFeature_LayerWithGeometryTypeButNoGeometryField_ReturnsGmlGeometry()
     {
-        var fixture = new WebAppFixture()
+        var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
             .ReplaceService<IMetadataV2GraphProvider>(BuildGeometryFromTypeMetadataProvider());
 
         try

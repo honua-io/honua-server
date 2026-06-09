@@ -474,6 +474,161 @@ public sealed class DeployWorkflowServiceTests
     }
 
     [Fact]
+    public async Task Reconciler_ProgressiveCanaryRamp_AdvancesThroughStepsAndPromotesAtFullWeight()
+    {
+        var store = new TestWorkflowOperationStore();
+        var backend = new RecordingStagedDeployBackend();
+        var operation = CreateRampOperationRecord(
+            stepWeights: [5, 25, 50, 100],
+            stepBake: TimeSpan.FromMilliseconds(1));
+        await store.TryCreateAsync(operation);
+
+        var reconciler = CreateReconciler(store, backend, AlwaysHealthyTelemetry());
+
+        // Step 0 (5%): first pass initializes the step bake clock without advancing.
+        await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
+        var afterInit = await store.GetAsync(operation.OperationId);
+        afterInit!.Status.Should().Be(WorkflowOperationStatus.Reconciling);
+        afterInit.Deploy!.CanaryRamp!.CurrentStepIndex.Should().Be(0);
+        afterInit.Deploy.Parameters["deployment.canary_weight_percentage"].Should().Be("5");
+
+        // Drive the remaining steps; each pass bakes (1ms) then the telemetry gate advances.
+        for (var pass = 0; pass < 6; pass++)
+        {
+            await Task.Delay(10);
+            await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
+            var snapshot = await store.GetAsync(operation.OperationId);
+            if (snapshot!.Status == WorkflowOperationStatus.Succeeded)
+            {
+                break;
+            }
+        }
+
+        var promoted = await store.GetAsync(operation.OperationId);
+        promoted!.Status.Should().Be(WorkflowOperationStatus.Succeeded);
+        promoted.ObservedState.Should().Be("sha256:new");
+        // Intermediate steps (25, 50) are applied through StartAsync; the terminal step promotes.
+        backend.AppliedCanaryWeights.Should().ContainInOrder("25", "50");
+        backend.PromoteCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Reconciler_ProgressiveCanaryRamp_RollsBackWhenTelemetryBreachesAtIntermediateStep()
+    {
+        var store = new TestWorkflowOperationStore();
+        var backend = new RecordingStagedDeployBackend();
+        var operation = CreateRampOperationRecord(
+            stepWeights: [5, 25, 50, 100],
+            stepBake: TimeSpan.FromMilliseconds(1));
+        await store.TryCreateAsync(operation);
+
+        // Healthy until the canary reaches an intermediate weight, then the error rate breaches.
+        var evaluator = new SwitchingTelemetrySignalEvaluator(breachWhenWeightAtLeast: 25);
+        var reconciler = CreateReconciler(store, backend, evaluator);
+
+        WorkflowOperationRecord? snapshot = null;
+        for (var pass = 0; pass < 8; pass++)
+        {
+            await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
+            snapshot = await store.GetAsync(operation.OperationId);
+            if (snapshot!.Status is WorkflowOperationStatus.RollbackRequested
+                or WorkflowOperationStatus.RolledBack
+                or WorkflowOperationStatus.Succeeded)
+            {
+                break;
+            }
+
+            await Task.Delay(10);
+        }
+
+        snapshot.Should().NotBeNull();
+        snapshot!.Status.Should().Be(WorkflowOperationStatus.RollbackRequested);
+        snapshot.CurrentPhase.Should().Contain("Automatic rollback requested");
+        // Rollback fired before promotion to full traffic.
+        backend.PromoteCount.Should().Be(0);
+        snapshot.Deploy!.CanaryRamp!.CurrentStepIndex.Should().BeLessThan(3);
+    }
+
+    [Fact]
+    public async Task Reconciler_WithoutCanaryRamp_PromotesInSingleStep_NoRegression()
+    {
+        var store = new TestWorkflowOperationStore();
+        var backend = new RecordingStagedDeployBackend();
+        var operation = CreateOperationRecord(
+            status: WorkflowOperationStatus.Reconciling,
+            createdAt: DateTimeOffset.UtcNow.AddMinutes(-10),
+            parameters: new Dictionary<string, string>
+            {
+                ["telemetry.connection"] = "prod-prom",
+                ["telemetry.error_rate.query"] = "honua_canary_error_rate",
+                ["telemetry.error_rate.threshold"] = "0.05",
+                ["telemetry.sample_count.query"] = "honua_canary_sample_count",
+                ["telemetry.sample_count.minimum"] = "20"
+            });
+        operation.Deploy!.CanaryRamp.Should().BeNull("no ramp parameters configured");
+        await store.TryCreateAsync(operation);
+
+        var reconciler = CreateReconciler(store, backend, AlwaysHealthyTelemetry());
+
+        await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
+        var promoted = await store.GetAsync(operation.OperationId);
+
+        promoted!.Status.Should().Be(WorkflowOperationStatus.Succeeded);
+        promoted.ObservedState.Should().Be("sha256:new");
+        backend.PromoteCount.Should().Be(1, "single-step deploys promote once with no ramp stepping");
+        backend.AppliedCanaryWeights.Should().BeEmpty("no intermediate StartAsync calls without a ramp");
+    }
+
+    [Fact]
+    public async Task ParseCanaryRamp_FromDeployParameters_ProducesValidRampAndPinsInitialWeight()
+    {
+        var store = new TestWorkflowOperationStore();
+        var backend = new RecordingStagedDeployBackend();
+        var service = CreateService(store, backend);
+
+        var plan = await service.PlanAsync(
+            "prod-api",
+            "sha256:abc123",
+            "sha256:old",
+            parameterOverrides: new Dictionary<string, string>
+            {
+                ["deployment.canary_ramp.step_weights"] = "5, 25, 50, 100",
+                ["deployment.canary_ramp.step_bake_seconds"] = "180",
+                ["telemetry.connection"] = "prod-prom"
+            });
+
+        plan.Should().NotBeNull();
+        plan!.Spec.CanaryRamp.Should().NotBeNull();
+        plan.Spec.CanaryRamp!.IsValid.Should().BeTrue();
+        plan.Spec.CanaryRamp.StepWeights.Should().Equal(5, 25, 50, 100);
+        plan.Spec.CanaryRamp.StepBakeDuration.Should().Be(TimeSpan.FromSeconds(180));
+        plan.Spec.Parameters["deployment.canary_weight_percentage"].Should().Be("5");
+    }
+
+    [Fact]
+    public async Task PlanAsync_WithInvalidCanaryRamp_BlocksSubmission()
+    {
+        var store = new TestWorkflowOperationStore();
+        var backend = new RecordingStagedDeployBackend();
+        var service = CreateService(store, backend);
+
+        var plan = await service.PlanAsync(
+            "prod-api",
+            "sha256:abc123",
+            "sha256:old",
+            parameterOverrides: new Dictionary<string, string>
+            {
+                // Not strictly increasing and missing a terminal 100% weight.
+                ["deployment.canary_ramp.step_weights"] = "50, 25",
+                ["deployment.canary_ramp.step_bake_seconds"] = "60"
+            });
+
+        plan.Should().NotBeNull();
+        plan!.Plan.IsReadyToSubmit.Should().BeFalse();
+        plan.Plan.BlockingReasons.Should().Contain(reason => reason.Contains("canary ramp", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public async Task Reconciler_WithLongRunningObservation_RenewsLeaseUntilObservationCompletes()
     {
         var store = new TestWorkflowOperationStore();
@@ -561,7 +716,63 @@ public sealed class DeployWorkflowServiceTests
         };
     }
 
-    private static PrometheusDeployTelemetrySignalEvaluator CreateTelemetryEvaluator(params string[] responses)
+    private static WorkflowOperationRecord CreateRampOperationRecord(
+        IReadOnlyList<int> stepWeights,
+        TimeSpan stepBake)
+    {
+        var now = DateTimeOffset.UtcNow.AddMinutes(-10);
+        return new WorkflowOperationRecord
+        {
+            OperationId = $"deploy-{Guid.NewGuid():N}",
+            Kind = WorkflowOperationKind.Deploy,
+            Status = WorkflowOperationStatus.Reconciling,
+            CreatedAt = now,
+            UpdatedAt = now,
+            CurrentPhase = "Submitted to deploy backend.",
+            Audit = new OperationAuditInfo
+            {
+                RequestedBy = "alice",
+                Reason = "Ship it",
+                IdempotencyKey = Guid.NewGuid().ToString("N")
+            },
+            Concurrency = new OperationConcurrencyPolicy
+            {
+                PartitionKey = "production:prod-api",
+                RequiresExclusiveLease = true
+            },
+            Deploy = new DeployOperationSpec
+            {
+                TargetId = "prod-api",
+                TargetKind = DeployTargetKind.Kubernetes,
+                Backend = "honua-gitops-kubernetes",
+                Environment = "production",
+                TargetName = "honua-server",
+                ArtifactReference = "ghcr.io/honua/server",
+                RuntimeProfile = "dotnet-api",
+                CurrentRevision = "sha256:old",
+                DesiredRevision = "sha256:new",
+                Parameters = new Dictionary<string, string>
+                {
+                    ["deployment.canary_weight_percentage"] = stepWeights[0].ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    ["telemetry.connection"] = "prod-prom",
+                    ["telemetry.error_rate.query"] = "honua_canary_error_rate",
+                    ["telemetry.error_rate.threshold"] = "0.05",
+                    ["telemetry.sample_count.query"] = "honua_canary_sample_count",
+                    ["telemetry.sample_count.minimum"] = "20"
+                },
+                CanaryRamp = new CanaryRampSpec
+                {
+                    StepWeights = stepWeights,
+                    StepBakeDuration = stepBake
+                }
+            }
+        };
+    }
+
+    private static StubDeployTelemetrySignalEvaluator AlwaysHealthyTelemetry()
+        => new(new DeployTelemetryDecision { Message = "Telemetry gate passed: error-rate signal is within threshold." });
+
+    private static DeployTelemetrySignalEvaluator CreateTelemetryEvaluator(params string[] responses)
     {
         var responseQueue = new ConcurrentQueue<string>(responses);
         var optionsMonitor = new TestControlPlaneOptionsMonitor(new ControlPlaneOptions
@@ -578,8 +789,7 @@ public sealed class DeployWorkflowServiceTests
             ]
         });
 
-        return new PrometheusDeployTelemetrySignalEvaluator(
-            optionsMonitor,
+        var prometheusProvider = new PrometheusDeployTelemetryProviderEvaluator(
             new StubHttpClientFactory(new HttpClient(new DelegateHttpMessageHandler(_ =>
                 new HttpResponseMessage(HttpStatusCode.OK)
                 {
@@ -589,8 +799,12 @@ public sealed class DeployWorkflowServiceTests
                             : """{"status":"success","data":{"resultType":"vector","result":[]}}""",
                         Encoding.UTF8,
                         "application/json")
-                }))),
-            NullLogger<PrometheusDeployTelemetrySignalEvaluator>.Instance);
+                }))));
+
+        return new DeployTelemetrySignalEvaluator(
+            optionsMonitor,
+            [prometheusProvider],
+            NullLogger<DeployTelemetrySignalEvaluator>.Instance);
     }
 
     private sealed class TestDeployTargetRegistry : IDeployTargetRegistry
@@ -1087,5 +1301,103 @@ public sealed class DeployWorkflowServiceTests
                 ObservedRevision = operation.Deploy?.CurrentRevision,
                 Message = "Rollback requested"
             });
+    }
+
+    private sealed class RecordingStagedDeployBackend : IDeployBackend
+    {
+        private readonly List<string> _appliedCanaryWeights = [];
+
+        public int PromoteCount { get; private set; }
+
+        public IReadOnlyList<string> AppliedCanaryWeights => _appliedCanaryWeights;
+
+        public string BackendName => "honua-gitops-kubernetes";
+
+        public DeployTargetKind TargetKind => DeployTargetKind.Kubernetes;
+
+        public Task<DeployBackendCapabilities> GetCapabilitiesAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(new DeployBackendCapabilities
+            {
+                SupportsRollback = true,
+                SupportsTrafficShifting = true,
+                SupportsProgressPolling = true,
+                SupportsRevisionPinning = true
+            });
+
+        public Task<DeployPlan> PlanAsync(DeployOperationSpec spec, CancellationToken cancellationToken = default)
+            => Task.FromResult(new DeployPlan { IsReadyToSubmit = true });
+
+        public Task<DeploySubmissionResult> StartAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default)
+        {
+            // The reconciler advances ramp steps by re-applying the deploy through StartAsync with
+            // the next step weight pinned onto the spec parameters.
+            if (operation.Deploy != null &&
+                operation.Deploy.Parameters.TryGetValue("deployment.canary_weight_percentage", out var weight))
+            {
+                _appliedCanaryWeights.Add(weight);
+            }
+
+            return Task.FromResult(new DeploySubmissionResult
+            {
+                Status = WorkflowOperationStatus.Submitted,
+                ProviderOperationId = $"recording-backend:{operation.OperationId}",
+                ObservedRevision = operation.Deploy?.CurrentRevision,
+                Message = "Canary weight applied."
+            });
+        }
+
+        public Task<DeployObservation> ObserveAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default)
+            => Task.FromResult(new DeployObservation
+            {
+                Status = WorkflowOperationStatus.Reconciling,
+                ProviderOperationId = operation.ProviderOperationId,
+                ObservedRevision = operation.Deploy?.CurrentRevision,
+                PromotionRecommended = true,
+                Message = "Canary is stable and ready for the next ramp step."
+            });
+
+        public Task<DeployObservation> PromoteAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default)
+        {
+            PromoteCount++;
+            return Task.FromResult(new DeployObservation
+            {
+                Status = WorkflowOperationStatus.Succeeded,
+                ProviderOperationId = operation.ProviderOperationId,
+                ObservedRevision = operation.Deploy?.DesiredRevision,
+                Message = "Canary promoted to full traffic."
+            });
+        }
+
+        public Task<DeployObservation> RollbackAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default)
+            => Task.FromResult(new DeployObservation
+            {
+                Status = WorkflowOperationStatus.RollbackRequested,
+                ProviderOperationId = operation.ProviderOperationId,
+                ObservedRevision = operation.Deploy?.CurrentRevision,
+                Message = "Rollback requested"
+            });
+    }
+
+    private sealed class SwitchingTelemetrySignalEvaluator(int breachWhenWeightAtLeast) : IDeployTelemetrySignalEvaluator
+    {
+        public Task<DeployTelemetryDecision?> EvaluateAsync(
+            WorkflowOperationRecord operation,
+            CancellationToken cancellationToken = default)
+        {
+            var weight = operation.Deploy?.CanaryRamp?.CurrentStepWeight ?? 0;
+            if (weight >= breachWhenWeightAtLeast)
+            {
+                return Task.FromResult<DeployTelemetryDecision?>(new DeployTelemetryDecision
+                {
+                    RollbackRecommended = true,
+                    Message = "Automatic rollback requested because telemetry detected canary degradation: error rate 0.25 exceeded threshold 0.05."
+                });
+            }
+
+            return Task.FromResult<DeployTelemetryDecision?>(new DeployTelemetryDecision
+            {
+                Message = "Telemetry gate passed: error-rate signal is within threshold."
+            });
+        }
     }
 }

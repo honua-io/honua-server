@@ -11,6 +11,8 @@ using Honua.Protocols.OData.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.API;
 
@@ -20,7 +22,7 @@ namespace Honua.Server.Tests.Features.API;
 [Collection("Database")]
 public sealed class EndpointCoverageTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
     private HttpClient _client = null!;
 
     public async Task InitializeAsync()

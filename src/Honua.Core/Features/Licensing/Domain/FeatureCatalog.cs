@@ -82,6 +82,15 @@ public static class FeatureCatalog
     public const string BranchVersioningKey = "editing.branch-versioning";
 
     /// <summary>
+    /// Entitlement key for multi-user feature editing — create/update/delete features via the
+    /// shared edit/transaction pipeline (FeatureServer applyEdits/add/update/delete, OGC API
+    /// Features mutations, WFS-T, OData CRUD, and gRPC edits). Pro-tier; Community deployments
+    /// remain read + serve + one-shot file import (#1548). One-shot file import (<c>import.file</c>)
+    /// and Enterprise branch versioning (<c>editing.branch-versioning</c>) are separate entitlements.
+    /// </summary>
+    public const string FeatureEditsKey = "editing.feature-edits";
+
+    /// <summary>
     /// Entitlement key for the server plugin/extension SDK (custom feature validators and edit
     /// hooks today; computed fields and custom endpoints in later phases). Gates compile-time,
     /// AOT-safe plugins registered at startup (#347, ADR-0024). Enterprise-only.
@@ -155,9 +164,9 @@ public static class FeatureCatalog
         new("caching.redis", "Redis Distributed Cache", Categories.Caching,
             HonuaEdition.Pro, "Redis-backed distributed cache for multi-node deployments."),
 
-        // Import — Pro
+        // Import — Community (one-shot file import ships in Community; see docs/features/README.md)
         new("import.file", "File Import", Categories.Import,
-            HonuaEdition.Pro, "Import geospatial data from file uploads (GeoJSON, Shapefile, GeoPackage)."),
+            HonuaEdition.Community, "Import geospatial data from file uploads (GeoJSON, Shapefile, GeoPackage)."),
 
         // Streaming — Pro
         new("streaming.feature-subscriptions", "Real-Time Feature Streams", Categories.Streaming,
@@ -228,6 +237,10 @@ public static class FeatureCatalog
             HonuaEdition.Pro, "Export print jobs as PDF files."),
         new("printing.layout-templates", "Print Layout Templates", Categories.Printing,
             HonuaEdition.Pro, "Use full print layout templates beyond MAP_ONLY."),
+
+        // Editing — Pro (multi-user feature editing across all write protocols)
+        new(FeatureEditsKey, "Feature Editing", Categories.Editing,
+            HonuaEdition.Pro, "Create, update, and delete features through the shared edit pipeline — FeatureServer applyEdits/add/update/delete, OGC API Features mutations, WFS-T, OData CRUD, and gRPC edits."),
 
         // Editing — Enterprise (Esri-style branch versioning; Postgres-only)
         new(BranchVersioningKey, "Branch Versioning", Categories.Editing,

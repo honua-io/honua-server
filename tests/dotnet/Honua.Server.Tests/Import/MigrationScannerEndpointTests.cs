@@ -20,6 +20,8 @@ using Honua.Import.RasterImport;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Import;
 
@@ -40,7 +42,7 @@ public sealed class MigrationScannerEndpointTests : IAsyncLifetime
 
     public MigrationScannerEndpointTests()
     {
-        _fixture = new WebAppFixture()
+        _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
             .ReplaceService<IGeoServerImportService>(_geoServerService)
             .ReplaceService<IGeoservicesImportService>(_geoservicesService)
             .ReplaceService<IOgcServiceMigrationScanner>(_ogcService)

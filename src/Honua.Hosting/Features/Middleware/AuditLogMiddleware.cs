@@ -1,38 +1,52 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Infrastructure.Middleware;
 
 /// <summary>
-/// Bridges the per-request HTTP context to the audit log feature (#1144).
+/// Centralized, route-metadata-driven audit emitter (#507). Bridges the
+/// per-request HTTP context to the audit log feature so that security-relevant
+/// operations are recorded without each endpoint making manual audit calls.
 /// </summary>
 /// <remarks>
 /// <para>
-/// This middleware is deliberately lightweight: it does NOT record an audit
-/// event for every request (that is the job of metrics / access logs). Its
-/// role is to (a) ensure <see cref="IAuditLog"/> is resolvable from the
-/// request scope, and (b) emit a single <c>auth.failure</c> audit event when
-/// the pipeline ultimately rejects a request with <c>401 Unauthorized</c> or
-/// <c>403 Forbidden</c>. Individual handlers that perform security-relevant
-/// actions (delete, export, config change, ...) call
-/// <see cref="IAuditLog.RecordAsync"/> directly.
+/// After the rest of the pipeline runs (so it observes the final status code and
+/// resolved principal), the middleware:
 /// </para>
+/// <list type="bullet">
+/// <item><description>
+/// Looks up the matched endpoint's route template via
+/// <see cref="IAuditActionResolver"/>. When the route is in the audit coverage
+/// matrix (admin mutations, login, token issuance, ...) it emits the matching
+/// event with the outcome derived from the response status code. This is how
+/// "all admin API operations" and authentication events are audited centrally.
+/// </description></item>
+/// <item><description>
+/// Independently emits an <c>auth.failure</c> / permission-denied event whenever
+/// the pipeline rejects a request with <c>401</c> or <c>403</c> — even for routes
+/// that are not otherwise in the matrix — so authorization failures are always
+/// captured.
+/// </description></item>
+/// </list>
 /// <para>
-/// The 401/403 audit emit runs <i>after</i> the rest of the pipeline so it
-/// observes the final status code, including codes set by downstream
-/// authentication / authorization handlers.
+/// Destructive feature writes (delete / bulk edit) are emitted by the shared
+/// edit-pipeline decorator rather than here, because protocols like WFS-T and
+/// gRPC tunnel the operation through a single endpoint where the route does not
+/// reveal it. Keeping that one concern in shared infrastructure ensures every
+/// protocol adapter is covered consistently.
 /// </para>
 /// </remarks>
-internal sealed class AuditLogMiddleware(RequestDelegate next)
+internal sealed class AuditLogMiddleware(RequestDelegate next, IAuditActionResolver actionResolver)
 {
-    private const string CorrelationIdHeader = "X-Correlation-ID";
-
     private readonly RequestDelegate _next = next ?? throw new ArgumentNullException(nameof(next));
+    private readonly IAuditActionResolver _actionResolver = actionResolver ?? throw new ArgumentNullException(nameof(actionResolver));
 
     public async Task InvokeAsync(HttpContext context)
     {
@@ -40,43 +54,27 @@ internal sealed class AuditLogMiddleware(RequestDelegate next)
 
         await _next(context).ConfigureAwait(false);
 
-        // Only emit the auth-failure audit event when the response is a 401 or 403.
-        // Other failure paths (404, 500, ...) are not security-relevant in the
-        // forensic sense and are covered by metrics / logs.
-        var status = context.Response.StatusCode;
-        if (status != StatusCodes.Status401Unauthorized && status != StatusCodes.Status403Forbidden)
-        {
-            return;
-        }
-
         var auditLog = context.RequestServices.GetService<IAuditLog>();
         if (auditLog is null)
         {
             return;
         }
 
-        // Resolve the actor in best-effort fashion. If the request authenticated
-        // (and was then 403'd) we still want the actor identity; otherwise it
-        // is recorded as anonymous.
-        var actor = ResolveActor(context, out var actorType);
+        var status = context.Response.StatusCode;
+        var isAuthFailure = status is StatusCodes.Status401Unauthorized or StatusCodes.Status403Forbidden;
 
-        var auditEvent = new AuditEvent
+        var descriptor = ResolveDescriptor(context);
+
+        // Nothing to audit: route is not in the matrix and the request did not
+        // fail authentication/authorization.
+        if (descriptor is null && !isAuthFailure)
         {
-            Timestamp = DateTimeOffset.UtcNow,
-            EventType = AuditEventType.Authentication,
-            Actor = actor,
-            ActorType = actorType,
-            ResourceType = "http",
-            ResourceId = context.Request.Path.HasValue ? context.Request.Path.Value : null,
-            Action = "auth.failure",
-            Outcome = status == StatusCodes.Status403Forbidden
-                ? AuditOutcome.Denied
-                : AuditOutcome.Failure,
-            CorrelationId = ResolveCorrelationId(context),
-            RemoteIp = context.Connection.RemoteIpAddress?.ToString(),
-            UserAgent = context.Request.Headers.UserAgent.ToString() is { Length: > 0 } ua ? ua : null,
-            Details = $"{{\"status\":{status},\"method\":\"{context.Request.Method}\"}}",
-        };
+            return;
+        }
+
+        var auditEvent = descriptor is not null
+            ? BuildMatrixEvent(context, descriptor, status, isAuthFailure)
+            : BuildAuthFailureEvent(context, status);
 
         try
         {
@@ -90,40 +88,93 @@ internal sealed class AuditLogMiddleware(RequestDelegate next)
         }
     }
 
-    private static string ResolveActor(HttpContext context, out AuditActorType actorType)
+    private AuditActionDescriptor? ResolveDescriptor(HttpContext context)
     {
-        var identity = context.User?.Identity;
-        if (identity is { IsAuthenticated: true } && !string.IsNullOrWhiteSpace(identity.Name))
+        var routePattern = ResolveRoutePattern(context);
+        if (routePattern is null)
         {
-            // For API-key authenticated callers the handler attaches an
-            // "api_key_id" claim; prefer that as a stable actor identifier so
-            // we never log the raw key name.
-            var apiKeyId = context.User?.FindFirst("api_key_id")?.Value;
-            if (!string.IsNullOrWhiteSpace(apiKeyId))
-            {
-                actorType = AuditActorType.ApiKey;
-                return apiKeyId;
-            }
-
-            actorType = AuditActorType.UserId;
-            return identity.Name;
+            return null;
         }
 
-        actorType = AuditActorType.Anonymous;
-        return AuditEvent.AnonymousActor;
+        var descriptor = _actionResolver.Resolve(context.Request.Method, routePattern);
+        if (descriptor is null)
+        {
+            return null;
+        }
+
+        // Honour the descriptor's success policy: read-style descriptors only
+        // emit on failure to avoid flooding the sink on every successful request.
+        if (!descriptor.AuditOnSuccess && IsSuccessStatus(context.Response.StatusCode))
+        {
+            return null;
+        }
+
+        return descriptor;
     }
 
-    private static string ResolveCorrelationId(HttpContext context)
+    private static AuditEvent BuildMatrixEvent(
+        HttpContext context,
+        AuditActionDescriptor descriptor,
+        int status,
+        bool isAuthFailure)
     {
-        if (context.Response.Headers.TryGetValue(CorrelationIdHeader, out var headerValue) &&
-            !string.IsNullOrWhiteSpace(headerValue.ToString()))
+        var outcome = isAuthFailure
+            ? (status == StatusCodes.Status403Forbidden ? AuditOutcome.Denied : AuditOutcome.Failure)
+            : (IsSuccessStatus(status) ? AuditOutcome.Success : AuditOutcome.Failure);
+
+        return new AuditEvent
         {
-            return headerValue.ToString();
+            Timestamp = DateTimeOffset.UtcNow,
+            EventType = descriptor.EventType,
+            Actor = AuditContextResolver.ResolveActor(context, out var actorType),
+            ActorType = actorType,
+            ResourceType = descriptor.ResourceType,
+            ResourceId = context.Request.Path.HasValue ? context.Request.Path.Value : null,
+            Action = descriptor.Action,
+            Outcome = outcome,
+            CorrelationId = AuditContextResolver.ResolveCorrelationId(context),
+            RemoteIp = AuditContextResolver.ResolveRemoteIp(context),
+            UserAgent = AuditContextResolver.ResolveUserAgent(context),
+            Details = BuildDetails(context, status),
+        };
+    }
+
+    private static AuditEvent BuildAuthFailureEvent(HttpContext context, int status)
+        => new()
+        {
+            Timestamp = DateTimeOffset.UtcNow,
+            EventType = status == StatusCodes.Status403Forbidden
+                ? AuditEventType.Authorization
+                : AuditEventType.Authentication,
+            Actor = AuditContextResolver.ResolveActor(context, out var actorType),
+            ActorType = actorType,
+            ResourceType = "http",
+            ResourceId = context.Request.Path.HasValue ? context.Request.Path.Value : null,
+            Action = status == StatusCodes.Status403Forbidden ? "auth.denied" : "auth.failure",
+            Outcome = status == StatusCodes.Status403Forbidden
+                ? AuditOutcome.Denied
+                : AuditOutcome.Failure,
+            CorrelationId = AuditContextResolver.ResolveCorrelationId(context),
+            RemoteIp = AuditContextResolver.ResolveRemoteIp(context),
+            UserAgent = AuditContextResolver.ResolveUserAgent(context),
+            Details = BuildDetails(context, status),
+        };
+
+    private static string BuildDetails(HttpContext context, int status)
+        => string.Create(
+            CultureInfo.InvariantCulture,
+            $"{{\"status\":{status},\"method\":\"{context.Request.Method}\"}}");
+
+    private static bool IsSuccessStatus(int status) => status is >= 200 and < 300;
+
+    private static string? ResolveRoutePattern(HttpContext context)
+    {
+        if (context.GetEndpoint() is RouteEndpoint routeEndpoint)
+        {
+            return routeEndpoint.RoutePattern.RawText;
         }
 
-        return string.IsNullOrWhiteSpace(context.TraceIdentifier)
-            ? Guid.NewGuid().ToString("D")
-            : context.TraceIdentifier;
+        return null;
     }
 }
 
@@ -134,10 +185,13 @@ public static class AuditLogMiddlewareExtensions
 {
     /// <summary>
     /// Register the audit-log middleware. Should be added after correlation-id
-    /// middleware (so the audit event can stamp the request's correlation id)
-    /// and after authentication so it can observe the resolved
-    /// <see cref="HttpContext.User"/>.
+    /// middleware (so the audit event can stamp the request's correlation id),
+    /// after routing (so the matched endpoint's route template is available), and
+    /// after authentication / authorization so it can observe the resolved
+    /// <see cref="HttpContext.User"/> and the final status code.
     /// </summary>
+    /// <param name="app">The application builder.</param>
+    /// <returns>The application builder for chaining.</returns>
     public static IApplicationBuilder UseHonuaAuditLog(this IApplicationBuilder app)
     {
         ArgumentNullException.ThrowIfNull(app);
