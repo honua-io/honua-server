@@ -3,8 +3,10 @@
 
 using Honua.Core.Features.Infrastructure.Resilience;
 using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Extensions;
 using Honua.Infrastructure.Licensing;
+using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Startup;
 
@@ -30,6 +32,21 @@ internal static class LicensingRegistration
             sp.GetRequiredService<FileBackedLicenseService>());
         services.AddHostedService(sp =>
             sp.GetRequiredService<FileBackedLicenseService>());
+
+        // Test/dev only: an explicit Licensing:DevGrantEdition grants every entitlement up to that
+        // edition without a signed license, so an out-of-process test/CI server can exercise
+        // edition-gated features (e.g. feature editing, honua-server#1548/#1577). Default off; the
+        // override is registered last so it wins ILicenseEntitlementService resolution. Never set
+        // this in production.
+        var devGrantEdition = configuration[$"{LicenseOptions.SectionName}:DevGrantEdition"];
+        if (!string.IsNullOrWhiteSpace(devGrantEdition)
+            && Enum.TryParse<HonuaEdition>(devGrantEdition, ignoreCase: true, out var grantEdition))
+        {
+            services.AddSingleton<ILicenseEntitlementService>(sp =>
+                new DevLicenseEntitlementService(
+                    grantEdition,
+                    sp.GetService<ILogger<DevLicenseEntitlementService>>()));
+        }
 
         // Named HTTP clients for identity provider connectivity tests with resilience.
         services.AddResilientHttpClient(
