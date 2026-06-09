@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Postgres.Features.Security;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Configuration;
 using Npgsql;
 using Xunit;
@@ -19,6 +20,7 @@ public sealed class SecureConnectionDataSourceCacheTests
     private const string SampleConnectionString =
         "Host=example.com;Port=5432;Database=honua_test;Username=app;Password=secret;SslMode=Disable";
 
+    [SecurityTest]
     [Fact]
     public void GetOrCreate_WithConfiguredDefaultSchema_EmbedsSearchPathInOptions()
     {
@@ -45,6 +47,7 @@ public sealed class SecureConnectionDataSourceCacheTests
         Assert.Contains("search_path=\"honua_tenant_a\",public", builder.Options ?? string.Empty);
     }
 
+    [SecurityTest]
     [Fact]
     public void GetOrCreate_WithoutConfiguredDefaultSchema_DoesNotEmbedSearchPath()
     {
@@ -64,6 +67,7 @@ public sealed class SecureConnectionDataSourceCacheTests
         Assert.DoesNotContain("search_path=", builder.Options ?? string.Empty);
     }
 
+    [SecurityTest]
     [Fact]
     public void GetOrCreate_SameConnectionString_ReturnsCachedInstance()
     {

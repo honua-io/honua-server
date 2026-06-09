@@ -1,10 +1,20 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
 using Honua.Core.Features.Security.Domain;
+using Honua.TestKit.Attributes;
 using Xunit;
 
 namespace Honua.Core.Security.Tests;
 
+/// <summary>
+/// Tests for <see cref="DataConnection"/> verifying provider-name normalization
+/// and that encrypted-credential construction enforces strict SSL/TLS transport
+/// modes when <see cref="DataConnection.SslRequired"/> is set.
+/// </summary>
 public sealed class DataConnectionTests
 {
+    [SecurityTest]
     [Theory]
     [InlineData(null, "postgis")]
     [InlineData("", "postgis")]
@@ -19,10 +29,11 @@ public sealed class DataConnectionTests
         Assert.Equal(expected, connection.NormalizedProvider);
     }
 
+    [SecurityTest]
     [Theory]
     [InlineData(SslMode.Allow)]
     [InlineData(SslMode.Prefer)]
-    public void CreateWithEncryptedCredentialsSslRequiredRejectsFallbackModes(SslMode sslMode)
+    public void CreateWithEncryptedCredentials_SslRequiredWithFallbackMode_ThrowsInvalidOperationException(SslMode sslMode)
     {
         var exception = Assert.Throws<InvalidOperationException>(() =>
             DataConnection.CreateWithEncryptedCredentials(
@@ -40,11 +51,12 @@ public sealed class DataConnectionTests
         Assert.Equal("SSL mode must require encrypted transport when SslRequired is true", exception.Message);
     }
 
+    [SecurityTest]
     [Theory]
     [InlineData(SslMode.Require)]
     [InlineData(SslMode.VerifyCa)]
     [InlineData(SslMode.VerifyFull)]
-    public void CreateWithEncryptedCredentialsSslRequiredAllowsStrictModes(SslMode sslMode)
+    public void CreateWithEncryptedCredentials_SslRequiredWithStrictMode_PreservesSslMode(SslMode sslMode)
     {
         var connection = DataConnection.CreateWithEncryptedCredentials(
             name: "analytics",

@@ -155,6 +155,9 @@ public readonly record struct EditFeature
     /// </summary>
     public EditUpdateMode UpdateMode { get; init; }
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="EditFeature"/> struct with default values.
+    /// </summary>
     public EditFeature()
     {
         ObjectId = null;
@@ -350,6 +353,9 @@ public readonly record struct EditTransactionOptions
     /// </summary>
     public TransactionIsolationLevel IsolationLevel { get; init; }
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="EditTransactionOptions"/> struct with default values.
+    /// </summary>
     public EditTransactionOptions()
     {
         RollbackOnFailure = false;
@@ -454,6 +460,9 @@ public readonly record struct EditValidationOptions
     /// </summary>
     public ValidationMode Mode { get; init; }
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="EditValidationOptions"/> struct with strict defaults.
+    /// </summary>
     public EditValidationOptions()
     {
         ValidateGeometry = true;

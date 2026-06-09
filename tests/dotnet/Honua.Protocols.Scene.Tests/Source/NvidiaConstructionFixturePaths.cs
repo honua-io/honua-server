@@ -21,21 +21,5 @@ internal static class NvidiaConstructionFixturePaths
     public const string StructureTileRelativePath = "tiles/structure.b3dm";
     public const string ObsPinTileRelativePath = "tiles/obs-pin.b3dm";
 
-    public static string ResolveFixtureRoot()
-    {
-        var directory = AppContext.BaseDirectory;
-        while (directory is not null)
-        {
-            var candidate = Path.Combine(directory, "tests", "fixtures", "scenes", "nvidia-construction");
-            if (Directory.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            directory = Path.GetDirectoryName(directory);
-        }
-
-        throw new DirectoryNotFoundException(
-            "Could not locate tests/fixtures/scenes/nvidia-construction from the test base directory.");
-    }
+    public static string ResolveFixtureRoot() => SceneFixtureRoots.Resolve("nvidia-construction");
 }

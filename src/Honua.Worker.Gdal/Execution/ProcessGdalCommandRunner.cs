@@ -13,7 +13,7 @@ namespace Honua.Worker.Gdal.Execution;
 /// worker container is built from; this runner does not bundle managed GDAL
 /// bindings so it adds no native package dependencies to any managed assembly.
 /// </summary>
-public sealed partial class ProcessGdalCommandRunner(ILogger<ProcessGdalCommandRunner> logger) : IGdalCommandRunner
+internal sealed partial class ProcessGdalCommandRunner(ILogger<ProcessGdalCommandRunner> logger) : IGdalCommandRunner
 {
     /// <inheritdoc />
     public async Task<GdalCommandResult> RunAsync(

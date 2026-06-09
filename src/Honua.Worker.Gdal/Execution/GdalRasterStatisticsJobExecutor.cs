@@ -19,7 +19,7 @@ namespace Honua.Worker.Gdal.Execution;
 /// in one invocation; the per-id difference is what we extract from that
 /// document and publish back as a scalar artifact.
 /// </summary>
-public sealed partial class GdalRasterStatisticsJobExecutor(
+internal sealed partial class GdalRasterStatisticsJobExecutor(
     IGdalCommandRunner runner,
     IOptionsMonitor<GdalWorkerOptions> options,
     ILogger<GdalRasterStatisticsJobExecutor> logger) : IJobExecutor
@@ -114,7 +114,7 @@ public sealed partial class GdalRasterStatisticsJobExecutor(
 
             if (!result.Succeeded)
             {
-                Log.ToolFailed(logger, job.OperationId, result.ExitCode, Truncate(result.StandardError));
+                Log.ToolFailed(logger, job.OperationId, result.ExitCode, GdalErrorSanitizer.TruncateForLog(result.StandardError));
                 return JobExecutionResult.Failed(
                     $"gdalinfo exited with code {result.ExitCode}: {GdalErrorSanitizer.Sanitize(result.StandardError, workspace)}");
             }
@@ -325,13 +325,6 @@ public sealed partial class GdalRasterStatisticsJobExecutor(
         {
             writer.WriteNumber(targetName, d);
         }
-    }
-
-    private static string Truncate(string value)
-    {
-        const int max = 500;
-        var trimmed = value.Trim();
-        return trimmed.Length <= max ? trimmed : trimmed[..max] + "…";
     }
 
     private static partial class Log

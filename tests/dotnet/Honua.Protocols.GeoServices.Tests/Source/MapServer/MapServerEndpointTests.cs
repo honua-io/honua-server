@@ -1591,14 +1591,14 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
             """;
 
         await _fixture.Postgres.ExecuteAsync(sql, schema);
-        SeedGenerateKmlMetadataV2Graph(serviceName);
+        await SeedGenerateKmlMetadataV2GraphAsync(serviceName);
         return serviceName;
     }
 
-    private void SeedGenerateKmlMetadataV2Graph(string serviceName)
+    private async Task SeedGenerateKmlMetadataV2GraphAsync(string serviceName)
     {
         var provider = _fixture.GetService<TestMetadataV2GraphProvider>();
-        var snapshot = provider.GetCurrentAsync().AsTask().GetAwaiter().GetResult();
+        var snapshot = await provider.GetCurrentAsync();
         var serviceId = $"svc-{serviceName}-map";
 
         var resources = snapshot.Graph.Resources.ToList();

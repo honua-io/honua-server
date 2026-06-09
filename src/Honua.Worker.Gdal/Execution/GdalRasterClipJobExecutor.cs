@@ -22,7 +22,7 @@ namespace Honua.Worker.Gdal.Execution;
 /// GeoTIFF as a canonical data-URI artifact. Runs only inside the GDAL worker
 /// image — <see cref="AcceptedRuntimeProfiles"/> is <c>{ "native" }</c>.
 /// </summary>
-public sealed partial class GdalRasterClipJobExecutor(
+internal sealed partial class GdalRasterClipJobExecutor(
     IGdalCommandRunner runner,
     IOptionsMonitor<GdalWorkerOptions> options,
     ILogger<GdalRasterClipJobExecutor> logger) : IJobExecutor
@@ -155,7 +155,7 @@ public sealed partial class GdalRasterClipJobExecutor(
 
             if (!result.Succeeded)
             {
-                Log.ToolFailed(logger, job.OperationId, result.ExitCode, Truncate(result.StandardError));
+                Log.ToolFailed(logger, job.OperationId, result.ExitCode, GdalErrorSanitizer.TruncateForLog(result.StandardError));
                 return JobExecutionResult.Failed(
                     $"gdalwarp exited with code {result.ExitCode}: {GdalErrorSanitizer.Sanitize(result.StandardError, workspace)}");
             }
@@ -219,13 +219,6 @@ public sealed partial class GdalRasterClipJobExecutor(
         sb.Append(geometryJson);
         sb.Append("}]}");
         return sb.ToString();
-    }
-
-    private static string Truncate(string value)
-    {
-        const int max = 500;
-        var trimmed = value.Trim();
-        return trimmed.Length <= max ? trimmed : trimmed[..max] + "…";
     }
 
     private static partial class Log

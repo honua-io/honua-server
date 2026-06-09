@@ -18,6 +18,11 @@ public sealed class EditProcessor : IEditProcessor
     private readonly ILogger<EditProcessor> _logger;
     private readonly IMetadataV2GraphProvider? _v2GraphProvider;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="EditProcessor"/> class.
+    /// </summary>
+    /// <param name="logger">The logger used to record edit diagnostics.</param>
+    /// <param name="v2GraphProvider">The optional metadata graph provider used to resolve storage layer identifiers.</param>
     public EditProcessor(ILogger<EditProcessor> logger, IMetadataV2GraphProvider? v2GraphProvider = null)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));

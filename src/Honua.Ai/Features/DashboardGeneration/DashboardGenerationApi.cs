@@ -77,6 +77,7 @@ public sealed record GenerateDashboardContentRequest
     [JsonPropertyName("kind")]
     public string Kind { get; init; } = "dashboard";
 
+    /// <summary>Human-readable prompt presented to the operator.</summary>
     [JsonPropertyName("prompt")]
     public string Prompt { get; init; } = string.Empty;
 
@@ -97,74 +98,98 @@ public sealed record GenerateDashboardContentRequest
     public DashboardGenerationAnswer[] Answers { get; init => field = value ?? []; } = [];
 }
 
+/// <summary>A single prior conversation turn supplied to ground a dashboard-generation refine request.</summary>
 public sealed record DashboardGenerationConversationTurn
 {
+    /// <summary>Role of the turn author (for example <c>user</c> or <c>assistant</c>).</summary>
     [JsonPropertyName("role")]
     public string Role { get; init; } = string.Empty;
 
+    /// <summary>Natural-language content of the turn.</summary>
     [JsonPropertyName("content")]
     public string Content { get; init; } = string.Empty;
 }
 
+/// <summary>An answer selecting one option for a previously emitted clarification question.</summary>
 public sealed record DashboardGenerationAnswer
 {
+    /// <summary>Identifier of the clarification question being answered.</summary>
     [JsonPropertyName("questionId")]
     public string QuestionId { get; init; } = string.Empty;
 
+    /// <summary>Identifier of the chosen option.</summary>
     [JsonPropertyName("optionId")]
     public string OptionId { get; init; } = string.Empty;
 }
 
+/// <summary>A clarification question returned when the prompt is ambiguous and needs operator input.</summary>
 public sealed record DashboardGenerationClarification
 {
+    /// <summary>Stable identifier.</summary>
     [JsonPropertyName("id")]
     public string Id { get; init; } = string.Empty;
 
+    /// <summary>Discriminator value.</summary>
     [JsonPropertyName("kind")]
     public string Kind { get; init; } = string.Empty;
 
+    /// <summary>Human-readable prompt presented to the operator.</summary>
     [JsonPropertyName("prompt")]
     public string Prompt { get; init; } = string.Empty;
 
+    /// <summary>Optional explanatory reason.</summary>
     [JsonPropertyName("reason")]
     public string? Reason { get; init; }
 
+    /// <summary>Selectable answer choices for the clarification.</summary>
     [JsonPropertyName("choices")]
     public IReadOnlyList<DashboardGenerationClarificationChoice> Choices { get; init; } = [];
 }
 
+/// <summary>A selectable choice for a clarification question.</summary>
 public sealed record DashboardGenerationClarificationChoice
 {
+    /// <summary>Stable identifier.</summary>
     [JsonPropertyName("id")]
     public string Id { get; init; } = string.Empty;
 
+    /// <summary>Human-readable label.</summary>
     [JsonPropertyName("label")]
     public string Label { get; init; } = string.Empty;
 
+    /// <summary>Optional description of the effect selecting this choice has on generation.</summary>
     [JsonPropertyName("effect")]
     public string? Effect { get; init; }
 }
 
+/// <summary>Reports the availability state of a generation capability for the current request.</summary>
 public sealed record DashboardGenerationCapabilityState
 {
+    /// <summary>Capability name.</summary>
     [JsonPropertyName("name")]
     public string Name { get; init; } = string.Empty;
 
+    /// <summary>Capability state (for example <c>available</c> or <c>unavailable</c>).</summary>
     [JsonPropertyName("state")]
     public string State { get; init; } = string.Empty;
 
+    /// <summary>Optional explanatory reason.</summary>
     [JsonPropertyName("reason")]
     public string? Reason { get; init; }
 }
 
+/// <summary>Token and latency usage metrics for a dashboard-generation request.</summary>
 public sealed record DashboardGenerationUsage
 {
+    /// <summary>Prompt tokens consumed, when reported by the provider.</summary>
     [JsonPropertyName("promptTokens")]
     public int? PromptTokens { get; init; }
 
+    /// <summary>Completion tokens produced, when reported by the provider.</summary>
     [JsonPropertyName("completionTokens")]
     public int? CompletionTokens { get; init; }
 
+    /// <summary>End-to-end latency in milliseconds, when measured.</summary>
     [JsonPropertyName("latencyMs")]
     public int? LatencyMs { get; init; }
 }

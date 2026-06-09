@@ -5,6 +5,10 @@ using System.Collections.Concurrent;
 
 namespace Honua.Core.Features.Collaboration.FeatureLocks;
 
+/// <summary>
+/// In-memory implementation of <see cref="IFeatureLockService"/> suitable for
+/// single-node deployments and tests.
+/// </summary>
 public sealed class InMemoryFeatureLockService : IFeatureLockService
 {
     private const string DeniedReason = "Feature lock mutation requires authorized write access.";
@@ -13,11 +17,16 @@ public sealed class InMemoryFeatureLockService : IFeatureLockService
     private readonly object _gate = new();
     private readonly TimeProvider _timeProvider;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="InMemoryFeatureLockService"/> class.
+    /// </summary>
+    /// <param name="timeProvider">The time provider used for lease timing, or <see langword="null"/> to use the system clock.</param>
     public InMemoryFeatureLockService(TimeProvider? timeProvider = null)
     {
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
+    /// <inheritdoc />
     public ValueTask<FeatureLockClaimResponse> ClaimAsync(
         FeatureRef feature,
         LockHolder holder,
@@ -66,6 +75,7 @@ public sealed class InMemoryFeatureLockService : IFeatureLockService
         }
     }
 
+    /// <inheritdoc />
     public ValueTask<FeatureLockRenewResponse> RenewAsync(
         FeatureRef feature,
         LockHolder holder,
@@ -106,6 +116,7 @@ public sealed class InMemoryFeatureLockService : IFeatureLockService
         }
     }
 
+    /// <inheritdoc />
     public ValueTask<FeatureLockReleaseResponse> ReleaseAsync(
         FeatureRef feature,
         LockHolder holder,
@@ -150,6 +161,7 @@ public sealed class InMemoryFeatureLockService : IFeatureLockService
         }
     }
 
+    /// <inheritdoc />
     public ValueTask<FeatureLockLease?> GetActiveLeaseAsync(
         FeatureRef feature,
         CancellationToken cancellationToken = default)
@@ -166,6 +178,7 @@ public sealed class InMemoryFeatureLockService : IFeatureLockService
         }
     }
 
+    /// <inheritdoc />
     public ValueTask<int> PruneExpiredAsync(CancellationToken cancellationToken = default)
     {
         lock (_gate)

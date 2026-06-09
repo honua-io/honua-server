@@ -29,6 +29,13 @@ public sealed class QueryProcessor : IQueryProcessor
     private const int MaxReasonableLimit = 50000;
     private const int MaxReasonableOffset = 1000000;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="QueryProcessor"/> class.
+    /// </summary>
+    /// <param name="filterTranslator">The translator that converts filter expressions into provider predicates.</param>
+    /// <param name="featureReader">The feature reader used for estimates and streaming decisions.</param>
+    /// <param name="logger">The logger used to record query diagnostics.</param>
+    /// <param name="v2GraphProvider">The optional metadata graph provider used to resolve storage layer identifiers.</param>
     public QueryProcessor(
         IFilterExpressionTranslator filterTranslator,
         IFeatureReader featureReader,

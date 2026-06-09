@@ -1,11 +1,14 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Data;
+using System.Data.Common;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.ReadOnlyProviders;
 using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.HealthCheck.Abstractions;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.MySql.Features.FeatureStore;
 using Honua.MySql.Features.FeatureStore.Services;
 using Honua.MySql.Features.HealthCheck;
@@ -188,15 +191,15 @@ public sealed class MySqlProviderResolutionTests
         return new MySqlFeatureStore(queryBuilder, dataAccess);
     }
 
-    private sealed class ThrowingConnectionProvider : Honua.Core.Features.Infrastructure.Abstractions.IDatabaseConnectionProvider
+    private sealed class ThrowingConnectionProvider : IDatabaseConnectionProvider
     {
         public string GetConnectionString() => string.Empty;
 
-        public Task<System.Data.Common.DbConnection> OpenConnectionAsync(CancellationToken cancellationToken = default)
+        public Task<DbConnection> OpenConnectionAsync(CancellationToken cancellationToken = default)
             => throw new NotSupportedException("Connection provider not used in resolution tests.");
 
-        public Task<(System.Data.Common.DbConnection Connection, System.Data.Common.DbTransaction Transaction)> OpenTransactionAsync(
-            System.Data.IsolationLevel isolationLevel = System.Data.IsolationLevel.RepeatableRead,
+        public Task<(DbConnection Connection, DbTransaction Transaction)> OpenTransactionAsync(
+            IsolationLevel isolationLevel = IsolationLevel.RepeatableRead,
             CancellationToken cancellationToken = default)
             => throw new NotSupportedException("Connection provider not used in resolution tests.");
 

@@ -49,11 +49,22 @@ public sealed class MetadataV2GraphIndex
         ResourcesByStyleResourceId = resourcesByStyleResourceId;
     }
 
+    /// <summary>Catalogs keyed by their identifier.</summary>
     public IReadOnlyDictionary<string, MetadataV2Catalog> CatalogsById { get; }
+
+    /// <summary>Resources keyed by their identifier.</summary>
     public IReadOnlyDictionary<string, MetadataV2Resource> ResourcesById { get; }
+
+    /// <summary>Resources keyed by their name.</summary>
     public IReadOnlyDictionary<string, MetadataV2Resource> ResourcesByName { get; }
+
+    /// <summary>Connections keyed by their identifier.</summary>
     public IReadOnlyDictionary<string, MetadataV2Connection> ConnectionsById { get; }
+
+    /// <summary>Storage bindings keyed by their identifier.</summary>
     public IReadOnlyDictionary<string, MetadataV2StorageBinding> StorageBindingsById { get; }
+
+    /// <summary>Storage bindings grouped by the resource they bind.</summary>
     public ILookup<string, MetadataV2StorageBinding> StorageBindingsByResource { get; }
 
     /// <summary>
@@ -73,14 +84,31 @@ public sealed class MetadataV2GraphIndex
     /// </summary>
     public IReadOnlyDictionary<int, MetadataV2Resource> ResourcesByStorageLayerId { get; }
 
+    /// <summary>Services keyed by their identifier.</summary>
     public IReadOnlyDictionary<string, MetadataV2Service> ServicesById { get; }
+
+    /// <summary>Services keyed by their name.</summary>
     public IReadOnlyDictionary<string, MetadataV2Service> ServicesByName { get; }
+
+    /// <summary>Publications keyed by their identifier.</summary>
     public IReadOnlyDictionary<string, MetadataV2Publication> PublicationsById { get; }
+
+    /// <summary>Publications grouped by the service they belong to.</summary>
     public ILookup<string, MetadataV2Publication> PublicationsByService { get; }
+
+    /// <summary>Publications grouped by the resource they expose.</summary>
     public ILookup<string, MetadataV2Publication> PublicationsByResource { get; }
+
+    /// <summary>Projection profiles keyed by their identifier.</summary>
     public IReadOnlyDictionary<string, MetadataV2ProjectionProfile> ProjectionProfilesById { get; }
+
+    /// <summary>Projection profiles grouped by their target.</summary>
     public ILookup<string, MetadataV2ProjectionProfile> ProjectionProfilesByTarget { get; }
+
+    /// <summary>Policies keyed by their identifier.</summary>
     public IReadOnlyDictionary<string, MetadataV2Policy> PoliciesById { get; }
+
+    /// <summary>Roles keyed by their identifier.</summary>
     public IReadOnlyDictionary<string, MetadataV2Role> RolesById { get; }
 
     /// <summary>

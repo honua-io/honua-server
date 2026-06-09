@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Net;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Honua.Core.Features.Validation.Abstractions;
@@ -361,14 +362,14 @@ internal static class OgcCommonUtilities
     {
         try
         {
-            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            using var doc = JsonDocument.Parse(json);
             if (!doc.RootElement.TryGetProperty("links", out var linksElement) ||
-                linksElement.ValueKind != System.Text.Json.JsonValueKind.Array)
+                linksElement.ValueKind != JsonValueKind.Array)
             {
                 return string.Empty;
             }
 
-            var sb = new System.Text.StringBuilder();
+            var sb = new StringBuilder();
             sb.Append("<nav><h2>Links</h2><ul>");
 
             foreach (var link in linksElement.EnumerateArray())
@@ -385,7 +386,7 @@ internal static class OgcCommonUtilities
                 // Only show HTML-navigable links
                 var type = link.TryGetProperty("type", out var typeProp) ? typeProp.GetString() : null;
                 var displayTitle = WebUtility.HtmlEncode(linkTitle ?? rel ?? href);
-                var relLabel = !string.IsNullOrEmpty(rel) ? $" <span class=\"rel\">[{WebUtility.HtmlEncode(rel)}]</span>" : "";
+                var relLabel = !string.IsNullOrEmpty(rel) ? $" <span class=\"rel\">[{WebUtility.HtmlEncode(rel)}]</span>" : string.Empty;
                 var htmlHref = type != null && !type.Contains("html", StringComparison.OrdinalIgnoreCase)
                     ? href + (href.Contains('?') ? "&" : "?") + "f=html"
                     : href;
@@ -396,8 +397,11 @@ internal static class OgcCommonUtilities
             sb.Append("</ul></nav>");
             return sb.ToString();
         }
-        catch
+        catch (JsonException)
         {
+            // Best-effort navigation enhancement: if the serialized payload is
+            // not parseable JSON we simply omit the link bar rather than fail
+            // the HTML response.
             return string.Empty;
         }
     }

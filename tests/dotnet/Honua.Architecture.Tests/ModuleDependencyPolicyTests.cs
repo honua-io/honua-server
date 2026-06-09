@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Xml.Linq;
 using FluentAssertions;
 using Xunit;
 
@@ -498,28 +497,8 @@ public sealed class ModuleDependencyPolicyTests
         }
     }
 
-    private static List<string> LoadProjectReferenceNames(string csprojPath)
-    {
-        var document = XDocument.Load(csprojPath);
-        var names = new List<string>();
-
-        foreach (var element in document.Descendants("ProjectReference"))
-        {
-            var include = element.Attribute("Include")?.Value;
-            if (string.IsNullOrWhiteSpace(include))
-            {
-                continue;
-            }
-
-            var fileName = Path.GetFileNameWithoutExtension(include.Replace('\\', '/'));
-            if (!string.IsNullOrWhiteSpace(fileName))
-            {
-                names.Add(fileName);
-            }
-        }
-
-        return names;
-    }
+    private static IReadOnlyList<string> LoadProjectReferenceNames(string csprojPath)
+        => ArchitectureTestHelpers.DirectProjectReferenceNames(csprojPath);
 
     /// <summary>
     /// Maps a csproj name to its <see cref="ModuleRole"/>. Order matters — the

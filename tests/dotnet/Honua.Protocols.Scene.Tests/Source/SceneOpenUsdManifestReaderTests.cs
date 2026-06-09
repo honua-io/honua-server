@@ -4,12 +4,20 @@
 using FluentAssertions;
 using Honua.Core.Features.Scene.Domain;
 using Honua.Protocols.Scene;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.Scene;
 
+/// <summary>
+/// Unit tests for the OpenUSD scene manifest reader. The reader maps a hosted
+/// scene's tileset + observation sidecar into the manifest input model; these
+/// tests isolate URL escaping of sidecar paths and CRS validation without a
+/// web host.
+/// </summary>
+[Protocol(TestProtocols.Scene)]
 public sealed class SceneOpenUsdManifestReaderTests
 {
-    [Fact]
+    [UnitTest]
     public async Task ReadAsync_ObservationSidecarWithSpaces_EmitsEscapedManifestUrls()
     {
         var root = CreateTempSceneRoot(
@@ -56,6 +64,7 @@ public sealed class SceneOpenUsdManifestReaderTests
     [Theory]
     [InlineData("EPSG:3857")]
     [InlineData("http://www.opengis.net/def/crs/EPSG/0/3857")]
+    [Trait("Category", "Unit")]
     public async Task ReadAsync_WithProjectedSceneCrs_RejectsManifest(string crs)
     {
         var root = CreateTempSceneRoot(

@@ -6,9 +6,12 @@ using FluentAssertions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 
+[Collection("Database")]
+[Protocol(TestProtocols.OgcApiFeatures)]
 public sealed class OgcFeaturesCollectionsExceptionFilterTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture;
@@ -25,6 +28,8 @@ public sealed class OgcFeaturesCollectionsExceptionFilterTests : IAsyncLifetime
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [Fact]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /ogc/features/collections/{collectionId}")]
     public async Task GetCollection_WhenMetadataGraphThrowsArgumentException_Returns500()
     {
         var response = await _fixture.Client.GetAsync("/ogc/features/collections/0");
@@ -35,6 +40,8 @@ public sealed class OgcFeaturesCollectionsExceptionFilterTests : IAsyncLifetime
     }
 
     [Fact]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/queryables")]
     public async Task GetQueryables_WhenMetadataGraphThrowsArgumentException_Returns500()
     {
         var response = await _fixture.Client.GetAsync("/ogc/features/collections/0/queryables");

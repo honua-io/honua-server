@@ -19,10 +19,12 @@ namespace Honua.Worker.Gdal.Tests;
 /// </summary>
 public sealed class GdalWorkerExecutorTests
 {
+    private const string ScratchSuite = "honua-gdal-test";
+
     private static readonly string PointGeoJson =
         """{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[1,2]},"properties":{"name":"a"}}]}""";
 
-    private static string Base64(string text) => Convert.ToBase64String(Encoding.UTF8.GetBytes(text));
+    private static string Base64(string text) => GdalCli.Base64(text);
 
     // -------------------------------------------------------------------------
     // Runtime-profile routing contract
@@ -113,7 +115,7 @@ public sealed class GdalWorkerExecutorTests
             result.Status.Should().Be(ExecutionJobStatus.Succeeded);
             context.Artifacts.Should().ContainSingle();
             context.Artifacts[0].Should().StartWith("data:text/csv;base64,");
-            DecodeDataUri(context.Artifacts[0]).Should().Equal(convertedBytes);
+            GdalCli.DecodeDataUri(context.Artifacts[0]).Should().Equal(convertedBytes);
             context.Progress.Should().Contain(p => p.Percent == 100);
 
             // ogr2ogr was invoked with the target driver and the output before the input.
@@ -262,7 +264,7 @@ public sealed class GdalWorkerExecutorTests
     [Operation("ProcessExecution")]
     public async Task VectorConvert_WithRealOgr2Ogr_ConvertsGeoJsonToCsv()
     {
-        if (!GdalCliAvailable("ogr2ogr"))
+        if (!GdalCli.Available("ogr2ogr"))
         {
             // GDAL CLI absent (e.g. lean CI agent). The fake-runner tests already
             // pin the executor contract; this case requires the worker image's
@@ -291,7 +293,7 @@ public sealed class GdalWorkerExecutorTests
             context.Artifacts.Should().ContainSingle();
             context.Artifacts[0].Should().StartWith("data:text/csv;base64,");
 
-            var csv = Encoding.UTF8.GetString(DecodeDataUri(context.Artifacts[0]));
+            var csv = Encoding.UTF8.GetString(GdalCli.DecodeDataUri(context.Artifacts[0]));
             // ogr2ogr's CSV driver emits a WKT/coordinate column plus the 'name' property.
             csv.Should().Contain("name");
             csv.Should().Contain("a");
@@ -320,41 +322,7 @@ public sealed class GdalWorkerExecutorTests
             runner, GdalJobFactory.Options(scratch), NullLogger<GdalRasterReprojectJobExecutor>.Instance);
     }
 
-    private static string NewScratch()
-        => Path.Combine(Path.GetTempPath(), "honua-gdal-test", Guid.NewGuid().ToString("N"));
+    private static string NewScratch() => GdalCli.NewScratch(ScratchSuite);
 
-    private static void CleanupScratch(string scratch)
-    {
-        try
-        {
-            if (Directory.Exists(scratch))
-            {
-                Directory.Delete(scratch, recursive: true);
-            }
-        }
-        catch (IOException)
-        {
-            // Best effort.
-        }
-    }
-
-    private static byte[] DecodeDataUri(string dataUri)
-    {
-        var comma = dataUri.IndexOf(',', StringComparison.Ordinal);
-        return Convert.FromBase64String(dataUri[(comma + 1)..]);
-    }
-
-    private static bool GdalCliAvailable(string tool)
-    {
-        var pathVar = Environment.GetEnvironmentVariable("PATH") ?? "";
-        foreach (var dir in pathVar.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
-        {
-            if (File.Exists(Path.Combine(dir, tool)))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
+    private static void CleanupScratch(string scratch) => GdalCli.CleanupScratch(scratch);
 }

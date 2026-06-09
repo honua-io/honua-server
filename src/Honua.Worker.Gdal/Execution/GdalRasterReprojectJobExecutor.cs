@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Text;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Microsoft.Extensions.Logging;
@@ -22,7 +21,7 @@ namespace Honua.Worker.Gdal.Execution;
 /// isolated scratch workspace, and publishes the reprojected GeoTIFF as a
 /// canonical data-URI artifact.
 /// </summary>
-public sealed partial class GdalRasterReprojectJobExecutor(
+internal sealed partial class GdalRasterReprojectJobExecutor(
     IGdalCommandRunner runner,
     IOptionsMonitor<GdalWorkerOptions> options,
     ILogger<GdalRasterReprojectJobExecutor> logger) : IJobExecutor
@@ -123,7 +122,7 @@ public sealed partial class GdalRasterReprojectJobExecutor(
 
             if (!result.Succeeded)
             {
-                Log.ToolFailed(logger, job.OperationId, result.ExitCode, Truncate(result.StandardError));
+                Log.ToolFailed(logger, job.OperationId, result.ExitCode, GdalErrorSanitizer.TruncateForLog(result.StandardError));
                 return JobExecutionResult.Failed(
                     $"gdalwarp exited with code {result.ExitCode}: {GdalErrorSanitizer.Sanitize(result.StandardError, workspace)}");
             }
@@ -151,7 +150,7 @@ public sealed partial class GdalRasterReprojectJobExecutor(
                     $"MaxArtifactBytes={opts.MaxArtifactBytes}.");
             }
 
-            var artifactUri = BuildDataUri(GeoTiffContentType, outputBytes);
+            var artifactUri = GdalDataUri.Build(GeoTiffContentType, outputBytes);
             await context.PublishArtifactAsync(artifactUri, cancellationToken).ConfigureAwait(false);
             await context.ReportProgressAsync(100, "Reprojection completed", cancellationToken).ConfigureAwait(false);
 
@@ -160,7 +159,7 @@ public sealed partial class GdalRasterReprojectJobExecutor(
         }
         finally
         {
-            TryCleanup(workspace);
+            GdalScratch.TryCleanup(workspace, logger);
         }
     }
 
@@ -205,42 +204,6 @@ public sealed partial class GdalRasterReprojectJobExecutor(
         return int.TryParse(token, out _) ? $"EPSG:{token}" : token;
     }
 
-    private static string BuildDataUri(string contentType, byte[] payload)
-    {
-        var sb = new StringBuilder(payload.Length * 2 + 64);
-        sb.Append("data:");
-        sb.Append(contentType);
-        sb.Append(";base64,");
-        sb.Append(Convert.ToBase64String(payload));
-        return sb.ToString();
-    }
-
-    private static string Truncate(string value)
-    {
-        const int max = 500;
-        var trimmed = value.Trim();
-        return trimmed.Length <= max ? trimmed : trimmed[..max] + "…";
-    }
-
-    private void TryCleanup(string workspace)
-    {
-        try
-        {
-            if (Directory.Exists(workspace))
-            {
-                Directory.Delete(workspace, recursive: true);
-            }
-        }
-        catch (IOException ex)
-        {
-            Log.CleanupFailed(logger, workspace, ex.Message);
-        }
-        catch (UnauthorizedAccessException ex)
-        {
-            Log.CleanupFailed(logger, workspace, ex.Message);
-        }
-    }
-
     private static partial class Log
     {
         [LoggerMessage(9220, LogLevel.Warning,
@@ -266,9 +229,5 @@ public sealed partial class GdalRasterReprojectJobExecutor(
         [LoggerMessage(9225, LogLevel.Information,
             "GDAL raster reproject executor completed job {OperationId}: targetSrs={TargetSrs}, bytes={Bytes}")]
         public static partial void ReprojectionCompleted(ILogger logger, string operationId, string targetSrs, long bytes);
-
-        [LoggerMessage(9226, LogLevel.Warning,
-            "GDAL worker scratch cleanup failed for {Workspace}: {Reason}")]
-        public static partial void CleanupFailed(ILogger logger, string workspace, string reason);
     }
 }

@@ -8,22 +8,55 @@ namespace Honua.Core.Features.Caching;
 /// </summary>
 public enum MetadataCacheContentClass
 {
+    /// <summary>The list of available services.</summary>
     ServiceList,
+
+    /// <summary>A layer descriptor document.</summary>
     LayerDescriptor,
+
+    /// <summary>The field definitions of a layer.</summary>
     Fields,
+
+    /// <summary>The coded-value or range domains of a layer.</summary>
     Domains,
+
+    /// <summary>Service or layer capabilities documents.</summary>
     Capabilities,
+
+    /// <summary>Relationship definitions between layers.</summary>
     Relationships,
+
+    /// <summary>Renderer and style definitions.</summary>
     RenderersStyles,
+
+    /// <summary>Legend descriptions.</summary>
     Legends,
+
+    /// <summary>Tile matrix set definitions.</summary>
     TileMatrixSets,
+
+    /// <summary>STAC collection metadata documents.</summary>
     StacCollectionMetadata,
+
+    /// <summary>OGC API process description documents.</summary>
     OgcProcessDescriptions,
+
+    /// <summary>An ad hoc feature response payload.</summary>
     FeatureResponse,
+
+    /// <summary>An ad hoc query response payload.</summary>
     QueryResponse,
+
+    /// <summary>An execution result response payload.</summary>
     ResultResponse,
+
+    /// <summary>A realtime response payload.</summary>
     RealtimeResponse,
+
+    /// <summary>A routing response payload.</summary>
     RouteResponse,
+
+    /// <summary>A process job result response payload.</summary>
     ProcessResultResponse
 }
 

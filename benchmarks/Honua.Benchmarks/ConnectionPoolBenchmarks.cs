@@ -92,17 +92,16 @@ public class ConnectionPoolBenchmarks
     }
 
     [Benchmark(Description = "Saturate + drain 8 slots back-to-back")]
-    public int AcquireReleaseBurst()
+    public async Task<int> AcquireReleaseBurst()
     {
         // Acquire every available slot, then release them in FIFO order.
-        // Uses the sync-completing fast path on each WaitAsync since no
-        // waiters are queued — measures the per-iteration lock overhead at
-        // the bursty edge of saturation.
+        // Each WaitAsync completes synchronously since no waiters are queued,
+        // so the awaits never suspend — this measures the per-iteration lock
+        // overhead at the bursty edge of saturation without blocking.
         var acquired = 0;
         for (var i = 0; i < 8; i++)
         {
-            var task = _burstGate.WaitAsync(CancellationToken.None);
-            if (task.IsCompletedSuccessfully && task.Result)
+            if (await _burstGate.WaitAsync(CancellationToken.None).ConfigureAwait(false))
             {
                 acquired++;
             }

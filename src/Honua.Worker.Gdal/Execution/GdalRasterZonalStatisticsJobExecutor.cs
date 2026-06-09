@@ -24,7 +24,7 @@ namespace Honua.Worker.Gdal.Execution;
 /// to compute per-band aggregates. Aggregates are projected onto a single JSON
 /// scalar artifact (one entry per zone, only the requested statistics emitted).
 /// </summary>
-public sealed partial class GdalRasterZonalStatisticsJobExecutor(
+internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
     IGdalCommandRunner runner,
     IOptionsMonitor<GdalWorkerOptions> options,
     ILogger<GdalRasterZonalStatisticsJobExecutor> logger) : IJobExecutor
@@ -475,13 +475,6 @@ public sealed partial class GdalRasterZonalStatisticsJobExecutor(
             writer.WriteEndObject();
         }
         return Encoding.UTF8.GetString(stream.ToArray());
-    }
-
-    private static string Truncate(string value)
-    {
-        const int max = 500;
-        var trimmed = value.Trim();
-        return trimmed.Length <= max ? trimmed : trimmed[..max] + "…";
     }
 
     private sealed record ZonalRow(

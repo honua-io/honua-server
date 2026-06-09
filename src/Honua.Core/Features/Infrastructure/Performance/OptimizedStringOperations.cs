@@ -403,61 +403,90 @@ public static class OptimizedStringOperations
         private StringBuilder _sb;
         private bool _disposed;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="OptimizedStringBuilder"/> struct,
+        /// renting a pooled <see cref="StringBuilder"/>.
+        /// </summary>
         public OptimizedStringBuilder()
         {
             _sb = _stringBuilderPool.Get();
             _disposed = false;
         }
 
+        /// <summary>Appends the supplied string and returns this builder.</summary>
+        /// <param name="value">The value to append.</param>
+        /// <returns>This builder, for chaining.</returns>
         public OptimizedStringBuilder Append(string? value)
         {
             _sb.Append(value);
             return this;
         }
 
+        /// <summary>Appends the supplied character and returns this builder.</summary>
+        /// <param name="value">The value to append.</param>
+        /// <returns>This builder, for chaining.</returns>
         public OptimizedStringBuilder Append(char value)
         {
             _sb.Append(value);
             return this;
         }
 
+        /// <summary>Appends the supplied integer and returns this builder.</summary>
+        /// <param name="value">The value to append.</param>
+        /// <returns>This builder, for chaining.</returns>
         public OptimizedStringBuilder Append(int value)
         {
             _sb.Append(value);
             return this;
         }
 
+        /// <summary>Appends the supplied double using invariant culture and returns this builder.</summary>
+        /// <param name="value">The value to append.</param>
+        /// <returns>This builder, for chaining.</returns>
         public OptimizedStringBuilder Append(double value)
         {
             _sb.Append(value.ToString(System.Globalization.CultureInfo.InvariantCulture));
             return this;
         }
 
+        /// <summary>Appends a line terminator and returns this builder.</summary>
+        /// <returns>This builder, for chaining.</returns>
         public OptimizedStringBuilder AppendLine()
         {
             _sb.AppendLine();
             return this;
         }
 
+        /// <summary>Appends the supplied string followed by a line terminator and returns this builder.</summary>
+        /// <param name="value">The value to append.</param>
+        /// <returns>This builder, for chaining.</returns>
         public OptimizedStringBuilder AppendLine(string? value)
         {
             _sb.AppendLine(value);
             return this;
         }
 
+        /// <summary>Appends a formatted string using invariant culture and returns this builder.</summary>
+        /// <param name="format">The composite format string.</param>
+        /// <param name="args">The format arguments.</param>
+        /// <returns>This builder, for chaining.</returns>
         public OptimizedStringBuilder AppendFormat(string format, params object?[] args)
         {
             _sb.AppendFormat(System.Globalization.CultureInfo.InvariantCulture, format, args);
             return this;
         }
 
+        /// <summary>Gets the current length of the underlying buffer.</summary>
         public readonly int Length => _sb.Length;
 
+        /// <summary>Returns the accumulated string.</summary>
+        /// <returns>The accumulated string.</returns>
         public readonly override string ToString()
         {
             return _sb.ToString();
         }
 
+        /// <summary>Returns the pooled <see cref="StringBuilder"/> to the pool.</summary>
         public void Dispose()
         {
             if (!_disposed)

@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Reflection;
+using System.Xml.Linq;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Architecture.Tests;
 
@@ -77,6 +79,39 @@ internal static class ArchitectureTestHelpers
     }
 
     /// <summary>
+    /// Enumerates every method across all integration-test assemblies
+    /// (<see cref="IntegrationTestAssemblies"/>) that is itself marked
+    /// <see cref="IntegrationTestAttribute"/> or sits on a class marked with it.
+    /// Endpoint- and operation-coverage scans share this discovery loop so the
+    /// reflection traversal lives in one place.
+    /// </summary>
+    internal static IEnumerable<MethodInfo> IntegrationTestMethods()
+    {
+        const BindingFlags MemberFlags =
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static;
+
+        foreach (var testAssembly in IntegrationTestAssemblies())
+        {
+            foreach (var type in GetTypesSafely(testAssembly))
+            {
+                var classHasIntegration =
+                    type.GetCustomAttributes(typeof(IntegrationTestAttribute), inherit: true).Length > 0;
+
+                foreach (var method in type.GetMethods(MemberFlags))
+                {
+                    var methodHasIntegration = classHasIntegration ||
+                        method.GetCustomAttributes(typeof(IntegrationTestAttribute), inherit: true).Length > 0;
+
+                    if (methodHasIntegration)
+                    {
+                        yield return method;
+                    }
+                }
+            }
+        }
+    }
+
+    /// <summary>
     /// Resolves the repository root by walking upward until Honua.sln is found.
     /// </summary>
     internal static string ResolveRepositoryRoot()
@@ -94,4 +129,31 @@ internal static class ArchitectureTestHelpers
 
         return directory.FullName;
     }
+
+    /// <summary>
+    /// Returns the bare project names (filename without extension) of every direct
+    /// <c>&lt;ProjectReference&gt;</c> declared in the given csproj. Blank includes are
+    /// skipped and Windows path separators are normalized so the result is stable
+    /// across platforms.
+    /// </summary>
+    internal static IReadOnlyList<string> DirectProjectReferenceNames(string csprojPath)
+        => DirectReferenceValues(csprojPath, "ProjectReference")
+            .Select(value => Path.GetFileNameWithoutExtension(value.Replace('\\', '/'))!)
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .ToList();
+
+    /// <summary>
+    /// Returns the raw <c>Include</c> values of every direct
+    /// <c>&lt;PackageReference&gt;</c> declared in the given csproj. Blank includes are
+    /// skipped.
+    /// </summary>
+    internal static IReadOnlyList<string> DirectPackageReferenceNames(string csprojPath)
+        => DirectReferenceValues(csprojPath, "PackageReference").ToList();
+
+    private static IEnumerable<string> DirectReferenceValues(string csprojPath, string elementName)
+        => XDocument.Load(csprojPath)
+            .Descendants(elementName)
+            .Select(element => element.Attribute("Include")?.Value)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value!);
 }

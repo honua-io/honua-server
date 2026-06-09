@@ -2,8 +2,11 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Globalization;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Tiles;
 using Honua.Core.Queries.Filters;
 using Honua.MySql.Features.FeatureStore.Services;
 using Honua.MySql.Features.Infrastructure;
@@ -345,7 +348,7 @@ public class MySqlFeatureQueryBuilderTests
 
         var ex = Assert.Throws<NotSupportedException>(() => builder.BuildSelectQuery(300, query));
         Assert.Contains("EPSG:4326 or SRID 0", ex.Message, StringComparison.Ordinal);
-        Assert.Contains(layerSrid.ToString(System.Globalization.CultureInfo.InvariantCulture), ex.Message, StringComparison.Ordinal);
+        Assert.Contains(layerSrid.ToString(CultureInfo.InvariantCulture), ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -389,8 +392,8 @@ public class MySqlFeatureQueryBuilderTests
             {
                 PropertyName = "observed_at",
                 PropertyType = TemporalPropertyType.DateTime,
-                Start = DateTimeOffset.Parse("2024-01-01T00:00:00Z", System.Globalization.CultureInfo.InvariantCulture),
-                End = DateTimeOffset.Parse("2024-12-31T23:59:59Z", System.Globalization.CultureInfo.InvariantCulture)
+                Start = DateTimeOffset.Parse("2024-01-01T00:00:00Z", CultureInfo.InvariantCulture),
+                End = DateTimeOffset.Parse("2024-12-31T23:59:59Z", CultureInfo.InvariantCulture)
             }
         };
 
@@ -407,7 +410,7 @@ public class MySqlFeatureQueryBuilderTests
             {
                 PropertyName = "observed_at",
                 PropertyType = TemporalPropertyType.DateTime,
-                Start = DateTimeOffset.Parse("2024-01-01T00:00:00Z", System.Globalization.CultureInfo.InvariantCulture)
+                Start = DateTimeOffset.Parse("2024-01-01T00:00:00Z", CultureInfo.InvariantCulture)
             }
         };
 
@@ -424,7 +427,7 @@ public class MySqlFeatureQueryBuilderTests
             {
                 PropertyName = "observed_at",
                 PropertyType = TemporalPropertyType.Date,
-                End = DateTimeOffset.Parse("2024-12-31T00:00:00Z", System.Globalization.CultureInfo.InvariantCulture)
+                End = DateTimeOffset.Parse("2024-12-31T00:00:00Z", CultureInfo.InvariantCulture)
             }
         };
 
@@ -441,7 +444,7 @@ public class MySqlFeatureQueryBuilderTests
             {
                 PropertyName = "observed_at",
                 PropertyType = TemporalPropertyType.DateTime,
-                Start = DateTimeOffset.Parse("2024-06-01T00:00:00Z", System.Globalization.CultureInfo.InvariantCulture)
+                Start = DateTimeOffset.Parse("2024-06-01T00:00:00Z", CultureInfo.InvariantCulture)
             }
         };
 
@@ -606,8 +609,8 @@ public class MySqlFeatureQueryBuilderTests
     {
         var ex = Assert.Throws<NotSupportedException>(() => _builder.BuildMvtTileQuery(
             LayerId, 0, 0, 0, null,
-            new Honua.Core.Features.Tiles.TileOptions(),
-            new Honua.Core.Configuration.TileLimits()));
+            new TileOptions(),
+            new TileLimits()));
         Assert.Contains("MySQL/MariaDB", ex.Message, StringComparison.Ordinal);
     }
 

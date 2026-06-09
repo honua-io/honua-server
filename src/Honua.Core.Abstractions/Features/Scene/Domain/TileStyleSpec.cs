@@ -137,6 +137,9 @@ public static class TileStyleSpecDefaults
 [JsonSerializable(typeof(TileStyleMaterial))]
 [JsonSerializable(typeof(TileStyleExpressions))]
 [JsonSerializable(typeof(TileStyleConditions))]
+/// <summary>
+/// Source-generated <see cref="JsonSerializerContext"/> for 3D Tiles style specifications.
+/// </summary>
 public sealed partial class TileStyleSpecJsonContext : JsonSerializerContext
 {
 }

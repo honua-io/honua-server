@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Xml.Linq;
 using FluentAssertions;
 using Xunit;
 
@@ -72,11 +71,6 @@ public sealed class HonuaImportIsolationTests
             string.Join(", ", disallowed));
     }
 
-    private static List<string> ReferencedProjectNames(string csprojPath)
-        => XDocument.Load(csprojPath)
-            .Descendants("ProjectReference")
-            .Select(element => element.Attribute("Include")?.Value)
-            .Where(value => !string.IsNullOrWhiteSpace(value))
-            .Select(value => Path.GetFileNameWithoutExtension(value!.Replace('\\', '/'))!)
-            .ToList();
+    private static IReadOnlyList<string> ReferencedProjectNames(string csprojPath)
+        => ArchitectureTestHelpers.DirectProjectReferenceNames(csprojPath);
 }

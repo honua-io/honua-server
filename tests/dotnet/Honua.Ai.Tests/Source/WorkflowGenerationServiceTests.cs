@@ -35,7 +35,7 @@ public sealed class WorkflowGenerationServiceTests
     private const string UnsupportedPrompt =
         "Pull the assessor CSV and then send a carrier pigeon to the county office.";
 
-    [Fact]
+    [UnitTest]
     public async Task GenerateAsync_DeterministicProvider_ReturnsGraphThatPassesTheValidationGate()
     {
         var service = CreateService(enabled: true);
@@ -51,7 +51,7 @@ public sealed class WorkflowGenerationServiceTests
         result.RegistryVersion.Should().Be("test-registry-1");
     }
 
-    [Fact]
+    [UnitTest]
     public async Task GenerateAsync_AmbiguousPrompt_ReturnsClarificationWithoutAGraph()
     {
         var service = CreateService(enabled: true);
@@ -63,7 +63,7 @@ public sealed class WorkflowGenerationServiceTests
         result.Clarifications.Should().NotBeEmpty();
     }
 
-    [Fact]
+    [UnitTest]
     public async Task GenerateAsync_UnmappableStep_ReturnsUnsupportedAndSurfacesTheUnmappedRequest()
     {
         var service = CreateService(enabled: true);
@@ -75,7 +75,7 @@ public sealed class WorkflowGenerationServiceTests
         result.UnmappedRequests.Should().NotBeEmpty();
     }
 
-    [Fact]
+    [UnitTest]
     public async Task GenerateAsync_WhenDisabled_ReportsUnsupportedRatherThanCallingAProvider()
     {
         var service = CreateService(enabled: false);
@@ -86,7 +86,7 @@ public sealed class WorkflowGenerationServiceTests
         result.Graph.Should().BeNull();
     }
 
-    [Fact]
+    [UnitTest]
     public async Task GetProvidersAsync_WhenEnabled_ReportsTheDeterministicProviderAsAvailable()
     {
         var service = CreateService(enabled: true);
@@ -99,7 +99,7 @@ public sealed class WorkflowGenerationServiceTests
             descriptor.Id == WorkflowGenerationConfiguration.DeterministicProviderId && descriptor.Available);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task GetProvidersAsync_WhenDisabled_ReportsTheFeatureOff()
     {
         var service = CreateService(enabled: false);

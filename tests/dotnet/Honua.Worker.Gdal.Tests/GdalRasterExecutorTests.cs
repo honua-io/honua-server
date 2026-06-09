@@ -22,10 +22,12 @@ namespace Honua.Worker.Gdal.Tests;
 /// </summary>
 public sealed class GdalRasterExecutorTests
 {
+    private const string ScratchSuite = "honua-gdal-raster-test";
+
     private const string ZonalGdalinfoFixture =
         """{"bands":[{"band":1,"type":"Float32","minimum":1.0,"maximum":5.0,"mean":3.0,"stdDev":1.4,"validCount":25}]}""";
 
-    private static string Base64(string text) => Convert.ToBase64String(Encoding.UTF8.GetBytes(text));
+    private static string Base64(string text) => GdalCli.Base64(text);
 
     // -------------------------------------------------------------------------
     // raster.clip
@@ -729,21 +731,7 @@ public sealed class GdalRasterExecutorTests
         return Encoding.UTF8.GetString(bytes);
     }
 
-    private static string NewScratch()
-        => Path.Combine(Path.GetTempPath(), "honua-gdal-raster-test", Guid.NewGuid().ToString("N"));
+    private static string NewScratch() => GdalCli.NewScratch(ScratchSuite);
 
-    private static void CleanupScratch(string scratch)
-    {
-        try
-        {
-            if (Directory.Exists(scratch))
-            {
-                Directory.Delete(scratch, recursive: true);
-            }
-        }
-        catch (IOException)
-        {
-            // best effort
-        }
-    }
+    private static void CleanupScratch(string scratch) => GdalCli.CleanupScratch(scratch);
 }

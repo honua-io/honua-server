@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Frozen;
-using System.Text;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Microsoft.Extensions.Logging;
@@ -22,7 +21,7 @@ namespace Honua.Worker.Gdal.Execution;
 /// conversion in an isolated scratch workspace, and publishes the converted bytes
 /// as a canonical data-URI artifact through the shared execution context.
 /// </summary>
-public sealed partial class GdalVectorConvertJobExecutor(
+internal sealed partial class GdalVectorConvertJobExecutor(
     IGdalCommandRunner runner,
     IOptionsMonitor<GdalWorkerOptions> options,
     ILogger<GdalVectorConvertJobExecutor> logger) : IJobExecutor
@@ -137,7 +136,7 @@ public sealed partial class GdalVectorConvertJobExecutor(
 
             if (!result.Succeeded)
             {
-                Log.ToolFailed(logger, job.OperationId, result.ExitCode, Truncate(result.StandardError));
+                Log.ToolFailed(logger, job.OperationId, result.ExitCode, GdalErrorSanitizer.TruncateForLog(result.StandardError));
                 return JobExecutionResult.Failed(
                     $"ogr2ogr exited with code {result.ExitCode}: {GdalErrorSanitizer.Sanitize(result.StandardError, workspace)}");
             }
@@ -165,7 +164,7 @@ public sealed partial class GdalVectorConvertJobExecutor(
                     $"MaxArtifactBytes={opts.MaxArtifactBytes}.");
             }
 
-            var artifactUri = BuildDataUri(targetMeta.ContentType, outputBytes);
+            var artifactUri = GdalDataUri.Build(targetMeta.ContentType, outputBytes);
             await context.PublishArtifactAsync(artifactUri, cancellationToken).ConfigureAwait(false);
             await context.ReportProgressAsync(100, "Conversion completed", cancellationToken).ConfigureAwait(false);
 
@@ -174,43 +173,7 @@ public sealed partial class GdalVectorConvertJobExecutor(
         }
         finally
         {
-            TryCleanup(workspace);
-        }
-    }
-
-    private static string BuildDataUri(string contentType, byte[] payload)
-    {
-        var sb = new StringBuilder(payload.Length * 2 + 64);
-        sb.Append("data:");
-        sb.Append(contentType);
-        sb.Append(";base64,");
-        sb.Append(Convert.ToBase64String(payload));
-        return sb.ToString();
-    }
-
-    private static string Truncate(string value)
-    {
-        const int max = 500;
-        var trimmed = value.Trim();
-        return trimmed.Length <= max ? trimmed : trimmed[..max] + "…";
-    }
-
-    private void TryCleanup(string workspace)
-    {
-        try
-        {
-            if (Directory.Exists(workspace))
-            {
-                Directory.Delete(workspace, recursive: true);
-            }
-        }
-        catch (IOException ex)
-        {
-            Log.CleanupFailed(logger, workspace, ex.Message);
-        }
-        catch (UnauthorizedAccessException ex)
-        {
-            Log.CleanupFailed(logger, workspace, ex.Message);
+            GdalScratch.TryCleanup(workspace, logger);
         }
     }
 
@@ -239,9 +202,5 @@ public sealed partial class GdalVectorConvertJobExecutor(
         [LoggerMessage(9215, LogLevel.Information,
             "GDAL vector convert executor completed job {OperationId}: format={Format}, bytes={Bytes}")]
         public static partial void ConversionCompleted(ILogger logger, string operationId, string format, long bytes);
-
-        [LoggerMessage(9216, LogLevel.Warning,
-            "GDAL worker scratch cleanup failed for {Workspace}: {Reason}")]
-        public static partial void CleanupFailed(ILogger logger, string workspace, string reason);
     }
 }

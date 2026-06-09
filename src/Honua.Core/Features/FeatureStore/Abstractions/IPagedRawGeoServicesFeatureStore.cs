@@ -10,6 +10,13 @@ namespace Honua.Core.Features.FeatureStore.Abstractions;
 /// </summary>
 public interface IPagedRawGeoServicesFeatureStore
 {
+    /// <summary>
+    /// Queries a single page of raw GeoServices point features for the supplied layer.
+    /// </summary>
+    /// <param name="layerId">The identifier of the layer to query.</param>
+    /// <param name="query">The canonical feature query describing the page.</param>
+    /// <param name="cancellationToken">A token to observe for cancellation.</param>
+    /// <returns>A paged result of raw GeoServices point features.</returns>
     Task<PagedQueryResult<RawGeoServicesFeature>> QueryGeoServicesRawPointPageAsync(
         int layerId,
         FeatureQuery query,

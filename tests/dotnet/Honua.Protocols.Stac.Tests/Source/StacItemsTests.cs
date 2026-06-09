@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
@@ -35,7 +36,7 @@ public sealed class StacItemsTests : IAsyncLifetime
     [Endpoint("GET /stac/collections/{collectionId}/items")]
     public async Task GetItems_ReturnsFeatureCollection()
     {
-        var collectionId = WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
         var response = await _fixture.Client.GetAsync(
             $"/stac/collections/{collectionId}/items");
 
@@ -54,7 +55,7 @@ public sealed class StacItemsTests : IAsyncLifetime
     [Endpoint("GET /stac/collections/{collectionId}/items")]
     public async Task GetItems_EachItemHasRequiredStacFields()
     {
-        var collectionId = WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
         var response = await _fixture.Client.GetAsync(
             $"/stac/collections/{collectionId}/items?limit=3");
 
@@ -83,14 +84,14 @@ public sealed class StacItemsTests : IAsyncLifetime
     [Endpoint("GET /stac/collections/{collectionId}/items")]
     public async Task GetItems_IncludeDeclaredStacExtensionsWhenConfigured()
     {
-        await UpdateLayerMetadataAsync(
+        UpdateLayerMetadata(
             new MetadataV2ResourceTemporal { StartTimeField = "timestamp" },
             JsonSerializer.SerializeToElement(new
             {
                 extensions = ExpectedItemExtensions
             }));
 
-        var collectionId = WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
         var response = await _fixture.Client.GetAsync(
             $"/stac/collections/{collectionId}/items?limit=1");
 
@@ -112,7 +113,7 @@ public sealed class StacItemsTests : IAsyncLifetime
     [Endpoint("GET /stac/collections/{collectionId}/items")]
     public async Task GetItems_SelfLinkMatchesRequestedUrl()
     {
-        var collectionId = WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
         var requestPath = $"/stac/collections/{collectionId}/items?limit=2";
         var response = await _fixture.Client.GetAsync(requestPath);
 
@@ -134,7 +135,7 @@ public sealed class StacItemsTests : IAsyncLifetime
     [Endpoint("GET /stac/collections/{collectionId}/items")]
     public async Task GetItems_WithLimit_RespectsLimit()
     {
-        var collectionId = WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
         var response = await _fixture.Client.GetAsync(
             $"/stac/collections/{collectionId}/items?limit=2");
 
@@ -165,7 +166,7 @@ public sealed class StacItemsTests : IAsyncLifetime
     [Endpoint("GET /stac/collections/{collectionId}/items")]
     public async Task GetItems_InvalidBbox_Returns400()
     {
-        var collectionId = WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
 
         var response = await _fixture.Client.GetAsync(
             $"/stac/collections/{collectionId}/items?bbox=1,2,3");
@@ -178,7 +179,7 @@ public sealed class StacItemsTests : IAsyncLifetime
     [Endpoint("GET /stac/collections/{collectionId}/items")]
     public async Task GetItems_OutOfRangeBbox_Returns400()
     {
-        var collectionId = WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
 
         var response = await _fixture.Client.GetAsync(
             $"/stac/collections/{collectionId}/items?bbox=200,95,210,100");
@@ -192,7 +193,7 @@ public sealed class StacItemsTests : IAsyncLifetime
     public async Task GetItems_WithDatelineCrossingBbox_ReturnsMatchingItem()
     {
         var featureId = await InsertDatelineFeatureAsync(179.9, 0.0, "Dateline STAC Item");
-        var collectionId = WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
 
         var response = await _fixture.Client.GetAsync(
             $"/stac/collections/{collectionId}/items?bbox={Uri.EscapeDataString("170,-10,-170,10")}");
@@ -204,7 +205,7 @@ public sealed class StacItemsTests : IAsyncLifetime
         var features = json.RootElement.GetProperty("features").EnumerateArray().ToArray();
 
         features.Should().Contain(feature =>
-            feature.GetProperty("id").GetString() == featureId.ToString(System.Globalization.CultureInfo.InvariantCulture) &&
+            feature.GetProperty("id").GetString() == featureId.ToString(CultureInfo.InvariantCulture) &&
             feature.GetProperty("properties").GetProperty("name").GetString() == "Dateline STAC Item");
     }
 
@@ -213,7 +214,7 @@ public sealed class StacItemsTests : IAsyncLifetime
     [Endpoint("GET /stac/collections/{collectionId}/items")]
     public async Task GetItems_WithInvalidThreeDimensionalBbox_Returns400()
     {
-        var collectionId = WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
 
         var response = await _fixture.Client.GetAsync(
             $"/stac/collections/{collectionId}/items?bbox=100,0,2,105,1,1");
@@ -226,7 +227,7 @@ public sealed class StacItemsTests : IAsyncLifetime
     [Endpoint("GET /stac/collections/{collectionId}/items")]
     public async Task GetItems_InvalidDatetime_Returns400()
     {
-        var collectionId = WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
 
         var response = await _fixture.Client.GetAsync(
             $"/stac/collections/{collectionId}/items?datetime=not-a-datetime");
@@ -239,7 +240,7 @@ public sealed class StacItemsTests : IAsyncLifetime
     [Endpoint("GET /stac/collections/{collectionId}/items")]
     public async Task GetItems_EncodesDatetimeInPaginationLinks()
     {
-        var collectionId = WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
         var datetime = "2020-01-01T00:00:00+00:00/2020-01-02T00:00:00+00:00";
         var encodedDatetime = Uri.EscapeDataString(datetime);
 
@@ -272,7 +273,7 @@ public sealed class StacItemsTests : IAsyncLifetime
     [Endpoint("GET /stac/collections/{collectionId}/items")]
     public async Task GetItems_EncodesBboxInPaginationLinks()
     {
-        var collectionId = WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
         var bbox = "-158.30,21.20,-157.70,21.70";
         var encodedBbox = Uri.EscapeDataString(bbox);
 
@@ -305,7 +306,7 @@ public sealed class StacItemsTests : IAsyncLifetime
     [Endpoint("GET /stac/collections/{collectionId}/items/{itemId}")]
     public async Task GetItem_ById_ReturnsStacItem()
     {
-        var collectionId = WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
         var featureId = await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, "STAC Test Item");
 
         var response = await _fixture.Client.GetAsync(
@@ -317,7 +318,7 @@ public sealed class StacItemsTests : IAsyncLifetime
         var json = JsonDocument.Parse(content);
 
         json.RootElement.GetProperty("type").GetString().Should().Be("Feature");
-        json.RootElement.GetProperty("id").GetString().Should().Be(featureId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        json.RootElement.GetProperty("id").GetString().Should().Be(featureId.ToString(CultureInfo.InvariantCulture));
         json.RootElement.GetProperty("collection").GetString().Should().Be(collectionId);
         json.RootElement.GetProperty("links").EnumerateArray().Should().NotBeEmpty();
         json.RootElement.GetProperty("links")
@@ -337,7 +338,7 @@ public sealed class StacItemsTests : IAsyncLifetime
     [Endpoint("GET /stac/collections/{collectionId}/items/{itemId}")]
     public async Task GetItem_ByStringId_ReturnsStacItem()
     {
-        var collectionId = WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
         var featureId = await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, "STAC String ID Item");
         await PromoteStacItemIdAsync(featureId, "stac-item-alpha");
 
@@ -360,7 +361,7 @@ public sealed class StacItemsTests : IAsyncLifetime
     [Endpoint("GET /stac/collections/{collectionId}/items/{itemId}")]
     public async Task GetItem_ByStacId_PrefersCanonicalStacIdBeyondIdCollisions()
     {
-        var collectionId = WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
         var canonicalItemId = $"stac-collision-{Guid.NewGuid():N}";
 
         for (var index = 0; index < 8; index++)
@@ -397,7 +398,7 @@ public sealed class StacItemsTests : IAsyncLifetime
     [Endpoint("GET /stac/collections/{collectionId}/items/{itemId}")]
     public async Task GetItem_ByNumericLookingStacId_ReturnsStacItemBeforeObjectIdFallback()
     {
-        var collectionId = WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
         var featureId = await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, "STAC Numeric ID Item");
         var numericStacId = "9000000001";
         await PromoteStacItemIdAsync(featureId, numericStacId);
@@ -424,20 +425,17 @@ public sealed class StacItemsTests : IAsyncLifetime
     [Endpoint("GET /stac/collections/{collectionId}/items/{itemId}")]
     public async Task GetItem_NotFound_Returns404()
     {
-        var collectionId = WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
         var response = await _fixture.Client.GetAsync(
             $"/stac/collections/{collectionId}/items/999999");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
-    private Task UpdateLayerMetadataAsync(
+    private void UpdateLayerMetadata(
         MetadataV2ResourceTemporal? temporal = null,
         JsonElement? stac = null)
-    {
-        _fixture.UpdateV2ResourceMetadata(WebAppFixture.TestLayerId, stacExtension: stac, temporal: temporal);
-        return Task.CompletedTask;
-    }
+        => _fixture.UpdateV2ResourceMetadata(WebAppFixture.TestLayerId, stacExtension: stac, temporal: temporal);
 
     private async Task<long> InsertDatelineFeatureAsync(double lon, double lat, string name)
     {
@@ -459,7 +457,7 @@ public sealed class StacItemsTests : IAsyncLifetime
         command.Parameters.AddWithValue("name", name);
 
         var result = await command.ExecuteScalarAsync();
-        return Convert.ToInt64(result, System.Globalization.CultureInfo.InvariantCulture);
+        return Convert.ToInt64(result, CultureInfo.InvariantCulture);
     }
 
     private async Task PromoteStacItemIdAsync(long featureId, string itemId)

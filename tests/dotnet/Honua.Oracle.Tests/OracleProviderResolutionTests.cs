@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
@@ -304,7 +305,7 @@ public class OracleProviderResolutionTests
             ServiceId = service.Metadata.Id,
             ResourceId = resource.Metadata.Id,
             StorageBindingId = storageBinding.Metadata.Id,
-            Identifier = new MetadataV2PublicationIdentifier { Value = LayerId.ToString(System.Globalization.CultureInfo.InvariantCulture), IsNumeric = true }
+            Identifier = new MetadataV2PublicationIdentifier { Value = LayerId.ToString(CultureInfo.InvariantCulture), IsNumeric = true }
         };
         var graph = new MetadataV2Graph
         {

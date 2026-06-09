@@ -146,6 +146,9 @@ public sealed class TileContent
 [JsonSerializable(typeof(TilesetAsset))]
 [JsonSerializable(typeof(TilesetExtras))]
 [JsonSerializable(typeof(TilesetStyleReference))]
+/// <summary>
+/// Source-generated <see cref="JsonSerializerContext"/> for 3D Tiles tileset documents.
+/// </summary>
 public sealed partial class TilesetJsonContext : JsonSerializerContext
 {
 }

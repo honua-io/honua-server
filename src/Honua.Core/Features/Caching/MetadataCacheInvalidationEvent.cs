@@ -8,15 +8,34 @@ namespace Honua.Core.Features.Caching;
 /// </summary>
 public enum MetadataCacheInvalidationReason
 {
+    /// <summary>The invalidation was triggered manually.</summary>
     Manual,
+
+    /// <summary>A tenant configuration change triggered the invalidation.</summary>
     TenantChanged,
+
+    /// <summary>A project configuration change triggered the invalidation.</summary>
     ProjectChanged,
+
+    /// <summary>An upstream source change triggered the invalidation.</summary>
     SourceChanged,
+
+    /// <summary>A schema change triggered the invalidation.</summary>
     SchemaChanged,
+
+    /// <summary>A style change triggered the invalidation.</summary>
     StyleChanged,
+
+    /// <summary>A permission change triggered the invalidation.</summary>
     PermissionChanged,
+
+    /// <summary>An adapter version change triggered the invalidation.</summary>
     AdapterVersionChanged,
+
+    /// <summary>A projection version change triggered the invalidation.</summary>
     ProjectionVersionChanged,
+
+    /// <summary>The upstream source became unavailable.</summary>
     SourceUnavailable
 }
 

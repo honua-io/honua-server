@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
@@ -93,7 +94,7 @@ public sealed class StacCollectionsTests : IAsyncLifetime
     [Endpoint("GET /stac/collections/{collectionId}")]
     public async Task GetCollection_ById_ReturnsStacCollection()
     {
-        var collectionId = WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
         var response = await _fixture.Client.GetAsync($"/stac/collections/{collectionId}");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -125,7 +126,7 @@ public sealed class StacCollectionsTests : IAsyncLifetime
                 extensions = ExpectedCollectionExtensions
             }));
 
-        var collectionId = WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
         var response = await _fixture.Client.GetAsync($"/stac/collections/{collectionId}");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -151,7 +152,7 @@ public sealed class StacCollectionsTests : IAsyncLifetime
     [Endpoint("GET /stac/collections/{collectionId}")]
     public async Task GetCollection_ById_ReturnsStrongETagAndSupportsConditionalRequest()
     {
-        var collectionId = WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
         var firstResponse = await _fixture.Client.GetAsync($"/stac/collections/{collectionId}");
 
         firstResponse.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -183,7 +184,7 @@ public sealed class StacCollectionsTests : IAsyncLifetime
     [Endpoint("GET /stac/collections/{collectionId}")]
     public async Task GetCollection_HasCrossProtocolLinks()
     {
-        var collectionId = WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
         var response = await _fixture.Client.GetAsync($"/stac/collections/{collectionId}");
 
         var content = await response.Content.ReadAsStringAsync();

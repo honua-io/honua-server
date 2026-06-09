@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Linq;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -11,7 +12,6 @@ using Honua.Protocols.Ogc.Api.Features.Models;
 using Honua.Protocols.Ogc.Api.Features.Services;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using System.Text.Json;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 

@@ -25,6 +25,7 @@ public class OgcFeaturesErrorHandlingTests : IAsyncLifetime
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [Fact]
+    [Operation(Operations.Query)]
     [Endpoint("GET /ogc/features/collections/{collectionId}")]
     public async Task GetCollection_NonExistentCollection_ReturnsStandardizedErrorFormat()
     {
@@ -45,6 +46,7 @@ public class OgcFeaturesErrorHandlingTests : IAsyncLifetime
     }
 
     [Fact]
+    [Operation(Operations.Query)]
     [Endpoint("GET /ogc/features/collections/{collectionId}/queryables")]
     public async Task GetQueryables_NonExistentCollection_ReturnsStandardizedErrorFormat()
     {
@@ -63,6 +65,7 @@ public class OgcFeaturesErrorHandlingTests : IAsyncLifetime
     }
 
     [Fact]
+    [Operation(Operations.Query)]
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
     public async Task GetItems_NonExistentCollection_ReturnsStandardizedErrorFormat()
     {
@@ -81,6 +84,7 @@ public class OgcFeaturesErrorHandlingTests : IAsyncLifetime
     }
 
     [Fact]
+    [Operation(Operations.GetById)]
     [Endpoint("GET /ogc/features/collections/{collectionId}/items/{featureId}")]
     public async Task GetItem_NonExistentFeature_ReturnsStandardizedErrorFormat()
     {
@@ -98,6 +102,7 @@ public class OgcFeaturesErrorHandlingTests : IAsyncLifetime
     }
 
     [Fact]
+    [Operation(Operations.GetById)]
     [Endpoint("GET /ogc/features/collections/{collectionId}/items/{featureId}")]
     public async Task GetItem_FeatureIdWithInvalidEscapedSequence_ReturnsNotFound()
     {
@@ -112,6 +117,7 @@ public class OgcFeaturesErrorHandlingTests : IAsyncLifetime
     }
 
     [Fact]
+    [Operation(Operations.GetById)]
     [Endpoint("GET /ogc/features/collections/{collectionId}/items/{featureId}")]
     public async Task GetItem_FeatureIdWithEncodedPercent_ReturnsNotFound()
     {
@@ -126,6 +132,7 @@ public class OgcFeaturesErrorHandlingTests : IAsyncLifetime
     }
 
     [Fact]
+    [Operation(Operations.Create)]
     [Endpoint("POST /ogc/features/collections/{collectionId}/items")]
     public async Task CreateFeature_InvalidRequest_ReturnsStandardizedErrorFormat()
     {
@@ -148,6 +155,7 @@ public class OgcFeaturesErrorHandlingTests : IAsyncLifetime
     }
 
     [Fact]
+    [Operation(Operations.Update)]
     [Endpoint("PUT /ogc/features/collections/{collectionId}/items/{featureId}")]
     public async Task UpdateFeature_InvalidRequest_ReturnsStandardizedErrorFormat()
     {
@@ -171,6 +179,7 @@ public class OgcFeaturesErrorHandlingTests : IAsyncLifetime
     }
 
     [Fact]
+    [Operation(Operations.Delete)]
     [Endpoint("DELETE /ogc/features/collections/{collectionId}/items/{featureId}")]
     public async Task DeleteFeature_NonExistentFeature_ReturnsStandardizedErrorFormat()
     {

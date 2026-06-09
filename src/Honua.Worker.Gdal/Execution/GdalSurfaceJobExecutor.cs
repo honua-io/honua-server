@@ -22,7 +22,7 @@ namespace Honua.Worker.Gdal.Execution;
 /// so the substrate claim fence keeps the lean managed worker from claiming
 /// surface.* jobs and keeps this worker from claiming managed jobs.
 /// </summary>
-public sealed partial class GdalSurfaceJobExecutor(
+internal sealed partial class GdalSurfaceJobExecutor(
     IGdalCommandRunner runner,
     IOptionsMonitor<GdalWorkerOptions> options,
     ILogger<GdalSurfaceJobExecutor> logger) : IJobExecutor
@@ -146,7 +146,7 @@ public sealed partial class GdalSurfaceJobExecutor(
             {
                 // Log raw stderr (operator-facing) but persist only the
                 // path-redacted message onto the job's client-visible result.
-                Log.ToolFailed(logger, job.OperationId, result.ExitCode, Truncate(result.StandardError));
+                Log.ToolFailed(logger, job.OperationId, result.ExitCode, GdalErrorSanitizer.TruncateForLog(result.StandardError));
                 return JobExecutionResult.Failed(
                     $"gdaldem exited with code {result.ExitCode}: {GdalErrorSanitizer.Sanitize(result.StandardError, workspace)}");
             }
@@ -366,13 +366,6 @@ public sealed partial class GdalSurfaceJobExecutor(
 
     private static string FormatDouble(double value)
         => value.ToString("R", CultureInfo.InvariantCulture);
-
-    private static string Truncate(string value)
-    {
-        const int max = 500;
-        var trimmed = value.Trim();
-        return trimmed.Length <= max ? trimmed : trimmed[..max] + "…";
-    }
 
     private static partial class Log
     {

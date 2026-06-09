@@ -1,7 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Diagnostics;
+using System.Text;
 using Honua.Worker.Gdal.Execution;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -38,6 +38,38 @@ internal static class GdalCli
     {
         var comma = dataUri.IndexOf(',', StringComparison.Ordinal);
         return Convert.FromBase64String(dataUri[(comma + 1)..]);
+    }
+
+    /// <summary>
+    /// Base64-encodes UTF-8 text for use as a durable step-input payload.
+    /// </summary>
+    public static string Base64(string text) => Convert.ToBase64String(Encoding.UTF8.GetBytes(text));
+
+    /// <summary>
+    /// Allocates a unique scratch directory path under the OS temp root for an
+    /// isolated executor run. The directory is created lazily by the executor.
+    /// </summary>
+    public static string NewScratch(string suite)
+        => Path.Combine(Path.GetTempPath(), suite, Guid.NewGuid().ToString("N"));
+
+    /// <summary>
+    /// Best-effort recursive cleanup of a scratch directory; swallows the
+    /// transient <see cref="IOException"/> that can surface when GDAL output
+    /// handles are still settling.
+    /// </summary>
+    public static void CleanupScratch(string scratch)
+    {
+        try
+        {
+            if (Directory.Exists(scratch))
+            {
+                Directory.Delete(scratch, recursive: true);
+            }
+        }
+        catch (IOException)
+        {
+            // Best effort.
+        }
     }
 
     /// <summary>

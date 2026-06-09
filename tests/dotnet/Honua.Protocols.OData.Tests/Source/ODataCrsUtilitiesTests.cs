@@ -70,14 +70,9 @@ public sealed class ODataCrsUtilitiesTests
         result.Definition.Value.IsGeographic.Should().BeTrue();
     }
 
-    private sealed class StubCrsRegistry : ICrsRegistry
+    private sealed class StubCrsRegistry(CrsDefinition? definition) : ICrsRegistry
     {
-        private readonly CrsDefinition? _definition;
-
-        public StubCrsRegistry(CrsDefinition? definition)
-        {
-            _definition = definition;
-        }
+        private readonly CrsDefinition? _definition = definition;
 
         public ValueTask<CrsDefinition?> ResolveAsync(string? crsIdentifier, CancellationToken cancellationToken = default)
             => ValueTask.FromResult(_definition);

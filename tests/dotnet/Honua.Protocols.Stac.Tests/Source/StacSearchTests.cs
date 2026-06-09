@@ -165,7 +165,7 @@ public sealed class StacSearchTests : IAsyncLifetime
     [Endpoint("GET /stac/search")]
     public async Task SearchGet_WithCollections_FiltersResults()
     {
-        var collectionId = WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
         var response = await _fixture.Client.GetAsync(
             $"/stac/search?collections={collectionId}");
 
@@ -310,7 +310,7 @@ public sealed class StacSearchTests : IAsyncLifetime
         var body = JsonSerializer.Serialize(new
         {
             limit = 5,
-            collections = new[] { WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture) }
+            collections = new[] { WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture) }
         });
 
         var response = await _fixture.Client.PostAsync(

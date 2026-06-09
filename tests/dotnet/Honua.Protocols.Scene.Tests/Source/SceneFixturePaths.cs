@@ -12,21 +12,5 @@ internal static class SceneFixturePaths
     public const string FixtureSceneId = "fixture-tileset";
     public const string ProtectedSceneId = "protected-fixture-tileset";
 
-    public static string ResolveFixtureRoot()
-    {
-        var directory = AppContext.BaseDirectory;
-        while (directory is not null)
-        {
-            var candidate = Path.Combine(directory, "tests", "fixtures", "scenes", "fixture-tileset");
-            if (Directory.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            directory = Path.GetDirectoryName(directory);
-        }
-
-        throw new DirectoryNotFoundException(
-            "Could not locate tests/fixtures/scenes/fixture-tileset from the test base directory.");
-    }
+    public static string ResolveFixtureRoot() => SceneFixtureRoots.Resolve(FixtureSceneId);
 }

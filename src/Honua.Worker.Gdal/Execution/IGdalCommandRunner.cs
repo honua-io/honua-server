@@ -6,7 +6,7 @@ namespace Honua.Worker.Gdal.Execution;
 /// <summary>
 /// Result of running a GDAL/OGR command-line tool.
 /// </summary>
-public sealed record GdalCommandResult
+internal sealed record GdalCommandResult
 {
     /// <summary>
     /// Process exit code. Zero indicates success for every GDAL CLI tool.
@@ -42,7 +42,7 @@ public sealed record GdalCommandResult
 /// that does not have GDAL installed, while the same executor code path runs
 /// the real tools inside the worker image.
 /// </remarks>
-public interface IGdalCommandRunner
+internal interface IGdalCommandRunner
 {
     /// <summary>
     /// Runs the named GDAL/OGR tool with the supplied arguments.

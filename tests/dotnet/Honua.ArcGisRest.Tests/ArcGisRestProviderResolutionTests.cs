@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Text.Json;
 using Honua.ArcGisRest;
 using Honua.ArcGisRest.Features.FeatureStore;
 using Honua.ArcGisRest.Features.FeatureStore.Models;
@@ -334,10 +335,10 @@ public class ArcGisRestProviderResolutionTests
         return (new MetadataV2GraphSnapshot(graph, "test", DateTimeOffset.UtcNow), service, resource, publication);
     }
 
-    private static Dictionary<string, System.Text.Json.JsonElement> ParseAttributes(string json)
+    private static Dictionary<string, JsonElement> ParseAttributes(string json)
     {
-        using var doc = System.Text.Json.JsonDocument.Parse(json);
-        var result = new Dictionary<string, System.Text.Json.JsonElement>(StringComparer.Ordinal);
+        using var doc = JsonDocument.Parse(json);
+        var result = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
         foreach (var property in doc.RootElement.EnumerateObject())
         {
             result[property.Name] = property.Value.Clone();
@@ -346,9 +347,9 @@ public class ArcGisRestProviderResolutionTests
         return result;
     }
 
-    private static System.Text.Json.JsonElement ParseElement(string json)
+    private static JsonElement ParseElement(string json)
     {
-        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        using var doc = JsonDocument.Parse(json);
         return doc.RootElement.Clone();
     }
 

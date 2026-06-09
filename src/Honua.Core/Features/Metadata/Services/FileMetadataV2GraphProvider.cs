@@ -21,12 +21,18 @@ public sealed class FileMetadataV2GraphProvider : IMetadataV2GraphProvider, IDis
     private readonly SemaphoreSlim _gate = new(1, 1);
     private MetadataV2GraphSnapshot? _snapshot;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="FileMetadataV2GraphProvider"/> class.
+    /// </summary>
+    /// <param name="path">The path to the graph JSON document.</param>
+    /// <param name="logger">The logger used to record load diagnostics.</param>
     public FileMetadataV2GraphProvider(string path, ILogger<FileMetadataV2GraphProvider> logger)
     {
         _path = path ?? throw new ArgumentNullException(nameof(path));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
+    /// <inheritdoc />
     public async ValueTask<MetadataV2GraphSnapshot> GetCurrentAsync(CancellationToken cancellationToken = default)
     {
         if (_snapshot is not null)
@@ -51,6 +57,7 @@ public sealed class FileMetadataV2GraphProvider : IMetadataV2GraphProvider, IDis
         }
     }
 
+    /// <inheritdoc />
     public async ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(long revision, CancellationToken cancellationToken = default)
     {
         var current = await GetCurrentAsync(cancellationToken).ConfigureAwait(false);
@@ -120,6 +127,7 @@ public sealed class FileMetadataV2GraphProvider : IMetadataV2GraphProvider, IDis
         return $"\"{Convert.ToHexString(hash).ToLowerInvariant()}\"";
     }
 
+    /// <inheritdoc />
     public void Dispose()
     {
         _gate.Dispose();

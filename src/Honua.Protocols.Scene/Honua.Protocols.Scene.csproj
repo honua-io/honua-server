@@ -15,7 +15,17 @@
       lives in Honua.Core. The protocol assembly may not ProjectReference
       Honua.Server (that's the cycle Phase 1 is solving).
     -->
-    <NoWarn>$(NoWarn);CS1591;IL2104;IL2026;IL3002;IL3050;CA1041;CA1000;CA1862;IDE0051;IDE0052;IDE0005;CA1844;IL2075</NoWarn>
+    <!--
+      Only AOT/trim warnings are suppressed at the project level: the source-
+      generated System.Text.Json contexts and ASP.NET minimal-API hosting in
+      this Web SDK assembly raise IL2026/IL3050/IL2104/IL3002/IL2075 that cannot
+      be resolved in source without abandoning source-gen JSON, matching the
+      sibling protocol assemblies (e.g. Honua.Protocols.Stac). Documentation
+      (CS1591), unused-code (IDE0051/IDE0052), unnecessary-using (IDE0005), and
+      API-design (CA*) warnings are NOT suppressed here — they are fixed at the
+      root in source so warnings-as-errors stays meaningful.
+    -->
+    <NoWarn>$(NoWarn);IL2104;IL2026;IL3002;IL3050;IL2075</NoWarn>
     <RootNamespace>Honua.Protocols.Scene</RootNamespace>
   </PropertyGroup>
 

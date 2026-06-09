@@ -31,7 +31,7 @@ namespace Honua.SqlServer.Tests;
 [Trait("Category", "SqlServerIntegration")]
 public class SqlServerFeatureStoreIntegrationTests : IAsyncLifetime
 {
-    private const string ConnectionEnvVar = "HONUA_SQLSERVER_TEST_CONNECTION";
+    internal const string ConnectionEnvVar = "HONUA_SQLSERVER_TEST_CONNECTION";
     private const int LayerId = 1;
 
     private string? _connectionString;
@@ -102,8 +102,6 @@ public class SqlServerFeatureStoreIntegrationTests : IAsyncLifetime
     [SkippableFact]
     public async Task QueryAsync_NoFilter_ReturnsAllFeatures()
     {
-        Skip.IfNot(ShouldRun, $"Set {ConnectionEnvVar} to run SQL Server integration tests.");
-
         var result = await _store.QueryAsync(LayerId, new FeatureQuery());
 
         Assert.Equal(3, result.Items.Length);
@@ -113,8 +111,6 @@ public class SqlServerFeatureStoreIntegrationTests : IAsyncLifetime
     [SkippableFact]
     public async Task CountAsync_NoFilter_ReturnsTotalRowCount()
     {
-        Skip.IfNot(ShouldRun, $"Set {ConnectionEnvVar} to run SQL Server integration tests.");
-
         var count = await _store.CountAsync(LayerId, new FeatureQuery());
 
         Assert.Equal(3, count);
@@ -123,8 +119,6 @@ public class SqlServerFeatureStoreIntegrationTests : IAsyncLifetime
     [SkippableFact]
     public async Task GetExtentAsync_ReturnsLayerEnvelope()
     {
-        Skip.IfNot(ShouldRun, $"Set {ConnectionEnvVar} to run SQL Server integration tests.");
-
         var extent = await _store.GetExtentAsync(LayerId);
 
         Assert.NotNull(extent);
@@ -137,8 +131,6 @@ public class SqlServerFeatureStoreIntegrationTests : IAsyncLifetime
     [SkippableFact]
     public async Task QueryAsync_AttributeFilter_ReturnsMatching()
     {
-        Skip.IfNot(ShouldRun, $"Set {ConnectionEnvVar} to run SQL Server integration tests.");
-
         var result = await _store.QueryAsync(LayerId, new FeatureQuery { Where = "name = 'Alpha'" });
 
         Assert.Single(result.Items);
@@ -148,8 +140,6 @@ public class SqlServerFeatureStoreIntegrationTests : IAsyncLifetime
     [SkippableFact]
     public async Task QueryAsync_LimitMatchingTotalRows_ReportsNoMoreResults()
     {
-        Skip.IfNot(ShouldRun, $"Set {ConnectionEnvVar} to run SQL Server integration tests.");
-
         // Three rows are seeded; a limit equal to the row count must not falsely advertise more.
         var result = await _store.QueryAsync(LayerId, new FeatureQuery { Limit = 3 });
 
@@ -160,8 +150,6 @@ public class SqlServerFeatureStoreIntegrationTests : IAsyncLifetime
     [SkippableFact]
     public async Task QueryAsync_LimitBelowTotalRows_ReportsMoreResults()
     {
-        Skip.IfNot(ShouldRun, $"Set {ConnectionEnvVar} to run SQL Server integration tests.");
-
         var result = await _store.QueryAsync(LayerId, new FeatureQuery { Limit = 2 });
 
         Assert.Equal(2, result.Items.Length);
@@ -241,29 +229,18 @@ public class SqlServerFeatureStoreIntegrationTests : IAsyncLifetime
     }
 }
 
-internal static class Skip
-{
-    public static void IfNot(bool condition, string reason)
-    {
-        if (!condition)
-        {
-            throw new SkipException(reason);
-        }
-    }
-}
-
-internal sealed class SkipException : Exception
-{
-    public SkipException(string message) : base(message) { }
-}
-
+/// <summary>
+/// A <see cref="FactAttribute"/> that marks the test as skipped (rather than executed) when the
+/// <c>HONUA_SQLSERVER_TEST_CONNECTION</c> environment variable is not set, so the SQL Server
+/// integration suite is opt-in without silently passing.
+/// </summary>
 internal sealed class SkippableFactAttribute : FactAttribute
 {
     public SkippableFactAttribute()
     {
         if (!SqlServerFeatureStoreIntegrationTests.ShouldRun)
         {
-            base.Skip = "Set HONUA_SQLSERVER_TEST_CONNECTION to run SQL Server integration tests.";
+            Skip = $"Set {SqlServerFeatureStoreIntegrationTests.ConnectionEnvVar} to run SQL Server integration tests.";
         }
     }
 }

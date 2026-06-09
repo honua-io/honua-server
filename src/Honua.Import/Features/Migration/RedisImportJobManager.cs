@@ -79,8 +79,16 @@ internal sealed partial class RedisImportJobManager : IDistributedImportJobManag
     }
 }
 
+/// <summary>
+/// Reports whether the distributed import coordination subsystem is healthy
+/// enough to accept new import jobs.
+/// </summary>
 public interface IImportCoordinationHealth
 {
+    /// <summary>
+    /// Gets a value indicating whether the coordinator can currently accept new
+    /// import jobs (for example, when durable Redis-backed coordination is available).
+    /// </summary>
     bool CanAcceptNewJobs { get; }
 }
 

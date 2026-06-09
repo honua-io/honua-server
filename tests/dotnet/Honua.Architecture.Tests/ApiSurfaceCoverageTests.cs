@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Reflection;
 using FluentAssertions;
 using Honua.Server;
 using Honua.TestKit.Attributes;
@@ -35,27 +34,11 @@ public sealed class ApiSurfaceCoverageTests
         // OData / Mcp / etc. integration tests now live in their own projects.
         var endpoints = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var testAssembly in ArchitectureTestHelpers.IntegrationTestAssemblies())
+        foreach (var method in ArchitectureTestHelpers.IntegrationTestMethods())
         {
-            foreach (var type in ArchitectureTestHelpers.GetTypesSafely(testAssembly))
+            foreach (var endpointAttribute in method.GetCustomAttributes(typeof(EndpointAttribute), inherit: true).Cast<EndpointAttribute>())
             {
-                var classHasIntegration = type.GetCustomAttributes(typeof(IntegrationTestAttribute), inherit: true).Length > 0;
-
-                foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static))
-                {
-                    var methodHasIntegration = classHasIntegration ||
-                        method.GetCustomAttributes(typeof(IntegrationTestAttribute), inherit: true).Length > 0;
-
-                    if (!methodHasIntegration)
-                    {
-                        continue;
-                    }
-
-                    foreach (var endpointAttribute in method.GetCustomAttributes(typeof(EndpointAttribute), inherit: true).Cast<EndpointAttribute>())
-                    {
-                        endpoints.Add(NormalizeEndpoint(endpointAttribute.Endpoint));
-                    }
-                }
+                endpoints.Add(NormalizeEndpoint(endpointAttribute.Endpoint));
             }
         }
 
