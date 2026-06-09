@@ -39,6 +39,7 @@
     <ProjectReference Include="..\..\..\src\Honua.Postgres\Honua.Postgres.csproj" />
     <ProjectReference Include="..\Honua.TestKit\Honua.TestKit.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.Protocols.GeoServices\Honua.Protocols.GeoServices.csproj" />
+    <ProjectReference Include="..\..\..\src\Honua.Plugins\Honua.Plugins.csproj" />
   </ItemGroup>
 
 </Project>

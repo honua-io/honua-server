@@ -13,6 +13,7 @@ using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
+using Honua.Plugins.Abstractions;
 using Honua.Protocols.GeoServices;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Protocols.GeoServices.FeatureServer.Services;
@@ -47,6 +48,7 @@ internal sealed class FeatureServerEditsHandler(
     private readonly IFilterExpressionService _filterExpressionService = dependencies.FilterExpressionService;
     private readonly IHttpContextAccessor _httpContextAccessor = dependencies.HttpContextAccessor;
     private readonly FeatureMutationEventService _mutationEventService = dependencies.MutationEventService;
+    private readonly IPluginEditPipeline _pluginPipeline = dependencies.PluginPipeline;
     private readonly ILogger<FeatureServerEditsHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
     /// <summary>
@@ -144,6 +146,13 @@ internal sealed class FeatureServerEditsHandler(
             // Process edit operations
             var editContext = await ProcessEditOperationsAsync(request, resource, storageLayerId.Value, cancellationToken);
 
+            // Run Enterprise plugin validators + before-edit hooks over the resolved features (#347).
+            // Rejected features are removed from the write set and marked failed in their response
+            // slots; with rollbackOnFailure this fails the whole request below. No-op (and skipped
+            // entirely) when no plugins are licensed/registered.
+            await ApplyPluginEditPipelineAsync(serviceId, layerId, resource, editContext, cancellationToken)
+                .ConfigureAwait(false);
+
             // Handle validation errors with rollback if needed
             if (editContext.HasValidationErrors && request.RollbackOnFailure)
             {
@@ -158,6 +167,8 @@ internal sealed class FeatureServerEditsHandler(
             {
                 await _mutationEventService.InvalidateLayerAsync(serviceId, layerId, CancellationToken.None);
                 await PublishFeatureChangeEventsAsync(serviceId, layerId, editContext, CancellationToken.None);
+                await RunPluginAfterHooksAsync(serviceId, layerId, resource, editContext, CancellationToken.None)
+                    .ConfigureAwait(false);
             }
 
             // Build and return final response
@@ -664,6 +675,201 @@ internal sealed class FeatureServerEditsHandler(
                 mutationFeature: deleteFeature,
                 serviceId: serviceId,
                 requestId: requestId).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Runs the Enterprise plugin edit pipeline (per-feature validators + batch before-hooks)
+    /// over the resolved features and applies any rejections back onto the edit context: each
+    /// rejected feature is removed from the write set and a failure result is written into its
+    /// response slot. A no-op when no plugins are licensed/registered.
+    /// </summary>
+    private async Task ApplyPluginEditPipelineAsync(
+        string serviceId,
+        int layerId,
+        MetadataV2Resource resource,
+        EditOperationContext context,
+        CancellationToken cancellationToken)
+    {
+        if (!_pluginPipeline.HasPlugins)
+        {
+            return;
+        }
+
+        var hookContext = BuildEditHookContext(serviceId, layerId, resource, context);
+        if (hookContext.Features.IsDefaultOrEmpty)
+        {
+            return;
+        }
+
+        var outcome = await _pluginPipeline.ValidateAndRunBeforeHooksAsync(hookContext, cancellationToken)
+            .ConfigureAwait(false);
+        if (!outcome.HasRejections)
+        {
+            return;
+        }
+
+        foreach (var rejection in outcome.Rejections)
+        {
+            context.HasValidationErrors = true;
+            var message = SanitizeEditErrorMessage(rejection.Message, InvalidFeatureDataMessage);
+            switch (rejection.Kind)
+            {
+                case EditKind.Create:
+                    RemoveCreateForRejection(context, rejection, message);
+                    break;
+                case EditKind.Update:
+                    RemoveUpdateForRejection(context, rejection, message);
+                    break;
+                case EditKind.Delete:
+                    RemoveDeleteForRejection(context, rejection, message);
+                    break;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Runs the Enterprise plugin after-edit hooks over the committed features. Best-effort:
+    /// the pipeline swallows hook exceptions so a post-write plugin failure cannot affect the
+    /// already-committed edit. A no-op when no plugins are licensed/registered.
+    /// </summary>
+    private async Task RunPluginAfterHooksAsync(
+        string serviceId,
+        int layerId,
+        MetadataV2Resource resource,
+        EditOperationContext context,
+        CancellationToken cancellationToken)
+    {
+        if (!_pluginPipeline.HasPlugins)
+        {
+            return;
+        }
+
+        var hookContext = BuildEditHookContext(serviceId, layerId, resource, context);
+        if (hookContext.Features.IsDefaultOrEmpty)
+        {
+            return;
+        }
+
+        await _pluginPipeline.RunAfterHooksAsync(hookContext, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Projects the surviving create/update/delete operations in <paramref name="context"/> into a
+    /// protocol-neutral <see cref="EditHookContext"/> for the plugin pipeline. Each item carries the
+    /// originating request slot so per-feature rejections map back precisely.
+    /// </summary>
+    private EditHookContext BuildEditHookContext(
+        string serviceId,
+        int layerId,
+        MetadataV2Resource resource,
+        EditOperationContext context)
+    {
+        var features = ImmutableArray.CreateBuilder<EditHookFeature>(
+            context.CreateFeatures.Count + context.UpdateFeatures.Count + context.DeleteIndexes.Count);
+
+        for (var k = 0; k < context.CreateFeatures.Count; k++)
+        {
+            features.Add(new EditHookFeature(EditKind.Create, context.CreateIndexes[k], ObjectId: null, context.CreateFeatures[k]));
+        }
+
+        for (var k = 0; k < context.UpdateFeatures.Count; k++)
+        {
+            features.Add(new EditHookFeature(EditKind.Update, context.UpdateIndexes[k], context.UpdateObjectIds[k], context.UpdateFeatures[k]));
+        }
+
+        for (var k = 0; k < context.DeleteIndexes.Count; k++)
+        {
+            var objectId = context.DeleteResponseObjectIds[k];
+            var snapshot = k < context.DeleteFeatures.Count ? context.DeleteFeatures[k] : null;
+            features.Add(new EditHookFeature(EditKind.Delete, context.DeleteIndexes[k], objectId, snapshot ?? Feature.Create(objectId, geometry: null)));
+        }
+
+        var httpContext = _httpContextAccessor.HttpContext;
+        return new EditHookContext(
+            serviceId,
+            layerId,
+            resource.Metadata.Name,
+            httpContext?.User?.Identity?.Name,
+            httpContext?.TraceIdentifier,
+            features.MoveToImmutable());
+    }
+
+    private static void RemoveCreateForRejection(EditOperationContext context, PluginEditRejection rejection, string message)
+    {
+        if (context.AddResults != null && rejection.RequestIndex >= 0 && rejection.RequestIndex < context.AddResults.Length)
+        {
+            context.AddResults[rejection.RequestIndex] = CreateFailureResult(rejection.ErrorCode, message, rejection.ObjectId);
+        }
+
+        var k = context.CreateIndexes.IndexOf(rejection.RequestIndex);
+        if (k < 0)
+        {
+            return;
+        }
+
+        context.CreateFeatures.RemoveAt(k);
+        context.CreateIndexes.RemoveAt(k);
+        if (k < context.CreateResponseObjectIds.Count)
+        {
+            context.CreateResponseObjectIds.RemoveAt(k);
+        }
+
+        if (k < context.CreateGeometryChanged.Count)
+        {
+            context.CreateGeometryChanged.RemoveAt(k);
+        }
+    }
+
+    private static void RemoveUpdateForRejection(EditOperationContext context, PluginEditRejection rejection, string message)
+    {
+        if (context.UpdateResults != null && rejection.RequestIndex >= 0 && rejection.RequestIndex < context.UpdateResults.Length)
+        {
+            context.UpdateResults[rejection.RequestIndex] = CreateFailureResult(rejection.ErrorCode, message, rejection.ObjectId);
+        }
+
+        var k = context.UpdateIndexes.IndexOf(rejection.RequestIndex);
+        if (k < 0)
+        {
+            return;
+        }
+
+        context.UpdateFeatures.RemoveAt(k);
+        context.UpdateIndexes.RemoveAt(k);
+        if (k < context.UpdateObjectIds.Count)
+        {
+            context.UpdateObjectIds.RemoveAt(k);
+        }
+
+        if (k < context.UpdateGeometryChanged.Count)
+        {
+            context.UpdateGeometryChanged.RemoveAt(k);
+        }
+    }
+
+    private static void RemoveDeleteForRejection(EditOperationContext context, PluginEditRejection rejection, string message)
+    {
+        if (context.DeleteResults != null && rejection.RequestIndex >= 0 && rejection.RequestIndex < context.DeleteResults.Length)
+        {
+            context.DeleteResults[rejection.RequestIndex] = CreateFailureResult(rejection.ErrorCode, message, rejection.ObjectId);
+        }
+
+        var k = context.DeleteIndexes.IndexOf(rejection.RequestIndex);
+        if (k < 0)
+        {
+            return;
+        }
+
+        context.DeleteIds.RemoveAt(k);
+        context.DeleteIndexes.RemoveAt(k);
+        if (k < context.DeleteResponseObjectIds.Count)
+        {
+            context.DeleteResponseObjectIds.RemoveAt(k);
+        }
+
+        if (k < context.DeleteFeatures.Count)
+        {
+            context.DeleteFeatures.RemoveAt(k);
         }
     }
 

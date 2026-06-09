@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <NoWarn>$(NoWarn);CS1591;CA1716</NoWarn>
+    <RootNamespace>Honua.Plugins</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Host-side plugin runtime (issue #347): DI discovery, the license-gated edit pipeline,
+      options, and the manifest catalog. References Honua.Core for the license-entitlement
+      gate and the audit sink, plus the public Honua.Plugins.Abstractions contract surface.
+      Deliberately free of ASP.NET Core: the plugin health check lives in Honua.Server next
+      to the other production health checks.
+    -->
+    <ProjectReference Include="..\Honua.Core\Honua.Core.csproj" />
+    <ProjectReference Include="..\Honua.Plugins.Abstractions\Honua.Plugins.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Honua.Plugins.Tests" />
+    <InternalsVisibleTo Include="Honua.Server.Tests" />
+  </ItemGroup>
+
+</Project>

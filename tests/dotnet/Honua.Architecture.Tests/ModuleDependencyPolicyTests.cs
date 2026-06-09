@@ -79,6 +79,7 @@ public sealed class ModuleDependencyPolicyTests
         ArcGisRest,
         Oracle,
         Protocols,
+        Plugins,
         Server,
         ServiceDefaults,
         AppHost,
@@ -179,6 +180,10 @@ public sealed class ModuleDependencyPolicyTests
         (ModuleRole.Protocols, ModuleRole.Scene),
         (ModuleRole.Protocols, ModuleRole.ServiceDefaults),
         (ModuleRole.Protocols, ModuleRole.Protocols),
+        // Plugin/extension SDK (#347, ADR-0024): protocol edit handlers consume the lean
+        // Honua.Plugins.Abstractions contract surface (IPluginEditPipeline) to fire plugin
+        // validators/hooks without coupling to the host-side plugin runtime.
+        (ModuleRole.Protocols, ModuleRole.Plugins),
 
         // Jobs: the durable job-execution substrate. Depends on
         // Abstractions + Core + Hosting + ServiceDefaults (no AWS/Azure
@@ -262,6 +267,15 @@ public sealed class ModuleDependencyPolicyTests
         (ModuleRole.Import, ModuleRole.Hosting),
         (ModuleRole.Import, ModuleRole.ServiceDefaults),
 
+        // Plugin/extension SDK host runtime (#347, ADR-0024). The Plugins role spans the lean
+        // public contract surface (Honua.Plugins.Abstractions) and the host-side runtime
+        // (Honua.Plugins). The contract surface depends on Abstractions only; the runtime depends
+        // on Core (license-entitlement gate + audit sink) and the contract surface. It must NEVER
+        // back-reference Server or any storage provider.
+        (ModuleRole.Plugins, ModuleRole.Abstractions),
+        (ModuleRole.Plugins, ModuleRole.Core),
+        (ModuleRole.Plugins, ModuleRole.Plugins),
+
         // Server (composition root): every tier below it.
         (ModuleRole.Server, ModuleRole.Abstractions),
         (ModuleRole.Server, ModuleRole.Core),
@@ -284,6 +298,7 @@ public sealed class ModuleDependencyPolicyTests
         (ModuleRole.Server, ModuleRole.ArcGisRest),
         (ModuleRole.Server, ModuleRole.Oracle),
         (ModuleRole.Server, ModuleRole.Protocols),
+        (ModuleRole.Server, ModuleRole.Plugins),
         (ModuleRole.Server, ModuleRole.ServiceDefaults),
 
         // ServiceDefaults sits sideways from the main stack but currently
@@ -677,6 +692,16 @@ public sealed class ModuleDependencyPolicyTests
         if (projectName.StartsWith("Honua.Protocols.", StringComparison.Ordinal))
         {
             return ModuleRole.Protocols;
+        }
+
+        // Plugin/extension SDK (#347): the public contract surface
+        // (Honua.Plugins.Abstractions) and the host-side runtime (Honua.Plugins) share the
+        // Plugins role. Honua.Plugins.Tests is already routed to Unclassified by the .Tests
+        // guard above, so the StartsWith check here only matches runtime plugin assemblies.
+        if (projectName.Equals("Honua.Plugins", StringComparison.Ordinal) ||
+            projectName.StartsWith("Honua.Plugins.", StringComparison.Ordinal))
+        {
+            return ModuleRole.Plugins;
         }
 
         // Tier 7: Server (composition root).

@@ -24,6 +24,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Honua.Core.Abstractions\Honua.Core.Abstractions.csproj" />
     <ProjectReference Include="..\Honua.Core\Honua.Core.csproj" />
+    <ProjectReference Include="..\Honua.Plugins.Abstractions\Honua.Plugins.Abstractions.csproj" />
     <ProjectReference Include="..\Honua.Geometry\Honua.Geometry.csproj" />
     <ProjectReference Include="..\Honua.Hosting\Honua.Hosting.csproj" />
     <ProjectReference Include="..\Honua.Geoprocessing\Honua.Geoprocessing.csproj" />

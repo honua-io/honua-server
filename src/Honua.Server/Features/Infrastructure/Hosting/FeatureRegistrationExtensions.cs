@@ -38,6 +38,7 @@ using Honua.Protocols.GeoServices.VersionManagementServer;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.NlQuery;
 using Honua.Ai.WorkflowGeneration;
+using Honua.Plugins;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Honua.Protocols.OData;
 using Honua.Protocols.Ogc.Api.Coverages;
@@ -82,6 +83,11 @@ internal static class FeatureRegistrationExtensions
         ArgumentNullException.ThrowIfNull(configuration);
 
         services.AddFeatureServer();
+        // Plugin/extension SDK (#347): registers IPluginEditPipeline (a no-op unless the
+        // Enterprise plugin.sdk entitlement is active and plugins are compiled in) so the
+        // FeatureServer edit path can depend on it unconditionally. Custom builds add plugins
+        // via the AddHonuaPlugins(configuration, plugins => plugins.Add<...>()) overload.
+        services.AddHonuaPlugins(configuration);
         services.AddCloudDemoServices(configuration);
         services.AddGeocoding(configuration);
         services.AddForms(configuration);
