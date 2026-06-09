@@ -15,6 +15,7 @@ using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Configuration;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Monitoring;
 using Honua.Infrastructure.Services;
 using Microsoft.Extensions.Caching.Distributed;
@@ -55,6 +56,12 @@ internal static class InfrastructureCompositionRoot
             default:
                 throw new InvalidOperationException($"Unsupported data source provider '{configuredProvider}'.");
         }
+
+        // Wrap the provider's IFeatureWriter with the shared audit decorator (#507)
+        // so destructive feature writes (deletes, bulk/transactional edits) emit
+        // audit events once, at the shared edit-pipeline boundary, for every
+        // protocol adapter (FeatureServer, OGC API Features, WFS-T, OData, gRPC).
+        services.AddAuditingFeatureWriter();
 
         // Register the SQL Server spatial provider as an additional read-only feature backend (#850).
         // Metadata v2 publications whose connection resolves to provider 'sqlserver'/'mssql' are routed here
