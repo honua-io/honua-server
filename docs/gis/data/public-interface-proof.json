@@ -1376,6 +1376,8 @@
         "VersionManagementServer::startEditing",
         "VersionManagementServer::stopEditing",
         "VersionManagementServer::reconcile",
+        "VersionManagementServer::inspectConflicts",
+        "VersionManagementServer::resolveConflicts",
         "VersionManagementServer::post"
       ],
       "proofs": [

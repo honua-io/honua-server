@@ -59,11 +59,49 @@ public interface IVersionManager
     /// <returns>The resolved context, or null when the named version does not exist.</returns>
     Task<VersionContext?> ResolveAsync(string? gdbVersion, CancellationToken cancellationToken = default);
 
-    /// <summary>Reconciles a version against DEFAULT, detecting conflicts since the merge base.</summary>
+    /// <summary>
+    /// Reconciles a version against DEFAULT, detecting conflicts since the merge base. Disjoint
+    /// field-level edits auto-merge; only genuinely-overlapping edits (overlapping fields,
+    /// geometry-vs-geometry, or update-vs-delete) become conflicts. When <paramref name="policy"/> is
+    /// a deterministic policy (#371) each conflict is auto-resolved so the version may be posted; when
+    /// <see cref="VersionReconcilePolicy.None"/> the unresolved conflicts are persisted for manual
+    /// review and block <c>Post</c>.
+    /// </summary>
     /// <param name="versionId">Version to reconcile.</param>
+    /// <param name="policy">Auto-resolution policy; <see cref="VersionReconcilePolicy.None"/> for manual review.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The reconcile result.</returns>
-    Task<VersionReconcileResult> ReconcileAsync(Guid versionId, CancellationToken cancellationToken = default);
+    Task<VersionReconcileResult> ReconcileAsync(
+        Guid versionId,
+        VersionReconcilePolicy policy = VersionReconcilePolicy.None,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns the current set of pending (unresolved) conflicts persisted for a version, each with the
+    /// three-way base/DEFAULT/version images and per-field diffs for a manual-resolution UI (#371). An
+    /// empty result means there are no pending conflicts and the version may be posted.
+    /// </summary>
+    /// <param name="versionId">Version whose pending conflicts to inspect.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The pending conflicts.</returns>
+    Task<IReadOnlyList<VersionReconcileConflict>> GetPendingConflictsAsync(
+        Guid versionId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Applies operator-submitted resolution choices to a version's pending conflicts (#371). Each
+    /// choice rewrites the branch overlay row to the selected side (version/DEFAULT/base) and clears
+    /// the persisted pending conflict, after which <c>Post</c> may proceed once no pending conflicts
+    /// remain.
+    /// </summary>
+    /// <param name="versionId">Version whose conflicts to resolve.</param>
+    /// <param name="resolutions">Per-feature resolution choices.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The resolution outcome (resolved/remaining counts and whether post may proceed).</returns>
+    Task<VersionConflictResolutionResult> ResolveConflictsAsync(
+        Guid versionId,
+        IReadOnlyList<VersionConflictResolution> resolutions,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Posts a reconciled version's net changes onto DEFAULT. Refused while unresolved conflicts

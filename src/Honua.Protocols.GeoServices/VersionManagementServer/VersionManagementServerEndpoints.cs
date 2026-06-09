@@ -111,6 +111,16 @@ public static class VersionManagementServerEndpoints
             .WithSummary("Reconcile a branch version against DEFAULT")
             .WithTags(Tag);
 
+        endpoints.MapGet($"{BasePath}/versions/{{versionGuid}}/inspectConflicts", HandleInspectConflicts)
+            .WithName("InspectVersionConflicts")
+            .WithSummary("Retrieve the pending conflict set for a branch version")
+            .WithTags(Tag);
+
+        endpoints.MapPost($"{BasePath}/versions/{{versionGuid}}/resolveConflicts", HandleResolveConflicts)
+            .WithName("ResolveVersionConflicts")
+            .WithSummary("Submit manual conflict resolutions for a branch version")
+            .WithTags(Tag);
+
         endpoints.MapPost($"{BasePath}/versions/{{versionGuid}}/post", HandlePost)
             .WithName("PostVersion")
             .WithSummary("Post a reconciled branch version's changes onto DEFAULT")
@@ -326,24 +336,112 @@ public static class VersionManagementServerEndpoints
         [FromServices] IVersionManager versionManager,
         CancellationToken cancellationToken)
     {
-        var (gate, _, versionId) = await AuthorizeReadAndResolveVersionAsync(
+        var (gate, values, versionId) = await AuthorizeReadAndResolveVersionAsync(
             serviceId, versionGuid, context, versionManager, cancellationToken).ConfigureAwait(false);
         if (gate is not null)
         {
             return gate;
         }
 
-        var result = await versionManager.ReconcileAsync(versionId, cancellationToken).ConfigureAwait(false);
+        var (policy, policyError) = ParseReconcilePolicy(context, values!);
+        if (policyError is not null)
+        {
+            return policyError;
+        }
+
+        var result = await versionManager.ReconcileAsync(versionId, policy, cancellationToken).ConfigureAwait(false);
         var response = new ReconcileResponse
         {
             HasConflicts = !result.Conflicts.IsDefaultOrEmpty && result.Conflicts.Length > 0,
             CanPost = result.CanPost,
+            AutoResolvedCount = result.AutoResolvedCount,
             Conflicts = result.Conflicts.IsDefaultOrEmpty
                 ? []
                 : result.Conflicts.Select(ToConflictInfo).ToArray(),
         };
 
         return Results.Json(response, VersionManagementJsonContext.Default.ReconcileResponse,
+            contentType: "application/json");
+    }
+
+    private static async Task<IResult> HandleInspectConflicts(
+        string serviceId,
+        string versionGuid,
+        HttpContext context,
+        [FromServices] IResourceValidator resourceValidator,
+        [FromServices] IVersionManager versionManager,
+        CancellationToken cancellationToken)
+    {
+        // Read-only review surface: gate on the entitlement + service validation, but no write auth and
+        // no request body (GET). Resolve the version directly.
+        var problem = await ValidateServiceAsync(serviceId, context, resourceValidator, cancellationToken)
+            .ConfigureAwait(false);
+        if (problem is not null)
+        {
+            return problem;
+        }
+
+        var entitlementGate = LicenseGate.RequireEntitlement(
+            context, FeatureCatalog.BranchVersioningKey, "Branch versioning");
+        if (entitlementGate is not null)
+        {
+            return entitlementGate;
+        }
+
+        if (!versionManager.SupportsVersioning)
+        {
+            return StandardErrorHelpers.CreateNotImplemented(
+                context,
+                "Branch versioning is not supported by the configured data provider.",
+                ["Branch versioning requires a PostgreSQL/PostGIS feature provider."]);
+        }
+
+        if (!Guid.TryParse(versionGuid, out var versionId))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, "versionGuid is not a valid GUID.");
+        }
+
+        var conflicts = await versionManager.GetPendingConflictsAsync(versionId, cancellationToken).ConfigureAwait(false);
+        var response = new InspectConflictsResponse
+        {
+            HasConflicts = conflicts.Count > 0,
+            Conflicts = conflicts.Select(ToConflictInfo).ToArray(),
+        };
+
+        return Results.Json(response, VersionManagementJsonContext.Default.InspectConflictsResponse,
+            contentType: "application/json");
+    }
+
+    private static async Task<IResult> HandleResolveConflicts(
+        string serviceId,
+        string versionGuid,
+        HttpContext context,
+        [FromServices] IVersionManager versionManager,
+        CancellationToken cancellationToken)
+    {
+        var (gate, values, versionId) = await AuthorizeReadAndResolveVersionAsync(
+            serviceId, versionGuid, context, versionManager, cancellationToken).ConfigureAwait(false);
+        if (gate is not null)
+        {
+            return gate;
+        }
+
+        var (resolutions, parseError) = ParseResolutions(context, values!);
+        if (parseError is not null)
+        {
+            return parseError;
+        }
+
+        var result = await versionManager.ResolveConflictsAsync(versionId, resolutions!, cancellationToken)
+            .ConfigureAwait(false);
+        var response = new ResolveConflictsResponse
+        {
+            Resolved = result.Resolved,
+            Remaining = result.Remaining,
+            CanPost = result.CanPost,
+        };
+
+        return Results.Json(response, VersionManagementJsonContext.Default.ResolveConflictsResponse,
             contentType: "application/json");
     }
 
@@ -530,7 +628,141 @@ public static class VersionManagementServerEndpoints
         LayerId = conflict.LayerId,
         ObjectId = conflict.ObjectId,
         ConflictType = ConflictTypeToString(conflict.ConflictType),
+        BaseAttributes = conflict.BaseAttributesJson,
+        DefaultAttributes = conflict.DefaultAttributesJson,
+        VersionAttributes = conflict.VersionAttributesJson,
+        BaseGeometry = conflict.BaseGeometryWkt,
+        DefaultGeometry = conflict.DefaultGeometryWkt,
+        VersionGeometry = conflict.VersionGeometryWkt,
+        FieldDiffs = conflict.FieldDiffs.IsDefaultOrEmpty
+            ? []
+            : conflict.FieldDiffs.Select(d => new VersionConflictFieldDiffInfo
+            {
+                Name = d.Name,
+                Base = d.Base,
+                Default = d.Default,
+                Version = d.Version,
+            }).ToArray(),
     };
+
+    /// <summary>
+    /// Parses the reconcile auto-resolution policy from the request. Accepts Honua's named policies
+    /// (<c>none</c>/<c>lastWriteWins</c>/<c>versionWins</c>/<c>defaultWins</c>) on a <c>conflictResolution</c>
+    /// (or <c>resolutionPolicy</c>) parameter, and maps the Esri-style <c>abortIfConflicts</c> flag to
+    /// the manual (none) policy when set. Absent or empty resolves to <see cref="VersionReconcilePolicy.None"/>.
+    /// </summary>
+    private static (VersionReconcilePolicy Policy, IResult? Error) ParseReconcilePolicy(
+        HttpContext context,
+        IReadOnlyDictionary<string, StringValues> values)
+    {
+        var raw = GeoServicesRequestValueHelpers.GetValueString(values, "conflictResolution")
+            ?? GeoServicesRequestValueHelpers.GetValueString(values, "resolutionPolicy");
+
+        // abortIfConflicts=true is Esri's "do not auto-resolve" intent; force manual review.
+        var abortRaw = GeoServicesRequestValueHelpers.GetValueString(values, "abortIfConflicts");
+        if (string.Equals(abortRaw?.Trim(), "true", StringComparison.OrdinalIgnoreCase))
+        {
+            return (VersionReconcilePolicy.None, null);
+        }
+
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return (VersionReconcilePolicy.None, null);
+        }
+
+        return raw.Trim().ToLowerInvariant() switch
+        {
+            "none" or "manual" => (VersionReconcilePolicy.None, null),
+            "lastwritewins" or "last-write-wins" => (VersionReconcilePolicy.LastWriteWins, null),
+            "versionwins" or "version-wins" or "favoreditversion" => (VersionReconcilePolicy.VersionWins, null),
+            "defaultwins" or "default-wins" or "favortargetversion" => (VersionReconcilePolicy.DefaultWins, null),
+            _ => (VersionReconcilePolicy.None, StandardErrorHelpers.CreateBadRequest(
+                context,
+                "Unsupported conflictResolution policy.",
+                ["Supported policies: none, lastWriteWins, versionWins, defaultWins."])),
+        };
+    }
+
+    /// <summary>
+    /// Parses the per-feature resolution choices from the <c>conflicts</c> JSON-array parameter. Each
+    /// element is <c>{ "layerId": int, "objectId": long, "choice": "version|default|base" }</c>.
+    /// </summary>
+    private static (IReadOnlyList<VersionConflictResolution>? Resolutions, IResult? Error) ParseResolutions(
+        HttpContext context,
+        IReadOnlyDictionary<string, StringValues> values)
+    {
+        var raw = GeoServicesRequestValueHelpers.GetValueString(values, "conflicts")
+            ?? GeoServicesRequestValueHelpers.GetValueString(values, "resolutions");
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return (null, StandardErrorHelpers.CreateBadRequest(
+                context, "conflicts parameter is required.",
+                ["Provide a JSON array of { layerId, objectId, choice } resolution objects."]));
+        }
+
+        try
+        {
+            using var document = System.Text.Json.JsonDocument.Parse(raw);
+            if (document.RootElement.ValueKind != System.Text.Json.JsonValueKind.Array)
+            {
+                return (null, StandardErrorHelpers.CreateBadRequest(context, "conflicts must be a JSON array."));
+            }
+
+            var resolutions = new List<VersionConflictResolution>();
+            foreach (var element in document.RootElement.EnumerateArray())
+            {
+                if (!element.TryGetProperty("layerId", out var layerProp) ||
+                    !element.TryGetProperty("objectId", out var objectProp) ||
+                    !element.TryGetProperty("choice", out var choiceProp))
+                {
+                    return (null, StandardErrorHelpers.CreateBadRequest(
+                        context, "Each conflict resolution requires layerId, objectId, and choice."));
+                }
+
+                if (!TryParseChoice(choiceProp.GetString(), out var choice))
+                {
+                    return (null, StandardErrorHelpers.CreateBadRequest(
+                        context, "Unsupported resolution choice.",
+                        ["Supported choices: version, default, base."]));
+                }
+
+                resolutions.Add(new VersionConflictResolution(
+                    layerProp.GetInt32(), objectProp.GetInt64(), choice));
+            }
+
+            return (resolutions, null);
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return (null, StandardErrorHelpers.CreateBadRequest(context, "conflicts is not valid JSON."));
+        }
+        catch (FormatException)
+        {
+            return (null, StandardErrorHelpers.CreateBadRequest(context, "conflicts contains an invalid layerId/objectId."));
+        }
+    }
+
+    private static bool TryParseChoice(string? raw, out VersionConflictResolutionChoice choice)
+    {
+        switch (raw?.Trim().ToLowerInvariant())
+        {
+            case "version":
+            case "takeversion":
+                choice = VersionConflictResolutionChoice.TakeVersion;
+                return true;
+            case "default":
+            case "takedefault":
+                choice = VersionConflictResolutionChoice.TakeDefault;
+                return true;
+            case "base":
+            case "takebase":
+                choice = VersionConflictResolutionChoice.TakeBase;
+                return true;
+            default:
+                choice = VersionConflictResolutionChoice.TakeVersion;
+                return false;
+        }
+    }
 
     private static string ConflictTypeToString(ReplicaConflictType type) => type switch
     {

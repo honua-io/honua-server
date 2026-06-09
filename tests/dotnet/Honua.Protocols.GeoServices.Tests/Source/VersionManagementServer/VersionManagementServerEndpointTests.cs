@@ -208,6 +208,69 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.VersionManagement)]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/reconcile")]
+    [InterfaceOperation(TestProtocols.VersionManagementServer, "reconcile")]
+    public async Task Reconcile_WithPolicy_ReportsAutoResolvedCount()
+    {
+        // A clean version with a policy still returns the auto-resolved count field (zero here) and can
+        // post; this exercises the conflictResolution parameter parsing on the reconcile endpoint.
+        var created = await CreateVersionAsync("admin.reconcile_policy");
+        var guid = created.GetProperty("versionGuid").GetString();
+
+        var response = await PostFormAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{guid}/reconcile",
+            ("conflictResolution", "lastWriteWins"), ("f", "json"));
+        response.StatusCode.Should().Be(HttpStatusCode.OK,
+            "reconcile with a policy should succeed; body: {0}", await response.Content.ReadAsStringAsync());
+
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        doc.RootElement.GetProperty("canPost").GetBoolean().Should().BeTrue();
+        doc.RootElement.GetProperty("autoResolvedCount").GetInt32().Should().Be(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.VersionManagement)]
+    [Endpoint("GET /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/inspectConflicts")]
+    [InterfaceOperation(TestProtocols.VersionManagementServer, "inspectConflicts")]
+    public async Task InspectConflicts_CleanVersion_ReturnsNoConflicts()
+    {
+        var created = await CreateVersionAsync("admin.inspect_clean");
+        var guid = created.GetProperty("versionGuid").GetString();
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{guid}/inspectConflicts?f=json");
+        response.StatusCode.Should().Be(HttpStatusCode.OK,
+            "inspectConflicts should succeed; body: {0}", await response.Content.ReadAsStringAsync());
+
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        doc.RootElement.GetProperty("hasConflicts").GetBoolean().Should().BeFalse();
+        doc.RootElement.GetProperty("conflicts").GetArrayLength().Should().Be(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.VersionManagement)]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/resolveConflicts")]
+    [InterfaceOperation(TestProtocols.VersionManagementServer, "resolveConflicts")]
+    public async Task ResolveConflicts_NoPendingConflicts_ReturnsCanPost()
+    {
+        // With no pending conflicts, submitting an (empty-effect) resolution leaves the version postable.
+        var created = await CreateVersionAsync("admin.resolve_clean");
+        var guid = created.GetProperty("versionGuid").GetString();
+
+        var conflicts = "[{\"layerId\":0,\"objectId\":1,\"choice\":\"version\"}]";
+        var response = await PostFormAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{guid}/resolveConflicts",
+            ("conflicts", conflicts), ("f", "json"));
+        response.StatusCode.Should().Be(HttpStatusCode.OK,
+            "resolveConflicts should succeed; body: {0}", await response.Content.ReadAsStringAsync());
+
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        doc.RootElement.GetProperty("canPost").GetBoolean().Should().BeTrue();
+        doc.RootElement.GetProperty("remaining").GetInt32().Should().Be(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.VersionManagement)]
     [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/post")]
     [InterfaceOperation(TestProtocols.VersionManagementServer, "post")]
     public async Task Post_AfterReconcile_Succeeds()

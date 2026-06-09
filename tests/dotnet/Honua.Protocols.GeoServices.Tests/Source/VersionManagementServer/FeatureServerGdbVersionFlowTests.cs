@@ -103,6 +103,68 @@ public sealed class FeatureServerGdbVersionFlowTests : IAsyncLifetime
             .Should().Be($"/rest/services/{ServiceId}/VersionManagementServer");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.VersionManagement)]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/resolveConflicts")]
+    [InterfaceOperation(TestProtocols.VersionManagementServer, "resolveConflicts")]
+    public async Task ConflictFlow_InspectThenResolveTakeVersion_PostsVersionValue()
+    {
+        var marker = "vconf_" + Guid.NewGuid().ToString("N")[..8];
+
+        // Seed a DEFAULT feature, then branch.
+        var seed = await PostFormAsync($"{LayerBase}/applyEdits", ("adds", BuildAddsJson(marker)), ("f", "json"));
+        seed.StatusCode.Should().Be(HttpStatusCode.OK, "seed add; body: {0}", await seed.Content.ReadAsStringAsync());
+        var objectId = await FirstAddObjectIdAsync(seed);
+
+        var versionGuid = await CreateVersionAsync("admin." + marker);
+
+        // Branch edits the feature's name; DEFAULT edits the SAME feature's name => overlapping conflict.
+        var branchEdit = await PostFormAsync($"{LayerBase}/applyEdits",
+            ("updates", BuildUpdateJson(objectId, marker + "_branch")), ("gdbVersion", versionGuid), ("f", "json"));
+        branchEdit.StatusCode.Should().Be(HttpStatusCode.OK, "branch edit; body: {0}", await branchEdit.Content.ReadAsStringAsync());
+
+        var defaultEdit = await PostFormAsync($"{LayerBase}/applyEdits",
+            ("updates", BuildUpdateJson(objectId, marker + "_default")), ("f", "json"));
+        defaultEdit.StatusCode.Should().Be(HttpStatusCode.OK, "default edit; body: {0}", await defaultEdit.Content.ReadAsStringAsync());
+
+        // Reconcile detects the conflict and blocks post.
+        var reconcile = await PostFormAsync($"{VmsBase}/versions/{versionGuid}/reconcile", ("f", "json"));
+        using (var reconcileDoc = JsonDocument.Parse(await reconcile.Content.ReadAsStringAsync()))
+        {
+            reconcileDoc.RootElement.GetProperty("hasConflicts").GetBoolean().Should().BeTrue();
+            reconcileDoc.RootElement.GetProperty("canPost").GetBoolean().Should().BeFalse();
+        }
+
+        // inspectConflicts returns the persisted 3-way conflict report.
+        var inspect = await _fixture.Client.GetAsync($"{VmsBase}/versions/{versionGuid}/inspectConflicts?f=json");
+        inspect.StatusCode.Should().Be(HttpStatusCode.OK, "inspect; body: {0}", await inspect.Content.ReadAsStringAsync());
+        using (var inspectDoc = JsonDocument.Parse(await inspect.Content.ReadAsStringAsync()))
+        {
+            inspectDoc.RootElement.GetProperty("hasConflicts").GetBoolean().Should().BeTrue();
+            var conflict = inspectDoc.RootElement.GetProperty("conflicts").EnumerateArray().Single();
+            conflict.GetProperty("objectId").GetInt64().Should().Be(objectId);
+            conflict.GetProperty("versionAttributes").GetString().Should().Contain(marker + "_branch");
+            conflict.GetProperty("defaultAttributes").GetString().Should().Contain(marker + "_default");
+        }
+
+        // Resolve taking the version side; post then succeeds and DEFAULT carries the branch value.
+        var conflicts = $"[{{\"layerId\":0,\"objectId\":{objectId},\"choice\":\"version\"}}]";
+        var resolve = await PostFormAsync($"{VmsBase}/versions/{versionGuid}/resolveConflicts",
+            ("conflicts", conflicts), ("f", "json"));
+        resolve.StatusCode.Should().Be(HttpStatusCode.OK, "resolve; body: {0}", await resolve.Content.ReadAsStringAsync());
+        using (var resolveDoc = JsonDocument.Parse(await resolve.Content.ReadAsStringAsync()))
+        {
+            resolveDoc.RootElement.GetProperty("resolved").GetInt32().Should().Be(1);
+            resolveDoc.RootElement.GetProperty("canPost").GetBoolean().Should().BeTrue();
+        }
+
+        var post = await PostFormAsync($"{VmsBase}/versions/{versionGuid}/post", ("f", "json"));
+        post.StatusCode.Should().Be(HttpStatusCode.OK, "post; body: {0}", await post.Content.ReadAsStringAsync());
+
+        (await QueryCountAsync(marker + "_branch", gdbVersion: null)).Should().Be(1,
+            "DEFAULT reflects the version value chosen by the manual resolution");
+    }
+
     // ---- helpers --------------------------------------------------------------------------------
 
     private async Task<string> CreateVersionAsync(string versionName)
@@ -148,6 +210,22 @@ public sealed class FeatureServerGdbVersionFlowTests : IAsyncLifetime
             new { attributes = new Dictionary<string, object?> { ["name"] = marker } }
         };
         return JsonSerializer.Serialize(adds);
+    }
+
+    private static string BuildUpdateJson(long objectId, string name)
+    {
+        var updates = new[]
+        {
+            new { attributes = new Dictionary<string, object?> { ["objectid"] = objectId, ["name"] = name } }
+        };
+        return JsonSerializer.Serialize(updates);
+    }
+
+    private static async Task<long> FirstAddObjectIdAsync(HttpResponseMessage applyEditsResponse)
+    {
+        using var doc = JsonDocument.Parse(await applyEditsResponse.Content.ReadAsStringAsync());
+        var add = doc.RootElement.GetProperty("addResults").EnumerateArray().First();
+        return add.GetProperty("objectId").GetInt64();
     }
 
     private Task<HttpResponseMessage> PostFormAsync(string url, params (string Key, string Value)[] fields)
