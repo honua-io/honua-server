@@ -496,6 +496,57 @@ Tests skip automatically when any required variable is missing. AWS credentials 
 
 ---
 
+## Kubernetes Argo Rollouts Canary
+
+Kubernetes deploys use an external [Argo Rollouts](https://argo-rollouts.readthedocs.io/) controller for weighted canary traffic shifting and automatic rollback, managed through the deploy controller backend `honua-kubernetes-argo-rollouts`. Honua initiates the rollout (sets the canary image), observes the controller-reported rollout status, and drives promotion or rollback through the shared telemetry-gated reconciler — the operation lifecycle reflects real rollout state instead of `ManualInterventionRequired`. The stepped canary ramp itself (`5→25→50→100`, pauses, analysis) is owned by the `Rollout` resource's `spec.strategy.canary.steps` on the cluster. This backend coexists with the GitOps passthrough backend `honua-gitops-kubernetes`; targets pick by `Backend` name. The decision is recorded in [ADR-0052](../../contributor/adr/0052-kubernetes-closed-loop-promotion-via-argo-rollouts.md).
+
+### Resource pre-conditions
+
+The operator (typically Helm/Terraform) must provision **before** submitting any deploy operation:
+
+- **Argo Rollouts controller** installed in the cluster.
+- A **`Rollout` custom resource** (`argoproj.io/v1alpha1`) for the workload — not a plain `Deployment` — with its `spec.strategy.canary.steps` defining the weighted ramp and any analysis templates. The container Honua shifts must be named in `kubernetes.argo.container_name`.
+- **Kubernetes API access** for the Honua server: in-cluster service-account RBAC (or an out-of-cluster `ControlPlane:Kubernetes:ApiServerUrl` + bearer token / CA bundle) granting `get` and `patch` on `rollouts` and `rollouts/status` in the target namespace. Honua reuses the same auth/CA path as the Kubernetes Job batch backend (`ControlPlane:Kubernetes:*`).
+
+Honua reads and writes only the named `Rollout`; the controller owns ReplicaSet management, traffic splitting, and analysis.
+
+### Lifecycle
+
+1. **Preflight**: `PlanAsync` validates that the namespace, rollout name, container name, and a non-empty `desiredRevision` (container image) are present. When a canary weight is set (`deployment.canary_weight_percentage` or `kubernetes.argo.canary_weight_percentage`), it requires `telemetry.connection` so the rollout can be promoted or rolled back automatically.
+2. **Start**: The controller backend reads the current pod-template image (captured for rollback baseline), then strategic-merge-patches `spec.template.spec.containers[name].image` to `desiredRevision`. Argo Rollouts begins the configured canary steps. The patch is keyed by container name so sibling containers and pod-template fields are preserved.
+3. **Observe**: Each reconciliation reads the `Rollout` `.status`. The observation maps controller state onto the operation lifecycle:
+    - **Paused at the configured canary weight** (`status.canary.weights.canary.weight` equals the target percentage): `Reconciling` with `PromotionRecommended=true`. The reconciler runs the telemetry gate and, on pass, promotes.
+    - **Healthy and fully promoted** (`status.currentPodHash == status.stableRS`): `Succeeded`.
+    - **Healthy but mid-ramp** (`currentPodHash != stableRS`): stays `Reconciling`.
+    - **Degraded or aborted** (`status.phase == Degraded` or `status.abort == true`): `Reconciling` with `RollbackRecommended=true`, which drives automatic rollback.
+    - **Rollout resource not found**: `Failed` (provision the `Rollout` before deploying).
+4. **Promote**: After the telemetry gate passes, the controller backend clears the rollout's pause conditions on the `status` subresource and unsets `spec.paused` (mirrors `kubectl-argo-rollouts promote`). Argo advances to the next step or to 100%. The operation stays `Reconciling` until a later observation reports `Healthy` + stable, then `Succeeded`.
+5. **Rollback**: The controller backend sets `status.abort=true` (mirrors `kubectl-argo-rollouts abort`) and reports `RollbackRequested`. Subsequent observations return `RolledBack` once the controller has reverted to the stable revision (`Healthy`, `currentPodHash == stableRS`).
+
+### Configuration (canary traffic shifting)
+
+```json
+{
+  "ControlPlane": {
+    "Kubernetes": {
+      "InClusterAutoDetect": true
+    },
+    "DeployTargets": [
+      {
+        "TargetId": "prod-k8s",
+        "TargetKind": "Kubernetes",
+        "Backend": "honua-kubernetes-argo-rollouts",
+        "Environment": "production",
+        "TargetName": "honua-server",
+        "Parameters": {
+          "kubernetes.namespace": "honua-prod",
+          "kubernetes.argo.rollout_name": "honua-server",
+          "kubernetes.argo.container_name": "honua",
+          "deployment.canary_weight_percentage": "25",
+          "telemetry.connection": "prod-prom"
+        }
+      }
+    ]
 ## Progressive Multi-Step Canary Ramp
 
 By default a canary deploy bakes at a single canary weight and then promotes to 100% (or rolls back) — one telemetry gate, one promotion. Targets that support weighted traffic shifting (AWS ECS + ALB, AWS Lambda, Azure Container Apps revisions) can instead ramp the canary through a sequence of increasing weights with a telemetry gate between every step and automatic rollback at any step. The ramp is optional and additive: omit the ramp parameters and the deploy keeps the single-step behavior unchanged.
@@ -524,6 +575,24 @@ Add the ramp parameters to the deploy target (or to per-operation parameter over
 }
 ```
 
+`desiredRevision` on each deploy operation must be the container image reference to roll out (for example `ghcr.io/honua/honua-server:sha-42`). Omit `deployment.canary_weight_percentage` for a rollout that pauses once for manual/telemetry-gated promotion without a weighted ramp.
+
+### Limitations
+
+- The workload must be modeled as an Argo `Rollout` resource; a plain `Deployment` is not driven by this backend.
+- The stepped canary ramp and analysis templates are authored cluster-side on the `Rollout`. Honua observes the step weight and gates promotion/rollback; it does not define the steps.
+- `SupportsCancellation` is `false`; in-flight rollouts are settled by promotion or rollback (abort), not cancellation.
+- When the controller does not report both `currentPodHash` and `stableRS` (older Argo versions), a `Healthy` phase is treated as fully converged so the operation still terminates.
+
+### Manual intervention scenarios
+
+- **Rollout not found**: `StartAsync`/`ObserveAsync` return a `Failed` observation naming the missing rollout/namespace. Provision the `Rollout` resource (and the Argo Rollouts controller) before retrying.
+- **Kubernetes API errors**: submission, observation, promotion, and rollback paths sanitise Kubernetes/Argo API errors. Operators see a stable `Argo Rollouts state lookup failed…` message on the operation record; the underlying error (resource names, namespaces, request detail) is in the structured log.
+- **Controller stalled mid-ramp**: if Argo holds the rollout `Progressing` without pausing or completing (for example a stuck analysis run), the operation stays `Reconciling`. Inspect with `kubectl argo rollouts get rollout <name> -n <ns>` and correct the rollout or analysis out-of-band.
+
+### GitOps passthrough alternative
+
+Operators who manage Kubernetes through a pure out-of-band GitOps hand-off (Flux/Argo CD, or Flagger) can use the `honua-gitops-kubernetes` backend instead. That backend delegates all state observation to the external controller and returns `ManualInterventionRequired` for observation.
 | Parameter | Required | Notes |
 |---|---|---|
 | `deployment.canary_ramp.step_weights` | yes (to enable the ramp) | Comma-separated, strictly increasing whole percentages in `1-100`. The final value must be `100`. Presence of this key enables the ramp. |
