@@ -10,6 +10,8 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
 using Honua.TestKit.Infrastructure;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
@@ -17,7 +19,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class FeatureServerSpatialReferenceTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
     private const double CoordinateTolerance = 0.0001;
     private long _pointObjectId;
 
