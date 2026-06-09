@@ -79,13 +79,13 @@ internal sealed class EmailAlertDeliverySink : IAlertDeliverySink
         {
             throw;
         }
-        catch (SmtpFailedRecipientException ex)
+        catch (SmtpFailedRecipientException)
         {
             return new AlertDeliveryResult
             {
                 Succeeded = false,
                 Retryable = false,
-                Error = $"Email delivery failed for recipient: {ex.Message}"
+                Error = "Email delivery failed for recipient."
             };
         }
         catch (SmtpException ex)
@@ -98,16 +98,16 @@ internal sealed class EmailAlertDeliverySink : IAlertDeliverySink
             {
                 Succeeded = false,
                 Retryable = retryable,
-                Error = $"SMTP error ({ex.StatusCode}): {ex.Message}"
+                Error = $"SMTP error ({ex.StatusCode})."
             };
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             return new AlertDeliveryResult
             {
                 Succeeded = false,
                 Retryable = true,
-                Error = ex.Message
+                Error = "Email delivery failed."
             };
         }
     }

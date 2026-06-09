@@ -382,7 +382,7 @@ internal sealed class ArcGisRestFeatureStore : IFeatureDataProvider, IFeatureRea
         }
 
         throw new InvalidOperationException(
-            $"ArcGIS REST service returned error {error.Code}: {error.Message ?? "(no message)"}");
+            $"ArcGIS REST service returned error {error.Code}.");
     }
 
     private static NotSupportedException NotSupported(string operation, int layerId)

@@ -20,25 +20,29 @@ internal interface IGeoprocessingJobService
     /// Validates that the caller has the required authorization for the specified operation.
     /// Enables adapters to enforce auth before protocol-specific validation.
     /// </summary>
-    void EnsureCallerAuthorized(ClaimsPrincipal principal, OperatorResourceType resourceType, OperatorOperation operation);
+    Task EnsureCallerAuthorizedAsync(
+        ClaimsPrincipal principal,
+        OperatorResourceType resourceType,
+        OperatorOperation operation,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Validates a plan for executability and returns the validation result.
-    /// Callers must pre-authorize via <see cref="EnsureCallerAuthorized"/> to
+    /// Callers must pre-authorize via <see cref="EnsureCallerAuthorizedAsync"/> to
     /// guarantee auth-before-validation ordering at the adapter boundary.
     /// </summary>
     PlanValidationResult ValidatePlan(AnalysisPlan plan, ClaimsPrincipal principal);
 
     /// <summary>
     /// Performs a dry run of a plan and returns cost/artifact estimates.
-    /// Callers must pre-authorize via <see cref="EnsureCallerAuthorized"/> to
+    /// Callers must pre-authorize via <see cref="EnsureCallerAuthorizedAsync"/> to
     /// guarantee auth-before-validation ordering at the adapter boundary.
     /// </summary>
     DryRunResult DryRunPlan(AnalysisPlan plan, ClaimsPrincipal principal);
 
     /// <summary>
     /// Submits a plan for asynchronous execution and returns the job record.
-    /// Callers must pre-authorize via <see cref="EnsureCallerAuthorized"/> to
+    /// Callers must pre-authorize via <see cref="EnsureCallerAuthorizedAsync"/> to
     /// guarantee auth-before-validation ordering at the adapter boundary.
     /// </summary>
     /// <param name="plan">The analysis plan to execute.</param>

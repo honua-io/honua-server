@@ -194,17 +194,6 @@ public sealed class MigrationEvidencePackBuilderTests
     [Fact]
     public void EmitNightlyEvidencePack_WhenEnvVarSet_WritesDeterministicArtifact()
     {
-        if (Environment.GetEnvironmentVariable("HONUA_EMIT_EVIDENCE_PACK") != "1")
-        {
-            return;
-        }
-
-        var outputPath = Environment.GetEnvironmentVariable("HONUA_EVIDENCE_PACK_OUTPUT");
-        if (string.IsNullOrWhiteSpace(outputPath))
-        {
-            outputPath = Path.Combine(AppContext.BaseDirectory, "geoserver-migration-evidence-pack.json");
-        }
-
         var pack = MigrationEvidencePackBuilder.Build(
             BuildInputs(),
             new MigrationEvidencePackBuilderOptions
@@ -228,6 +217,19 @@ public sealed class MigrationEvidencePackBuilderTests
         }
 
         var json = System.Text.Encoding.UTF8.GetString(stream.ToArray());
+        pack.BundleFingerprint.Should().StartWith("sha256:");
+        json.Should().Contain("\"bundleFingerprint\"");
+
+        if (Environment.GetEnvironmentVariable("HONUA_EMIT_EVIDENCE_PACK") != "1")
+        {
+            return;
+        }
+
+        var outputPath = Environment.GetEnvironmentVariable("HONUA_EVIDENCE_PACK_OUTPUT");
+        if (string.IsNullOrWhiteSpace(outputPath))
+        {
+            outputPath = Path.Combine(AppContext.BaseDirectory, "geoserver-migration-evidence-pack.json");
+        }
 
         var directory = Path.GetDirectoryName(outputPath);
         if (!string.IsNullOrWhiteSpace(directory))
@@ -236,7 +238,6 @@ public sealed class MigrationEvidencePackBuilderTests
         }
 
         File.WriteAllText(outputPath, json);
-        pack.BundleFingerprint.Should().StartWith("sha256:");
     }
 
     [Fact]

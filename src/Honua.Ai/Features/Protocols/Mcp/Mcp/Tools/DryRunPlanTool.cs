@@ -38,7 +38,7 @@ internal sealed class DryRunPlanTool : IMcpTool
         InputSchema = McpToolSchemas.PlanArgumentSchema
     };
 
-    public Task<McpToolsCallResult> InvokeAsync(
+    public async Task<McpToolsCallResult> InvokeAsync(
         HttpContext httpContext,
         JsonElement? arguments,
         CancellationToken cancellationToken)
@@ -47,7 +47,9 @@ internal sealed class DryRunPlanTool : IMcpTool
         McpLog.ToolInvoked(_logger, ToolName, WorkflowFamily);
 
         var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
-        _jobService.EnsureCallerAuthorized(principal, OperatorResourceType.Process, OperatorOperation.Read);
+        await _jobService
+            .EnsureCallerAuthorizedAsync(principal, OperatorResourceType.Process, OperatorOperation.Read, cancellationToken)
+            .ConfigureAwait(false);
 
         var argument = McpToolHelpers.ParseArguments(arguments, McpJsonContext.Default.McpPlanArgument);
         var plan = McpToolHelpers.ToDomainPlan(argument.Plan);
@@ -61,6 +63,6 @@ internal sealed class DryRunPlanTool : IMcpTool
         };
 
         var callResult = McpToolHelpers.SuccessResult(output, McpJsonContext.Default.McpDryRunOutput);
-        return Task.FromResult(callResult);
+        return callResult;
     }
 }

@@ -57,7 +57,7 @@ internal static class JobEndpoints
             .ExcludeFromDescription();
 
         // HANDLER-AUTHORIZED (#1144): the handler calls
-        // OperatorApprovalGate.CheckAuthorization (with destructive=true) for
+        // OperatorApprovalGate.CheckAuthorizationAsync (with destructive=true) for
         // OperatorResourceType.Job + Execute before any mutation; unauth
         // callers receive an OGC-shaped 401/403. Marked AllowAnonymous so the
         // audit architecture guard records the explicit decision.
@@ -81,11 +81,14 @@ internal static class JobEndpoints
         EnrichActivity("GetJobList");
 
         var gate = context.RequestServices.GetRequiredService<OperatorApprovalGate>();
-        var authDecision = gate.CheckAuthorization(context.User, new OperatorAuthorizationRequest
-        {
-            ResourceType = OperatorResourceType.Job,
-            Operation = OperatorOperation.Read
-        });
+        var authDecision = await gate.CheckAuthorizationAsync(
+            context.User,
+            new OperatorAuthorizationRequest
+            {
+                ResourceType = OperatorResourceType.Job,
+                Operation = OperatorOperation.Read
+            },
+            context.RequestAborted).ConfigureAwait(false);
         if (!authDecision.IsAllowed)
         {
             OgcProcessesLog.AuthorizationDenied(logger, OperatorResourceType.Job.ToString(), OperatorOperation.Read.ToString());
@@ -122,17 +125,32 @@ internal static class JobEndpoints
         var effectiveLimit = limit ?? options.Value.DefaultJobLimit;
 
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
-        var statusInfos = jobs
-            .Where(job => gate.CheckAuthorization(context.User, new OperatorAuthorizationRequest
+        var statusInfosBuilder = ImmutableArray.CreateBuilder<OgcStatusInfo>();
+        foreach (var job in jobs)
+        {
+            var jobAuthDecision = await gate.CheckAuthorizationAsync(
+                context.User,
+                new OperatorAuthorizationRequest
+                {
+                    ResourceType = OperatorResourceType.Job,
+                    ResourceId = job.OperationId,
+                    Operation = OperatorOperation.Read
+                },
+                context.RequestAborted).ConfigureAwait(false);
+            if (!jobAuthDecision.IsAllowed)
             {
-                ResourceType = OperatorResourceType.Job,
-                ResourceId = job.OperationId,
-                Operation = OperatorOperation.Read
-            }).IsAllowed)
-            .Take(effectiveLimit)
-            .Select(j => OgcProcessesConversionHelpers.ToOgcStatusInfo(
-                j, ResolveOgcProcessId(j), baseUrl))
-            .ToImmutableArray();
+                continue;
+            }
+
+            statusInfosBuilder.Add(OgcProcessesConversionHelpers.ToOgcStatusInfo(
+                job, ResolveOgcProcessId(job), baseUrl));
+            if (statusInfosBuilder.Count >= effectiveLimit)
+            {
+                break;
+            }
+        }
+
+        var statusInfos = statusInfosBuilder.ToImmutable();
 
         var jobList = new OgcJobList
         {
@@ -153,11 +171,14 @@ internal static class JobEndpoints
         EnrichActivity("GetJobStatus");
 
         var gate = context.RequestServices.GetRequiredService<OperatorApprovalGate>();
-        var authDecision = gate.CheckAuthorization(context.User, new OperatorAuthorizationRequest
-        {
-            ResourceType = OperatorResourceType.Job,
-            Operation = OperatorOperation.Read
-        });
+        var authDecision = await gate.CheckAuthorizationAsync(
+            context.User,
+            new OperatorAuthorizationRequest
+            {
+                ResourceType = OperatorResourceType.Job,
+                Operation = OperatorOperation.Read
+            },
+            context.RequestAborted).ConfigureAwait(false);
         if (!authDecision.IsAllowed)
         {
             OgcProcessesLog.AuthorizationDenied(logger, OperatorResourceType.Job.ToString(), OperatorOperation.Read.ToString());
@@ -179,12 +200,15 @@ internal static class JobEndpoints
             return JobNotFoundResult(jobId);
         }
 
-        authDecision = gate.CheckAuthorization(context.User, new OperatorAuthorizationRequest
-        {
-            ResourceType = OperatorResourceType.Job,
-            ResourceId = job.OperationId,
-            Operation = OperatorOperation.Read
-        });
+        authDecision = await gate.CheckAuthorizationAsync(
+            context.User,
+            new OperatorAuthorizationRequest
+            {
+                ResourceType = OperatorResourceType.Job,
+                ResourceId = job.OperationId,
+                Operation = OperatorOperation.Read
+            },
+            context.RequestAborted).ConfigureAwait(false);
         if (!authDecision.IsAllowed)
         {
             OgcProcessesLog.AuthorizationDenied(logger, OperatorResourceType.Job.ToString(), OperatorOperation.Read.ToString());
@@ -208,11 +232,14 @@ internal static class JobEndpoints
         EnrichActivity("GetJobResults");
 
         var gate = context.RequestServices.GetRequiredService<OperatorApprovalGate>();
-        var authDecision = gate.CheckAuthorization(context.User, new OperatorAuthorizationRequest
-        {
-            ResourceType = OperatorResourceType.Job,
-            Operation = OperatorOperation.Read
-        });
+        var authDecision = await gate.CheckAuthorizationAsync(
+            context.User,
+            new OperatorAuthorizationRequest
+            {
+                ResourceType = OperatorResourceType.Job,
+                Operation = OperatorOperation.Read
+            },
+            context.RequestAborted).ConfigureAwait(false);
         if (!authDecision.IsAllowed)
         {
             OgcProcessesLog.AuthorizationDenied(logger, OperatorResourceType.Job.ToString(), OperatorOperation.Read.ToString());
@@ -234,12 +261,15 @@ internal static class JobEndpoints
             return JobNotFoundResult(jobId);
         }
 
-        authDecision = gate.CheckAuthorization(context.User, new OperatorAuthorizationRequest
-        {
-            ResourceType = OperatorResourceType.Job,
-            ResourceId = job.OperationId,
-            Operation = OperatorOperation.Read
-        });
+        authDecision = await gate.CheckAuthorizationAsync(
+            context.User,
+            new OperatorAuthorizationRequest
+            {
+                ResourceType = OperatorResourceType.Job,
+                ResourceId = job.OperationId,
+                Operation = OperatorOperation.Read
+            },
+            context.RequestAborted).ConfigureAwait(false);
         if (!authDecision.IsAllowed)
         {
             OgcProcessesLog.AuthorizationDenied(logger, OperatorResourceType.Job.ToString(), OperatorOperation.Read.ToString());
@@ -320,11 +350,14 @@ internal static class JobEndpoints
 
         var gate = context.RequestServices.GetRequiredService<OperatorApprovalGate>();
 
-        var authDecision = gate.CheckAuthorization(context.User, new OperatorAuthorizationRequest
-        {
-            ResourceType = OperatorResourceType.Job,
-            Operation = OperatorOperation.Execute
-        });
+        var authDecision = await gate.CheckAuthorizationAsync(
+            context.User,
+            new OperatorAuthorizationRequest
+            {
+                ResourceType = OperatorResourceType.Job,
+                Operation = OperatorOperation.Execute
+            },
+            context.RequestAborted).ConfigureAwait(false);
         if (!authDecision.IsAllowed)
         {
             OgcProcessesLog.AuthorizationDenied(logger, OperatorResourceType.Job.ToString(), OperatorOperation.Execute.ToString());
@@ -346,13 +379,16 @@ internal static class JobEndpoints
             return JobNotFoundResult(jobId);
         }
 
-        authDecision = gate.CheckAuthorization(context.User, new OperatorAuthorizationRequest
-        {
-            ResourceType = OperatorResourceType.Job,
-            ResourceId = job.OperationId,
-            Operation = OperatorOperation.Execute,
-            IsDestructive = true
-        });
+        authDecision = await gate.CheckAuthorizationAsync(
+            context.User,
+            new OperatorAuthorizationRequest
+            {
+                ResourceType = OperatorResourceType.Job,
+                ResourceId = job.OperationId,
+                Operation = OperatorOperation.Execute,
+                IsDestructive = true
+            },
+            context.RequestAborted).ConfigureAwait(false);
         if (!authDecision.IsAllowed)
         {
             OgcProcessesLog.AuthorizationDenied(logger, OperatorResourceType.Job.ToString(), OperatorOperation.Execute.ToString());

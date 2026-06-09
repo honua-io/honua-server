@@ -103,8 +103,7 @@ internal sealed partial class GdalSurfaceJobExecutor(
             return JobExecutionResult.Failed($"Invalid {processId} inputs: {failure}");
         }
 
-        var workspace = Path.Combine(opts.ScratchRoot, job.OperationId);
-        Directory.CreateDirectory(workspace);
+        var workspace = GdalScratch.CreateWorkspace(opts.ScratchRoot, job.OperationId);
         try
         {
             var inputPath = Path.Combine(workspace, "input.tif");

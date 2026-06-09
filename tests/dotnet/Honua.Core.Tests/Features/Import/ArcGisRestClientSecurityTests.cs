@@ -9,6 +9,7 @@ using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.FileImport.Services;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -171,14 +172,9 @@ public sealed class ArcGisRestClientSecurityTests
         socketsHandler.ConnectCallback.Should().NotBeNull();
     }
 
-    [Fact]
+    [LinuxProcFdFact]
     public async Task CreatePinnedDnsHttpMessageHandler_CanceledConnect_DoesNotLeakSockets()
     {
-        if (!OperatingSystem.IsLinux() || !Directory.Exists("/proc/self/fd"))
-        {
-            return;
-        }
-
         var handler = ArcGisRestClient.CreatePinnedDnsHttpMessageHandler((_, _) =>
             Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
         var socketsHandler = handler.Should().BeOfType<SocketsHttpHandler>().Subject;

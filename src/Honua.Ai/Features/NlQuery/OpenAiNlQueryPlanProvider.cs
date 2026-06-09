@@ -222,13 +222,13 @@ internal sealed class OpenAiNlQueryPlanProvider : INlQueryPlanProvider
         {
             NlQueryLog.PlanFailed(_logger, request.CollectionId ?? "unknown", ex.Message);
             activity?.SetTag("nl.success", false);
-            return NlQueryPlanResult.Failure($"HTTP request failed: {ex.Message}");
+            return NlQueryPlanResult.Failure("Provider request failed.");
         }
         catch (JsonException ex)
         {
             NlQueryLog.PlanFailed(_logger, request.CollectionId ?? "unknown", ex.Message);
             activity?.SetTag("nl.success", false);
-            return NlQueryPlanResult.Failure($"Failed to parse provider response: {ex.Message}");
+            return NlQueryPlanResult.Failure("Provider response could not be parsed.");
         }
     }
 

@@ -17,6 +17,7 @@ using Honua.Core.Features.Query;
 using Honua.Core.Features.Shared.Models;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Events;
+using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Validation;
 using Honua.Protocols.Ogc.Common;
@@ -101,7 +102,12 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 return contentTypeError;
             }
 
-            var (batchRequest, requestError) = await ReadBatchRequestAsync(context, cancellationToken);
+            var (batchRequest, requestErrorResult, requestError) = await ReadBatchRequestAsync(context, cancellationToken);
+            if (requestErrorResult is not null)
+            {
+                return requestErrorResult;
+            }
+
             if (batchRequest == null)
             {
                 return StandardErrorHelpers.CreateBadRequest(context, requestError ?? "Invalid batch request payload.");
@@ -340,7 +346,13 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 return contentTypeError;
             }
 
-            var (requestFeature, requestError) = await OgcFeaturePayloadReader.ReadGeoJsonFeatureAsync(context, cancellationToken);
+            var (requestFeature, requestErrorResult, requestError) =
+                await OgcFeaturePayloadReader.ReadGeoJsonFeatureAsync(context, cancellationToken);
+            if (requestErrorResult is not null)
+            {
+                return requestErrorResult;
+            }
+
             if (requestFeature == null)
             {
                 return StandardErrorHelpers.CreateBadRequest(context, requestError ?? "Invalid GeoJSON payload.");
@@ -596,7 +608,12 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 return contentTypeError;
             }
 
-            var (patchRequest, patchError) = await ReadPatchRequestAsync(context, cancellationToken);
+            var (patchRequest, patchErrorResult, patchError) = await ReadPatchRequestAsync(context, cancellationToken);
+            if (patchErrorResult is not null)
+            {
+                return patchErrorResult;
+            }
+
             if (patchRequest == null)
             {
                 return StandardErrorHelpers.CreateBadRequest(context, patchError ?? "Invalid patch payload.");
@@ -1646,7 +1663,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         }
     }
 
-    private static async Task<(BatchRequest? Request, string? Error)> ReadBatchRequestAsync(
+    private static async Task<(BatchRequest? Request, IResult? ErrorResult, string? Error)> ReadBatchRequestAsync(
         HttpContext context,
         CancellationToken cancellationToken)
     {
@@ -1654,40 +1671,48 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         {
             if (context.Request.ContentLength == 0)
             {
-                return (null, "Request body is required.");
+                return (null, null, "Request body is required.");
             }
 
-            var request = await JsonSerializer.DeserializeAsync(
-                context.Request.Body,
-                OgcJsonContext.Default.BatchRequest,
-                cancellationToken);
+            var bodyRead = await RequestBodySizeGuard.ReadUtf8TextAsync(
+                context,
+                RequestBodySizeGuard.ResolveMaxBodyBytes(context),
+                cancellationToken).ConfigureAwait(false);
+            if (bodyRead.TooLarge)
+            {
+                return (null, bodyRead.ErrorResult, null);
+            }
+
+            var request = JsonSerializer.Deserialize(
+                bodyRead.Body ?? string.Empty,
+                OgcJsonContext.Default.BatchRequest);
             if (request == null)
             {
-                return (null, "Invalid batch request payload.");
+                return (null, null, "Invalid batch request payload.");
             }
 
             if (request.Operations == null)
             {
-                return (null, "Batch request operations are required.");
+                return (null, null, "Batch request operations are required.");
             }
 
             for (var i = 0; i < request.Operations.Count; i++)
             {
                 if (request.Operations[i] == null)
                 {
-                    return (null, $"Batch operation at index {i} is required.");
+                    return (null, null, $"Batch operation at index {i} is required.");
                 }
             }
 
-            return (request, null);
+            return (request, null, null);
         }
         catch (JsonException)
         {
-            return (null, "Invalid JSON payload.");
+            return (null, null, "Invalid JSON payload.");
         }
     }
 
-    private static async Task<(PatchRequest? Request, string? Error)> ReadPatchRequestAsync(
+    private static async Task<(PatchRequest? Request, IResult? ErrorResult, string? Error)> ReadPatchRequestAsync(
         HttpContext context,
         CancellationToken cancellationToken)
     {
@@ -1695,13 +1720,22 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         {
             if (context.Request.ContentLength == 0)
             {
-                return (null, "Request body is required.");
+                return (null, null, "Request body is required.");
             }
 
-            using var document = await JsonDocument.ParseAsync(context.Request.Body, cancellationToken: cancellationToken);
+            var bodyRead = await RequestBodySizeGuard.ReadUtf8TextAsync(
+                context,
+                RequestBodySizeGuard.ResolveMaxBodyBytes(context),
+                cancellationToken).ConfigureAwait(false);
+            if (bodyRead.TooLarge)
+            {
+                return (null, bodyRead.ErrorResult, null);
+            }
+
+            using var document = JsonDocument.Parse(bodyRead.Body ?? string.Empty);
             if (document.RootElement.ValueKind != JsonValueKind.Object)
             {
-                return (null, "Patch payload must be a JSON object.");
+                return (null, null, "Patch payload must be a JSON object.");
             }
 
             var root = document.RootElement;
@@ -1710,7 +1744,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 if (typeProperty.ValueKind != JsonValueKind.String ||
                     !string.Equals(typeProperty.GetString(), "Feature", StringComparison.OrdinalIgnoreCase))
                 {
-                    return (null, "GeoJSON 'type' must be 'Feature' when provided.");
+                    return (null, null, "GeoJSON 'type' must be 'Feature' when provided.");
                 }
             }
 
@@ -1727,7 +1761,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
 
                 if (string.IsNullOrWhiteSpace(payloadId))
                 {
-                    return (null, "GeoJSON 'id' must be a string or integer when provided.");
+                    return (null, null, "GeoJSON 'id' must be a string or integer when provided.");
                 }
             }
 
@@ -1749,7 +1783,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 }
                 else
                 {
-                    return (null, "GeoJSON 'properties' must be an object or null when provided.");
+                    return (null, null, "GeoJSON 'properties' must be an object or null when provided.");
                 }
             }
 
@@ -1771,25 +1805,25 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                     }
                     catch (JsonException)
                     {
-                        return (null, "Invalid GeoJSON geometry payload.");
+                        return (null, null, "Invalid GeoJSON geometry payload.");
                     }
 
                     if (geometry == null || string.IsNullOrWhiteSpace(geometry.Type))
                     {
-                        return (null, "GeoJSON geometry must include a 'type' value.");
+                        return (null, null, "GeoJSON geometry must include a 'type' value.");
                     }
                 }
                 else
                 {
-                    return (null, "GeoJSON 'geometry' must be an object or null when provided.");
+                    return (null, null, "GeoJSON 'geometry' must be an object or null when provided.");
                 }
             }
 
-            return (new PatchRequest(payloadId, hasGeometry, geometry, hasProperties, properties), null);
+            return (new PatchRequest(payloadId, hasGeometry, geometry, hasProperties, properties), null, null);
         }
         catch (JsonException)
         {
-            return (null, "Invalid JSON payload.");
+            return (null, null, "Invalid JSON payload.");
         }
     }
 

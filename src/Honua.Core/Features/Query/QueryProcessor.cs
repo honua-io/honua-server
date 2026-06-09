@@ -599,10 +599,7 @@ public sealed class QueryProcessor : IQueryProcessor
         // Create a deterministic hash of the query for caching
         var keyBuilder = new StringBuilder();
         AppendKeyPart(keyBuilder, nameof(protocol), protocol);
-        // Use the resource id as the v2 analog of the v1 layer.Id; if a storage layer
-        // id is available, include it as well to preserve invalidation parity with v1.
         AppendKeyPart(keyBuilder, "ResourceId", resource.Metadata.Id);
-        AppendKeyPart(keyBuilder, "StorageLayerId", TryResolveStorageLayerId(resource));
         AppendKeyPart(keyBuilder, "Filter", query.Filter?.GetFilterExpression()?.ToString() ?? query.Filter?.GetSqlFragment()?.Sql);
         AppendSequence(keyBuilder, "FilterParams", query.Filter?.GetSqlFragment()?.Parameters);
         AppendSpatialFilter(keyBuilder, query.SpatialFilter);
@@ -731,23 +728,6 @@ public sealed class QueryProcessor : IQueryProcessor
         return resource.SchemaFields.Any(field => field.Name.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase))
             ? objectIdFieldName
             : null;
-    }
-
-    private int? TryResolveStorageLayerId(MetadataV2Resource resource)
-    {
-        if (_v2GraphProvider is null)
-        {
-            return null;
-        }
-        try
-        {
-            var snapshot = _v2GraphProvider.GetCurrentAsync().AsTask().GetAwaiter().GetResult();
-            return snapshot.ResolveStorageLayerId(resource);
-        }
-        catch
-        {
-            return null;
-        }
     }
 
 }

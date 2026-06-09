@@ -28,7 +28,7 @@ public sealed class SpatialAnalyticsReaderAvailabilityTests
 {
     [UnitTest]
     [Protocol(TestProtocols.SpatialAnalytics)]
-    public void TryGetAnalyticsReader_NoReaderRegistered_ReturnsNotImplemented()
+    public async Task TryGetAnalyticsReader_NoReaderRegistered_ReturnsNotImplemented()
     {
         var context = BuildHttpContext(registerReader: false);
 
@@ -38,7 +38,7 @@ public sealed class SpatialAnalyticsReaderAvailabilityTests
         resolved.Should().BeFalse();
         reader.Should().BeNull();
         errorResult.Should().NotBeNull();
-        AssertStatusCode(errorResult!, StatusCodes.Status501NotImplemented);
+        await AssertStatusCodeAsync(errorResult!, StatusCodes.Status501NotImplemented);
     }
 
     [UnitTest]
@@ -57,7 +57,7 @@ public sealed class SpatialAnalyticsReaderAvailabilityTests
 
     [UnitTest]
     [Protocol(TestProtocols.SpatialAnalytics)]
-    public void TryGetAnalyticsReader_NullLoggerMissingReader_StillReturnsNotImplemented()
+    public async Task TryGetAnalyticsReader_NullLoggerMissingReader_StillReturnsNotImplemented()
     {
         // The helper tolerates a null logger (it's resolved best-effort from DI)
         // so missing observability must not change the 501 contract.
@@ -68,7 +68,7 @@ public sealed class SpatialAnalyticsReaderAvailabilityTests
 
         resolved.Should().BeFalse();
         reader.Should().BeNull();
-        AssertStatusCode(errorResult!, StatusCodes.Status501NotImplemented);
+        await AssertStatusCodeAsync(errorResult!, StatusCodes.Status501NotImplemented);
     }
 
     private static DefaultHttpContext BuildHttpContext(bool registerReader)
@@ -85,7 +85,7 @@ public sealed class SpatialAnalyticsReaderAvailabilityTests
         };
     }
 
-    private static void AssertStatusCode(IResult result, int expected)
+    private static async Task AssertStatusCodeAsync(IResult result, int expected)
     {
         if (result is IStatusCodeHttpResult statusCodeResult)
         {
@@ -94,7 +94,7 @@ public sealed class SpatialAnalyticsReaderAvailabilityTests
         }
 
         var ctx = new DefaultHttpContext { Response = { Body = new MemoryStream() } };
-        result.ExecuteAsync(ctx).GetAwaiter().GetResult();
+        await result.ExecuteAsync(ctx);
         ctx.Response.StatusCode.Should().Be(expected);
     }
 

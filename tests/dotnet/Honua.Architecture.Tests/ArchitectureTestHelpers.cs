@@ -12,6 +12,19 @@ namespace Honua.Architecture.Tests;
 /// </summary>
 internal static class ArchitectureTestHelpers
 {
+    private const BindingFlags TestMemberFlags =
+        BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static;
+
+    private static readonly Type[] IntegrationAttributeTypes =
+    [
+        typeof(IntegrationTestAttribute),
+        typeof(CloudTestAttribute),
+        typeof(EmulatorTestAttribute),
+        typeof(ExternalServiceTestAttribute),
+        typeof(RoutingTestAttribute),
+        typeof(ScaleTestAttribute)
+    ];
+
     /// <summary>
     /// Returns all types from an assembly, gracefully handling <see cref="ReflectionTypeLoadException"/>
     /// which can occur when optional dependencies are not present.
@@ -51,7 +64,13 @@ internal static class ArchitectureTestHelpers
         // Honua.Ai, not a standalone Honua.Protocols.Mcp), so it holds endpoint /
         // operation coverage that the scans must see alongside the Server.Tests
         // and per-protocol Honua.Protocols.*.Tests assemblies.
-        var patterns = new[] { "Honua.Server.Tests.dll", "Honua.Protocols.*.Tests.dll", "Honua.Ai.Tests.dll" };
+        var patterns = new[]
+        {
+            "Honua.Server.Tests.dll",
+            "Honua.Protocols.*.Tests.dll",
+            "Honua.Ai.Tests.dll",
+            "Honua.Worker.Gdal.Tests.dll"
+        };
 
         var assemblies = new List<Assembly>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -79,30 +98,36 @@ internal static class ArchitectureTestHelpers
     }
 
     /// <summary>
+    /// Returns true when the method or its declaring test class carries one of
+    /// the test attributes that emits <c>Category=Integration</c>.
+    /// </summary>
+    internal static bool IsIntegrationTestMethod(Type type, MethodInfo method)
+        => HasIntegrationAttribute(type) || HasIntegrationAttribute(method);
+
+    /// <summary>
+    /// Returns true when the type or any of its test methods carries one of the
+    /// test attributes that emits <c>Category=Integration</c>.
+    /// </summary>
+    internal static bool IsIntegrationTestClass(Type type)
+        => HasIntegrationAttribute(type) ||
+           type.GetMethods(TestMemberFlags).Any(method => IsIntegrationTestMethod(type, method));
+
+    /// <summary>
     /// Enumerates every method across all integration-test assemblies
-    /// (<see cref="IntegrationTestAssemblies"/>) that is itself marked
-    /// <see cref="IntegrationTestAttribute"/> or sits on a class marked with it.
-    /// Endpoint- and operation-coverage scans share this discovery loop so the
-    /// reflection traversal lives in one place.
+    /// (<see cref="IntegrationTestAssemblies"/>) that is marked with an integration
+    /// category attribute or sits on a class marked with one. Endpoint- and
+    /// operation-coverage scans share this discovery loop so the reflection
+    /// traversal lives in one place.
     /// </summary>
     internal static IEnumerable<MethodInfo> IntegrationTestMethods()
     {
-        const BindingFlags MemberFlags =
-            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static;
-
         foreach (var testAssembly in IntegrationTestAssemblies())
         {
             foreach (var type in GetTypesSafely(testAssembly))
             {
-                var classHasIntegration =
-                    type.GetCustomAttributes(typeof(IntegrationTestAttribute), inherit: true).Length > 0;
-
-                foreach (var method in type.GetMethods(MemberFlags))
+                foreach (var method in type.GetMethods(TestMemberFlags))
                 {
-                    var methodHasIntegration = classHasIntegration ||
-                        method.GetCustomAttributes(typeof(IntegrationTestAttribute), inherit: true).Length > 0;
-
-                    if (methodHasIntegration)
+                    if (IsIntegrationTestMethod(type, method))
                     {
                         yield return method;
                     }
@@ -110,6 +135,10 @@ internal static class ArchitectureTestHelpers
             }
         }
     }
+
+    private static bool HasIntegrationAttribute(MemberInfo member)
+        => member.CustomAttributes.Any(attribute =>
+            IntegrationAttributeTypes.Any(type => attribute.AttributeType == type));
 
     /// <summary>
     /// Resolves the repository root by walking upward until Honua.sln is found.

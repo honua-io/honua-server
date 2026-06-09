@@ -4,6 +4,7 @@
 using System.Text;
 using Honua.Worker.Gdal.Execution;
 using Microsoft.Extensions.Logging.Abstractions;
+using Xunit;
 
 namespace Honua.Worker.Gdal.Tests;
 
@@ -78,7 +79,7 @@ internal static class GdalCli
     /// as a fallback. Returns the raw GeoTIFF bytes ready to be base64-encoded
     /// onto the durable spec.
     /// </summary>
-    public static byte[] GenerateSampleDem(string scratch)
+    public static async Task<byte[]> GenerateSampleDemAsync(string scratch)
     {
         Directory.CreateDirectory(scratch);
         var demPath = Path.Combine(scratch, "sample-dem.tif");
@@ -93,7 +94,7 @@ internal static class GdalCli
                 "-of", "GTiff",
                 demPath,
             };
-            RunOrThrow("gdal_create", args, scratch);
+            await RunOrThrowAsync("gdal_create", args, scratch).ConfigureAwait(false);
         }
         else
         {
@@ -108,19 +109,31 @@ internal static class GdalCli
                   </VRTRasterBand>
                 </VRTDataset>
                 """);
-            RunOrThrow("gdal_translate", new[] { "-of", "GTiff", "-a_nodata", "0", vrtPath, demPath }, scratch);
+            await RunOrThrowAsync("gdal_translate", new[] { "-of", "GTiff", "-a_nodata", "0", vrtPath, demPath }, scratch)
+                .ConfigureAwait(false);
         }
         return File.ReadAllBytes(demPath);
     }
 
-    private static void RunOrThrow(string tool, IReadOnlyList<string> args, string scratch)
+    private static async Task RunOrThrowAsync(string tool, IReadOnlyList<string> args, string scratch)
     {
         var runner = new ProcessGdalCommandRunner(NullLogger<ProcessGdalCommandRunner>.Instance);
-        var result = runner.RunAsync(tool, args, scratch, CancellationToken.None).GetAwaiter().GetResult();
+        var result = await runner.RunAsync(tool, args, scratch, CancellationToken.None).ConfigureAwait(false);
         if (!result.Succeeded)
         {
             throw new InvalidOperationException(
                 $"Failed to synthesize sample DEM via {tool}: exit={result.ExitCode}; stderr={result.StandardError}");
+        }
+    }
+}
+
+internal sealed class GdalCliFactAttribute : FactAttribute
+{
+    public GdalCliFactAttribute(string tool)
+    {
+        if (!GdalCli.Available(tool))
+        {
+            Skip = $"GDAL CLI tool '{tool}' is not available on PATH.";
         }
     }
 }

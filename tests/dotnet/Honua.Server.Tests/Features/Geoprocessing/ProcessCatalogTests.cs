@@ -305,6 +305,69 @@ public sealed class ProcessCatalogTests
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_ExternalPostgisSink_WithSecureConnectionName_ProducesNoViolations()
+    {
+        var plan = CreateSingleStepPlan(
+            "sink.external-postgis",
+            new Dictionary<string, string>
+            {
+                ["input"] = "data:application/geo+json;base64,e30=",
+                ["connectionName"] = "external-target",
+                ["table"] = "external_out",
+                ["targetSrid"] = "4326"
+            });
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_ExternalPostgisSink_WithInlineConnectionString_RejectsPlan()
+    {
+        var plan = CreateSingleStepPlan(
+            "sink.external-postgis",
+            new Dictionary<string, string>
+            {
+                ["input"] = "data:application/geo+json;base64,e30=",
+                ["connectionString"] = "Host=localhost;Database=external",
+                ["table"] = "external_out",
+                ["targetSrid"] = "4326"
+            });
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().Contain(v =>
+            v.FieldPath == "steps[s1].inputs.connectionString" &&
+            v.Message.Contains("inline connection strings are not accepted", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_ExternalPostgisSink_WithoutSecureConnection_RejectsPlan()
+    {
+        var plan = CreateSingleStepPlan(
+            "sink.external-postgis",
+            new Dictionary<string, string>
+            {
+                ["input"] = "data:application/geo+json;base64,e30=",
+                ["table"] = "external_out",
+                ["targetSrid"] = "4326"
+            });
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().Contain(v =>
+            v.FieldPath == "steps[s1].inputs.connectionName" &&
+            v.Code == "MISSING_REQUIRED_PARAMETER");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
     public void Validator_UnknownProcess_ProducesViolation()
     {
         var plan = new AnalysisPlan
@@ -3107,6 +3170,22 @@ public sealed class ProcessCatalogTests
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
+
+    private static AnalysisPlan CreateSingleStepPlan(string processId, Dictionary<string, string> inputs) => new()
+    {
+        PlanId = "p1",
+        IntentId = "i1",
+        Steps =
+        [
+            new AnalysisPlanStep
+            {
+                StepId = "s1",
+                Kind = AnalysisPlanStepKind.Geoprocess,
+                ProcessId = processId,
+                Inputs = inputs
+            }
+        ]
+    };
 
     private HonuaProcessService CreateServiceWithCatalog()
     {

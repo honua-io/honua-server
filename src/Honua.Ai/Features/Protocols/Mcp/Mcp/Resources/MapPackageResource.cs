@@ -72,8 +72,9 @@ internal sealed class MapPackageResource : IMcpResource
     {
         McpTelemetry.EnrichActivity("GetMapPackage");
         var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
-        _jobService.EnsureCallerAuthorized(
-            principal, OperatorResourceType.Package, OperatorOperation.Read);
+        await _jobService.EnsureCallerAuthorizedAsync(
+                principal, OperatorResourceType.Package, OperatorOperation.Read, cancellationToken)
+            .ConfigureAwait(false);
 
         var packageId = uri[McpResourceUris.MapPackagesPrefix.Length..];
         McpLog.ResourceRead(_logger, Family, uri);

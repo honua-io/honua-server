@@ -528,16 +528,15 @@ public sealed class TileOperationJobServicePublishTests
     }
 
     [Fact]
-    public void NormalizeRequest_RejectsUnknownOperation()
+    public async Task NormalizeRequest_RejectsUnknownOperation()
     {
-        Action act = () =>
+        Func<Task> act = async () =>
         {
             using var sp = BuildScope(new StubCloudStorage(), includeCloudStorage: true);
             var sut = CreateSut(sp);
-            _ = sut.StartAsync(new TileOperationStartRequest { Operation = "explode" })
-                .ConfigureAwait(false).GetAwaiter().GetResult();
+            _ = await sut.StartAsync(new TileOperationStartRequest { Operation = "explode" });
         };
-        act.Should().Throw<ArgumentException>()
+        await act.Should().ThrowAsync<ArgumentException>()
             .WithMessage("*publish*");
     }
 

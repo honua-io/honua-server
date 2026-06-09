@@ -85,7 +85,7 @@ internal abstract class BaseGeocodeProvider : IGeocodeProvider
             return new GeocodeProviderHealth(
                 ProviderName: Name,
                 IsHealthy: false,
-                ErrorMessage: ex.Message,
+                ErrorMessage: "Provider health check failed.",
                 LastChecked: DateTime.UtcNow)
             {
                 ResponseTimeMs = stopwatch.Elapsed.TotalMilliseconds

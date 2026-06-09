@@ -85,6 +85,7 @@ public class PreparedStatementCacheTests : IDisposable
         // Assert
         preparedCommand.Should().NotBeNull("second execution should create prepared statement (MinExecutionsForCaching=2)");
         preparedCommand!.CommandText.Should().Be(sql);
+        preparedCommand.IsPrepared.Should().BeTrue("the returned execution command must be prepared, not only the cached template");
     }
 
     [Fact]
@@ -115,6 +116,8 @@ public class PreparedStatementCacheTests : IDisposable
         second.Should().NotBeNull();
         first.Should().NotBeSameAs(second, "should return cloned instances");
         first!.CommandText.Should().Be(second!.CommandText);
+        first.IsPrepared.Should().BeTrue("cached execution clones must be prepared before callers execute them");
+        second.IsPrepared.Should().BeTrue("cached execution clones must be prepared before callers execute them");
     }
 
     [Fact]
@@ -135,8 +138,9 @@ public class PreparedStatementCacheTests : IDisposable
             configureParams);
 
         preparedCommand.Should().NotBeNull();
+        preparedCommand!.IsPrepared.Should().BeTrue("the returned execution command must be prepared before execution");
 
-        var result = await preparedCommand!.ExecuteScalarAsync();
+        var result = await preparedCommand.ExecuteScalarAsync();
         result.Should().Be(42);
     }
 
@@ -160,7 +164,8 @@ public class PreparedStatementCacheTests : IDisposable
 
         // Assert
         command.Should().NotBeNull();
-        command.CommandText.Should().Be(sql);
+        command!.CommandText.Should().Be(sql);
+        command.IsPrepared.Should().BeTrue("priority statements should return a prepared execution command");
     }
 
     [Theory]

@@ -301,9 +301,12 @@ public sealed class GPServerClientCompatibilityTests : IAsyncLifetime
         public IReadOnlyDictionary<string, string> LastSubmittedProtocolMetadata { get; private set; } =
             new Dictionary<string, string>();
 
-        public void EnsureCallerAuthorized(ClaimsPrincipal principal, OperatorResourceType resourceType, OperatorOperation operation)
-        {
-        }
+        public Task EnsureCallerAuthorizedAsync(
+            ClaimsPrincipal principal,
+            OperatorResourceType resourceType,
+            OperatorOperation operation,
+            CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
 
         public PlanValidationResult ValidatePlan(AnalysisPlan plan, ClaimsPrincipal principal)
             => throw new NotSupportedException();

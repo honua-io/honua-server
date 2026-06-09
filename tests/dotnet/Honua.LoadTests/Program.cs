@@ -11,19 +11,11 @@ namespace Honua.LoadTests;
 
 internal static class Program
 {
-    private static readonly string[] _knownScenarios =
-    {
-        "feature_query_load",
-        "spatial_query_load",
-        "ogc_query_load",
-        "cql_filter_load",
-        "odata_query_load",
-        "connection_pool_stress",
-        "memory_stress",
-        "tiles_load"
-    };
+    private static readonly string[] _knownScenarios = LoadTestScenarios.ScenarioNames.ToArray();
 
     private static readonly HashSet<string> _knownScenarioSet = new(_knownScenarios, StringComparer.OrdinalIgnoreCase);
+
+    internal static IReadOnlyList<string> KnownScenarios => _knownScenarios;
 
     public static int Main(string[] args)
     {

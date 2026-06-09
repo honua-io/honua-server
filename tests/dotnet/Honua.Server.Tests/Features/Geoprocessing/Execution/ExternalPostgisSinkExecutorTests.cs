@@ -4,6 +4,7 @@
 using System.Text;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Security.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Geoprocessing.Execution;
 using Honua.ControlPlane;
@@ -51,7 +52,11 @@ public sealed class ExternalPostgisSinkExecutorTests : IAsyncLifetime
     [Fact]
     public async Task ExecuteAsync_CreatesTableAndInsertsFeaturesWithBatchTag()
     {
-        var executor = new ExternalPostgisSinkExecutor(Options());
+        var resolver = Substitute.For<ISecureConnectionResolver>();
+        resolver
+            .ResolveConnectionStringAsync("external-target", Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(_fixture.ConnectionString));
+        var executor = new ExternalPostgisSinkExecutor(Options(), resolver);
         var factory = new GeometryFactory(new PrecisionModel(), 4326);
         var input = BuildInputUri(
             new Feature(factory.CreatePoint(new Coordinate(13.405, 52.52)), new AttributesTable { { "name", "berlin" } }),
@@ -67,7 +72,7 @@ public sealed class ExternalPostgisSinkExecutorTests : IAsyncLifetime
 
         var record = Record(
             ("input", input),
-            ("connectionString", _fixture.ConnectionString),
+            ("connectionName", "external-target"),
             ("schema", _schemaName),
             ("table", "external_out"),
             ("targetSrid", "4326"),
@@ -94,6 +99,35 @@ public sealed class ExternalPostgisSinkExecutorTests : IAsyncLifetime
         await using var sridCommand = new NpgsqlCommand(
             $"SELECT DISTINCT ST_SRID(geom) FROM \"{_schemaName}\".external_out", connection);
         Assert.Equal(4326, (int)(await sridCommand.ExecuteScalarAsync())!);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WithInlineConnectionString_FailsBeforeOpeningConnection()
+    {
+        var resolver = Substitute.For<ISecureConnectionResolver>();
+        var executor = new ExternalPostgisSinkExecutor(Options(), resolver);
+        var factory = new GeometryFactory(new PrecisionModel(), 4326);
+        var input = BuildInputUri(
+            new Feature(factory.CreatePoint(new Coordinate(13.405, 52.52)), new AttributesTable { { "name", "berlin" } }));
+
+        var result = await executor.ExecuteAsync(
+            Record(
+                ("input", input),
+                ("connectionString", _fixture.ConnectionString),
+                ("schema", _schemaName),
+                ("table", "external_out"),
+                ("targetSrid", "4326")),
+            Substitute.For<IJobExecutionContext>(),
+            CancellationToken.None);
+
+        Assert.Equal(ExecutionJobStatus.Failed, result.Status);
+        Assert.Contains("connectionString is not accepted", result.ErrorMessage, StringComparison.Ordinal);
+        _ = resolver
+            .DidNotReceiveWithAnyArgs()
+            .ResolveConnectionStringAsync(default(string)!, default);
+        _ = resolver
+            .DidNotReceiveWithAnyArgs()
+            .ResolveConnectionStringAsync(default(Guid), default);
     }
 
     private static IOptionsMonitor<GeoprocessingExecutorOptions> Options()

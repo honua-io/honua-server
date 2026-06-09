@@ -148,10 +148,11 @@ internal sealed class WorkflowPackageService(
             };
         }
 
-        geoprocessingJobService.EnsureCallerAuthorized(
+        await geoprocessingJobService.EnsureCallerAuthorizedAsync(
             principal,
             OperatorResourceType.Process,
-            OperatorOperation.Execute);
+            OperatorOperation.Execute,
+            cancellationToken).ConfigureAwait(false);
 
         var hasDataBindings = WorkflowPackageGraphCompiler.HasCrossNodeDataBindings(packageVersion.Graph);
         ArtifactKind[] estimatedArtifacts;
@@ -366,7 +367,7 @@ internal sealed class WorkflowPackageService(
             };
         }
 
-        geoprocessingJobService.EnsureCallerAuthorized(
+        await geoprocessingJobService.EnsureCallerAuthorizedAsync(
             principal,
             OperatorResourceType.Process,
             OperatorOperation.Execute);
@@ -411,10 +412,11 @@ internal sealed class WorkflowPackageService(
         {
             try
             {
-                geoprocessingJobService.EnsureCallerAuthorized(
+                await geoprocessingJobService.EnsureCallerAuthorizedAsync(
                     principal,
                     OperatorResourceType.Process,
-                    OperatorOperation.Execute);
+                    OperatorOperation.Execute,
+                    cancellationToken).ConfigureAwait(false);
                 var plan = await CompileAnalysisPlanAsync(graph, hash, cancellationToken).ConfigureAwait(false);
                 var planValidation = geoprocessingJobService.ValidatePlan(plan, principal);
                 var dataBoundInputFieldPaths = WorkflowPackageGraphCompiler.BuildDataBoundInputFieldPaths(graph);

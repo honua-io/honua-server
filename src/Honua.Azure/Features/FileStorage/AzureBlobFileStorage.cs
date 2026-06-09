@@ -42,7 +42,6 @@ internal sealed class AzureBlobFileStorage : CloudFileStorageBase
         }
 
         _containerClient = new BlobContainerClient(_options.ConnectionString, _options.ContainerName);
-        _containerClient.CreateIfNotExists();
     }
 
     public override CloudStorageProvider Provider => CloudStorageProvider.AzureBlob;
@@ -60,10 +59,13 @@ internal sealed class AzureBlobFileStorage : CloudFileStorageBase
 
         var initialProgress = UploadProgress.CreateInitial(uploadId, request.FileName, totalBytes, request.ContentType);
         await ProgressStore.SetProgressAsync(uploadId, initialProgress, TimeSpan.FromHours(1), cancellationToken);
-        request.Progress?.Report(initialProgress);
+        ReportProgressToCaller(request.Progress, uploadId, initialProgress);
+        SerializedUploadProgressWriter? progressWriter = null;
 
         try
         {
+            await _containerClient.CreateIfNotExistsAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
+
             var objectKey = !string.IsNullOrWhiteSpace(request.ObjectKeyOverride)
                 ? request.ObjectKeyOverride
                 : CloudStoragePath.BuildObjectKey(
@@ -91,6 +93,8 @@ internal sealed class AzureBlobFileStorage : CloudFileStorageBase
 
             if (request.Progress != null)
             {
+                var writer = CreateProgressWriter(uploadId);
+                progressWriter = writer;
                 var lastProgressUpdate = DateTimeOffset.UtcNow;
                 uploadOptions.ProgressHandler = new Progress<long>(bytesTransferred =>
                 {
@@ -112,8 +116,8 @@ internal sealed class AzureBlobFileStorage : CloudFileStorageBase
                         CurrentPhase = "Uploading"
                     };
 
-                    _ = ProgressStore.SetProgressAsync(uploadId, progress, TimeSpan.FromHours(1), CancellationToken.None);
-                    request.Progress.Report(progress);
+                    writer.Report(progress);
+                    ReportProgressToCaller(request.Progress, uploadId, progress);
                     lastProgressUpdate = now;
                 });
             }
@@ -148,8 +152,13 @@ internal sealed class AzureBlobFileStorage : CloudFileStorageBase
                 CompletedAt = uploadedAt,
                 CurrentPhase = "Upload completed"
             };
+            if (progressWriter != null)
+            {
+                await progressWriter.CloseAndDrainAsync().ConfigureAwait(false);
+            }
+
             await ProgressStore.SetProgressAsync(uploadId, completedProgress, TimeSpan.FromHours(1), cancellationToken);
-            request.Progress?.Report(completedProgress);
+            ReportProgressToCaller(request.Progress, uploadId, completedProgress);
 
             stopwatch.Stop();
             FileStorageLog.FileUploaded(Logger, request.FileName, sizeBytes, objectKey, stopwatch.ElapsedMilliseconds);
@@ -159,12 +168,22 @@ internal sealed class AzureBlobFileStorage : CloudFileStorageBase
         catch (OperationCanceledException) when (linkedCancellationSource.Token.IsCancellationRequested)
         {
             stopwatch.Stop();
+            if (progressWriter != null)
+            {
+                await progressWriter.CloseAndDrainAsync().ConfigureAwait(false);
+            }
+
             await ReportCancelledUploadAsync(uploadId, request, totalBytes, initialProgress.StartedAt);
             throw;
         }
         catch (ArgumentException ex)
         {
             var (progressMessage, resultMessage) = ResolveArgumentFailureMessages(ex);
+            if (progressWriter != null)
+            {
+                await progressWriter.CloseAndDrainAsync().ConfigureAwait(false);
+            }
+
             return await ReportFailedUploadAsync(
                 uploadId,
                 request,
@@ -177,6 +196,11 @@ internal sealed class AzureBlobFileStorage : CloudFileStorageBase
         }
         catch (Exception ex)
         {
+            if (progressWriter != null)
+            {
+                await progressWriter.CloseAndDrainAsync().ConfigureAwait(false);
+            }
+
             return await ReportFailedUploadAsync(
                 uploadId,
                 request,

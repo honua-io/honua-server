@@ -95,7 +95,7 @@ internal sealed partial class PostgresDatabaseCompatibilityChecker : IDatabaseCo
         }
         catch (Exception ex)
         {
-            var errorMessage = $"Database compatibility check failed: {ex.Message}";
+            const string errorMessage = "Database compatibility check failed.";
             LogCompatibilityCheckFailed(_logger, ex.Message, ex);
             return DatabaseCompatibilityResult.Incompatible(errorMessage, error: ex);
         }

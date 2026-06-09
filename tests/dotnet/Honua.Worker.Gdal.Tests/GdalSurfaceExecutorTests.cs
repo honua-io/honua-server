@@ -5,6 +5,7 @@ using System.Text;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Honua.Worker.Gdal.Execution;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -297,16 +298,12 @@ public sealed class GdalSurfaceExecutorTests
         }
     }
 
+    [GdalCliFact("gdaldem")]
     [IntegrationTest]
-    [Protocol("OgcApiProcesses")]
-    [Operation("ProcessExecution")]
+    [Protocol(ProtocolNames.TestQuality)]
+    [Operation(Operations.TestInfrastructure)]
     public async Task Slope_WithRealGdaldem_ProducesGeoTiff_AndReconcilesAgainstSource()
     {
-        if (!GdalCli.Available("gdaldem"))
-        {
-            return;
-        }
-
         var scratch = NewScratch();
         var executor = new GdalSurfaceJobExecutor(
             new ProcessGdalCommandRunner(NullLogger<ProcessGdalCommandRunner>.Instance),
@@ -315,7 +312,7 @@ public sealed class GdalSurfaceExecutorTests
 
         try
         {
-            var demBytes = GdalCli.GenerateSampleDem(scratch);
+            var demBytes = await GdalCli.GenerateSampleDemAsync(scratch).ConfigureAwait(false);
             var job = GdalJobFactory.Job(
                 GdalSurfaceJobExecutor.SlopeProcessId,
                 ("source", Convert.ToBase64String(demBytes)));

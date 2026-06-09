@@ -146,14 +146,15 @@ internal sealed class ProgressTrackingStream : Stream
     {
         if (!_disposed && disposing)
         {
-            // Report final progress
+            // Terminal upload states are owned by the storage service after persistence succeeds.
+            // Disposal only reports the stream copy state so a failed outer write cannot be
+            // overwritten by this wrapper.
             if (_progress != null)
             {
                 try
                 {
-                    var status = _bytesProcessed >= _totalLength ? OperationStatus.Completed : OperationStatus.Failed;
-                    var phase = _bytesProcessed >= _totalLength ? "Upload completed" : "Upload incomplete";
-                    ReportProgress(status, phase);
+                    var phase = _bytesProcessed >= _totalLength ? "Upload stream copied" : "Upload stream incomplete";
+                    ReportProgress(OperationStatus.Processing, phase);
                 }
                 catch (Exception)
                 {
@@ -173,14 +174,15 @@ internal sealed class ProgressTrackingStream : Stream
     {
         if (!_disposed)
         {
-            // Report final progress
+            // Terminal upload states are owned by the storage service after persistence succeeds.
+            // Disposal only reports the stream copy state so a failed outer write cannot be
+            // overwritten by this wrapper.
             if (_progress != null)
             {
                 try
                 {
-                    var status = _bytesProcessed >= _totalLength ? OperationStatus.Completed : OperationStatus.Failed;
-                    var phase = _bytesProcessed >= _totalLength ? "Upload completed" : "Upload incomplete";
-                    ReportProgress(status, phase);
+                    var phase = _bytesProcessed >= _totalLength ? "Upload stream copied" : "Upload stream incomplete";
+                    ReportProgress(OperationStatus.Processing, phase);
                 }
                 catch (Exception)
                 {

@@ -369,7 +369,7 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
             }
             catch (Exception ex)
             {
-                errors.Add($"Workspace {workspace.WorkspaceId}: {ex.Message}");
+                errors.Add($"Workspace {workspace.WorkspaceId}: cleanup failed");
                 WorkspaceLifecycleLog.CleanupError(_logger, workspace.WorkspaceId, ex);
             }
         }

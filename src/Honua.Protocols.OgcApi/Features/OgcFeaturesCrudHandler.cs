@@ -86,7 +86,13 @@ internal sealed partial class OgcFeaturesCrudHandler(
                 return contentTypeError;
             }
 
-            var (requestFeature, requestError) = await OgcFeaturePayloadReader.ReadGeoJsonFeatureAsync(context, cancellationToken);
+            var (requestFeature, requestErrorResult, requestError) =
+                await OgcFeaturePayloadReader.ReadGeoJsonFeatureAsync(context, cancellationToken);
+            if (requestErrorResult is not null)
+            {
+                return requestErrorResult;
+            }
+
             if (requestFeature == null)
             {
                 return StandardErrorHelpers.CreateBadRequest(context, requestError ?? "Invalid GeoJSON payload.");

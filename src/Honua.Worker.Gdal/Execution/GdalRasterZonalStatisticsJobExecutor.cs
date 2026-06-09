@@ -100,8 +100,9 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
         }
         catch (Exception ex) when (ex is JsonException or ArgumentException or InvalidOperationException)
         {
+            Log.ZonesParseFailed(logger, job.OperationId, ex);
             return JobExecutionResult.Failed(
-                $"Invalid zonal statistics inputs: 'zones' could not be parsed as a GeoJSON FeatureCollection: {ex.Message}");
+                "Invalid zonal statistics inputs: 'zones' could not be parsed as a GeoJSON FeatureCollection.");
         }
 
         if (zones.Count == 0)
@@ -151,8 +152,7 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
             }
         }
 
-        var workspace = Path.Combine(opts.ScratchRoot, job.OperationId);
-        Directory.CreateDirectory(workspace);
+        var workspace = GdalScratch.CreateWorkspace(opts.ScratchRoot, job.OperationId);
         try
         {
             var inputPath = Path.Combine(workspace, "input.tif");
@@ -261,8 +261,9 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
                 }
                 catch (JsonException ex)
                 {
+                    Log.ZoneStatisticsParseFailed(logger, job.OperationId, zoneIndex, ex);
                     zonalResults.Add(ZonalRow.Skipped(zoneIndex, ZoneId(feature, zoneIndex),
-                        $"gdalinfo JSON parse error: {ex.Message}"));
+                        "gdalinfo JSON parse error."));
                 }
             }
 
@@ -511,5 +512,17 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
         [LoggerMessage(9295, LogLevel.Information,
             "GDAL zonal statistics executor completed job {OperationId}: zones={ZoneCount}, bytes={Bytes}")]
         public static partial void OperationCompleted(ILogger logger, string operationId, int zoneCount, long bytes);
+
+        [LoggerMessage(9296, LogLevel.Warning,
+            "GDAL zonal statistics executor could not parse zones GeoJSON for job {OperationId}")]
+        public static partial void ZonesParseFailed(ILogger logger, string operationId, Exception exception);
+
+        [LoggerMessage(9297, LogLevel.Warning,
+            "GDAL zonal statistics executor could not parse gdalinfo JSON for job {OperationId}, zone {ZoneIndex}")]
+        public static partial void ZoneStatisticsParseFailed(
+            ILogger logger,
+            string operationId,
+            int zoneIndex,
+            Exception exception);
     }
 }

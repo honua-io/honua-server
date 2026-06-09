@@ -5,6 +5,7 @@ using System.Text;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Honua.Worker.Gdal.Execution;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -259,19 +260,12 @@ public sealed class GdalWorkerExecutorTests
     // Real GDAL CLI — end-to-end proof when ogr2ogr is available
     // -------------------------------------------------------------------------
 
+    [GdalCliFact("ogr2ogr")]
     [IntegrationTest]
-    [Protocol("OgcApiProcesses")]
-    [Operation("ProcessExecution")]
+    [Protocol(ProtocolNames.TestQuality)]
+    [Operation(Operations.TestInfrastructure)]
     public async Task VectorConvert_WithRealOgr2Ogr_ConvertsGeoJsonToCsv()
     {
-        if (!GdalCli.Available("ogr2ogr"))
-        {
-            // GDAL CLI absent (e.g. lean CI agent). The fake-runner tests already
-            // pin the executor contract; this case requires the worker image's
-            // GDAL base layer or a dev host with GDAL installed.
-            return;
-        }
-
         var scratch = NewScratch();
         var executor = new GdalVectorConvertJobExecutor(
             new ProcessGdalCommandRunner(NullLogger<ProcessGdalCommandRunner>.Instance),

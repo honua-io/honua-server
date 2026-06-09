@@ -123,7 +123,7 @@ internal sealed partial class GeoservicesImportService
             }
             catch (Exception ex)
             {
-                firstError ??= ex.Message;
+                firstError ??= "Feature import failed.";
                 Log.FeatureInsertFailed(_logger, ex.Message);
                 failed++;
             }

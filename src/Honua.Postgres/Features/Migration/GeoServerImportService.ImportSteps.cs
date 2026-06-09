@@ -69,7 +69,7 @@ internal sealed partial class GeoServerImportService
                 {
                     ResourceType = "Workspace",
                     Name = workspace.Name,
-                    ErrorMessage = ex.Message
+                    ErrorMessage = "Workspace import failed."
                 });
 
                 result.FailureCount++;
@@ -148,7 +148,7 @@ internal sealed partial class GeoServerImportService
                     ResourceType = "DataStore",
                     Name = dataStore.Name,
                     WorkspaceName = dataStore.WorkspaceName,
-                    ErrorMessage = ex.Message
+                    ErrorMessage = "Datastore import failed."
                 });
 
                 result.FailureCount++;
@@ -227,7 +227,7 @@ internal sealed partial class GeoServerImportService
                     ResourceType = "Layer",
                     Name = layer.Name,
                     WorkspaceName = layer.WorkspaceName,
-                    ErrorMessage = ex.Message
+                    ErrorMessage = "Layer import failed."
                 });
 
                 result.FailureCount++;
@@ -338,7 +338,7 @@ internal sealed partial class GeoServerImportService
                     ResourceType = "Style",
                     Name = style.Name,
                     WorkspaceName = style.WorkspaceName,
-                    ErrorMessage = ex.Message
+                    ErrorMessage = "Style import failed."
                 });
 
                 result.FailureCount++;

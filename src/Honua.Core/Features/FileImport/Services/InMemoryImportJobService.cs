@@ -26,6 +26,7 @@ namespace Honua.Core.Features.FileImport.Services;
 /// </summary>
 internal sealed partial class InMemoryImportJobService : IImportJobService, IDisposable
 {
+    private const string SafeImportFailureMessage = "Import failed.";
     private readonly IFileImportService _importService;
     private readonly IPerformanceMonitor _performanceMonitor;
     private readonly ILogger<InMemoryImportJobService> _logger;
@@ -191,18 +192,19 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
                 featureCount = result.FeatureCount;
                 failedFeatures = state.Progress.FailedFeatures;
                 errorMessage = result.ErrorMessage;
+                var clientErrorMessage = result.Success ? result.ErrorMessage : SafeImportFailureMessage;
 
                 state.Progress = state.Progress with
                 {
                     Status = result.Success ? ImportStatus.Completed : ImportStatus.Failed,
                     FeaturesProcessed = result.FeatureCount,
                     CompletedAt = DateTimeOffset.UtcNow,
-                    ErrorMessage = result.ErrorMessage,
+                    ErrorMessage = clientErrorMessage,
                     Warnings = result.Warnings,
                     DetectedSrid = result.DetectedSrid,
                     CurrentPhase = result.Success ? "Import completed" : "Import failed"
                 };
-                state.Result = result;
+                state.Result = result.Success ? result : result with { ErrorMessage = SafeImportFailureMessage };
 
                 if (result.Success)
                 {
@@ -236,16 +238,16 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
             if (_jobs.TryGetValue(jobId, out var state))
             {
                 status = "failed";
-                errorMessage = ex.Message;
+                errorMessage = "Import failed.";
                 failedFeatures = state.Progress.FailedFeatures;
                 state.Progress = state.Progress with
                 {
                     Status = ImportStatus.Failed,
                     CompletedAt = DateTimeOffset.UtcNow,
-                    ErrorMessage = ex.Message
+                    ErrorMessage = SafeImportFailureMessage
                 };
                 ImportJobLog.JobFailed(_logger, jobId, state.TableName, state.Format, state.FileSize,
-                    errorMessage, stopwatch.Elapsed.TotalMilliseconds);
+                    ex.Message, stopwatch.Elapsed.TotalMilliseconds);
             }
         }
         finally
@@ -525,6 +527,7 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
 /// </summary>
 internal sealed partial class UniversalImportJobService : IImportJobService, IDisposable
 {
+    private const string SafeImportFailureMessage = "Import failed.";
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IUniversalProgressStore _progressStore;
     private readonly IPerformanceMonitor _performanceMonitor;
@@ -691,17 +694,8 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
                 UniversalImportJobLog.JobStarted(_logger, jobId, state.TableName, state.Format, state.FileSize);
             }
 
-            var progress = new Progress<ImportProgress>(async p =>
-            {
-                try
-                {
-                    await _progressStore.SetProgressAsync(jobId, p with { JobId = jobId }, TimeSpan.FromDays(1), CancellationToken.None);
-                }
-                catch (Exception ex)
-                {
-                    UniversalImportJobLog.ProgressUpdateFailed(_logger, jobId, ex);
-                }
-            });
+            progressWriter = new SerializedImportProgressWriter(_progressStore, _logger, jobId);
+            var progress = new Progress<ImportProgress>(p => progressWriter.Report(p with { JobId = jobId }));
 
             using var scope = _scopeFactory.CreateScope();
             var importService = scope.ServiceProvider.GetRequiredService<IFileImportService>();
@@ -713,16 +707,18 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
                 featureCount = result.FeatureCount;
                 errorMessage = result.ErrorMessage;
 
+                await progressWriter.CloseAndDrainAsync().ConfigureAwait(false);
                 var currentProgress = await _progressStore.GetProgressAsync<ImportProgress>(jobId, cancellationToken);
                 failedFeatures = currentProgress?.FailedFeatures ?? 0;
                 if (currentProgress != null)
                 {
+                    var clientErrorMessage = result.Success ? result.ErrorMessage : SafeImportFailureMessage;
                     var finalProgress = currentProgress with
                     {
                         Status = result.Success ? ImportStatus.Completed : ImportStatus.Failed,
                         FeaturesProcessed = result.FeatureCount,
                         CompletedAt = DateTimeOffset.UtcNow,
-                        ErrorMessage = result.ErrorMessage,
+                        ErrorMessage = clientErrorMessage,
                         Warnings = result.Warnings,
                         DetectedSrid = result.DetectedSrid,
                         CurrentPhase = result.Success ? "Import completed" : "Import failed"
@@ -747,6 +743,11 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
             if (_jobs.TryGetValue(jobId, out var state))
             {
                 status = "cancelled";
+                if (progressWriter != null)
+                {
+                    await progressWriter.CloseAndDrainAsync().ConfigureAwait(false);
+                }
+
                 var currentProgress = await _progressStore.GetProgressAsync<ImportProgress>(jobId, CancellationToken.None);
                 failedFeatures = currentProgress?.FailedFeatures;
                 if (currentProgress != null)
@@ -769,6 +770,11 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
             {
                 status = "failed";
                 errorMessage = "Import failed.";
+                if (progressWriter != null)
+                {
+                    await progressWriter.CloseAndDrainAsync().ConfigureAwait(false);
+                }
+
                 var currentProgress = await _progressStore.GetProgressAsync<ImportProgress>(jobId, CancellationToken.None);
                 failedFeatures = currentProgress?.FailedFeatures;
                 if (currentProgress != null)
@@ -777,7 +783,7 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
                     {
                         Status = ImportStatus.Failed,
                         CompletedAt = DateTimeOffset.UtcNow,
-                        ErrorMessage = "Import failed."
+                        ErrorMessage = SafeImportFailureMessage
                     };
                     await _progressStore.SetProgressAsync(jobId, failedProgress, TimeSpan.FromDays(1), CancellationToken.None);
                 }
@@ -962,6 +968,80 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
         public required DateTimeOffset StartedAt { get; init; }
         public required long FileSize { get; init; }
         public required string Format { get; init; }
+    }
+
+    private sealed class SerializedImportProgressWriter
+    {
+        private readonly IUniversalProgressStore _progressStore;
+        private readonly ILogger<UniversalImportJobService> _logger;
+        private readonly string _jobId;
+        private readonly object _gate = new();
+        private Task _tail = Task.CompletedTask;
+        private bool _closed;
+
+        public SerializedImportProgressWriter(
+            IUniversalProgressStore progressStore,
+            ILogger<UniversalImportJobService> logger,
+            string jobId)
+        {
+            _progressStore = progressStore;
+            _logger = logger;
+            _jobId = jobId;
+        }
+
+        public void Report(ImportProgress progress)
+        {
+            lock (_gate)
+            {
+                if (_closed)
+                {
+                    return;
+                }
+
+                var previous = _tail;
+                _tail = StoreAfterPreviousAsync(previous, progress);
+            }
+        }
+
+        public Task CloseAndDrainAsync()
+        {
+            lock (_gate)
+            {
+                _closed = true;
+                return _tail;
+            }
+        }
+
+        private async Task StoreAfterPreviousAsync(Task previous, ImportProgress progress)
+        {
+            try
+            {
+                await previous.ConfigureAwait(false);
+            }
+            catch
+            {
+                // StoreAsync logs and swallows failures. This guard prevents one
+                // unexpected fault from breaking the serialized progress chain.
+            }
+
+            await StoreAsync(progress).ConfigureAwait(false);
+        }
+
+        private async Task StoreAsync(ImportProgress progress)
+        {
+            try
+            {
+                await _progressStore.SetProgressAsync(
+                    _jobId,
+                    progress,
+                    TimeSpan.FromDays(1),
+                    CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                UniversalImportJobLog.ProgressUpdateFailed(_logger, _jobId, ex);
+            }
+        }
     }
 
     private static void TryDeleteTempFile(string? tempFilePath)

@@ -31,10 +31,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Npgsql" />
     <PackageReference Include="Apache.Arrow" />
     <PackageReference Include="ParquetSharp" />
-    <PackageReference Include="StackExchange.Redis" />
   </ItemGroup>
 
   <ItemGroup>

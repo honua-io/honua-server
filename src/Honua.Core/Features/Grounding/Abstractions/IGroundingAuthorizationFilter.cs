@@ -20,7 +20,8 @@ public interface IGroundingAuthorizationFilter
     /// <paramref name="principal"/> is authorized to discover. Implementations
     /// must keep the input order so the filtered list stays sorted.
     /// </summary>
-    IReadOnlyList<GroundingCandidate> Filter(
+    Task<IReadOnlyList<GroundingCandidate>> FilterAsync(
         ClaimsPrincipal principal,
-        IReadOnlyList<GroundingCandidate> candidates);
+        IReadOnlyList<GroundingCandidate> candidates,
+        CancellationToken cancellationToken = default);
 }

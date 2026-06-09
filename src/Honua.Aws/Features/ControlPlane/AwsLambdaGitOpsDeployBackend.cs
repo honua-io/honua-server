@@ -239,7 +239,7 @@ internal sealed partial class AwsLambdaGitOpsDeployBackend(
                 Status = WorkflowOperationStatus.Failed,
                 ProviderOperationId = operation.ProviderOperationId,
                 ObservedRevision = spec.CurrentRevision,
-                Message = ex.Message
+                Message = "Lambda alias was not found."
             };
         }
     }

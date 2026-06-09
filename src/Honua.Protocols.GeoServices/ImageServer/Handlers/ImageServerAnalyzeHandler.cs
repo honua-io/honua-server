@@ -87,7 +87,7 @@ internal sealed class ImageServerAnalyzeHandler
             catch (JsonException ex)
             {
                 ImageServerLog.InvalidAnalyzeParameters(_logger, layerId, ex.Message);
-                return StandardErrorHelpers.CreateBadRequest(context, $"Invalid raster function document: {ex.Message}");
+                return StandardErrorHelpers.CreateBadRequest(context, "Invalid raster function document.");
             }
 
             RasterFunctionPlan plan;
@@ -98,7 +98,7 @@ internal sealed class ImageServerAnalyzeHandler
             catch (ImageServerRasterFunctionException ex)
             {
                 ImageServerLog.InvalidAnalyzeParameters(_logger, layerId, ex.Message);
-                return StandardErrorHelpers.CreateBadRequest(context, ex.Message);
+                return StandardErrorHelpers.CreateBadRequest(context, "Invalid raster function chain.");
             }
 
             var response = new AnalyzeResponse

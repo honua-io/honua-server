@@ -57,6 +57,15 @@ internal sealed class GeoJsonFileSinkExecutor(IOptionsMonitor<GeoprocessingExecu
             return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: {pathError}");
         }
 
+        if (!SinkPathResolver.TryResolveOutputPath(
+            _options.CurrentValue.OutputRootDirectory,
+            path,
+            out var resolvedPath,
+            out var pathResolutionError))
+        {
+            return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: {pathResolutionError}");
+        }
+
         if (!FeatureCollectionArtifact.TryParseDataUri(inputUri, out var source, out var parseError))
         {
             return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: 'input' {parseError}");
@@ -69,9 +78,10 @@ internal sealed class GeoJsonFileSinkExecutor(IOptionsMonitor<GeoprocessingExecu
         long rejected = 0;
         try
         {
+            Directory.CreateDirectory(Path.GetDirectoryName(resolvedPath)!);
             var geoJsonWriter = new GeoJsonWriter();
             await using var stream = new FileStream(
-                path, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: 65536, useAsync: true);
+                resolvedPath, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: 65536, useAsync: true);
             await using var textWriter = new StreamWriter(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
             using var jsonWriter = new Newtonsoft.Json.JsonTextWriter(textWriter);
 
@@ -108,7 +118,7 @@ internal sealed class GeoJsonFileSinkExecutor(IOptionsMonitor<GeoprocessingExecu
 
         cancellationToken.ThrowIfCancellationRequested();
         await context.PublishArtifactAsync(
-            SinkResultArtifact.Build(HandledProcessId, ("path", path), ("featuresWritten", written), ("featuresRejected", rejected)),
+            SinkResultArtifact.Build(HandledProcessId, ("path", resolvedPath), ("featuresWritten", written), ("featuresRejected", rejected)),
             cancellationToken).ConfigureAwait(false);
         await context.ReportProgressAsync(100, $"{HandledProcessId} completed", cancellationToken).ConfigureAwait(false);
 

@@ -106,8 +106,7 @@ internal sealed partial class GdalRasterReprojectCatalogJobExecutor(
             return JobExecutionResult.Failed($"Invalid reproject inputs: {sourceError}");
         }
 
-        var workspace = Path.Combine(opts.ScratchRoot, job.OperationId);
-        Directory.CreateDirectory(workspace);
+        var workspace = GdalScratch.CreateWorkspace(opts.ScratchRoot, job.OperationId);
         try
         {
             var inputPath = Path.Combine(workspace, "input.tif");

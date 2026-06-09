@@ -75,7 +75,9 @@ internal sealed class WorkspaceResource : IMcpResource
     {
         McpTelemetry.EnrichActivity("GetWorkspace");
         var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
-        _jobService.EnsureCallerAuthorized(principal, OperatorResourceType.Workspace, OperatorOperation.Read);
+        await _jobService
+            .EnsureCallerAuthorizedAsync(principal, OperatorResourceType.Workspace, OperatorOperation.Read, cancellationToken)
+            .ConfigureAwait(false);
 
         var workspaceId = uri[McpResourceUris.WorkspacesPrefix.Length..];
         McpLog.ResourceRead(_logger, Family, uri);

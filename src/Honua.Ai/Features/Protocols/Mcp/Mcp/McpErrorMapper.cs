@@ -146,10 +146,10 @@ internal static class McpErrorMapper
 
         GroundingException groundingEx => MapGrounding(groundingEx),
 
-        InvalidOperationException opEx => new McpJsonRpcError
+        InvalidOperationException => new McpJsonRpcError
         {
             Code = JsonRpcServerError,
-            Message = opEx.Message,
+            Message = "An internal MCP operation failed.",
             Data = new McpErrorData
             {
                 Code = Codes.Internal
@@ -184,7 +184,7 @@ internal static class McpErrorMapper
         GroundingErrorKind.CatalogUnavailable => new McpJsonRpcError
         {
             Code = JsonRpcServerError,
-            Message = exception.Message,
+            Message = "Metadata graph is unavailable.",
             Data = new McpErrorData { Code = Codes.Unavailable, Retryable = true }
         },
         _ => new McpJsonRpcError

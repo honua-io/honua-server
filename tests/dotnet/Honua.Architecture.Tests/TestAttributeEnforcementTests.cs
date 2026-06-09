@@ -3,7 +3,6 @@
 
 using System.Reflection;
 using FluentAssertions;
-using Honua.Server;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Xunit;
@@ -19,13 +18,12 @@ public sealed class TestAttributeEnforcementTests
     [ArchitectureTest]
     public void AllIntegrationTestClasses_MustHaveProtocolAttribute()
     {
-        var testAssembly = typeof(Honua.Server.Tests.Import.UniversalProgressStoreIntegrationTests).Assembly;
         var classesWithoutProtocol = new List<string>();
 
-        foreach (var type in ArchitectureTestHelpers.GetTypesSafely(testAssembly))
+        foreach (var type in IntegrationTestTypes())
         {
             // Skip if not a test class
-            if (!IsIntegrationTestClass(type))
+            if (!ArchitectureTestHelpers.IsIntegrationTestClass(type))
             {
                 continue;
             }
@@ -37,7 +35,8 @@ public sealed class TestAttributeEnforcementTests
             }
 
             var hasMethodProtocol = type.GetMethods(BindingFlags.Public | BindingFlags.Instance)
-                .Any(method => IsIntegrationTestMethod(type, method) && GetProtocolValues(method).Length > 0);
+                .Any(method => ArchitectureTestHelpers.IsIntegrationTestMethod(type, method) &&
+                    GetProtocolValues(method).Length > 0);
 
             if (!hasMethodProtocol)
             {
@@ -53,17 +52,16 @@ public sealed class TestAttributeEnforcementTests
     [ArchitectureTest]
     public void AllIntegrationTestMethods_MustHaveOperationAndEndpointAttributes()
     {
-        var testAssembly = typeof(Honua.Server.Tests.Import.UniversalProgressStoreIntegrationTests).Assembly;
         var methodsWithMissingAttributes = new List<string>();
 
-        foreach (var type in ArchitectureTestHelpers.GetTypesSafely(testAssembly))
+        foreach (var type in IntegrationTestTypes())
         {
             var classOperations = GetOperationValues(type);
             var classProtocols = GetProtocolValues(type);
 
             foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.Instance))
             {
-                if (!IsIntegrationTestMethod(type, method))
+                if (!ArchitectureTestHelpers.IsIntegrationTestMethod(type, method))
                 {
                     continue;
                 }
@@ -100,12 +98,11 @@ public sealed class TestAttributeEnforcementTests
     [ArchitectureTest]
     public void AllProtocolAttributes_ShouldUseStandardizedValues()
     {
-        var testAssembly = typeof(Honua.Server.Tests.Import.UniversalProgressStoreIntegrationTests).Assembly;
         var invalidProtocolValues = new List<string>();
 
         var validProtocols = GetConstantValues(typeof(ProtocolNames));
 
-        foreach (var type in ArchitectureTestHelpers.GetTypesSafely(testAssembly))
+        foreach (var type in IntegrationTestTypes())
         {
             foreach (var protocolAttribute in type.GetCustomAttributes(typeof(ProtocolAttribute), inherit: true).Cast<ProtocolAttribute>())
             {
@@ -157,12 +154,11 @@ public sealed class TestAttributeEnforcementTests
     [ArchitectureTest]
     public void AllOperationAttributes_ShouldUseStandardizedValues()
     {
-        var testAssembly = typeof(Honua.Server.Tests.Import.UniversalProgressStoreIntegrationTests).Assembly;
         var invalidOperationValues = new List<string>();
 
         var validOperations = GetConstantValues(typeof(Operations));
 
-        foreach (var type in ArchitectureTestHelpers.GetTypesSafely(testAssembly))
+        foreach (var type in IntegrationTestTypes())
         {
             foreach (var operationAttribute in type.GetCustomAttributes(typeof(OperationAttribute), inherit: true).Cast<OperationAttribute>())
             {
@@ -214,10 +210,9 @@ public sealed class TestAttributeEnforcementTests
     [ArchitectureTest]
     public void AllEndpointAttributes_ShouldHaveValidFormat()
     {
-        var testAssembly = typeof(Honua.Server.Tests.Import.UniversalProgressStoreIntegrationTests).Assembly;
         var invalidEndpointFormats = new List<string>();
 
-        foreach (var type in ArchitectureTestHelpers.GetTypesSafely(testAssembly))
+        foreach (var type in IntegrationTestTypes())
         {
             foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.Instance))
             {
@@ -265,14 +260,13 @@ public sealed class TestAttributeEnforcementTests
     [ArchitectureTest]
     public void AllInterfaceOperationAttributes_ShouldUseRegisteredValues()
     {
-        var testAssembly = typeof(Honua.Server.Tests.Import.UniversalProgressStoreIntegrationTests).Assembly;
         var invalidValues = new List<string>();
 
         var registeredOperations = OperationRegistry.All
             .Select(op => $"{op.Protocol}::{op.Operation}")
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var type in ArchitectureTestHelpers.GetTypesSafely(testAssembly))
+        foreach (var type in IntegrationTestTypes())
         {
             foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.Instance))
             {
@@ -295,24 +289,15 @@ public sealed class TestAttributeEnforcementTests
             $"Invalid values found:\n{string.Join("\n", invalidValues)}");
     }
 
-    private static bool IsIntegrationTestClass(Type type)
+    private static IEnumerable<Type> IntegrationTestTypes()
     {
-        // Check if class has [IntegrationTest] attribute
-        if (type.GetCustomAttributes(typeof(IntegrationTestAttribute), inherit: true).Length > 0)
+        foreach (var assembly in ArchitectureTestHelpers.IntegrationTestAssemblies())
         {
-            return true;
+            foreach (var type in ArchitectureTestHelpers.GetTypesSafely(assembly))
+            {
+                yield return type;
+            }
         }
-
-        // Check if any method has [IntegrationTest] attribute
-        return type.GetMethods(BindingFlags.Public | BindingFlags.Instance)
-            .Any(method => method.GetCustomAttributes(typeof(IntegrationTestAttribute), inherit: true).Length > 0);
-    }
-
-    private static bool IsIntegrationTestMethod(Type type, MethodInfo method)
-    {
-        var classHasIntegration = type.GetCustomAttributes(typeof(IntegrationTestAttribute), inherit: true).Length > 0;
-        var methodHasIntegration = method.GetCustomAttributes(typeof(IntegrationTestAttribute), inherit: true).Length > 0;
-        return classHasIntegration || methodHasIntegration;
     }
 
     private static string[] GetProtocolValues(MemberInfo member)

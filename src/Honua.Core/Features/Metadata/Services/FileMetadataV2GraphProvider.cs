@@ -19,7 +19,9 @@ public sealed class FileMetadataV2GraphProvider : IMetadataV2GraphProvider, IDis
     private readonly string _path;
     private readonly ILogger<FileMetadataV2GraphProvider> _logger;
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly object _snapshotLock = new();
     private MetadataV2GraphSnapshot? _snapshot;
+    private int _generation;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="FileMetadataV2GraphProvider"/> class.
@@ -35,21 +37,38 @@ public sealed class FileMetadataV2GraphProvider : IMetadataV2GraphProvider, IDis
     /// <inheritdoc />
     public async ValueTask<MetadataV2GraphSnapshot> GetCurrentAsync(CancellationToken cancellationToken = default)
     {
-        if (_snapshot is not null)
-        {
-            return _snapshot;
-        }
-
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
+        lock (_snapshotLock)
         {
             if (_snapshot is not null)
             {
                 return _snapshot;
             }
+        }
 
-            _snapshot = await LoadAsync(cancellationToken).ConfigureAwait(false);
-            return _snapshot;
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            int generation;
+            lock (_snapshotLock)
+            {
+                if (_snapshot is not null)
+                {
+                    return _snapshot;
+                }
+
+                generation = _generation;
+            }
+
+            var loaded = await LoadAsync(cancellationToken).ConfigureAwait(false);
+            lock (_snapshotLock)
+            {
+                if (_generation == generation)
+                {
+                    _snapshot = loaded;
+                }
+
+                return loaded;
+            }
         }
         finally
         {
@@ -69,14 +88,14 @@ public sealed class FileMetadataV2GraphProvider : IMetadataV2GraphProvider, IDis
     /// </summary>
     public void Invalidate()
     {
-        _gate.Wait();
-        try
+        lock (_snapshotLock)
         {
+            unchecked
+            {
+                _generation++;
+            }
+
             _snapshot = null;
-        }
-        finally
-        {
-            _gate.Release();
         }
     }
 

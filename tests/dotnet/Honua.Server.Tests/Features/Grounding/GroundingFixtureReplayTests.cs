@@ -116,8 +116,11 @@ public sealed class GroundingFixtureReplayTests
         var catalog = new BuiltInProcessCatalog();
         var authFilter = Substitute.For<IGroundingAuthorizationFilter>();
         authFilter
-            .Filter(Arg.Any<ClaimsPrincipal>(), Arg.Any<IReadOnlyList<GroundingCandidate>>())
-            .Returns(call => call.ArgAt<IReadOnlyList<GroundingCandidate>>(1));
+            .FilterAsync(
+                Arg.Any<ClaimsPrincipal>(),
+                Arg.Any<IReadOnlyList<GroundingCandidate>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(call => Task.FromResult(call.ArgAt<IReadOnlyList<GroundingCandidate>>(1)));
 
         var options = Options.Create(new GroundingOptions());
         return new GroundingService(

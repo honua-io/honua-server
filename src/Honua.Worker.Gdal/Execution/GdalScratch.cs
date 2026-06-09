@@ -14,6 +14,37 @@ namespace Honua.Worker.Gdal.Execution;
 internal static partial class GdalScratch
 {
     /// <summary>
+    /// Creates a per-job workspace under <paramref name="scratchRoot"/> after
+    /// validating that <paramref name="operationId"/> cannot escape the root.
+    /// </summary>
+    public static string CreateWorkspace(string scratchRoot, string operationId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(scratchRoot);
+        ArgumentException.ThrowIfNullOrWhiteSpace(operationId);
+
+        if (operationId.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 ||
+            operationId.Contains(Path.DirectorySeparatorChar) ||
+            operationId.Contains(Path.AltDirectorySeparatorChar))
+        {
+            throw new InvalidOperationException("GDAL scratch operation id contains invalid path characters.");
+        }
+
+        var root = Path.GetFullPath(scratchRoot);
+        var workspace = Path.GetFullPath(Path.Combine(root, operationId));
+        var rootPrefix = Path.EndsInDirectorySeparator(root)
+            ? root
+            : root + Path.DirectorySeparatorChar;
+
+        if (!workspace.StartsWith(rootPrefix, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("GDAL scratch workspace must remain under the configured scratch root.");
+        }
+
+        Directory.CreateDirectory(workspace);
+        return workspace;
+    }
+
+    /// <summary>
     /// Best-effort recursive delete of a per-job scratch workspace. Logs and
     /// swallows IO/permission errors so the executor's finally block never throws.
     /// </summary>

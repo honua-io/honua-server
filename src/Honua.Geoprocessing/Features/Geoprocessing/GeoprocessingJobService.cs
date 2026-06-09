@@ -74,12 +74,13 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         _resultPackageStore = resultPackageStore;
     }
 
-    public void EnsureCallerAuthorized(
+    public Task EnsureCallerAuthorizedAsync(
         ClaimsPrincipal principal,
         OperatorResourceType resourceType,
-        OperatorOperation operation)
+        OperatorOperation operation,
+        CancellationToken cancellationToken = default)
     {
-        EnsureAuthorized(principal, resourceType, operation);
+        return EnsureAuthorizedAsync(principal, resourceType, operation, cancellationToken);
     }
 
     public PlanValidationResult ValidatePlan(AnalysisPlan plan, ClaimsPrincipal principal)
@@ -263,7 +264,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 jobId,
                 progressStore: _progressStore,
                 progressRetention: ProgressRetention,
-                failureMessage: $"Submission failed: {ex.Message}",
+                failureMessage: "Submission failed.",
                 cancellationToken: CancellationToken.None).ConfigureAwait(false);
 
             throw;
@@ -437,7 +438,11 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         ClaimsPrincipal principal,
         CancellationToken cancellationToken = default)
     {
-        EnsureAuthorized(principal, OperatorResourceType.Job, OperatorOperation.Read);
+        await EnsureAuthorizedAsync(
+            principal,
+            OperatorResourceType.Job,
+            OperatorOperation.Read,
+            cancellationToken).ConfigureAwait(false);
 
         if (string.IsNullOrWhiteSpace(jobId))
         {
@@ -461,7 +466,11 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         ClaimsPrincipal principal,
         CancellationToken cancellationToken = default)
     {
-        EnsureAuthorized(principal, OperatorResourceType.Job, OperatorOperation.Read);
+        await EnsureAuthorizedAsync(
+            principal,
+            OperatorResourceType.Job,
+            OperatorOperation.Read,
+            cancellationToken).ConfigureAwait(false);
 
         if (string.IsNullOrWhiteSpace(jobId))
         {
@@ -536,7 +545,11 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             throw new GeoprocessingValidationException("Job identifier is required.");
         }
 
-        EnsureAuthorized(principal, OperatorResourceType.Job, OperatorOperation.Execute);
+        await EnsureAuthorizedAsync(
+            principal,
+            OperatorResourceType.Job,
+            OperatorOperation.Execute,
+            cancellationToken).ConfigureAwait(false);
 
         var jobStore = RequireJobStore();
         var job = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
@@ -746,16 +759,20 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     // Helpers
     // -----------------------------------------------------------------------
 
-    private void EnsureAuthorized(
+    private async Task EnsureAuthorizedAsync(
         ClaimsPrincipal principal,
         OperatorResourceType resourceType,
-        OperatorOperation operation)
+        OperatorOperation operation,
+        CancellationToken cancellationToken = default)
     {
-        var decision = _authEvaluator.EvaluateAsync(principal, new OperatorAuthorizationRequest
-        {
-            ResourceType = resourceType,
-            Operation = operation
-        }).ConfigureAwait(false).GetAwaiter().GetResult();
+        var decision = await _authEvaluator.EvaluateAsync(
+            principal,
+            new OperatorAuthorizationRequest
+            {
+                ResourceType = resourceType,
+                Operation = operation
+            },
+            cancellationToken).ConfigureAwait(false);
 
         if (decision.IsAllowed)
         {

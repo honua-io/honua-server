@@ -176,6 +176,10 @@ internal sealed partial class Wfs20Handler
                 ex.Message,
                 "request");
         }
+        catch (RequestBodyTooLargeException)
+        {
+            return StandardErrorHelpers.CreatePayloadTooLarge(context, "Request payload is too large.");
+        }
         catch (Exception ex)
         {
             Wfs20Log.DatabaseQueryFailed(_logger, Wfs20Utilities.Operations.Transaction, ex.Message);
@@ -1516,15 +1520,21 @@ internal sealed partial class Wfs20Handler
 
         request.EnableBuffering();
         request.Body.Position = 0;
+        var bodyRead = await RequestBodySizeGuard.ReadUtf8TextAsync(
+            request.HttpContext,
+            RequestBodySizeGuard.ResolveMaxBodyBytes(request.HttpContext),
+            cancellationToken).ConfigureAwait(false);
+        if (request.Body.CanSeek)
+        {
+            request.Body.Position = 0;
+        }
 
-        using var reader = new StreamReader(
-            request.Body,
-            Encoding.UTF8,
-            detectEncodingFromByteOrderMarks: true,
-            bufferSize: 1024,
-            leaveOpen: true);
-        var body = await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
-        request.Body.Position = 0;
+        if (bodyRead.TooLarge)
+        {
+            throw new RequestBodyTooLargeException();
+        }
+
+        var body = bodyRead.Body;
 
         if (string.IsNullOrWhiteSpace(body))
         {

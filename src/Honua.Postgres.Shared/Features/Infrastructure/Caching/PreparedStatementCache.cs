@@ -634,7 +634,7 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         }
     }
 
-    private static Task<NpgsqlCommand?> CreatePreparedExecutionCommandAsync(
+    private static async Task<NpgsqlCommand?> CreatePreparedExecutionCommandAsync(
         NpgsqlCommand template,
         NpgsqlConnection connection,
         Action<NpgsqlCommand>? configureParameters,
@@ -643,7 +643,8 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
     {
         var cloned = CloneCommand(template, connection);
         ApplyConfiguredParameterValues(cloned, configureParameters);
-        return Task.FromResult<NpgsqlCommand?>(cloned);
+        await cloned.PrepareAsync(cancellationToken).ConfigureAwait(false);
+        return cloned;
     }
 
     private int GetConnectionCacheCount(string connectionId)

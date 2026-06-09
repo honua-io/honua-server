@@ -200,7 +200,7 @@ internal sealed class PostgresRasterImportService : IRasterImportService
             {
                 await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
                 throw new InvalidDataException(
-                    $"PostGIS could not process the raster file: {ex.MessageText}", ex);
+                    "PostGIS could not process the raster file.", ex);
             }
             catch
             {
@@ -222,12 +222,12 @@ internal sealed class PostgresRasterImportService : IRasterImportService
             PostgresRasterImportLog.ImportFailed(_logger, ex, request.LayerId, request.FileName);
 
             ReportProgress(progress, operationId, startedAt, RasterImportPhase.Failed, OperationStatus.Failed,
-                $"Import failed: {ex.Message}", completedAt: DateTimeOffset.UtcNow,
-                errorMessage: ex.Message, warnings: warnings);
+                "Import failed.", completedAt: DateTimeOffset.UtcNow,
+                errorMessage: "Import failed.", warnings: warnings);
 
             return RasterImportResult.CreateFailure(
                 request.LayerId, request.Name, request.Format,
-                ex.Message, stopwatch.Elapsed, warnings);
+                "Import failed.", stopwatch.Elapsed, warnings);
         }
         catch (Exception ex)
         {

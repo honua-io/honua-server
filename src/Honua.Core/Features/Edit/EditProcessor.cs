@@ -16,7 +16,6 @@ namespace Honua.Core.Features.Edit;
 public sealed class EditProcessor : IEditProcessor
 {
     private readonly ILogger<EditProcessor> _logger;
-    private readonly IMetadataV2GraphProvider? _v2GraphProvider;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="EditProcessor"/> class.
@@ -26,7 +25,7 @@ public sealed class EditProcessor : IEditProcessor
     public EditProcessor(ILogger<EditProcessor> logger, IMetadataV2GraphProvider? v2GraphProvider = null)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _v2GraphProvider = v2GraphProvider;
+        _ = v2GraphProvider;
     }
 
     private static bool HasGlobalIds(UnifiedEditRequest request)
@@ -141,7 +140,7 @@ public sealed class EditProcessor : IEditProcessor
         }
         catch (Exception ex)
         {
-            EditLog.ValidateEditFailed(_logger, ResolveStorageLayerIdForLog(resource), ex);
+            EditLog.ValidateEditFailed(_logger, resource.Metadata.Id, ex);
             return EditValidationResult.Failure("Failed to validate edit request");
         }
     }
@@ -172,7 +171,7 @@ public sealed class EditProcessor : IEditProcessor
 #pragma warning disable CA1873 // logger gated explicitly above; resolution is bounded and only runs in Debug
                 EditLog.EditRequestOptimized(
                     _logger,
-                    ResolveStorageLayerIdForLog(resource),
+                    resource.Metadata.Id,
                     editRequest.TotalOperations,
                     optimizedRequest.TotalOperations);
 #pragma warning restore CA1873
@@ -182,7 +181,7 @@ public sealed class EditProcessor : IEditProcessor
         }
         catch (Exception ex)
         {
-            EditLog.OptimizeEditFailed(_logger, ResolveStorageLayerIdForLog(resource), ex);
+            EditLog.OptimizeEditFailed(_logger, resource.Metadata.Id, ex);
             return editRequest;
         }
     }
@@ -220,7 +219,7 @@ public sealed class EditProcessor : IEditProcessor
         }
         catch (Exception ex)
         {
-            EditLog.FeatureEditBatchConversionFailed(_logger, ResolveStorageLayerIdForLog(resource), ex);
+            EditLog.FeatureEditBatchConversionFailed(_logger, resource.Metadata.Id, ex);
             throw;
         }
     }
@@ -294,7 +293,7 @@ public sealed class EditProcessor : IEditProcessor
         }
         catch (Exception ex)
         {
-            EditLog.ValidateTransactionFailed(_logger, transaction.TransactionId, ResolveStorageLayerIdForLog(resource), ex);
+            EditLog.ValidateTransactionFailed(_logger, transaction.TransactionId, resource.Metadata.Id, ex);
             return TransactionValidationResult.Failure("Failed to validate transaction");
         }
     }
@@ -392,7 +391,7 @@ public sealed class EditProcessor : IEditProcessor
         }
         catch (Exception ex)
         {
-            EditLog.EstimateEditPerformanceFailed(_logger, ResolveStorageLayerIdForLog(resource), ex);
+            EditLog.EstimateEditPerformanceFailed(_logger, resource.Metadata.Id, ex);
             throw;
         }
     }
@@ -656,20 +655,4 @@ public sealed class EditProcessor : IEditProcessor
         return resource.Spatial?.GeometryType is { } gt && gt != MetadataV2GeometryType.None;
     }
 
-    private int ResolveStorageLayerIdForLog(MetadataV2Resource resource)
-    {
-        if (_v2GraphProvider is null)
-        {
-            return 0;
-        }
-        try
-        {
-            var snapshot = _v2GraphProvider.GetCurrentAsync().AsTask().GetAwaiter().GetResult();
-            return snapshot.ResolveStorageLayerId(resource) ?? 0;
-        }
-        catch
-        {
-            return 0;
-        }
-    }
 }

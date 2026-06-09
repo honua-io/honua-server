@@ -705,17 +705,17 @@ internal static partial class FeatureStreamEndpoints
             var env = geometry.EnvelopeInternal;
             return ([env.MinX, env.MinY, env.MaxX, env.MaxY], null);
         }
-        catch (ArgumentException ex)
+        catch (ArgumentException)
         {
-            return (bbox, $"Invalid bbox projection for layer {layer.LayerId}: {ex.Message}");
+            return (bbox, $"Invalid bbox projection for layer {layer.LayerId}.");
         }
-        catch (NotSupportedException ex)
+        catch (NotSupportedException)
         {
-            return (bbox, $"bbox filters do not support projecting layer {layer.LayerId} to SRID {layerSrid.Value}: {ex.Message}");
+            return (bbox, $"bbox filters do not support projecting layer {layer.LayerId} to SRID {layerSrid.Value}.");
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException)
         {
-            return (bbox, $"bbox filters could not be projected for layer {layer.LayerId}: {ex.Message}");
+            return (bbox, $"bbox filters could not be projected for layer {layer.LayerId}.");
         }
     }
 }

@@ -125,15 +125,15 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
                     request.Password,
                     accessConfirmed: false,
                     anonymousMode: "anonymous-or-auth-required",
-                    notes: [ex.Message]),
+                    notes: ["GeoServer inventory scan failed."]),
                 ScanCompleteness = MigrationInventoryHelpers.BuildCompleteness(
                     "failed",
-                    [ex.Message],
+                    ["GeoServer inventory scan failed."],
                     ["source-inventory"]),
                 Summary = new MigrationInventorySummary(),
                 OverallCompatibility = MigrationInventoryHelpers.Partial(
                     "The scan did not complete successfully.",
-                    [ex.Message],
+                    ["GeoServer inventory scan failed."],
                     ["Verify GeoServer reachability and credentials, then rerun the scan."],
                     ImportCompatibilityCodes.GeoServerScanFailed),
                 Containers = [],
@@ -354,14 +354,14 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
                 Status = GeoServerImportStatus.Failed,
                 CompletedAt = DateTimeOffset.UtcNow,
                 CurrentPhase = "Import failed",
-                ErrorMessage = ex.Message
+                ErrorMessage = "GeoServer import failed."
             };
             progress?.Report(errorProgress);
 
             return GeoServerImportResult.CreateFailure(
                 request.GeoServerRestUrl,
                 request.TargetHonuaUrl,
-                ex.Message,
+                "GeoServer import failed.",
                 stopwatch.Elapsed);
         }
     }

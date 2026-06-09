@@ -193,15 +193,13 @@ public class MemoryMonitorTests
     }
 
     [Fact]
-    public void GetMemoryUsage_MultipleCallsShouldShowDifferentTimestamps()
+    public void GetMemoryUsage_ShouldTimestampMeasurementWithinCallWindow()
     {
-        // Act
-        var usage1 = MemoryMonitor.GetMemoryUsage();
-        Thread.Sleep(1); // Ensure different timestamps
-        var usage2 = MemoryMonitor.GetMemoryUsage();
+        var before = DateTimeOffset.UtcNow;
+        var usage = MemoryMonitor.GetMemoryUsage();
+        var after = DateTimeOffset.UtcNow;
 
-        // Assert
-        Assert.NotEqual(usage1.Timestamp, usage2.Timestamp);
-        Assert.True(usage2.Timestamp > usage1.Timestamp, "Second measurement should have later timestamp");
+        Assert.True(usage.Timestamp >= before, "Measurement timestamp should not precede the call.");
+        Assert.True(usage.Timestamp <= after, "Measurement timestamp should not be later than the completed call.");
     }
 }

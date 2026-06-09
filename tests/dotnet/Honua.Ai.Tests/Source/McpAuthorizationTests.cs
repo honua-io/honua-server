@@ -201,8 +201,11 @@ public sealed class McpAuthorizationTests
     public async Task WorkspaceResource_AuthenticatedButUnauthorized_ThrowsPermissionDenied()
     {
         _jobService
-            .When(s => s.EnsureCallerAuthorized(
-                Arg.Any<ClaimsPrincipal>(), OperatorResourceType.Workspace, OperatorOperation.Read))
+            .When(s => s.EnsureCallerAuthorizedAsync(
+                Arg.Any<ClaimsPrincipal>(),
+                OperatorResourceType.Workspace,
+                OperatorOperation.Read,
+                Arg.Any<CancellationToken>()))
             .Do(_ => throw new GeoprocessingAuthorizationException(requiresAuthentication: false));
         var resource = new WorkspaceResource(_jobService, NullLogger<WorkspaceResource>.Instance);
 
@@ -218,8 +221,11 @@ public sealed class McpAuthorizationTests
     public async Task ProcessCatalogResource_AuthenticatedButUnauthorized_ThrowsPermissionDenied()
     {
         _jobService
-            .When(s => s.EnsureCallerAuthorized(
-                Arg.Any<ClaimsPrincipal>(), OperatorResourceType.Catalog, OperatorOperation.Discover))
+            .When(s => s.EnsureCallerAuthorizedAsync(
+                Arg.Any<ClaimsPrincipal>(),
+                OperatorResourceType.Catalog,
+                OperatorOperation.Discover,
+                Arg.Any<CancellationToken>()))
             .Do(_ => throw new GeoprocessingAuthorizationException(requiresAuthentication: false));
         var resource = new ProcessCatalogResource(_jobService, NullLogger<ProcessCatalogResource>.Instance);
 
@@ -235,8 +241,11 @@ public sealed class McpAuthorizationTests
     public async Task GroundCandidates_AuthenticatedButUnauthorized_ThrowsPermissionDenied()
     {
         _jobService
-            .When(s => s.EnsureCallerAuthorized(
-                Arg.Any<ClaimsPrincipal>(), OperatorResourceType.Catalog, OperatorOperation.Discover))
+            .When(s => s.EnsureCallerAuthorizedAsync(
+                Arg.Any<ClaimsPrincipal>(),
+                OperatorResourceType.Catalog,
+                OperatorOperation.Discover,
+                Arg.Any<CancellationToken>()))
             .Do(_ => throw new GeoprocessingAuthorizationException(requiresAuthentication: false));
         var tool = new GroundCandidatesTool(_groundingService, _jobService, NullLogger<GroundCandidatesTool>.Instance);
         JsonElement? arguments = McpTestFactory.ParseJson("""{"goal":"Buffer the parcels"}""");
@@ -258,8 +267,11 @@ public sealed class McpAuthorizationTests
         // IGroundingService.GroundAsync, so asymmetric permissions would let a
         // caller start grounding but fail to answer its clarification envelope.
         _jobService
-            .When(s => s.EnsureCallerAuthorized(
-                Arg.Any<ClaimsPrincipal>(), OperatorResourceType.Catalog, OperatorOperation.Discover))
+            .When(s => s.EnsureCallerAuthorizedAsync(
+                Arg.Any<ClaimsPrincipal>(),
+                OperatorResourceType.Catalog,
+                OperatorOperation.Discover,
+                Arg.Any<CancellationToken>()))
             .Do(_ => throw new GeoprocessingAuthorizationException(requiresAuthentication: false));
         var tool = new ClarifyIntentTool(_groundingService, _jobService, NullLogger<ClarifyIntentTool>.Instance);
         JsonElement? arguments = McpTestFactory.ParseJson("""

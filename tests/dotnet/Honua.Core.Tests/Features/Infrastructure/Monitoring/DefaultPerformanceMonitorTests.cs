@@ -87,7 +87,7 @@ public class DefaultPerformanceMonitorTests
     }
 
     [Fact]
-    public void OperationScope_ShouldTrackTiming()
+    public void OperationScope_ShouldRecordTagsOnDispose()
     {
         // Arrange
         var operationName = "timed-operation";
@@ -99,10 +99,6 @@ public class DefaultPerformanceMonitorTests
             {
                 Assert.NotNull(scope);
 
-                // Simulate some work
-                Thread.Sleep(10);
-
-                // Add tags
                 scope.WithTag("layer", "test")
                      .WithTag("operation_type", "query");
             }

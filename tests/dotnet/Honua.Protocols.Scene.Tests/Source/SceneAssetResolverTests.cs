@@ -214,10 +214,9 @@ public sealed class SceneAssetResolverTests : IDisposable
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or PlatformNotSupportedException)
         {
-            // The current OS or user cannot create symlinks (e.g., Windows
-            // without Developer Mode). Skip silently — Linux CI still proves
-            // the resolver path.
-            return;
+            throw new InvalidOperationException(
+                "Scene symlink-escape coverage requires filesystem symlink support.",
+                ex);
         }
 
         try

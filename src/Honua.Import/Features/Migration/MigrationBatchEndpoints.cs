@@ -164,7 +164,10 @@ internal static partial class MigrationBatchEndpoints
         }
         catch (ArgumentException ex)
         {
-            await AdminResponseWriter.WriteErrorAsync(context, ex.Message, StatusCodes.Status400BadRequest);
+            await AdminResponseWriter.WriteErrorAsync(
+                context,
+                ImportValidationErrorMessage.FromArgument(ex, "Invalid migration batch request."),
+                StatusCodes.Status400BadRequest);
             return;
         }
 

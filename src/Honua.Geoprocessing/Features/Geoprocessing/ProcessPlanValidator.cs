@@ -388,6 +388,31 @@ internal static partial class ProcessPlanValidator
         AnalysisPlanStep step,
         List<GeoprocessingValidationFailure> violations)
     {
+        if (step.Inputs.TryGetValue("connectionString", out var rawConnectionString)
+            && !string.IsNullOrWhiteSpace(rawConnectionString))
+        {
+            AddRangeViolationIfNew(step, "connectionString",
+                "inline connection strings are not accepted; use connectionName or connectionId", violations);
+        }
+
+        var hasConnectionName = step.Inputs.TryGetValue("connectionName", out var connectionName)
+            && !string.IsNullOrWhiteSpace(connectionName);
+        var hasConnectionId = step.Inputs.TryGetValue("connectionId", out var connectionId)
+            && !string.IsNullOrWhiteSpace(connectionId);
+        if (!hasConnectionName && !hasConnectionId)
+        {
+            RequireConditionalParameter(step, "connectionName", "no connectionId is supplied", violations);
+        }
+        else if (hasConnectionName && hasConnectionId)
+        {
+            AddRangeViolationIfNew(step, "connectionId",
+                "supply exactly one of connectionName or connectionId", violations);
+        }
+        else if (hasConnectionId && !Guid.TryParse(connectionId, out _))
+        {
+            AddRangeViolationIfNew(step, "connectionId", $"expected a valid GUID, got '{connectionId}'", violations);
+        }
+
         // Identifiers cannot be parameterized in DDL/DML, so the executor rejects any
         // value outside ^[A-Za-z_][A-Za-z0-9_]*$. Mirror that here for table/schema/
         // geometryColumn so the validator does not admit plans the executor will refuse.
@@ -1322,9 +1347,9 @@ internal static partial class ProcessPlanValidator
 
             return true;
         }
-        catch (JsonException ex)
+        catch (JsonException)
         {
-            error = $"outStatistics is not valid JSON: {ex.Message}";
+            error = "outStatistics is not valid JSON.";
             return false;
         }
     }
@@ -1798,9 +1823,9 @@ internal static partial class ProcessPlanValidator
 
             return true;
         }
-        catch (JsonException ex)
+        catch (JsonException)
         {
-            errorDetail = $"WKB array is not valid JSON: {ex.Message}";
+            errorDetail = "WKB array is not valid JSON.";
             return false;
         }
     }

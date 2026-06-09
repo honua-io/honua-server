@@ -14,7 +14,6 @@ using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Services;
 using Microsoft.Extensions.Options;
-using Npgsql;
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 
@@ -195,10 +194,6 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
         catch (FormatException ex)
         {
             throw new InvalidOperationException("Invalid related query format.", ex);
-        }
-        catch (PostgresException ex) when (QueryExceptionClassifier.IsInvalidQuerySyntax(ex))
-        {
-            throw new InvalidOperationException("Invalid related query syntax.", ex);
         }
     }
 

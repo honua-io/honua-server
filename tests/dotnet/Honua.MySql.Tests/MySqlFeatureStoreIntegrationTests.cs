@@ -29,32 +29,16 @@ public class MySqlFeatureStoreIntegrationTests : IAsyncLifetime
     private MySqlDataSource _dataSource = null!;
     private MySqlFeatureStore _store = null!;
     private MySqlLayerMappingRegistry _registry = null!;
-    private bool _skipped;
 
     public async Task InitializeAsync()
     {
-        if (!string.Equals(Environment.GetEnvironmentVariable("HONUA_TEST_MYSQL"), "1", StringComparison.Ordinal))
-        {
-            _skipped = true;
-            return;
-        }
-
-        try
-        {
-            _container = new MySqlBuilder()
-                .WithImage("mysql:8.0.36")
-                .WithDatabase("honua_test")
-                .WithUsername("test")
-                .WithPassword("test")
-                .Build();
-            await _container.StartAsync();
-        }
-        catch (Exception)
-        {
-            // Docker not available — gracefully skip.
-            _skipped = true;
-            return;
-        }
+        _container = new MySqlBuilder()
+            .WithImage("mysql:8.0.36")
+            .WithDatabase("honua_test")
+            .WithUsername("test")
+            .WithPassword("test")
+            .Build();
+        await _container.StartAsync();
 
         var connectionString = _container.GetConnectionString();
         _dataSource = new MySqlDataSourceBuilder(connectionString).Build();
@@ -126,14 +110,9 @@ public class MySqlFeatureStoreIntegrationTests : IAsyncLifetime
         }
     }
 
-    [Fact]
+    [MySqlIntegrationFact]
     public async Task Query_Count_Extent_RoundTripAgainstMysql8()
     {
-        if (_skipped)
-        {
-            return;
-        }
-
         var query = new FeatureQuery();
 
         var count = await _store.CountAsync(LayerId, query);
@@ -151,14 +130,9 @@ public class MySqlFeatureStoreIntegrationTests : IAsyncLifetime
         Assert.True(extent.Value.MinY < extent.Value.MaxY);
     }
 
-    [Fact]
+    [MySqlIntegrationFact]
     public async Task Query_WithBboxIntersectsFilter_ReturnsSubset()
     {
-        if (_skipped)
-        {
-            return;
-        }
-
         // Bounding-box polygon WKB covering the first ~5 parcels (lon -121.99..-121.95, lat 37.01..37.05).
         // Build via SQL to avoid hand-rolling WKB. EPSG:4326 has lat-lon axis order in MySQL 8.0+
         // ST_GeomFromText, so request lon-lat axis order explicitly to keep the WKT readable.
@@ -186,28 +160,18 @@ public class MySqlFeatureStoreIntegrationTests : IAsyncLifetime
         Assert.True(count is > 0 and < 10);
     }
 
-    [Fact]
+    [MySqlIntegrationFact]
     public async Task GetAsync_KnownId_ReturnsFeature()
     {
-        if (_skipped)
-        {
-            return;
-        }
-
         var feature = await _store.GetAsync(LayerId, featureId: 1);
 
         Assert.NotNull(feature);
         Assert.Equal(1, feature!.Value.Id);
     }
 
-    [Fact]
+    [MySqlIntegrationFact]
     public async Task StreamFeaturesAsync_PagesThroughAllRows()
     {
-        if (_skipped)
-        {
-            return;
-        }
-
         var seen = new List<long>();
         await foreach (var feature in _store.StreamFeaturesAsync(LayerId, new FeatureQuery
         {
@@ -221,14 +185,9 @@ public class MySqlFeatureStoreIntegrationTests : IAsyncLifetime
         Assert.Equal(Enumerable.Range(1, 10).Select(i => (long)i), seen);
     }
 
-    [Fact]
+    [MySqlIntegrationFact]
     public async Task StreamFeatureBatchesAsync_HonoursBatchSize()
     {
-        if (_skipped)
-        {
-            return;
-        }
-
         var batches = new List<IReadOnlyList<Feature>>();
         await foreach (var batch in _store.StreamFeatureBatchesAsync(
             LayerId,
@@ -243,16 +202,22 @@ public class MySqlFeatureStoreIntegrationTests : IAsyncLifetime
         Assert.Single(batches[3]);
     }
 
-    [Fact]
+    [MySqlIntegrationFact]
     public async Task StreamGmlFeaturesAsync_ThrowsNotSupported()
     {
-        if (_skipped)
-        {
-            return;
-        }
-
         Assert.Throws<NotSupportedException>(() =>
             _store.StreamGmlFeaturesAsync(LayerId, new FeatureQuery()));
         await Task.CompletedTask;
+    }
+}
+
+internal sealed class MySqlIntegrationFactAttribute : FactAttribute
+{
+    public MySqlIntegrationFactAttribute()
+    {
+        if (!string.Equals(Environment.GetEnvironmentVariable("HONUA_TEST_MYSQL"), "1", StringComparison.Ordinal))
+        {
+            Skip = "Set HONUA_TEST_MYSQL=1 to run MySQL Testcontainers integration tests.";
+        }
     }
 }

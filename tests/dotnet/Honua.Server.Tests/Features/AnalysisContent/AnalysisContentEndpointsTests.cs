@@ -600,12 +600,12 @@ public sealed class AnalysisContentEndpointsTests : IAsyncLifetime
             _jobs[failed.OperationId] = failed;
         }
 
-        public void EnsureCallerAuthorized(
+        public Task EnsureCallerAuthorizedAsync(
             ClaimsPrincipal principal,
             OperatorResourceType resourceType,
-            OperatorOperation operation)
-        {
-        }
+            OperatorOperation operation,
+            CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
 
         public PlanValidationResult ValidatePlan(AnalysisPlan plan, ClaimsPrincipal principal)
             => new() { IsExecutable = true };

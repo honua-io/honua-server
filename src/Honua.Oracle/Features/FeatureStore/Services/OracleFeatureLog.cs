@@ -14,8 +14,8 @@ internal static partial class OracleFeatureLog
     [LoggerMessage(
         EventId = 7100,
         Level = LogLevel.Debug,
-        Message = "Oracle feature query prepared: {Sql} with {ParameterCount} parameter(s).")]
-    public static partial void QueryPrepared(ILogger logger, string sql, int parameterCount);
+        Message = "Oracle feature query prepared with {ParameterCount} parameter(s).")]
+    public static partial void QueryPrepared(ILogger logger, int parameterCount);
 
     [LoggerMessage(
         EventId = 7101,

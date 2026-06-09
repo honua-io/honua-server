@@ -57,7 +57,7 @@ public sealed class OgcFeaturesJsonbAttributeLayerTests : IAsyncLifetime
             $"/ogc/features/collections/{MobileOfflineDemoGraphPublisher.OfflineSitesLayerId}/items";
 
         // Reproduce the drift: no attributesColumn => bare-column projection => 42703 => 500.
-        MobileOfflineDemoGraphPublisher.Publish(Provider, includeAttributesAccessor: false);
+        await MobileOfflineDemoGraphPublisher.PublishAsync(Provider, includeAttributesAccessor: false);
 
         var brokenResponse = await _fixture.Client.GetAsync(requestUri);
         brokenResponse.StatusCode.Should().NotBe(HttpStatusCode.OK,
@@ -65,7 +65,7 @@ public sealed class OgcFeaturesJsonbAttributeLayerTests : IAsyncLifetime
             + "rejects the query with 42703 (the honua-server#1238 failure)");
 
         // The fix: with the accessor, declared fields resolve as attributes->>'field'.
-        MobileOfflineDemoGraphPublisher.Publish(Provider, includeAttributesAccessor: true);
+        await MobileOfflineDemoGraphPublisher.PublishAsync(Provider, includeAttributesAccessor: true);
 
         var fixedResponse = await _fixture.Client.GetAsync(requestUri);
         fixedResponse.StatusCode.Should().Be(HttpStatusCode.OK,
@@ -89,7 +89,7 @@ public sealed class OgcFeaturesJsonbAttributeLayerTests : IAsyncLifetime
     [Endpoint("GET /ogc/features/collections/68910/items")]
     public async Task GetItems_SharedFeaturesTable_IsolatesByLayerDiscriminator()
     {
-        MobileOfflineDemoGraphPublisher.Publish(Provider, includeAttributesAccessor: true);
+        await MobileOfflineDemoGraphPublisher.PublishAsync(Provider, includeAttributesAccessor: true);
 
         // OGC API Features: layer 68910 returns its 3 site features only (not the 2 zones).
         await AssertLayerIsolatedAsync(

@@ -781,11 +781,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     {
         // Create a job directly via the store with GPServer binding metadata.
         var jobStore = _fixture.GetOptionalService<IExecutionJobStore>();
-        if (jobStore == null)
-        {
-            // Without Redis, skip binding validation — store unavailable
-            return;
-        }
+        jobStore.Should().NotBeNull("GPServer binding validation requires an execution job store");
 
         var jobId = $"gpbind-svc-{Guid.NewGuid():N}";
         var jobRecord = new ExecutionJobRecord
@@ -808,11 +804,8 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
             }
         };
 
-        var created = await jobStore.TryCreateAsync(jobRecord);
-        if (!created)
-        {
-            return;
-        }
+        var created = await jobStore!.TryCreateAsync(jobRecord);
+        created.Should().BeTrue("the binding-validation fixture job must be created");
 
         // Query status under a different service — should be rejected
         var statusResponse = await _client.GetAsync(
@@ -828,11 +821,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     {
         // Create a job directly via the store with GPServer binding metadata.
         var jobStore = _fixture.GetOptionalService<IExecutionJobStore>();
-        if (jobStore == null)
-        {
-            // Without Redis, skip binding validation — store unavailable
-            return;
-        }
+        jobStore.Should().NotBeNull("GPServer binding validation requires an execution job store");
 
         var jobId = $"gpbind-task-{Guid.NewGuid():N}";
         var jobRecord = new ExecutionJobRecord
@@ -855,11 +844,8 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
             }
         };
 
-        var created = await jobStore.TryCreateAsync(jobRecord);
-        if (!created)
-        {
-            return;
-        }
+        var created = await jobStore!.TryCreateAsync(jobRecord);
+        created.Should().BeTrue("the binding-validation fixture job must be created");
 
         // Query status under a different task — should be rejected
         var statusResponse = await _client.GetAsync(
@@ -880,11 +866,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         // Write a job record directly to the store without GPServer binding metadata.
         // This simulates a gRPC-submitted job that should not be visible via GPServer routes.
         var jobStore = _fixture.GetOptionalService<IExecutionJobStore>();
-        if (jobStore == null)
-        {
-            // Without Redis, skip — store unavailable
-            return;
-        }
+        jobStore.Should().NotBeNull("cross-protocol binding validation requires an execution job store");
 
         var jobId = $"grpc-test-{Guid.NewGuid():N}";
         var jobRecord = new ExecutionJobRecord
@@ -903,11 +885,8 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
             }
         };
 
-        var created = await jobStore.TryCreateAsync(jobRecord);
-        if (!created)
-        {
-            return;
-        }
+        var created = await jobStore!.TryCreateAsync(jobRecord);
+        created.Should().BeTrue("the cross-protocol fixture job must be created");
 
         // Access via GPServer route — should be rejected (no GPServer binding metadata)
         var response = await _client.GetAsync(
@@ -1097,9 +1076,12 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
 
     private sealed class TimeoutGeoprocessingJobService : IGeoprocessingJobService
     {
-        public void EnsureCallerAuthorized(ClaimsPrincipal principal, OperatorResourceType resourceType, OperatorOperation operation)
-        {
-        }
+        public Task EnsureCallerAuthorizedAsync(
+            ClaimsPrincipal principal,
+            OperatorResourceType resourceType,
+            OperatorOperation operation,
+            CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
 
         public PlanValidationResult ValidatePlan(AnalysisPlan plan, ClaimsPrincipal principal)
             => throw new NotSupportedException();
@@ -1139,9 +1121,12 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
 
     private sealed class PreconditionFailedGeoprocessingJobService : IGeoprocessingJobService
     {
-        public void EnsureCallerAuthorized(ClaimsPrincipal principal, OperatorResourceType resourceType, OperatorOperation operation)
-        {
-        }
+        public Task EnsureCallerAuthorizedAsync(
+            ClaimsPrincipal principal,
+            OperatorResourceType resourceType,
+            OperatorOperation operation,
+            CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
 
         public PlanValidationResult ValidatePlan(AnalysisPlan plan, ClaimsPrincipal principal)
             => throw new NotSupportedException();
@@ -1183,9 +1168,12 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
 
         public IReadOnlyDictionary<string, string>? LastProtocolMetadata { get; private set; }
 
-        public void EnsureCallerAuthorized(ClaimsPrincipal principal, OperatorResourceType resourceType, OperatorOperation operation)
-        {
-        }
+        public Task EnsureCallerAuthorizedAsync(
+            ClaimsPrincipal principal,
+            OperatorResourceType resourceType,
+            OperatorOperation operation,
+            CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
 
         public PlanValidationResult ValidatePlan(AnalysisPlan plan, ClaimsPrincipal principal)
             => throw new NotSupportedException();
@@ -1286,9 +1274,12 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
                 ExecutedAt = DateTimeOffset.UtcNow
             });
 
-        public void EnsureCallerAuthorized(ClaimsPrincipal principal, OperatorResourceType resourceType, OperatorOperation operation)
-        {
-        }
+        public Task EnsureCallerAuthorizedAsync(
+            ClaimsPrincipal principal,
+            OperatorResourceType resourceType,
+            OperatorOperation operation,
+            CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
 
         public PlanValidationResult ValidatePlan(AnalysisPlan plan, ClaimsPrincipal principal)
             => throw new NotSupportedException();
@@ -1355,9 +1346,12 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
                     ExecutedAt = DateTimeOffset.UtcNow
                 });
 
-        public void EnsureCallerAuthorized(ClaimsPrincipal principal, OperatorResourceType resourceType, OperatorOperation operation)
-        {
-        }
+        public Task EnsureCallerAuthorizedAsync(
+            ClaimsPrincipal principal,
+            OperatorResourceType resourceType,
+            OperatorOperation operation,
+            CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
 
         public PlanValidationResult ValidatePlan(AnalysisPlan plan, ClaimsPrincipal principal)
             => throw new NotSupportedException();

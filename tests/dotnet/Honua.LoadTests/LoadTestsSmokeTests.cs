@@ -3,6 +3,7 @@
 
 using Honua.LoadTests.Scenarios;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Performance;
 using NBomber.Contracts;
 using Xunit;
 
@@ -74,5 +75,13 @@ public sealed class LoadTestsSmokeTests
         {
             Environment.SetEnvironmentVariable(LoadScenarioSettings.TargetEnvVar, originalTarget);
         }
+    }
+
+    [UnitTest]
+    public void CliScenarioAllowlist_MatchesRegisteredLoadSuite()
+    {
+        Assert.Equal(
+            LoadTestScenarios.ScenarioNames.OrderBy(static name => name, StringComparer.Ordinal),
+            Program.KnownScenarios.OrderBy(static name => name, StringComparer.Ordinal));
     }
 }

@@ -1,12 +1,12 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Data.Common;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
-using Npgsql;
 using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 
 namespace Honua.Infrastructure.Helpers;
@@ -46,7 +46,7 @@ internal static class ServiceResourceValidationHelpers
         {
             serviceResult = await resourceValidator.ValidateServiceV2Async(serviceId, cancellationToken).ConfigureAwait(false);
         }
-        catch (PostgresException ex) when (IsCatalogStorageUnavailable(ex))
+        catch (Exception ex) when (IsCatalogStorageUnavailable(ex))
         {
             return new ServiceValidationV2Result(
                 false,
@@ -117,7 +117,7 @@ internal static class ServiceResourceValidationHelpers
                 layerId,
                 cancellationToken).ConfigureAwait(false);
         }
-        catch (PostgresException ex) when (IsCatalogStorageUnavailable(ex))
+        catch (Exception ex) when (IsCatalogStorageUnavailable(ex))
         {
             return new ServiceLayerValidationV2Result(
                 false,
@@ -176,6 +176,6 @@ internal static class ServiceResourceValidationHelpers
             null);
     }
 
-    private static bool IsCatalogStorageUnavailable(PostgresException exception)
-        => exception.SqlState == PostgresErrorCodes.UndefinedTable;
+    private static bool IsCatalogStorageUnavailable(Exception exception)
+        => exception is DbException { SqlState: "42P01" };
 }

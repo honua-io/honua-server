@@ -7,7 +7,7 @@ namespace Honua.Ai.Protocols.Mcp;
 
 /// <summary>
 /// Shared authentication helpers for MCP tool and resource handlers.
-/// Tools delegate to <see cref="Geoprocessing.IGeoprocessingJobService.EnsureCallerAuthorized"/>
+/// Tools delegate to <see cref="Geoprocessing.IGeoprocessingJobService.EnsureCallerAuthorizedAsync"/>
 /// for operator-grant checks; this helper adapts the MCP request context into
 /// the same <see cref="ClaimsPrincipal"/> shape the domain service expects.
 /// </summary>

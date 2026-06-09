@@ -395,9 +395,12 @@ public sealed class AzureBatchDataPlaneClientTests
         private int _callCount;
 
         public override AccessToken GetToken(TokenRequestContext requestContext, CancellationToken cancellationToken)
-            => GetTokenAsync(requestContext, cancellationToken).AsTask().GetAwaiter().GetResult();
+            => GetTokenCore();
 
         public override ValueTask<AccessToken> GetTokenAsync(TokenRequestContext requestContext, CancellationToken cancellationToken)
+            => ValueTask.FromResult(GetTokenCore());
+
+        private AccessToken GetTokenCore()
         {
             var callIndex = Interlocked.Increment(ref _callCount);
 
@@ -410,12 +413,12 @@ public sealed class AzureBatchDataPlaneClientTests
                     throw failureException;
                 }
 
-                return ValueTask.FromResult(new AccessToken("stub-token", DateTimeOffset.UtcNow.AddHours(1)));
+                return new AccessToken("stub-token", DateTimeOffset.UtcNow.AddHours(1));
             }
 
             if (callIndex == 1 && firstCallSucceeds)
             {
-                return ValueTask.FromResult(new AccessToken("stub-token", DateTimeOffset.UtcNow.AddHours(1)));
+                return new AccessToken("stub-token", DateTimeOffset.UtcNow.AddHours(1));
             }
 
             throw failureException;

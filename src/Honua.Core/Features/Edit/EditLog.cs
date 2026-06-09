@@ -25,24 +25,24 @@ internal static partial class EditLog
     [LoggerMessage(EventId = 7625, Level = LogLevel.Error, Message = "Failed to execute batch edit for layer {LayerId}")]
     public static partial void ExecuteBatchEditFailed(ILogger logger, int layerId, Exception exception);
 
-    [LoggerMessage(EventId = 7626, Level = LogLevel.Warning, Message = "Failed to estimate edit performance for layer {LayerId}")]
-    public static partial void EstimateEditPerformanceFailed(ILogger logger, int layerId, Exception exception);
+    [LoggerMessage(EventId = 7626, Level = LogLevel.Warning, Message = "Failed to estimate edit performance for resource {ResourceId}")]
+    public static partial void EstimateEditPerformanceFailed(ILogger logger, string resourceId, Exception exception);
 
     [LoggerMessage(EventId = 7627, Level = LogLevel.Error, Message = "Failed to validate edit request for layer {LayerId}")]
     public static partial void ValidateEditRequestFailed(ILogger logger, int layerId, Exception exception);
 
-    [LoggerMessage(EventId = 7628, Level = LogLevel.Error, Message = "Error validating edit request for layer {LayerId}")]
-    public static partial void ValidateEditFailed(ILogger logger, int layerId, Exception exception);
+    [LoggerMessage(EventId = 7628, Level = LogLevel.Error, Message = "Error validating edit request for resource {ResourceId}")]
+    public static partial void ValidateEditFailed(ILogger logger, string resourceId, Exception exception);
 
-    [LoggerMessage(EventId = 7629, Level = LogLevel.Debug, Message = "Optimized edit request for layer {LayerId}: {OriginalOps} -> {OptimizedOps} operations")]
-    public static partial void EditRequestOptimized(ILogger logger, int layerId, int originalOps, int optimizedOps);
+    [LoggerMessage(EventId = 7629, Level = LogLevel.Debug, Message = "Optimized edit request for resource {ResourceId}: {OriginalOps} -> {OptimizedOps} operations")]
+    public static partial void EditRequestOptimized(ILogger logger, string resourceId, int originalOps, int optimizedOps);
 
-    [LoggerMessage(EventId = 7630, Level = LogLevel.Warning, Message = "Failed to optimize edit request for layer {LayerId}, returning original")]
-    public static partial void OptimizeEditFailed(ILogger logger, int layerId, Exception exception);
+    [LoggerMessage(EventId = 7630, Level = LogLevel.Warning, Message = "Failed to optimize edit request for resource {ResourceId}, returning original")]
+    public static partial void OptimizeEditFailed(ILogger logger, string resourceId, Exception exception);
 
-    [LoggerMessage(EventId = 7631, Level = LogLevel.Error, Message = "Error converting unified edit request to feature edit batch for layer {LayerId}")]
-    public static partial void FeatureEditBatchConversionFailed(ILogger logger, int layerId, Exception exception);
+    [LoggerMessage(EventId = 7631, Level = LogLevel.Error, Message = "Error converting unified edit request to feature edit batch for resource {ResourceId}")]
+    public static partial void FeatureEditBatchConversionFailed(ILogger logger, string resourceId, Exception exception);
 
-    [LoggerMessage(EventId = 7632, Level = LogLevel.Error, Message = "Error validating transaction {TransactionId} for layer {LayerId}")]
-    public static partial void ValidateTransactionFailed(ILogger logger, string transactionId, int layerId, Exception exception);
+    [LoggerMessage(EventId = 7632, Level = LogLevel.Error, Message = "Error validating transaction {TransactionId} for resource {ResourceId}")]
+    public static partial void ValidateTransactionFailed(ILogger logger, string transactionId, string resourceId, Exception exception);
 }

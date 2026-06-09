@@ -50,15 +50,15 @@ internal sealed class EventHubPublisher : IEventHubPublisher
         }
         catch (EventHubsException ex) when (ex.Reason == EventHubsException.FailureReason.ResourceNotFound)
         {
-            return new EventHubPublishResult(false, false, $"Event Hub not found: {ex.Message}");
+            return new EventHubPublishResult(false, false, "Event Hub not found.");
         }
         catch (EventHubsException ex) when (ex.IsTransient)
         {
-            return new EventHubPublishResult(false, true, $"Event Hub transient error: {ex.Message}");
+            return new EventHubPublishResult(false, true, "Event Hub transient error.");
         }
-        catch (UnauthorizedAccessException ex)
+        catch (UnauthorizedAccessException)
         {
-            return new EventHubPublishResult(false, false, $"Event Hub authorization failed: {ex.Message}");
+            return new EventHubPublishResult(false, false, "Event Hub authorization failed.");
         }
     }
 
@@ -117,13 +117,13 @@ internal sealed class AzureEventHubAlertDeliverySink : IAlertDeliverySink
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             return new AlertDeliveryResult
             {
                 Succeeded = false,
                 Retryable = true,
-                Error = ex.Message
+                Error = "Event Hub alert delivery failed."
             };
         }
     }

@@ -972,14 +972,15 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     private static async Task AssertODataErrorAsync(HttpResponseMessage response, string? expectedCode = null)
     {
         var content = await response.Content.ReadAsStringAsync();
-        if (string.IsNullOrWhiteSpace(content))
-        {
-            return;
-        }
+        content.Should().NotBeNullOrWhiteSpace("OData error responses must include a JSON error payload");
+
         using var document = JsonDocument.Parse(content);
 
         document.RootElement.TryGetProperty("error", out var errorElement).Should().BeTrue(
             $"Response should contain OData error format. Response: {content}");
+        errorElement.ValueKind.Should().Be(JsonValueKind.Object);
+        errorElement.TryGetProperty("message", out var messageElement).Should().BeTrue();
+        messageElement.GetString().Should().NotBeNullOrWhiteSpace();
 
         if (expectedCode != null)
         {

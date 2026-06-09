@@ -47,8 +47,12 @@ public sealed class GroundingServiceTests
         _metadataGraphProvider = new DelegatingMetadataV2GraphProvider(GetSnapshotAsync);
         _engine.Name.Returns("test-engine");
         _processCatalog.ListProcesses().Returns([]);
-        _authorizationFilter.Filter(Arg.Any<ClaimsPrincipal>(), Arg.Any<IReadOnlyList<GroundingCandidate>>())
-            .Returns(callInfo => callInfo.Arg<IReadOnlyList<GroundingCandidate>>());
+        _authorizationFilter
+            .FilterAsync(
+                Arg.Any<ClaimsPrincipal>(),
+                Arg.Any<IReadOnlyList<GroundingCandidate>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(callInfo => Task.FromResult(callInfo.Arg<IReadOnlyList<GroundingCandidate>>()));
     }
 
     [UnitTest]
@@ -152,11 +156,15 @@ public sealed class GroundingServiceTests
         _engine.Classify(Arg.Any<GroundingRequest>()).Returns(HighAnalyze);
         _engine.ScoreProcesses(Arg.Any<GroundingRequest>(), Arg.Any<IReadOnlyList<ProcessDefinition>>())
             .Returns([Candidate("allowed", 0.9, CandidateKind.Process), Candidate("denied", 0.8, CandidateKind.Process)]);
-        _authorizationFilter.Filter(Arg.Any<ClaimsPrincipal>(), Arg.Any<IReadOnlyList<GroundingCandidate>>())
-            .Returns(callInfo =>
+        _authorizationFilter
+            .FilterAsync(
+                Arg.Any<ClaimsPrincipal>(),
+                Arg.Any<IReadOnlyList<GroundingCandidate>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(callInfo => Task.FromResult<IReadOnlyList<GroundingCandidate>>(
                 callInfo.Arg<IReadOnlyList<GroundingCandidate>>()
                     .Where(c => c.Id == "allowed")
-                    .ToList());
+                    .ToList()));
 
         var service = CreateService();
 
@@ -180,11 +188,15 @@ public sealed class GroundingServiceTests
                 Candidate("denied-2", 0.90, CandidateKind.Process),
                 Candidate("allowed-below-cap", 0.80, CandidateKind.Process)
             ]);
-        _authorizationFilter.Filter(Arg.Any<ClaimsPrincipal>(), Arg.Any<IReadOnlyList<GroundingCandidate>>())
-            .Returns(callInfo =>
+        _authorizationFilter
+            .FilterAsync(
+                Arg.Any<ClaimsPrincipal>(),
+                Arg.Any<IReadOnlyList<GroundingCandidate>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(callInfo => Task.FromResult<IReadOnlyList<GroundingCandidate>>(
                 callInfo.Arg<IReadOnlyList<GroundingCandidate>>()
                     .Where(c => !c.Id.StartsWith("denied", StringComparison.Ordinal))
-                    .ToList());
+                    .ToList()));
 
         var service = CreateService();
 

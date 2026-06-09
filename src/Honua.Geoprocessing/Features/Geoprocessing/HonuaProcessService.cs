@@ -26,7 +26,7 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
         _logger = logger;
     }
 
-    public override Task<Proto.ValidatePlanResponse> ValidatePlan(
+    public override async Task<Proto.ValidatePlanResponse> ValidatePlan(
         Proto.ValidatePlanRequest request,
         ServerCallContext context)
     {
@@ -34,15 +34,16 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
 
         try
         {
-            _jobService.EnsureCallerAuthorized(
+            await _jobService.EnsureCallerAuthorizedAsync(
                 context.GetHttpContext().User,
                 OperatorResourceType.Process,
-                OperatorOperation.Read);
+                OperatorOperation.Read,
+                context.CancellationToken).ConfigureAwait(false);
 
             ValidateProtoStructure(request.Plan);
             var domainPlan = GeoprocessingConversionHelpers.ToDomainPlan(request.Plan);
             var result = _jobService.ValidatePlan(domainPlan, context.GetHttpContext().User);
-            return Task.FromResult(GeoprocessingConversionHelpers.ToProtoValidatePlanResponse(result));
+            return GeoprocessingConversionHelpers.ToProtoValidatePlanResponse(result);
         }
         catch (Exception ex) when (ex is not RpcException)
         {
@@ -50,7 +51,7 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
         }
     }
 
-    public override Task<Proto.DryRunPlanResponse> DryRunPlan(
+    public override async Task<Proto.DryRunPlanResponse> DryRunPlan(
         Proto.DryRunPlanRequest request,
         ServerCallContext context)
     {
@@ -58,21 +59,22 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
 
         try
         {
-            _jobService.EnsureCallerAuthorized(
+            await _jobService.EnsureCallerAuthorizedAsync(
                 context.GetHttpContext().User,
                 OperatorResourceType.Process,
-                OperatorOperation.Read);
+                OperatorOperation.Read,
+                context.CancellationToken).ConfigureAwait(false);
 
             ValidateProtoStructure(request.Plan);
             var domainPlan = GeoprocessingConversionHelpers.ToDomainPlan(request.Plan);
             var validation = _jobService.ValidatePlan(domainPlan, context.GetHttpContext().User);
             if (!validation.IsExecutable)
             {
-                return Task.FromResult(GeoprocessingConversionHelpers.ToProtoDryRunPlanResponse(validation));
+                return GeoprocessingConversionHelpers.ToProtoDryRunPlanResponse(validation);
             }
 
             var result = _jobService.DryRunPlan(domainPlan, context.GetHttpContext().User);
-            return Task.FromResult(GeoprocessingConversionHelpers.ToProtoDryRunPlanResponse(result));
+            return GeoprocessingConversionHelpers.ToProtoDryRunPlanResponse(result);
         }
         catch (Exception ex) when (ex is not RpcException)
         {
@@ -80,7 +82,7 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
         }
     }
 
-    public override Task<Proto.ExecutePlanResponse> ExecutePlan(
+    public override async Task<Proto.ExecutePlanResponse> ExecutePlan(
         Proto.ExecutePlanRequest request,
         ServerCallContext context)
     {
@@ -88,10 +90,11 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
 
         try
         {
-            _jobService.EnsureCallerAuthorized(
+            await _jobService.EnsureCallerAuthorizedAsync(
                 context.GetHttpContext().User,
                 OperatorResourceType.Process,
-                OperatorOperation.Execute);
+                OperatorOperation.Execute,
+                context.CancellationToken).ConfigureAwait(false);
 
             throw new RpcException(new Status(
                 StatusCode.Unimplemented,
@@ -103,7 +106,7 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
         }
     }
 
-    public override Task ExecutePlanStream(
+    public override async Task ExecutePlanStream(
         Proto.ExecutePlanRequest request,
         IServerStreamWriter<Proto.ExecutionEvent> responseStream,
         ServerCallContext context)
@@ -112,10 +115,11 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
 
         try
         {
-            _jobService.EnsureCallerAuthorized(
+            await _jobService.EnsureCallerAuthorizedAsync(
                 context.GetHttpContext().User,
                 OperatorResourceType.Process,
-                OperatorOperation.Execute);
+                OperatorOperation.Execute,
+                context.CancellationToken).ConfigureAwait(false);
 
             throw new RpcException(new Status(
                 StatusCode.Unimplemented,
@@ -135,10 +139,11 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
 
         try
         {
-            _jobService.EnsureCallerAuthorized(
+            await _jobService.EnsureCallerAuthorizedAsync(
                 context.GetHttpContext().User,
                 OperatorResourceType.Process,
-                OperatorOperation.Execute);
+                OperatorOperation.Execute,
+                context.CancellationToken).ConfigureAwait(false);
 
             ValidateProtoStructure(request.Plan);
             var domainPlan = GeoprocessingConversionHelpers.ToDomainPlan(request.Plan);

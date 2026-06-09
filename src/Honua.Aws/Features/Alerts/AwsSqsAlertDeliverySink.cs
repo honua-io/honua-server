@@ -67,9 +67,9 @@ internal sealed class AwsSqsPublisher : ISqsPublisher, IDisposable
             var retryable = (int)response.HttpStatusCode >= 500;
             return new SqsPublishResult(false, retryable, $"SQS send responded with {(int)response.HttpStatusCode}.");
         }
-        catch (QueueDoesNotExistException ex)
+        catch (QueueDoesNotExistException)
         {
-            return new SqsPublishResult(false, false, $"SQS queue not found: {ex.Message}");
+            return new SqsPublishResult(false, false, "SQS queue not found.");
         }
     }
 }
@@ -126,13 +126,13 @@ internal sealed class AwsSqsAlertDeliverySink : IAlertDeliverySink
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             return new AlertDeliveryResult
             {
                 Succeeded = false,
                 Retryable = true,
-                Error = ex.Message
+                Error = "SQS alert delivery failed."
             };
         }
     }

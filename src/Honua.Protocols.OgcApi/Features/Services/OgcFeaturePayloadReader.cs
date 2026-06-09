@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Validation;
 using Honua.Protocols.Ogc.Api.Features.Models;
 using Honua.Protocols.Ogc.Common;
@@ -38,7 +39,7 @@ internal static class OgcFeaturePayloadReader
     public static IResult? ValidateJsonContentType(HttpContext context)
         => ValidateContentType(context, JsonContentTypes);
 
-    public static async Task<(GeoJsonFeature? Feature, string? Error)> ReadGeoJsonFeatureAsync(
+    public static async Task<(GeoJsonFeature? Feature, IResult? ErrorResult, string? Error)> ReadGeoJsonFeatureAsync(
         HttpContext context,
         CancellationToken cancellationToken)
     {
@@ -46,40 +47,49 @@ internal static class OgcFeaturePayloadReader
         {
             if (context.Request.ContentLength == 0)
             {
-                return (null, "Request body is required.");
+                return (null, null, "Request body is required.");
             }
 
-            using var document = await JsonDocument.ParseAsync(context.Request.Body, cancellationToken: cancellationToken);
+            var bodyRead = await RequestBodySizeGuard.ReadUtf8TextAsync(
+                context,
+                RequestBodySizeGuard.ResolveMaxBodyBytes(context),
+                cancellationToken).ConfigureAwait(false);
+            if (bodyRead.TooLarge)
+            {
+                return (null, bodyRead.ErrorResult, null);
+            }
+
+            using var document = JsonDocument.Parse(bodyRead.Body ?? string.Empty);
             if (document.RootElement.ValueKind != JsonValueKind.Object)
             {
-                return (null, "GeoJSON payload must be an object.");
+                return (null, null, "GeoJSON payload must be an object.");
             }
 
             if (!document.RootElement.TryGetProperty("type", out var typeProperty))
             {
-                return (null, "GeoJSON payload must include a 'type' member.");
+                return (null, null, "GeoJSON payload must include a 'type' member.");
             }
 
             if (!string.Equals(typeProperty.GetString(), "Feature", StringComparison.OrdinalIgnoreCase))
             {
-                return (null, "GeoJSON 'type' must be 'Feature'.");
+                return (null, null, "GeoJSON 'type' must be 'Feature'.");
             }
 
             try
             {
                 var feature = JsonSerializer.Deserialize<GeoJsonFeature>(document.RootElement, OgcJsonContext.Default.Options);
                 return feature == null
-                    ? (null, "Invalid GeoJSON payload.")
-                    : (feature, null);
+                    ? (null, null, "Invalid GeoJSON payload.")
+                    : (feature, null, null);
             }
             catch (JsonException)
             {
-                return (null, "Invalid GeoJSON payload.");
+                return (null, null, "Invalid GeoJSON payload.");
             }
         }
         catch (JsonException)
         {
-            return (null, "Invalid JSON payload.");
+            return (null, null, "Invalid JSON payload.");
         }
     }
 

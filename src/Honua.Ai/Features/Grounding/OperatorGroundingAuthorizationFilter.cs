@@ -28,9 +28,10 @@ internal sealed class OperatorGroundingAuthorizationFilter : IGroundingAuthoriza
         _logger = logger;
     }
 
-    public IReadOnlyList<GroundingCandidate> Filter(
+    public async Task<IReadOnlyList<GroundingCandidate>> FilterAsync(
         ClaimsPrincipal principal,
-        IReadOnlyList<GroundingCandidate> candidates)
+        IReadOnlyList<GroundingCandidate> candidates,
+        CancellationToken cancellationToken = default)
     {
         if (candidates.Count == 0)
         {
@@ -47,7 +48,7 @@ internal sealed class OperatorGroundingAuthorizationFilter : IGroundingAuthoriza
                 ResourceId = candidate.Id
             };
 
-            var decision = _evaluator.EvaluateAsync(principal, request).ConfigureAwait(false).GetAwaiter().GetResult();
+            var decision = await _evaluator.EvaluateAsync(principal, request, cancellationToken).ConfigureAwait(false);
             if (decision.IsAllowed)
             {
                 allowed.Add(candidate);

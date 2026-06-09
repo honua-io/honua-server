@@ -10,6 +10,7 @@ using Honua.Core.Features.Shared.Models;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Events;
+using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Validation;
 using Honua.Protocols.OData.Models;
 using Honua.Protocols.OData.Services;
@@ -717,10 +718,18 @@ internal sealed class ODataCrudHandler(
                 return (null, contentTypeError);
             }
 
-            var request = await JsonSerializer.DeserializeAsync(
-                context.Request.Body,
-                ODataJsonContext.Default.ODataFeatureRequest,
-                cancellationToken);
+            var bodyRead = await RequestBodySizeGuard.ReadUtf8TextAsync(
+                context,
+                RequestBodySizeGuard.ResolveMaxBodyBytes(context),
+                cancellationToken).ConfigureAwait(false);
+            if (bodyRead.TooLarge)
+            {
+                return (null, bodyRead.ErrorResult);
+            }
+
+            var request = JsonSerializer.Deserialize(
+                bodyRead.Body ?? string.Empty,
+                ODataJsonContext.Default.ODataFeatureRequest);
             if (request == null)
             {
                 return (null, ODataUtilityService.CreateODataError(

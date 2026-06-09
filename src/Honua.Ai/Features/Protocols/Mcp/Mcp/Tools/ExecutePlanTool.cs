@@ -49,7 +49,9 @@ internal sealed class ExecutePlanTool : IMcpTool
         McpLog.ToolInvoked(_logger, ToolName, WorkflowFamily);
 
         var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
-        _jobService.EnsureCallerAuthorized(principal, OperatorResourceType.Process, OperatorOperation.Execute);
+        await _jobService
+            .EnsureCallerAuthorizedAsync(principal, OperatorResourceType.Process, OperatorOperation.Execute, cancellationToken)
+            .ConfigureAwait(false);
 
         var argument = McpToolHelpers.ParseArguments(arguments, McpJsonContext.Default.McpExecutePlanArgument);
         var plan = McpToolHelpers.ToDomainPlan(argument.Plan);

@@ -124,16 +124,11 @@ public sealed class CloudDeploymentValidationTests
         }
     }
 
-    [CloudTest(BaseUrlEnv, AdminApiKeyEnv)]
+    [CloudTest(BaseUrlEnv, AdminApiKeyEnv, SkipWhenFalseEnvironmentVariables = new[] { ExpectDeployPlanSupportEnv })]
     [Operation(Operations.Configuration)]
     [Endpoint("POST /api/v1/admin/deploy/plan")]
     public async Task DeployPlanEndpoint_ReturnsPlan_WhenTargetConfigured_OrNotFoundContract_WhenNoTargetConfigured()
     {
-        if (!GetOptionalBool(ExpectDeployPlanSupportEnv, defaultValue: true))
-        {
-            return;
-        }
-
         using var client = CreateClient();
 
         var configuredTargetId = Environment.GetEnvironmentVariable(DeployTargetIdEnv);
@@ -208,18 +203,18 @@ public sealed class CloudDeploymentValidationTests
         }
     }
 
-    [CloudTest(BaseUrlEnv, AdminApiKeyEnv, DeployTargetIdEnv, DeployDesiredRevisionEnv)]
+    [CloudTest(
+        BaseUrlEnv,
+        AdminApiKeyEnv,
+        DeployTargetIdEnv,
+        DeployDesiredRevisionEnv,
+        RequiredTrueEnvironmentVariables = new[] { ExecuteDeployOperationEnv })]
     [Operation(Operations.Configuration)]
     [Endpoint("POST /api/v1/admin/deploy/operations")]
     [Endpoint("GET /api/v1/admin/deploy/operations/{operationId}")]
     [Endpoint("POST /api/v1/admin/deploy/operations/{operationId}/rollback")]
-    public async Task DeployOperation_CanPromoteAndOptionallyRollback_WhenLiveExecutionIsEnabled()
+    public async Task DeployOperation_CanPromote_WhenLiveExecutionIsEnabled()
     {
-        if (!GetOptionalBool(ExecuteDeployOperationEnv))
-        {
-            return;
-        }
-
         using var client = CreateClient();
         var targetId = GetRequiredEnv(DeployTargetIdEnv);
         var currentRevision = GetOptionalEnv(DeployCurrentRevisionEnv);
@@ -230,11 +225,29 @@ public sealed class CloudDeploymentValidationTests
         var promoted = await WaitForDeployOperationTerminalStateAsync(client, promoteOperation.OperationId, timeout);
         promoted.GetProperty("status").GetString().Should().Be("Succeeded");
         promoted.GetProperty("target").GetProperty("desiredRevision").GetString().Should().Be(desiredRevision);
+    }
 
-        if (!GetOptionalBool(VerifyDeployRollbackEnv))
-        {
-            return;
-        }
+    [CloudTest(
+        BaseUrlEnv,
+        AdminApiKeyEnv,
+        DeployTargetIdEnv,
+        DeployDesiredRevisionEnv,
+        RequiredTrueEnvironmentVariables = new[] { ExecuteDeployOperationEnv, VerifyDeployRollbackEnv })]
+    [Operation(Operations.Configuration)]
+    [Endpoint("POST /api/v1/admin/deploy/operations")]
+    [Endpoint("GET /api/v1/admin/deploy/operations/{operationId}")]
+    [Endpoint("POST /api/v1/admin/deploy/operations/{operationId}/rollback")]
+    public async Task DeployOperation_CanRollback_WhenRollbackValidationIsEnabled()
+    {
+        using var client = CreateClient();
+        var targetId = GetRequiredEnv(DeployTargetIdEnv);
+        var currentRevision = GetOptionalEnv(DeployCurrentRevisionEnv);
+        var desiredRevision = ResolveDesiredRevision(currentRevision);
+        var timeout = TimeSpan.FromSeconds(GetDeployTimeoutSeconds());
+
+        var promoteOperation = await CreateDeployOperationAsync(client, targetId, desiredRevision, currentRevision);
+        var promoted = await WaitForDeployOperationTerminalStateAsync(client, promoteOperation.OperationId, timeout);
+        promoted.GetProperty("status").GetString().Should().Be("Succeeded");
 
         var rollbackOperation = await RequestRollbackAsync(client, promoteOperation.OperationId);
         rollbackOperation.GetProperty("status").GetString().Should().Be("RollbackRequested");
@@ -247,7 +260,7 @@ public sealed class CloudDeploymentValidationTests
         restored.GetProperty("status").GetString().Should().Be("Succeeded");
     }
 
-    [CloudTest(BaseUrlEnv, AdminApiKeyEnv, ImportTablePrefixEnv)]
+    [CloudTest(BaseUrlEnv, AdminApiKeyEnv, ImportTablePrefixEnv, SkipWhenFalseEnvironmentVariables = new[] { ExpectMutationSupportEnv })]
     [Operation(Operations.Import)]
     [Endpoint("POST /api/v1/admin/import/upload")]
     [Endpoint("GET /api/v1/admin/import/uploads/{uploadId}/progress")]
@@ -259,15 +272,6 @@ public sealed class CloudDeploymentValidationTests
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
     public async Task CloudStagedImport_CompletesAndPublishedLayerBecomesPublicMetadata_WhenMutationChecksAreEnabled()
     {
-        // Unlike deploy-plan (single endpoint with a defined 405 contract), the import
-        // flow spans multiple endpoints and does not expose a uniform unsupported-operation
-        // response. Skip entirely when mutations are disabled rather than asserting a
-        // partial contract. See DeployPlanEndpoint for the contract-asserting pattern.
-        if (!GetOptionalBool(ExpectMutationSupportEnv, defaultValue: true))
-        {
-            return;
-        }
-
         using var client = CreateClient();
         var tablePrefix = GetRequiredEnv(ImportTablePrefixEnv);
         var tableName = $"{tablePrefix}_{Guid.NewGuid():N}".ToLowerInvariant();
@@ -943,12 +947,6 @@ public sealed class CloudDeploymentValidationTests
     {
         var value = Environment.GetEnvironmentVariable(name);
         return string.IsNullOrWhiteSpace(value) ? null : value;
-    }
-
-    private static bool GetOptionalBool(string name, bool defaultValue = false)
-    {
-        var value = GetOptionalEnv(name);
-        return bool.TryParse(value, out var parsed) ? parsed : defaultValue;
     }
 
     private static string GetRequiredEnv(string name)

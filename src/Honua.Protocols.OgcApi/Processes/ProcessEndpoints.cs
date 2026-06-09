@@ -85,7 +85,7 @@ internal static class ProcessEndpoints
             .ExcludeFromDescription();
 
         // HANDLER-AUTHORIZED (#1144): the handler calls
-        // IGeoprocessingJobService.EnsureCallerAuthorized for Process+Execute
+        // IGeoprocessingJobService.EnsureCallerAuthorizedAsync for Process+Execute
         // before reading the body so unauthenticated callers get 401 ahead of
         // 400. Marked AllowAnonymous so the audit architecture guard records
         // the explicit decision.
@@ -195,10 +195,11 @@ internal static class ProcessEndpoints
 
         try
         {
-            jobService.EnsureCallerAuthorized(
+            await jobService.EnsureCallerAuthorizedAsync(
                 context.User,
                 OperatorResourceType.Process,
-                OperatorOperation.Execute);
+                OperatorOperation.Execute,
+                context.RequestAborted).ConfigureAwait(false);
 
             var definition = string.Equals(processId, CanonicalProcessId, StringComparison.OrdinalIgnoreCase)
                 ? null
@@ -218,11 +219,19 @@ internal static class ProcessEndpoints
             OgcExecuteRequest? request;
             try
             {
-                request = await JsonSerializer.DeserializeAsync(
-                    context.Request.Body,
-                    OgcProcessesJsonContext.Default.OgcExecuteRequest,
+                var bodyRead = await RequestBodySizeGuard.ReadUtf8TextAsync(
+                    context,
+                    RequestBodySizeGuard.ResolveMaxBodyBytes(context),
                     context.RequestAborted)
                     .ConfigureAwait(false);
+                if (bodyRead.TooLarge)
+                {
+                    return bodyRead.ErrorResult!;
+                }
+
+                request = JsonSerializer.Deserialize(
+                    bodyRead.Body ?? string.Empty,
+                    OgcProcessesJsonContext.Default.OgcExecuteRequest);
             }
             catch (JsonException)
             {

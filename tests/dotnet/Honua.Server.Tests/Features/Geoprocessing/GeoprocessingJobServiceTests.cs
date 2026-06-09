@@ -78,7 +78,7 @@ public sealed class GeoprocessingJobServiceTests
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public void ValidatePlan_DoesNotCheckAuth_AdapterResponsibility()
     {
-        // Auth is the adapter's responsibility (EnsureCallerAuthorized) so the
+        // Auth is the adapter's responsibility (EnsureCallerAuthorizedAsync) so the
         // service method must succeed even when the evaluator would deny access.
         _authEvaluator
             .EvaluateAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>(), Arg.Any<CancellationToken>())

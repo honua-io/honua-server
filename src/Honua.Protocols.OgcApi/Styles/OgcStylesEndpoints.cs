@@ -2,9 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
-using System.IO;
 using System.Text;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Styling.Abstractions;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Protocols.Ogc.Api.Styles.Handlers;
@@ -12,6 +13,7 @@ using Honua.Protocols.Ogc.Api.Styles.Models;
 using Honua.Protocols.Ogc.Common;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
 
 namespace Honua.Protocols.Ogc.Api.Styles;
@@ -97,7 +99,9 @@ public static class OgcStylesEndpoints
             .Produces(StatusCodes.Status204NoContent)
             .Produces(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status404NotFound)
-            .Produces(StatusCodes.Status415UnsupportedMediaType);
+            .Produces(StatusCodes.Status413PayloadTooLarge)
+            .Produces(StatusCodes.Status415UnsupportedMediaType)
+            .RequireAdminAuthorization();
 
         group.MapPost(string.Empty, CreateStyle)
             .WithDisplayName("Create Style")
@@ -107,7 +111,9 @@ public static class OgcStylesEndpoints
             .Produces(StatusCodes.Status201Created)
             .Produces(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status409Conflict)
-            .Produces(StatusCodes.Status415UnsupportedMediaType);
+            .Produces(StatusCodes.Status413PayloadTooLarge)
+            .Produces(StatusCodes.Status415UnsupportedMediaType)
+            .RequireAdminAuthorization();
 
         group.MapDelete("/{styleId}", DeleteStyle)
             .WithDisplayName("Delete Style")
@@ -115,7 +121,8 @@ public static class OgcStylesEndpoints
             .WithSummary("Delete a style (manage-styles)")
             .WithDescription("Deletes a standalone style from the independent style catalog (ADR-0048 Phase 2).")
             .Produces(StatusCodes.Status204NoContent)
-            .Produces(StatusCodes.Status404NotFound);
+            .Produces(StatusCodes.Status404NotFound)
+            .RequireAdminAuthorization();
     }
 
     /// <summary>
@@ -316,6 +323,7 @@ public static class OgcStylesEndpoints
         string styleId,
         HttpContext context,
         IOgcStyleProjection projection,
+        IOptions<LimitsOptions> limitsOptions,
         ILoggerFactory loggerFactory,
         CancellationToken cancellationToken = default)
     {
@@ -330,11 +338,16 @@ public static class OgcStylesEndpoints
                 "manage-styles accepts MapLibre/Mapbox style JSON (application/vnd.mapbox.style+json or application/json) or Esri drawingInfo (application/vnd.esri.drawinginfo+json).");
         }
 
-        string body;
-        using (var reader = new StreamReader(context.Request.Body, Encoding.UTF8))
+        var bodyRead = await RequestBodySizeGuard.ReadUtf8TextAsync(
+            context,
+            RequestBodySizeGuard.ResolveMaxBodyBytes(limitsOptions),
+            cancellationToken).ConfigureAwait(false);
+        if (bodyRead.TooLarge)
         {
-            body = await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
+            return bodyRead.ErrorResult!;
         }
+
+        var body = bodyRead.Body;
 
         if (string.IsNullOrWhiteSpace(body))
         {
@@ -388,6 +401,7 @@ public static class OgcStylesEndpoints
     private static async Task<IResult> CreateStyle(
         HttpContext context,
         IOgcStyleProjection projection,
+        IOptions<LimitsOptions> limitsOptions,
         ILoggerFactory loggerFactory,
         CancellationToken cancellationToken = default)
     {
@@ -400,11 +414,16 @@ public static class OgcStylesEndpoints
                 "manage-styles create accepts only MapLibre/Mapbox style JSON (application/vnd.mapbox.style+json or application/json).");
         }
 
-        string body;
-        using (var reader = new StreamReader(context.Request.Body, Encoding.UTF8))
+        var bodyRead = await RequestBodySizeGuard.ReadUtf8TextAsync(
+            context,
+            RequestBodySizeGuard.ResolveMaxBodyBytes(limitsOptions),
+            cancellationToken).ConfigureAwait(false);
+        if (bodyRead.TooLarge)
         {
-            body = await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
+            return bodyRead.ErrorResult!;
         }
+
+        var body = bodyRead.Body;
 
         if (string.IsNullOrWhiteSpace(body))
         {

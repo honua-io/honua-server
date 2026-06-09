@@ -63,8 +63,11 @@ public sealed class PlanAnalysisToolTests
         body.GetProperty("warnings").EnumerateArray()
             .Should().Contain(w => w.GetProperty("code").GetString() == "mutable_source_cache_warning");
 
-        _jobService.Received(1).EnsureCallerAuthorized(
-            Arg.Any<ClaimsPrincipal>(), OperatorResourceType.Process, OperatorOperation.Read);
+        await _jobService.Received(1).EnsureCallerAuthorizedAsync(
+            Arg.Any<ClaimsPrincipal>(),
+            OperatorResourceType.Process,
+            OperatorOperation.Read,
+            Arg.Any<CancellationToken>());
     }
 
     [UnitTest]

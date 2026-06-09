@@ -10,6 +10,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Tiles;
 using Honua.Infrastructure.Authentication;
@@ -352,8 +353,11 @@ internal static partial class TilesEndpoints
         [FromServices] IOptions<TileOptions> tileOptions,
         [FromServices] IOptions<LimitsOptions> limitsOptions)
     {
-        // TODO(#1144): wire tenant filter — resolve ITenantContext from context.RequestServices
-        // and reject (or scope) tile requests whose collectionId is not visible to the caller's tenant.
+        if (!TryRequireTenantContext(context, out var tenantError))
+        {
+            return tenantError!;
+        }
+
         var request = context.Request;
         var f = OgcCommonUtilities.GetQueryValue(request, "f");
         var datetime = OgcCommonUtilities.GetQueryValue(request, "datetime");
@@ -1552,6 +1556,22 @@ internal static partial class TilesEndpoints
             MetadataV2GeometryType.MultiPolygon => TileRenderer.GeometryKind.MultiPolygon,
             _ => TileRenderer.GeometryKind.Unknown
         };
+
+    private static bool TryRequireTenantContext(HttpContext context, out IResult? error)
+    {
+        var tenantContext = context.RequestServices.GetService<ITenantContext>();
+        if (tenantContext is not null && tenantContext.RequireTenantId(out var tenantId, out _))
+        {
+            Activity.Current?.SetTag("honua.tenant_id", tenantId);
+            error = null;
+            return true;
+        }
+
+        error = StandardErrorHelpers.CreateForbidden(
+            context,
+            "Tenant context is required to access collection tiles.");
+        return false;
+    }
 
     private sealed record TileRequestLayer(
         string CollectionId,

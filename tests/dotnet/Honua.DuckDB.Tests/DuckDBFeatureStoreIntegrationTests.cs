@@ -22,6 +22,7 @@ public class DuckDBFeatureStoreIntegrationTests : IAsyncLifetime
     private DuckDBFeatureStore _store = null!;
     private DuckDBLayerRegistry _registry = null!;
     private string _connectionString = null!;
+    private DuckDBSpatialBootstrap _spatialBootstrap = null!;
     private const int LayerId = 0;
 
     public async Task InitializeAsync()
@@ -33,8 +34,10 @@ public class DuckDBFeatureStoreIntegrationTests : IAsyncLifetime
         await using var seedConnection = new DuckDBConnection(_connectionString);
         await seedConnection.OpenAsync();
 
-        await ExecuteAsync(seedConnection, "INSTALL spatial");
-        await ExecuteAsync(seedConnection, "LOAD spatial");
+        _spatialBootstrap = new DuckDBSpatialBootstrap(
+            extensionPath: null,
+            logger: NullLogger<DuckDBSpatialBootstrap>.Instance);
+        await _spatialBootstrap.EnsureSpatialExtensionAsync(seedConnection, CancellationToken.None);
 
         await ExecuteAsync(seedConnection, """
             CREATE TABLE parcels (
@@ -78,7 +81,7 @@ public class DuckDBFeatureStoreIntegrationTests : IAsyncLifetime
         };
 
         _registry = new DuckDBLayerRegistry([mapping]);
-        var connectionProvider = new FileDuckDBConnectionProvider(_connectionString);
+        var connectionProvider = new FileDuckDBConnectionProvider(_connectionString, _spatialBootstrap);
         var queryBuilder = new DuckDBFeatureQueryBuilder(_registry);
         var dataAccess = new DuckDBFeatureDataAccess(
             connectionProvider,
@@ -92,6 +95,7 @@ public class DuckDBFeatureStoreIntegrationTests : IAsyncLifetime
 
     public Task DisposeAsync()
     {
+        _spatialBootstrap?.Dispose();
         try { File.Delete(_dbPath); } catch { /* best effort cleanup */ }
         try { File.Delete(_dbPath + ".wal"); } catch { /* best effort cleanup */ }
         return Task.CompletedTask;
@@ -349,10 +353,12 @@ public class DuckDBFeatureStoreIntegrationTests : IAsyncLifetime
     private sealed class FileDuckDBConnectionProvider : Core.Features.Infrastructure.Abstractions.IDatabaseConnectionProvider
     {
         private readonly string _connectionString;
+        private readonly DuckDBSpatialBootstrap _spatialBootstrap;
 
-        public FileDuckDBConnectionProvider(string connectionString)
+        public FileDuckDBConnectionProvider(string connectionString, DuckDBSpatialBootstrap spatialBootstrap)
         {
             _connectionString = connectionString;
+            _spatialBootstrap = spatialBootstrap;
         }
 
         public string GetConnectionString() => _connectionString;
@@ -361,9 +367,7 @@ public class DuckDBFeatureStoreIntegrationTests : IAsyncLifetime
         {
             var conn = new DuckDBConnection(_connectionString);
             await conn.OpenAsync(ct);
-            await using var cmd = conn.CreateCommand();
-            cmd.CommandText = "LOAD spatial";
-            await cmd.ExecuteNonQueryAsync(ct);
+            await _spatialBootstrap.EnsureSpatialExtensionAsync(conn, ct);
             return conn;
         }
 

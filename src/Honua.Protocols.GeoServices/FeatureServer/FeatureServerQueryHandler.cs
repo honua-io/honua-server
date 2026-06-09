@@ -1089,7 +1089,7 @@ internal sealed partial class FeatureServerQueryHandler(
                 return _streamingResult;
             }
 
-            return StandardErrorHelpers.CreateInternalServerError(context, "DIAG2: " + ex.GetType().Name + ": " + ex.Message + " || " + (ex.StackTrace ?? ""));
+            return StandardErrorHelpers.CreateInternalServerError(context, "Query execution failed");
         }
         finally
         {

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.FeatureStore.Domain;
+using System.Text.Json.Serialization;
 
 namespace Honua.Core.Features.Security.Domain;
 
@@ -23,6 +24,7 @@ public class DataConnection
     /// <summary>
     /// Connection string for the data source.
     /// </summary>
+    [JsonIgnore]
     public string ConnectionString { get; set; } = string.Empty;
 
     /// <summary>
@@ -53,6 +55,7 @@ public class DataConnection
     /// <summary>
     /// Additional configuration properties.
     /// </summary>
+    [JsonIgnore]
     public Dictionary<string, object> Properties { get; set; } = new();
 
     /// <summary>

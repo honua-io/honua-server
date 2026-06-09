@@ -173,7 +173,7 @@ internal sealed class OracleFeatureDataAccess
             command.Parameters.Add(new OracleParameter(name, value));
         }
 
-        OracleFeatureLog.QueryPrepared(_logger, query.Sql, query.WhereParameters.Count);
+        OracleFeatureLog.QueryPrepared(_logger, query.WhereParameters.Count);
         return command;
     }
 

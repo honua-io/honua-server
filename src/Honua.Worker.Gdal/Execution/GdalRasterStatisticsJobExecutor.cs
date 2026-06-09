@@ -81,8 +81,7 @@ internal sealed partial class GdalRasterStatisticsJobExecutor(
             return JobExecutionResult.Failed($"Invalid {processId} inputs: {bandError}");
         }
 
-        var workspace = Path.Combine(opts.ScratchRoot, job.OperationId);
-        Directory.CreateDirectory(workspace);
+        var workspace = GdalScratch.CreateWorkspace(opts.ScratchRoot, job.OperationId);
         try
         {
             var inputPath = Path.Combine(workspace, "input.tif");
@@ -131,12 +130,14 @@ internal sealed partial class GdalRasterStatisticsJobExecutor(
             }
             catch (JsonException ex)
             {
+                Log.OutputParseFailed(logger, job.OperationId, ex);
                 return JobExecutionResult.Failed(
-                    $"gdalinfo returned output that could not be parsed as JSON: {ex.Message}");
+                    "gdalinfo returned output that could not be parsed as JSON.");
             }
             catch (InvalidOperationException ex)
             {
-                return JobExecutionResult.Failed(ex.Message);
+                Log.OutputProjectionFailed(logger, job.OperationId, ex);
+                return JobExecutionResult.Failed("gdalinfo output did not contain the required raster statistics.");
             }
 
             var payload = Encoding.UTF8.GetBytes(scalar);
@@ -352,5 +353,13 @@ internal sealed partial class GdalRasterStatisticsJobExecutor(
         [LoggerMessage(9285, LogLevel.Information,
             "GDAL raster statistics executor completed job {OperationId}: process={ProcessId}, bytes={Bytes}")]
         public static partial void OperationCompleted(ILogger logger, string operationId, string processId, long bytes);
+
+        [LoggerMessage(9286, LogLevel.Warning,
+            "GDAL raster statistics executor could not parse gdalinfo JSON for job {OperationId}")]
+        public static partial void OutputParseFailed(ILogger logger, string operationId, Exception exception);
+
+        [LoggerMessage(9287, LogLevel.Warning,
+            "GDAL raster statistics executor could not project scalar statistics for job {OperationId}")]
+        public static partial void OutputProjectionFailed(ILogger logger, string operationId, Exception exception);
     }
 }

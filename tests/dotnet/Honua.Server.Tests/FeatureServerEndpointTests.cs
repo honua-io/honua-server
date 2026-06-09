@@ -2801,7 +2801,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
 
         try
         {
-            _fixture.UpdateV2ResourceAttributeRules(TestLayerId, [rule]);
+            await _fixture.UpdateV2ResourceAttributeRulesAsync(TestLayerId, [rule]);
 
             var editsRequest = new ApplyEditsRequest
             {
@@ -2841,7 +2841,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         }
         finally
         {
-            _fixture.UpdateV2ResourceAttributeRules(TestLayerId, null);
+            await _fixture.UpdateV2ResourceAttributeRulesAsync(TestLayerId, null);
         }
     }
 
@@ -2862,7 +2862,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
 
         try
         {
-            _fixture.UpdateV2ResourceAttributeRules(TestLayerId, [rule]);
+            await _fixture.UpdateV2ResourceAttributeRulesAsync(TestLayerId, [rule]);
 
             var editsRequest = new ApplyEditsRequest
             {
@@ -2894,7 +2894,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         }
         finally
         {
-            _fixture.UpdateV2ResourceAttributeRules(TestLayerId, null);
+            await _fixture.UpdateV2ResourceAttributeRulesAsync(TestLayerId, null);
         }
     }
 
@@ -2914,7 +2914,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
 
         try
         {
-            _fixture.UpdateV2ResourceAttributeRules(TestLayerId, [rule]);
+            await _fixture.UpdateV2ResourceAttributeRulesAsync(TestLayerId, [rule]);
 
             var editsRequest = new ApplyEditsRequest
             {
@@ -2942,7 +2942,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         }
         finally
         {
-            _fixture.UpdateV2ResourceAttributeRules(TestLayerId, null);
+            await _fixture.UpdateV2ResourceAttributeRulesAsync(TestLayerId, null);
         }
     }
 

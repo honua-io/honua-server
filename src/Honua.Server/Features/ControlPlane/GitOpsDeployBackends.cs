@@ -294,7 +294,7 @@ internal sealed partial class AzureContainerAppsRevisionDeployBackend(
                 Status = WorkflowOperationStatus.Failed,
                 ProviderOperationId = operation.ProviderOperationId,
                 ObservedRevision = operation.ObservedState,
-                Message = ex.Message
+                Message = "Container Apps state lookup failed."
             };
         }
     }
@@ -704,7 +704,7 @@ internal sealed partial class AzureFunctionsGitOpsDeployBackend(
                 Status = WorkflowOperationStatus.Failed,
                 ProviderOperationId = operation.ProviderOperationId,
                 ObservedRevision = operation.ObservedState,
-                Message = ex.Message
+                Message = "Azure Functions state lookup failed."
             };
         }
     }

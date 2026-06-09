@@ -155,7 +155,10 @@ internal static class OgcTileCacheExportEndpoints
         }
         catch (ArgumentException ex)
         {
-            await AdminResponseWriter.WriteErrorAsync(context, ex.Message, StatusCodes.Status400BadRequest);
+            await AdminResponseWriter.WriteErrorAsync(
+                context,
+                ImportValidationErrorMessage.FromArgument(ex, "Invalid tile-cache export request."),
+                StatusCodes.Status400BadRequest);
             return;
         }
 

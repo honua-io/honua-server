@@ -46,7 +46,7 @@ internal sealed class ConfigurationValidator : IConfigurationValidator, IConfigu
     public IEnumerable<string> ValidateConfiguration(IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(configuration);
-        return ValidateAllAsync().GetAwaiter().GetResult().AllErrors;
+        return ValidateRegisteredOptions(isDevelopment: false, isTest: false).AllErrors;
     }
 
     /// <summary>
@@ -68,20 +68,16 @@ internal sealed class ConfigurationValidator : IConfigurationValidator, IConfigu
     /// <summary>
     /// Validates all registered configuration options at startup.
     /// </summary>
-    public async Task<ConfigurationValidationSummary> ValidateAllAsync(bool isDevelopment = false, bool isTest = false)
+    public Task<ConfigurationValidationSummary> ValidateAllAsync(bool isDevelopment = false, bool isTest = false)
+        => Task.FromResult(ValidateRegisteredOptions(isDevelopment, isTest));
+
+    private ConfigurationValidationSummary ValidateRegisteredOptions(bool isDevelopment, bool isTest)
     {
         var results = new List<OptionsValidationResult>();
-        var validationTasks = new List<Task<OptionsValidationResult>>();
 
         foreach (var registration in _registeredOptions.Values)
         {
-            validationTasks.Add(ValidateOptionsTypeAsync(registration, isDevelopment, isTest));
-        }
-
-        if (validationTasks.Count > 0)
-        {
-            var completedResults = await Task.WhenAll(validationTasks).ConfigureAwait(false);
-            results.AddRange(completedResults);
+            results.Add(ValidateOptionsType(registration, isDevelopment, isTest));
         }
 
         var summary = new ConfigurationValidationSummary(results);
@@ -147,7 +143,7 @@ internal sealed class ConfigurationValidator : IConfigurationValidator, IConfigu
         throw new InvalidOperationException($"Options type {typeof(TOptions).Name} has not been registered for validation");
     }
 
-    private async Task<OptionsValidationResult> ValidateOptionsTypeAsync(
+    private OptionsValidationResult ValidateOptionsType(
         IConfigurationOptionsRegistration registration,
         bool isDevelopment,
         bool isTest)

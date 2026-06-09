@@ -42,10 +42,11 @@ public sealed class AnalysisReportServiceTests
             new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, "op")], "Test")),
             CancellationToken.None);
 
-        jobService.Received(1).EnsureCallerAuthorized(
+        await jobService.Received(1).EnsureCallerAuthorizedAsync(
             Arg.Any<ClaimsPrincipal>(),
             OperatorResourceType.Job,
-            OperatorOperation.Read);
+            OperatorOperation.Read,
+            Arg.Any<CancellationToken>());
 
         report.JobId.Should().Be("job-1");
         report.ReportContractVersion.Should().Be(ReportingConstants.ContractVersionV1);

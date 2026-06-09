@@ -709,11 +709,9 @@ internal sealed partial class RedisLeaderElection : IDistributedLeaderElection, 
         }
     }
 
-    // Synchronous Dispose offloads the async release to a thread-pool task and waits with
-    // a bounded timeout. Running through Task.Run avoids reentrancy on the caller's
-    // SynchronizationContext (the classic sync-over-async deadlock); the timeout ensures
-    // we never block forever on a wedged Redis. Prefer DisposeAsync for deterministic
-    // release without any blocking wait.
+    // Synchronous Dispose cannot wait on Redis without risking sync-over-async stalls.
+    // Prefer DisposeAsync for deterministic release; Dispose schedules a bounded
+    // best-effort release and stops local heartbeat state immediately.
     public void Dispose()
     {
         if (_disposed)
@@ -725,16 +723,7 @@ internal sealed partial class RedisLeaderElection : IDistributedLeaderElection, 
 
         if (_isLeader && _useRedis && _redisDb != null)
         {
-            try
-            {
-                Task.Run(ReleaseLeadershipOnDisposeAsync).Wait(_disposeReleaseTimeout);
-            }
-            catch (Exception ex)
-            {
-                // ReleaseLeadershipOnDisposeAsync swallows its own exceptions; this guard
-                // covers scheduling failures (e.g., AggregateException from Task.Wait).
-                Log.LeadershipError(_logger, "dispose", ex);
-            }
+            _ = Task.Run(ReleaseLeadershipOnDisposeAsync);
         }
 
         _isLeader = false;
@@ -767,7 +756,7 @@ internal sealed partial class RedisLeaderElection : IDistributedLeaderElection, 
     {
         try
         {
-            await ReleaseLeadershipAsync(CancellationToken.None)
+            await ReleaseRedisLockOnlyAsync()
                 .WaitAsync(_disposeReleaseTimeout)
                 .ConfigureAwait(false);
         }
@@ -778,6 +767,24 @@ internal sealed partial class RedisLeaderElection : IDistributedLeaderElection, 
         catch (Exception ex)
         {
             Log.LeadershipError(_logger, "dispose", ex);
+        }
+    }
+
+    private async Task ReleaseRedisLockOnlyAsync()
+    {
+        if (_redisDb is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _redisDb.LockReleaseAsync(_lockKey, _instanceId).ConfigureAwait(false);
+            Log.LeadershipReleased(_logger, _instanceId);
+        }
+        catch (Exception ex)
+        {
+            Log.LeadershipError(_logger, "dispose-release", ex);
         }
     }
 

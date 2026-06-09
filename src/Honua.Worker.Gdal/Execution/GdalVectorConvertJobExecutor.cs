@@ -99,8 +99,7 @@ internal sealed partial class GdalVectorConvertJobExecutor(
             ? sourceMeta.Extension
             : ".dat";
 
-        var workspace = Path.Combine(opts.ScratchRoot, job.OperationId);
-        Directory.CreateDirectory(workspace);
+        var workspace = GdalScratch.CreateWorkspace(opts.ScratchRoot, job.OperationId);
         try
         {
             var inputPath = Path.Combine(workspace, "input" + sourceExtension);

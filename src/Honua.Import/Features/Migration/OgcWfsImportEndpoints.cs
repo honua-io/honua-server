@@ -139,7 +139,10 @@ internal static class OgcWfsImportEndpoints
         }
         catch (ArgumentException ex)
         {
-            await AdminResponseWriter.WriteErrorAsync(context, ex.Message, StatusCodes.Status400BadRequest);
+            await AdminResponseWriter.WriteErrorAsync(
+                context,
+                ImportValidationErrorMessage.FromArgument(ex, "Invalid WFS import request."),
+                StatusCodes.Status400BadRequest);
             return;
         }
 

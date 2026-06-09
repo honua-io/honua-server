@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Security.Domain;
 using Honua.TestKit.Attributes;
+using System.Text.Json;
 using Xunit;
 
 namespace Honua.Core.Security.Tests;
@@ -72,5 +73,28 @@ public sealed class DataConnectionTests
 
         Assert.Equal(sslMode, connection.SslMode);
         Assert.Equal("postgis", connection.NormalizedProvider);
+    }
+
+    [SecurityTest]
+    [Fact]
+    public void Serialize_DoesNotEmitRawConnectionString()
+    {
+        var connection = new DataConnection
+        {
+            Name = "analytics",
+            ConnectionString = "Host=db.example.com;Username=app;Password=secret",
+            SecretRef = "vault://connections/analytics",
+            Properties = new Dictionary<string, object>
+            {
+                ["token"] = "secret-token"
+            }
+        };
+
+        var json = JsonSerializer.Serialize(connection);
+
+        Assert.DoesNotContain("ConnectionString", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Password=secret", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("secret-token", json, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("SecretRef", json, StringComparison.OrdinalIgnoreCase);
     }
 }

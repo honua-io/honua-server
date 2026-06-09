@@ -70,8 +70,9 @@ internal sealed class AppPackageResource : IMcpResource
     {
         McpTelemetry.EnrichActivity("GetAppPackage");
         var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
-        _jobService.EnsureCallerAuthorized(
-            principal, OperatorResourceType.Package, OperatorOperation.Read);
+        await _jobService.EnsureCallerAuthorizedAsync(
+                principal, OperatorResourceType.Package, OperatorOperation.Read, cancellationToken)
+            .ConfigureAwait(false);
 
         var packageId = uri[McpResourceUris.AppPackagesPrefix.Length..];
         McpLog.ResourceRead(_logger, Family, uri);

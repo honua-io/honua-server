@@ -255,7 +255,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 }
                 catch (InvalidDataException ex)
                 {
-                    errorMessage = ex.Message;
+                    errorMessage = "Invalid GeoPackage import request.";
                     result = ImportResult.CreateFailure(
                         request.TableName,
                         format.Value,
@@ -559,9 +559,9 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         catch (InvalidDataException ex)
         {
             // Preserve the specific message (e.g. "Row X in row group Y contains
-            // invalid WKB geometry data") instead of collapsing to "Import failed."
+            // invalid WKB geometry data") after stripping unsafe environment details.
             ImportLog.ImportFailedWithException(_logger, ex, jobId, request.TableName);
-            errorMessage = ex.Message;
+            errorMessage = SanitizeInvalidDataMessage(ex);
             result = ImportResult.CreateFailure(
                 request.TableName,
                 format ?? SupportedFileFormat.GeoJson,
@@ -653,4 +653,24 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         "22P02" or "22P04" or "22023" => "the data could not be parsed for the target columns",
         _ => "an unexpected database error occurred",
     };
+
+    private static string SanitizeInvalidDataMessage(InvalidDataException exception)
+        => SanitizeImportValidationMessage(exception);
+
+    private static string SanitizeImportValidationMessage(Exception exception)
+    {
+        var message = string.IsNullOrWhiteSpace(exception.Message)
+            ? "Import file is invalid."
+            : exception.Message;
+
+        message = ImportErrorUrlRegex().Replace(message, "[redacted-url]");
+        message = ImportErrorAbsolutePathRegex().Replace(message, "[redacted-path]");
+        return message.Length <= 512 ? message : string.Concat(message.AsSpan(0, 512), "...");
+    }
+
+    [GeneratedRegex(@"https?://[^\s""'<>)]*", RegexOptions.IgnoreCase)]
+    private static partial Regex ImportErrorUrlRegex();
+
+    [GeneratedRegex(@"(?<![A-Za-z0-9_])(?:[A-Za-z]:\\|/)[^\s""'<>)]*", RegexOptions.IgnoreCase)]
+    private static partial Regex ImportErrorAbsolutePathRegex();
 }

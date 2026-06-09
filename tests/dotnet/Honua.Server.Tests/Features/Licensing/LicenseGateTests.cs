@@ -21,7 +21,7 @@ namespace Honua.Server.Tests.Features.Licensing;
 public sealed class LicenseGateTests
 {
     [UnitTest]
-    public void RequireEntitlement_MissingPaidEntitlement_ReturnsPaymentRequired()
+    public async Task RequireEntitlement_MissingPaidEntitlement_ReturnsPaymentRequired()
     {
         var context = BuildContext(HonuaEdition.Community);
 
@@ -32,7 +32,7 @@ public sealed class LicenseGateTests
             NullLogger.Instance);
 
         result.Should().NotBeNull();
-        GetStatusCode(result!).Should().Be(StatusCodes.Status402PaymentRequired);
+        (await GetStatusCodeAsync(result!)).Should().Be(StatusCodes.Status402PaymentRequired);
     }
 
     [UnitTest]
@@ -72,7 +72,7 @@ public sealed class LicenseGateTests
         };
     }
 
-    private static int? GetStatusCode(IResult result)
+    private static async Task<int?> GetStatusCodeAsync(IResult result)
     {
         if (result is IStatusCodeHttpResult statusCodeResult)
         {
@@ -80,7 +80,7 @@ public sealed class LicenseGateTests
         }
 
         var context = new DefaultHttpContext { Response = { Body = new MemoryStream() } };
-        result.ExecuteAsync(context).GetAwaiter().GetResult();
+        await result.ExecuteAsync(context);
         return context.Response.StatusCode;
     }
 }

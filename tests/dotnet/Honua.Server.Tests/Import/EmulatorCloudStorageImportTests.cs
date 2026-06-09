@@ -119,10 +119,7 @@ public sealed class EmulatorAwsS3CloudStorageImportTests : IAsyncLifetime
     public async Task Upload_MultiLayerFileGdbViaS3CloudStaging_FailsWithoutMergingLayers()
     {
         var fileGdbPath = Path.Combine(AppContext.BaseDirectory, "TestData", "FileGdb", "testopenfilegdb.gdb.zip");
-        if (!File.Exists(fileGdbPath))
-        {
-            return; // Skip if test data not available
-        }
+        File.Exists(fileGdbPath).Should().BeTrue("the FileGDB fixture must be copied to the test output");
 
         var fileGdbBytes = await File.ReadAllBytesAsync(fileGdbPath);
         var tableName = $"s3_fgdb_{Guid.NewGuid().ToString("N")[..8]}";
