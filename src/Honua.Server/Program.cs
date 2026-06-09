@@ -1079,6 +1079,7 @@ app.MapAdminLayerStyleEndpoints();
 app.MapAdminLayerFieldConfigurationEndpoints();
 app.MapAdminLayerAuthoringEndpoints();
 app.MapAdminLayerMetadataAuthoringEndpoints();
+app.MapAdminLayerAdvancedMetadataAuthoringEndpoints();
 app.MapAdminLayerFilterConfigurationEndpoints();
 app.MapReplicaManagementEndpoints();
 app.MapAdminLayerValidationEndpoints();
