@@ -438,6 +438,82 @@ public sealed record DeployOperationSpec
     /// Opaque backend-specific parameters.
     /// </summary>
     public IReadOnlyDictionary<string, string> Parameters { get; init; } = new Dictionary<string, string>();
+
+    /// <summary>
+    /// Optional progressive canary ramp that advances the deploy through a sequence of
+    /// canary traffic weights with a per-step telemetry gate between steps. When null the
+    /// deploy uses the default single-step bake-then-promote behavior.
+    /// </summary>
+    public CanaryRampSpec? CanaryRamp { get; init; }
+}
+
+/// <summary>
+/// Optional multi-step canary ramp configuration. Each step shifts an increasing share of
+/// traffic to the canary and bakes for a configured duration before the telemetry gate is
+/// evaluated; a breach at any step triggers automatic rollback. The terminal step promotes
+/// the deploy to full traffic.
+/// </summary>
+public sealed record CanaryRampSpec
+{
+    /// <summary>
+    /// Ordered canary traffic weights as whole percentages (for example <c>[5, 25, 50, 100]</c>).
+    /// Values must be strictly increasing in the range 1-100, and the final value must be 100.
+    /// </summary>
+    public required IReadOnlyList<int> StepWeights { get; init; } = Array.Empty<int>();
+
+    /// <summary>
+    /// Bake duration applied at each ramp step before its telemetry gate is evaluated.
+    /// </summary>
+    public required TimeSpan StepBakeDuration { get; init; }
+
+    /// <summary>
+    /// Zero-based index of the ramp step the deploy is currently baking at. Advanced by the
+    /// reconciler each time a step's telemetry gate passes.
+    /// </summary>
+    public int CurrentStepIndex { get; init; }
+
+    /// <summary>
+    /// Time the current ramp step began baking. Used to enforce the per-step bake duration
+    /// independently of the operation's overall warmup window.
+    /// </summary>
+    public DateTimeOffset? CurrentStepStartedAt { get; init; }
+
+    /// <summary>
+    /// Whether the ramp configuration is well-formed: at least one step, strictly increasing
+    /// weights within 1-100, and a terminal weight of 100.
+    /// </summary>
+    public bool IsValid =>
+        StepWeights.Count > 0 &&
+        StepBakeDuration > TimeSpan.Zero &&
+        StepWeights[^1] == 100 &&
+        StepWeights.All(static weight => weight is >= 1 and <= 100) &&
+        IsStrictlyIncreasing(StepWeights);
+
+    /// <summary>
+    /// Canary weight for the current ramp step, or null when the ramp has no steps.
+    /// </summary>
+    public int? CurrentStepWeight =>
+        CurrentStepIndex >= 0 && CurrentStepIndex < StepWeights.Count
+            ? StepWeights[CurrentStepIndex]
+            : null;
+
+    /// <summary>
+    /// Whether the current step is the terminal (100%) ramp step.
+    /// </summary>
+    public bool IsFinalStep => CurrentStepIndex >= StepWeights.Count - 1;
+
+    private static bool IsStrictlyIncreasing(IReadOnlyList<int> weights)
+    {
+        for (var index = 1; index < weights.Count; index++)
+        {
+            if (weights[index] <= weights[index - 1])
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
 }
 
 /// <summary>

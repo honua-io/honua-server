@@ -553,8 +553,28 @@ if (replicaProvider != DataProviderNames.DuckDb &&
     // providers register the NoOp stub (SupportsVersioning=false) in their ServiceCollectionExtensions.
     builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IVersionManager>(sp =>
         new Honua.Postgres.Features.FeatureStore.Services.PostgresVersionManager(
-            sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IDatabaseConnectionProvider>()));
+            sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IDatabaseConnectionProvider>(),
+            schemaName: null,
+            versionLock: sp.GetRequiredService<Honua.Core.Features.FeatureStore.Abstractions.IVersionLock>()));
 }
+
+// Branch-versioning durable lock + async job runtime (#1553). The Redis-backed version lock serializes
+// reconcile/post/resolve per (service, version) across replicas; the Redis-backed job store makes the
+// async reconcile/post job pollable and restart-durable. Both degrade to single-node in-process/in-memory
+// fallbacks when Redis is not configured. The job runner wraps the synchronous reconcile/post engine in a
+// durable, pollable job and is provider-agnostic (it adapts to the registered IVersionManager). These are
+// registered for every provider so the version-management endpoints can resolve them uniformly; for
+// non-Postgres providers the NoOp version manager rejects reconcile/post, so the lock/store/runner stay
+// inert.
+builder.Services.AddSingleton<Honua.Core.Features.FeatureStore.Abstractions.IVersionLock>(sp =>
+    new Honua.Infrastructure.Coordination.RedisVersionLock(
+        sp.GetService<StackExchange.Redis.IConnectionMultiplexer>(),
+        sp.GetRequiredService<ILogger<Honua.Infrastructure.Coordination.RedisVersionLock>>()));
+builder.Services.AddSingleton<Honua.Core.Features.FeatureStore.Abstractions.IVersionJobStore>(sp =>
+    new Honua.Infrastructure.Coordination.RedisVersionJobStore(
+        sp.GetService<StackExchange.Redis.IConnectionMultiplexer>()));
+builder.Services.AddSingleton<Honua.Core.Features.FeatureStore.Abstractions.IVersionJobRunner,
+    Honua.Core.Features.FeatureStore.Services.VersionJobRunner>();
 builder.Services.AddScoped<Honua.Protocols.GeoServices.FeatureServer.IReplicaStore>(sp =>
     new Honua.Protocols.GeoServices.FeatureServer.Services.CachingReplicaStore(
         sp.GetRequiredService<Honua.Protocols.GeoServices.FeatureServer.DistributedReplicaStore>(),

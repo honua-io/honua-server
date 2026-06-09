@@ -12,6 +12,8 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Geometry.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
@@ -88,6 +90,15 @@ public static class ServiceRbacTestFixture
                     services.AddSingleton<ICoordinateTransformService, TestCoordinateTransformService>();
                     services.AddSingleton<IGeometryTopologyValidator, NoOpGeometryTopologyValidator>();
                     configureServices?.Invoke(services);
+
+                    // #1548: feature editing is a Pro entitlement. These RBAC suites assert
+                    // role-based authorization (403/200) on write endpoints like applyEdits, so
+                    // the host must be Pro-licensed or the edit gate would 402 before RBAC runs.
+                    var proLicense = new TestLicenseEntitlementService(HonuaEdition.Pro);
+                    services.RemoveAll<ILicenseEntitlementService>();
+                    services.RemoveAll<ILicenseStatusProvider>();
+                    services.AddSingleton<ILicenseEntitlementService>(proLicense);
+                    services.AddSingleton<ILicenseStatusProvider>(proLicense);
 
                     services.AddAuthentication()
                         .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(TestAuthHandler.SchemeName, _ => { });

@@ -79,6 +79,15 @@ public static class FeatureCatalog
     public const string BranchVersioningKey = "editing.branch-versioning";
 
     /// <summary>
+    /// Entitlement key for multi-user feature editing — create/update/delete features via the
+    /// shared edit/transaction pipeline (FeatureServer applyEdits/add/update/delete, OGC API
+    /// Features mutations, WFS-T, OData CRUD, and gRPC edits). Pro-tier; Community deployments
+    /// remain read + serve + one-shot file import (#1548). One-shot file import (<c>import.file</c>)
+    /// and Enterprise branch versioning (<c>editing.branch-versioning</c>) are separate entitlements.
+    /// </summary>
+    public const string FeatureEditsKey = "editing.feature-edits";
+
+    /// <summary>
     /// All edition-gated features in the platform.
     /// </summary>
     public static IReadOnlyList<FeatureDefinition> All { get; } =
@@ -218,6 +227,10 @@ public static class FeatureCatalog
             HonuaEdition.Pro, "Export print jobs as PDF files."),
         new("printing.layout-templates", "Print Layout Templates", Categories.Printing,
             HonuaEdition.Pro, "Use full print layout templates beyond MAP_ONLY."),
+
+        // Editing — Pro (multi-user feature editing across all write protocols)
+        new(FeatureEditsKey, "Feature Editing", Categories.Editing,
+            HonuaEdition.Pro, "Create, update, and delete features through the shared edit pipeline — FeatureServer applyEdits/add/update/delete, OGC API Features mutations, WFS-T, OData CRUD, and gRPC edits."),
 
         // Editing — Enterprise (Esri-style branch versioning; Postgres-only)
         new(BranchVersioningKey, "Branch Versioning", Categories.Editing,

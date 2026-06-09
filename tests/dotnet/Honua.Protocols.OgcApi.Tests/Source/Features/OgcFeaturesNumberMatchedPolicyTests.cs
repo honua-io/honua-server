@@ -9,6 +9,8 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Configuration;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 
@@ -17,7 +19,7 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 [Operation(Operations.Query)]
 public sealed class OgcFeaturesNumberMatchedPolicyTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture()
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
         .ConfigureWebHost(builder =>
             builder.ConfigureAppConfiguration((_, configBuilder) =>
                 configBuilder.AddInMemoryCollection(new Dictionary<string, string?>

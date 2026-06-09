@@ -13,6 +13,8 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
 using Xunit.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests;
 
@@ -27,7 +29,7 @@ namespace Honua.Server.Tests;
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class StreamingFeatureServerEndpointTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _webAppFixture = new();
+    private readonly WebAppFixture _webAppFixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
     private readonly ITestOutputHelper _output;
 
     public StreamingFeatureServerEndpointTests(ITestOutputHelper output)
@@ -248,7 +250,7 @@ public sealed class StreamingFeatureServerEndpointTests : IAsyncLifetime
 [Collection("Database.CoreEndpoints")]
 public sealed class FeatureServerEndpointTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
     private const string TestServiceId = "test";
     private const int TestLayerId = 0;
 
