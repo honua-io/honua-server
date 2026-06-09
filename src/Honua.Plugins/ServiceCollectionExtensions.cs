@@ -37,7 +37,12 @@ public static class ServiceCollectionExtensions
         configure?.Invoke(builder);
 
         services.TryAddSingleton(new PluginCatalog(builder.Registrations));
-        services.TryAddSingleton<IPluginEditPipeline, PluginEditPipeline>();
+        // Scoped, not singleton: the pipeline consumes the scoped IAuditLog (PostgresAuditLog
+        // needs a per-request DB connection), so a singleton would be a captive dependency that
+        // fails ValidateScopes/ValidateOnBuild in Development. Its only consumer —
+        // FeatureServerEditsDependencies — is itself scoped, and the validators/hooks it
+        // aggregates are singletons (safe to consume from a scoped service).
+        services.TryAddScoped<IPluginEditPipeline, PluginEditPipeline>();
 
         return services;
     }

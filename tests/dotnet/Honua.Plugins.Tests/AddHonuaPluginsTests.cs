@@ -87,6 +87,29 @@ public sealed class AddHonuaPluginsTests
     }
 
     [Fact]
+    public void Pipeline_DoesNotCaptureScopedDependencies_UnderValidateScopes()
+    {
+        // Regression (#347): IAuditLog is registered scoped by the server (PostgresAuditLog needs
+        // a per-request connection). The pipeline must therefore not be a singleton, or it becomes
+        // a captive dependency that fails ValidateScopes/ValidateOnBuild — which ASP.NET enables in
+        // Development, breaking unrelated host-startup tests.
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Enterprise));
+        services.AddScoped<IAuditLog>(_ => new RecordingAuditLog()); // mirrors the server's scoped registration
+        services.AddHonuaPlugins(new ConfigurationBuilder().Build(), p => p.Add<UtilityValidationPlugin>());
+
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions
+        {
+            ValidateOnBuild = true,
+            ValidateScopes = true,
+        });
+
+        using var scope = provider.CreateScope();
+        scope.ServiceProvider.GetRequiredService<IPluginEditPipeline>().HasPlugins.Should().BeTrue();
+    }
+
+    [Fact]
     public void PluginSdk_EntitlementIsEnterprise()
     {
         var feature = FeatureCatalog.All.SingleOrDefault(f => f.Key == FeatureCatalog.PluginSdkKey);
