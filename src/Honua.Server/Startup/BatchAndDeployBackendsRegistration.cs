@@ -34,11 +34,26 @@ internal static class BatchAndDeployBackendsRegistration
         services.AddSingleton<IDeployTargetRegistry, ConfigurationDeployTargetRegistry>();
         services.AddSingleton<IExecutionJobDefinitionRegistry, ConfigurationExecutionJobDefinitionRegistry>();
         services.AddSingleton<DeployWorkflowService>();
-        services.AddSingleton<IDeployTelemetrySignalEvaluator, PrometheusDeployTelemetrySignalEvaluator>();
+
+        // Multi-provider deploy telemetry gate. The dispatcher selects a provider evaluator by the
+        // telemetry connection's Provider; Prometheus is always available, CloudWatch is added with
+        // the rest of the AWS surface.
+        services.AddSingleton<IDeployTelemetryProviderEvaluator, PrometheusDeployTelemetryProviderEvaluator>();
+#if !HONUA_EXCLUDE_AWS
+        services.AddSingleton<ICloudWatchMetricClient, AwsSdkCloudWatchMetricClient>();
+        services.AddSingleton<IDeployTelemetryProviderEvaluator, CloudWatchDeployTelemetryProviderEvaluator>();
+#endif
+        services.AddSingleton<IDeployTelemetrySignalEvaluator, DeployTelemetrySignalEvaluator>();
+
+        // Shared Kubernetes API request factory (in-cluster / out-of-cluster auth) consumed
+        // by both the Argo Rollouts deploy client and the Kubernetes Job batch client.
+        services.AddSingleton<KubernetesApiRequestFactory>();
+        services.AddSingleton<IArgoRolloutsClient, ArgoRolloutsClient>();
 
         // Deploy backend concrete singletons. Order matters for the IEnumerable<IDeployBackend>
         // resolution below — keep the existing K8s/AWS/Azure ordering.
         services.AddSingleton<KubernetesGitOpsDeployBackend>();
+        services.AddSingleton<KubernetesArgoRolloutsDeployBackend>();
 #if !HONUA_EXCLUDE_AWS
         services.AddSingleton<AwsEcsGitOpsDeployBackend>();
         services.AddSingleton<AwsEcsAlbDeployBackend>();
@@ -54,6 +69,7 @@ internal static class BatchAndDeployBackendsRegistration
         services.AddSingleton<AzureFunctionsGitOpsDeployBackend>();
 #endif
         services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<KubernetesGitOpsDeployBackend>());
+        services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<KubernetesArgoRolloutsDeployBackend>());
 #if !HONUA_EXCLUDE_AWS
         services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AwsEcsGitOpsDeployBackend>());
         services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AwsEcsAlbDeployBackend>());

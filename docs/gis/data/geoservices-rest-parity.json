@@ -1602,33 +1602,35 @@
     {
       "id": "geometry-service",
       "displayName": "Geometry Service",
-      "parity": "partial",
+      "parity": "complete",
       "drillDownDoc": "docs/gis/geometry-service-matrix.md",
       "implementedSurface": [
-        "buffer",
-        "simplify",
-        "project",
-        "intersect",
-        "union",
-        "clip",
-        "difference",
-        "supplemental area",
-        "supplemental length"
+        "Geometry Service metadata",
+        "Buffer",
+        "Simplify",
+        "Project",
+        "Intersect",
+        "Union",
+        "Clip",
+        "Difference",
+        "Areas and Lengths",
+        "Lengths",
+        "Distance",
+        "Relation",
+        "Densify",
+        "Convex Hull",
+        "Generalize",
+        "Label Points",
+        "Cut",
+        "Trim/Extend",
+        "Offset",
+        "Auto Complete",
+        "Reshape",
+        "Find Transformations",
+        "To Geo Coordinate String",
+        "From Geo Coordinate String"
       ],
-      "knownGaps": [
-        "GeometryServer root metadata resource",
-        "areasAndLengths",
-        "lengths",
-        "distance",
-        "offset",
-        "relation",
-        "reshape",
-        "cut",
-        "convexHull",
-        "densify",
-        "labelPoints",
-        "trimExtend"
-      ],
+      "knownGaps": [],
       "evidence": {
         "code": [
           "src/Honua.Server/Features/Protocols/GeoServices/GeometryService/GeometryServiceEndpoints.cs",
@@ -1645,6 +1647,19 @@
       "operations": {
         "implemented": [
           {
+            "name": "Geometry Service metadata",
+            "esriPath": "/Utilities/Geometry/GeometryServer",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/Utilities/Geometry/GeometryServer",
+              "POST /rest/services/Utilities/Geometry/GeometryServer"
+            ],
+            "notes": "ArcGIS-style service descriptor (currentVersion, serviceDescription, maxBufferCount, maxSimplifyCount)."
+          },
+          {
             "name": "Buffer",
             "esriPath": "/GeometryServer/buffer",
             "methods": [
@@ -1652,8 +1667,8 @@
               "POST"
             ],
             "honuaEndpoints": [
-              "GET /rest/services/geometry/buffer",
-              "POST /rest/services/geometry/buffer"
+              "GET /rest/services/Utilities/Geometry/GeometryServer/buffer",
+              "POST /rest/services/Utilities/Geometry/GeometryServer/buffer"
             ]
           },
           {
@@ -1664,8 +1679,8 @@
               "POST"
             ],
             "honuaEndpoints": [
-              "GET /rest/services/geometry/simplify",
-              "POST /rest/services/geometry/simplify"
+              "GET /rest/services/Utilities/Geometry/GeometryServer/simplify",
+              "POST /rest/services/Utilities/Geometry/GeometryServer/simplify"
             ]
           },
           {
@@ -1676,8 +1691,8 @@
               "POST"
             ],
             "honuaEndpoints": [
-              "GET /rest/services/geometry/project",
-              "POST /rest/services/geometry/project"
+              "GET /rest/services/Utilities/Geometry/GeometryServer/project",
+              "POST /rest/services/Utilities/Geometry/GeometryServer/project"
             ]
           },
           {
@@ -1688,8 +1703,8 @@
               "POST"
             ],
             "honuaEndpoints": [
-              "GET /rest/services/geometry/intersect",
-              "POST /rest/services/geometry/intersect"
+              "GET /rest/services/Utilities/Geometry/GeometryServer/intersect",
+              "POST /rest/services/Utilities/Geometry/GeometryServer/intersect"
             ]
           },
           {
@@ -1700,8 +1715,8 @@
               "POST"
             ],
             "honuaEndpoints": [
-              "GET /rest/services/geometry/union",
-              "POST /rest/services/geometry/union"
+              "GET /rest/services/Utilities/Geometry/GeometryServer/union",
+              "POST /rest/services/Utilities/Geometry/GeometryServer/union"
             ]
           },
           {
@@ -1712,8 +1727,8 @@
               "POST"
             ],
             "honuaEndpoints": [
-              "GET /rest/services/geometry/clip",
-              "POST /rest/services/geometry/clip"
+              "GET /rest/services/Utilities/Geometry/GeometryServer/clip",
+              "POST /rest/services/Utilities/Geometry/GeometryServer/clip"
             ],
             "notes": "Uses the envelope of the clip geometry."
           },
@@ -1725,17 +1740,8 @@
               "POST"
             ],
             "honuaEndpoints": [
-              "GET /rest/services/geometry/difference",
-              "POST /rest/services/geometry/difference"
-            ]
-          }
-        ],
-        "notImplemented": [
-          {
-            "name": "Geometry Service metadata",
-            "esriPath": "/Utilities/Geometry/GeometryServer",
-            "methods": [
-              "GET"
+              "GET /rest/services/Utilities/Geometry/GeometryServer/difference",
+              "POST /rest/services/Utilities/Geometry/GeometryServer/difference"
             ]
           },
           {
@@ -1744,14 +1750,62 @@
             "methods": [
               "GET",
               "POST"
-            ]
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/Utilities/Geometry/GeometryServer/areasAndLengths",
+              "POST /rest/services/Utilities/Geometry/GeometryServer/areasAndLengths"
+            ],
+            "notes": "Supports calculationType (planar/geodesic/preserveShape), areaUnit, lengthUnit."
           },
           {
-            "name": "Auto Complete",
-            "esriPath": "/GeometryServer/autoComplete",
+            "name": "Lengths",
+            "esriPath": "/GeometryServer/lengths",
             "methods": [
               "GET",
               "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/Utilities/Geometry/GeometryServer/lengths",
+              "POST /rest/services/Utilities/Geometry/GeometryServer/lengths"
+            ],
+            "notes": "Supports calculationType and lengthUnit."
+          },
+          {
+            "name": "Distance",
+            "esriPath": "/GeometryServer/distance",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/Utilities/Geometry/GeometryServer/distance",
+              "POST /rest/services/Utilities/Geometry/GeometryServer/distance"
+            ],
+            "notes": "Supports distanceUnit and geodesic."
+          },
+          {
+            "name": "Relation",
+            "esriPath": "/GeometryServer/relation",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/Utilities/Geometry/GeometryServer/relation",
+              "POST /rest/services/Utilities/Geometry/GeometryServer/relation"
+            ],
+            "notes": "Esri relation set plus DE-9IM (relationParam)."
+          },
+          {
+            "name": "Densify",
+            "esriPath": "/GeometryServer/densify",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/Utilities/Geometry/GeometryServer/densify",
+              "POST /rest/services/Utilities/Geometry/GeometryServer/densify"
             ]
           },
           {
@@ -1760,38 +1814,10 @@
             "methods": [
               "GET",
               "POST"
-            ]
-          },
-          {
-            "name": "Cut",
-            "esriPath": "/GeometryServer/cut",
-            "methods": [
-              "GET",
-              "POST"
-            ]
-          },
-          {
-            "name": "Densify",
-            "esriPath": "/GeometryServer/densify",
-            "methods": [
-              "GET",
-              "POST"
-            ]
-          },
-          {
-            "name": "Distance",
-            "esriPath": "/GeometryServer/distance",
-            "methods": [
-              "GET",
-              "POST"
-            ]
-          },
-          {
-            "name": "Find Transformations",
-            "esriPath": "/GeometryServer/findTransformations",
-            "methods": [
-              "GET",
-              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/Utilities/Geometry/GeometryServer/convexHull",
+              "POST /rest/services/Utilities/Geometry/GeometryServer/convexHull"
             ]
           },
           {
@@ -1800,6 +1826,10 @@
             "methods": [
               "GET",
               "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/Utilities/Geometry/GeometryServer/generalize",
+              "POST /rest/services/Utilities/Geometry/GeometryServer/generalize"
             ]
           },
           {
@@ -1808,38 +1838,22 @@
             "methods": [
               "GET",
               "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/Utilities/Geometry/GeometryServer/labelPoints",
+              "POST /rest/services/Utilities/Geometry/GeometryServer/labelPoints"
             ]
           },
           {
-            "name": "Lengths",
-            "esriPath": "/GeometryServer/lengths",
+            "name": "Cut",
+            "esriPath": "/GeometryServer/cut",
             "methods": [
               "GET",
               "POST"
-            ]
-          },
-          {
-            "name": "Offset",
-            "esriPath": "/GeometryServer/offset",
-            "methods": [
-              "GET",
-              "POST"
-            ]
-          },
-          {
-            "name": "Relation",
-            "esriPath": "/GeometryServer/relation",
-            "methods": [
-              "GET",
-              "POST"
-            ]
-          },
-          {
-            "name": "Reshape",
-            "esriPath": "/GeometryServer/reshape",
-            "methods": [
-              "GET",
-              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/Utilities/Geometry/GeometryServer/cut",
+              "POST /rest/services/Utilities/Geometry/GeometryServer/cut"
             ]
           },
           {
@@ -1848,9 +1862,90 @@
             "methods": [
               "GET",
               "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/Utilities/Geometry/GeometryServer/trimExtend",
+              "POST /rest/services/Utilities/Geometry/GeometryServer/trimExtend"
             ]
+          },
+          {
+            "name": "Offset",
+            "esriPath": "/GeometryServer/offset",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/Utilities/Geometry/GeometryServer/offset",
+              "POST /rest/services/Utilities/Geometry/GeometryServer/offset"
+            ],
+            "notes": "Supports offsetUnit, offsetHow (rounded/bevelled/mitered), bevelRatio."
+          },
+          {
+            "name": "Auto Complete",
+            "esriPath": "/GeometryServer/autoComplete",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/Utilities/Geometry/GeometryServer/autoComplete",
+              "POST /rest/services/Utilities/Geometry/GeometryServer/autoComplete"
+            ]
+          },
+          {
+            "name": "Reshape",
+            "esriPath": "/GeometryServer/reshape",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/Utilities/Geometry/GeometryServer/reshape",
+              "POST /rest/services/Utilities/Geometry/GeometryServer/reshape"
+            ]
+          },
+          {
+            "name": "Find Transformations",
+            "esriPath": "/GeometryServer/findTransformations",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/Utilities/Geometry/GeometryServer/findTransformations",
+              "POST /rest/services/Utilities/Geometry/GeometryServer/findTransformations"
+            ],
+            "notes": "Returns an empty list; Honua applies CRS transforms through its PROJ-backed projection pipeline."
+          },
+          {
+            "name": "To Geo Coordinate String",
+            "esriPath": "/GeometryServer/toGeoCoordinateString",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/Utilities/Geometry/GeometryServer/toGeoCoordinateString",
+              "POST /rest/services/Utilities/Geometry/GeometryServer/toGeoCoordinateString"
+            ],
+            "notes": "Supports MGRS and USNG."
+          },
+          {
+            "name": "From Geo Coordinate String",
+            "esriPath": "/GeometryServer/fromGeoCoordinateString",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/Utilities/Geometry/GeometryServer/fromGeoCoordinateString",
+              "POST /rest/services/Utilities/Geometry/GeometryServer/fromGeoCoordinateString"
+            ],
+            "notes": "Supports MGRS and USNG."
           }
-        ]
+        ],
+        "notImplemented": []
       },
       "supplementalRoutes": [
         {
@@ -1908,10 +2003,10 @@
         ]
       },
       "knownLimitations": [
-        "Honua does not expose a GeometryServer root metadata endpoint.",
-        "Only JSON-style responses are supported.",
+        "Only JSON-style responses are supported (json/pjson); Esri html output is not supported.",
         "clip uses the envelope of the supplied clip geometry, not the full clip shape.",
-        "The implemented area and length routes are Honua-specific helpers rather than drop-in replacements for Esri areasAndLengths and lengths."
+        "findTransformations returns an empty transformation list because Honua applies CRS transformations through its PROJ-backed projection pipeline rather than exposing the discrete Esri geographic-transformation catalog; project still performs the correct datum transform.",
+        "toGeoCoordinateString / fromGeoCoordinateString support MGRS and USNG; the remaining Esri conversion types (UTM, GARS, GEOREF, DD, DDM, DMS) return a clear 400."
       ]
     },
     {

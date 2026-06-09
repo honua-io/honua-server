@@ -232,7 +232,7 @@ public sealed class BranchVersioningIntegrationTests : IAsyncLifetime
                 versionContext: VersionContext.ForVersion(version)),
             CancellationToken.None);
 
-        var result = await versionManager.ReconcileAsync(version.VersionId, CancellationToken.None);
+        var result = await versionManager.ReconcileAsync(version.VersionId, cancellationToken: CancellationToken.None);
 
         result.CanPost.Should().BeTrue();
         result.Conflicts.Should().BeEmpty();
@@ -257,7 +257,7 @@ public sealed class BranchVersioningIntegrationTests : IAsyncLifetime
             CancellationToken.None);
         await store.UpdateAsync(PointsLayerId, BuildFeature("Conflict-Default", 7.9, 7.9, feature.Id), CancellationToken.None);
 
-        var reconcile = await versionManager.ReconcileAsync(version.VersionId, CancellationToken.None);
+        var reconcile = await versionManager.ReconcileAsync(version.VersionId, cancellationToken: CancellationToken.None);
         reconcile.CanPost.Should().BeFalse();
         reconcile.Conflicts.Should().ContainSingle(c => c.ObjectId == feature.Id);
 
@@ -287,7 +287,7 @@ public sealed class BranchVersioningIntegrationTests : IAsyncLifetime
                 versionContext: VersionContext.ForVersion(version)),
             CancellationToken.None);
 
-        var reconcile = await versionManager.ReconcileAsync(version.VersionId, CancellationToken.None);
+        var reconcile = await versionManager.ReconcileAsync(version.VersionId, cancellationToken: CancellationToken.None);
         reconcile.CanPost.Should().BeTrue();
 
         var post = await versionManager.PostAsync(version.VersionId, CancellationToken.None);
@@ -303,14 +303,189 @@ public sealed class BranchVersioningIntegrationTests : IAsyncLifetime
         names.Should().NotContain("Keep");
     }
 
+    [Fact]
+    public async Task Reconcile_DisjointFieldEdits_AutoMergesWithoutConflict()
+    {
+        var store = CreateFeatureStore();
+        var versionManager = CreateVersionManager();
+
+        // Base feature with two attribute fields.
+        var feature = await store.CreateAsync(
+            PointsLayerId, BuildFeatureWithFields(9.0, 9.0, ("name", "Disjoint"), ("status", "open")), CancellationToken.None);
+        var version = await versionManager.CreateAsync(
+            new CreateVersionRequest("Disjoint", "sde", VersionAccess.Public), CancellationToken.None);
+
+        // Branch edits only "name"; DEFAULT edits only "status" => disjoint, auto-mergeable.
+        await store.ApplyEditsAsync(
+            PointsLayerId,
+            FeatureEditBatch.Create(
+                updates: ImmutableArray.Create(BuildFeatureWithFields(9.0, 9.0, feature.Id, ("name", "Branch"), ("status", "open"))),
+                versionContext: VersionContext.ForVersion(version)),
+            CancellationToken.None);
+        await store.UpdateAsync(
+            PointsLayerId, BuildFeatureWithFields(9.0, 9.0, feature.Id, ("name", "Disjoint"), ("status", "closed")), CancellationToken.None);
+
+        var reconcile = await versionManager.ReconcileAsync(version.VersionId, cancellationToken: CancellationToken.None);
+        reconcile.Conflicts.Should().BeEmpty("disjoint field edits auto-merge");
+        reconcile.CanPost.Should().BeTrue();
+
+        var post = await versionManager.PostAsync(version.VersionId, CancellationToken.None);
+        post.Posted.Should().BeTrue();
+
+        // DEFAULT carries BOTH the branch's name and DEFAULT's status.
+        var rows = await store.QueryAsync(PointsLayerId, new FeatureQuery(), CancellationToken.None);
+        var merged = rows.Items.Single(f => f.Id == feature.Id);
+        FieldValue(merged, "name").Should().Be("Branch");
+        FieldValue(merged, "status").Should().Be("closed");
+    }
+
+    [Fact]
+    public async Task Reconcile_OverlappingFieldEdits_ReportsThreeWayConflict()
+    {
+        var store = CreateFeatureStore();
+        var versionManager = CreateVersionManager();
+
+        var feature = await store.CreateAsync(
+            PointsLayerId, BuildFeatureWithFields(10.0, 10.0, ("name", "Base"), ("status", "open")), CancellationToken.None);
+        var version = await versionManager.CreateAsync(
+            new CreateVersionRequest("Overlap", "sde", VersionAccess.Public), CancellationToken.None);
+
+        // Both edit "status" => overlapping field => genuine conflict with a 3-way report.
+        await store.ApplyEditsAsync(
+            PointsLayerId,
+            FeatureEditBatch.Create(
+                updates: ImmutableArray.Create(BuildFeatureWithFields(10.0, 10.0, feature.Id, ("name", "Base"), ("status", "branch"))),
+                versionContext: VersionContext.ForVersion(version)),
+            CancellationToken.None);
+        await store.UpdateAsync(
+            PointsLayerId, BuildFeatureWithFields(10.0, 10.0, feature.Id, ("name", "Base"), ("status", "default")), CancellationToken.None);
+
+        var reconcile = await versionManager.ReconcileAsync(version.VersionId, cancellationToken: CancellationToken.None);
+        reconcile.CanPost.Should().BeFalse();
+        var conflict = reconcile.Conflicts.Should().ContainSingle(c => c.ObjectId == feature.Id).Subject;
+        conflict.ConflictType.Should().Be(ReplicaConflictType.Attribute);
+        conflict.BaseAttributesJson.Should().Contain("open");
+        conflict.DefaultAttributesJson.Should().Contain("default");
+        conflict.VersionAttributesJson.Should().Contain("branch");
+
+        var statusDiff = conflict.FieldDiffs.Should().ContainSingle(d => d.Name == "status").Subject;
+        statusDiff.Base.Should().Contain("open");
+        statusDiff.Default.Should().Contain("default");
+        statusDiff.Version.Should().Contain("branch");
+
+        // The pending conflict is persisted and retrievable for a manual-resolution UI.
+        var pending = await versionManager.GetPendingConflictsAsync(version.VersionId, CancellationToken.None);
+        pending.Should().ContainSingle(c => c.ObjectId == feature.Id);
+    }
+
+    [Theory]
+    [InlineData(VersionReconcilePolicy.VersionWins, "branch")]
+    [InlineData(VersionReconcilePolicy.DefaultWins, "default")]
+    [InlineData(VersionReconcilePolicy.LastWriteWins, "default")]
+    public async Task Reconcile_WithPolicy_AutoResolvesAndPosts(VersionReconcilePolicy policy, string expectedStatus)
+    {
+        var store = CreateFeatureStore();
+        var versionManager = CreateVersionManager();
+
+        var feature = await store.CreateAsync(
+            PointsLayerId, BuildFeatureWithFields(11.0, 11.0, ("name", "Base"), ("status", "open")), CancellationToken.None);
+        var version = await versionManager.CreateAsync(
+            new CreateVersionRequest($"Policy_{policy}", "sde", VersionAccess.Public), CancellationToken.None);
+
+        // Branch edits status first, then DEFAULT edits status later (DEFAULT is the last write).
+        await store.ApplyEditsAsync(
+            PointsLayerId,
+            FeatureEditBatch.Create(
+                updates: ImmutableArray.Create(BuildFeatureWithFields(11.0, 11.0, feature.Id, ("name", "Base"), ("status", "branch"))),
+                versionContext: VersionContext.ForVersion(version)),
+            CancellationToken.None);
+        await store.UpdateAsync(
+            PointsLayerId, BuildFeatureWithFields(11.0, 11.0, feature.Id, ("name", "Base"), ("status", "default")), CancellationToken.None);
+
+        var reconcile = await versionManager.ReconcileAsync(version.VersionId, policy, CancellationToken.None);
+        reconcile.CanPost.Should().BeTrue("policy auto-resolves the conflict");
+        reconcile.AutoResolvedCount.Should().Be(1);
+        reconcile.Conflicts.Should().BeEmpty();
+
+        var post = await versionManager.PostAsync(version.VersionId, CancellationToken.None);
+        post.Posted.Should().BeTrue();
+
+        var rows = await store.QueryAsync(PointsLayerId, new FeatureQuery(), CancellationToken.None);
+        var resolved = rows.Items.Single(f => f.Id == feature.Id);
+        FieldValue(resolved, "status").Should().Be(expectedStatus);
+    }
+
+    [Fact]
+    public async Task ResolveConflicts_TakeVersion_ClearsConflictAndPostsVersionImage()
+    {
+        var store = CreateFeatureStore();
+        var versionManager = CreateVersionManager();
+
+        var feature = await store.CreateAsync(
+            PointsLayerId, BuildFeatureWithFields(12.0, 12.0, ("name", "Base"), ("status", "open")), CancellationToken.None);
+        var version = await versionManager.CreateAsync(
+            new CreateVersionRequest("ManualResolve", "sde", VersionAccess.Public), CancellationToken.None);
+
+        await store.ApplyEditsAsync(
+            PointsLayerId,
+            FeatureEditBatch.Create(
+                updates: ImmutableArray.Create(BuildFeatureWithFields(12.0, 12.0, feature.Id, ("name", "Base"), ("status", "branch"))),
+                versionContext: VersionContext.ForVersion(version)),
+            CancellationToken.None);
+        await store.UpdateAsync(
+            PointsLayerId, BuildFeatureWithFields(12.0, 12.0, feature.Id, ("name", "Base"), ("status", "default")), CancellationToken.None);
+
+        var reconcile = await versionManager.ReconcileAsync(version.VersionId, cancellationToken: CancellationToken.None);
+        reconcile.CanPost.Should().BeFalse();
+
+        // Manual resolution: take the version side. Post is blocked until resolved.
+        var blocked = await versionManager.PostAsync(version.VersionId, CancellationToken.None);
+        blocked.BlockedByConflicts.Should().BeTrue();
+
+        var resolution = new VersionConflictResolution(PointsLayerId, feature.Id, VersionConflictResolutionChoice.TakeVersion);
+        var outcome = await versionManager.ResolveConflictsAsync(
+            version.VersionId, new[] { resolution }, CancellationToken.None);
+        outcome.Resolved.Should().Be(1);
+        outcome.Remaining.Should().Be(0);
+        outcome.CanPost.Should().BeTrue();
+
+        (await versionManager.GetPendingConflictsAsync(version.VersionId, CancellationToken.None))
+            .Should().BeEmpty();
+
+        var post = await versionManager.PostAsync(version.VersionId, CancellationToken.None);
+        post.Posted.Should().BeTrue();
+
+        var rows = await store.QueryAsync(PointsLayerId, new FeatureQuery(), CancellationToken.None);
+        FieldValue(rows.Items.Single(f => f.Id == feature.Id), "status").Should().Be("branch");
+    }
+
     private static string NameOf(Feature feature)
         => feature.Attributes.TryGetValue("name", out var value) ? value?.ToString() ?? string.Empty : string.Empty;
+
+    private static string? FieldValue(Feature feature, string field)
+        => feature.Attributes.TryGetValue(field, out var value) ? value?.ToString() : null;
 
     private static Feature BuildFeature(string name, double x, double y, long id = 0)
     {
         var point = _geometryFactory.CreatePoint(new Coordinate(x, y));
         point.SRID = 4326;
         var attributes = ImmutableDictionary<string, object?>.Empty.Add("name", name);
+        return new Feature { Id = id, Geometry = _wkbWriter.Write(point), Attributes = attributes };
+    }
+
+    private static Feature BuildFeatureWithFields(double x, double y, params (string Key, object? Value)[] fields)
+        => BuildFeatureWithFields(x, y, 0, fields);
+
+    private static Feature BuildFeatureWithFields(double x, double y, long id, params (string Key, object? Value)[] fields)
+    {
+        var point = _geometryFactory.CreatePoint(new Coordinate(x, y));
+        point.SRID = 4326;
+        var attributes = ImmutableDictionary<string, object?>.Empty;
+        foreach (var (key, value) in fields)
+        {
+            attributes = attributes.SetItem(key, value);
+        }
+
         return new Feature { Id = id, Geometry = _wkbWriter.Write(point), Attributes = attributes };
     }
 

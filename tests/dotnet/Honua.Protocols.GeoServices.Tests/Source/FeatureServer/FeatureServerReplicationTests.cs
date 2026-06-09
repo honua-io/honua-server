@@ -10,6 +10,8 @@ using Honua.Protocols.GeoServices.FeatureServer;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
@@ -17,7 +19,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class FeatureServerReplicationTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
 
     public async Task InitializeAsync() => await _fixture.InitializeAsync();
 
@@ -28,7 +30,7 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
     public async Task CreateReplica_WhenPersistenceFails_ReturnsServiceUnavailable()
     {
-        var fixture = new WebAppFixture().ReplaceService<IReplicaStore>(new ThrowingReplicaStore());
+        var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro).ReplaceService<IReplicaStore>(new ThrowingReplicaStore());
         await fixture.InitializeAsync();
 
         try

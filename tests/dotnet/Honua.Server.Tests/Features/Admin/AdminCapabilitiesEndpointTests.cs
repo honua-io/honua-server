@@ -18,7 +18,7 @@ namespace Honua.Server.Tests.Features.Admin;
 /// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
-[Operation(Operations.Configuration)]
+[Operation(Operations.Metadata)]
 public sealed class AdminCapabilitiesEndpointTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();

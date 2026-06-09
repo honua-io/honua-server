@@ -682,6 +682,57 @@ approval check and the write (mitigating a TOCTOU race where a recomputed plan
 would otherwise roll back under a stale approval). Callers should re-read the
 operation and re-approve against the current plan.
 
+#### Deploy backends and traffic-shifting targets
+
+A deploy operation resolves to an `IDeployBackend` by the target's `Backend`
+name and `TargetKind`. The following backends are closed-loop: Honua observes
+real provider state and drives weighted promotion and automatic rollback through
+the leased reconciler and the telemetry gate, so the operation lifecycle reflects
+actual rollout state rather than `ManualInterventionRequired`.
+
+| Backend | TargetKind | Mechanism |
+|---|---|---|
+| `honua-aws-lambda-alias` | `AwsLambda` | Alias-weighted version traffic shifting |
+| `honua-aws-ecs-alb` | `AwsEcs` | ALB listener-rule weights across stable/canary services |
+| `honua-azure-container-apps-revision` | `AzureContainerApps` | Revision traffic splitting |
+| `honua-azure-functions-slot` | `AzureFunctions` | Deployment-slot swap |
+| `honua-kubernetes-argo-rollouts` | `Kubernetes` | Weighted canary + auto-rollback via an external [Argo Rollouts](https://argo-rollouts.readthedocs.io/) controller; status reflected into the operation lifecycle (ADR-0052) |
+
+The `honua-gitops-*` backends (including `honua-gitops-kubernetes`) remain
+available as a pure out-of-band GitOps passthrough: they hand the rollout to an
+external controller and return `ManualInterventionRequired` for observation.
+Honua is not positioning Flux or Argo CD as its primary control plane; the
+Kubernetes integration is Console-driven promotion with the GitOps manifest as
+the declarative artifact, not an autonomous pull-from-git reconciler. See the
+[Upgrade and Rollback Runbook](runbooks/UPGRADE_AND_ROLLBACK.md) for per-backend
+configuration and required parameters.
+#### Progressive multi-step canary ramp
+
+Deploy plan/create requests accept an optional progressive canary ramp through
+the operation `parameters` map. When present, the deploy advances the canary
+through a sequence of increasing traffic weights with a telemetry gate between
+every step and automatic rollback at any step; when absent, the deploy keeps the
+default single-step bake-then-promote behavior (no regression). The ramp stays
+behind the existing deploy backend and telemetry-gate abstractions, so the
+operation lifecycle and Console flow are unchanged.
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `deployment.canary_ramp.step_weights` | yes (to enable) | Comma-separated, strictly increasing whole percentages in `1-100`; the final value must be `100` (for example `5,25,50,100`). Presence enables the ramp. |
+| `deployment.canary_ramp.step_bake_seconds` | no | Per-step bake duration before each telemetry gate; defaults to `120`. |
+| `telemetry.connection` | yes | Telemetry connection used for the per-step gate. |
+
+Each step's canary share is driven through the backend-neutral
+`deployment.canary_weight_percentage` parameter that the weighted-traffic
+backends (AWS ECS + ALB, AWS Lambda, Azure Container Apps) already read; the
+plan endpoint blocks submission with a `Progressive canary ramp is invalid…`
+blocking reason when the ramp is configured but malformed. The gate uses
+absolute per-step thresholds (canary-vs-baseline delta comparison is not part of
+this ramp). The operation's `currentPhase` reports the active step, its weight,
+and the bake countdown. See the
+[Progressive Multi-Step Canary Ramp](runbooks/UPGRADE_AND_ROLLBACK.md#progressive-multi-step-canary-ramp)
+runbook section for the full lifecycle and operator notes.
+
 ### **Alert Management Endpoints**
 
 | Endpoint | Method | Purpose |

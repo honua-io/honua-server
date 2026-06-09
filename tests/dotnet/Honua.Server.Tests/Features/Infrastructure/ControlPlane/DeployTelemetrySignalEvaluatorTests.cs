@@ -303,7 +303,135 @@ public sealed class DeployTelemetrySignalEvaluatorTests
         capturedQueries.Should().BeEmpty();
     }
 
-    private static PrometheusDeployTelemetrySignalEvaluator CreateEvaluator(
+    [Fact]
+    public async Task EvaluateAsync_WithUnsupportedProvider_WaitsWithExplicitMessage_AndDoesNotQuery()
+    {
+        var capturedQueries = new ConcurrentQueue<string>();
+        var evaluator = CreateEvaluator(
+            capturedQueries,
+            connection: new DeployTelemetryConnectionOptions
+            {
+                ConnectionId = "prod-prom",
+                Provider = "datadog",
+                BaseUrl = "https://api.datadoghq.com",
+                TimeoutSeconds = 2
+            });
+
+        var decision = await evaluator.EvaluateAsync(CreateOperation(
+            DeployTargetKind.Kubernetes,
+            new Dictionary<string, string>
+            {
+                ["telemetry.connection"] = "prod-prom",
+                ["telemetry.prometheus.job"] = "honua-prod"
+            }));
+
+        decision.Should().NotBeNull();
+        decision!.WaitForMoreTelemetry.Should().BeTrue();
+        decision.RollbackRecommended.Should().BeFalse();
+        decision.Message.Should().Contain("datadog");
+        decision.Message.Should().Contain("not supported");
+        capturedQueries.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_SelectsProviderByConnectionProvider()
+    {
+        // Two providers registered; the connection's Provider ("fake-metrics") selects the fake
+        // one rather than Prometheus, proving dispatch is driven by the connection.
+        var fakeProvider = new FakeProviderEvaluator("fake-metrics", new DeployTelemetryReadings
+        {
+            SampleCount = 50,
+            ErrorRate = 0.01,
+            LatencyP95 = 120
+        });
+        var prometheusProvider = new PrometheusDeployTelemetryProviderEvaluator(
+            new StubHttpClientFactory(new HttpClient(new DelegateHttpMessageHandler(_ =>
+                throw new InvalidOperationException("Prometheus provider must not be invoked.")))));
+
+        var evaluator = new DeployTelemetrySignalEvaluator(
+            new TestControlPlaneOptionsMonitor(new ControlPlaneOptions
+            {
+                TelemetryConnections =
+                [
+                    new DeployTelemetryConnectionOptions
+                    {
+                        ConnectionId = "prod-metrics",
+                        Provider = "fake-metrics",
+                        BaseUrl = "https://example.com",
+                        TimeoutSeconds = 2
+                    }
+                ]
+            }),
+            [prometheusProvider, fakeProvider],
+            NullLogger<DeployTelemetrySignalEvaluator>.Instance);
+
+        var decision = await evaluator.EvaluateAsync(CreateOperation(
+            DeployTargetKind.AwsEcs,
+            new Dictionary<string, string>
+            {
+                ["telemetry.connection"] = "prod-metrics",
+                ["telemetry.policy"] = "aws-lambda-canary",
+                ["telemetry.error_rate.query"] = "errors / requests",
+                ["telemetry.error_rate.threshold"] = "0.05",
+                ["telemetry.latency_p95.query"] = "p95",
+                ["telemetry.latency_p95.threshold_ms"] = "2000",
+                ["telemetry.sample_count.query"] = "requests",
+                ["telemetry.sample_count.minimum"] = "10"
+            },
+            createdAt: DateTimeOffset.UtcNow.AddMinutes(-5)));
+
+        decision.Should().NotBeNull();
+        decision!.WaitForMoreTelemetry.Should().BeFalse();
+        decision.RollbackRecommended.Should().BeFalse();
+        fakeProvider.WasInvoked.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_ProviderReadingBreachesThreshold_RecommendsRollback()
+    {
+        var fakeProvider = new FakeProviderEvaluator("fake-metrics", new DeployTelemetryReadings
+        {
+            SampleCount = 50,
+            ErrorRate = 0.5,
+            LatencyP95 = 120
+        });
+
+        var evaluator = new DeployTelemetrySignalEvaluator(
+            new TestControlPlaneOptionsMonitor(new ControlPlaneOptions
+            {
+                TelemetryConnections =
+                [
+                    new DeployTelemetryConnectionOptions
+                    {
+                        ConnectionId = "prod-metrics",
+                        Provider = "fake-metrics",
+                        BaseUrl = "https://example.com",
+                        TimeoutSeconds = 2
+                    }
+                ]
+            }),
+            [fakeProvider],
+            NullLogger<DeployTelemetrySignalEvaluator>.Instance);
+
+        var decision = await evaluator.EvaluateAsync(CreateOperation(
+            DeployTargetKind.AwsEcs,
+            new Dictionary<string, string>
+            {
+                ["telemetry.connection"] = "prod-metrics",
+                ["telemetry.error_rate.query"] = "errors / requests",
+                ["telemetry.error_rate.threshold"] = "0.05",
+                ["telemetry.sample_count.query"] = "requests",
+                ["telemetry.sample_count.minimum"] = "10"
+            },
+            createdAt: DateTimeOffset.UtcNow.AddMinutes(-5)));
+
+        decision.Should().NotBeNull();
+        decision!.RollbackRecommended.Should().BeTrue();
+        decision.WaitForMoreTelemetry.Should().BeFalse();
+        decision.Message.Should().Contain("error rate");
+    }
+
+    private static DeployTelemetrySignalEvaluator CreateEvaluator(
         ConcurrentQueue<string> capturedQueries,
         DeployTelemetryConnectionOptions? connection = null,
         params string[] responses)
@@ -326,7 +454,10 @@ public sealed class DeployTelemetrySignalEvaluatorTests
             };
         });
 
-        return new PrometheusDeployTelemetrySignalEvaluator(
+        var prometheusProvider = new PrometheusDeployTelemetryProviderEvaluator(
+            new StubHttpClientFactory(new HttpClient(handler)));
+
+        return new DeployTelemetrySignalEvaluator(
             new TestControlPlaneOptionsMonitor(new ControlPlaneOptions
             {
                 TelemetryConnections =
@@ -340,8 +471,8 @@ public sealed class DeployTelemetrySignalEvaluatorTests
                     }
                 ]
             }),
-            new StubHttpClientFactory(new HttpClient(handler)),
-            NullLogger<PrometheusDeployTelemetrySignalEvaluator>.Instance);
+            [prometheusProvider],
+            NullLogger<DeployTelemetrySignalEvaluator>.Instance);
     }
 
     private static string[] CreateSuccessfulResponses(string sampleCount, string errorRate, string latencyP95)
@@ -409,5 +540,21 @@ public sealed class DeployTelemetrySignalEvaluatorTests
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
             => Task.FromResult(handler(request));
+    }
+
+    private sealed class FakeProviderEvaluator(string provider, DeployTelemetryReadings readings) : IDeployTelemetryProviderEvaluator
+    {
+        public string Provider => provider;
+
+        public bool WasInvoked { get; private set; }
+
+        public Task<DeployTelemetryReadings> ReadAsync(
+            DeployTelemetryPolicyDescriptor policy,
+            DeployTelemetryConnectionDescriptor connection,
+            CancellationToken cancellationToken)
+        {
+            WasInvoked = true;
+            return Task.FromResult(readings);
+        }
     }
 }

@@ -139,7 +139,10 @@ public static class OperationRegistry
         new(VersionManagementServer, "startEditing"),
         new(VersionManagementServer, "stopEditing"),
         new(VersionManagementServer, "reconcile"),
+        new(VersionManagementServer, "inspectConflicts"),
+        new(VersionManagementServer, "resolveConflicts"),
         new(VersionManagementServer, "post"),
+        new(VersionManagementServer, "jobStatus"),
     ];
 }
 

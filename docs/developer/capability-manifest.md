@@ -101,7 +101,7 @@ Example response excerpt, with required sections such as `packages` and `limits`
       {
         "key": "import.file",
         "active": true,
-        "minimumEdition": "Pro"
+        "minimumEdition": "Community"
       }
     ],
     "authorizationNotice": "Manifest availability is informational only; operation endpoints remain the source of truth for authorization, tenant, environment, license, and resource checks."
@@ -157,6 +157,8 @@ Package families under `packages.families` are `metadata-v2-graph`, `metadata-re
 `package.map` and `package.app` are policy-scoped package authoring capabilities. They do not require spatial analytics entitlements.
 
 `analysis.spatial` is an aggregate spatial analytics capability. It requires `features.query` policy and all four endpoint entitlements: `analytics.clustering`, `analytics.spatial-join`, `analytics.buffer-aggregate`, and `analytics.density`. If any required analytics entitlement is inactive, the aggregate capability is unavailable and the individual entitlement states remain visible under `policies.entitlements`.
+
+`edit.features` is the multi-user feature-editing capability. It requires the `features.edit` policy and the Pro `editing.feature-edits` entitlement, which gates the shared edit pipeline across FeatureServer applyEdits/add/update/delete, OGC API Features mutations, WFS-T, OData CRUD, and gRPC edits. Community deployments remain read + serve + one-shot file import (`import.file`); Esri-style branch versioning is the separate Enterprise `editing.branch-versioning` entitlement.
 
 Reason codes are stable client-facing strings:
 
