@@ -11,6 +11,7 @@ using Honua.TestKit.Helpers;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Infrastructure;
+using Honua.Core.Features.Licensing.Domain;
 
 namespace Honua.Server.Tests.Features.Protocols.OData;
 
@@ -23,7 +24,7 @@ namespace Honua.Server.Tests.Features.Protocols.OData;
 [Protocol(TestProtocols.ODataV4)]
 public sealed class ODataGeometryCrudTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
     private const int TestLayerId = 0;
 
     public async Task InitializeAsync()
@@ -449,7 +450,7 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
     public async Task CreateFeature_OnSrid3857Layer_MismatchedGeometryCrs_ReturnsBadRequest()
     {
         // Use the spatial-reference seed with SRID 3857 layers
-        var sridFixture = new WebAppFixture();
+        var sridFixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
         sridFixture.UseSeed(Path.Combine("tests", "seed", "spatial-reference.yaml"));
         await sridFixture.InitializeAsync();
 

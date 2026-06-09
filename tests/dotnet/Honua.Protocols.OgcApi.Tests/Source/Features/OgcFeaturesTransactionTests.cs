@@ -12,6 +12,8 @@ using Honua.Protocols.Ogc.Api.Features.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 
@@ -19,7 +21,7 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 [Protocol(TestProtocols.OgcApiFeatures)]
 public sealed class OgcFeaturesTransactionTests : IAsyncLifetime, IDisposable
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
     private const int TestLayerId = 0;
 
     public async Task InitializeAsync()
@@ -358,7 +360,7 @@ public sealed class OgcFeaturesTransactionTests : IAsyncLifetime, IDisposable
     [Endpoint("POST /ogc/features/collections/{collectionId}/items")]
     public async Task CreateFeature_WhenEventPublishFails_ReturnsCreated()
     {
-        await using var fixture = new WebAppFixture()
+        await using var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
             .ReplaceService<IFeatureChangeEventPublisher>(new ThrowingFeatureChangeEventPublisher());
         await fixture.InitializeAsync();
 
@@ -389,7 +391,7 @@ public sealed class OgcFeaturesTransactionTests : IAsyncLifetime, IDisposable
     [Endpoint("DELETE /ogc/features/collections/{collectionId}/items/{featureId}")]
     public async Task DeleteFeature_WhenEventPublishFails_ReturnsNoContent()
     {
-        await using var fixture = new WebAppFixture()
+        await using var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
             .ReplaceService<IFeatureChangeEventPublisher>(new ThrowingFeatureChangeEventPublisher());
         await fixture.InitializeAsync();
 
@@ -406,7 +408,7 @@ public sealed class OgcFeaturesTransactionTests : IAsyncLifetime, IDisposable
     [Endpoint("PUT /ogc/features/collections/{collectionId}/items/{featureId}")]
     public async Task UpdateFeature_WhenEventPublishFails_ReturnsUpdated()
     {
-        await using var fixture = new WebAppFixture()
+        await using var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
             .ReplaceService<IFeatureChangeEventPublisher>(new ThrowingFeatureChangeEventPublisher());
         await fixture.InitializeAsync();
 
@@ -439,7 +441,7 @@ public sealed class OgcFeaturesTransactionTests : IAsyncLifetime, IDisposable
     [Endpoint("PATCH /ogc/features/collections/{collectionId}/items/{featureId}")]
     public async Task PatchFeature_WhenEventPublishFails_ReturnsUpdated()
     {
-        await using var fixture = new WebAppFixture()
+        await using var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
             .ReplaceService<IFeatureChangeEventPublisher>(new ThrowingFeatureChangeEventPublisher());
         await fixture.InitializeAsync();
 

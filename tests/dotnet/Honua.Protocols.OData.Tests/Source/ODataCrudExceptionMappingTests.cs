@@ -12,6 +12,8 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using NSubstitute;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.OData;
 
@@ -95,7 +97,7 @@ public sealed class ODataCrudExceptionMappingTests
         writer.ApplyEditsAsync(default, default, default)
             .ReturnsForAnyArgs(_ => Task.FromException<FeatureEditResult>(exceptionFactory()));
 
-        return new WebAppFixture()
+        return new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
             .ReplaceService<IFeatureWriter>(writer);
     }
 
@@ -105,7 +107,7 @@ public sealed class ODataCrudExceptionMappingTests
         writer.ApplyEditsAsync(default, default, default)
             .ReturnsForAnyArgs(_ => Task.FromException<FeatureEditResult>(exceptionFactory()));
 
-        return new WebAppFixture()
+        return new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
             .ReplaceService<IFeatureWriter>(writer);
     }
 }

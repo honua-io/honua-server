@@ -1376,7 +1376,10 @@
         "VersionManagementServer::startEditing",
         "VersionManagementServer::stopEditing",
         "VersionManagementServer::reconcile",
-        "VersionManagementServer::post"
+        "VersionManagementServer::inspectConflicts",
+        "VersionManagementServer::resolveConflicts",
+        "VersionManagementServer::post",
+        "VersionManagementServer::jobStatus"
       ],
       "proofs": [
         {

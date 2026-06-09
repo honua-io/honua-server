@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Postgres.Features.Infrastructure;
 using Npgsql;
@@ -11,25 +12,46 @@ using Npgsql;
 namespace Honua.Postgres.Features.FeatureStore.Services;
 
 /// <summary>
-/// Postgres branch-versioning manager (#1272 Track B, ADR-0051). Owns gdb-version lifecycle over
-/// <c>honua.gdb_versions</c> + the overlay <c>honua.version_edits</c>. Reconcile/post are wired in a later
-/// slice; this manager provides create/delete/alter/list/resolve so versioned read/edit can be exercised
-/// end to end. A null or DEFAULT resolution always maps to the byte-identical base path.
+/// Postgres branch-versioning manager (#1272 Track B, ADR-0051; production hardening #1553). Owns
+/// gdb-version lifecycle over <c>honua.gdb_versions</c> + the overlay <c>honua.version_edits</c>, plus the
+/// reconcile/post merge workflow with #371 conflict resolution. Reconcile/post and a conflicting resolve
+/// run under a durable (service, version) <see cref="IVersionLock"/> so concurrent maintenance for the
+/// same version is serialized; large runs execute through the canonical async job runner. A null or
+/// DEFAULT resolution always maps to the byte-identical base path.
 /// </summary>
 internal sealed partial class PostgresVersionManager : IVersionManager
 {
     private const string DefaultVersionSentinel = "sde.default";
 
+    // The (service, version) maintenance lock auto-expires after this lease if a holder crashes
+    // mid-reconcile/post, so a stuck lock can never permanently wedge a version (#1553). The Redis
+    // handle renews the lease while the critical section runs.
+    private static readonly TimeSpan MaintenanceLockLease = TimeSpan.FromMinutes(15);
+
     private readonly IDatabaseConnectionProvider _connectionProvider;
     private readonly string? _schemaName;
+    private readonly IVersionLock _versionLock;
+    private readonly string _lockScope;
 
     /// <summary>Initializes the manager with the database connection provider.</summary>
     /// <param name="connectionProvider">Database connection provider.</param>
     /// <param name="schemaName">Optional schema hosting the DEFAULT <c>features</c> table; null for the search-path default.</param>
-    public PostgresVersionManager(IDatabaseConnectionProvider connectionProvider, string? schemaName = null)
+    /// <param name="versionLock">
+    /// Durable (service, version) lock that serializes reconcile/post/resolve for a version (#1553).
+    /// Defaults to a single-node in-process lock when none is supplied (development/test and single-node
+    /// deployments); the Redis-backed lock is injected in multi-replica deployments.
+    /// </param>
+    public PostgresVersionManager(
+        IDatabaseConnectionProvider connectionProvider,
+        string? schemaName = null,
+        IVersionLock? versionLock = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _schemaName = schemaName;
+        _versionLock = versionLock ?? new InProcessVersionLock();
+        // The version registry is scoped to the schema, so the schema name is the natural lock service
+        // scope; the version id makes the key globally unique within it.
+        _lockScope = string.IsNullOrWhiteSpace(schemaName) ? "honua.versioning" : schemaName!;
     }
 
     /// <inheritdoc />

@@ -27,6 +27,9 @@ using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
+using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.OData.Services;
 
@@ -307,6 +310,12 @@ public sealed class ODataBatchOperationHandlerTests
         services.AddSingleton(outputCacheInvalidationService);
         services.AddSingleton<IMetadataV2GraphProvider>(
             new TestMetadataV2GraphProvider(new TestMetadataV2GraphBuilder().Build()));
+
+        // #1548: batch/change-set writes are gated behind the Pro editing.feature-edits
+        // entitlement via RequestServices; register a Pro license for these handler unit tests.
+        var proLicense = new TestLicenseEntitlementService(HonuaEdition.Pro);
+        services.AddSingleton<ILicenseEntitlementService>(proLicense);
+        services.AddSingleton<ILicenseStatusProvider>(proLicense);
 
         var context = new DefaultHttpContext
         {

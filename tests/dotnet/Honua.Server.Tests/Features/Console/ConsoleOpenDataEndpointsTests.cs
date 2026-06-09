@@ -15,6 +15,8 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Console;
 
@@ -44,7 +46,7 @@ public sealed class ConsoleOpenDataEndpointsTests : IAsyncLifetime
 
     public ConsoleOpenDataEndpointsTests()
     {
-        _fixture = new WebAppFixture()
+        _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
             .UseSeed("tests/seed/server.yaml")
             .ConfigureWebHost(builder =>
             {

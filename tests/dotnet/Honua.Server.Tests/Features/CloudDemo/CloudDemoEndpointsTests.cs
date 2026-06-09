@@ -10,6 +10,8 @@ using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.CloudDemo;
 
@@ -25,7 +27,7 @@ public sealed class CloudDemoEndpointsTests : IAsyncLifetime
 
     public CloudDemoEndpointsTests()
     {
-        _fixture = new WebAppFixture()
+        _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
             .ConfigureWebHost(builder =>
             {
                 builder.ConfigureAppConfiguration((_, configBuilder) =>

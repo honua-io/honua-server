@@ -8,6 +8,8 @@ using Honua.Infrastructure.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 
@@ -15,7 +17,7 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 [Protocol(TestProtocols.OgcApiFeatures)]
 public class OgcFeaturesErrorHandlingTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
 
     public async Task InitializeAsync()
     {

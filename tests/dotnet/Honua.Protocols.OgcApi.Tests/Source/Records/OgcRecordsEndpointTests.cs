@@ -6,6 +6,8 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Records;
 
@@ -17,7 +19,7 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Records;
 public sealed class OgcRecordsEndpointTests : IAsyncLifetime
 {
     private const string CatalogId = "honua-catalog";
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
 
     public Task InitializeAsync() => _fixture.InitializeAsync();
 

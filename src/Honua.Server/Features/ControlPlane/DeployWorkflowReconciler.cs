@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Microsoft.Extensions.Hosting;
@@ -201,6 +202,20 @@ internal sealed partial class DeployWorkflowReconciler(
 
         if (current.Status is WorkflowOperationStatus.Submitted or WorkflowOperationStatus.Reconciling or WorkflowOperationStatus.Succeeded)
         {
+            // When a progressive canary ramp is configured the current step must finish its
+            // bake window before the telemetry gate is evaluated. Holding here keeps each step
+            // independent of the operation-wide warmup window and preserves single-step behavior
+            // (the default) when no ramp is configured. A backend-recommended rollback bypasses
+            // the hold so provider-detected failures still settle promptly.
+            if (string.IsNullOrWhiteSpace(rollbackReason))
+            {
+                var rampBakeHold = GetCanaryRampBakeHold(current);
+                if (rampBakeHold != null)
+                {
+                    return rampBakeHold;
+                }
+            }
+
             var telemetryDecision = await telemetrySignalEvaluator.EvaluateAsync(current, cancellationToken).ConfigureAwait(false);
             if (telemetryDecision != null)
             {
@@ -233,19 +248,7 @@ internal sealed partial class DeployWorkflowReconciler(
                     promotionRecommended &&
                     current.Status == WorkflowOperationStatus.Reconciling)
                 {
-                    var promotionObservation = await backend.PromoteAsync(current, cancellationToken).ConfigureAwait(false);
-                    current = current with
-                    {
-                        Status = promotionObservation.Status,
-                        UpdatedAt = DateTimeOffset.UtcNow,
-                        CompletedAt = IsTerminal(promotionObservation.Status) ? DateTimeOffset.UtcNow : null,
-                        ProviderOperationId = promotionObservation.ProviderOperationId ?? current.ProviderOperationId,
-                        CurrentPhase = promotionObservation.Message ?? current.CurrentPhase,
-                        ObservedState = promotionObservation.ObservedRevision ?? current.ObservedState,
-                        ErrorMessage = promotionObservation.Status == WorkflowOperationStatus.Failed
-                            ? promotionObservation.Message ?? current.ErrorMessage
-                            : current.ErrorMessage
-                    };
+                    current = await AdvanceOrPromoteAsync(current, backend, cancellationToken).ConfigureAwait(false);
                 }
             }
         }
@@ -281,6 +284,145 @@ internal sealed partial class DeployWorkflowReconciler(
             }
         };
     }
+
+    /// <summary>
+    /// Generic backend-neutral key the deploy backends read to resolve the desired canary
+    /// traffic share. The progressive ramp drives stepped weights through this key so the
+    /// existing <see cref="IDeployBackend"/> contract does not need a weight argument.
+    /// </summary>
+    private const string CanaryWeightParameterKey = "deployment.canary_weight_percentage";
+
+    /// <summary>
+    /// Holds the current ramp step until its bake window elapses. Returns null when no ramp is
+    /// configured (single-step default), the ramp is invalid, or the step has finished baking.
+    /// Lazily initializes the first step's bake clock and synchronizes the canary weight
+    /// parameter so the backend applies the configured step weight.
+    /// </summary>
+    private static WorkflowOperationRecord? GetCanaryRampBakeHold(WorkflowOperationRecord current)
+    {
+        var deploy = current.Deploy;
+        var ramp = deploy?.CanaryRamp;
+        if (deploy == null || ramp == null || !ramp.IsValid)
+        {
+            return null;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var stepWeight = ramp.CurrentStepWeight ?? 100;
+
+        if (ramp.CurrentStepStartedAt == null)
+        {
+            // First observation of this step: start its bake clock and pin the step weight onto
+            // the spec parameters so the backend serves the configured share on the next apply.
+            var initialized = current with
+            {
+                UpdatedAt = now,
+                CurrentPhase = $"Canary ramp baking step {ramp.CurrentStepIndex + 1} of {ramp.StepWeights.Count} at {stepWeight}% for {DescribeDuration(ramp.StepBakeDuration)} before the telemetry gate.",
+                Deploy = deploy with
+                {
+                    Parameters = WithCanaryWeight(deploy.Parameters, stepWeight),
+                    CanaryRamp = ramp with { CurrentStepStartedAt = now }
+                }
+            };
+
+            return initialized;
+        }
+
+        var elapsed = now - ramp.CurrentStepStartedAt.Value;
+        if (elapsed >= ramp.StepBakeDuration)
+        {
+            return null;
+        }
+
+        var remaining = ramp.StepBakeDuration - elapsed;
+        return current with
+        {
+            Status = WorkflowOperationStatus.Reconciling,
+            UpdatedAt = now,
+            CompletedAt = null,
+            CurrentPhase = $"Canary ramp baking step {ramp.CurrentStepIndex + 1} of {ramp.StepWeights.Count} at {stepWeight}% ({Math.Ceiling(Math.Max(remaining.TotalSeconds, 0)).ToString("0", CultureInfo.InvariantCulture)}s remaining before the telemetry gate).",
+            ErrorMessage = null
+        };
+    }
+
+    /// <summary>
+    /// Advances the progressive canary ramp to the next step (applying the next weight through
+    /// <see cref="IDeployBackend.StartAsync"/>) or promotes the deploy to full traffic at the
+    /// terminal step. Without a configured ramp this preserves the single-step default by calling
+    /// <see cref="IDeployBackend.PromoteAsync"/> once.
+    /// </summary>
+    private static async Task<WorkflowOperationRecord> AdvanceOrPromoteAsync(
+        WorkflowOperationRecord current,
+        IDeployBackend backend,
+        CancellationToken cancellationToken)
+    {
+        var deploy = current.Deploy;
+        var ramp = deploy?.CanaryRamp;
+
+        if (deploy != null && ramp != null && ramp.IsValid && !ramp.IsFinalStep)
+        {
+            var nextIndex = ramp.CurrentStepIndex + 1;
+            var nextWeight = ramp.StepWeights[nextIndex];
+            var rampedSpec = deploy with
+            {
+                Parameters = WithCanaryWeight(deploy.Parameters, nextWeight),
+                CanaryRamp = ramp with
+                {
+                    CurrentStepIndex = nextIndex,
+                    CurrentStepStartedAt = DateTimeOffset.UtcNow
+                }
+            };
+            var rampedOperation = current with { Deploy = rampedSpec };
+
+            // Re-apply the deploy at the next step weight. StartAsync resolves the canary share
+            // from the synchronized parameter, so backends shift traffic without a new contract.
+            var stepObservation = await backend.StartAsync(rampedOperation, cancellationToken).ConfigureAwait(false);
+            var stepStatus = stepObservation.Status == WorkflowOperationStatus.Failed
+                ? WorkflowOperationStatus.Failed
+                : WorkflowOperationStatus.Reconciling;
+
+            return rampedOperation with
+            {
+                Status = stepStatus,
+                UpdatedAt = DateTimeOffset.UtcNow,
+                CompletedAt = IsTerminal(stepStatus) ? DateTimeOffset.UtcNow : null,
+                ProviderOperationId = stepObservation.ProviderOperationId ?? current.ProviderOperationId,
+                CurrentPhase = stepObservation.Message
+                    ?? $"Canary ramp advanced to step {nextIndex + 1} of {ramp.StepWeights.Count} at {nextWeight}%.",
+                ObservedState = stepObservation.ObservedRevision ?? current.ObservedState,
+                ErrorMessage = stepStatus == WorkflowOperationStatus.Failed
+                    ? stepObservation.Message ?? current.ErrorMessage
+                    : null
+            };
+        }
+
+        var promotionObservation = await backend.PromoteAsync(current, cancellationToken).ConfigureAwait(false);
+        return current with
+        {
+            Status = promotionObservation.Status,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            CompletedAt = IsTerminal(promotionObservation.Status) ? DateTimeOffset.UtcNow : null,
+            ProviderOperationId = promotionObservation.ProviderOperationId ?? current.ProviderOperationId,
+            CurrentPhase = promotionObservation.Message ?? current.CurrentPhase,
+            ObservedState = promotionObservation.ObservedRevision ?? current.ObservedState,
+            ErrorMessage = promotionObservation.Status == WorkflowOperationStatus.Failed
+                ? promotionObservation.Message ?? current.ErrorMessage
+                : current.ErrorMessage
+        };
+    }
+
+    private static Dictionary<string, string> WithCanaryWeight(
+        IReadOnlyDictionary<string, string> parameters,
+        int weight)
+        => new(parameters, StringComparer.Ordinal)
+        {
+            [CanaryWeightParameterKey] = weight.ToString(CultureInfo.InvariantCulture)
+        };
+
+    private static string DescribeDuration(TimeSpan duration)
+        => duration.TotalMinutes >= 1
+            ? $"{duration.TotalMinutes.ToString("0.#", CultureInfo.InvariantCulture)}m"
+            : $"{Math.Ceiling(duration.TotalSeconds).ToString("0", CultureInfo.InvariantCulture)}s";
 
     internal static partial class Log
     {

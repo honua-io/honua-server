@@ -329,7 +329,7 @@ internal sealed class CapabilityManifestService(
                 policyCapability: "features.query"),
             Capability("publication.metadata-release", "publication", context, policyCapability: "catalog.publish", requiresEnvironment: true),
             Capability("upload.file", "upload", context, entitlementKey: "import.file", policyCapability: "metadata.write"),
-            Capability("edit.features", "edit", context, policyCapability: "features.edit")
+            Capability("edit.features", "edit", context, entitlementKey: "editing.feature-edits", policyCapability: "features.edit")
         ];
     }
 

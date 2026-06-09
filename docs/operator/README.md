@@ -15,6 +15,7 @@ Deploy, configure, monitor, and manage Honua Server.
 - [Security](security.md) — Authentication, authorization, CORS, CSP
 - [Client Certificate Authentication](client-certificate-authentication.md) — Native/admin mTLS modes, trust profiles, mappings, revocations, and response contracts
 - [Compliance Framework](compliance-framework.md) — SOC 2 / FedRAMP readiness evidence, data residency policy + dry-run, compliance key-version rotation, report export
+- [Audit Coverage Matrix](audit-coverage-matrix.md) — Which operations emit audit events (admin actions, destructive writes, authentication/authorization) and where emission lives
 - [HTTP Client Resilience](http-client-resilience.md) — Retry, circuit breaker, and timeout tuning for external services
 - [Feature Change Webhooks](feature-change-webhooks.md) — Event notification setup
 - [Feature Streaming](feature-streaming.md) — WebSocket/SSE feature-change subscriptions

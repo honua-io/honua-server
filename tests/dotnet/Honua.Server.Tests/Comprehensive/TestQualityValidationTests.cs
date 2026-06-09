@@ -12,6 +12,8 @@ using Honua.TestKit.Infrastructure;
 using Honua.TestKit.Performance;
 using Honua.TestKit.Security;
 using Xunit.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Comprehensive;
 
@@ -23,7 +25,7 @@ namespace Honua.Server.Tests.Comprehensive;
 [Protocol(TestProtocols.TestQuality)]
 public class TestQualityValidationTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
     private readonly ITestOutputHelper _output;
     private string _schema = string.Empty;
 

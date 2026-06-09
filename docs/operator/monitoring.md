@@ -329,9 +329,28 @@ The recommended alerting path uses managed cloud services rather than self-hoste
 
 For self-hosted multi-node environments, Prometheus can also scrape `GET /metrics` directly with admin credentials and act as both the collector and the query backend for deploy rollback gates.
 
-### Deploy Telemetry Presets
+### Deploy Telemetry Providers and Presets
 
-Deploy targets can point at a Prometheus-compatible query backend by setting `telemetry.connection` in the control-plane target parameters.
+Deploy targets point at a telemetry query backend by setting `telemetry.connection` in the
+control-plane target parameters. Each `ControlPlane:TelemetryConnections` entry declares a
+`Provider` that selects the metrics backend:
+
+- `prometheus` (default): PromQL backend. The presets below synthesize PromQL automatically.
+- `cloudwatch`: Amazon CloudWatch backend. Requires explicit `telemetry.*.query` CloudWatch
+  metric-math expressions (the presets only emit PromQL). Available unless the server is built
+  with `HONUA_EXCLUDE_AWS`. Credentials come from the AWS SDK default credential chain; scope IAM
+  to `cloudwatch:GetMetricData`. Set the connection's optional `Region`, or let it be inferred from
+  a regional `BaseUrl` (`https://monitoring.<region>.amazonaws.com`).
+
+An unconfigured/unknown `Provider` does not stall silently: the gate returns a
+`WaitForMoreTelemetry` decision with an explicit message and logs a warning naming the connection,
+the unsupported provider, and the supported providers; auto-rollback stays disabled for that
+operation until a supported provider is configured.
+
+The thresholds, warmup, minimum-sample gate, and promote/rollback/wait decision are identical
+across providers — only the query dialect differs.
+
+The PromQL presets:
 
 - Default Kubernetes preset: when a Kubernetes deploy target sets `telemetry.connection`, Honua uses the built-in `kubernetes-honua-http` policy unless you override it.
 - AWS ALB canary preset: set `telemetry.policy=aws-alb-canary` and expose a distinct Prometheus scrape lane for the canary tasks, typically via a separate scrape job such as `honua-canary`.
@@ -352,7 +371,8 @@ Useful target parameters:
 - `containerapp.canary_weight_percentage`: optional Azure Container Apps canary traffic percentage (1–99) for the `honua-azure-container-apps-revision` backend; requires `telemetry.connection`
 - `aws.ecs.canary_weight_percentage`: optional AWS ECS canary traffic percentage (1–99) for the `honua-aws-ecs-alb` backend; requires `telemetry.connection`. Equivalent to the generic `deployment.canary_weight_percentage` key
 
-Explicit query overrides still win:
+Explicit query overrides still win (and are required for `cloudwatch` connections, expressed as
+CloudWatch metric-math; for `prometheus` connections they are PromQL):
 
 - `telemetry.error_rate.query`
 - `telemetry.latency_p95.query`
@@ -366,8 +386,14 @@ Keep environment-specific `ControlPlane` target metadata in the infrastructure r
     "TelemetryConnections": [
       {
         "ConnectionId": "prometheus-default",
-        "ConnectionType": "Prometheus",
+        "Provider": "prometheus",
         "BaseUrl": "https://prometheus.example.com"
+      },
+      {
+        "ConnectionId": "cloudwatch-prod",
+        "Provider": "cloudwatch",
+        "BaseUrl": "https://monitoring.us-east-1.amazonaws.com",
+        "Region": "us-east-1"
       }
     ],
     "DeployTargets": [

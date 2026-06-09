@@ -110,6 +110,19 @@ internal sealed partial class DeployWorkflowService
             };
         }
 
+        // A configured-but-malformed progressive canary ramp must block submission rather than
+        // silently falling back to single-step promotion. The reconciler ignores invalid ramps,
+        // so surface the misconfiguration to the operator at plan time.
+        if (spec.CanaryRamp is { IsValid: false } invalidRamp)
+        {
+            var rampBlock = DescribeInvalidCanaryRamp(invalidRamp);
+            plan = plan with
+            {
+                IsReadyToSubmit = false,
+                BlockingReasons = [.. plan.BlockingReasons, rampBlock]
+            };
+        }
+
         return new DeployWorkflowPlanResult(target, spec, plan, capabilities, canonicalApproval);
     }
 
@@ -657,6 +670,17 @@ internal sealed partial class DeployWorkflowService
             }
         }
 
+        var canaryRamp = ParseCanaryRamp(mergedParameters);
+        if (canaryRamp is { IsValid: true })
+        {
+            // Pin the first ramp step's weight onto the spec parameters so the initial backend
+            // submission serves the configured starting canary share. Subsequent steps are
+            // advanced by the reconciler. Single-step deploys (no ramp) are untouched.
+            var initialWeight = canaryRamp.StepWeights[0];
+            mergedParameters["deployment.canary_weight_percentage"] =
+                initialWeight.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+
         var resolvedCurrentRevision = currentRevision;
         if (string.IsNullOrWhiteSpace(resolvedCurrentRevision))
         {
@@ -690,8 +714,70 @@ internal sealed partial class DeployWorkflowService
             DesiredRevision = desiredRevision,
             RequiresOutOfBandMigrations = target.RequiresOutOfBandMigrations,
             RequiresApproval = target.RequiresApproval,
-            Parameters = mergedParameters
+            Parameters = mergedParameters,
+            CanaryRamp = canaryRamp
         };
+    }
+
+    /// <summary>
+    /// Parses an optional progressive canary ramp from deploy parameters. Returns null when no
+    /// ramp parameters are present so the deploy keeps the default single-step bake-then-promote
+    /// behavior. Invalid ramp configuration is surfaced through the spec's validation so the plan
+    /// can block submission, rather than being silently discarded.
+    /// </summary>
+    private static CanaryRampSpec? ParseCanaryRamp(Dictionary<string, string> parameters)
+    {
+        if (!parameters.TryGetValue("deployment.canary_ramp.step_weights", out var rawWeights) ||
+            string.IsNullOrWhiteSpace(rawWeights))
+        {
+            return null;
+        }
+
+        var stepWeights = new List<int>();
+        foreach (var token in rawWeights.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (int.TryParse(token, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var weight))
+            {
+                stepWeights.Add(weight);
+            }
+            else
+            {
+                // Preserve an out-of-range marker so IsValid fails deterministically.
+                stepWeights.Add(-1);
+            }
+        }
+
+        var bakeSeconds = parameters.TryGetValue("deployment.canary_ramp.step_bake_seconds", out var rawBake) &&
+            double.TryParse(rawBake, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var parsedBake) &&
+            parsedBake > 0
+                ? TimeSpan.FromSeconds(parsedBake)
+                : TimeSpan.FromMinutes(2);
+
+        return new CanaryRampSpec
+        {
+            StepWeights = stepWeights,
+            StepBakeDuration = bakeSeconds
+        };
+    }
+
+    private static string DescribeInvalidCanaryRamp(CanaryRampSpec ramp)
+    {
+        if (ramp.StepWeights.Count == 0)
+        {
+            return "Progressive canary ramp is invalid: deployment.canary_ramp.step_weights must list at least one weight.";
+        }
+
+        if (ramp.StepBakeDuration <= TimeSpan.Zero)
+        {
+            return "Progressive canary ramp is invalid: deployment.canary_ramp.step_bake_seconds must be greater than zero.";
+        }
+
+        if (ramp.StepWeights[^1] != 100)
+        {
+            return "Progressive canary ramp is invalid: the final deployment.canary_ramp.step_weights value must be 100.";
+        }
+
+        return "Progressive canary ramp is invalid: deployment.canary_ramp.step_weights must be strictly increasing whole percentages between 1 and 100.";
     }
 
     private IDeployBackend? ResolveBackend(DeployTargetDefinition target)

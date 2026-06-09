@@ -8,6 +8,8 @@ using FluentAssertions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
@@ -15,7 +17,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class FeatureServerMaintenanceTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
 
     public async Task InitializeAsync() => await _fixture.InitializeAsync();
 

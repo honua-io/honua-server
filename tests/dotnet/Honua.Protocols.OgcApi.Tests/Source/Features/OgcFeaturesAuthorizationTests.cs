@@ -11,6 +11,8 @@ using Honua.Protocols.Ogc.Api.Features.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 
@@ -19,7 +21,7 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 public sealed class OgcFeaturesAuthorizationTests : IAsyncLifetime
 {
     private const string AdminApiKey = "test-ogc-admin-key";
-    private readonly WebAppFixture _fixture = new WebAppFixture()
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
         .ConfigureWebHost(builder =>
         {
             builder.UseSetting("HONUA_DEV_AUTH", "false");

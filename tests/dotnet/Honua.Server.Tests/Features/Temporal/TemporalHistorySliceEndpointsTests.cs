@@ -17,6 +17,8 @@ using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Temporal;
 
@@ -45,7 +47,7 @@ public sealed class TemporalHistorySliceEndpointsTests : IAsyncLifetime
 
     public TemporalHistorySliceEndpointsTests()
     {
-        _fixture = new WebAppFixture()
+        _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
             .ConfigureWebHost(builder =>
             {
                 builder.UseEnvironment("Test");

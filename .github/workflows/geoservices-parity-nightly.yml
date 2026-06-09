@@ -1,8 +1,14 @@
-name: GeoServices Parity Nightly
+name: GeoServices Parity (External, On-Demand)
 
+# This suite imports from LIVE public ArcGIS endpoints (geodata.hawaii.gov,
+# maps.kauai.gov, sampleserver6.arcgisonline.com) and compares query results
+# against them. Those upstream services drift between runs (e.g. a layer's
+# feature count changes), producing non-deterministic failures unrelated to
+# Honua — so it is no longer run on a nightly schedule. Run it on demand to
+# validate parity against live Esri services. Deterministic parity coverage
+# stays in the per-PR Parity Scorecard Governance gate + the in-repo parity
+# matrix/JSON; see docs/ci/gate-model.md. (honua-server#1570)
 on:
-  schedule:
-    - cron: '30 6 * * *'
   workflow_dispatch:
 
 env:

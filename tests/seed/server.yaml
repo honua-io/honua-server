@@ -1008,6 +1008,30 @@ sql:
   - "DROP TRIGGER IF EXISTS trigger_track_version_edits ON honua.version_edits;"
   - "CREATE TRIGGER trigger_track_version_edits BEFORE INSERT OR UPDATE ON honua.version_edits FOR EACH ROW EXECUTE FUNCTION honua.track_version_edits();"
   - |
+      CREATE TABLE IF NOT EXISTS honua.version_conflicts (
+          conflict_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          version_id UUID NOT NULL REFERENCES honua.gdb_versions(version_id) ON DELETE CASCADE,
+          layer_id INT NOT NULL,
+          objectid BIGINT NOT NULL,
+          conflict_type SMALLINT NOT NULL,
+          status SMALLINT NOT NULL DEFAULT 0,
+          base_attributes JSONB,
+          default_attributes JSONB,
+          version_attributes JSONB,
+          base_geometry_wkt TEXT,
+          default_geometry_wkt TEXT,
+          version_geometry_wkt TEXT,
+          field_diffs JSONB,
+          resolution_choice SMALLINT,
+          resolved_by TEXT,
+          detected_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          resolved_at TIMESTAMPTZ,
+          CONSTRAINT version_conflicts_valid_status CHECK(status IN (0, 1)),
+          CONSTRAINT version_conflicts_valid_resolution CHECK(resolution_choice IS NULL OR resolution_choice IN (0, 1, 2))
+      );
+  - "CREATE UNIQUE INDEX IF NOT EXISTS idx_version_conflicts_pending_feature ON honua.version_conflicts(version_id, layer_id, objectid) WHERE status = 0;"
+  - "CREATE INDEX IF NOT EXISTS idx_version_conflicts_version_status ON honua.version_conflicts(version_id, status);"
+  - |
       CREATE TABLE IF NOT EXISTS honua.fieldcollection_features (
           feature_id  TEXT        NOT NULL,
           layer_id    INT         NOT NULL,

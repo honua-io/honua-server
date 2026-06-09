@@ -4,8 +4,10 @@
 using System.Collections.Immutable;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Validation;
 using Honua.Protocols.OData.Models;
 using Honua.ServiceDefaults;
@@ -440,6 +442,28 @@ internal sealed partial class ODataBatchHandler
         var updateCount = updateRequests.Values.Sum(list => list.Count);
         var deleteCount = deleteRequests.Values.Sum(list => list.Count);
         var totalCount = addCount + updateCount + deleteCount;
+
+        // #1548: multi-user feature editing is a Pro entitlement. An atomicity group applies
+        // its creates/updates/deletes directly through the shared writer below, bypassing the
+        // per-request ODataCrudHandler gate, so enforce the same entitlement here before any
+        // change-set write is committed.
+        if (totalCount > 0)
+        {
+            var editsDecision = LicenseGate.CheckEntitlement(context.RequestServices, FeatureCatalog.FeatureEditsKey);
+            if (!editsDecision.IsActive)
+            {
+                foreach (var request in requests.Where(r => !responses.Any(resp => resp.Id == r.Id)))
+                {
+                    responses.Add(CreateErrorResponse(
+                        request.Id,
+                        402,
+                        "PaymentRequired",
+                        editsDecision.UpgradeMessage));
+                }
+
+                return responses.ToImmutableArray();
+            }
+        }
 
         if (addCount > _editLimits.MaxFeaturesPerEdit ||
             updateCount > _editLimits.MaxFeaturesPerEdit ||
