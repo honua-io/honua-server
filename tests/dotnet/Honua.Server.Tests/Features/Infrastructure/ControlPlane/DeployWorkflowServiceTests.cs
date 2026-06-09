@@ -561,7 +561,7 @@ public sealed class DeployWorkflowServiceTests
         };
     }
 
-    private static PrometheusDeployTelemetrySignalEvaluator CreateTelemetryEvaluator(params string[] responses)
+    private static DeployTelemetrySignalEvaluator CreateTelemetryEvaluator(params string[] responses)
     {
         var responseQueue = new ConcurrentQueue<string>(responses);
         var optionsMonitor = new TestControlPlaneOptionsMonitor(new ControlPlaneOptions
@@ -578,8 +578,7 @@ public sealed class DeployWorkflowServiceTests
             ]
         });
 
-        return new PrometheusDeployTelemetrySignalEvaluator(
-            optionsMonitor,
+        var prometheusProvider = new PrometheusDeployTelemetryProviderEvaluator(
             new StubHttpClientFactory(new HttpClient(new DelegateHttpMessageHandler(_ =>
                 new HttpResponseMessage(HttpStatusCode.OK)
                 {
@@ -589,8 +588,12 @@ public sealed class DeployWorkflowServiceTests
                             : """{"status":"success","data":{"resultType":"vector","result":[]}}""",
                         Encoding.UTF8,
                         "application/json")
-                }))),
-            NullLogger<PrometheusDeployTelemetrySignalEvaluator>.Instance);
+                }))));
+
+        return new DeployTelemetrySignalEvaluator(
+            optionsMonitor,
+            [prometheusProvider],
+            NullLogger<DeployTelemetrySignalEvaluator>.Instance);
     }
 
     private sealed class TestDeployTargetRegistry : IDeployTargetRegistry

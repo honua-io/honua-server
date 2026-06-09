@@ -34,7 +34,16 @@ internal static class BatchAndDeployBackendsRegistration
         services.AddSingleton<IDeployTargetRegistry, ConfigurationDeployTargetRegistry>();
         services.AddSingleton<IExecutionJobDefinitionRegistry, ConfigurationExecutionJobDefinitionRegistry>();
         services.AddSingleton<DeployWorkflowService>();
-        services.AddSingleton<IDeployTelemetrySignalEvaluator, PrometheusDeployTelemetrySignalEvaluator>();
+
+        // Multi-provider deploy telemetry gate. The dispatcher selects a provider evaluator by the
+        // telemetry connection's Provider; Prometheus is always available, CloudWatch is added with
+        // the rest of the AWS surface.
+        services.AddSingleton<IDeployTelemetryProviderEvaluator, PrometheusDeployTelemetryProviderEvaluator>();
+#if !HONUA_EXCLUDE_AWS
+        services.AddSingleton<ICloudWatchMetricClient, AwsSdkCloudWatchMetricClient>();
+        services.AddSingleton<IDeployTelemetryProviderEvaluator, CloudWatchDeployTelemetryProviderEvaluator>();
+#endif
+        services.AddSingleton<IDeployTelemetrySignalEvaluator, DeployTelemetrySignalEvaluator>();
 
         // Deploy backend concrete singletons. Order matters for the IEnumerable<IDeployBackend>
         // resolution below — keep the existing K8s/AWS/Azure ordering.
