@@ -125,6 +125,15 @@ When the user asks to create a ticket, issue, or GitHub issue:
 - Before filing, search the target repo for existing issues to avoid duplicates. If a close match exists, comment on it or ask whether to reuse it instead of filing a duplicate.
 - For SDK integration work, default ownership is SDK-side implementation in `honua-sdk-js`, `honua-sdk-dotnet`, or `honua-sdk-python`, with `honua-server` owning shared seed/bootstrap contracts and release-proof integration.
 
+## Pull Request Policy
+
+Every `honua-server` PR runs a **Validate PR Template Compliance** check (in `ci.yml`) that **gates the entire CI matrix**. If it fails, the **CI Gate fails and every build/test shard is SKIPPED** — the PR then gets no validation and *looks* broken even though nothing in the code is wrong. This is the single most common reason an agent's PR appears stuck. To pass it:
+
+- Fill **every** required section of `.github/pull_request_template.md`: an issue link (`Fixes`/`Closes`/`Resolves`/`Related to #N`), a non-empty **Summary**, **Changes Made** as `-` bullet points, **Breaking Changes** (or `None`), at least one `[x]` in the **Gate Impact** and **Testing** sections, and a conventional-commit **title** (`type(scope): description`, e.g. `feat: ...`).
+- **Tick `- [x] Ran scripts/ci/pre-pr-check.sh and all checks passed`.** This exact box is required. Run the script first (it runs the warnings-as-errors Release build, `dotnet format --verify-no-changes`, and the affected tests); do not tick it without running the equivalent — but do not leave it unticked either, or CI never validates the PR.
+- The compliance check triggers on **push / `labeled` / `ready_for_review`**, **not** on PR-body edits. Editing the body to add the box will *not* re-run it — push a commit, toggle a label, or mark the PR ready-for-review to re-trigger CI.
+- **Known flake, not a break:** integration shards (e.g. `DbUpMigrations.MobileOfflineDemoSeed`, `OGC API Maps and Tiles`) intermittently fail with a transient Postgres `40P01: deadlock detected` under concurrent host load. This is environmental — re-run the failed shard (`gh run rerun <run-id> --failed`) rather than treating it as a code failure. Root-cause serialization lives in `PostgresFixture`/`SeedRunner` (honua-server#1568).
+
 ## MVP Deferrals (Operational Simplicity)
 
 The MVP intentionally defers enterprise/operational features to reduce complexity:
