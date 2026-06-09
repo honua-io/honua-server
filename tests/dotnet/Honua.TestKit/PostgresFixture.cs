@@ -216,6 +216,56 @@ public sealed class PostgresFixture : IAsyncLifetime
     }
 
     /// <summary>
+    /// Runs a schema-mutating action (e.g. a raw DbUp upgrade) while holding the session-level
+    /// Postgres advisory lock shared with <see cref="Seeding.SeedRunner"/>, retrying on a
+    /// transient <c>40P01</c> deadlock / <c>40001</c> serialization failure.
+    /// </summary>
+    /// <remarks>
+    /// DbUp DDL (the <c>schema_versions</c> journal, <c>CREATE TABLE/INDEX</c>, extensions) takes
+    /// locks on the global <c>pg_catalog</c>, which per-test schema isolation does not protect.
+    /// Serializing every schema-mutating setup path on one advisory lock removes the catalog-level
+    /// lock-ordering deadlocks that flake parallel integration runs (honua-server#1568).
+    /// </remarks>
+    /// <param name="action">The schema-mutating work to run while the lock is held.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public async Task RunUnderSchemaMutationLockAsync(Func<Task> action, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+
+        const int maxAttempts = 4;
+        for (var attempt = 1; ; attempt++)
+        {
+            await using var lockConnection = await GetConnectionAsync().ConfigureAwait(false);
+            await ExecuteAdvisoryLockCommandAsync(lockConnection, "SELECT pg_advisory_lock(@key);", cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await action().ConfigureAwait(false);
+                return;
+            }
+            catch (PostgresException ex) when (attempt < maxAttempts && IsTransientLockFailure(ex))
+            {
+                // Deadlock / serialization victim: its transaction is fully rolled back, so retry
+                // is safe. The lock is released in the finally block before the next attempt.
+            }
+            finally
+            {
+                await ExecuteAdvisoryLockCommandAsync(lockConnection, "SELECT pg_advisory_unlock(@key);", cancellationToken).ConfigureAwait(false);
+            }
+        }
+    }
+
+    private static async Task ExecuteAdvisoryLockCommandAsync(NpgsqlConnection connection, string sql, CancellationToken cancellationToken)
+    {
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = sql;
+        _ = cmd.Parameters.AddWithValue("key", Seeding.SeedRunner.SeedApplicationLockKey);
+        await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static bool IsTransientLockFailure(PostgresException ex)
+        => ex.SqlState is PostgresErrorCodes.DeadlockDetected or PostgresErrorCodes.SerializationFailure;
+
+    /// <summary>
     /// Clean up test data in the public schema (legacy method).
     /// Prefer schema-based isolation for parallel execution.
     /// </summary>

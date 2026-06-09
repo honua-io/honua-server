@@ -5,6 +5,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
+using Honua.Plugins.Abstractions;
 using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Honua.Infrastructure.Events;
 using Honua.Infrastructure.Validation;
@@ -23,7 +24,8 @@ internal sealed class FeatureServerEditsDependencies
         FeatureMutationValidator mutationValidator,
         IFilterExpressionService filterExpressionService,
         IHttpContextAccessor httpContextAccessor,
-        FeatureMutationEventService mutationEventService)
+        FeatureMutationEventService mutationEventService,
+        IPluginEditPipeline pluginPipeline)
     {
         ResourceValidator = resourceValidator ?? throw new ArgumentNullException(nameof(resourceValidator));
         FeatureWriter = featureWriter ?? throw new ArgumentNullException(nameof(featureWriter));
@@ -35,6 +37,7 @@ internal sealed class FeatureServerEditsDependencies
         FilterExpressionService = filterExpressionService ?? throw new ArgumentNullException(nameof(filterExpressionService));
         HttpContextAccessor = httpContextAccessor ?? throw new ArgumentNullException(nameof(httpContextAccessor));
         MutationEventService = mutationEventService ?? throw new ArgumentNullException(nameof(mutationEventService));
+        PluginPipeline = pluginPipeline ?? throw new ArgumentNullException(nameof(pluginPipeline));
     }
 
     public IResourceValidator ResourceValidator { get; }
@@ -47,4 +50,5 @@ internal sealed class FeatureServerEditsDependencies
     public IFilterExpressionService FilterExpressionService { get; }
     public IHttpContextAccessor HttpContextAccessor { get; }
     public FeatureMutationEventService MutationEventService { get; }
+    public IPluginEditPipeline PluginPipeline { get; }
 }

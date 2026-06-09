@@ -69,6 +69,9 @@ public static class FeatureCatalog
 
         /// <summary>Editing features — branch versioning, reconcile/post, multi-user editing.</summary>
         public const string Editing = "Editing";
+
+        /// <summary>Server extensibility features — plugin/extension SDK.</summary>
+        public const string Extensibility = "Extensibility";
     }
 
     /// <summary>
@@ -86,6 +89,13 @@ public static class FeatureCatalog
     /// and Enterprise branch versioning (<c>editing.branch-versioning</c>) are separate entitlements.
     /// </summary>
     public const string FeatureEditsKey = "editing.feature-edits";
+
+    /// <summary>
+    /// Entitlement key for the server plugin/extension SDK (custom feature validators and edit
+    /// hooks today; computed fields and custom endpoints in later phases). Gates compile-time,
+    /// AOT-safe plugins registered at startup (#347, ADR-0024). Enterprise-only.
+    /// </summary>
+    public const string PluginSdkKey = "plugin.sdk";
 
     /// <summary>
     /// All edition-gated features in the platform.
@@ -235,5 +245,9 @@ public static class FeatureCatalog
         // Editing — Enterprise (Esri-style branch versioning; Postgres-only)
         new(BranchVersioningKey, "Branch Versioning", Categories.Editing,
             HonuaEdition.Enterprise, "Named gdb versions with isolated edits, reconcile/post back to DEFAULT, and gdbVersion-scoped editing/querying over the GeoServices VersionManagementServer."),
+
+        // Extensibility — Enterprise (plugin/extension SDK)
+        new(PluginSdkKey, "Plugin/Extension SDK", Categories.Extensibility,
+            HonuaEdition.Enterprise, "Register compile-time, AOT-safe server plugins (custom feature validators and pre/post-edit hooks) discovered and gated at startup."),
     ];
 }
