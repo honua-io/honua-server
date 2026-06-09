@@ -6,6 +6,7 @@ using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Extensions;
 using Honua.Infrastructure.Licensing;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Startup;
@@ -18,7 +19,10 @@ namespace Honua.Server.Startup;
 /// </summary>
 internal static class LicensingRegistration
 {
-    public static IServiceCollection AddHonuaLicensing(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddHonuaLicensing(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        IHostEnvironment environment)
     {
         services.Configure<LicenseOptions>(
             configuration.GetSection(LicenseOptions.SectionName));
@@ -35,17 +39,27 @@ internal static class LicensingRegistration
 
         // Test/dev only: an explicit Licensing:DevGrantEdition grants every entitlement up to that
         // edition without a signed license, so an out-of-process test/CI server can exercise
-        // edition-gated features (e.g. feature editing, honua-server#1548/#1577). Default off; the
-        // override is registered last so it wins ILicenseEntitlementService resolution. Never set
-        // this in production.
+        // edition-gated features (e.g. feature editing, honua-server#1548/#1577). It is registered
+        // last so it wins ILicenseEntitlementService resolution. It is FAIL-CLOSED in Production:
+        // setting it there throws at startup rather than silently bypassing every edition gate.
         var devGrantEdition = configuration[$"{LicenseOptions.SectionName}:DevGrantEdition"];
-        if (!string.IsNullOrWhiteSpace(devGrantEdition)
-            && Enum.TryParse<HonuaEdition>(devGrantEdition, ignoreCase: true, out var grantEdition))
+        if (!string.IsNullOrWhiteSpace(devGrantEdition))
         {
-            services.AddSingleton<ILicenseEntitlementService>(sp =>
-                new DevLicenseEntitlementService(
-                    grantEdition,
-                    sp.GetService<ILogger<DevLicenseEntitlementService>>()));
+            if (environment.IsProduction())
+            {
+                throw new InvalidOperationException(
+                    $"{LicenseOptions.SectionName}:DevGrantEdition is a test/dev-only license override and must not be " +
+                    "set in the Production environment; it would bypass every edition gate without a signed license. " +
+                    "Remove it or install a signed license.");
+            }
+
+            if (Enum.TryParse<HonuaEdition>(devGrantEdition, ignoreCase: true, out var grantEdition))
+            {
+                services.AddSingleton<ILicenseEntitlementService>(sp =>
+                    new DevLicenseEntitlementService(
+                        grantEdition,
+                        sp.GetService<ILogger<DevLicenseEntitlementService>>()));
+            }
         }
 
         // Named HTTP clients for identity provider connectivity tests with resilience.

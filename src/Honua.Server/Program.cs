@@ -428,7 +428,7 @@ builder.Services.AddScoped<Honua.Server.Features.HealthCheck.IReadinessCheckServ
 builder.Services.AddProductionHealthChecks(builder.Configuration);
 
 // ---- Extracted: licensing + identity-provider HTTP clients (Startup/LicensingRegistration.cs)
-builder.Services.AddHonuaLicensing(builder.Configuration);
+builder.Services.AddHonuaLicensing(builder.Configuration, builder.Environment);
 // ---- End extracted block
 
 // Register configuration documentation service for self-documenting admin endpoint
