@@ -96,9 +96,18 @@ internal static class AdminLayerFieldConfigurationEndpoints
                 field.Name.Trim(),
                 NormalizeAlias(field.Alias),
                 field.Domain,
-                field.Hidden))
+                field.Hidden,
+                field.DefaultValue))
             .ToArray();
 
+        // The field-config store persists alias, hidden, and the full domain JSONB — so the new
+        // range domain + mergePolicy/splitPolicy round-trip through the store as part of the
+        // domain document. The per-field defaultValue is authored only onto the canonical
+        // resource field below (which round-trips through the graph store); it is NOT written to
+        // the layer_fields table.
+        // TODO(gapB): if defaultValue must survive a graph rebuild from the field-config store
+        // alone, add a layer_fields.default_value JSONB column + plumb it through
+        // ILayerFieldConfigurationStore. Today the resource field is the authoritative home.
         var configurations = await fieldConfigurationStore.UpdateFieldConfigurationsAsync(
                 layerId,
                 updates,
@@ -215,9 +224,20 @@ internal static class AdminLayerFieldConfigurationEndpoints
             return $"Domain name for field '{fieldName}' must be 1 to {MaxDomainNameLength} characters.";
         }
 
+        var policyError = ValidateDomainPolicies(fieldName, domain);
+        if (policyError != null)
+        {
+            return policyError;
+        }
+
+        if (string.Equals(domain.Type, "range", StringComparison.OrdinalIgnoreCase))
+        {
+            return ValidateRangeDomain(fieldName, domain);
+        }
+
         if (!string.Equals(domain.Type, "codedValue", StringComparison.OrdinalIgnoreCase))
         {
-            return $"Domain for field '{fieldName}' must use type 'codedValue'.";
+            return $"Domain for field '{fieldName}' must use type 'codedValue' or 'range'.";
         }
 
         if (domain.CodedValues.Count == 0)
@@ -252,6 +272,66 @@ internal static class AdminLayerFieldConfigurationEndpoints
         return null;
     }
 
+    /// <summary>
+    /// Validates a <c>range</c> domain: requires a two-element [min, max] numeric range,
+    /// ordered min &lt;= max, and forbids coded values on a range domain.
+    /// </summary>
+    private static string? ValidateRangeDomain(string fieldName, MetadataV2FieldDomain domain)
+    {
+        if (domain.CodedValues.Count > 0)
+        {
+            return $"Range domain for field '{fieldName}' must not include coded values.";
+        }
+
+        if (domain.Range is not { Count: 2 } range)
+        {
+            return $"Range domain for field '{fieldName}' must provide a two-element [min, max] range.";
+        }
+
+        if (range[0].ValueKind != JsonValueKind.Number || range[1].ValueKind != JsonValueKind.Number)
+        {
+            return $"Range domain bounds for field '{fieldName}' must be numbers.";
+        }
+
+        if (range[0].GetDouble() > range[1].GetDouble())
+        {
+            return $"Range domain for field '{fieldName}' must have min less than or equal to max.";
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Validates the optional Esri-style <c>mergePolicy</c> / <c>splitPolicy</c> tokens
+    /// carried on a domain. Accepts the canonical Esri policy names, case-insensitively.
+    /// </summary>
+    private static string? ValidateDomainPolicies(string fieldName, MetadataV2FieldDomain domain)
+    {
+        if (domain.MergePolicy is { Length: > 0 } merge && !IsValidMergePolicy(merge))
+        {
+            return $"Domain mergePolicy '{merge}' for field '{fieldName}' is invalid. "
+                + "Allowed: esriMPTDefaultValue, esriMPTSumValues, esriMPTAreaWeighted.";
+        }
+
+        if (domain.SplitPolicy is { Length: > 0 } split && !IsValidSplitPolicy(split))
+        {
+            return $"Domain splitPolicy '{split}' for field '{fieldName}' is invalid. "
+                + "Allowed: esriSPTDefaultValue, esriSPTDuplicate, esriSPTGeometryRatio.";
+        }
+
+        return null;
+    }
+
+    private static bool IsValidMergePolicy(string value) =>
+        value.Equals("esriMPTDefaultValue", StringComparison.OrdinalIgnoreCase)
+        || value.Equals("esriMPTSumValues", StringComparison.OrdinalIgnoreCase)
+        || value.Equals("esriMPTAreaWeighted", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsValidSplitPolicy(string value) =>
+        value.Equals("esriSPTDefaultValue", StringComparison.OrdinalIgnoreCase)
+        || value.Equals("esriSPTDuplicate", StringComparison.OrdinalIgnoreCase)
+        || value.Equals("esriSPTGeometryRatio", StringComparison.OrdinalIgnoreCase);
+
     private static LayerFieldConfigurationResponse BuildResponse(
         int layerId,
         MetadataV2Resource resource,
@@ -272,6 +352,9 @@ internal static class AdminLayerFieldConfigurationEndpoints
                     Type = field.Type.ToString(),
                     Alias = configuration is null ? field.Description : configuration.Alias,
                     Domain = configuration?.Domain,
+                    // DefaultValue is authored onto the canonical resource field (the config store
+                    // has no defaultValue column), so it is read back off the resource field.
+                    DefaultValue = field.DefaultValue,
                     Hidden = configuration?.Hidden ?? false
                 };
             })
@@ -316,7 +399,13 @@ internal static class AdminLayerFieldConfigurationEndpoints
                     {
                         Alias = configuration.Alias,
                         Domain = configuration.Domain,
-                        Hidden = configuration.Hidden
+                        Hidden = configuration.Hidden,
+                        // Per-field default value is authored onto the canonical resource field
+                        // (which round-trips through the graph store). A null update preserves the
+                        // current field default; a JSON null literal clears it.
+                        DefaultValue = configuration.DefaultValue is { } incoming
+                            ? (incoming.ValueKind == JsonValueKind.Null ? null : incoming)
+                            : field.DefaultValue
                     }
                     : field)
                 .ToArray();

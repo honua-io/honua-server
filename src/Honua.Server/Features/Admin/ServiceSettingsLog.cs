@@ -30,4 +30,16 @@ internal static partial class ServiceSettingsLog
 
     [LoggerMessage(EventId = 4667, Level = LogLevel.Warning, Message = "Failed to invalidate service catalog cache for {ServiceName}")]
     public static partial void InvalidateServiceCatalogCacheFailed(ILogger logger, string serviceName, Exception exception);
+
+    [LoggerMessage(EventId = 4668, Level = LogLevel.Warning, Message = "Failed to get service settings caps for {ServiceName}")]
+    public static partial void GetServiceSettingsCapsFailed(ILogger logger, string serviceName, Exception exception);
+
+    [LoggerMessage(EventId = 4669, Level = LogLevel.Warning, Message = "Failed to update service settings caps for {ServiceName}")]
+    public static partial void UpdateServiceSettingsCapsFailed(ILogger logger, string serviceName, Exception exception);
+
+    [LoggerMessage(EventId = 4670, Level = LogLevel.Warning, Message = "Failed to get service discovery metadata for {ServiceName}")]
+    public static partial void GetServiceDiscoveryFailed(ILogger logger, string serviceName, Exception exception);
+
+    [LoggerMessage(EventId = 4671, Level = LogLevel.Warning, Message = "Failed to update service discovery metadata for {ServiceName}")]
+    public static partial void UpdateServiceDiscoveryFailed(ILogger logger, string serviceName, Exception exception);
 }

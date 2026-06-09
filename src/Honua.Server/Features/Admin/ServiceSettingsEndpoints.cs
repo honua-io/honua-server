@@ -67,6 +67,22 @@ internal static class ServiceSettingsEndpoints
         group.MapPut("/{serviceName}/layers/{layerId:int}/metadata", HandleUpdateLayerMetadata)
             .WithDisplayName("Update Layer Metadata")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
+
+        group.MapGet("/{serviceName}/settings-caps", HandleGetSettingsCaps)
+            .WithDisplayName("Get Service Settings Caps")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+
+        group.MapPut("/{serviceName}/settings-caps", HandleUpdateSettingsCaps)
+            .WithDisplayName("Update Service Settings Caps")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
+
+        group.MapGet("/{serviceName}/discovery", HandleGetServiceDiscovery)
+            .WithDisplayName("Get Service Discovery Metadata")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+
+        group.MapPut("/{serviceName}/discovery", HandleUpdateServiceDiscovery)
+            .WithDisplayName("Update Service Discovery Metadata")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
     }
 
     private static async Task<Results<Ok<ApiResponse<ServiceSummary[]>>, ProblemHttpResult>>
@@ -457,6 +473,333 @@ internal static class ServiceSettingsEndpoints
                 detail: "An internal error occurred while updating layer metadata.",
                 statusCode: StatusCodes.Status500InternalServerError);
         }
+    }
+
+    // ---- Service settings caps (MetadataV2ServiceSettings) ----------------------------------------------
+
+    private static async Task<Results<Ok<ApiResponse<ServiceSettingsCapsResponse>>, NotFound<ApiResponse<object>>, ProblemHttpResult>>
+        HandleGetSettingsCaps(
+            string serviceName,
+            [FromServices] IMetadataV2GraphProvider graphProvider,
+            ILogger<ServiceSettingsEndpointsLog> logger,
+            HttpContext context)
+    {
+        try
+        {
+            var snapshot = await graphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
+            if (!TryResolveServicesByName(snapshot, serviceName, out var services))
+            {
+                return TypedResults.NotFound(ApiResponse<object>.Failure($"Service '{serviceName}' not found."));
+            }
+
+            // Settings caps collapse to the first matching service entry's settings (deterministic
+            // per the graph's storage order) — multiple protocol-specific service entries that share
+            // a display name carry the same logical settings.
+            var settings = services.Select(s => s.Settings).FirstOrDefault(s => s is not null);
+            return TypedResults.Ok(ApiResponse<ServiceSettingsCapsResponse>.CreateSuccess(
+                BuildSettingsCapsResponse(serviceName, settings)));
+        }
+        catch (Exception ex)
+        {
+            ServiceSettingsLog.GetServiceSettingsCapsFailed(logger, serviceName, ex);
+            return TypedResults.Problem(
+                title: "Service settings caps retrieval failed",
+                detail: "An internal error occurred while retrieving service settings caps.",
+                statusCode: StatusCodes.Status500InternalServerError);
+        }
+    }
+
+    private static async Task<Results<Ok<ApiResponse<ServiceSettingsCapsResponse>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, ProblemHttpResult>>
+        HandleUpdateSettingsCaps(
+            string serviceName,
+            UpdateServiceSettingsCapsRequest request,
+            [FromServices] IMetadataV2GraphProvider graphProvider,
+            [FromServices] IMetadataV2GraphStore graphStore,
+            ILogger<ServiceSettingsEndpointsLog> logger,
+            HttpContext context)
+    {
+        try
+        {
+            var snapshot = await graphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
+            if (!TryResolveServicesByName(snapshot, serviceName, out _))
+            {
+                return TypedResults.NotFound(ApiResponse<object>.Failure($"Service '{serviceName}' not found."));
+            }
+
+            var validationError = ValidateSettingsCaps(request);
+            if (validationError is not null)
+            {
+                return TypedResults.BadRequest(ApiResponse<object>.Failure(validationError));
+            }
+
+            await MutateServicesByNameAsync(
+                graphStore,
+                serviceName,
+                svc => svc with { Settings = ApplySettingsCaps(svc.Settings, request) },
+                context.RequestAborted).ConfigureAwait(false);
+            await InvalidateServiceCatalogCacheAsync(context, graphProvider, serviceName, logger).ConfigureAwait(false);
+
+            var refreshed = await graphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
+            TryResolveServicesByName(refreshed, serviceName, out var updatedServices);
+            var settings = (updatedServices ?? Array.Empty<MetadataV2Service>())
+                .Select(s => s.Settings).FirstOrDefault(s => s is not null);
+            return TypedResults.Ok(ApiResponse<ServiceSettingsCapsResponse>.CreateSuccess(
+                BuildSettingsCapsResponse(serviceName, settings)));
+        }
+        catch (Exception ex)
+        {
+            ServiceSettingsLog.UpdateServiceSettingsCapsFailed(logger, serviceName, ex);
+            return TypedResults.Problem(
+                title: "Service settings caps update failed",
+                detail: "An internal error occurred while updating service settings caps.",
+                statusCode: StatusCodes.Status500InternalServerError);
+        }
+    }
+
+    private static string? ValidateSettingsCaps(UpdateServiceSettingsCapsRequest request)
+    {
+        foreach (var (label, value) in new (string, int?)[]
+        {
+            ("maxRecordCount", request.MaxRecordCount),
+            ("defaultRecordCount", request.DefaultRecordCount),
+            ("maxFeaturesPerLayer", request.MaxFeaturesPerLayer),
+            ("queryTimeoutMs", request.QueryTimeoutMs),
+            ("maxEditsPerTransaction", request.MaxEditsPerTransaction),
+        })
+        {
+            if (value is < 0)
+            {
+                return $"{label} must be zero or greater.";
+            }
+        }
+
+        if (request.MaxPayloadBytes is < 0)
+        {
+            return "maxPayloadBytes must be zero or greater.";
+        }
+
+        if (request.MaxAttachmentSizeBytes is < 0)
+        {
+            return "maxAttachmentSizeBytes must be zero or greater.";
+        }
+
+        return null;
+    }
+
+    private static MetadataV2ServiceSettings ApplySettingsCaps(
+        MetadataV2ServiceSettings? existing,
+        UpdateServiceSettingsCapsRequest request)
+    {
+        var current = existing ?? new MetadataV2ServiceSettings();
+        return current with
+        {
+            MaxRecordCount = request.MaxRecordCount ?? current.MaxRecordCount,
+            DefaultRecordCount = request.DefaultRecordCount ?? current.DefaultRecordCount,
+            MaxFeaturesPerLayer = request.MaxFeaturesPerLayer ?? current.MaxFeaturesPerLayer,
+            QueryTimeoutMs = request.QueryTimeoutMs ?? current.QueryTimeoutMs,
+            MaxEditsPerTransaction = request.MaxEditsPerTransaction ?? current.MaxEditsPerTransaction,
+            MaxPayloadBytes = request.MaxPayloadBytes ?? current.MaxPayloadBytes,
+            SupportedFormats = request.SupportedFormats ?? current.SupportedFormats,
+            DefaultFormat = request.DefaultFormat is null
+                ? current.DefaultFormat
+                : (string.IsNullOrWhiteSpace(request.DefaultFormat) ? null : request.DefaultFormat),
+            DefaultTileMatrixSet = request.DefaultTileMatrixSet is null
+                ? current.DefaultTileMatrixSet
+                : (string.IsNullOrWhiteSpace(request.DefaultTileMatrixSet) ? null : request.DefaultTileMatrixSet),
+            SupportsAttachments = request.SupportsAttachments ?? current.SupportsAttachments,
+            MaxAttachmentSizeBytes = request.MaxAttachmentSizeBytes ?? current.MaxAttachmentSizeBytes,
+        };
+    }
+
+    private static ServiceSettingsCapsResponse BuildSettingsCapsResponse(
+        string serviceName,
+        MetadataV2ServiceSettings? settings)
+    {
+        var s = settings ?? new MetadataV2ServiceSettings();
+        return new ServiceSettingsCapsResponse
+        {
+            ServiceName = serviceName,
+            MaxRecordCount = s.MaxRecordCount,
+            DefaultRecordCount = s.DefaultRecordCount,
+            MaxFeaturesPerLayer = s.MaxFeaturesPerLayer,
+            QueryTimeoutMs = s.QueryTimeoutMs,
+            MaxEditsPerTransaction = s.MaxEditsPerTransaction,
+            MaxPayloadBytes = s.MaxPayloadBytes,
+            SupportedFormats = s.SupportedFormats,
+            DefaultFormat = s.DefaultFormat,
+            DefaultTileMatrixSet = s.DefaultTileMatrixSet,
+            SupportsAttachments = s.SupportsAttachments,
+            MaxAttachmentSizeBytes = s.MaxAttachmentSizeBytes,
+        };
+    }
+
+    // ---- Service discovery metadata (MetadataV2ObjectMetadata discovery fields) -------------------------
+
+    private static async Task<Results<Ok<ApiResponse<DiscoveryMetadataResponse>>, NotFound<ApiResponse<object>>, ProblemHttpResult>>
+        HandleGetServiceDiscovery(
+            string serviceName,
+            [FromServices] IMetadataV2GraphProvider graphProvider,
+            ILogger<ServiceSettingsEndpointsLog> logger,
+            HttpContext context)
+    {
+        try
+        {
+            var snapshot = await graphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
+            if (!TryResolveServicesByName(snapshot, serviceName, out var services))
+            {
+                return TypedResults.NotFound(ApiResponse<object>.Failure($"Service '{serviceName}' not found."));
+            }
+
+            var metadata = services[0].Metadata;
+            return TypedResults.Ok(ApiResponse<DiscoveryMetadataResponse>.CreateSuccess(
+                BuildServiceDiscoveryResponse(serviceName, metadata)));
+        }
+        catch (Exception ex)
+        {
+            ServiceSettingsLog.GetServiceDiscoveryFailed(logger, serviceName, ex);
+            return TypedResults.Problem(
+                title: "Service discovery retrieval failed",
+                detail: "An internal error occurred while retrieving service discovery metadata.",
+                statusCode: StatusCodes.Status500InternalServerError);
+        }
+    }
+
+    private static async Task<Results<Ok<ApiResponse<DiscoveryMetadataResponse>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, ProblemHttpResult>>
+        HandleUpdateServiceDiscovery(
+            string serviceName,
+            DiscoveryMetadataUpdateRequest request,
+            [FromServices] IMetadataV2GraphProvider graphProvider,
+            [FromServices] IMetadataV2GraphStore graphStore,
+            ILogger<ServiceSettingsEndpointsLog> logger,
+            HttpContext context)
+    {
+        try
+        {
+            var snapshot = await graphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
+            if (!TryResolveServicesByName(snapshot, serviceName, out _))
+            {
+                return TypedResults.NotFound(ApiResponse<object>.Failure($"Service '{serviceName}' not found."));
+            }
+
+            var validationError = ValidateServiceDiscovery(request);
+            if (validationError is not null)
+            {
+                return TypedResults.BadRequest(ApiResponse<object>.Failure(validationError));
+            }
+
+            await MutateServicesByNameAsync(
+                graphStore,
+                serviceName,
+                svc => svc with { Metadata = ApplyServiceDiscovery(svc.Metadata, request) },
+                context.RequestAborted).ConfigureAwait(false);
+            await InvalidateServiceCatalogCacheAsync(context, graphProvider, serviceName, logger).ConfigureAwait(false);
+
+            var refreshed = await graphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
+            TryResolveServicesByName(refreshed, serviceName, out var updatedServices);
+            var metadata = (updatedServices ?? Array.Empty<MetadataV2Service>()).Select(s => s.Metadata).FirstOrDefault()
+                ?? new MetadataV2ObjectMetadata();
+            return TypedResults.Ok(ApiResponse<DiscoveryMetadataResponse>.CreateSuccess(
+                BuildServiceDiscoveryResponse(serviceName, metadata)));
+        }
+        catch (Exception ex)
+        {
+            ServiceSettingsLog.UpdateServiceDiscoveryFailed(logger, serviceName, ex);
+            return TypedResults.Problem(
+                title: "Service discovery update failed",
+                detail: "An internal error occurred while updating service discovery metadata.",
+                statusCode: StatusCodes.Status500InternalServerError);
+        }
+    }
+
+    private static string? ValidateServiceDiscovery(DiscoveryMetadataUpdateRequest request)
+    {
+        if (request.ContactPoint?.Email is { Length: > 0 } email && !email.Contains('@', StringComparison.Ordinal))
+        {
+            return "Contact point email must contain '@'.";
+        }
+
+        if (request.Links is { } links)
+        {
+            foreach (var link in links)
+            {
+                if (string.IsNullOrWhiteSpace(link.Href) || string.IsNullOrWhiteSpace(link.Rel))
+                {
+                    return "Each discovery link requires a non-empty href and rel.";
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static MetadataV2ObjectMetadata ApplyServiceDiscovery(
+        MetadataV2ObjectMetadata metadata,
+        DiscoveryMetadataUpdateRequest request)
+    {
+        static string? ApplyNullable(string? current, string? requested) =>
+            requested is null ? current : (string.IsNullOrWhiteSpace(requested) ? null : requested);
+
+        return metadata with
+        {
+            Title = ApplyNullable(metadata.Title, request.Title),
+            Description = ApplyNullable(metadata.Description, request.Description),
+            Keywords = request.Keywords ?? metadata.Keywords,
+            Themes = request.Themes ?? metadata.Themes,
+            Language = ApplyNullable(metadata.Language, request.Language),
+            License = ApplyNullable(metadata.License, request.License),
+            Attribution = ApplyNullable(metadata.Attribution, request.Attribution),
+            Publisher = ApplyNullable(metadata.Publisher, request.Publisher),
+            ContactPoint = request.ContactPoint is null
+                ? metadata.ContactPoint
+                : new MetadataV2ContactPoint
+                {
+                    Name = request.ContactPoint.Name,
+                    Email = request.ContactPoint.Email,
+                    Url = request.ContactPoint.Url,
+                },
+            Links = request.Links is null
+                ? metadata.Links
+                : request.Links.Select(l => new MetadataV2Link
+                {
+                    Href = l.Href,
+                    Rel = l.Rel,
+                    Type = l.Type,
+                    Title = l.Title,
+                    Hreflang = l.Hreflang,
+                }).ToArray(),
+        };
+    }
+
+    private static DiscoveryMetadataResponse BuildServiceDiscoveryResponse(
+        string serviceName,
+        MetadataV2ObjectMetadata metadata)
+    {
+        return new DiscoveryMetadataResponse
+        {
+            ServiceName = serviceName,
+            Title = metadata.Title,
+            Description = metadata.Description,
+            Keywords = metadata.Keywords,
+            Themes = metadata.Themes,
+            Language = metadata.Language,
+            License = metadata.License,
+            Attribution = metadata.Attribution,
+            Publisher = metadata.Publisher,
+            ContactPoint = metadata.ContactPoint is null ? null : new DiscoveryContactPoint
+            {
+                Name = metadata.ContactPoint.Name,
+                Email = metadata.ContactPoint.Email,
+                Url = metadata.ContactPoint.Url,
+            },
+            Links = metadata.Links.Select(l => new DiscoveryLink
+            {
+                Href = l.Href,
+                Rel = l.Rel,
+                Type = l.Type,
+                Title = l.Title,
+                Hreflang = l.Hreflang,
+            }).ToArray(),
+        };
     }
 
     /// <summary>

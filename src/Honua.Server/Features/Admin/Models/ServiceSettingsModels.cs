@@ -231,6 +231,91 @@ internal sealed class UpdateMapServerSettingsRequest
 }
 
 /// <summary>
+/// Response model for a service's operational settings caps
+/// (<c>MetadataV2ServiceSettings</c>).
+/// </summary>
+internal sealed class ServiceSettingsCapsResponse
+{
+    /// <summary>The service name.</summary>
+    public required string ServiceName { get; init; }
+
+    /// <summary>Maximum records per query (paging cap).</summary>
+    public int? MaxRecordCount { get; init; }
+
+    /// <summary>Default records per query when the client does not request one.</summary>
+    public int? DefaultRecordCount { get; init; }
+
+    /// <summary>Maximum features returned per layer per request.</summary>
+    public int? MaxFeaturesPerLayer { get; init; }
+
+    /// <summary>Per-query timeout in milliseconds.</summary>
+    public int? QueryTimeoutMs { get; init; }
+
+    /// <summary>Maximum edit operations per applyEdits transaction.</summary>
+    public int? MaxEditsPerTransaction { get; init; }
+
+    /// <summary>Maximum request payload size in bytes.</summary>
+    public long? MaxPayloadBytes { get; init; }
+
+    /// <summary>Response formats this service is allowed to emit.</summary>
+    public IReadOnlyList<string> SupportedFormats { get; init; } = Array.Empty<string>();
+
+    /// <summary>Default response format token.</summary>
+    public string? DefaultFormat { get; init; }
+
+    /// <summary>Default tile matrix set identifier for tile services.</summary>
+    public string? DefaultTileMatrixSet { get; init; }
+
+    /// <summary>Whether this service supports attachments.</summary>
+    public bool SupportsAttachments { get; init; }
+
+    /// <summary>Maximum attachment size in bytes.</summary>
+    public long? MaxAttachmentSizeBytes { get; init; }
+}
+
+/// <summary>
+/// Request to update a service's operational settings caps
+/// (<c>MetadataV2ServiceSettings</c>). Null scalar fields leave the corresponding
+/// stored value unchanged; a null <c>SupportedFormats</c> leaves it unchanged while an
+/// empty array clears it. Boolean caps and clear-flags follow apply-with-clear semantics.
+/// </summary>
+internal sealed class UpdateServiceSettingsCapsRequest
+{
+    /// <summary>Maximum records per query. Null leaves unchanged.</summary>
+    public int? MaxRecordCount { get; init; }
+
+    /// <summary>Default records per query. Null leaves unchanged.</summary>
+    public int? DefaultRecordCount { get; init; }
+
+    /// <summary>Maximum features per layer per request. Null leaves unchanged.</summary>
+    public int? MaxFeaturesPerLayer { get; init; }
+
+    /// <summary>Per-query timeout in milliseconds. Null leaves unchanged.</summary>
+    public int? QueryTimeoutMs { get; init; }
+
+    /// <summary>Maximum edits per applyEdits transaction. Null leaves unchanged.</summary>
+    public int? MaxEditsPerTransaction { get; init; }
+
+    /// <summary>Maximum request payload size in bytes. Null leaves unchanged.</summary>
+    public long? MaxPayloadBytes { get; init; }
+
+    /// <summary>Allowed response formats. Null leaves unchanged; empty array clears.</summary>
+    public IReadOnlyList<string>? SupportedFormats { get; init; }
+
+    /// <summary>Default response format token. Null leaves unchanged; empty string clears.</summary>
+    public string? DefaultFormat { get; init; }
+
+    /// <summary>Default tile matrix set identifier. Null leaves unchanged; empty string clears.</summary>
+    public string? DefaultTileMatrixSet { get; init; }
+
+    /// <summary>Whether attachments are supported. Null leaves unchanged.</summary>
+    public bool? SupportsAttachments { get; init; }
+
+    /// <summary>Maximum attachment size in bytes. Null leaves unchanged.</summary>
+    public long? MaxAttachmentSizeBytes { get; init; }
+}
+
+/// <summary>
 /// Lightweight service summary for the service list endpoint.
 /// </summary>
 internal sealed class ServiceSummary

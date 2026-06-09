@@ -33,9 +33,17 @@ public sealed class LayerFieldConfigurationUpdateItem
     public string? Alias { get; init; }
 
     /// <summary>
-    /// Optional coded-value domain for the field. Null clears the domain.
+    /// Optional value domain for the field — either a <c>codedValue</c> domain
+    /// (coded values) or a <c>range</c> domain (two-element [min, max] range), and
+    /// optionally <c>mergePolicy</c> / <c>splitPolicy</c>. Null clears the domain.
     /// </summary>
     public MetadataV2FieldDomain? Domain { get; init; }
+
+    /// <summary>
+    /// Optional per-field default value applied by edit-capable services on insert.
+    /// Null leaves the current value unchanged; a JSON null literal clears it.
+    /// </summary>
+    public System.Text.Json.JsonElement? DefaultValue { get; init; }
 
     /// <summary>
     /// Optional hidden-field flag. Null preserves the current value.
@@ -80,9 +88,14 @@ public sealed class LayerFieldConfigurationItem
     public string? Alias { get; init; }
 
     /// <summary>
-    /// Optional coded-value domain for the field.
+    /// Optional value domain for the field (coded-value or range).
     /// </summary>
     public MetadataV2FieldDomain? Domain { get; init; }
+
+    /// <summary>
+    /// Optional per-field default value applied by edit-capable services on insert.
+    /// </summary>
+    public System.Text.Json.JsonElement? DefaultValue { get; init; }
 
     /// <summary>
     /// Whether public protocol output should omit the field.

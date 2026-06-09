@@ -29,6 +29,14 @@ namespace Honua.Server.Features.Admin.Models;
 [JsonSerializable(typeof(UpdateLayerMetadataRequest))]
 [JsonSerializable(typeof(ServiceSummary))]
 [JsonSerializable(typeof(ServiceSummary[]))]
+[JsonSerializable(typeof(ApiResponse<ServiceSettingsCapsResponse>))]
+[JsonSerializable(typeof(ServiceSettingsCapsResponse))]
+[JsonSerializable(typeof(UpdateServiceSettingsCapsRequest))]
+[JsonSerializable(typeof(ApiResponse<DiscoveryMetadataResponse>))]
+[JsonSerializable(typeof(DiscoveryMetadataResponse))]
+[JsonSerializable(typeof(DiscoveryMetadataUpdateRequest))]
+[JsonSerializable(typeof(DiscoveryContactPoint))]
+[JsonSerializable(typeof(DiscoveryLink))]
 internal sealed partial class ServiceSettingsJsonContext : JsonSerializerContext
 {
 }
