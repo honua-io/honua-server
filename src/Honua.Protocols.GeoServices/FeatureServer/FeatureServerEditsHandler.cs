@@ -758,7 +758,11 @@ internal sealed class FeatureServerEditsHandler(
             return;
         }
 
-        var hookContext = BuildEditHookContext(serviceId, layerId, resource, context);
+        // Only surface rows that were actually committed. With rollbackOnFailure=false a batch can
+        // partially fail (ApplyEditsAsync records per-row failures but leaves the create/update/
+        // delete lists intact), and after-hooks must not emit downstream side effects for features
+        // that failed to write.
+        var hookContext = BuildEditHookContext(serviceId, layerId, resource, context, committedOnly: true);
         if (hookContext.Features.IsDefaultOrEmpty)
         {
             return;
@@ -768,34 +772,55 @@ internal sealed class FeatureServerEditsHandler(
     }
 
     /// <summary>
-    /// Projects the surviving create/update/delete operations in <paramref name="context"/> into a
+    /// Projects the create/update/delete operations in <paramref name="context"/> into a
     /// protocol-neutral <see cref="EditHookContext"/> for the plugin pipeline. Each item carries the
-    /// originating request slot so per-feature rejections map back precisely.
+    /// originating request slot so per-feature rejections map back precisely. When
+    /// <paramref name="committedOnly"/> is <see langword="true"/> (the after-hook path), only rows
+    /// whose response slot reports success are included, so post-write hooks never observe features
+    /// that failed to write under a partial-failure (rollbackOnFailure=false) edit.
     /// </summary>
     private EditHookContext BuildEditHookContext(
         string serviceId,
         int layerId,
         MetadataV2Resource resource,
-        EditOperationContext context)
+        EditOperationContext context,
+        bool committedOnly = false)
     {
-        var features = ImmutableArray.CreateBuilder<EditHookFeature>(
-            context.CreateFeatures.Count + context.UpdateFeatures.Count + context.DeleteIndexes.Count);
+        var features = ImmutableArray.CreateBuilder<EditHookFeature>();
 
         for (var k = 0; k < context.CreateFeatures.Count; k++)
         {
-            features.Add(new EditHookFeature(EditKind.Create, context.CreateIndexes[k], ObjectId: null, context.CreateFeatures[k]));
+            var requestIndex = context.CreateIndexes[k];
+            if (committedOnly && !IsSlotCommitted(context.AddResults, requestIndex))
+            {
+                continue;
+            }
+
+            features.Add(new EditHookFeature(EditKind.Create, requestIndex, ObjectId: null, context.CreateFeatures[k]));
         }
 
         for (var k = 0; k < context.UpdateFeatures.Count; k++)
         {
-            features.Add(new EditHookFeature(EditKind.Update, context.UpdateIndexes[k], context.UpdateObjectIds[k], context.UpdateFeatures[k]));
+            var requestIndex = context.UpdateIndexes[k];
+            if (committedOnly && !IsSlotCommitted(context.UpdateResults, requestIndex))
+            {
+                continue;
+            }
+
+            features.Add(new EditHookFeature(EditKind.Update, requestIndex, context.UpdateObjectIds[k], context.UpdateFeatures[k]));
         }
 
         for (var k = 0; k < context.DeleteIndexes.Count; k++)
         {
+            var requestIndex = context.DeleteIndexes[k];
+            if (committedOnly && !IsSlotCommitted(context.DeleteResults, requestIndex))
+            {
+                continue;
+            }
+
             var objectId = context.DeleteResponseObjectIds[k];
             var snapshot = k < context.DeleteFeatures.Count ? context.DeleteFeatures[k] : null;
-            features.Add(new EditHookFeature(EditKind.Delete, context.DeleteIndexes[k], objectId, snapshot ?? Feature.Create(objectId, geometry: null)));
+            features.Add(new EditHookFeature(EditKind.Delete, requestIndex, objectId, snapshot ?? Feature.Create(objectId, geometry: null)));
         }
 
         var httpContext = _httpContextAccessor.HttpContext;
@@ -805,8 +830,14 @@ internal sealed class FeatureServerEditsHandler(
             resource.Metadata.Name,
             httpContext?.User?.Identity?.Name,
             httpContext?.TraceIdentifier,
-            features.MoveToImmutable());
+            features.ToImmutable());
     }
+
+    private static bool IsSlotCommitted(EditResult?[]? results, int requestIndex)
+        => results is not null
+           && requestIndex >= 0
+           && requestIndex < results.Length
+           && results[requestIndex] is { Success: true };
 
     private static void RemoveCreateForRejection(EditOperationContext context, PluginEditRejection rejection, string message)
     {

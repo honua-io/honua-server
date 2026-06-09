@@ -35,7 +35,9 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 [Collection("Database")]
 public sealed class FeatureServerPluginValidationTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    // Enterprise grants the editing.feature-edits gate that fronts all FeatureServer writes
+    // (#1548) as well as the plugin.sdk entitlement.
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Enterprise);
     private const string TestServiceId = "test";
     private const int TestLayerId = 0;
     private const string RejectedName = "REJECT";
