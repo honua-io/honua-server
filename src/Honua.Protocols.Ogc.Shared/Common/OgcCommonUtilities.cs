@@ -397,11 +397,11 @@ internal static class OgcCommonUtilities
             sb.Append("</ul></nav>");
             return sb.ToString();
         }
-        catch (JsonException)
+        catch
         {
-            // Best-effort navigation enhancement: if the serialized payload is
-            // not parseable JSON we simply omit the link bar rather than fail
-            // the HTML response.
+            // Best-effort navigation enhancement: if the payload cannot be parsed
+            // or a link field carries an unexpected JSON value kind, omit the link
+            // bar rather than fail the HTML response.
             return string.Empty;
         }
     }

@@ -32,9 +32,6 @@ namespace Honua.Core.Features.Metadata.Domain.V2;
 [JsonSerializable(typeof(MetadataScriptFieldContract[]))]
 [JsonSerializable(typeof(string[]))]
 [JsonSerializable(typeof(IReadOnlyDictionary<string, string>), TypeInfoPropertyName = "ReadOnlyDictionaryStringString")]
-/// <summary>
-/// Source-generated <see cref="JsonSerializerContext"/> for metadata V2 compatibility report models.
-/// </summary>
 public sealed partial class MetadataCompatibilityJsonContext : JsonSerializerContext
 {
 }
