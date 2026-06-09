@@ -236,7 +236,7 @@ public sealed class BranchVersioningAsyncReconcileTests : IAsyncLifetime
     {
         var connectionProvider = new TestDatabaseConnectionProvider(_fixture.DataSource, () => _schema);
         var poolProvider = new DefaultObjectPoolProvider();
-        var stringBuilderPool = poolProvider.Create(new StringBuilderPooledObjectPolicy());
+        var stringBuilderPool = poolProvider.Create(new Microsoft.Extensions.ObjectPool.StringBuilderPooledObjectPolicy());
         var dictionaryPool = poolProvider.Create(new DictionaryPooledObjectPolicy());
         var geometryProcessor = new GeometryProcessor();
         var cacheManager = new FeatureCacheManager(connectionProvider, NullLogger<FeatureCacheManager>.Instance, _schema);
