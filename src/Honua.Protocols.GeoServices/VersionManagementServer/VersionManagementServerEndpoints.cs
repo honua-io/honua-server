@@ -126,6 +126,11 @@ public static class VersionManagementServerEndpoints
             .WithSummary("Post a reconciled branch version's changes onto DEFAULT")
             .WithTags(Tag);
 
+        endpoints.MapGet($"{BasePath}/versions/{{versionGuid}}/jobs/{{jobId}}", HandleJobStatus)
+            .WithName("GetVersionJobStatus")
+            .WithSummary("Poll the status of an async reconcile/post job")
+            .WithTags(Tag);
+
         return endpoints;
     }
 
@@ -334,6 +339,7 @@ public static class VersionManagementServerEndpoints
         string versionGuid,
         HttpContext context,
         [FromServices] IVersionManager versionManager,
+        [FromServices] IVersionJobRunner jobRunner,
         CancellationToken cancellationToken)
     {
         var (gate, values, versionId) = await AuthorizeReadAndResolveVersionAsync(
@@ -349,19 +355,35 @@ public static class VersionManagementServerEndpoints
             return policyError;
         }
 
-        var result = await versionManager.ReconcileAsync(versionId, policy, cancellationToken).ConfigureAwait(false);
-        var response = new ReconcileResponse
+        // Async fast path: start a durable, pollable job under the version lock and return 202 with a
+        // job handle. The synchronous path stays the default for small/fast versions (#1553).
+        if (ParseAsyncRequested(values!))
         {
-            HasConflicts = !result.Conflicts.IsDefaultOrEmpty && result.Conflicts.Length > 0,
-            CanPost = result.CanPost,
-            AutoResolvedCount = result.AutoResolvedCount,
-            Conflicts = result.Conflicts.IsDefaultOrEmpty
-                ? []
-                : result.Conflicts.Select(ToConflictInfo).ToArray(),
-        };
+            var job = await jobRunner.StartReconcileAsync(serviceId, versionId, policy, cancellationToken)
+                .ConfigureAwait(false);
+            return AcceptedJob(serviceId, versionGuid, job);
+        }
 
-        return Results.Json(response, VersionManagementJsonContext.Default.ReconcileResponse,
-            contentType: "application/json");
+        try
+        {
+            var result = await versionManager.ReconcileAsync(versionId, policy, cancellationToken).ConfigureAwait(false);
+            var response = new ReconcileResponse
+            {
+                HasConflicts = !result.Conflicts.IsDefaultOrEmpty && result.Conflicts.Length > 0,
+                CanPost = result.CanPost,
+                AutoResolvedCount = result.AutoResolvedCount,
+                Conflicts = result.Conflicts.IsDefaultOrEmpty
+                    ? []
+                    : result.Conflicts.Select(ToConflictInfo).ToArray(),
+            };
+
+            return Results.Json(response, VersionManagementJsonContext.Default.ReconcileResponse,
+                contentType: "application/json");
+        }
+        catch (VersionLockedException ex)
+        {
+            return InProgress(context, ex);
+        }
     }
 
     private static async Task<IResult> HandleInspectConflicts(
@@ -450,26 +472,89 @@ public static class VersionManagementServerEndpoints
         string versionGuid,
         HttpContext context,
         [FromServices] IVersionManager versionManager,
+        [FromServices] IVersionJobRunner jobRunner,
         CancellationToken cancellationToken)
     {
-        var (gate, _, versionId) = await AuthorizeReadAndResolveVersionAsync(
+        var (gate, values, versionId) = await AuthorizeReadAndResolveVersionAsync(
             serviceId, versionGuid, context, versionManager, cancellationToken).ConfigureAwait(false);
         if (gate is not null)
         {
             return gate;
         }
 
-        var result = await versionManager.PostAsync(versionId, cancellationToken).ConfigureAwait(false);
-        var response = new PostResponse
+        // Async fast path: start a durable, pollable post job under the version lock (#1553).
+        if (ParseAsyncRequested(values!))
         {
-            Success = result.Posted,
-            AppliedChanges = result.AppliedChanges,
-            ServerGeneration = result.ServerGeneration,
-            BlockedByConflicts = result.BlockedByConflicts,
-        };
+            var job = await jobRunner.StartPostAsync(serviceId, versionId, cancellationToken).ConfigureAwait(false);
+            return AcceptedJob(serviceId, versionGuid, job);
+        }
 
-        return Results.Json(response, VersionManagementJsonContext.Default.PostResponse,
-            contentType: "application/json");
+        try
+        {
+            var result = await versionManager.PostAsync(versionId, cancellationToken).ConfigureAwait(false);
+            var response = new PostResponse
+            {
+                Success = result.Posted,
+                AppliedChanges = result.AppliedChanges,
+                ServerGeneration = result.ServerGeneration,
+                BlockedByConflicts = result.BlockedByConflicts,
+            };
+
+            return Results.Json(response, VersionManagementJsonContext.Default.PostResponse,
+                contentType: "application/json");
+        }
+        catch (VersionLockedException ex)
+        {
+            return InProgress(context, ex);
+        }
+    }
+
+    private static async Task<IResult> HandleJobStatus(
+        string serviceId,
+        string versionGuid,
+        string jobId,
+        HttpContext context,
+        [FromServices] IResourceValidator resourceValidator,
+        [FromServices] IVersionManager versionManager,
+        [FromServices] IVersionJobRunner jobRunner,
+        CancellationToken cancellationToken)
+    {
+        // Read-only poll: gate on the entitlement + service validation only (no write auth, no body).
+        var problem = await ValidateServiceAsync(serviceId, context, resourceValidator, cancellationToken)
+            .ConfigureAwait(false);
+        if (problem is not null)
+        {
+            return problem;
+        }
+
+        var entitlementGate = LicenseGate.RequireEntitlement(
+            context, FeatureCatalog.BranchVersioningKey, "Branch versioning");
+        if (entitlementGate is not null)
+        {
+            return entitlementGate;
+        }
+
+        if (!versionManager.SupportsVersioning)
+        {
+            return StandardErrorHelpers.CreateNotImplemented(
+                context,
+                "Branch versioning is not supported by the configured data provider.",
+                ["Branch versioning requires a PostgreSQL/PostGIS feature provider."]);
+        }
+
+        if (!Guid.TryParse(jobId, out var jobGuid))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, "jobId is not a valid GUID.");
+        }
+
+        var job = await jobRunner.GetJobAsync(jobGuid, cancellationToken).ConfigureAwait(false);
+        if (job is null)
+        {
+            return StandardErrorHelpers.CreateNotFound(context, $"Version job '{jobId}' was not found.");
+        }
+
+        return Results.Json(ToJobResponse(serviceId, versionGuid, job),
+            VersionManagementJsonContext.Default.VersionJobResponse, contentType: "application/json");
     }
 
     // ---- Shared adapter plumbing ---------------------------------------------------------------
@@ -763,6 +848,68 @@ public static class VersionManagementServerEndpoints
                 return false;
         }
     }
+
+    /// <summary>
+    /// Whether the caller requested asynchronous (job-wrapped) reconcile/post execution via an
+    /// <c>async=true</c> flag or <c>mode=async</c> parameter (#1553). Absent or any other value runs the
+    /// synchronous fast path.
+    /// </summary>
+    private static bool ParseAsyncRequested(IReadOnlyDictionary<string, StringValues> values)
+    {
+        var asyncRaw = GeoServicesRequestValueHelpers.GetValueString(values, "async");
+        if (string.Equals(asyncRaw?.Trim(), "true", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var modeRaw = GeoServicesRequestValueHelpers.GetValueString(values, "mode");
+        return string.Equals(modeRaw?.Trim(), "async", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Builds the HTTP 202 Accepted response carrying the started job handle and its status-poll URL.
+    /// </summary>
+    private static IResult AcceptedJob(string serviceId, string versionGuid, VersionJob job)
+    {
+        var response = ToJobResponse(serviceId, versionGuid, job);
+        return Results.Json(response, VersionManagementJsonContext.Default.VersionJobResponse,
+            statusCode: StatusCodes.Status202Accepted, contentType: "application/json");
+    }
+
+    /// <summary>
+    /// Maps a contended version lock to a 409 in-progress response so the caller knows another
+    /// reconcile/post for the same version is already running (#1553).
+    /// </summary>
+    private static IResult InProgress(HttpContext context, VersionLockedException ex)
+        => StandardErrorHelpers.CreateConflict(
+            context,
+            ex.Message,
+            ["A reconcile or post for this version is already in progress. Retry once it completes, or poll the in-flight job."]);
+
+    private static VersionJobResponse ToJobResponse(string serviceId, string versionGuid, VersionJob job) => new()
+    {
+        JobId = job.JobId.ToString(),
+        Kind = job.Kind == VersionJobKind.Reconcile ? "reconcile" : "post",
+        Status = JobStatusToString(job.Status),
+        StatusUrl = $"/rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/jobs/{job.JobId}",
+        ConflictCount = job.ConflictCount,
+        AutoResolvedCount = job.AutoResolvedCount,
+        CanPost = job.CanPost,
+        AppliedChanges = job.AppliedChanges,
+        ServerGeneration = job.ServerGeneration,
+        BlockedByConflicts = job.BlockedByConflicts,
+        Error = job.ErrorMessage,
+    };
+
+    private static string JobStatusToString(VersionJobStatus status) => status switch
+    {
+        VersionJobStatus.Pending => "pending",
+        VersionJobStatus.Running => "running",
+        VersionJobStatus.Succeeded => "succeeded",
+        VersionJobStatus.Failed => "failed",
+        VersionJobStatus.LockContended => "lockContended",
+        _ => status.ToString().ToLower(CultureInfo.InvariantCulture),
+    };
 
     private static string ConflictTypeToString(ReplicaConflictType type) => type switch
     {

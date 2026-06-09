@@ -1378,7 +1378,8 @@
         "VersionManagementServer::reconcile",
         "VersionManagementServer::inspectConflicts",
         "VersionManagementServer::resolveConflicts",
-        "VersionManagementServer::post"
+        "VersionManagementServer::post",
+        "VersionManagementServer::jobStatus"
       ],
       "proofs": [
         {
