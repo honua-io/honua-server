@@ -8,6 +8,7 @@ using System.Text.RegularExpressions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Security.Abstractions;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Features;
 using NetTopologySuite.IO;
@@ -25,9 +26,7 @@ namespace Honua.Geoprocessing.Execution;
 /// interpolation since they cannot be parameterized in DDL/DML. Every row's attributes JSONB
 /// carries a reserved <c>__pipeline_batch_id</c> key for soft-delete rollback.
 /// </summary>
-internal sealed partial class ExternalPostgisSinkExecutor(
-    IOptionsMonitor<GeoprocessingExecutorOptions> options,
-    ISecureConnectionResolver? secureConnectionResolver = null) : IJobExecutor
+internal sealed partial class ExternalPostgisSinkExecutor : IJobExecutor
 {
     internal const string HandledProcessId = "sink.external-postgis";
 
@@ -39,8 +38,26 @@ internal sealed partial class ExternalPostgisSinkExecutor(
     // Options is part of the canonical executor shape (artifact guardrails); the sink
     // result descriptor is tiny so the ceiling is not consulted, but the field keeps the
     // ctor uniform with the rest of the family.
-    private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _options = options;
-    private readonly ISecureConnectionResolver? _secureConnectionResolver = secureConnectionResolver;
+    private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _options;
+    private readonly IServiceScopeFactory? _serviceScopeFactory;
+    private readonly ISecureConnectionResolver? _secureConnectionResolver;
+
+    [ActivatorUtilitiesConstructor]
+    public ExternalPostgisSinkExecutor(
+        IOptionsMonitor<GeoprocessingExecutorOptions> options,
+        IServiceScopeFactory serviceScopeFactory)
+    {
+        _options = options;
+        _serviceScopeFactory = serviceScopeFactory;
+    }
+
+    internal ExternalPostgisSinkExecutor(
+        IOptionsMonitor<GeoprocessingExecutorOptions> options,
+        ISecureConnectionResolver? secureConnectionResolver = null)
+    {
+        _options = options;
+        _secureConnectionResolver = secureConnectionResolver;
+    }
 
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 
@@ -177,11 +194,6 @@ internal sealed partial class ExternalPostgisSinkExecutor(
             return (null, "connectionString is not accepted; use connectionName or connectionId.");
         }
 
-        if (_secureConnectionResolver is null)
-        {
-            return (null, "secure connection resolver is not configured.");
-        }
-
         var hasName = inputs.TryGet("connectionName", out var connectionName);
         var hasId = inputs.TryGet("connectionId", out var connectionIdText);
         if (hasName == hasId)
@@ -189,6 +201,43 @@ internal sealed partial class ExternalPostgisSinkExecutor(
             return (null, "exactly one of connectionName or connectionId is required.");
         }
 
+        if (_secureConnectionResolver is { } directResolver)
+        {
+            return await ResolveConnectionStringAsync(
+                directResolver,
+                hasId,
+                connectionName,
+                connectionIdText,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        if (_serviceScopeFactory is null)
+        {
+            return (null, "secure connection resolver is not configured.");
+        }
+
+        using var scope = _serviceScopeFactory.CreateScope();
+        var scopedResolver = scope.ServiceProvider.GetService<ISecureConnectionResolver>();
+        if (scopedResolver is null)
+        {
+            return (null, "secure connection resolver is not configured.");
+        }
+
+        return await ResolveConnectionStringAsync(
+            scopedResolver,
+            hasId,
+            connectionName,
+            connectionIdText,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<(string? ConnectionString, string? Error)> ResolveConnectionStringAsync(
+        ISecureConnectionResolver resolver,
+        bool hasId,
+        string? connectionName,
+        string? connectionIdText,
+        CancellationToken cancellationToken)
+    {
         try
         {
             string connectionString;
@@ -199,13 +248,13 @@ internal sealed partial class ExternalPostgisSinkExecutor(
                     return (null, "connectionId must be a valid GUID.");
                 }
 
-                connectionString = await _secureConnectionResolver.ResolveConnectionStringAsync(
+                connectionString = await resolver.ResolveConnectionStringAsync(
                     connectionId,
                     cancellationToken).ConfigureAwait(false);
             }
             else
             {
-                connectionString = await _secureConnectionResolver.ResolveConnectionStringAsync(
+                connectionString = await resolver.ResolveConnectionStringAsync(
                     connectionName!,
                     cancellationToken).ConfigureAwait(false);
             }

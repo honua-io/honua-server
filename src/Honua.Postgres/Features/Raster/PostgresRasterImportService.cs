@@ -193,18 +193,18 @@ internal sealed class PostgresRasterImportService : IRasterImportService
             }
             catch (PostgresException ex) when (ex.SqlState == "23503")
             {
-                await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+                await TryRollbackAsync(transaction).ConfigureAwait(false);
                 throw new ArgumentException($"Layer {request.LayerId} does not exist.", ex);
             }
             catch (PostgresException ex) when (IsRasterDataError(ex))
             {
-                await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+                await TryRollbackAsync(transaction).ConfigureAwait(false);
                 throw new InvalidDataException(
                     "PostGIS could not process the raster file.", ex);
             }
             catch
             {
-                await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+                await TryRollbackAsync(transaction).ConfigureAwait(false);
                 throw;
             }
         }
@@ -407,6 +407,24 @@ internal sealed class PostgresRasterImportService : IRasterImportService
 
         var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         return (long)result!;
+    }
+
+    private static async Task TryRollbackAsync(DbTransaction transaction)
+    {
+        try
+        {
+            await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (ObjectDisposedException)
+        {
+            // Npgsql can dispose the transaction while surfacing the original
+            // PostGIS/GDAL exception. Do not mask the user-input failure.
+        }
+        catch (InvalidOperationException)
+        {
+            // The provider may already have aborted the transaction after a
+            // server-side raster error. Preserve the original failure path.
+        }
     }
 
     private static async Task AcquireLayerImportLockAsync(

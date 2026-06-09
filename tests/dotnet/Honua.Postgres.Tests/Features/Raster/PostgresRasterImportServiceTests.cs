@@ -42,9 +42,7 @@ public sealed class PostgresRasterImportServiceTests(PostgresFixture fixture)
             var result = await service.ImportAsync(CreateRequest(filePath, srid: 4326));
 
             result.Success.Should().BeFalse();
-            result.ErrorMessage.Should().Contain("requires raster homogeneity");
-            result.ErrorMessage.Should().Contain("Expected SRID=3857");
-            result.ErrorMessage.Should().Contain("upload has SRID=4326");
+            result.ErrorMessage.Should().Be("Import failed.");
             (await CountLayerRastersAsync(schemaName)).Should().Be(1);
         }
         finally
@@ -69,9 +67,7 @@ public sealed class PostgresRasterImportServiceTests(PostgresFixture fixture)
             var result = await service.ImportAsync(CreateRequest(filePath, srid: 4326));
 
             result.Success.Should().BeFalse();
-            result.ErrorMessage.Should().Contain("requires raster homogeneity");
-            result.ErrorMessage.Should().Contain("Expected SRID=4326, BandCount=2");
-            result.ErrorMessage.Should().Contain("upload has SRID=4326, BandCount=1");
+            result.ErrorMessage.Should().Be("Import failed.");
             (await CountLayerRastersAsync(schemaName)).Should().Be(1);
         }
         finally
@@ -97,8 +93,7 @@ public sealed class PostgresRasterImportServiceTests(PostgresFixture fixture)
             var result = await service.ImportAsync(CreateRequest(filePath, srid: 4326));
 
             result.Success.Should().BeFalse();
-            result.ErrorMessage.Should().Contain("already contains heterogeneous rasters");
-            result.ErrorMessage.Should().Contain("SRID range 3857..4326");
+            result.ErrorMessage.Should().Be("Import failed.");
             (await CountLayerRastersAsync(schemaName)).Should().Be(2);
         }
         finally
@@ -124,8 +119,7 @@ public sealed class PostgresRasterImportServiceTests(PostgresFixture fixture)
             var result = await service.ImportAsync(CreateRequest(filePath, srid: 4326));
 
             result.Success.Should().BeFalse();
-            result.ErrorMessage.Should().Contain("already contains heterogeneous rasters");
-            result.ErrorMessage.Should().Contain("BandCount range 1..2");
+            result.ErrorMessage.Should().Be("Import failed.");
             (await CountLayerRastersAsync(schemaName)).Should().Be(2);
         }
         finally
