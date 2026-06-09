@@ -52,7 +52,12 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
             .Build();
 
         // Act
-        var result = upgrader.PerformUpgrade();
+        DbUp.Engine.DatabaseUpgradeResult result = null!;
+        await _postgres.RunUnderSchemaMutationLockAsync(() =>
+        {
+            result = upgrader.PerformUpgrade();
+            return Task.CompletedTask;
+        });
 
         // Assert
         if (!result.Successful)
@@ -140,8 +145,14 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
             .Build();
 
         // Act - Run migrations twice
-        var firstResult = upgrader.PerformUpgrade();
-        var secondResult = upgrader.PerformUpgrade();
+        DbUp.Engine.DatabaseUpgradeResult firstResult = null!;
+        DbUp.Engine.DatabaseUpgradeResult secondResult = null!;
+        await _postgres.RunUnderSchemaMutationLockAsync(() =>
+        {
+            firstResult = upgrader.PerformUpgrade();
+            secondResult = upgrader.PerformUpgrade();
+            return Task.CompletedTask;
+        });
 
         // Assert
         firstResult.Successful.Should().BeTrue($"first migration should succeed. Error: {firstResult.Error}");
@@ -167,7 +178,12 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
             .WithTransaction()
             .Build();
 
-        var migrationResult = upgrader.PerformUpgrade();
+        DbUp.Engine.DatabaseUpgradeResult migrationResult = null!;
+        await _postgres.RunUnderSchemaMutationLockAsync(() =>
+        {
+            migrationResult = upgrader.PerformUpgrade();
+            return Task.CompletedTask;
+        });
         migrationResult.Successful.Should().BeTrue($"migrations should complete successfully. Error: {migrationResult.Error}");
 
         var baselineSeedPath = RepositoryPaths.Resolve("tests", "seed", "mobile-offline-demo-v1.sql");
