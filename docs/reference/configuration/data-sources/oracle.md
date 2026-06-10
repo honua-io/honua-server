@@ -1,4 +1,4 @@
-# Oracle Spatial Provider
+# Oracle provider
 
 Honua exposes standard Oracle Spatial (`SDO_GEOMETRY`) tables as read-only feature layers
 through the shared `IFeatureDataProvider` seam. Oracle is the dominant enterprise-geodatabase

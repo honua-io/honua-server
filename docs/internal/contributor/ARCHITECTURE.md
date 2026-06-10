@@ -131,7 +131,7 @@ The server is organized by vertical slices under `src/Honua.Server/Features/`.
 - **AOT compatibility**: reflection avoided in hot paths; source-gen JSON.
 
 For deployment architecture and infrastructure details, see:
-- [Deployment Scenarios](../../guides/deploy/deployment-scenarios.md)
+- [Deployment Scenarios](../../guides/deploy/cloud-deployments.md)
 - [Architecture Diagrams](ARCHITECTURE_DIAGRAMS.md)
 - [Platform Overview](../../concepts/architecture.md)
 

@@ -1,20 +1,15 @@
-# API Standards Summary
+# OGC conformance
 
-This page is the single answer to "where does Honua Server stand on API standards
-and conformance?" It consolidates pointers to the authoritative documents in one
-place so audits, re-grades, and onboarding can move quickly. Each section links
-to the source of truth; this file is a navigational aid, not a redefinition.
+Honua Server passes 952 / 952 assertions (100%) across 11 OGC CITE suites on `trunk`,
+with 0 failed, 0 skipped, and 0 CantTell. The authoritative snapshot, evidence-run
+links, and re-grading guidance live in [`docs/cite-status.md`](../../cite-status.md);
+the numbers below mirror that page and must never diverge from it.
 
-Last reviewed: 2026-05-20.
+## CITE pass rates per suite
 
-## OGC CITE Conformance
+Snapshot from the 2026-05-17 evidence run (`allPassed=true`):
 
-**Authoritative pass rate: 952 / 952 (100%) across 11 OGC CITE suites on `trunk`.**
-
-Snapshot from the 2026-05-17 evidence run (`allPassed=true`, 0 failed, 0 skipped,
-0 CantTell):
-
-| Suite | Profile | Passed / Total | Pass Rate |
+| Suite | Profile | Passed / Total | Pass rate |
 |---|---|---:|---:|
 | OGC API Features 1.0 | `default` | 137 / 137 | 100% |
 | OGC API Tiles 1.0 | `default` | 16 / 16 | 100% |
@@ -28,63 +23,71 @@ Snapshot from the 2026-05-17 evidence run (`allPassed=true`, 0 failed, 0 skipped
 | WMS 1.3 | `default` | 199 / 199 | 100% |
 | WMTS 1.0 | `default` | 60 / 60 | 100% |
 
-Sources of truth:
+The WFS 2.0 explicit transactional slice is tracked separately and passes 25 / 25.
 
-- [`docs/cite-status.md`](../../cite-status.md) — authoritative snapshot, re-grading guidance.
-- [`docs/contributor/ogc-cite-conformance-evidence.md`](../../internal/contributor/ogc-cite-conformance-evidence.md)
-  — canonical, website-linkable evidence summary.
-- [`docs/contributor/cite-runbook.md`](../../internal/contributor/cite-runbook.md) — per-suite
-  scope, scripts, and workflow files.
-- [`docs/contributor/ogc-certification-path.md`](../../internal/contributor/ogc-certification-path.md)
-  — formal OGC certification posture.
+## What conformance means per protocol
 
-The OpenAPI specs under `src/Honua.Server/*-openapi.json` carry the same totals
-in an `x-honua-cite-compliance` vendor extension on the `info` object, so SDK
-generators and contract diff tools see the conformance posture without leaving
-the spec.
+- **OGC API Features** — Part 1 Core, Part 2 CRS, and Part 3 Filtering pass against
+  the seeded fixture. Any spec-compliant OAPIF client (QGIS, GDAL/OGR, OpenLayers)
+  can discover collections, page items, filter with CQL2, and request alternate CRSs.
+- **OGC API Tiles** — vector and raster tile delivery against the seeded tile matrix
+  sets; 7 conformance classes.
+- **WFS 1.0 / 1.1 / 2.0** — the `basic` profile: capabilities, DescribeFeatureType,
+  GetFeature, spatial/temporal filters, paging, transactions, and managed stored
+  queries. Locking, feature versioning, and spatial joins are not advertised and not
+  in scope. WFS 1.0/1.1 are read-only compatibility surfaces.
+- **WMS 1.3 / WMTS 1.0 / WCS 2.0** — the official ETS default/core profiles:
+  GetCapabilities, GetMap/GetTile/GetCoverage, and GetFeatureInfo behave as legacy
+  OGC clients expect. WMS 1.1.1 is also served but has no CITE evidence yet (see
+  [known limitations](clients.md#known-limitations)).
+- **GeoPackage 1.2 / GML 3.2 / KML 2.2** — format-level conformance: exported
+  documents validate against the official suites for the classes Honua's exports
+  exercise (`applicable` profile; out-of-scope optional class families are explained
+  per suite in [`docs/cite-status.md`](../../cite-status.md)).
 
-## gRPC Versioning Policy
+Some OGC API surfaces have no official CITE executable test suite yet — Styles,
+Maps, Processes, Coverages, and Records. They are shipped as conformant adapters
+proven by targeted integration tests plus accurate `/conformance` declarations,
+and are not part of the 952/952 count. See the
+[OGC API surfaces without an official CITE ETS](../../cite-status.md#ogc-api-surfaces-without-an-official-cite-ets)
+section of the CITE status page.
 
-The `Geospatial.V1` gRPC surface is the long-lived, source-available wire
-contract for SDKs and integrators.
+## Runtime conformance endpoints
 
-- [`docs/grpc-versioning-policy.md`](../protocols/grpc.md) — versioning
-  rules, breaking-change matrix, deprecation policy, and proto evolution
-  guidance.
-- Stability tier: **stable**. Breaking changes require a new major package
-  (`Geospatial.V2`) and a documented migration window.
+Each OGC API surface declares its implemented conformance classes at runtime
+(paths verified against `src/Honua.Server/EndpointRegistry.cs`):
 
-## OpenAPI Drift Workflow
+| Surface | Endpoint |
+|---|---|
+| OGC API Features | `GET /ogc/features/conformance` |
+| OGC API Tiles | `GET /ogc/tiles/conformance` |
+| OGC API Maps | `GET /ogc/maps/conformance` |
+| OGC API Processes | `GET /ogc/processes/conformance` |
+| OGC API Coverages | `GET /ogc/coverages/conformance` |
+| OGC API Records | `GET /ogc/records/conformance` |
+| OGC API Styles | `GET /ogc/styles/conformance` |
+| STAC API | `GET /stac/conformance` |
 
-Admin/control-plane OpenAPI contracts are gated in CI and reproducible across
-SDK generations.
+The OpenAPI specs under `src/Honua.Server/*-openapi.json` carry the same CITE
+totals in an `x-honua-cite-compliance` vendor extension on the `info` object.
 
-- `.github/workflows/openapi-contract-governance.yml` — OpenAPI spec shape and
-  breaking-change detection for admin endpoints (see
-  [`docs/contributor/CI_QUALITY_GATES.md`](../../internal/contributor/CI_QUALITY_GATES.md)).
-- `.github/workflows/control-plane-sdk-governance.yml` — reproducible SDK
-  generation from the admin OpenAPI spec, ensuring no silent drift between
-  spec, server, and clients.
+## API versioning in one paragraph
 
-## API Versioning Strategy
-
-Honua exposes two stable, separately versioned API tiers:
-
-- **Admin / control plane (v1).** See
-  [`docs/developer/CONTROL_PLANE_VERSIONING_POLICY.md`](../versioning-and-support.md)
-  for backward-compatibility commitments, deprecation timelines, and the
-  process for introducing v2. Migration guidance lives in
-  [`docs/developer/CONTROL_PLANE_MIGRATION_GUIDE.md`](../control-plane-migration-guide.md).
-- **OGC (stable).** Versioning is governed by the underlying OGC standard
-  (e.g. WFS 2.0, WMS 1.3, OGC API Features 1.0). Honua does not invent its
-  own version axis for these; conformance is asserted via CITE pass rates
-  above.
+Honua exposes two separately versioned API tiers. The admin/control plane is
+path-versioned (`/api/v1/...`) with a documented deprecation lifecycle and
+CI-gated OpenAPI contract governance — see
+[versioning and support](../versioning-and-support.md). Standards APIs (WFS, WMS,
+OGC API Features, and the rest) are versioned by the underlying OGC standard;
+Honua does not add its own version axis, and conformance is asserted via the CITE
+pass rates above. The `Geospatial.V1` gRPC surface is a stable wire contract —
+breaking changes require a new major package (`Geospatial.V2`); see the
+[gRPC versioning policy](../protocols/grpc.md).
 
 ## Related
 
-- [`docs/gis/STANDARDS_APIS.md`](../../concepts/protocols.md) — every protocol Honua
-  speaks, with endpoint, version, and coverage links.
-- [`docs/gis/MVP_COMPATIBILITY_CONTRACT.md`](clients.md)
-  — the supported client × protocol matrix for MVP.
-- [`docs/contributor/public-interface-quality-model.md`](../../internal/contributor/public-interface-quality-model.md)
-  — how public API surfaces are scored and gated.
+- [`docs/cite-status.md`](../../cite-status.md) — authoritative CITE snapshot (source of truth for the table above).
+- [CITE conformance evidence](../../internal/contributor/ogc-cite-conformance-evidence.md) — canonical, website-linkable evidence summary.
+- [CITE runbook](../../internal/contributor/cite-runbook.md) — per-suite scope, scripts, and workflow files.
+- [OGC certification path](../../internal/contributor/ogc-certification-path.md) — formal certification posture.
+- [Supported clients](clients.md) — which clients consume these protocols, with tested versions.
+- [Protocols overview](../../concepts/protocols.md) — every protocol Honua speaks.

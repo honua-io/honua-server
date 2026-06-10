@@ -1,4 +1,4 @@
-# DuckDB Provider
+# DuckDB provider
 
 Honua supports DuckDB as a read-only embedded feature provider. This is designed for analytical and
 reference workloads where data is prepared offline (e.g. GeoParquet, CSV, or Shapefile imports into

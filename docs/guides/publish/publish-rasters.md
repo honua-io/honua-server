@@ -1,201 +1,104 @@
-# Raster Overview
+# Publish rasters
 
-This page summarizes the current Honua raster surface for GIS operators and
-client integrators. It is the durable status page for the raster roadmap tracked
-by issue `#381`.
+You'll have raster data imported into PostGIS (or registered from cloud storage) and served through ImageServer, WCS, and OGC API Coverages in about 10 minutes.
 
-## Current status
+**Prerequisites:** A running server ([quickstart](../../get-started/quickstart.md)), admin credentials ([authentication](../secure/authentication.md)), and a target layer id in the catalog.
 
-| Area | Status | Notes |
-| --- | --- | --- |
-| Raster upload and import | Shipped (`#517`) | Admin import accepts GeoTIFF/COG files and PNG/JPEG rasters with world-file sidecars, then loads them into the PostGIS raster store. |
-| COG registration, direct serving, and export support | Shipped (`#519`) | Admin COG registration is available for cloud-hosted COGs. ImageServer tile requests can fall back to registered COGs when PostGIS has no tile. Shared raster export/conversion paths can request COG output. |
-| Terrain-RGB elevation tiles | Shipped (`#839`) | Registered single-band DEM/raster sources can be served through `/terrain/{datasetId}/tile.json` and `/terrain/{datasetId}/{z}/{x}/{y}.png` for MapLibre/Mapbox `raster-dem` clients. |
-| Elevation Query / Profile API | Shipped (`#840`) | Numeric point lookup at `/elevation/{datasetId}/value` and ordered distance/elevation samples at `/elevation/{datasetId}/profile` over the same registered raster/DEM sources. Profile sampling runs as a single PostGIS round-trip that transforms the input line to WGS 84, measures geodesic length, and samples with `ST_LineInterpolatePoint(geog, frac, true)` (PostGIS 3.4+). See [Elevation Query and Profile API](../../reference/protocols/terrain-and-elevation.md). |
-| Multi-raster mosaic and raster catalog completion | Remaining (`#522`) | MVP layer-level raster selection and simple PostGIS mosaic rendering exist, but full mosaic dataset/raster catalog behavior remains the remaining implementation child. |
-| WCS protocol adapter | Shipped (`#377`) | WCS adapts to the shared raster backend for primary-raster `GetCapabilities`, `DescribeCoverage`, and `GetCoverage`. |
-| OGC API Coverages protocol adapter | Shipped (`#521`) | OGC API Coverages adapts to the shared raster backend for REST/JSON coverage discovery, schema metadata, and GeoTIFF/PNG coverage retrieval. |
-| Zarr coverage support | MVP (`#1009`) | Read-only Zarr v2 registration via the admin catalog. Pure-managed metadata reader and bounded chunk-aligned subset reader. Wider protocol-adapter exposure (STAC, OGC API Coverages/Maps/Tiles, ImageServer) is a deferred follow-on. |
+Honua serves rasters from two sources: rasters imported into the PostGIS raster store, and cloud-hosted COGs registered for direct range-read serving. Both surface through the same protocol adapters.
 
-## Raster upload and import
+> Also available in Honua Console — UI guide coming soon.
 
-Raster import is exposed through the admin API:
+## Steps
 
-| Endpoint | Purpose |
-| --- | --- |
-| `POST /api/v1/admin/import/raster` | Multipart raster upload into PostGIS. |
-| `GET /api/v1/admin/import/raster/formats` | Lists supported raster extensions and descriptions. |
+### 1. Check supported raster formats
 
-The primary raster file can be:
+```bash
+HONUA_URL=http://localhost:8080
+HONUA_API_KEY=your-admin-api-key
+curl -H "X-API-Key: $HONUA_API_KEY" "$HONUA_URL/api/v1/admin/import/raster/formats"
+```
 
-| Format | File extensions | Georeferencing expectations |
-| --- | --- | --- |
-| GeoTIFF / COG | `.tif`, `.tiff` | Embedded TIFF/GeoTIFF georeferencing is preferred. The import path validates TIFF/BigTIFF headers and uses the same PostGIS ingestion path for standard GeoTIFF and COG files. |
-| PNG world-file raster | `.png` | Requires a `.pgw` or `.wld` sidecar. A `.prj` sidecar or explicit `srid` field should be supplied when the CRS is not otherwise known. |
-| JPEG world-file raster | `.jpg`, `.jpeg` | Requires a `.jgw` or `.wld` sidecar. A `.prj` sidecar or explicit `srid` field should be supplied when the CRS is not otherwise known. |
+GeoTIFF/COG (`.tif`, `.tiff`) carry embedded georeferencing; PNG (`.png`) and JPEG (`.jpg`, `.jpeg`) require a world-file sidecar.
 
-The import request is synchronous today. It is bounded by
-`Limits:Imports:MaxSyncImportSize` and does not yet enqueue a background raster
-job for larger uploads. If async/background raster import is prioritized, track
-that as a separate `honua-server` child ticket rather than adding it to `#522`.
+### 2. Import a raster into PostGIS
 
-Successful imports report progress through the universal progress store when it
-is available and invalidate layer output cache entries after the import
-commits, including Terrain-RGB metadata and tile entries tagged with `terrain`.
-Imported rasters must remain homogeneous per layer for SRID and band count
-because the shared mosaic paths depend on PostGIS `ST_Union`.
+```bash
+LAYER_ID=1
+curl -X POST -H "X-API-Key: $HONUA_API_KEY" \
+  -F "file=@dem.tif" \
+  -F "layerId=$LAYER_ID" \
+  -F "name=City DEM 2026" \
+  "$HONUA_URL/api/v1/admin/import/raster"
+```
 
-## Cloud raster and COG serving
+Optional form fields: `description`, `srid` (overrides CRS detection), `acquisitionDate` (ISO 8601, used by temporal mosaic selection), `tileZoomLevels` (comma-separated 0–24, default `0-8` pre-generated). For PNG/JPEG, attach the world file (`-F "file=@dem.pgw"`) and optionally a `.prj` sidecar. The import runs synchronously and is bounded by `Limits:Imports:MaxSyncImportSize`.
 
-Cloud-hosted COGs are registered outside the Esri ImageServer operation set:
+Every raster uploaded to the same layer must match the layer's first raster in SRID and band count; mismatches return `400` with a structured homogeneity message.
 
-| Endpoint | Purpose |
-| --- | --- |
-| `POST /api/v1/admin/cloud-rasters` | Register a cloud-hosted COG for a layer. |
-| `GET /api/v1/admin/cloud-rasters?layerId={layerId}` | List COG registrations for a layer. |
-| `GET /api/v1/admin/cloud-rasters/{id}` | Read one COG registration. |
-| `DELETE /api/v1/admin/cloud-rasters/{id}` | Unregister a COG and evict its metadata cache entry. |
-| `POST /api/v1/admin/cloud-rasters/{id}/refresh` | Re-scan COG metadata from cloud storage and evict stale cached metadata. |
+### 3. Register a cloud-hosted COG (alternative to import)
 
-Registered COGs currently support these providers:
+```bash
+curl -X POST -H "X-API-Key: $HONUA_API_KEY" -H "Content-Type: application/json" \
+  -d '{"layerId":1,"name":"ortho-2026","provider":"AwsS3","bucket":"my-rasters","objectKey":"ortho/2026.tif"}' \
+  "$HONUA_URL/api/v1/admin/cloud-rasters"
+```
 
-| Provider | Status |
-| --- | --- |
-| `AwsS3` | Supported for direct COG range reads when the S3 range reader is configured. |
-| `AzureBlob` | Supported for direct COG range reads when the Azure Blob range reader is configured. |
-| `Local` | Not valid for COG registration. |
-| Google Cloud Storage | Not implemented. Do not treat GCS as shipped support until a provider exists. |
+Providers: `AwsS3` and `AzureBlob` (a matching range reader must be configured). Manage registrations with `GET /api/v1/admin/cloud-rasters?layerId=1`, `GET|DELETE /api/v1/admin/cloud-rasters/{id}`, and `POST /api/v1/admin/cloud-rasters/{id}/refresh` to re-scan metadata. ImageServer tile requests use PostGIS first and fall back to registered COGs; direct COG tile serving supports JPEG, DEFLATE, and uncompressed tiles, and is Pro-gated (`raster.cloud-cog-serving`).
 
-ImageServer tile requests use the PostGIS raster tile path first. When no
-PostGIS tile is produced and a COG resolver is configured, Honua attempts direct
-COG tile serving from registered cloud rasters for the addressed layer.
+## Verify
 
-Direct COG tile serving is Pro-gated by the canonical feature key
-`raster.cloud-cog-serving`. COG import, registration, and export/conversion
-support are Community-tier and ungated.
+ImageServer export:
 
-## COG compression and tile output
+```bash
+curl "$HONUA_URL/rest/services/$LAYER_ID/ImageServer/exportImage?bbox=-122.5,37.7,-122.3,37.9&f=json"
+```
 
-Direct COG tile serving reads tile byte ranges from cloud storage and serves the
-native tile content when it can satisfy the requested ImageServer tile format.
+Other protocol surfaces over the same raster backend:
 
-| Compression | Direct tile-serving status |
-| --- | --- |
-| `JPEG` | Supported as JPEG passthrough. |
-| `DEFLATE` | Supported through zlib-wrapped TIFF deflate decompression. |
-| `NONE` / empty | Supported as uncompressed tile bytes. |
-| `LZW`, `ZSTD`, `WEBP`, and other TIFF/COG modes | Not supported for direct tile serving today. Honua logs an unsupported-compression warning and tries the next registered COG for the layer. |
+```bash
+curl "$HONUA_URL/ogc/coverages/collections"
+curl "$HONUA_URL/rest/services/$LAYER_ID/ImageServer/WCS?service=WCS&request=GetCapabilities"
+```
 
-COG export support uses the raster store's GDAL output path. When the native
-COG driver is available it can emit `COG`; otherwise it falls back to `GTiff`
-with COG-compatible options such as internal tiling and `DEFLATE` compression.
-The public ArcGIS ImageServer `exportImage` format parameter remains limited to
-the documented ImageServer formats and does not expose `format=cog`.
+```json
+{"collections": [{"id": "…", …}], …}
+```
 
-## Zarr coverage support
+## HDF5 / NetCDF
 
-Honua exposes read-only Zarr coverage support through the shared raster/coverage
-pipeline. Zarr stores are registered alongside COGs and surfaced through the
-canonical admin catalog rather than a protocol-local reader.
+Cloud-optimized HDF5 (`.h5`, `.hdf5`) and NetCDF-4 (`.nc`, `.nc4`) sources can be registered against a layer today; metadata extraction and subset reads ship in a follow-up reader:
 
-| Endpoint | Purpose |
-| --- | --- |
-| `POST /api/v1/admin/zarr-stores` | Register a Zarr store for a layer. |
-| `GET /api/v1/admin/zarr-stores?layerId={layerId}` | List Zarr registrations for a layer. |
-| `GET /api/v1/admin/zarr-stores/{id}` | Read one Zarr registration including discovered variables. |
-| `DELETE /api/v1/admin/zarr-stores/{id}` | Unregister a Zarr store. |
-| `POST /api/v1/admin/zarr-stores/{id}/refresh` | Re-scan store metadata via the shared range reader. |
+```bash
+curl -X POST -H "X-API-Key: $HONUA_API_KEY" -H "Content-Type: application/json" \
+  -d '{
+    "layerId": 1,
+    "name": "ghrsst-l4-daily",
+    "format": "NetCdf4",
+    "provider": "AwsS3",
+    "bucket": "noaa-sst",
+    "objectKey": "ghrsst/2026/05/18.nc4",
+    "variables": ["analysed_sst", "analysis_error"]
+  }' \
+  "$HONUA_URL/api/v1/admin/multidim-coverages"
+```
 
-### MVP support matrix
+- `provider` must be `AwsS3` or `AzureBlob`; local paths are rejected. `variables` empty means "all CF data variables".
+- Manage with `GET /api/v1/admin/multidim-coverages?layerId=1`, `GET|DELETE .../multidim-coverages/{id}`.
+- `POST .../multidim-coverages/{id}/refresh` currently returns `501 Not Implemented` (`HONUA-COV-HDF-READER-NOT-ENABLED`) — registrations are kept and activate when the metadata reader ships.
+- Keep objects in a hot storage class (`STANDARD`); archive tiers time out on range reads.
 
-| Capability | Status |
-| --- | --- |
-| Zarr format version | v2 only. v3 stores are detected and rejected with a clear error. |
-| Layout | C order chunks named `0.0`, `0.1`, ... using the default `.` separator. Fortran order is rejected. |
-| Compressors | Uncompressed and `zlib`. `blosc`, `gzip`, `lz4`, `zstd`, and filter pipelines are deferred. |
-| dtypes | Little-endian numpy dtypes: `<f4`, `<f8`, `<i1`..`<i8`, `<u1`..`<u8`, and `|u1`/`|i1`. Big-endian and structured dtypes are rejected. |
-| Sources | `AwsS3` and `AzureBlob` via `ICloudRangeReader`. `Local` is permitted for registration so single-host deployments can serve filesystem stores. |
-| Variables | Single-array stores or grouped stores that list variable names in `.zattrs.variables` (max 64 variables). |
-| Georeferencing | `crs_wkid` or `crs` (`EPSG:NNNN`) and `extent` (`[xmin,ymin,xmax,ymax]`) in the root `.zattrs`. Dimension hints (`x_dimension`, `y_dimension`, `t_dimension`) are read when present. CF-style `_ARRAY_DIMENSIONS` per array is honored. |
-| Subset reads | Per-variable, per-dimension bounded `[start,stop)` reads. Capped at 4096 chunks and 256 MiB per request. |
-| Write/rechunk | Out of scope. Stores are read-only. |
-| STAC, OGC API Coverages/Maps/Tiles, ImageServer exposure | Deferred follow-on; the admin catalog records the registration so a later PR can plug Zarr variables into the shared `IRasterStore` surface. |
+## Troubleshoot
 
-### Object-storage layout requirements
+- **`'layerId' is required and must be a valid integer.`** — the multipart request is missing the `layerId` form field; rasters attach to an existing catalog layer.
+- **`Raster import request is invalid.` for PNG/JPEG** — those formats need a `.pgw`/`.jgw`/`.wld` world file; add the sidecar or supply `srid` plus a `.prj`.
+- **Homogeneity error on upload** — the new raster's SRID or band count differs from the layer's first raster; use a separate layer or reproject/restack the source.
+- **COG tiles not served from cloud** — check the registration with `GET /api/v1/admin/cloud-rasters/{id}`, confirm a range reader is configured for the provider, and note that LZW/ZSTD/WEBP-compressed COGs are not supported for direct tile serving.
+- **Web tiles misaligned** — direct COG tile serving expects EPSG:3857 sources; other SRIDs are logged as potentially problematic for web clients.
 
-A registered root path must resolve to either a single Zarr array (so
-`<root>/.zarray` exists) or a Zarr group with a `<root>/.zgroup` document. When
-a `<root>/.zattrs` is present, the reader uses the optional `variables` array to
-discover child arrays. Each child array lives at `<root>/<variable>/.zarray`
-with chunks under the same prefix. Path traversal sequences (`..`, backslashes,
-leading `/`) are rejected by the admin validator.
+More help: [troubleshooting](../deploy/troubleshooting.md).
 
-### Deployment dependencies
+## Next steps
 
-The Zarr reader is pure managed and ships with the server runtime. No native
-GDAL/Zarr binaries are required. Cloud reads reuse the shared S3 and Azure Blob
-range readers configured for COG, so any environment that already serves cloud
-COGs can register Zarr stores from the same buckets.
-
-## CRS and georeferencing assumptions
-
-GeoTIFF and COG imports should carry embedded georeferencing. World-file rasters
-depend on sidecar georeferencing and should include a `.prj` file or explicit
-`srid` form value when the CRS cannot be inferred.
-
-Direct COG tile resolution is designed for web-map tile alignment. EPSG:3857 is
-the expected CRS for directly serving web tiles. EPSG:4326 COG metadata can be
-read, but clients may need protocol-specific handling. Other SRIDs are logged
-as potentially problematic for web clients.
-
-## Terrain-RGB elevation tiles
-
-Terrain-RGB is available as a server-owned elevation tile surface over the
-registered PostGIS raster source for a layer:
-
-| Endpoint | Purpose |
-| --- | --- |
-| `GET /terrain/{datasetId}/tile.json` | TileJSON 3.0 metadata with Honua source and no-data extensions. |
-| `GET /terrain/{datasetId}/{z}/{x}/{y}.png` | 256x256 WebMercator XYZ Terrain-RGB PNG tile. |
-
-Terrain v1 expects one numeric source elevation band, a usable CRS/SRID, and a
-consistent source CRS across the dataset. Source no-data and uncovered pixels
-are encoded as opaque Terrain-RGB `[0, 0, 0]` (`-10000m`), including tiles that
-are entirely outside raster coverage. When overlapping rasters exist, terrain
-tiles use the layer's `rasterMosaic.mergeStrategy` default and do not accept a
-per-request mosaic override. See [Terrain-RGB Elevation Tiles](publish-terrain-and-elevation.md)
-for the client contract.
-
-## Cache and observability behavior
-
-Raster import invalidates the affected layer's output-cache entries after a
-successful commit, including the `terrain` tag used by Terrain-RGB TileJSON and
-finite-grid tile policies. Admin service, collection, and all-cache invalidation
-also evict the same terrain tag. It does not enable exact response caching for
-arbitrary raster windows.
-
-COG metadata uses an in-memory cache keyed as `cog:metadata:{id}` with a
-30-minute sliding expiration. `DELETE /api/v1/admin/cloud-rasters/{id}` and
-`POST /api/v1/admin/cloud-rasters/{id}/refresh` remove that cache entry.
-Persisted metadata stores overview summaries today; tile offset arrays may
-still require a cloud scan on cold cache.
-
-The shipped paths preserve observable signals for raster import progress, COG
-registration, metadata scans, direct COG tile serving, OGC API Coverages exports,
-unsupported compression, non-web-mercator CRS warnings, and Terrain-RGB
-metadata/tile requests. OGC API Coverages collection list/detail, schema, and
-coverage byte routes are not output-cached; only bounded metadata resources
-such as landing, conformance, and OpenAPI use output-cache policies. Terrain
-tile generation spans include layer, dataset, `z/x/y`, selected raster count,
-output bytes, and all-no-data status.
-
-## Remaining roadmap
-
-| Issue | Scope |
-| --- | --- |
-| `#522` | Complete true multi-raster mosaic dataset behavior and raster catalog workflows beyond the MVP layer-level selection/composition paths. |
-| Future child if prioritized | Add async/background raster import queueing separate from `#522`. |
-
-Protocol follow-ons must stay as thin adapters over the shared raster store,
-rendering, metadata, validation, cache, authorization, and telemetry
-infrastructure.
+- [Publish terrain and elevation](publish-terrain-and-elevation.md) — serve a DEM as Terrain-RGB tiles and elevation queries.
+- [Publish tiles](publish-tiles.md) — tile cache operations.
+- [Publish layers](publish-layers.md) — vector layer publishing.

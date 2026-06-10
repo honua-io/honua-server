@@ -7,7 +7,7 @@ Build applications and integrations with Honua APIs and SDKs.
 - [API Examples](../../guides/query-analyze/query-features.md) — Request/response examples for major Honua protocols
 - [Integration Patterns](../../reference/integration-patterns.md) — Common integration approaches with code samples
 - [Metadata and Catalog Parity Matrix](../../internal/developer/metadata-catalog-parity-matrix.md) — Canonical server endpoint inventory and SDK parity contract for catalog and metadata reads
-- [Capability Manifest](../../reference/admin-api/capability-manifest.md) — Neutral runtime capability discovery for Console, MCP, QGIS, native hosts, and SDK clients
+- [Capability Manifest](../../reference/admin-api/overview.md) — Neutral runtime capability discovery for Console, MCP, QGIS, native hosts, and SDK clients
 - [Console Content, Share, and RBAC (Admin API)](../../internal/admin-api/console-content-and-rbac.md) — Honua Console metadata v2 session bootstrap, content CRUD/list/search, action-check, provenance traversal, Share access, public-link, and embed contracts under `/api/v1/console/**`
 - [Console Workflow Packages (Admin API)](../../internal/admin-api/console-workflow-packages.md) — Server-owned GP/ETL node registry, workflow package versioning, validation, dry-run, publication, runs, and provenance under `/api/v1/console/workflow-*`
 - [Console Job Observability (Admin API)](../../internal/admin-api/console-job-observability.md) — Durable job list/detail/log/artifact/action contract for Console job viewers under `/api/v1/admin/jobs/**`

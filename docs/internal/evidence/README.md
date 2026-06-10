@@ -21,9 +21,9 @@ What we run, what passes, what the formal certification posture is.
 - **OGC certification path** — [`contributor/ogc-certification-path.md`](../contributor/ogc-certification-path.md). Decision record: formal OGC certification is currently deferred. Includes the evidence baseline matrix and the criteria for reopening a submission.
 - **Legacy CITE (manual)** — [`archive/contributor/cite-legacy-ogc-conformance-testing.md`](../../archive/contributor/cite-legacy-ogc-conformance-testing.md). WMS 1.1.1, WFS 1.0, WFS 1.1 — manual procedures only, not part of the automated runbook.
 - **Per-spec coverage matrices** — [`gis/specifications/`](../../gis/specifications):
-  - [OGC API Features](../../reference/protocols/specifications/ogc-api-features-coverage.md) (umbrella + [Part 1 Core](../../reference/protocols/specifications/ogc-api-features-part1-core.md) / [Part 2 CRS](../../reference/protocols/specifications/ogc-api-features-part2-crs.md) / [Part 3 Filtering](../../reference/protocols/specifications/ogc-api-features-part3-filtering.md))
-  - [OGC API Tiles](../../reference/protocols/specifications/ogc-api-tiles-coverage.md), [Records](../../reference/protocols/specifications/ogc-api-records-coverage.md), [Coverages](../../reference/protocols/specifications/ogc-api-coverages-coverage.md), [Processes](../../reference/protocols/specifications/ogc-api-processes-coverage.md)
-  - [WCS 2.0.1](../../reference/protocols/specifications/wcs-2.0.1-coverage.md), [OData v4](../../reference/protocols/specifications/odata-v4-coverage.md)
+  - [OGC API Features](../../reference/protocols/ogc-apis.md) (umbrella + [Part 1 Core](../../reference/protocols/ogc-apis.md) / [Part 2 CRS](../../reference/protocols/ogc-apis.md) / [Part 3 Filtering](../../reference/protocols/ogc-apis.md))
+  - [OGC API Tiles](../../reference/protocols/ogc-apis.md), [Records](../../reference/protocols/ogc-apis.md), [Coverages](../../reference/protocols/ogc-apis.md), [Processes](../../reference/protocols/ogc-apis.md)
+  - [WCS 2.0.1](../../reference/protocols/wms-wfs-wcs-wmts.md), [OData v4](../../reference/protocols/odata.md)
   - OGC API Maps coverage doesn't ship as a spec doc; see the Maps section in [`contributor/cite-runbook.md`](../contributor/cite-runbook.md#ogc-api-maps) (integration-test-driven, not TeamEngine-driven).
 - **Visual style certification** — [`gis/visual-style-certification-slice.md`](visual-style-certification-slice.md). Render-regression evidence for style fidelity across protocols.
 
@@ -32,7 +32,7 @@ What we run, what passes, what the formal certification posture is.
 How Honua's GeoServices REST surface compares to Esri's.
 
 - **GeoServices REST parity overview** — [`gis/geoservices-rest-parity.md`](../../reference/compatibility/geoservices-parity.md). Canonical landing page.
-- **Per-service matrices** — [FeatureServer](../../reference/compatibility/feature-server-matrix.md), [MapServer / WMS / WMTS](../../reference/compatibility/map-server-matrix.md), [ImageServer](../../reference/compatibility/image-server-matrix.md), [Geometry Service](../../reference/compatibility/geometry-service-matrix.md).
+- **Per-service matrices** — [FeatureServer](../../reference/compatibility/geoservices-parity.md), [MapServer / WMS / WMTS](../../reference/compatibility/geoservices-parity.md), [ImageServer](../../reference/compatibility/geoservices-parity.md), [Geometry Service](../../reference/compatibility/geoservices-parity.md).
 - **I3S scene compatibility** — [`gis/i3s-compatibility-matrix.md`](../spikes/i3s-compatibility-matrix.md).
 - **ArcGIS Pro licensed evidence** — [`gis/ARCGIS_PRO_LICENSED_EVIDENCE.md`](ARCGIS_PRO_LICENSED_EVIDENCE.md).
 

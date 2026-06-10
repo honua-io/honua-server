@@ -10,7 +10,7 @@ issues.
 streaming adapter, GPU/Batch executor, or change-detection job is added by
 this spike.** Honua's current 3D demo path remains hosted OGC 3D Tiles served
 from `SceneEndpoints` and produced either externally or via the
-[3D Tiles generation pipeline](../../guides/publish/scene-generation.md) for PostGIS feature
+[3D Tiles generation pipeline](../../guides/publish/publish-3d-scenes.md) for PostGIS feature
 layers.
 
 ## Recommendation
@@ -325,7 +325,7 @@ should be answered before child #1 is filed:
 - [OpenDroneMap](https://www.opendronemap.org/)
 - [NVIDIA cuSpatial](https://docs.rapids.ai/api/cuspatial/stable/)
 - Honua scene references: [Hosted 3D Tiles Scenes](../../guides/publish/publish-3d-scenes.md),
-  [3D Tiles Generation Pipeline](../../guides/publish/scene-generation.md),
+  [3D Tiles Generation Pipeline](../../guides/publish/publish-3d-scenes.md),
   [Scene Dataset Registry (Admin API)](../admin-api/scene-dataset-registry.md),
   [NVIDIA Construction Demo Fixture](../demo/nvidia-construction.md),
   [OpenUSD and Omniverse Export Path](openusd-omniverse-export-path.md).

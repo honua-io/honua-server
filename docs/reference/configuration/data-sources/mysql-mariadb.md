@@ -1,4 +1,4 @@
-# MySQL / MariaDB Provider (Read/Query Slice)
+# MySQL/MariaDB provider
 
 Honua supports MySQL 8.0.11+ and MariaDB 10.6+ as a **read-only** spatial feature
 provider. This is a thin slice intended for serving spatial data that already

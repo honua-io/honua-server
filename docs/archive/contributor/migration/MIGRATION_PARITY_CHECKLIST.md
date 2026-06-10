@@ -15,12 +15,12 @@ Verify protocol coverage against the canonical matrices for operations in scope.
 |----------|----------------|---------------------|--------|
 | GeoServices REST parity landing page | [geoservices-rest-parity.md](../../../reference/compatibility/geoservices-parity.md) | Pilot-critical Esri operations across FeatureServer, MapServer, ImageServer, and Geometry Service | |
 | GeoServices REST parity data | [geoservices-rest-parity.json](../../../gis/data/geoservices-rest-parity.json) | Machine-readable review of operation status, parameter support, and evidence links | |
-| FeatureServer | [feature-server-matrix.md](../../../reference/compatibility/feature-server-matrix.md) | | |
-| MapServer | [map-server-matrix.md](../../../reference/compatibility/map-server-matrix.md) | | |
-| ImageServer | [image-server-matrix.md](../../../reference/compatibility/image-server-matrix.md) | | |
-| Geometry Service | [geometry-service-matrix.md](../../../reference/compatibility/geometry-service-matrix.md) | | |
-| OGC API Features | [ogc-api-features-coverage.md](../../../reference/protocols/specifications/ogc-api-features-coverage.md) | | |
-| OData v4 | [odata-v4-coverage.md](../../../reference/protocols/specifications/odata-v4-coverage.md) | | |
+| FeatureServer | [feature-server-matrix.md](../../../reference/compatibility/geoservices-parity.md) | | |
+| MapServer | [map-server-matrix.md](../../../reference/compatibility/geoservices-parity.md) | | |
+| ImageServer | [image-server-matrix.md](../../../reference/compatibility/geoservices-parity.md) | | |
+| Geometry Service | [geometry-service-matrix.md](../../../reference/compatibility/geoservices-parity.md) | | |
+| OGC API Features | [ogc-api-features-coverage.md](../../../reference/protocols/ogc-apis.md) | | |
+| OData v4 | [odata-v4-coverage.md](../../../reference/protocols/odata.md) | | |
 
 ## Automated Scorecard Status
 

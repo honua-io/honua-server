@@ -10,7 +10,7 @@ this first slice.
 
 A **pure-managed CityGML building reader** plus a **Building Scene Layer
 builder** that maps parsed building geometry and semantics onto Honua's existing
-[3D Tiles generation pipeline](../../guides/publish/scene-generation.md):
+[3D Tiles generation pipeline](../../guides/publish/publish-3d-scenes.md):
 
 - `CityGmlReader` (`Honua.Core.Features.Scene.Bim`) parses `bldg:Building`
   features, their boundary surfaces, and the generic/CityGML attributes attached

@@ -8,7 +8,7 @@ Cesium ion, or any live drone/point-cloud pipeline.
 > Status: prebuilt placeholder geometry committed by `honua-server-898`. A
 > deterministic generation path that produces a real GLB tileset for the
 > same `nvidia-construction` scene id has landed in `honua-server-899` —
-> see [3D Tiles Generation Pipeline](../../guides/publish/scene-generation.md#demo-fixture-nvidia-construction-site-899)
+> see [3D Tiles Generation Pipeline](../../guides/publish/publish-3d-scenes.md#demo-fixture-nvidia-construction-site-899)
 > for the prebuilt-vs-generated registry toggle (Postgres-first composite,
 > with `Scenes:Datasets` as the fallback) and the seed entry that drives
 > `POST /api/v1/admin/scenes/generate`. Production-scale tiling, LOD, and
