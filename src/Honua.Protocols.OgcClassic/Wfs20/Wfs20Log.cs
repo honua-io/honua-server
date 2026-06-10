@@ -111,10 +111,10 @@ internal static partial class Wfs20Log
     public static partial void FeatureSerializationFailed(ILogger logger, string format, string error);
 
     /// <summary>
-    /// Logs database query errors
+    /// Logs database query errors, including the full exception for diagnostics.
     /// </summary>
     [LoggerMessage(Level = LogLevel.Error, Message = "WFS 2.0 database query failed for operation {Operation}: {Error}")]
-    public static partial void DatabaseQueryFailed(ILogger logger, string operation, string error);
+    public static partial void DatabaseQueryFailed(ILogger logger, Exception exception, string operation, string error);
 
     /// <summary>
     /// Logs transaction rollback events

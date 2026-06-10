@@ -447,7 +447,17 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
                 return 'OK'
             ";
 
-            _redisDb.ScriptEvaluate(script, new RedisKey[] { invalidatedKey, pendingKey });
+            // Fire-and-forget: the invalidation script is best-effort on the
+            // calling (mutation request) thread. ScriptEvaluateAsync avoids
+            // blocking a thread-pool thread on the Redis round-trip; unobserved
+            // faults are swallowed deliberately because the local state is already
+            // updated and the coordinator will retry on the next refresh cycle.
+            _ = _redisDb.ScriptEvaluateAsync(script, new RedisKey[] { invalidatedKey, pendingKey })
+                .ContinueWith(
+                    t => Log.RedisOperationFailed(_logger, "NotifyInvalidation", key, t.Exception!.InnerException ?? t.Exception),
+                    System.Threading.CancellationToken.None,
+                    TaskContinuationOptions.OnlyOnFaulted,
+                    TaskScheduler.Default);
 
             // Also handle local state
             NotifyLocalInvalidation(key);
@@ -496,14 +506,19 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
             var pendingKey = RedisKeyPrefix + "pending:" + key;
             var invalidatedKey = RedisKeyPrefix + "invalidated:" + key;
 
-            // Only delete if we own the lock
+            // Only delete if we own the lock.
+            // Use plain equality / sub-string prefix comparison instead of string.match
+            // because instanceId can contain Lua pattern-magic characters (e.g. '-' in
+            // k8s pod hostnames) that would break the match or, worse, match a different
+            // instance's value and delete a claim this node does not own.
             var script = @"
                 local pendingKey = KEYS[1]
                 local invalidatedKey = KEYS[2]
                 local instanceId = ARGV[1]
+                local claimedPrefix = instanceId .. ':'
 
-                local current = redis.call('GET', pendingKey)
-                if current == instanceId or string.match(current or '', instanceId .. ':') then
+                local current = redis.call('GET', pendingKey) or ''
+                if current == instanceId or string.sub(current, 1, #claimedPrefix) == claimedPrefix then
                     redis.call('DEL', pendingKey)
                 end
 
@@ -513,9 +528,17 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
                 return 'OK'
             ";
 
-            _redisDb.ScriptEvaluate(script,
-                new RedisKey[] { pendingKey, invalidatedKey },
-                new RedisValue[] { _instanceId });
+            // Release is a best-effort cleanup step; fire the async variant and let
+            // the lock TTL (RedisLockExpiry) self-expire if the call fails.  Sync
+            // ScriptEvaluate would block a thread-pool thread for the Redis round-trip.
+            _ = _redisDb.ScriptEvaluateAsync(script,
+                    new RedisKey[] { pendingKey, invalidatedKey },
+                    new RedisValue[] { _instanceId })
+                .ContinueWith(
+                    t => Log.RedisOperationFailed(_logger, "ReleaseClaim", key, t.Exception!.InnerException ?? t.Exception),
+                    System.Threading.CancellationToken.None,
+                    TaskContinuationOptions.OnlyOnFaulted,
+                    TaskScheduler.Default);
         }
         catch (Exception ex)
         {

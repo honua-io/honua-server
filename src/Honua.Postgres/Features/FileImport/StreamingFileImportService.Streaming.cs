@@ -53,7 +53,7 @@ internal sealed partial class StreamingFileImportService
         // unconditionally for the freshly-named staging table.
         await CreateTableAsync(connection, targetSchema, allowedTableName, request.TargetSrid, cancellationToken);
 
-        var wkbWriter = new WKBWriter();
+        var wkbWriter = new WKBWriter(ByteOrder.LittleEndian, handleSRID: false, emitZ: true, emitM: true);
         var batch = new List<IFeature>(_limits.BatchSize);
         var totalImported = 0;
         var totalFailed = 0;

@@ -54,8 +54,9 @@ internal sealed partial class AlertEvaluationBackgroundService : BackgroundServi
                 var pipeline = scope.ServiceProvider.GetRequiredService<IAlertPipeline>();
                 var checkpointStore = scope.ServiceProvider.GetRequiredService<IAlertCheckpointStore>();
 
+                var previousGeneration = checkpoint.LastGeneration;
                 var nextGeneration = await pipeline
-                    .ProcessChangesAsync(checkpoint.LastGeneration, _options.Evaluation.ChangeBatchSize, stoppingToken)
+                    .ProcessChangesAsync(previousGeneration, _options.Evaluation.ChangeBatchSize, stoppingToken)
                     .ConfigureAwait(false);
 
                 var now = DateTimeOffset.UtcNow;
@@ -71,13 +72,15 @@ internal sealed partial class AlertEvaluationBackgroundService : BackgroundServi
                     checkpoint = checkpoint with { LastDwellSweepAt = now };
                 }
 
-                if (nextGeneration != checkpoint.LastGeneration || shouldSweep)
+                if (nextGeneration != previousGeneration || shouldSweep)
                 {
                     checkpoint = checkpoint with { LastGeneration = nextGeneration };
                     await checkpointStore.SetAsync(checkpoint, stoppingToken).ConfigureAwait(false);
                 }
 
-                if (nextGeneration == checkpoint.LastGeneration && !shouldSweep)
+                // Delay only when the batch made no progress; a productive batch loops
+                // immediately so a change backlog drains at full speed.
+                if (nextGeneration == previousGeneration && !shouldSweep)
                 {
                     await Task.Delay(_options.Evaluation.IdleDelay, stoppingToken).ConfigureAwait(false);
                 }

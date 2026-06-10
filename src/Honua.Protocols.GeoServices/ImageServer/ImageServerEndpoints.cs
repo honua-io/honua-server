@@ -37,7 +37,8 @@ internal static class ImageServerEndpoints
             .WithTags("ImageServer")
             // Read-only Esri ImageServer surface; access is enforced by the
             // handlers via the layer access policy.
-            .AllowAnonymous();
+            .AllowAnonymous()
+            .AddEndpointFilter(ApplyLimitsTimeoutToken);
 
         // Service metadata endpoint
         group.MapGet("", GetServiceInfo)
@@ -362,7 +363,8 @@ internal static class ImageServerEndpoints
             .WithTags("ImageServer")
             // Read-only Esri ImageServer surface; access is enforced by the
             // handlers via the layer access policy.
-            .AllowAnonymous();
+            .AllowAnonymous()
+            .AddEndpointFilter(ApplyLimitsTimeoutToken);
 
         serviceGroup.MapGet("", GetServiceInfoByService)
             .WithDisplayName("Get Image Service Info by Service")
@@ -622,6 +624,28 @@ internal static class ImageServerEndpoints
             .Produces<RasterFunctionInfosResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(400)
             .Produces(404);
+    }
+
+    /// <summary>
+    /// Replaces handler-bound <see cref="CancellationToken"/> arguments (which minimal
+    /// APIs bind to <see cref="HttpContext.RequestAborted"/> only) with the per-request
+    /// limits timeout token, so long-running raster operations honor the configured
+    /// request timeout the same way the other GeoServices protocols do.
+    /// </summary>
+    private static ValueTask<object?> ApplyLimitsTimeoutToken(
+        EndpointFilterInvocationContext invocationContext,
+        EndpointFilterDelegate next)
+    {
+        var timeoutToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(invocationContext.HttpContext);
+        for (var i = 0; i < invocationContext.Arguments.Count; i++)
+        {
+            if (invocationContext.Arguments[i] is CancellationToken)
+            {
+                invocationContext.Arguments[i] = timeoutToken;
+            }
+        }
+
+        return next(invocationContext);
     }
 
     /// <summary>

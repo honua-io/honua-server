@@ -30,37 +30,38 @@ internal sealed class OgcMapsConformanceHandler
         {
             ConformsTo = [
                 // OGC API - Maps Part 1: Core
-                "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/core",
+                // OGC conformance class identifiers use the http://www.opengis.net scheme (OGC-NA policy).
+                "http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/core",
 
                 // Collection maps support
-                "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/collection-map",
+                "http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/collection-map",
 
                 // Styled maps support (styleId-resolved MapLibre styling of vector collections, ADR-0048)
-                "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/styled-map",
+                "http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/styled-map",
 
                 // Dataset-wide maps support
-                "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/dataset-map",
+                "http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/dataset-map",
 
                 // Collections selection (collections parameter for dataset maps)
-                "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/collections-selection",
+                "http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/collections-selection",
 
                 // Datetime selection for temporal raster mosaics
-                "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/datetime",
+                "http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/datetime",
 
                 // Supported CRS
-                "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/crs",
+                "http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/crs",
 
                 // PNG support
-                "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/png",
+                "http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/png",
 
                 // JPEG support
-                "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/jpeg",
+                "http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/jpeg",
 
                 // TIFF support
-                "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/tiff",
+                "http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/tiff",
 
                 // Scaling support (width/height parameters)
-                "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/scaling"
+                "http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/scaling"
             ]
         };
 

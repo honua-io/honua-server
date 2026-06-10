@@ -501,7 +501,13 @@ internal sealed partial class GeoServerRestClient
                     var value = valueProp.GetString();
                     if (key != null && value != null)
                     {
-                        connectionParams[key] = value;
+                        // Redact credentials (e.g. JDBC 'passwd') at the capture point:
+                        // discovery results are serialized verbatim by the admin endpoint,
+                        // and downstream consumers only read non-sensitive keys such as
+                        // dbtype/host/database/schema/url/directory.
+                        connectionParams[key] = MigrationInventoryHelpers.IsSensitiveKey(key)
+                            ? MigrationInventoryHelpers.RedactedValue
+                            : value;
                     }
                 }
             }
@@ -1061,7 +1067,9 @@ internal sealed partial class GeoServerRestClient
         }
 
         using var response = await SendAsync(request, cancellationToken).ConfigureAwait(false);
-        return await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        return await MigrationHttpContentReader
+            .ReadStringWithLimitAsync(response, MigrationHttpContentReader.DefaultMaxResponseBytes, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -1083,7 +1091,20 @@ internal sealed partial class GeoServerRestClient
                 request,
                 HttpCompletionOption.ResponseHeadersRead,
                 effectiveToken).ConfigureAwait(false);
-            response.EnsureSuccessStatusCode();
+
+            try
+            {
+                response.EnsureSuccessStatusCode();
+            }
+            catch
+            {
+                // With ResponseHeadersRead the response holds a pooled connection until
+                // disposed; discovery routinely swallows per-endpoint failures, so an
+                // undisposed error response would leak the connection.
+                response.Dispose();
+                throw;
+            }
+
             return response;
         }
         catch (OperationCanceledException) when (timeoutCts?.IsCancellationRequested == true && !cancellationToken.IsCancellationRequested)

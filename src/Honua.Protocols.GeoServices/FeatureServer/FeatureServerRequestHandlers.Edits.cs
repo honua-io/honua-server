@@ -648,15 +648,59 @@ internal static partial class FeatureServerEndpoints
                     DeleteResults = response?.DeleteResults
                 };
             }
+            else if (i == 0)
+            {
+                // Nothing has been committed yet, so the protocol error (with its
+                // original status code) can be surfaced directly.
+                return layerResult;
+            }
             else
             {
-                // If the layer returned an error, return it directly
-                return layerResult;
+                // Earlier layers' edits are already committed in their own
+                // transactions, so don't short-circuit with a bare error that
+                // discards their results. Record a per-layer failure entry instead
+                // (Esri per-layer result contract) so the response reflects exactly
+                // which edits were applied.
+                var statusCode = (layerResult as IStatusCodeHttpResult)?.StatusCode;
+                var description = statusCode is { } code
+                    ? $"Edits for layer {entry.Id} were not applied (HTTP {code})."
+                    : $"Edits for layer {entry.Id} were not applied.";
+                results[i] = new ServiceLayerEditResult
+                {
+                    Id = entry.Id,
+                    AddResults = BuildLayerFailureResults(entry.Adds?.Length ?? 0, description),
+                    UpdateResults = BuildLayerFailureResults(entry.Updates?.Length ?? 0, description),
+                    DeleteResults = BuildLayerFailureResults(entry.Deletes?.Length ?? 0, description)
+                };
             }
         }
 
         var serviceResponse = new ServiceApplyEditsResponse { EditResults = results };
         return Results.Json(serviceResponse, FeatureServerJsonContext.Default.ServiceApplyEditsResponse, contentType: "application/json");
+    }
+
+    /// <summary>
+    /// Builds per-slot failure entries for a layer whose applyEdits call returned a
+    /// non-JSON protocol error after earlier layers had already committed.
+    /// </summary>
+    private static EditResult[]? BuildLayerFailureResults(int count, string description)
+    {
+        if (count == 0)
+        {
+            return null;
+        }
+
+        var failures = new EditResult[count];
+        for (var i = 0; i < count; i++)
+        {
+            failures[i] = new EditResult
+            {
+                Success = false,
+                Error = new EditError { Code = 1000, Description = description }
+            };
+        }
+
+        return failures;
     }
 
     private static GeoServicesFeature[]? ConcatFeatures(GeoServicesFeature[]? first, GeoServicesFeature[]? second)

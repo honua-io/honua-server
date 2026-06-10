@@ -12,6 +12,8 @@ using Honua.Core.Features.WorkflowPackages.Generation;
 using Honua.Geoprocessing;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.Ai.WorkflowGeneration;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.AnalysisGeneration;
@@ -371,7 +373,7 @@ public sealed class AnalysisGenerationServiceTests
         var handler = new StubChatHandler(cannedResponses, throwIfCalled);
         var factory = new StubHttpClientFactory(handler);
 
-        return new AnalysisGenerationService(factory, configuration, _catalog);
+        return new AnalysisGenerationService(factory, configuration, _catalog, new WorkflowGenerationApiKeyResolver(), NullLogger<AnalysisGenerationService>.Instance);
     }
 
     private sealed class StubHttpClientFactory(HttpMessageHandler handler) : IHttpClientFactory

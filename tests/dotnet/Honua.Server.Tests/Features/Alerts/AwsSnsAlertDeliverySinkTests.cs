@@ -4,6 +4,7 @@
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Alerts;
 using Honua.TestKit.Attributes;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Alerts;
@@ -23,7 +24,7 @@ public sealed class AwsSnsAlertDeliverySinkTests
     public async Task DeliverAsync_WithNoTopicArnConfigured_ReturnsNonRetryableFailure()
     {
         var publisher = new FakeSnsPublisher();
-        var sink = new AwsSnsAlertDeliverySink(publisher, Options.Create(new AlertDeliveryOptions()));
+        var sink = new AwsSnsAlertDeliverySink(publisher, Options.Create(new AlertDeliveryOptions()), NullLogger<AwsSnsAlertDeliverySink>.Instance);
 
         var result = await sink.DeliverAsync(
             AlertTestFixtures.CreateDispatchItem(AlertChannelType.AwsSns),
@@ -42,7 +43,7 @@ public sealed class AwsSnsAlertDeliverySinkTests
             PublishAsyncHandler = static (_, _, _, _, _) => Task.FromResult(new SnsPublishResult(true, false, null))
         };
 
-        var sink = new AwsSnsAlertDeliverySink(publisher, Options.Create(CreateOptionsWithSns()));
+        var sink = new AwsSnsAlertDeliverySink(publisher, Options.Create(CreateOptionsWithSns()), NullLogger<AwsSnsAlertDeliverySink>.Instance);
         var result = await sink.DeliverAsync(
             AlertTestFixtures.CreateDispatchItem(AlertChannelType.AwsSns),
             AlertTestFixtures.CreateAlertEvent());
@@ -59,7 +60,7 @@ public sealed class AwsSnsAlertDeliverySinkTests
             PublishAsyncHandler = static (_, _, _, _, _) => Task.FromResult(new SnsPublishResult(false, true, "SNS publish responded with 500."))
         };
 
-        var sink = new AwsSnsAlertDeliverySink(publisher, Options.Create(CreateOptionsWithSns()));
+        var sink = new AwsSnsAlertDeliverySink(publisher, Options.Create(CreateOptionsWithSns()), NullLogger<AwsSnsAlertDeliverySink>.Instance);
         var result = await sink.DeliverAsync(
             AlertTestFixtures.CreateDispatchItem(AlertChannelType.AwsSns),
             AlertTestFixtures.CreateAlertEvent());
@@ -76,7 +77,7 @@ public sealed class AwsSnsAlertDeliverySinkTests
             PublishAsyncHandler = static (_, _, _, _, _) => Task.FromResult(new SnsPublishResult(false, false, "SNS authorization failed: Access denied"))
         };
 
-        var sink = new AwsSnsAlertDeliverySink(publisher, Options.Create(CreateOptionsWithSns()));
+        var sink = new AwsSnsAlertDeliverySink(publisher, Options.Create(CreateOptionsWithSns()), NullLogger<AwsSnsAlertDeliverySink>.Instance);
         var result = await sink.DeliverAsync(
             AlertTestFixtures.CreateDispatchItem(AlertChannelType.AwsSns),
             AlertTestFixtures.CreateAlertEvent());
@@ -93,7 +94,7 @@ public sealed class AwsSnsAlertDeliverySinkTests
 
         var overrideArn = "arn:aws:sns:us-east-1:123456:override-topic";
         var sink = new AwsSnsAlertDeliverySink(publisher, Options.Create(
-            CreateOptionsWithSns("arn:aws:sns:us-east-1:123456:default-topic")));
+            CreateOptionsWithSns("arn:aws:sns:us-east-1:123456:default-topic")), NullLogger<AwsSnsAlertDeliverySink>.Instance);
 
         await sink.DeliverAsync(
             AlertTestFixtures.CreateDispatchItem(AlertChannelType.AwsSns, destination: overrideArn),
@@ -107,7 +108,7 @@ public sealed class AwsSnsAlertDeliverySinkTests
     {
         var publisher = new FakeSnsPublisher();
 
-        var sink = new AwsSnsAlertDeliverySink(publisher, Options.Create(CreateOptionsWithSns()));
+        var sink = new AwsSnsAlertDeliverySink(publisher, Options.Create(CreateOptionsWithSns()), NullLogger<AwsSnsAlertDeliverySink>.Instance);
         await sink.DeliverAsync(
             AlertTestFixtures.CreateDispatchItem(AlertChannelType.AwsSns),
             AlertTestFixtures.CreateAlertEvent());
@@ -123,7 +124,7 @@ public sealed class AwsSnsAlertDeliverySinkTests
     public void ChannelType_ReturnsAwsSns()
     {
         var publisher = new FakeSnsPublisher();
-        var sink = new AwsSnsAlertDeliverySink(publisher, Options.Create(new AlertDeliveryOptions()));
+        var sink = new AwsSnsAlertDeliverySink(publisher, Options.Create(new AlertDeliveryOptions()), NullLogger<AwsSnsAlertDeliverySink>.Instance);
         Assert.Equal(AlertChannelType.AwsSns, sink.ChannelType);
     }
 }

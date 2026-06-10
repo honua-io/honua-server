@@ -321,10 +321,12 @@ internal sealed class FeatureServerEditsHandler(
         if (request.Updates == null)
             return;
 
+        // First pass: parse the per-slot object ids so the existing rows can be
+        // resolved with a single batched lookup instead of one round-trip per update.
+        var slotObjectIds = new long?[request.Updates.Length];
         for (var i = 0; i < request.Updates.Length; i++)
         {
-            var update = request.Updates[i];
-            if (!TryGetObjectId(update.Attributes, resource, out var objectId))
+            if (!TryGetObjectId(request.Updates[i].Attributes, resource, out var parsedObjectId))
             {
                 context.HasValidationErrors = true;
                 context.UpdateResults![i] = CreateFailureResult(
@@ -333,10 +335,49 @@ internal sealed class FeatureServerEditsHandler(
                 continue;
             }
 
+            slotObjectIds[i] = parsedObjectId;
+        }
+
+        IReadOnlyDictionary<long, Feature> existingFeatures;
+        try
+        {
+            existingFeatures = await ResolveFeaturesByGeoServicesObjectIdsAsync(
+                resource,
+                storageLayerId,
+                slotObjectIds,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (ArgumentException ex)
+        {
+            // ObjectId field translation failed; this is schema-level and would have
+            // failed every slot under the previous per-feature resolve as well.
+            var description = SanitizeEditErrorMessage(ex.Message, InvalidFeatureDataMessage);
+            for (var i = 0; i < slotObjectIds.Length; i++)
+            {
+                if (slotObjectIds[i] is { } failedObjectId)
+                {
+                    context.HasValidationErrors = true;
+                    context.UpdateResults![i] = CreateFailureResult(
+                        code: 1002,
+                        description: description,
+                        objectId: failedObjectId);
+                }
+            }
+
+            return;
+        }
+
+        for (var i = 0; i < request.Updates.Length; i++)
+        {
+            if (slotObjectIds[i] is not { } objectId)
+            {
+                continue;
+            }
+
+            var update = request.Updates[i];
             try
             {
-                var existingFeature = await ResolveFeatureByGeoServicesObjectIdAsync(resource, storageLayerId, objectId, cancellationToken)
-                    .ConfigureAwait(false);
+                Feature? existingFeature = existingFeatures.TryGetValue(objectId, out var resolvedFeature) ? resolvedFeature : null;
                 if (!ShouldUseInternalObjectIdFastPath(resource) && existingFeature is null)
                 {
                     context.HasValidationErrors = true;
@@ -398,9 +439,12 @@ internal sealed class FeatureServerEditsHandler(
         if (request.Deletes == null)
             return;
 
+        // First pass: parse the per-slot object ids so the existing rows can be
+        // resolved with a single batched lookup instead of one round-trip per delete.
+        var slotObjectIds = new long?[request.Deletes.Length];
         for (var i = 0; i < request.Deletes.Length; i++)
         {
-            if (!FeatureServerValueParser.TryConvertToLong(request.Deletes[i], out var objectId))
+            if (!FeatureServerValueParser.TryConvertToLong(request.Deletes[i], out var parsedObjectId))
             {
                 context.HasValidationErrors = true;
                 context.DeleteResults![i] = CreateFailureResult(
@@ -409,8 +453,23 @@ internal sealed class FeatureServerEditsHandler(
                 continue;
             }
 
-            var existingFeature = await ResolveFeatureByGeoServicesObjectIdAsync(resource, storageLayerId, objectId, cancellationToken)
-                .ConfigureAwait(false);
+            slotObjectIds[i] = parsedObjectId;
+        }
+
+        var existingFeatures = await ResolveFeaturesByGeoServicesObjectIdsAsync(
+            resource,
+            storageLayerId,
+            slotObjectIds,
+            cancellationToken).ConfigureAwait(false);
+
+        for (var i = 0; i < request.Deletes.Length; i++)
+        {
+            if (slotObjectIds[i] is not { } objectId)
+            {
+                continue;
+            }
+
+            Feature? existingFeature = existingFeatures.TryGetValue(objectId, out var resolvedFeature) ? resolvedFeature : null;
             if (!ShouldUseInternalObjectIdFastPath(resource) && existingFeature is null)
             {
                 context.HasValidationErrors = true;
@@ -438,8 +497,15 @@ internal sealed class FeatureServerEditsHandler(
         {
             return await _featureReader.GetAsync(layerId, objectId, cancellationToken);
         }
-        catch
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // The snapshot only enriches delete events/plugin hooks; a read failure
+            // must not fail the delete itself, but it should leave an operator signal.
+            FeatureServerLog.DeleteSnapshotReadFailed(_logger, layerId, objectId, ex);
             return null;
         }
     }
@@ -953,27 +1019,65 @@ internal sealed class FeatureServerEditsHandler(
         public bool HasValidationErrors { get; set; }
     }
 
-    private async Task<Feature?> ResolveFeatureByGeoServicesObjectIdAsync(
+    /// <summary>
+    /// Resolves the existing rows for a batch of GeoServices object ids with a single
+    /// provider round-trip (internal-objectid fast path uses <see cref="FeatureQuery.ObjectIds"/>;
+    /// custom objectid fields use one translated IN filter), keyed by the GeoServices
+    /// object id. Missing rows are simply absent from the result.
+    /// </summary>
+    private async Task<IReadOnlyDictionary<long, Feature>> ResolveFeaturesByGeoServicesObjectIdsAsync(
         MetadataV2Resource resource,
         int storageLayerId,
-        long objectId,
+        long?[] slotObjectIds,
         CancellationToken cancellationToken)
     {
+        var objectIds = new List<long>(slotObjectIds.Length);
+        var seen = new HashSet<long>();
+        foreach (var slotObjectId in slotObjectIds)
+        {
+            if (slotObjectId is { } objectId && seen.Add(objectId))
+            {
+                objectIds.Add(objectId);
+            }
+        }
+
+        var resolved = new Dictionary<long, Feature>(objectIds.Count);
+        if (objectIds.Count == 0)
+        {
+            return resolved;
+        }
+
         if (ShouldUseInternalObjectIdFastPath(resource))
         {
-            return await _featureReader.GetAsync(storageLayerId, objectId, cancellationToken).ConfigureAwait(false);
+            var fastPathResult = await _featureReader.QueryAsync(
+                storageLayerId,
+                new FeatureQuery
+                {
+                    ObjectIds = objectIds.ToImmutableArray(),
+                    Limit = objectIds.Count
+                },
+                cancellationToken).ConfigureAwait(false);
+
+            foreach (var feature in fastPathResult.Items)
+            {
+                resolved[feature.Id] = feature;
+            }
+
+            return resolved;
         }
 
         var objectIdField = GeoServicesObjectIdFieldResolver.ResolveObjectIdField(resource);
         if (objectIdField is null)
         {
-            return null;
+            return resolved;
         }
 
         var expression = new BinaryExpression(
             new PropertyReference(objectIdField.Name),
-            BinaryOperator.Equal,
-            new Literal(objectId, LiteralType.Number));
+            BinaryOperator.In,
+            new ValueList(objectIds
+                .Select(static objectId => new Literal(objectId, LiteralType.Number))
+                .ToArray()));
         var translation = _filterExpressionService.Translate(expression, resource);
         if (!translation.IsSuccess)
         {
@@ -985,11 +1089,20 @@ internal sealed class FeatureServerEditsHandler(
             new FeatureQuery
             {
                 SqlFilter = translation.SqlFilter,
-                Limit = 1
+                Limit = objectIds.Count
             },
             cancellationToken).ConfigureAwait(false);
 
-        return result.Items.IsDefaultOrEmpty ? null : result.Items[0];
+        foreach (var feature in result.Items)
+        {
+            if (feature.Attributes.TryGetValue(objectIdField.Name, out var rawValue)
+                && FeatureServerValueParser.TryConvertToLong(rawValue, out var key))
+            {
+                resolved[key] = feature;
+            }
+        }
+
+        return resolved;
     }
 
     private static bool ShouldUseInternalObjectIdFastPath(MetadataV2Resource resource)

@@ -27,24 +27,32 @@ internal sealed class SceneAccessEnvelopeService : ISceneAccessEnvelopeService
     private static readonly IReadOnlyList<string> AllowedMethods = new[] { "GET", "HEAD" };
 
     private readonly TimeProvider _timeProvider;
-    private readonly byte[] _signingKey;
-    private readonly TimeSpan _ttl;
-    private readonly double _refreshFraction;
+    private readonly IOptionsMonitor<SceneAccessSigningOptions> _optionsMonitor;
 
     public SceneAccessEnvelopeService(
-        IOptions<SceneAccessSigningOptions> options,
+        IOptionsMonitor<SceneAccessSigningOptions> optionsMonitor,
         TimeProvider timeProvider)
     {
-        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(optionsMonitor);
         ArgumentNullException.ThrowIfNull(timeProvider);
 
-        // All bounds checks throw InvalidOperationException so the scene
-        // endpoints' catch (InvalidOperationException) blocks surface a
-        // structured 500 + OptionsMisconfigured log on misconfigured
-        // deployments. Data-annotation validation is deliberately not used —
-        // it would throw OptionsValidationException, which the catch sites
-        // do not intercept.
-        var value = options.Value;
+        _optionsMonitor = optionsMonitor;
+        _timeProvider = timeProvider;
+    }
+
+    /// <summary>
+    /// Reads and validates the current signing options from the monitor.
+    /// All bounds checks throw <see cref="InvalidOperationException"/> so the
+    /// scene endpoints' <c>catch (InvalidOperationException)</c> blocks surface
+    /// a structured 500 + OptionsMisconfigured log on misconfigured deployments.
+    /// Reading <see cref="IOptionsMonitor{T}.CurrentValue"/> on every call means
+    /// key rotation takes effect on the next request without a process restart,
+    /// honoring the documented revocation contract.
+    /// </summary>
+    private (byte[] signingKey, TimeSpan ttl, double refreshFraction) GetCurrentOptions()
+    {
+        var value = _optionsMonitor.CurrentValue;
+
         if (string.IsNullOrEmpty(value.SigningKey))
         {
             throw new InvalidOperationException(
@@ -68,21 +76,22 @@ internal sealed class SceneAccessEnvelopeService : ISceneAccessEnvelopeService
                 "Honua:SceneAccessSigning:RefreshAfterFractionOfTtl must be between 0.0 and 1.0.");
         }
 
-        _signingKey = Encoding.UTF8.GetBytes(value.SigningKey);
-        _ttl = TimeSpan.FromMinutes(value.TokenTtlMinutes);
-        _refreshFraction = value.RefreshAfterFractionOfTtl;
-        _timeProvider = timeProvider;
+        return (Encoding.UTF8.GetBytes(value.SigningKey),
+                TimeSpan.FromMinutes(value.TokenTtlMinutes),
+                value.RefreshAfterFractionOfTtl);
     }
 
     public SceneAccessEnvelope Issue(string sceneId)
     {
         ArgumentException.ThrowIfNullOrEmpty(sceneId);
 
-        var now = _timeProvider.GetUtcNow();
-        var expiresAt = now + _ttl;
-        var refreshAfter = now + (_ttl * _refreshFraction);
+        var (signingKey, ttl, refreshFraction) = GetCurrentOptions();
 
-        var token = SignToken(sceneId, expiresAt.ToUnixTimeSeconds());
+        var now = _timeProvider.GetUtcNow();
+        var expiresAt = now + ttl;
+        var refreshAfter = now + (ttl * refreshFraction);
+
+        var token = SignToken(sceneId, expiresAt.ToUnixTimeSeconds(), signingKey);
 
         return new SceneAccessEnvelope(
             SceneId: sceneId,
@@ -139,8 +148,11 @@ internal sealed class SceneAccessEnvelopeService : ISceneAccessEnvelopeService
             return EnvelopeValidationResult.Tampered;
         }
 
+        // Read the current signing key so rotation takes effect immediately.
+        var (signingKey, _, _) = GetCurrentOptions();
+
         Span<byte> expectedHash = stackalloc byte[32];
-        if (!TryComputeHash(payload.SceneId, payload.ExpiresAtUnixSeconds, expectedHash))
+        if (!TryComputeHash(payload.SceneId, payload.ExpiresAtUnixSeconds, signingKey, expectedHash))
         {
             return EnvelopeValidationResult.Tampered;
         }
@@ -164,7 +176,7 @@ internal sealed class SceneAccessEnvelopeService : ISceneAccessEnvelopeService
         return EnvelopeValidationResult.Allowed;
     }
 
-    private string SignToken(string sceneId, long expiresAtUnixSeconds)
+    private string SignToken(string sceneId, long expiresAtUnixSeconds, byte[] signingKey)
     {
         var payload = new SceneAccessTokenPayload(sceneId, expiresAtUnixSeconds);
         var payloadBytes = JsonSerializer.SerializeToUtf8Bytes(
@@ -174,7 +186,7 @@ internal sealed class SceneAccessEnvelopeService : ISceneAccessEnvelopeService
         var encodedPayload = EncodeBase64Url(payloadBytes);
 
         Span<byte> hash = stackalloc byte[32];
-        if (!TryComputeHash(sceneId, expiresAtUnixSeconds, hash))
+        if (!TryComputeHash(sceneId, expiresAtUnixSeconds, signingKey, hash))
         {
             // Cannot happen: the signing string fits inside the inline
             // buffers and HMACSHA256 always produces 32 bytes.
@@ -192,7 +204,7 @@ internal sealed class SceneAccessEnvelopeService : ISceneAccessEnvelopeService
             });
     }
 
-    private bool TryComputeHash(string sceneId, long expiresAtUnixSeconds, Span<byte> destination)
+    private static bool TryComputeHash(string sceneId, long expiresAtUnixSeconds, byte[] signingKey, Span<byte> destination)
     {
         // Canonical signing string: "{sceneId}\n{expires}".
         // Bound stack allocation by the maximum reasonable scene-id length;
@@ -212,7 +224,7 @@ internal sealed class SceneAccessEnvelopeService : ISceneAccessEnvelopeService
 
         var totalLength = written + expiresWritten;
 
-        return HMACSHA256.TryHashData(_signingKey, messageBuffer[..totalLength], destination, out _);
+        return HMACSHA256.TryHashData(signingKey, messageBuffer[..totalLength], destination, out _);
     }
 
     private static string EncodeBase64Url(ReadOnlySpan<byte> bytes)

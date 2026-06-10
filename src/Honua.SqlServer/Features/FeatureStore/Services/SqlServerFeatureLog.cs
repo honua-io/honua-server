@@ -22,4 +22,10 @@ internal static partial class SqlServerFeatureLog
         Level = LogLevel.Warning,
         Message = "SQL Server feature provider rejected unsupported operation '{Operation}' for layer {LayerId}.")]
     public static partial void OperationRejected(ILogger logger, string operation, int layerId);
+
+    [LoggerMessage(
+        EventId = 7002,
+        Level = LogLevel.Error,
+        Message = "SQL Server {OperationType} query failed for layer {LayerId}.")]
+    public static partial void QueryFailed(ILogger logger, string operationType, int layerId, Exception exception);
 }

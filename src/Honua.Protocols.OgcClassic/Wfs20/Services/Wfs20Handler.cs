@@ -938,7 +938,9 @@ internal sealed partial class Wfs20Handler
 
         foreach (var plan in planSet.Plans)
         {
-            var axisOrder = plan.Query.OutputAxisOrder ?? AxisOrder.EastNorth;
+            // GeoJSON positions are always longitude,latitude (RFC 7946 §3.1.1);
+            // OutputAxisOrder applies only to GML serialization.
+            const AxisOrder axisOrder = AxisOrder.EastNorth;
             var projectedProperties = GetProjectedProperties(plan.Query);
 
             if (geoJsonFeatureStore is not null)
@@ -996,7 +998,9 @@ internal sealed partial class Wfs20Handler
             var attributeHeaders = GetProjectedAttributeFields(descriptor.Resource, query)
                 .Select(field => field.Name)
                 .ToArray();
-            var axisOrder = query.OutputAxisOrder ?? AxisOrder.EastNorth;
+            // The CSV geometry column is GeoJSON, which is always longitude,latitude
+            // (RFC 7946 §3.1.1); OutputAxisOrder applies only to GML serialization.
+            const AxisOrder axisOrder = AxisOrder.EastNorth;
 
             foreach (var feature in result.Items)
             {
@@ -1112,7 +1116,9 @@ internal sealed partial class Wfs20Handler
                 }
             }
 
-            var axisOrder = plan.Query.OutputAxisOrder ?? AxisOrder.EastNorth;
+            // The CSV geometry column is GeoJSON, which is always longitude,latitude
+            // (RFC 7946 §3.1.1); OutputAxisOrder applies only to GML serialization.
+            const AxisOrder axisOrder = AxisOrder.EastNorth;
             var result = await _featureReader.QueryAsync(plan.Descriptor.StorageLayerId, plan.Query, cancellationToken);
             foreach (var feature in result.Items)
             {

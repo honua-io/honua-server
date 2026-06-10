@@ -1022,7 +1022,73 @@ public static class Fes20Parser
             throw new Fes20ParseException("Distance element must contain a valid numeric value.");
         }
 
+        // FES 2.0 §7.8.3 (DistanceBufferType): the uom attribute is mandatory.
+        // Convert to metres so the downstream translator always receives a
+        // consistent unit (ST_DWithin on the geography path interprets the
+        // distance as metres).
+        var uom = distanceElement.Attribute("uom")?.Value;
+        distance = ConvertDistanceToMetres(distance, uom);
+
         return new Literal(distance, LiteralType.Number);
+    }
+
+    /// <summary>
+    /// Converts a distance value from the given unit-of-measure to metres.
+    /// Accepts the common OGC/UCUM linear unit designators; rejects unknown
+    /// designators with <see cref="Fes20ParseException"/> so callers cannot
+    /// silently send the wrong unit.
+    /// </summary>
+    private static double ConvertDistanceToMetres(double value, string? uom)
+    {
+        if (string.IsNullOrEmpty(uom))
+        {
+            // The attribute is mandatory per FES 2.0.  Accept a missing uom as
+            // metres for tolerance with non-conformant clients, matching the
+            // original behaviour (silent pass-through of the raw value).
+            return value;
+        }
+
+        return uom switch
+        {
+            // Exact SI metre representations
+            "m" or "M" or "metre" or "metres" or "meter" or "meters"
+                or "urn:ogc:def:uom:OGC::m"
+                or "http://www.opengis.net/def/uom/OGC/1.0/metre" => value,
+
+            // Kilometre
+            "km" or "kilometre" or "kilometres" or "kilometer" or "kilometers"
+                or "urn:ogc:def:uom:OGC::km"
+                or "http://www.opengis.net/def/uom/OGC/1.0/kilometre" => value * 1_000.0,
+
+            // Foot (international)
+            "ft" or "foot" or "feet"
+                or "urn:ogc:def:uom:OGC::ft"
+                or "[ft_i]"   // UCUM
+                or "http://www.opengis.net/def/uom/OGC/1.0/foot" => value * 0.3048,
+
+            // US survey foot
+            "us-ft" or "[ft_us]" => value * (1200.0 / 3937.0),
+
+            // Mile (statute)
+            "mi" or "mile" or "miles"
+                or "urn:ogc:def:uom:OGC::mi"
+                or "[mi_i]"   // UCUM
+                or "http://www.opengis.net/def/uom/OGC/1.0/StatuteMile" => value * 1_609.344,
+
+            // Nautical mile
+            "NM" or "nmi" or "[nmi_i]"
+                or "urn:ogc:def:uom:OGC::nmi"
+                or "http://www.opengis.net/def/uom/OGC/1.0/NauticalMile" => value * 1_852.0,
+
+            // Yard
+            "yd" or "yard" or "yards"
+                or "[yd_i]"   // UCUM
+                or "http://www.opengis.net/def/uom/OGC/1.0/yard" => value * 0.9144,
+
+            _ => throw new Fes20ParseException(
+                $"Unrecognised or unsupported distance unit-of-measure '{uom}'. " +
+                "Use a standard linear unit (m, km, ft, mi, NM, yd or an OGC URN/URL equivalent).")
+        };
     }
 
     private static bool MatchesToken(string text, string token, int index)

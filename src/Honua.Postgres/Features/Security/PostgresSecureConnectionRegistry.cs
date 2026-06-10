@@ -347,6 +347,17 @@ internal sealed class PostgresSecureConnectionRegistry : ISecureConnectionRegist
         }
     }
 
+    /// <summary>
+    /// Checks that the connection configuration exists and is marked active.
+    /// </summary>
+    /// <remarks>
+    /// This is a metadata/activity check only — it does NOT open the target
+    /// database. Resolving a usable connection string requires decryption and
+    /// secret resolution, which live in <c>ISecureConnectionResolver</c> (a
+    /// consumer of this registry); real connectivity probes go through
+    /// <c>ISecureConnectionResolver.TestConnectionHealthAsync</c> or the
+    /// per-provider <c>IConnectionHealthTester</c>/<c>IConnectionDriver</c>.
+    /// </remarks>
     public async Task<bool> TestConnectionAsync(Guid connectionId, CancellationToken cancellationToken = default)
     {
         var connection = await GetConnectionAsync(connectionId, cancellationToken);
@@ -488,6 +499,14 @@ internal sealed class PostgresSecureConnectionRegistry : ISecureConnectionRegist
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// The registry cannot probe the target databases itself (see
+    /// <see cref="TestConnectionAsync(Guid, CancellationToken)"/>), so instead of
+    /// fabricating <see cref="ConnectionHealthStatus.Healthy"/> from the IsActive
+    /// flag it reports the stored <c>health_status</c> — the outcome of the most
+    /// recent real probe recorded via
+    /// <see cref="UpdateHealthStatusAsync(Guid, ConnectionHealthStatus, CancellationToken)"/>.
+    /// </remarks>
     public async Task<Dictionary<string, ConnectionHealthStatus>> TestAllConnectionsAsync()
     {
         var connections = await GetActiveConnectionsAsync();
@@ -495,9 +514,7 @@ internal sealed class PostgresSecureConnectionRegistry : ISecureConnectionRegist
 
         foreach (var connection in connections)
         {
-            var isHealthy = await TestConnectionAsync(connection.ConnectionId);
-            var status = isHealthy ? ConnectionHealthStatus.Healthy : ConnectionHealthStatus.Unhealthy;
-            results[connection.ConnectionId.ToString()] = status;
+            results[connection.ConnectionId.ToString()] = connection.HealthStatus;
         }
 
         return results;

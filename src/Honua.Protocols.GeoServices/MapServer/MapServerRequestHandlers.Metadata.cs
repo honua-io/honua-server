@@ -284,7 +284,10 @@ internal static partial class MapServerEndpoints
     {
         const double webMercatorOrigin = SpatialConstants.WebMercatorExtent;
         const int tileSize = 256;
-        const double pixelSize = 0.00028;
+        const int dpi = 96;
+        // Esri's scale convention uses 39.37 inches per meter (not 1/0.0254 = 39.3701),
+        // which is what produces the canonical AGOL WebMercator lods values.
+        const double inchesPerMeter = 39.37;
 
         var effectiveMaxZoom = Math.Clamp(maxTileZoom, 0, TileMath.MaxSupportedZoomLevel);
         var lods = new LevelOfDetail[effectiveMaxZoom + 1];
@@ -292,7 +295,12 @@ internal static partial class MapServerEndpoints
         {
             var matrixSize = 1L << z;
             var resolution = 2.0 * webMercatorOrigin / (tileSize * (double)matrixSize);
-            var scale = resolution / pixelSize;
+
+            // Esri tiling-scheme convention: scale derives from the declared dpi
+            // (z0 = 591657527.591555 for WebMercator), not the OGC 0.28mm pixel
+            // (which yields 559082264.03, ~5.5% off the scheme every Esri client
+            // compares against, toggling minScale/maxScale visibility one LOD off).
+            var scale = resolution * dpi * inchesPerMeter;
             lods[z] = new LevelOfDetail
             {
                 Level = z,
@@ -305,7 +313,7 @@ internal static partial class MapServerEndpoints
         {
             Rows = tileSize,
             Cols = tileSize,
-            Dpi = 96,
+            Dpi = dpi,
             Format = "PNG",
             Origin = new TileOrigin
             {

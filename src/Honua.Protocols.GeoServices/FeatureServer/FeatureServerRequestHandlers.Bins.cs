@@ -10,6 +10,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
+using Honua.Core.Queries.Filters;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
@@ -25,6 +26,14 @@ internal static partial class FeatureServerEndpoints
         int layerId,
         HttpContext context)
     {
+        var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
+        if (!TryValidateAllowedParameters(context.Request.Query, queryValidator, AllowedQueryParameters.QueryBins, out var error))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid query parameters",
+                [error ?? "Invalid query parameter."]);
+        }
+
         var values = ToCaseInsensitiveDictionary(context.Request.Query);
         return await HandleQueryBinsCore(serviceId, layerId, values, context);
     }
@@ -46,6 +55,14 @@ internal static partial class FeatureServerEndpoints
             return StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid request body",
                 [readError ?? "Invalid request body."]);
+        }
+
+        var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
+        if (!TryValidateAllowedParameters(values, queryValidator, AllowedQueryParameters.QueryBins, out var error))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid query parameters",
+                [error ?? "Invalid query parameter."]);
         }
 
         return await HandleQueryBinsCore(serviceId, layerId, values, context);
@@ -95,6 +112,14 @@ internal static partial class FeatureServerEndpoints
                 $"Layer '{resource.Metadata.Name ?? layerId.ToString(CultureInfo.InvariantCulture)}' is not bound to a storage layer.");
         }
 
+        var requestedFormat = GetValueString(values, "f");
+        if (!TryValidateOutputFormat(requestedFormat, JsonOnlyFormats, out _, out var formatError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid query parameters",
+                [formatError ?? "Output format is not supported."]);
+        }
+
         // Parse bin JSON parameter
         var binJson = GetValueString(values, "bin");
         if (string.IsNullOrWhiteSpace(binJson))
@@ -110,6 +135,13 @@ internal static partial class FeatureServerEndpoints
                 [binParseError ?? "bin must be valid JSON."]);
         }
 
+        if (!IsSchemaField(resource, binDefinition.Field))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid bin parameter",
+                [$"Field '{binDefinition.Field}' does not exist on the layer."]);
+        }
+
         // Parse optional outStatistics
         var outStatsJson = GetValueString(values, "outStatistics");
         if (!string.IsNullOrWhiteSpace(outStatsJson))
@@ -121,14 +153,23 @@ internal static partial class FeatureServerEndpoints
                     [statsError ?? "outStatistics must be valid JSON."]);
             }
 
+            if (!TryValidateStatisticsFields(resource, outStats, out var statsFieldError))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context,
+                    "Invalid outStatistics parameter",
+                    [statsFieldError ?? "outStatistics references an unknown field."]);
+            }
+
             binDefinition = binDefinition with { OutStatistics = outStats };
         }
 
-        var query = new FeatureQuery
+        // Translate the where clause through the shared filter pipeline (matching
+        // /query and queryH3) so valid ArcGIS SQL is supported and invalid input
+        // surfaces as a protocol-shaped 400 instead of a provider exception.
+        if (!TryBuildAnalyticsFeatureQuery(context, resource, GetValueString(values, "where"), out var query, out var whereError))
         {
-            Where = GetValueString(values, "where"),
-            SpatialReferenceSrid = resource.ReadSrid()
-        };
+            return whereError!;
+        }
 
         var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
         var rows = await featureReader.QueryBinsAsync(storageLayerId.Value, query, binDefinition, cancellationToken);
@@ -144,6 +185,99 @@ internal static partial class FeatureServerEndpoints
         };
 
         return Results.Json(response, FeatureServerJsonContext.Default.QueryResponse, contentType: "application/json");
+    }
+
+    /// <summary>
+    /// Returns whether the field exists on the layer schema (or is the layer's
+    /// resolved object-id field, which may be internal rather than schema-listed).
+    /// </summary>
+    private static bool IsSchemaField(MetadataV2Resource resource, string fieldName)
+    {
+        foreach (var field in resource.SchemaFields)
+        {
+            if (string.Equals(field.Name, fieldName, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return string.Equals(
+            GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource),
+            fieldName,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Validates that every outStatistics entry references a known layer field, so
+    /// unknown names are rejected with a clear 400 before reaching the provider.
+    /// </summary>
+    private static bool TryValidateStatisticsFields(
+        MetadataV2Resource resource,
+        ImmutableArray<StatisticDefinition> statistics,
+        out string? error)
+    {
+        foreach (var statistic in statistics)
+        {
+            if (!IsSchemaField(resource, statistic.OnStatisticField))
+            {
+                error = $"onStatisticField '{statistic.OnStatisticField}' does not exist on the layer.";
+                return false;
+            }
+        }
+
+        error = null;
+        return true;
+    }
+
+    /// <summary>
+    /// Builds the analytics <see cref="FeatureQuery"/> with the where clause parsed
+    /// and translated through the shared <see cref="IFilterExpressionService"/>
+    /// pipeline (the same path /query and queryH3 use) instead of handing the raw
+    /// string to the provider's legacy where-parser.
+    /// </summary>
+    private static bool TryBuildAnalyticsFeatureQuery(
+        HttpContext context,
+        MetadataV2Resource resource,
+        string? whereClause,
+        out FeatureQuery query,
+        out IResult? errorResult)
+    {
+        query = new FeatureQuery
+        {
+            SpatialReferenceSrid = resource.ReadSrid()
+        };
+        errorResult = null;
+
+        if (string.IsNullOrWhiteSpace(whereClause) || whereClause.Trim() == "1=1")
+        {
+            return true;
+        }
+
+        var filterService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
+        var parseResult = filterService.Parse(FilterLanguage.ArcGisSql, whereClause);
+        if (!parseResult.IsSuccess)
+        {
+            errorResult = StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid where clause",
+                [parseResult.ErrorMessage ?? "Invalid filter syntax."]);
+            return false;
+        }
+
+        if (parseResult.Expression != null)
+        {
+            var translationResult = filterService.Translate(parseResult.Expression, resource);
+            if (!translationResult.IsSuccess)
+            {
+                errorResult = StandardErrorHelpers.CreateBadRequest(context,
+                    "Invalid where clause",
+                    [translationResult.ErrorMessage ?? "Invalid filter syntax."]);
+                return false;
+            }
+
+            query = query with { SqlFilter = translationResult.SqlFilter };
+        }
+
+        return true;
     }
 
     private static bool TryParseBinDefinition(string json, out BinDefinition binDefinition, out string? error)

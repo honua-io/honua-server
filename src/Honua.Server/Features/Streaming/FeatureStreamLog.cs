@@ -83,4 +83,8 @@ internal static partial class FeatureStreamLog
     [LoggerMessage(EventId = 5019, Level = LogLevel.Debug,
         Message = "Feature stream session {SessionId} dropped a stale-generation frame for subscription {SubscriptionId} (frameGeneration={FrameGeneration})")]
     public static partial void StaleSubscriptionFrameDropped(ILogger logger, Guid sessionId, string subscriptionId, long frameGeneration);
+
+    [LoggerMessage(EventId = 5020, Level = LogLevel.Warning,
+        Message = "Feature stream cluster-broadcast backlog exceeded {Capacity} entries; dropping oldest payloads (totalDropped={TotalDropped})")]
+    public static partial void ClusterBroadcastBacklogOverflowed(ILogger logger, int capacity, long totalDropped);
 }

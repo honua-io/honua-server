@@ -58,6 +58,8 @@ public interface ICommonQueryValidator
 
     /// <summary>
     /// Validates and normalizes pagination parameters, returning effective values with defaults.
+    /// Uses <see cref="PaginationValidationOptions.Default"/>, which clamps an over-maximum limit
+    /// to the configured maximum record count (OGC API - Features semantics) instead of failing.
     /// </summary>
     /// <param name="offset">Offset/skip parameter (null uses 0)</param>
     /// <param name="limit">Limit/take/count parameter (null uses default from configuration)</param>

@@ -834,6 +834,7 @@ internal static partial class ImportEndpoints
                 {
                     if (stagedFile != null)
                     {
+                        MultipartParsingHelpers.TryDeleteFile(stagedFile.LocalFilePath);
                         return MultipartImportParseResult.Failure("Only one file upload is supported per request.", StatusCodes.Status400BadRequest);
                     }
 
@@ -912,6 +913,11 @@ internal static partial class ImportEndpoints
         {
             MultipartParsingHelpers.TryDeleteFile(stagedFile?.LocalFilePath);
             return MultipartImportParseResult.Failure(InvalidMultipartImportRequestMessage, StatusCodes.Status400BadRequest);
+        }
+        catch
+        {
+            MultipartParsingHelpers.TryDeleteFile(stagedFile?.LocalFilePath);
+            throw;
         }
     }
 

@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Buffers.Binary;
 using System.Collections.Immutable;
 using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -8,6 +9,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Infrastructure.Services;
 using Microsoft.Extensions.Options;
+using NetTopologySuite.Algorithm;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
@@ -137,13 +139,23 @@ internal sealed class PbfQueryFormatter
             sr.Dispose();
         }
 
+        // hasZ/hasM (fields 10/11) must describe the coordinate stride actually
+        // emitted, not the request parameters: decoders read 2/3/4 ordinates per
+        // vertex based on these flags, so advertising Z for a 2D layer queried with
+        // returnZ=true would garble every subsequent vertex. Derive the effective
+        // flags from the data (mirroring the f=json path) and emit a Z/M ordinate
+        // for EVERY vertex whenever the corresponding flag is set.
+        var (dataHasZ, dataHasM) = DetectZmOrdinates(result.Items);
+        var effectiveZ = returnZ && dataHasZ;
+        var effectiveM = returnM && dataHasM;
+
         writer.WriteBool(9, result.HasMoreResults);
-        writer.WriteBool(10, returnZ);
-        writer.WriteBool(11, returnM);
+        writer.WriteBool(10, effectiveZ);
+        writer.WriteBool(11, effectiveM);
 
         if (hasGeometry && returnGeometry)
         {
-            WriteTransform(ref writer, srid);
+            WriteTransform(ref writer, effectiveZ, effectiveM);
         }
 
         var declaredAttributeFields = resource.SchemaFields
@@ -179,8 +191,8 @@ internal sealed class PbfQueryFormatter
                 fieldIndex,
                 objectIdFieldName,
                 returnGeometry,
-                returnZ,
-                returnM,
+                effectiveZ,
+                effectiveM,
                 geometryLimits,
                 scale);
             writer.WriteMessage(15, ref featureMsg);
@@ -263,54 +275,59 @@ internal sealed class PbfQueryFormatter
     }
 
     /// <summary>
-    /// Writes a single attribute value into the Value oneof.
+    /// Writes a single attribute value into the Value oneof. Oneof members carry
+    /// explicit presence, so the *Always writers are used: the default-skipping
+    /// writers would encode 0, 0.0, false, and "" as "no member set", which clients
+    /// decode as null.
     /// </summary>
     private static void WriteAttributeValue(ref ProtobufWriter writer, object value)
     {
         switch (value)
         {
             case string s:
-                writer.WriteString(1, s);       // string_value
+                writer.WriteStringAlways(1, s);     // string_value
                 break;
             case float f:
-                writer.WriteFloat(2, f);        // float_value
+                writer.WriteFloatAlways(2, f);      // float_value
                 break;
             case double d:
-                writer.WriteDouble(3, d);       // double_value
+                writer.WriteDoubleAlways(3, d);     // double_value
                 break;
             case int i:
-                writer.WriteSInt32(4, i);       // sint_value
+                writer.WriteSInt32Always(4, i);     // sint_value
                 break;
             case uint u:
-                writer.WriteUInt32(5, u);       // uint_value
+                writer.WriteUInt32Always(5, u);     // uint_value
                 break;
             case long l:
-                writer.WriteInt64(6, l);        // int64_value
+                writer.WriteInt64Always(6, l);      // int64_value
                 break;
             case ulong ul:
-                writer.WriteUInt64(7, ul);      // uint64_value
+                writer.WriteUInt64Always(7, ul);    // uint64_value
                 break;
             case bool b:
-                writer.WriteBool(9, b);         // bool_value
+                writer.WriteBoolAlways(9, b);       // bool_value
                 break;
             case short s:
-                writer.WriteSInt32(4, s);
+                writer.WriteSInt32Always(4, s);
                 break;
             case decimal d:
-                writer.WriteDouble(3, (double)d);
+                writer.WriteDoubleAlways(3, (double)d);
                 break;
             case DateTime dt:
-                // Esri PBF encodes dates as int64 milliseconds since epoch
-                writer.WriteInt64(6, new DateTimeOffset(dt, TimeSpan.Zero).ToUnixTimeMilliseconds());
+                // Esri PBF encodes dates as int64 milliseconds since epoch. The shared
+                // convention handles all DateTimeKind values (the DateTimeOffset(dt, Zero)
+                // constructor throws for Local-kind values).
+                writer.WriteInt64Always(6, GeoServicesFieldConventions.ToEpochMilliseconds(dt));
                 break;
             case DateTimeOffset dto:
-                writer.WriteInt64(6, dto.ToUnixTimeMilliseconds());
+                writer.WriteInt64Always(6, dto.ToUnixTimeMilliseconds());
                 break;
             case Guid g:
-                writer.WriteString(1, g.ToString());
+                writer.WriteStringAlways(1, g.ToString());
                 break;
             default:
-                writer.WriteString(1, value.ToString());
+                writer.WriteStringAlways(1, value.ToString());
                 break;
         }
     }
@@ -331,9 +348,9 @@ internal sealed class PbfQueryFormatter
         {
             geometry = WkbReaderCache.Get().Read(wkb);
         }
-        catch
+        catch (Exception ex) when (ex is ParseException or FormatException)
         {
-            return; // Skip unparseable geometry
+            return; // Skip unparseable geometry (matches the f=json/f=geojson formatters)
         }
 
         if (geometry == null || geometry.IsEmpty)
@@ -366,6 +383,15 @@ internal sealed class PbfQueryFormatter
     /// <summary>
     /// Delta-encodes geometry coordinates into integer arrays.
     /// </summary>
+    /// <remarks>
+    /// Esri PBF quantization semantics (matching ArcGIS Server output and the
+    /// reference decoders in github.com/Esri/arcgis-pbf):
+    /// - The default quantization origin is upperLeft, so quantized Y is the
+    ///   NEGATED map-space Y (decoders compute y = yTranslate - y' * yScale).
+    /// - Each lengths[] segment (ring/path) restarts delta encoding: the first
+    ///   vertex of every segment is absolute and only subsequent vertices are
+    ///   deltas, so the running accumulator resets at each part boundary.
+    /// </remarks>
     private static (List<uint> lengths, List<long> coords) EncodeGeometryCoordinates(
         Geometry geometry,
         double scale,
@@ -400,6 +426,9 @@ internal sealed class PbfQueryFormatter
                 {
                     var line = (LineString)mls.GetGeometryN(i);
                     lengths.Add((uint)line.NumPoints);
+                    // Each path restarts delta encoding from an absolute first vertex.
+                    prevX = 0;
+                    prevY = 0;
                     AppendCoordinateSequence(coords, line.CoordinateSequence, scale, ref prevX, ref prevY, returnZ, returnM);
                 }
                 break;
@@ -429,18 +458,47 @@ internal sealed class PbfQueryFormatter
         bool returnZ,
         bool returnM)
     {
+        // Esri ring convention (mirrors GeoServicesGeometryConverter.BuildRingCoordinates
+        // on the f=json path): exterior rings clockwise, holes counter-clockwise in map
+        // space. Decoders classify rings purely by winding, so stored CCW exteriors (the
+        // common PostGIS orientation) would otherwise render as holes or be dropped.
+
         // Exterior ring
         var exterior = polygon.ExteriorRing;
         lengths.Add((uint)exterior.NumPoints);
-        AppendCoordinateSequence(coords, exterior.CoordinateSequence, scale, ref prevX, ref prevY, returnZ, returnM);
+        prevX = 0;
+        prevY = 0;
+        AppendCoordinateSequence(
+            coords, exterior.CoordinateSequence, scale, ref prevX, ref prevY, returnZ, returnM,
+            reverse: ShouldReverseRing(exterior, clockwise: true));
 
         // Interior rings (holes)
         for (int i = 0; i < polygon.NumInteriorRings; i++)
         {
             var ring = polygon.GetInteriorRingN(i);
             lengths.Add((uint)ring.NumPoints);
-            AppendCoordinateSequence(coords, ring.CoordinateSequence, scale, ref prevX, ref prevY, returnZ, returnM);
+            prevX = 0;
+            prevY = 0;
+            AppendCoordinateSequence(
+                coords, ring.CoordinateSequence, scale, ref prevX, ref prevY, returnZ, returnM,
+                reverse: ShouldReverseRing(ring, clockwise: false));
         }
+    }
+
+    /// <summary>
+    /// Determines whether a ring must be emitted in reverse order to honor the Esri
+    /// winding convention (<paramref name="clockwise"/> = true for exterior rings,
+    /// false for holes), evaluated in map space.
+    /// </summary>
+    private static bool ShouldReverseRing(LineString ring, bool clockwise)
+    {
+        if (ring.NumPoints < 4)
+        {
+            return false;
+        }
+
+        var isCcw = Orientation.IsCCW(ring.Coordinates);
+        return clockwise == isCcw;
     }
 
     private static void AppendCoordinate(
@@ -453,15 +511,19 @@ internal sealed class PbfQueryFormatter
         bool returnM)
     {
         long x = (long)Math.Round(coord.X * scale);
-        long y = (long)Math.Round(coord.Y * scale);
+        // upperLeft quantization origin: quantized Y is negated map-space Y.
+        long y = -(long)Math.Round(coord.Y * scale);
         coords.Add(x - prevX);
         coords.Add(y - prevY);
         prevX = x;
         prevY = y;
 
-        if (returnZ && !double.IsNaN(coord.Z))
+        // When the Z/M flags are set every vertex must carry the ordinate, otherwise
+        // the decoder's stride no longer matches hasZ/hasM and the stream garbles.
+        if (returnZ)
         {
-            coords.Add((long)Math.Round(coord.Z * scale));
+            var z = double.IsNaN(coord.Z) ? 0d : coord.Z;
+            coords.Add((long)Math.Round(z * scale));
         }
 
         if (returnM)
@@ -478,20 +540,29 @@ internal sealed class PbfQueryFormatter
         ref long prevX,
         ref long prevY,
         bool returnZ,
-        bool returnM)
+        bool returnM,
+        bool reverse = false)
     {
-        for (int i = 0; i < sequence.Count; i++)
+        for (int index = 0; index < sequence.Count; index++)
         {
+            var i = reverse ? sequence.Count - 1 - index : index;
             long x = (long)Math.Round(sequence.GetX(i) * scale);
-            long y = (long)Math.Round(sequence.GetY(i) * scale);
+            // upperLeft quantization origin: quantized Y is negated map-space Y.
+            long y = -(long)Math.Round(sequence.GetY(i) * scale);
             coords.Add(x - prevX);
             coords.Add(y - prevY);
             prevX = x;
             prevY = y;
 
-            if (returnZ && sequence.HasZ)
+            if (returnZ)
             {
-                coords.Add((long)Math.Round(sequence.GetZ(i) * scale));
+                var z = sequence.HasZ ? sequence.GetZ(i) : double.NaN;
+                if (double.IsNaN(z))
+                {
+                    z = 0d;
+                }
+
+                coords.Add((long)Math.Round(z * scale));
             }
 
             if (returnM)
@@ -508,26 +579,87 @@ internal sealed class PbfQueryFormatter
     }
 
     /// <summary>
+    /// Detects whether any feature's WKB geometry carries Z or M ordinates by
+    /// inspecting the WKB type header (EWKB dimension flags and ISO SQL/MM
+    /// 1000/2000/3000 type offsets), without fully parsing the geometries.
+    /// </summary>
+    private static (bool HasZ, bool HasM) DetectZmOrdinates(ImmutableArray<Feature> features)
+    {
+        var hasZ = false;
+        var hasM = false;
+        foreach (var feature in features)
+        {
+            var wkb = feature.Geometry;
+            if (wkb is not { Length: >= 5 })
+            {
+                continue;
+            }
+
+            var type = wkb[0] == 1
+                ? BinaryPrimitives.ReadUInt32LittleEndian(wkb.AsSpan(1, 4))
+                : BinaryPrimitives.ReadUInt32BigEndian(wkb.AsSpan(1, 4));
+
+            // EWKB flags
+            hasZ |= (type & 0x80000000u) != 0;
+            hasM |= (type & 0x40000000u) != 0;
+
+            // ISO SQL/MM type offsets: +1000 = Z, +2000 = M, +3000 = ZM
+            var isoDimension = (type & 0xFFFFu) / 1000u;
+            hasZ |= isoDimension is 1 or 3;
+            hasM |= isoDimension is 2 or 3;
+
+            if (hasZ && hasM)
+            {
+                break;
+            }
+        }
+
+        return (hasZ, hasM);
+    }
+
+    /// <summary>
     /// Writes the Transform message with quantization scale/translate.
     /// </summary>
-    private static void WriteTransform(ref ProtobufWriter writer, int srid)
+    private static void WriteTransform(ref ProtobufWriter writer, bool hasZ, bool hasM)
     {
         double scale = DefaultQuantizationScale;
         var transform = new ProtobufWriter(64);
 
-        // field 1: quantizeOriginPosition (0 = upperLeft, default)
+        // field 1: quantizeOriginPosition (0 = upperLeft, default).
+        // The coordinate encoder negates Y accordingly (see EncodeGeometryCoordinates).
 
-        // field 2: scale
-        var scaleMsg = new ProtobufWriter(32);
+        // field 2: scale (Scale: xScale=1, yScale=2, mScale=3, zScale=4).
+        // Z/M ordinates are quantized at the same precision as X/Y, so their scales
+        // must be emitted whenever those ordinates are present, or decoders dequantize
+        // them with the default 0.0 scale and every Z/M collapses to 0.
+        var scaleMsg = new ProtobufWriter(48);
         scaleMsg.WriteDouble(1, 1.0 / scale);   // xScale
         scaleMsg.WriteDouble(2, 1.0 / scale);   // yScale
+        if (hasM)
+        {
+            scaleMsg.WriteDouble(3, 1.0 / scale);   // mScale
+        }
+        if (hasZ)
+        {
+            scaleMsg.WriteDouble(4, 1.0 / scale);   // zScale
+        }
         transform.WriteMessage(2, ref scaleMsg);
         scaleMsg.Dispose();
 
-        // field 3: translate
-        var translateMsg = new ProtobufWriter(32);
-        translateMsg.WriteDouble(1, 0.0);        // xTranslate
-        translateMsg.WriteDouble(2, 0.0);        // yTranslate
+        // field 3: translate (Translate: xTranslate=1, yTranslate=2, mTranslate=3,
+        // zTranslate=4), all zero. Forced writes keep the Translate message non-empty
+        // so it is present on the wire for decoders that dereference it directly.
+        var translateMsg = new ProtobufWriter(48);
+        translateMsg.WriteDoubleAlways(1, 0.0);        // xTranslate
+        translateMsg.WriteDoubleAlways(2, 0.0);        // yTranslate
+        if (hasM)
+        {
+            translateMsg.WriteDoubleAlways(3, 0.0);    // mTranslate
+        }
+        if (hasZ)
+        {
+            translateMsg.WriteDoubleAlways(4, 0.0);    // zTranslate
+        }
         transform.WriteMessage(3, ref translateMsg);
         translateMsg.Dispose();
 

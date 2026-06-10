@@ -78,7 +78,17 @@ internal static class OgcOpenApiSpecUtilities
         // Use GetOrAdd first - this is atomic and handles the common case without racing
         if (_openApiCache.TryGetValue(cacheKey, out var existing))
         {
-            return existing.Value;
+            var existingTask = existing.Value;
+            // If the cached task faulted or was cancelled (e.g. transient IO error during deploy),
+            // evict it so the next request gets a fresh attempt instead of replaying the fault forever.
+            if (existingTask.IsFaulted || existingTask.IsCanceled)
+            {
+                _openApiCache.TryRemove(cacheKey, out _);
+            }
+            else
+            {
+                return existingTask;
+            }
         }
 
         // Only evict when at capacity and the key is genuinely new.

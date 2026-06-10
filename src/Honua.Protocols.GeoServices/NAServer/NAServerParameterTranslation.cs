@@ -183,14 +183,16 @@ internal static class NAServerParameterTranslation
                 var root = doc.RootElement;
                 if (root.ValueKind == JsonValueKind.Object)
                 {
-                    if (root.TryGetProperty("wkid", out var wkid) && wkid.ValueKind == JsonValueKind.Number)
+                    if (root.TryGetProperty("wkid", out var wkid) && wkid.ValueKind == JsonValueKind.Number &&
+                        wkid.TryGetInt32(out var wkidValue) && wkidValue > 0)
                     {
-                        return wkid.GetInt32();
+                        return wkidValue;
                     }
 
-                    if (root.TryGetProperty("latestWkid", out var latest) && latest.ValueKind == JsonValueKind.Number)
+                    if (root.TryGetProperty("latestWkid", out var latest) && latest.ValueKind == JsonValueKind.Number &&
+                        latest.TryGetInt32(out var latestValue) && latestValue > 0)
                     {
-                        return latest.GetInt32();
+                        return latestValue;
                     }
                 }
             }

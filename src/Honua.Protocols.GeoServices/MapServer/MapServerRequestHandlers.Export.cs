@@ -159,7 +159,11 @@ internal static partial class MapServerEndpoints
                     AxisOrder.EastNorth,
                     SpatialReference.Create(bboxSrid.Value).IsGeographic);
 
-            if (!TryParseBbox(bboxValue, bboxCrsDefinition.AxisOrder, bboxCrsDefinition.IsGeographic, out var extent))
+            // GeoServices bbox is always xmin,ymin,xmax,ymax in CRS x/y (EastNorth) order
+            // regardless of the bboxSR datum. Esri never sends lat/lon-first bbox strings;
+            // passing the geographic CRS axis order (NorthEast) silently transposes extents
+            // where |lon|<=90 (Europe, Africa, India, etc.).
+            if (!TryParseBbox(bboxValue, AxisOrder.EastNorth, bboxCrsDefinition.IsGeographic, out var extent))
             {
                 return StandardErrorHelpers.CreateBadRequest(context,
                     "Invalid or missing bbox parameter. Expected format: xmin,ymin,xmax,ymax");

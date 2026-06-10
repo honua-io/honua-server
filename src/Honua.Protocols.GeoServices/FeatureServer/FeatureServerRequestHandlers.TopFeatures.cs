@@ -27,6 +27,14 @@ internal static partial class FeatureServerEndpoints
         int layerId,
         HttpContext context)
     {
+        var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
+        if (!TryValidateAllowedParameters(context.Request.Query, queryValidator, AllowedQueryParameters.QueryTopFeatures, out var error))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid query parameters",
+                [error ?? "Invalid query parameter."]);
+        }
+
         var values = ToCaseInsensitiveDictionary(context.Request.Query);
         return await HandleQueryTopFeaturesCore(serviceId, layerId, values, context);
     }
@@ -50,6 +58,14 @@ internal static partial class FeatureServerEndpoints
                 [readError ?? "Invalid request body."]);
         }
 
+        var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
+        if (!TryValidateAllowedParameters(values, queryValidator, AllowedQueryParameters.QueryTopFeatures, out var error))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid query parameters",
+                [error ?? "Invalid query parameter."]);
+        }
+
         return await HandleQueryTopFeaturesCore(serviceId, layerId, values, context);
     }
 
@@ -64,6 +80,14 @@ internal static partial class FeatureServerEndpoints
         activity?.SetTag(HonuaTelemetry.Tags.Operation, "queryTopFeatures");
         activity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
         activity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId);
+
+        var requestedFormat = GetValueString(values, "f");
+        if (!TryValidateOutputFormat(requestedFormat, JsonOnlyFormats, out _, out var formatError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid query parameters",
+                [formatError ?? "Output format is not supported."]);
+        }
 
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
         var cancellationToken = GetTimeoutAwareCancellationToken(context);

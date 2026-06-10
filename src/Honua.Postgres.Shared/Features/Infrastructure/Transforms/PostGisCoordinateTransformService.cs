@@ -293,6 +293,10 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
 
             return (reader.GetDouble(0), reader.GetDouble(1), reader.GetDouble(2), reader.GetDouble(3));
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             Log.PostGisTransformFailed(_logger, fromSrid, toSrid, ex);
@@ -349,6 +353,10 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
             }
 
             return (reader.GetDouble(0), reader.GetDouble(1));
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {

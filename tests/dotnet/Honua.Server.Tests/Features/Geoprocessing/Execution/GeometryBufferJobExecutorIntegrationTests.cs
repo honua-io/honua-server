@@ -19,6 +19,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 using StackExchange.Redis;
@@ -146,6 +147,7 @@ public sealed class GeometryBufferJobExecutorIntegrationTests(RedisFixture redis
         services.AddSingleton<IGeoprocessingResultPackageStore>(sp =>
             new RedisGeoprocessingResultPackageStore(
                 sp.GetRequiredService<IConnectionMultiplexer>(),
+                sp.GetRequiredService<IOptionsMonitor<GeoprocessingExecutorOptions>>(),
                 sp.GetRequiredService<ILogger<RedisGeoprocessingResultPackageStore>>()));
 
         services.RemoveAll<RedisJobQueue>();

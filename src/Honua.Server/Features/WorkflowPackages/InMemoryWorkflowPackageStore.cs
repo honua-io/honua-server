@@ -7,6 +7,17 @@ using Honua.Core.Features.WorkflowPackages.Domain;
 
 namespace Honua.Server.Features.WorkflowPackages;
 
+/// <summary>
+/// Process-local, non-durable <see cref="IWorkflowPackageStore"/>. Packages,
+/// versions, and publications do NOT survive a restart, while schedule
+/// publications persist their compiled cron <c>WorkflowDefinition</c> into the
+/// durable (Redis-backed) workflow definition store. After a restart the
+/// scheduler therefore keeps firing runs for definitions whose owning
+/// publication no longer exists, and those orphans can only be stopped by
+/// deleting the definition from Redis. Production deployments need a durable
+/// package store (or scheduler-side orphan reaping) before schedule
+/// publications can be relied on across restarts.
+/// </summary>
 internal sealed class InMemoryWorkflowPackageStore : IWorkflowPackageStore
 {
     private readonly ConcurrentDictionary<string, WorkflowPackage> _packages = new(StringComparer.Ordinal);

@@ -168,6 +168,12 @@ public static class WorkflowDefinitionValidator
         HashSet<string> unvisited,
         HashSet<string> active)
     {
+        if (!unvisited.Contains(stepId))
+        {
+            // Already fully explored via another dependency path; no cycle through this step.
+            return false;
+        }
+
         if (!active.Add(stepId))
         {
             return true;

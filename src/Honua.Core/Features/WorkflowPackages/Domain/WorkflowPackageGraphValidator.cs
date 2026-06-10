@@ -218,44 +218,59 @@ public static class WorkflowPackageGraphValidator
             }
         }
 
+        // Three-colour DFS with an explicit stack over user-submitted graphs: `unvisited`
+        // tracks white (never seen) nodes and `active` tracks the grey path. Consulting
+        // `unvisited` before descending keeps shared subgraphs (diamond fan-in) at O(V+E)
+        // instead of exponential re-traversal, and the explicit stack keeps arbitrarily
+        // long chains from overflowing the call stack.
         var unvisited = new HashSet<string>(adjacency.Keys, StringComparer.Ordinal);
         var active = new HashSet<string>(StringComparer.Ordinal);
+        var stack = new Stack<(string NodeId, int NextChild)>();
 
-        foreach (var nodeId in adjacency.Keys)
+        foreach (var root in adjacency.Keys)
         {
-            if (unvisited.Contains(nodeId) && Visit(nodeId, adjacency, unvisited, active))
+            if (!unvisited.Contains(root))
             {
-                return true;
+                continue;
             }
-        }
 
-        return false;
-    }
+            stack.Push((root, 0));
+            active.Add(root);
 
-    private static bool Visit(
-        string nodeId,
-        IReadOnlyDictionary<string, List<string>> adjacency,
-        HashSet<string> unvisited,
-        HashSet<string> active)
-    {
-        if (!active.Add(nodeId))
-        {
-            return true;
-        }
-
-        if (adjacency.TryGetValue(nodeId, out var targets))
-        {
-            foreach (var target in targets)
+            while (stack.Count > 0)
             {
-                if (Visit(target, adjacency, unvisited, active))
+                var (nodeId, nextChild) = stack.Pop();
+                var targets = adjacency[nodeId];
+
+                var descended = false;
+                while (nextChild < targets.Count)
                 {
-                    return true;
+                    var target = targets[nextChild++];
+                    if (active.Contains(target))
+                    {
+                        return true; // Back-edge onto the active path: dependency cycle.
+                    }
+
+                    if (!unvisited.Contains(target))
+                    {
+                        continue; // Already fully explored via another path.
+                    }
+
+                    stack.Push((nodeId, nextChild));
+                    stack.Push((target, 0));
+                    active.Add(target);
+                    descended = true;
+                    break;
+                }
+
+                if (!descended)
+                {
+                    active.Remove(nodeId);
+                    unvisited.Remove(nodeId);
                 }
             }
         }
 
-        active.Remove(nodeId);
-        unvisited.Remove(nodeId);
         return false;
     }
 }

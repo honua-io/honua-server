@@ -11,6 +11,7 @@ using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Rendering;
 using Honua.Protocols.GeoServices.MapServer.Models;
+using Honua.ServiceDefaults;
 
 namespace Honua.Protocols.GeoServices.MapServer;
 
@@ -18,6 +19,10 @@ internal static partial class MapServerEndpoints
 {
     private const int DefaultLegendSwatchWidth = 20;
     private const int DefaultLegendSwatchHeight = 20;
+
+    // Legend swatches are tiny by convention (Esri emits 20x20). A hard ceiling keeps
+    // an anonymous GET from allocating arbitrarily large Skia surfaces per style layer.
+    private const int MaxLegendSwatchDimension = 512;
 
     private sealed record LegendLayerDescriptor(
         int LayerId,
@@ -46,9 +51,38 @@ internal static partial class MapServerEndpoints
         var loggerFactory = context.RequestServices.GetRequiredService<ILoggerFactory>();
         var logger = loggerFactory.CreateLogger("Honua.Server.MapServerEndpoints");
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
+        using var scope = HonuaTelemetryScope.StartFeature(
+            "legend",
+            HonuaTelemetry.Protocols.MapServer,
+            "*");
+        scope.WithTag(HonuaTelemetry.Tags.ServiceId, serviceId)
+            .WithTag(HonuaTelemetry.Tags.Operation, "legend");
 
         MapServerLog.LegendRequested(logger, serviceId);
 
+        try
+        {
+            return await HandleLegendCoreAsync(context, serviceId, logger, scope, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            MapServerLog.LegendFailed(logger, serviceId, ex.Message, ex);
+            scope.RecordException(ex);
+            return StandardErrorHelpers.CreateInternalServerError(context, "MapServer legend failed.");
+        }
+    }
+
+    private static async Task<IResult> HandleLegendCoreAsync(
+        HttpContext context,
+        string serviceId,
+        ILogger logger,
+        HonuaTelemetryScope scope,
+        CancellationToken cancellationToken)
+    {
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
         var serviceResult = await ServiceResourceValidationHelpers.ValidateServiceV2Async(
             resourceValidator,
@@ -129,6 +163,7 @@ internal static partial class MapServerEndpoints
         }
 
         MapServerLog.LegendCompleted(logger, serviceId, legendLayers.Count);
+        scope.SetSuccess(legendLayers.Count);
 
         var response = new LegendResponse { Layers = [.. legendLayers] };
         return Results.Json(response, MapServerJsonContext.Default.LegendResponse, contentType: "application/json");
@@ -184,23 +219,26 @@ internal static partial class MapServerEndpoints
                 var parts = sizeValue.Split(',', StringSplitOptions.TrimEntries);
                 if (parts.Length == 2)
                 {
-                    if (!int.TryParse(parts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out width) || width <= 0)
+                    if (!int.TryParse(parts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out width) ||
+                        width <= 0 || width > MaxLegendSwatchDimension)
                     {
-                        error = "Invalid size width.";
+                        error = $"Invalid size width. Expected an integer between 1 and {MaxLegendSwatchDimension}.";
                         return false;
                     }
 
-                    if (!int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out height) || height <= 0)
+                    if (!int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out height) ||
+                        height <= 0 || height > MaxLegendSwatchDimension)
                     {
-                        error = "Invalid size height.";
+                        error = $"Invalid size height. Expected an integer between 1 and {MaxLegendSwatchDimension}.";
                         return false;
                     }
                 }
                 else if (parts.Length == 1)
                 {
-                    if (!int.TryParse(parts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out width) || width <= 0)
+                    if (!int.TryParse(parts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out width) ||
+                        width <= 0 || width > MaxLegendSwatchDimension)
                     {
-                        error = "Invalid size parameter.";
+                        error = $"Invalid size parameter. Expected an integer between 1 and {MaxLegendSwatchDimension}.";
                         return false;
                     }
 

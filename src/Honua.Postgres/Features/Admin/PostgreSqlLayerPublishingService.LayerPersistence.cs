@@ -20,6 +20,33 @@ namespace Honua.Postgres.Features.Admin;
 
 internal sealed partial class PostgreSqlLayerPublishingService
 {
+    /// <summary>
+    /// Serializes concurrent publishes of the same source table for the duration of
+    /// the transaction. honua.layers has no unique constraint on
+    /// (table_schema, table_name), so without this two concurrent publishes (e.g.
+    /// parallel AutoPublish imports) could both pass <see cref="FindExistingLayerAsync"/>
+    /// and insert duplicate layer rows. The transaction-scoped advisory lock is
+    /// released automatically at commit/rollback; the loser then re-runs the
+    /// existence check against the committed row and surfaces the Conflict error.
+    /// </summary>
+    private static async Task AcquireLayerPublishLockAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string schema,
+        string table,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT pg_advisory_xact_lock(
+                hashtextextended('honua.layers:' || lower(@schema) || '.' || lower(@table), 0));
+            """;
+
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("@schema", schema);
+        command.Parameters.AddWithValue("@table", table);
+        _ = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     private static async Task<int?> FindExistingLayerAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,

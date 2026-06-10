@@ -8,6 +8,11 @@ namespace Honua.Server.Features.Collaboration.Sessions;
 
 internal sealed class InMemoryCollaborationSessionService
 {
+    // Per-participant outbox cap. Outboxes are only drained by the participant's own poll; a
+    // participant that never drains (crashed client, no events surface wired) must not grow the
+    // singleton service without bound, so the oldest events are dropped once the cap is reached.
+    internal const int MaxOutboxDepth = 256;
+
     private readonly ConcurrentDictionary<string, MapChannel> _channels = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<Guid, string> _sessionMapIndex = new();
     private readonly ISavedMapCollaborationAuthorizer _authorizer;
@@ -51,21 +56,34 @@ internal sealed class InMemoryCollaborationSessionService
             LastSeenAt = now
         };
 
-        var channel = _channels.GetOrAdd(mapId, static id => new MapChannel(id));
         CollaborationSessionSnapshot snapshot;
-        lock (channel.Sync)
+        while (true)
         {
-            channel.Participants.Add(sessionId, new ParticipantState(participant));
-            _sessionMapIndex[sessionId] = mapId;
+            var channel = _channels.GetOrAdd(mapId, static id => new MapChannel(id));
+            lock (channel.Sync)
+            {
+                if (channel.Removed)
+                {
+                    // Leave/prune emptied this channel and unregistered it from _channels after we
+                    // resolved it but before we acquired its lock. Joining the orphaned instance
+                    // would make the session invisible to every later TryResolveSession lookup and
+                    // permanently leak its _sessionMapIndex entry, so re-resolve and retry.
+                    continue;
+                }
 
-            var joined = CreateEvent(
-                CollaborationSessionEventTypes.ParticipantJoined,
-                mapId,
-                participant,
-                now) with
-            { Participant = participant };
-            FanOutLocked(channel, joined, excludeSessionId: sessionId);
-            snapshot = CreateSnapshotLocked(channel, now);
+                channel.Participants.Add(sessionId, new ParticipantState(participant));
+                _sessionMapIndex[sessionId] = mapId;
+
+                var joined = CreateEvent(
+                    CollaborationSessionEventTypes.ParticipantJoined,
+                    mapId,
+                    participant,
+                    now) with
+                { Participant = participant };
+                FanOutLocked(channel, joined, excludeSessionId: sessionId);
+                snapshot = CreateSnapshotLocked(channel, now);
+                break;
+            }
         }
 
         return new CollaborationJoinResult
@@ -84,7 +102,19 @@ internal sealed class InMemoryCollaborationSessionService
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(mapId);
         var now = _clock.UtcNow;
-        var channel = _channels.GetOrAdd(mapId, static id => new MapChannel(id));
+        // A read must not register a channel: a GetOrAdd here would leave an empty MapChannel in
+        // _channels for every map id ever queried (nothing removes channels that never had a
+        // participant), growing the singleton without bound.
+        if (!_channels.TryGetValue(mapId, out var channel))
+        {
+            return new CollaborationSessionSnapshot
+            {
+                MapId = mapId,
+                Participants = [],
+                GeneratedAt = now
+            };
+        }
+
         lock (channel.Sync)
         {
             return CreateSnapshotLocked(channel, now);
@@ -301,10 +331,22 @@ internal sealed class InMemoryCollaborationSessionService
 
     private bool TryResolveSession(Guid sessionId, out string mapId, out MapChannel channel)
     {
-        mapId = string.Empty;
         channel = null!;
-        return _sessionMapIndex.TryGetValue(sessionId, out mapId!) &&
-            _channels.TryGetValue(mapId, out channel!);
+        if (!_sessionMapIndex.TryGetValue(sessionId, out mapId!))
+        {
+            mapId = string.Empty;
+            return false;
+        }
+
+        if (_channels.TryGetValue(mapId, out channel!))
+        {
+            return true;
+        }
+
+        // The index entry points at a channel that has been emptied and unregistered; the session
+        // is gone, so drop the dangling mapping instead of leaking it forever.
+        _sessionMapIndex.TryRemove(sessionId, out _);
+        return false;
     }
 
     private static int FanOutLocked(MapChannel channel, CollaborationEventEnvelope ev, Guid excludeSessionId)
@@ -315,6 +357,11 @@ internal sealed class InMemoryCollaborationSessionService
             if (sessionId == excludeSessionId)
             {
                 continue;
+            }
+
+            while (state.Outbox.Count >= MaxOutboxDepth)
+            {
+                state.Outbox.Dequeue();
             }
 
             state.Outbox.Enqueue(ev);
@@ -393,8 +440,12 @@ internal sealed class InMemoryCollaborationSessionService
 
     private void RemoveChannelIfEmpty(string mapId, MapChannel channel)
     {
+        // Caller holds channel.Sync. Marking the channel removed under the lock lets a concurrent
+        // JoinAsync that already resolved this instance detect the removal and retry against a
+        // fresh channel instead of joining an orphan that is no longer reachable via _channels.
         if (channel.Participants.Count == 0)
         {
+            channel.Removed = true;
             _channels.TryRemove(new KeyValuePair<string, MapChannel>(mapId, channel));
         }
     }
@@ -443,6 +494,12 @@ internal sealed class InMemoryCollaborationSessionService
         public object Sync { get; } = new();
 
         public Dictionary<Guid, ParticipantState> Participants { get; } = new();
+
+        /// <summary>
+        /// Set under <see cref="Sync"/> when the channel has been unregistered from the channel
+        /// map so a racing join can detect the orphaned instance and retry.
+        /// </summary>
+        public bool Removed { get; set; }
     }
 
     private sealed class ParticipantState

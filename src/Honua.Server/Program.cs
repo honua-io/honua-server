@@ -444,7 +444,12 @@ builder.Services.AddSingleton<Honua.Core.Features.Identity.Abstractions.IOidcPro
     Honua.Server.Features.Admin.Services.InMemoryOidcProviderStore>();
 builder.Services.AddSingleton<Honua.Core.Features.Identity.Abstractions.IUserStore,
     Honua.Server.Features.Admin.Services.InMemoryUserStore>();
-builder.Services.AddSingleton<Honua.Core.Features.Authorization.Abstractions.IRoleStore,
+// TryAdd so the durable scoped PostgresRoleStore registered by AddPostgreSqlServices wins
+// when the Postgres provider is active (#1374); the in-memory singleton is only the
+// fallback for providers without a durable role store. All IRoleStore consumers are
+// scoped or resolve per-operation via IServiceScopeFactory, so the scoped registration
+// is lifetime-safe.
+builder.Services.TryAddSingleton<Honua.Core.Features.Authorization.Abstractions.IRoleStore,
     Honua.Server.Features.Admin.Services.InMemoryRoleStore>();
 // Canonical per-operation permission resolver (#1375): the shared authorization
 // seam over EffectivePermissions. Scoped so it can consume the (scoped) Postgres
@@ -572,7 +577,8 @@ builder.Services.AddSingleton<Honua.Core.Features.FeatureStore.Abstractions.IVer
         sp.GetRequiredService<ILogger<Honua.Infrastructure.Coordination.RedisVersionLock>>()));
 builder.Services.AddSingleton<Honua.Core.Features.FeatureStore.Abstractions.IVersionJobStore>(sp =>
     new Honua.Infrastructure.Coordination.RedisVersionJobStore(
-        sp.GetService<StackExchange.Redis.IConnectionMultiplexer>()));
+        sp.GetService<StackExchange.Redis.IConnectionMultiplexer>(),
+        sp.GetRequiredService<ILogger<Honua.Infrastructure.Coordination.RedisVersionJobStore>>()));
 builder.Services.AddSingleton<Honua.Core.Features.FeatureStore.Abstractions.IVersionJobRunner,
     Honua.Core.Features.FeatureStore.Services.VersionJobRunner>();
 builder.Services.AddScoped<Honua.Protocols.GeoServices.FeatureServer.IReplicaStore>(sp =>

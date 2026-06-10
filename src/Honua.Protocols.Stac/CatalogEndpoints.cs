@@ -363,5 +363,14 @@ internal static class CatalogEndpoints
             StacConstants.Conformance.Collections,
             StacConstants.Conformance.FieldsExtension,
             StacConstants.Conformance.SortExtension,
-            StacConstants.Conformance.FilterExtension);
+            StacConstants.Conformance.FilterExtension,
+            // OGC API - Features Part 1 URIs required by STAC API - Features.
+            StacConstants.Conformance.OgcFeaturesCore,
+            StacConstants.Conformance.OgcFeaturesOas30,
+            StacConstants.Conformance.OgcFeaturesGeoJson,
+            // OGC API - Features Part 3 / CQL2 URIs required by the Filter Extension.
+            StacConstants.Conformance.OgcFeaturesFilter,
+            StacConstants.Conformance.Cql2BasicCql2,
+            StacConstants.Conformance.Cql2Text,
+            StacConstants.Conformance.Cql2Json);
 }

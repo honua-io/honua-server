@@ -203,6 +203,21 @@ public sealed class ODataFilterParser
             var value = Previous().Value;
             if (value.Contains('.') || value.Contains('e') || value.Contains('E'))
             {
+                // Use decimal for dot-only literals (no exponent) to preserve
+                // full precision for Edm.Decimal comparisons (e.g. monetary
+                // or high-precision IDs).  Fall back to double only for
+                // scientific-notation forms where Edm.Double semantics apply.
+                if (!value.Contains('e') && !value.Contains('E'))
+                {
+                    if (!decimal.TryParse(value, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint,
+                            CultureInfo.InvariantCulture, out var dec))
+                    {
+                        throw new ODataFilterParseException($"Invalid numeric literal '{value}'", Previous().Position);
+                    }
+
+                    return new Literal(dec, LiteralType.Number);
+                }
+
                 if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var dbl))
                 {
                     throw new ODataFilterParseException($"Invalid numeric literal '{value}'", Previous().Position);
@@ -238,7 +253,14 @@ public sealed class ODataFilterParser
         if (Match(ODataFilterTokenType.DateTimeLiteral))
         {
             var value = Previous().Value;
-            if (!DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var timestamp))
+            // OData ABNF requires an explicit offset or 'Z' on dateTimeOffsetValue.
+            // DateTimeStyles.RoundtripKind silently accepts offset-less strings and
+            // interprets them in the server's local time zone, yielding TZ-dependent
+            // query results.  AssumeUniversal treats offset-less inputs as UTC so
+            // behaviour is at least deterministic, and the resulting DateTimeOffset
+            // always carries a zero offset that round-trips consistently.
+            if (!DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture,
+                    DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var timestamp))
             {
                 throw new ODataFilterParseException($"Invalid datetime literal '{value}'", Previous().Position);
             }
@@ -457,7 +479,8 @@ public sealed class ODataFilterParser
             identifier.Equals("datetimeoffset", StringComparison.OrdinalIgnoreCase))
         {
             var token = Advance();
-            if (!DateTimeOffset.TryParse(token.Value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var timestamp))
+            if (!DateTimeOffset.TryParse(token.Value, CultureInfo.InvariantCulture,
+                    DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var timestamp))
             {
                 throw new ODataFilterParseException($"Invalid datetime literal '{token.Value}'", token.Position);
             }
@@ -590,15 +613,17 @@ public sealed class ODataFilterParser
     {
         if (left is Literal { Type: LiteralType.Null } || right is Literal { Type: LiteralType.Null })
         {
-            if (op is not (BinaryOperator.Equal or BinaryOperator.NotEqual))
+            if (op is BinaryOperator.Equal or BinaryOperator.NotEqual)
             {
-                throw new ODataFilterParseException("Null comparisons require eq or ne", position);
+                var operand = left is Literal { Type: LiteralType.Null } ? right : left;
+                return op == BinaryOperator.Equal
+                    ? new UnaryExpression(UnaryOperator.IsNull, operand)
+                    : new UnaryExpression(UnaryOperator.IsNotNull, operand);
             }
 
-            var operand = left is Literal { Type: LiteralType.Null } ? right : left;
-            return op == BinaryOperator.Equal
-                ? new UnaryExpression(UnaryOperator.IsNull, operand)
-                : new UnaryExpression(UnaryOperator.IsNotNull, operand);
+            // OData v4.01 §5.1.1.1.3–5.1.1.1.6: if any operand of a relational
+            // operator (gt/ge/lt/le) is null, the operator returns false.
+            return new Literal(false, LiteralType.Boolean);
         }
 
         return new BinaryExpression(left, op, right);

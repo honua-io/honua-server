@@ -18,6 +18,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes;
@@ -66,6 +67,7 @@ public sealed class OgcProcessesDurableRuntimeTests(RedisFixture redis)
                 services.AddSingleton<IGeoprocessingResultPackageStore>(sp =>
                     new RedisGeoprocessingResultPackageStore(
                         sp.GetRequiredService<IConnectionMultiplexer>(),
+                        sp.GetRequiredService<IOptionsMonitor<GeoprocessingExecutorOptions>>(),
                         sp.GetRequiredService<ILogger<RedisGeoprocessingResultPackageStore>>()));
 
                 services.RemoveAll<RedisJobQueue>();

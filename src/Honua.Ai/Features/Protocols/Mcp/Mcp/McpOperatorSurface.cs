@@ -149,6 +149,7 @@ internal sealed class McpOperatorSurface
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            McpLog.DispatchFailed(_logger, request.Method, ex);
             return ErrorResponse(request.Id, McpErrorMapper.Map(ex));
         }
     }
@@ -302,6 +303,13 @@ internal sealed class McpOperatorSurface
                 new KeyValuePair<string, object?>("status", McpTelemetry.Status.Error),
                 new KeyValuePair<string, object?>("workflow_family", tool.WorkflowFamily));
             McpLog.ToolFailed(_logger, tool.Name, code, ex.Message);
+            // Log the full exception for internal/unexpected failures so stack traces
+            // are visible; domain exceptions (auth, validation, etc.) already carry
+            // their message in the ToolFailed entry above and do not need a stack trace.
+            if (string.Equals(code, McpErrorMapper.Codes.Internal, StringComparison.Ordinal))
+            {
+                McpLog.ToolFailedUnexpected(_logger, tool.Name, ex);
+            }
         }
 
         return SuccessResponse(request.Id, result, McpJsonContext.Default.McpToolsCallResult);
@@ -397,6 +405,11 @@ internal sealed class McpOperatorSurface
                 1,
                 new KeyValuePair<string, object?>("resource_family", resourceFamily),
                 new KeyValuePair<string, object?>("status", McpTelemetry.Status.Error));
+            // Log the full exception for internal failures so stack traces are visible.
+            if (string.Equals(error.Data?.Code, McpErrorMapper.Codes.Internal, StringComparison.Ordinal))
+            {
+                McpLog.ResourceReadFailed(_logger, resourceFamily, parameters.Uri, ex);
+            }
             return ErrorResponse(request.Id, error);
         }
     }

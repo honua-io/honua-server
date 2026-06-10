@@ -44,6 +44,8 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
     private readonly ConcurrentDictionary<string, StatementMetrics> _executionCounts = new();
     private readonly ConcurrentDictionary<(string ConnectionId, string StatementHash), CachedStatement> _cache = new();
     private readonly ConcurrentDictionary<string, int> _connectionCounts = new();
+    // Tracks which connection IDs already have a StateChange subscription so we only subscribe once.
+    private readonly ConcurrentDictionary<string, byte> _subscribedConnections = new();
     private readonly Timer _cleanupTimer;
     private bool? _prepareSupported;
     private volatile bool _disposed;
@@ -113,12 +115,20 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
     /// </summary>
     public sealed class ParameterDistribution
     {
+        private const int MaxTrackedValues = 100;
         private long _totalValues;
         private readonly ConcurrentDictionary<string, long> _valueFrequency = new();
 
         public void RecordValue(object? value)
         {
             Interlocked.Increment(ref _totalValues);
+            // Cap distinct tracked values to prevent unbounded growth for high-cardinality
+            // parameters (bounding boxes, object IDs, timestamps, etc.).
+            if (_valueFrequency.Count >= MaxTrackedValues)
+            {
+                return;
+            }
+
             var key = value?.ToString() ?? "<null>";
             _valueFrequency.AddOrUpdate(key, 1, (_, count) => count + 1);
         }
@@ -285,12 +295,6 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
                 return existing;
             });
 
-        // WEEK 5 FIX: Record parameter patterns for adaptive optimization
-        if (configureParameters != null)
-        {
-            RecordParameterPatterns(metrics, configureParameters);
-        }
-
         // Check if we have a cached prepared statement
         if (_cache.TryGetValue(cacheKey, out var cached))
         {
@@ -302,11 +306,13 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
                 PreparedStatementCacheLog.CacheHit(_logger, statementHash);
             }
 
+            // Pass metrics so configureParameters is invoked exactly once and parameter
+            // distributions are recorded from the same invocation that applies values.
             var cachedClone = await CreatePreparedExecutionCommandAsync(
                 cached.Command,
                 connection,
                 configureParameters,
-                statementHash,
+                metrics,
                 cancellationToken).ConfigureAwait(false);
 
             if (cachedClone != null)
@@ -341,7 +347,7 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
                     Command = preparedCommand
                 };
 
-                var added = TryAddCachedStatement(cacheKey, cachedStatement);
+                var added = TryAddCachedStatement(cacheKey, cachedStatement, connection);
 
                 if (added && _options.EnablePerformanceLogging)
                 {
@@ -358,7 +364,7 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
                             existing.Command,
                             connection,
                             configureParameters,
-                            statementHash,
+                            metrics,
                             cancellationToken).ConfigureAwait(false);
                     }
 
@@ -369,7 +375,7 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
                     preparedCommand,
                     connection,
                     configureParameters,
-                    statementHash,
+                    metrics,
                     cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex)
@@ -439,7 +445,7 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
                 existing.Command,
                 connection,
                 configureParameters,
-                statementHash,
+                metrics: null,
                 cancellationToken).ConfigureAwait(false);
 
             if (cachedClone != null)
@@ -469,7 +475,7 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
             EvictLeastRecentlyUsed(connectionId);
         }
 
-        var added = TryAddCachedStatement(cacheKey, cached);
+        var added = TryAddCachedStatement(cacheKey, cached, connection);
         if (!added)
         {
             command.Dispose();
@@ -482,7 +488,7 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
             command,
             connection,
             configureParameters,
-            statementHash,
+            metrics: null,
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -506,25 +512,13 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
     }
 
     /// <summary>
-    /// Clears all cached statements for a specific connection
+    /// Clears all cached statements for a specific connection.
+    /// Can be called manually; also triggered automatically via StateChange subscription.
     /// </summary>
     /// <param name="connection">The connection to clear cache for</param>
     public void ClearConnectionCache(NpgsqlConnection connection)
     {
-        var connectionId = GetConnectionId(connection);
-        var keysToRemove = _cache.Keys.Where(k => k.ConnectionId == connectionId).ToList();
-        var removedCount = 0;
-
-        foreach (var key in keysToRemove)
-        {
-            if (TryRemoveCachedStatement(key, out var statement) && statement != null)
-            {
-                statement.Dispose();
-                removedCount++;
-            }
-        }
-
-        PreparedStatementCacheLog.ConnectionCacheCleared(_logger, removedCount, connectionId);
+        ClearConnectionCache(GetConnectionId(connection));
     }
 
     private bool IsPreparationSupported(NpgsqlConnection connection)
@@ -599,18 +593,8 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         return cloned;
     }
 
-    private static void ApplyConfiguredParameterValues(
-        NpgsqlCommand destination,
-        Action<NpgsqlCommand>? configureParameters)
+    private static void ApplyParameterValues(NpgsqlCommand destination, NpgsqlCommand configured)
     {
-        if (configureParameters == null)
-        {
-            return;
-        }
-
-        using var configured = new NpgsqlCommand();
-        configureParameters(configured);
-
         for (var index = 0; index < configured.Parameters.Count; index++)
         {
             var source = configured.Parameters[index];
@@ -638,11 +622,26 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         NpgsqlCommand template,
         NpgsqlConnection connection,
         Action<NpgsqlCommand>? configureParameters,
-        string statementHash,
+        StatementMetrics? metrics,
         CancellationToken cancellationToken)
     {
         var cloned = CloneCommand(template, connection);
-        ApplyConfiguredParameterValues(cloned, configureParameters);
+
+        if (configureParameters != null)
+        {
+            // Configure parameters exactly once; reuse the result for both value-application
+            // and distribution tracking so configureParameters is never called twice per request.
+            using var configured = new NpgsqlCommand();
+            configureParameters(configured);
+
+            ApplyParameterValues(cloned, configured);
+
+            if (metrics != null)
+            {
+                RecordParameterDistributions(metrics, configured);
+            }
+        }
+
         await cloned.PrepareAsync(cancellationToken).ConfigureAwait(false);
         return cloned;
     }
@@ -652,15 +651,66 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
 
     private bool TryAddCachedStatement(
         (string ConnectionId, string StatementHash) cacheKey,
-        CachedStatement cachedStatement)
+        CachedStatement cachedStatement,
+        NpgsqlConnection connection)
     {
         if (_cache.TryAdd(cacheKey, cachedStatement))
         {
             _connectionCounts.AddOrUpdate(cacheKey.ConnectionId, 1, (_, count) => count + 1);
+            SubscribeToConnectionClose(connection, cacheKey.ConnectionId);
             return true;
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Subscribes once per physical connection so that cached statements are cleared when
+    /// the connection is closed or broken, preventing stale NpgsqlCommand objects from being
+    /// served and avoiding confusion from Postgres backend PID reuse after a server restart.
+    /// </summary>
+    private void SubscribeToConnectionClose(NpgsqlConnection connection, string connectionId)
+    {
+        if (!_subscribedConnections.TryAdd(connectionId, 0))
+        {
+            return;
+        }
+
+        void OnStateChange(object? sender, System.Data.StateChangeEventArgs e)
+        {
+            if (e.CurrentState is System.Data.ConnectionState.Closed or System.Data.ConnectionState.Broken)
+            {
+                connection.StateChange -= OnStateChange;
+                _subscribedConnections.TryRemove(connectionId, out _);
+                ClearConnectionCache(connectionId);
+            }
+        }
+
+        connection.StateChange += OnStateChange;
+    }
+
+    /// <summary>
+    /// Clears all cached statements keyed to the given connection ID.
+    /// Called automatically when a subscribed connection closes or breaks.
+    /// </summary>
+    private void ClearConnectionCache(string connectionId)
+    {
+        var keysToRemove = _cache.Keys.Where(k => k.ConnectionId == connectionId).ToList();
+        var removedCount = 0;
+
+        foreach (var key in keysToRemove)
+        {
+            if (TryRemoveCachedStatement(key, out var statement) && statement != null)
+            {
+                statement.Dispose();
+                removedCount++;
+            }
+        }
+
+        if (removedCount > 0)
+        {
+            PreparedStatementCacheLog.ConnectionCacheCleared(_logger, removedCount, connectionId);
+        }
     }
 
     private bool TryRemoveCachedStatement(
@@ -730,15 +780,12 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
     }
 
     /// <summary>
-    /// WEEK 5 FIX: Record parameter patterns for adaptive optimization
+    /// Records parameter value distributions from a command that has already been configured
+    /// by the caller's configureParameters delegate.  Avoids a redundant delegate invocation.
     /// </summary>
-    private static void RecordParameterPatterns(StatementMetrics metrics, Action<NpgsqlCommand> configureParameters)
+    private static void RecordParameterDistributions(StatementMetrics metrics, NpgsqlCommand configured)
     {
-        // Create a temporary command to analyze parameters
-        using var tempCommand = new NpgsqlCommand();
-        configureParameters(tempCommand);
-
-        foreach (NpgsqlParameter param in tempCommand.Parameters)
+        foreach (NpgsqlParameter param in configured.Parameters)
         {
             var paramName = param.ParameterName ?? string.Empty;
             var distribution = metrics.ParameterDistributions.GetOrAdd(paramName, _ => new ParameterDistribution());
@@ -936,6 +983,7 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         _cache.Clear();
         _executionCounts.Clear();
         _connectionCounts.Clear();
+        _subscribedConnections.Clear();
     }
 }
 

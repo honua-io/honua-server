@@ -231,19 +231,19 @@ internal static class CoreEndpoints
                 // OGC API Features Part 3 - Filtering
                 "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/queryables",
                 "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/filter",
-                "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/sorting",
+                "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/features-filter",
                 "http://www.opengis.net/spec/cql2/1.0/conf/cql2-text",
                 "http://www.opengis.net/spec/cql2/1.0/conf/cql2-json",
                 "http://www.opengis.net/spec/cql2/1.0/conf/basic-cql2",
-                "http://www.opengis.net/spec/cql2/1.0/conf/basic-spatial-operators",
+                "http://www.opengis.net/spec/cql2/1.0/conf/basic-spatial-functions",
                 // CQL2 classes the parser already implements. Declaring them unlocks
                 // the matching OGC conformance tests and lets compliant clients exercise
                 // the operators (previously they were working but un-advertised).
                 "http://www.opengis.net/spec/cql2/1.0/conf/advanced-comparison-operators",
                 "http://www.opengis.net/spec/cql2/1.0/conf/case-insensitive-comparison",
                 "http://www.opengis.net/spec/cql2/1.0/conf/accent-insensitive-comparison",
-                "http://www.opengis.net/spec/cql2/1.0/conf/temporal",
-                "http://www.opengis.net/spec/cql2/1.0/conf/array-operators",
+                "http://www.opengis.net/spec/cql2/1.0/conf/temporal-functions",
+                "http://www.opengis.net/spec/cql2/1.0/conf/array-functions",
 
                 // OGC API Features Part 4 - Create, Replace, Delete
                 "http://www.opengis.net/spec/ogcapi-features-4/1.0/conf/create-replace-delete"

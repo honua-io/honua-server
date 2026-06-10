@@ -14,6 +14,13 @@ namespace Honua.Core.Features.Raster.CogParser;
 public static class TileDecompressor
 {
     /// <summary>
+    /// Default ceiling for decompressed tile output. A legitimate COG tile is bounded by
+    /// tileWidth * tileHeight * bands * bytesPerSample (a 1024x1024 tile with 16 float64 bands
+    /// is 128 MiB), so anything beyond this is a malformed or hostile (decompression-bomb) tile.
+    /// </summary>
+    public const int DefaultMaxDecompressedBytes = 128 * 1024 * 1024;
+
+    /// <summary>
     /// Decompresses tile data and returns the content type for the response.
     /// JPEG tiles are standalone images and served directly (zero-copy passthrough).
     /// DEFLATE and NONE tiles contain raw pixel data (not a valid image file);
@@ -23,13 +30,20 @@ public static class TileDecompressor
     /// </summary>
     /// <param name="tileData">Raw compressed tile bytes from the COG</param>
     /// <param name="compression">TIFF compression name (JPEG, DEFLATE, NONE, etc.)</param>
+    /// <param name="maxDecompressedBytes">
+    /// Maximum allowed decompressed size; pass the tile's expected pixel-buffer size when known.
+    /// Exceeding it throws <see cref="InvalidDataException"/> (decompression-bomb guard).
+    /// </param>
     /// <returns>Decompressed data and the appropriate content type</returns>
-    public static (byte[] Data, string ContentType) Decompress(byte[] tileData, string compression)
+    public static (byte[] Data, string ContentType) Decompress(
+        byte[] tileData,
+        string compression,
+        int maxDecompressedBytes = DefaultMaxDecompressedBytes)
     {
         return compression switch
         {
             "JPEG" => (tileData, "image/jpeg"), // Zero-copy passthrough — tile is a standalone JPEG
-            "DEFLATE" => (DecompressZlib(tileData), "application/octet-stream"),
+            "DEFLATE" => (DecompressZlib(tileData, maxDecompressedBytes), "application/octet-stream"),
             "NONE" or "" => (tileData, "application/octet-stream"),
             _ => throw new NotSupportedException(
                 $"COG tile compression '{compression}' is not supported. Supported: JPEG (passthrough), DEFLATE, NONE.")
@@ -48,7 +62,7 @@ public static class TileDecompressor
     // Tradeoff: callers consume the returned byte[] across async hops and ownership boundaries,
     // so we still allocate a sized byte[] for the result but pool the growing scratch buffer
     // (the unbounded intermediate that previously came from MemoryStream's internal doubling).
-    private static byte[] DecompressZlib(byte[] compressedData)
+    private static byte[] DecompressZlib(byte[] compressedData, int maxDecompressedBytes)
     {
         // MemoryStream(byte[]) is a non-copying wrapper over the input, so no pooling needed there.
         using var input = new MemoryStream(compressedData);
@@ -65,7 +79,13 @@ public static class TileDecompressor
             {
                 if (written == scratch.Length)
                 {
-                    var bigger = pool.Rent(scratch.Length * 2);
+                    if (written >= maxDecompressedBytes)
+                    {
+                        throw new InvalidDataException(
+                            $"DEFLATE tile decompressed beyond the {maxDecompressedBytes}-byte limit; refusing to inflate further (possible decompression bomb).");
+                    }
+
+                    var bigger = pool.Rent((int)Math.Min(scratch.Length * 2L, maxDecompressedBytes));
                     Buffer.BlockCopy(scratch, 0, bigger, 0, written);
                     pool.Return(scratch);
                     scratch = bigger;
@@ -77,6 +97,12 @@ public static class TileDecompressor
                     break;
                 }
                 written += read;
+            }
+
+            if (written > maxDecompressedBytes)
+            {
+                throw new InvalidDataException(
+                    $"DEFLATE tile decompressed to {written} bytes, exceeding the {maxDecompressedBytes}-byte limit (possible decompression bomb).");
             }
 
             var result = new byte[written];

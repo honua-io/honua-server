@@ -186,10 +186,13 @@ public static class PerformanceMonitoringIntegrationExtensions
 
     private static long? GetRowCount<T>(T result)
     {
+        // Only report counts for already-materialized collections. Enumerating an arbitrary
+        // IEnumerable here would consume one-shot/streaming sequences (or silently re-execute
+        // deferred queries) before the caller reads them - just to record a metric.
         return result switch
         {
             System.Collections.ICollection collection => collection.Count,
-            System.Collections.IEnumerable enumerable => enumerable.Cast<object>().LongCount(),
+            IReadOnlyCollection<object> collection => collection.Count,
             _ => null
         };
     }

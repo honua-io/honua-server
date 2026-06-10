@@ -168,16 +168,18 @@ internal sealed partial class ODataBatchHandler
         out string? errorMessage)
     {
         var trimmed = url.Trim();
-        normalizedUrl = trimmed.TrimStart('/');
         errorMessage = null;
 
-        if (Uri.TryCreate(trimmed, UriKind.Absolute, out _))
+        // OData v4.01 §11.7: sub-request URLs may be absolute URI, absolute path, or relative path.
+        // For absolute URIs strip scheme+host and keep path+query; the authority is implicitly the
+        // same service (clients that want to target a different host must be rejected by the caller).
+        if (Uri.TryCreate(trimmed, UriKind.Absolute, out var absoluteUri))
         {
-            normalizedUrl = string.Empty;
-            errorMessage = AbsoluteBatchRequestUrlMessage;
-            return false;
+            normalizedUrl = absoluteUri.PathAndQuery.TrimStart('/');
+            return true;
         }
 
+        normalizedUrl = trimmed.TrimStart('/');
         return true;
     }
 

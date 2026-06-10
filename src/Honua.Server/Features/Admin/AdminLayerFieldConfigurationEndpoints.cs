@@ -21,6 +21,7 @@ namespace Honua.Server.Features.Admin;
 /// </summary>
 internal static class AdminLayerFieldConfigurationEndpoints
 {
+    private const int MetadataMutationMaxAttempts = 5;
     private const int MaxFieldAliasLength = 256;
     private const int MaxDomainNameLength = 128;
     private const int MaxDomainLabelLength = 256;
@@ -284,58 +285,79 @@ internal static class AdminLayerFieldConfigurationEndpoints
         };
     }
 
+    /// <summary>
+    /// Read-modify-write the resource(s) a layer publishes through, with an optimistic-concurrency retry on
+    /// Metadata v2 etag mismatch (background writers can bump the etag between the read and the save),
+    /// mirroring <c>AdminLayerAuthoringEndpoints.MutateResourceForLayerAsync</c>.
+    /// </summary>
     private static async Task WriteResourceFieldConfigurationsAsync(
         IMetadataV2GraphStore graphStore,
         int layerId,
         IReadOnlyList<LayerFieldConfiguration> configurations,
         CancellationToken cancellationToken)
     {
-        var snapshot = await graphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var targetResourceIds = snapshot.Graph.Publications
-            .Where(publication => publication.Identifier.IsNumeric && publication.LayerIndex == layerId)
-            .Select(publication => publication.ResourceId)
-            .ToHashSet(StringComparer.Ordinal);
-        if (targetResourceIds.Count == 0)
-        {
-            return;
-        }
-
         var configurationMap = configurations.ToDictionary(field => field.Name, StringComparer.OrdinalIgnoreCase);
-        var resources = snapshot.Graph.Resources.ToArray();
-        var mutated = false;
-        for (var i = 0; i < resources.Length; i++)
+        for (var attempt = 1; ; attempt++)
         {
-            if (!targetResourceIds.Contains(resources[i].Metadata.Id))
+            var snapshot = await graphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            var targetResourceIds = snapshot.Graph.Publications
+                .Where(publication => publication.Identifier.IsNumeric && publication.LayerIndex == layerId)
+                .Select(publication => publication.ResourceId)
+                .ToHashSet(StringComparer.Ordinal);
+            if (targetResourceIds.Count == 0)
             {
-                continue;
+                return;
             }
 
-            var fields = resources[i].SchemaFields
-                .Select(field => configurationMap.TryGetValue(field.Name, out var configuration)
-                    ? field with
-                    {
-                        Alias = configuration.Alias,
-                        Domain = configuration.Domain,
-                        Hidden = configuration.Hidden
-                    }
-                    : field)
-                .ToArray();
-            resources[i] = resources[i] with { SchemaFields = fields };
-            mutated = true;
-        }
+            var resources = snapshot.Graph.Resources.ToArray();
+            var mutated = false;
+            for (var i = 0; i < resources.Length; i++)
+            {
+                if (!targetResourceIds.Contains(resources[i].Metadata.Id))
+                {
+                    continue;
+                }
 
-        if (!mutated)
-        {
-            return;
-        }
+                var fields = resources[i].SchemaFields
+                    .Select(field => configurationMap.TryGetValue(field.Name, out var configuration)
+                        ? field with
+                        {
+                            Alias = configuration.Alias,
+                            Domain = configuration.Domain,
+                            Hidden = configuration.Hidden
+                        }
+                        : field)
+                    .ToArray();
+                resources[i] = resources[i] with { SchemaFields = fields };
+                mutated = true;
+            }
 
-        var updated = snapshot.Graph with
-        {
-            Resources = resources,
-            Revision = snapshot.Graph.Revision + 1,
-        };
-        _ = await graphStore.SaveAsync(updated, snapshot.Etag, cancellationToken).ConfigureAwait(false);
+            if (!mutated)
+            {
+                return;
+            }
+
+            var updated = snapshot.Graph with
+            {
+                Resources = resources,
+                Revision = snapshot.Graph.Revision + 1,
+            };
+
+            try
+            {
+                _ = await graphStore.SaveAsync(updated, snapshot.Etag, cancellationToken).ConfigureAwait(false);
+                return;
+            }
+            catch (Exception ex) when (IsEtagMismatch(ex) && attempt < MetadataMutationMaxAttempts)
+            {
+                // Concurrent etag bump — re-read and re-apply.
+            }
+        }
     }
+
+    private static bool IsEtagMismatch(Exception exception) =>
+        exception is InvalidOperationException
+        && exception.Message.Contains("etag mismatch", StringComparison.OrdinalIgnoreCase);
 
     private static string? NormalizeAlias(string? alias)
     {

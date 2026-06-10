@@ -204,7 +204,7 @@ internal static partial class SecureConnectionEndpoints
 
             return TypedResults.Ok(ApiResponse<ConnectionTestResult>.CreateSuccess(result));
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             SecureConnectionLog.TestDraftConnectionFailed(logger, ex);
             return TypedResults.Problem(
@@ -251,7 +251,7 @@ internal static partial class SecureConnectionEndpoints
 
             return TypedResults.Ok(ApiResponse<IReadOnlyList<SecureConnectionSummary>>.CreateSuccess(summaries.AsReadOnly()));
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             SecureConnectionLog.RetrieveSecureConnectionsFailed(logger, ex);
             return TypedResults.Problem(
@@ -305,7 +305,7 @@ internal static partial class SecureConnectionEndpoints
 
             return TypedResults.Ok(ApiResponse<SecureConnectionDetail>.CreateSuccess(detail));
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             SecureConnectionLog.RetrieveConnectionFailed(logger, id, ex);
             return TypedResults.Problem(
@@ -469,7 +469,7 @@ internal static partial class SecureConnectionEndpoints
                 detail: "An internal error occurred while creating the secure connection.",
                 statusCode: StatusCodes.Status500InternalServerError);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             SecureConnectionLog.CreateSecureConnectionFailed(logger, ex);
             return TypedResults.Problem(
@@ -522,7 +522,7 @@ internal static partial class SecureConnectionEndpoints
 
             return TypedResults.Ok(ApiResponse<ConnectionTestResult>.CreateSuccess(result));
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             SecureConnectionLog.TestConnectionFailed(logger, id, ex);
             return TypedResults.Problem(
@@ -558,7 +558,7 @@ internal static partial class SecureConnectionEndpoints
 
             return TypedResults.Ok(ApiResponse<EncryptionValidationResult>.CreateSuccess(result));
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             SecureConnectionLog.ValidateEncryptionServiceFailed(logger, ex);
             return TypedResults.Problem(
@@ -575,6 +575,7 @@ internal static partial class SecureConnectionEndpoints
             [FromServices] ISecureConnectionRegistry registry,
             [FromServices] IConnectionEncryptionService encryptionService,
             [FromServices] IDatabaseConnectionStringBuilder connectionStringBuilder,
+            [FromServices] IConnectionDriverRegistry driverRegistry,
             HttpContext context,
             [FromServices] ILogger<SecureConnectionEndpointsLog> logger)
     {
@@ -625,15 +626,43 @@ internal static partial class SecureConnectionEndpoints
             string? secretRef = existing.SecretRef;
             string? secretType = existing.SecretType;
 
+            // Managed (encrypted) connections embed host/port/database/username/ssl-mode in the stored
+            // connection string. Changing any of those without re-supplying the password would update the
+            // display metadata while the encrypted connection string silently keeps targeting the old
+            // endpoint, so reject the request instead of persisting a divergent record.
+            if (string.IsNullOrWhiteSpace(request.Password) &&
+                existing.ConnectionStringEncrypted != null &&
+                (!string.Equals(host, existing.Host, StringComparison.Ordinal) ||
+                 port != existing.Port ||
+                 !string.Equals(databaseName, existing.DatabaseName, StringComparison.Ordinal) ||
+                 !string.Equals(username, existing.Username, StringComparison.Ordinal) ||
+                 sslMode != existing.SslMode))
+            {
+                return TypedResults.BadRequest(ApiResponse<object>.Failure(
+                    "Password must be provided when changing host, port, database, username, or SSL mode of a managed connection so the stored connection string can be rebuilt."));
+            }
+
             if (!string.IsNullOrWhiteSpace(request.Password))
             {
-                var connectionString = connectionStringBuilder.BuildConnectionString(
-                    host,
-                    port,
-                    databaseName,
-                    username,
-                    request.Password,
-                    sslMode);
+                // Rebuild in the engine's native format (Npgsql / MySqlConnector / Microsoft.Data.SqlClient /
+                // Oracle) for the connection's provider, mirroring HandleCreateConnection. Falls back to the
+                // PostgreSQL builder when no driver is registered for the provider.
+                var driver = driverRegistry.Find(existing.Provider);
+                var connectionString = driver is not null
+                    ? driver.BuildConnectionString(new ConnectionTarget(
+                        host,
+                        port,
+                        databaseName,
+                        username,
+                        request.Password,
+                        sslMode))
+                    : connectionStringBuilder.BuildConnectionString(
+                        host,
+                        port,
+                        databaseName,
+                        username,
+                        request.Password,
+                        sslMode);
 
                 encryptedConnection = await encryptionService.EncryptConnectionStringAsync(connectionString);
                 encryptionVersion = await encryptionService.GetCurrentKeyVersionAsync();
@@ -689,7 +718,7 @@ internal static partial class SecureConnectionEndpoints
 
             return TypedResults.Ok(ApiResponse<SecureConnectionSummary>.CreateSuccess(summary));
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             SecureConnectionLog.UpdateSecureConnectionFailed(logger, id, ex);
             return TypedResults.Problem(
@@ -722,7 +751,7 @@ internal static partial class SecureConnectionEndpoints
             SecureConnectionLog.SecureConnectionInUse(logger, id, ex);
             return TypedResults.Conflict(ApiResponse<object>.Failure("Connection is in use by services"));
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             SecureConnectionLog.DeleteSecureConnectionFailed(logger, id, ex);
             return TypedResults.Problem(
@@ -760,7 +789,7 @@ internal static partial class SecureConnectionEndpoints
             SecureConnectionLog.EncryptionKeyRotationNotSupported(logger, ex);
             return TypedResults.BadRequest(ApiResponse<object>.Failure(EncryptionRotationNotSupportedMessage));
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             SecureConnectionLog.RotateEncryptionKeyFailed(logger, ex);
             return TypedResults.Problem(
@@ -781,8 +810,15 @@ internal static class HttpContextExtensions
 {
     public static string GetUserIdentity(this HttpContext context)
     {
-        // This would extract the user identity from the authentication context
-        // For now, return a placeholder
-        return context.User?.Identity?.Name ?? "admin";
+        if (!string.IsNullOrWhiteSpace(context.User?.Identity?.Name))
+        {
+            return context.User.Identity!.Name;
+        }
+
+        // Shared admin API-key auth carries no Name claim; attribute the action to the
+        // authenticated key (mirrors AdminApiKeyEndpoints.ResolveCreator) instead of a
+        // constant placeholder so the actual actor is preserved on audit-sensitive records.
+        var apiKeyId = context.User?.FindFirst("api_key_id")?.Value;
+        return string.IsNullOrWhiteSpace(apiKeyId) ? "admin" : $"api-key:{apiKeyId}";
     }
 }

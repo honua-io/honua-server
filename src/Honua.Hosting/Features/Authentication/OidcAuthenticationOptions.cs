@@ -325,6 +325,16 @@ public sealed class TokenValidationOptions
     /// Gets or sets the maximum replay cache duration (0 uses token expiry).
     /// </summary>
     public TimeSpan TokenReplayCacheDuration { get; set; } = TimeSpan.Zero;
+
+    /// <summary>
+    /// Gets or sets whether token validation fails when replay protection cannot be
+    /// enforced cluster-wide: when a configured Redis instance is unreachable, or when
+    /// no replay cache is available at all. Defaults to <see langword="false"/> (fail
+    /// open, degrading to per-node in-memory protection) to preserve availability.
+    /// Enable in multi-node deployments where single-use token semantics must hold
+    /// even during cache outages.
+    /// </summary>
+    public bool ReplayProtectionFailClosed { get; set; }
 }
 
 /// <summary>

@@ -36,6 +36,7 @@ public sealed class GeoprocessingArtifactPersistenceTests
         services.AddScoped<IAnalysisContentStore>(_ => new RecordingAnalysisContentStore(artifacts));
         services.AddSingleton<ILogger<GeoprocessingJobTerminalCallback>>(
             NullLogger<GeoprocessingJobTerminalCallback>.Instance);
+        services.AddOptions<GeoprocessingExecutorOptions>();
         services.AddSingleton<IJobTerminalCallback, GeoprocessingJobTerminalCallback>();
 
         using var provider = services.BuildServiceProvider(

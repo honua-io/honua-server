@@ -31,10 +31,16 @@ namespace Honua.Infrastructure.Services;
 /// </remarks>
 internal sealed class GeometryService : IGeometryService
 {
-    private static readonly WKBReader _wkbReader = new();
-    private static readonly WKTReader _wktReader = new();
-    private static readonly GeoJsonReader _geoJsonReader = new();
-    private static readonly GeoJsonWriter _geoJsonWriter = new();
+    // WKBReader, WKTReader, GeoJsonReader, and GeoJsonWriter are NOT thread-safe —
+    // their Read/Write methods mutate instance state (coordinate buffers, input-dimension
+    // tracking). Because GeometryService is registered as a singleton, instances must not
+    // be shared across concurrent requests. Constructing per call is cheap and AOT-safe.
+    // See also: SpatialFilterHelpers uses [ThreadStatic] WKBWriter for the same reason.
+    private static WKBReader NewWkbReader() => new();
+    private static WKTReader NewWktReader() => new();
+    private static GeoJsonReader NewGeoJsonReader() => new();
+    private static GeoJsonWriter NewGeoJsonWriter() => new();
+
     private readonly GeometryLimits _geometryLimits;
     private readonly GeometryValidationOptions _validationOptions;
 
@@ -54,7 +60,7 @@ internal sealed class GeometryService : IGeometryService
 
         try
         {
-            var geometry = _wkbReader.Read(wkb);
+            var geometry = NewWkbReader().Read(wkb);
             return DetectZMFromGeometry(geometry);
         }
         catch
@@ -84,14 +90,14 @@ internal sealed class GeometryService : IGeometryService
 
         try
         {
-            var geometry = _wkbReader.Read(wkb);
+            var geometry = NewWkbReader().Read(wkb);
             if (geometry == null)
             {
                 return null;
             }
 
             var processed = GeometryOutputProcessor.ApplyLimits(geometry, _geometryLimits);
-            return processed == null ? null : _geoJsonWriter.Write(processed);
+            return processed == null ? null : NewGeoJsonWriter().Write(processed);
         }
         catch (Exception ex) when (ex is ParseException or FormatException or JsonException)
         {
@@ -122,7 +128,7 @@ internal sealed class GeometryService : IGeometryService
 
         try
         {
-            var geometry = _geoJsonReader.Read<Geometry>(geoJson);
+            var geometry = NewGeoJsonReader().Read<Geometry>(geoJson);
             ValidateInputGeometryComplexity(geometry);
             if (geometry == null)
             {
@@ -161,7 +167,7 @@ internal sealed class GeometryService : IGeometryService
 
         try
         {
-            var geometry = _wktReader.Read(wkt);
+            var geometry = NewWktReader().Read(wkt);
             ValidateInputGeometryComplexity(geometry);
             if (geometry == null)
             {
@@ -198,7 +204,7 @@ internal sealed class GeometryService : IGeometryService
 
         try
         {
-            var geometry = _wkbReader.Read(wkb);
+            var geometry = NewWkbReader().Read(wkb);
             if (geometry == null)
             {
                 return null;

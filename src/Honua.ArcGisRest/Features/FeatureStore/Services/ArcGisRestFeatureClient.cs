@@ -16,23 +16,26 @@ namespace Honua.ArcGisRest.Features.FeatureStore.Services;
 /// <remarks>
 /// The HttpClient itself is registered through <see cref="ArcGisRestServiceClientName"/>
 /// in the DI composition root and managed by <see cref="System.Net.Http.IHttpClientFactory"/>.
+/// <para>The optional ArcGIS API token is passed as an <c>X-Esri-Authorization: Bearer …</c>
+/// request header rather than a query parameter to prevent it from appearing in
+/// HTTP logs, OpenTelemetry traces, or upstream server access logs.</para>
 /// </remarks>
 internal interface IArcGisRestFeatureClient
 {
     /// <summary>Fetches a page of features from the remote layer.</summary>
-    Task<ArcGisRestQueryResponse> QueryAsync(string url, CancellationToken cancellationToken);
+    Task<ArcGisRestQueryResponse> QueryAsync(string url, string? authorizationHeader, CancellationToken cancellationToken);
 
     /// <summary>Fetches a record-count from the remote layer.</summary>
-    Task<ArcGisRestCountResponse> QueryCountAsync(string url, CancellationToken cancellationToken);
+    Task<ArcGisRestCountResponse> QueryCountAsync(string url, string? authorizationHeader, CancellationToken cancellationToken);
 
     /// <summary>Fetches the extent envelope from the remote layer.</summary>
-    Task<ArcGisRestExtentResponse> QueryExtentAsync(string url, CancellationToken cancellationToken);
+    Task<ArcGisRestExtentResponse> QueryExtentAsync(string url, string? authorizationHeader, CancellationToken cancellationToken);
 
     /// <summary>Fetches an object-id list from the remote layer.</summary>
-    Task<ArcGisRestObjectIdsResponse> QueryObjectIdsAsync(string url, CancellationToken cancellationToken);
+    Task<ArcGisRestObjectIdsResponse> QueryObjectIdsAsync(string url, string? authorizationHeader, CancellationToken cancellationToken);
 
     /// <summary>Fetches the layer metadata document for the remote layer.</summary>
-    Task<ArcGisRestLayerResponse> GetLayerMetadataAsync(string url, CancellationToken cancellationToken);
+    Task<ArcGisRestLayerResponse> GetLayerMetadataAsync(string url, string? authorizationHeader, CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -40,6 +43,13 @@ internal interface IArcGisRestFeatureClient
 /// </summary>
 internal sealed class ArcGisRestFeatureClient : IArcGisRestFeatureClient
 {
+    /// <summary>
+    /// ArcGIS Server and ArcGIS Online header for bearer-token authentication.
+    /// Using a request header rather than the <c>token</c> query parameter prevents
+    /// the credential from appearing in HTTP access logs and telemetry traces.
+    /// </summary>
+    private const string EsriAuthorizationHeader = "X-Esri-Authorization";
+
     private readonly HttpClient _httpClient;
 
     public ArcGisRestFeatureClient(HttpClient httpClient)
@@ -47,27 +57,34 @@ internal sealed class ArcGisRestFeatureClient : IArcGisRestFeatureClient
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
     }
 
-    public Task<ArcGisRestQueryResponse> QueryAsync(string url, CancellationToken cancellationToken)
-        => GetAsync(url, ArcGisRestJsonContext.Default.ArcGisRestQueryResponse, cancellationToken);
+    public Task<ArcGisRestQueryResponse> QueryAsync(string url, string? authorizationHeader, CancellationToken cancellationToken)
+        => GetAsync(url, authorizationHeader, ArcGisRestJsonContext.Default.ArcGisRestQueryResponse, cancellationToken);
 
-    public Task<ArcGisRestCountResponse> QueryCountAsync(string url, CancellationToken cancellationToken)
-        => GetAsync(url, ArcGisRestJsonContext.Default.ArcGisRestCountResponse, cancellationToken);
+    public Task<ArcGisRestCountResponse> QueryCountAsync(string url, string? authorizationHeader, CancellationToken cancellationToken)
+        => GetAsync(url, authorizationHeader, ArcGisRestJsonContext.Default.ArcGisRestCountResponse, cancellationToken);
 
-    public Task<ArcGisRestExtentResponse> QueryExtentAsync(string url, CancellationToken cancellationToken)
-        => GetAsync(url, ArcGisRestJsonContext.Default.ArcGisRestExtentResponse, cancellationToken);
+    public Task<ArcGisRestExtentResponse> QueryExtentAsync(string url, string? authorizationHeader, CancellationToken cancellationToken)
+        => GetAsync(url, authorizationHeader, ArcGisRestJsonContext.Default.ArcGisRestExtentResponse, cancellationToken);
 
-    public Task<ArcGisRestObjectIdsResponse> QueryObjectIdsAsync(string url, CancellationToken cancellationToken)
-        => GetAsync(url, ArcGisRestJsonContext.Default.ArcGisRestObjectIdsResponse, cancellationToken);
+    public Task<ArcGisRestObjectIdsResponse> QueryObjectIdsAsync(string url, string? authorizationHeader, CancellationToken cancellationToken)
+        => GetAsync(url, authorizationHeader, ArcGisRestJsonContext.Default.ArcGisRestObjectIdsResponse, cancellationToken);
 
-    public Task<ArcGisRestLayerResponse> GetLayerMetadataAsync(string url, CancellationToken cancellationToken)
-        => GetAsync(url, ArcGisRestJsonContext.Default.ArcGisRestLayerResponse, cancellationToken);
+    public Task<ArcGisRestLayerResponse> GetLayerMetadataAsync(string url, string? authorizationHeader, CancellationToken cancellationToken)
+        => GetAsync(url, authorizationHeader, ArcGisRestJsonContext.Default.ArcGisRestLayerResponse, cancellationToken);
 
     private async Task<T> GetAsync<T>(
         string url,
+        string? authorizationHeader,
         System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> typeInfo,
         CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
+
+        if (authorizationHeader is not null)
+        {
+            request.Headers.TryAddWithoutValidation(EsriAuthorizationHeader, authorizationHeader);
+        }
+
         using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
 
         response.EnsureSuccessStatusCode();

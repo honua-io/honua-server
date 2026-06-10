@@ -137,6 +137,13 @@ public static class OidcAuthenticationExtensions
         // Auto-populate AdditionalRoleClaimTypes from provider config on the DI-bound instance
         services.PostConfigure<OidcAuthenticationOptions>(PopulateAdditionalRoleClaimTypes);
 
+        // Resolve env:VARNAME secret references on the DI-bound instance too. The local
+        // copy above only configures the authentication handlers; consumers that inject
+        // IOptions<OidcAuthenticationOptions> (e.g. the portal OAuth broker's IdP code
+        // exchange) would otherwise send the literal "env:VARNAME" as the client secret.
+        // ResolveOidcSecrets is idempotent (resolved values no longer carry the prefix).
+        services.PostConfigure<OidcAuthenticationOptions>(ResolveOidcSecrets);
+
         // Add composite policy scheme that handles both API key and JWT Bearer
         authBuilder.AddPolicyScheme(CompositeScheme, "API Key or JWT Bearer", options =>
         {
@@ -424,23 +431,46 @@ public static class OidcAuthenticationExtensions
             }
             else
             {
-                // Configure authority for metadata retrieval
-                // Use the first available provider's authority
+                // Configure metadata retrieval for signing-key discovery. With a single
+                // provider the standard Authority-driven configuration manager applies;
+                // with multiple providers the signing keys of every authority must be
+                // merged, otherwise tokens from the second..nth provider pass the
+                // issuer/audience checks above but fail signature validation (IDX10501).
+                var authorities = new List<string>();
+
                 if (oidcOptions.AzureAd?.IsValid == true)
                 {
-                    options.Authority = $"{oidcOptions.AzureAd.Instance}{oidcOptions.AzureAd.TenantId}/v2.0";
+                    authorities.Add($"{oidcOptions.AzureAd.Instance}{oidcOptions.AzureAd.TenantId}/v2.0");
                 }
-                else if (oidcOptions.Generic?.IsValid == true)
+
+                if (oidcOptions.Generic?.IsValid == true && !string.IsNullOrWhiteSpace(oidcOptions.Generic.Authority))
                 {
-                    options.Authority = oidcOptions.Generic.Authority;
+                    authorities.Add(oidcOptions.Generic.Authority);
                 }
-                else if (oidcOptions.Okta?.IsValid == true)
+
+                if (oidcOptions.Okta?.IsValid == true)
                 {
-                    options.Authority = oidcOptions.Okta.GetAuthority();
+                    authorities.Add(oidcOptions.Okta.GetAuthority());
                 }
-                else if (oidcOptions.Auth0?.IsValid == true)
+
+                if (oidcOptions.Auth0?.IsValid == true)
                 {
-                    options.Authority = oidcOptions.Auth0.GetAuthority();
+                    authorities.Add(oidcOptions.Auth0.GetAuthority());
+                }
+
+                if (oidcOptions.Google?.IsValid == true)
+                {
+                    authorities.Add("https://accounts.google.com");
+                }
+
+                if (authorities.Count == 1)
+                {
+                    options.Authority = authorities[0];
+                }
+                else if (authorities.Count > 1)
+                {
+                    options.ConfigurationManager =
+                        new MultiAuthorityConfigurationManager(authorities, oidcOptions.RequireHttps);
                 }
             }
 
@@ -481,6 +511,7 @@ public static class OidcAuthenticationExtensions
                                 expiresOn,
                                 redis,
                                 memoryCache,
+                                oidcOptions.TokenValidation.ReplayProtectionFailClosed,
                                 logger,
                                 context.HttpContext.RequestAborted).ConfigureAwait(false);
 
@@ -488,6 +519,13 @@ public static class OidcAuthenticationExtensions
                             {
                                 OidcAuthenticationLog.TokenReplayDetected(logger);
                                 context.Fail("Token replay detected");
+                                return;
+                            }
+
+                            if (registrationResult == TokenReplayRegistrationResult.Unavailable)
+                            {
+                                OidcAuthenticationLog.TokenReplayProtectionUnavailableFailClosed(logger);
+                                context.Fail("Token replay protection unavailable");
                                 return;
                             }
                         }
@@ -502,6 +540,7 @@ public static class OidcAuthenticationExtensions
         DateTime expiresOn,
         IConnectionMultiplexer? redis,
         IMemoryCache? memoryCache,
+        bool failClosed,
         ILogger logger,
         CancellationToken cancellationToken)
     {
@@ -534,6 +573,14 @@ public static class OidcAuthenticationExtensions
             {
                 OidcAuthenticationLog.TokenReplayRedisAccessFailed(logger, ex);
             }
+
+            // Redis is configured but unavailable: per-node memory cannot provide
+            // cluster-wide single-use semantics, so fail-closed deployments reject
+            // the token instead of silently degrading.
+            if (failClosed)
+            {
+                return TokenReplayRegistrationResult.Unavailable;
+            }
         }
 
         if (memoryCache is not null)
@@ -546,7 +593,9 @@ public static class OidcAuthenticationExtensions
         }
 
         OidcAuthenticationLog.TokenReplayCacheUnavailable(logger);
-        return TokenReplayRegistrationResult.Skipped;
+        return failClosed
+            ? TokenReplayRegistrationResult.Unavailable
+            : TokenReplayRegistrationResult.Skipped;
     }
 
     private static async Task<TokenReplayRegistrationResult> TryRegisterTokenReplayInMemoryAsync(
@@ -560,8 +609,7 @@ public static class OidcAuthenticationExtensions
             return TokenReplayRegistrationResult.ReplayDetected;
         }
 
-        var replayLock = TokenReplayLocks.GetOrAdd(tokenKey, static _ => new ReplayLockState());
-        Interlocked.Increment(ref replayLock.ReferenceCount);
+        var replayLock = AcquireReplayLock(tokenKey);
 
         try
         {
@@ -587,14 +635,44 @@ public static class OidcAuthenticationExtensions
         }
         finally
         {
+            // Tombstone the state (0 -> Tombstone) before removing/disposing so a
+            // concurrent acquirer that already obtained this instance via GetOrAdd can
+            // never increment past the tombstone and wait on a disposed semaphore.
+            // If an acquirer raced us and raised the count first, the CAS fails and
+            // that acquirer (or the last one to release) performs the cleanup instead.
             if (Interlocked.Decrement(ref replayLock.ReferenceCount) == 0 &&
-                TokenReplayLocks.TryGetValue(tokenKey, out var currentLock) &&
-                ReferenceEquals(currentLock, replayLock) &&
-                TokenReplayLocks.TryRemove(tokenKey, out var removedLock) &&
-                ReferenceEquals(removedLock, replayLock))
+                Interlocked.CompareExchange(ref replayLock.ReferenceCount, ReplayLockState.Tombstone, 0) == 0)
             {
+                TokenReplayLocks.TryRemove(new KeyValuePair<string, ReplayLockState>(tokenKey, replayLock));
                 replayLock.Semaphore.Dispose();
             }
+        }
+    }
+
+    private static ReplayLockState AcquireReplayLock(string tokenKey)
+    {
+        while (true)
+        {
+            var state = TokenReplayLocks.GetOrAdd(tokenKey, static _ => new ReplayLockState());
+
+            // Increment the reference count only while the state is live. A CAS loop
+            // (rather than a blind Interlocked.Increment) guarantees we never resurrect
+            // a state that the release path has already tombstoned and disposed.
+            var count = Volatile.Read(ref state.ReferenceCount);
+            while (count >= 0)
+            {
+                var previous = Interlocked.CompareExchange(ref state.ReferenceCount, count + 1, count);
+                if (previous == count)
+                {
+                    return state;
+                }
+
+                count = previous;
+            }
+
+            // The state was tombstoned between GetOrAdd and the increment; drop the
+            // dead entry (best effort) and retry with a fresh state.
+            TokenReplayLocks.TryRemove(new KeyValuePair<string, ReplayLockState>(tokenKey, state));
         }
     }
 
@@ -699,11 +777,21 @@ public static class OidcAuthenticationExtensions
     {
         Registered,
         ReplayDetected,
-        Skipped
+        Skipped,
+
+        /// <summary>
+        /// Replay protection could not be enforced and
+        /// <see cref="TokenValidationOptions.ReplayProtectionFailClosed"/> requires
+        /// the token to be rejected.
+        /// </summary>
+        Unavailable
     }
 
     private sealed class ReplayLockState
     {
+        /// <summary>Reference-count value marking a state removed by the release path.</summary>
+        public const int Tombstone = -1;
+
         public SemaphoreSlim Semaphore { get; } = new(1, 1);
 
         public int ReferenceCount;

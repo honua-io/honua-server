@@ -29,7 +29,12 @@ internal sealed partial class RedisVersionLock : IVersionLock
     public RedisVersionLock(IConnectionMultiplexer? redis, ILogger<RedisVersionLock> logger)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _database = redis?.IsConnected == true ? redis.GetDatabase() : null;
+        // GetDatabase does not require an active connection (the multiplexer is created with
+        // AbortOnConnectFail=false), so resolve it whenever Redis is configured at all. Checking
+        // IsConnected here would permanently pin this singleton to the in-process fallback when
+        // Redis is merely slow or briefly down at startup; per-operation RedisExceptions already
+        // degrade gracefully via the catch in TryAcquireAsync.
+        _database = redis?.GetDatabase();
     }
 
     /// <inheritdoc />
@@ -109,16 +114,23 @@ internal sealed partial class RedisVersionLock : IVersionLock
                 while (!cancellationToken.IsCancellationRequested)
                 {
                     await Task.Delay(interval, cancellationToken).ConfigureAwait(false);
-                    await _database.LockExtendAsync(_key, _token, _leaseDuration).ConfigureAwait(false);
+                    try
+                    {
+                        await _database.LockExtendAsync(_key, _token, _leaseDuration).ConfigureAwait(false);
+                    }
+                    catch (RedisException ex)
+                    {
+                        // A transient Redis blip must not permanently stop lease renewal: the lease
+                        // would silently expire under a long-running reconcile/post and another
+                        // replica could acquire the same lock. Log and retry at the next interval;
+                        // the lease only expires if Redis stays unreachable for the full duration.
+                        Log.VersionLockRenewalError(_logger, _key, ex);
+                    }
                 }
             }
             catch (OperationCanceledException)
             {
                 // Expected on release.
-            }
-            catch (RedisException ex)
-            {
-                Log.VersionLockRedisError(_logger, _key, ex);
             }
         }
 
@@ -161,5 +173,11 @@ internal sealed partial class RedisVersionLock : IVersionLock
             Level = LogLevel.Warning,
             Message = "Version lock Redis operation failed for {LockKey}; degrading to in-process lock.")]
         public static partial void VersionLockRedisError(ILogger logger, string lockKey, Exception exception);
+
+        [LoggerMessage(
+            EventId = 7111,
+            Level = LogLevel.Warning,
+            Message = "Version lock lease renewal failed for {LockKey}; retrying at the next renewal interval.")]
+        public static partial void VersionLockRenewalError(ILogger logger, string lockKey, Exception exception);
     }
 }

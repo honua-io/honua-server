@@ -10,10 +10,19 @@ namespace Honua.Core.Features.Spec.Services;
 /// <summary>
 /// Default process-local content-hash artifact cache. Stores bytes in a
 /// <see cref="ConcurrentDictionary{TKey,TValue}"/> keyed by the sha256 hex
-/// digest; TTL-backed entries are garbage-collected lazily on read.
+/// digest; TTL-backed entries are garbage-collected lazily on read and on every
+/// write. Non-TTL entries are bounded by <see cref="MaxEntries"/> and
+/// <see cref="MaxTotalBytes"/> to prevent unbounded memory growth in long-running
+/// servers that process many distinct specs.
 /// </summary>
 internal sealed class InMemoryContentHashArtifactCache : IContentHashArtifactCache
 {
+    /// <summary>Maximum number of entries retained across all TTL states.</summary>
+    internal const int MaxEntries = 2048;
+
+    /// <summary>Maximum total byte payload retained (512 MiB).</summary>
+    internal const long MaxTotalBytes = 512L * 1024 * 1024;
+
     private readonly ConcurrentDictionary<string, CacheEntry> _entries = new(StringComparer.Ordinal);
     private readonly TimeProvider _timeProvider;
 
@@ -94,6 +103,14 @@ internal sealed class InMemoryContentHashArtifactCache : IContentHashArtifactCac
         // TryRemove, so it is safe against concurrent reads on the live entries.
         SweepExpired(producedAt);
 
+        // Enforce hard bounds so non-TTL (deterministic compute) entries do not
+        // accumulate indefinitely in long-running servers.  After the TTL sweep
+        // above, evict arbitrary entries until we are under both the count and
+        // byte-budget ceilings.  ConcurrentDictionary offers no ordering, so
+        // eviction is not strict LRU; the goal is OOM prevention, not cache
+        // optimality.
+        EnforceBudget();
+
         return Task.FromResult(reference);
     }
 
@@ -116,6 +133,44 @@ internal sealed class InMemoryContentHashArtifactCache : IContentHashArtifactCac
                 _entries.TryRemove(kvp);
             }
         }
+    }
+
+    /// <summary>
+    /// Evicts arbitrary entries until both <see cref="MaxEntries"/> and
+    /// <see cref="MaxTotalBytes"/> constraints are satisfied.  Called after
+    /// every <see cref="PutAsync"/> so the dictionary never grows without bound
+    /// when the workload keeps producing distinct content hashes with no TTL.
+    /// </summary>
+    private void EnforceBudget()
+    {
+        // Fast-path: most calls are under budget.
+        if (_entries.Count <= MaxEntries && TotalBytes() <= MaxTotalBytes)
+        {
+            return;
+        }
+
+        // Evict entries one by one until we are within budget.  We snapshot
+        // the keys once so that the loop terminates even under concurrent writes.
+        foreach (var kvp in _entries)
+        {
+            if (_entries.Count <= MaxEntries && TotalBytes() <= MaxTotalBytes)
+            {
+                break;
+            }
+
+            _entries.TryRemove(kvp);
+        }
+    }
+
+    private long TotalBytes()
+    {
+        long total = 0;
+        foreach (var kvp in _entries)
+        {
+            total += kvp.Value.Bytes.LongLength;
+        }
+
+        return total;
     }
 
     private sealed record CacheEntry(CachedArtifactRef Reference, byte[] Bytes);

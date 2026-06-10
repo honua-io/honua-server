@@ -378,11 +378,13 @@ internal static class FileUploadSecurity
                 ArrayPool<byte>.Shared.Return(buffer, clearArray: true);
             }
 
-            // Additional content validation for text files
+            // Additional content validation for text files. The stream is wrapped in a
+            // LimitedReadStream so the deep scan never reads more than the configured
+            // security-scan limit, regardless of the uploaded file size.
             var extension = Path.GetExtension(fileName).ToLowerInvariant();
             if (IsTextFile(extension))
             {
-                await using var textStream = openReadStream();
+                await using var textStream = new LimitedReadStream(openReadStream(), scanLimit);
                 var textValidationResult = await ValidateTextFileContentAsync(textStream, cancellationToken);
                 if (!textValidationResult.IsValid)
                 {

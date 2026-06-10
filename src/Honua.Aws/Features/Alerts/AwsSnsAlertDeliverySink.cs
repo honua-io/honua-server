@@ -81,17 +81,20 @@ internal sealed class AwsSnsPublisher : ISnsPublisher, IDisposable
     }
 }
 
-internal sealed class AwsSnsAlertDeliverySink : IAlertDeliverySink
+internal sealed partial class AwsSnsAlertDeliverySink : IAlertDeliverySink
 {
     private readonly ISnsPublisher _publisher;
     private readonly AlertDeliveryOptions _options;
+    private readonly ILogger<AwsSnsAlertDeliverySink> _logger;
 
     public AwsSnsAlertDeliverySink(
         ISnsPublisher publisher,
-        IOptions<AlertDeliveryOptions> options)
+        IOptions<AlertDeliveryOptions> options,
+        ILogger<AwsSnsAlertDeliverySink> logger)
     {
         _publisher = publisher ?? throw new ArgumentNullException(nameof(publisher));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     public AlertChannelType ChannelType => AlertChannelType.AwsSns;
@@ -134,8 +137,9 @@ internal sealed class AwsSnsAlertDeliverySink : IAlertDeliverySink
         {
             throw;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            Log.DeliveryFailed(_logger, ex);
             return new AlertDeliveryResult
             {
                 Succeeded = false,
@@ -143,5 +147,11 @@ internal sealed class AwsSnsAlertDeliverySink : IAlertDeliverySink
                 Error = "SNS alert delivery failed."
             };
         }
+    }
+
+    private static partial class Log
+    {
+        [LoggerMessage(9050, LogLevel.Warning, "SNS alert delivery failed with an unhandled exception.")]
+        public static partial void DeliveryFailed(ILogger logger, Exception ex);
     }
 }

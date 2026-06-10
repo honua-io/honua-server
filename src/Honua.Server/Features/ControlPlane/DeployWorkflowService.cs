@@ -244,15 +244,16 @@ internal sealed partial class DeployWorkflowService
                 {
                     throw;
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
+                    Log.DeploySubmissionFailed(_logger, operation.OperationId, targetId, ex);
                     operation = operation with
                     {
                         Status = WorkflowOperationStatus.Failed,
                         UpdatedAt = DateTimeOffset.UtcNow,
                         CompletedAt = DateTimeOffset.UtcNow,
                         CurrentPhase = "Backend submission failed.",
-                        ErrorMessage = "Backend submission failed."
+                        ErrorMessage = $"Backend submission failed ({ex.GetType().Name})."
                     };
                 }
 
@@ -331,15 +332,16 @@ internal sealed partial class DeployWorkflowService
         {
             throw;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            Log.DeploySubmissionFailed(_logger, operation.OperationId, operation.Deploy.TargetId, ex);
             var failed = operation with
             {
                 Status = WorkflowOperationStatus.Failed,
                 UpdatedAt = DateTimeOffset.UtcNow,
                 CompletedAt = DateTimeOffset.UtcNow,
                 CurrentPhase = "Backend submission failed.",
-                ErrorMessage = "Backend submission failed.",
+                ErrorMessage = $"Backend submission failed ({ex.GetType().Name}).",
                 Audit = MergeSubmissionAudit(operation.Audit, requestedBy, reason)
             };
 
@@ -653,6 +655,13 @@ internal sealed partial class DeployWorkflowService
             string packageId,
             string rollbackClass,
             bool isDataAffecting);
+
+        [LoggerMessage(9101, LogLevel.Error, "Deploy backend submission failed for operation {OperationId}, target {TargetId}")]
+        public static partial void DeploySubmissionFailed(
+            ILogger logger,
+            string operationId,
+            string targetId,
+            Exception exception);
     }
 
     private static DeployOperationSpec BuildSpec(

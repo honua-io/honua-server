@@ -293,7 +293,11 @@ internal sealed class ExportJobService(
 
             if (shouldRequeue)
             {
-                await _jobQueue.Writer.WriteAsync(job.JobId, CancellationToken.None).ConfigureAwait(false);
+                // Use TryWrite to avoid a deadlock: this is the channel's only reader, so
+                // WriteAsync (unbounded wait) would block forever if the bounded channel
+                // is already full. If TryWrite fails the job record remains in Queued
+                // status and the recovery poll in ReadQueuedJobIdsAsync will re-enqueue it.
+                _jobQueue.Writer.TryWrite(job.JobId);
             }
         }
         finally
@@ -566,9 +570,15 @@ internal sealed class ExportJobService(
     }
 
     private static async Task<RedisLeaseCoordinator?> TryAcquireLeaseAsync(RedisLeaseCoordinator leaseCoordinator)
-        => await leaseCoordinator.TryAcquireOrExtendAsync().ConfigureAwait(false)
-            ? leaseCoordinator
-            : null;
+    {
+        if (await leaseCoordinator.TryAcquireOrExtendAsync().ConfigureAwait(false))
+        {
+            return leaseCoordinator;
+        }
+
+        leaseCoordinator.Dispose();
+        return null;
+    }
 
     internal sealed record PersistedExportJobRequest
     {

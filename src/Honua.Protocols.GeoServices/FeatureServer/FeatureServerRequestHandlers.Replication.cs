@@ -809,6 +809,29 @@ internal static partial class FeatureServerEndpoints
         var editsJson = GetValueString(values, "edits");
         var isUploadDirection = !string.Equals(syncDirection, "download", StringComparison.OrdinalIgnoreCase);
 
+        // Esri sync protocol: the client echoes the server generation it actually
+        // received (replicaServerGen, from the preceding extractChanges serverGen).
+        // Honoring it prevents the download cursor from jumping over edits committed
+        // between the client's extractChanges call and this acknowledgment, which
+        // would silently never be delivered to the replica.
+        long? acknowledgedServerGen = null;
+        var replicaServerGenRaw = GetValueString(values, "replicaServerGen");
+        if (!string.IsNullOrWhiteSpace(replicaServerGenRaw))
+        {
+            if (!long.TryParse(
+                    replicaServerGenRaw.Trim(),
+                    System.Globalization.NumberStyles.Integer,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out var parsedServerGen) ||
+                parsedServerGen < 0)
+            {
+                return StandardErrorHelpers.CreateBadRequest(context,
+                    "replicaServerGen must be a non-negative integer.");
+            }
+
+            acknowledgedServerGen = parsedServerGen;
+        }
+
         var changeTracker = context.RequestServices.GetRequiredService<IChangeTracker>();
 
         SynchronizeReplicaConflict[]? conflicts = null;
@@ -884,11 +907,22 @@ internal static partial class FeatureServerEndpoints
 
         // The server generation cursor recorded for the replica. After an upload we record the
         // post-apply generation as both the last-sync and upload-base cursor so a subsequent download
-        // delta excludes the client's own just-applied edits. Download-only syncs simply advance the
-        // last-sync cursor to the current generation.
-        var currentGen = didUpload
-            ? uploadServerGen
-            : await changeTracker.GetCurrentGenerationAsync(cancellationToken);
+        // delta excludes the client's own just-applied edits. Download-only syncs advance the
+        // last-sync cursor to the generation the client acknowledged receiving (replicaServerGen,
+        // clamped to the live generation); only when the client supplies no acknowledgment do we
+        // fall back to the live current generation.
+        long currentGen;
+        if (didUpload)
+        {
+            currentGen = uploadServerGen;
+        }
+        else
+        {
+            var liveGen = await changeTracker.GetCurrentGenerationAsync(cancellationToken);
+            currentGen = acknowledgedServerGen is { } acknowledged
+                ? Math.Min(acknowledged, liveGen)
+                : liveGen;
+        }
 
         var updated = replica with
         {

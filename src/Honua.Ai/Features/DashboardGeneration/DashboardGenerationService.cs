@@ -4,6 +4,7 @@
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using Honua.Ai.WorkflowGeneration;
 using Honua.Ai.WorkflowGeneration.Models;
 using Honua.Core.Features.Publishing.Dashboards;
 using Honua.Core.Features.WorkflowPackages.Generation;
@@ -24,13 +25,19 @@ public sealed class DashboardGenerationService : IDashboardGenerationService
 {
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly WorkflowGenerationConfiguration _configuration;
+    private readonly WorkflowGenerationApiKeyResolver _apiKeyResolver;
+    private readonly ILogger<DashboardGenerationService> _logger;
 
     public DashboardGenerationService(
         IHttpClientFactory httpClientFactory,
-        IOptions<WorkflowGenerationConfiguration> options)
+        IOptions<WorkflowGenerationConfiguration> options,
+        WorkflowGenerationApiKeyResolver apiKeyResolver,
+        ILogger<DashboardGenerationService> logger)
     {
         _httpClientFactory = httpClientFactory;
         _configuration = options.Value;
+        _apiKeyResolver = apiKeyResolver;
+        _logger = logger;
     }
 
     /// <inheritdoc />
@@ -132,10 +139,7 @@ public sealed class DashboardGenerationService : IDashboardGenerationService
     {
         try
         {
-            // A localhost model typically needs no key; the hosted provider reads it from config or env.
-            var apiKey = string.IsNullOrWhiteSpace(options.ApiKey)
-                ? Environment.GetEnvironmentVariable($"HONUA_WORKFLOWGEN_{providerId.ToUpperInvariant()}_API_KEY")
-                : options.ApiKey;
+            var apiKey = await _apiKeyResolver.ResolveAsync(providerId, options, cancellationToken).ConfigureAwait(false);
 
             var chatRequest = new OpenAiChatCompletionRequest
             {
@@ -175,8 +179,10 @@ public sealed class DashboardGenerationService : IDashboardGenerationService
             using var response = await client.SendAsync(httpRequest, cancellationToken).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
             {
-                _ = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-                return ErrorProposal($"Provider returned HTTP {(int)response.StatusCode}.");
+                var status = (int)response.StatusCode;
+                var errorBody = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                GenerationProviderLog.ProviderHttpError(_logger, providerId, status, Truncate(errorBody));
+                return ErrorProposal($"Provider returned HTTP {status}.");
             }
 
             var responseJson = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
@@ -192,21 +198,27 @@ public sealed class DashboardGenerationService : IDashboardGenerationService
         }
         catch (TaskCanceledException ex) when (ex.InnerException is TimeoutException)
         {
+            GenerationProviderLog.ProviderTimeout(_logger, providerId);
             return ErrorProposal("Provider request timed out.");
         }
         catch (OperationCanceledException)
         {
             throw;
         }
-        catch (HttpRequestException)
+        catch (HttpRequestException ex)
         {
+            GenerationProviderLog.ProviderRequestFailed(_logger, providerId, ex);
             return ErrorProposal("Provider request failed.");
         }
-        catch (JsonException)
+        catch (JsonException ex)
         {
+            GenerationProviderLog.ProviderResponseParseFailed(_logger, providerId, ex);
             return ErrorProposal("Provider response could not be parsed.");
         }
     }
+
+    private static string Truncate(string value, int maxLength = 500) =>
+        value.Length <= maxLength ? value : string.Concat(value.AsSpan(0, maxLength), "...");
 
     private static DashboardGenerationResult Unsupported(string reason) => new()
     {
@@ -263,7 +275,8 @@ public sealed class DashboardGenerationService : IDashboardGenerationService
     private static JsonElement SerializeDashboard(DashboardDocument dashboard)
     {
         var json = JsonSerializer.Serialize(dashboard, DashboardDocumentJsonContext.Default.DashboardDocument);
-        return JsonDocument.Parse(json).RootElement.Clone();
+        using var doc = JsonDocument.Parse(json);
+        return doc.RootElement.Clone();
     }
 
     private static DashboardGenerationClarification[] MapClarifications(DashboardGenerationModelClarification[] clarifications) =>

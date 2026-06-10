@@ -110,7 +110,7 @@ internal static class ServiceSettingsEndpoints
 
             return TypedResults.Ok(ApiResponse<ServiceSummary[]>.CreateSuccess(summaries));
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             ServiceSettingsLog.ListServicesFailed(logger, ex);
             return TypedResults.Problem(
@@ -138,7 +138,7 @@ internal static class ServiceSettingsEndpoints
             var response = BuildSettingsResponse(serviceName, services);
             return TypedResults.Ok(ApiResponse<ServiceSettingsResponse>.CreateSuccess(response));
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             ServiceSettingsLog.GetServiceSettingsFailed(logger, serviceName, ex);
             return TypedResults.Problem(
@@ -201,7 +201,7 @@ internal static class ServiceSettingsEndpoints
             var response = BuildSettingsResponse(serviceName, updatedServices ?? Array.Empty<MetadataV2Service>());
             return TypedResults.Ok(ApiResponse<ServiceSettingsResponse>.CreateSuccess(response));
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             ServiceSettingsLog.UpdateProtocolsFailed(logger, serviceName, ex);
             return TypedResults.Problem(
@@ -280,7 +280,7 @@ internal static class ServiceSettingsEndpoints
             var response = BuildSettingsResponse(serviceName, updatedServices ?? Array.Empty<MetadataV2Service>());
             return TypedResults.Ok(ApiResponse<ServiceSettingsResponse>.CreateSuccess(response));
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             ServiceSettingsLog.UpdateAccessPolicyFailed(logger, serviceName, ex);
             return TypedResults.Problem(
@@ -449,7 +449,7 @@ internal static class ServiceSettingsEndpoints
                 updatedRasterMosaic);
             return TypedResults.Ok(ApiResponse<LayerMetadataResponse>.CreateSuccess(response));
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             ServiceSettingsLog.UpdateLayerMetadataFailed(logger, serviceName, layerId, ex);
             return TypedResults.Problem(

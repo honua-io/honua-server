@@ -97,9 +97,13 @@ internal sealed class ImageServerSamplesHandler
             var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, GetString(values, "mosaicRule"));
 
             var samples = new List<SampleEntry>(Math.Min(samplePoints.Count, maxSampleCount));
+            var processedPoints = 0;
             foreach (var point in samplePoints)
             {
-                if (samples.Count >= maxSampleCount)
+                // Cap the INPUT points processed (Esri sampleCount semantics), not just
+                // successful hits — otherwise a huge geometry whose vertices fall outside
+                // raster coverage drives one raster-store query per vertex.
+                if (processedPoints++ >= maxSampleCount)
                 {
                     break;
                 }

@@ -683,23 +683,43 @@ internal sealed class StreamingGeoJsonReader
         return _geometryFactory.CreateMultiLineString(lineStrings.ToArray());
     }
 
-    private Polygon ParsePolygon(JsonElement coords)
+    private Polygon? ParsePolygon(JsonElement coords)
     {
-        var rings = new List<LinearRing>();
+        // RFC 7946 §3.1.6: the first ring is the exterior ring; any further rings
+        // are interior rings (holes).  If the exterior ring is degenerate (< 4
+        // positions), reject the whole polygon rather than silently promoting a
+        // hole into the shell position.
+        LinearRing? shell = null;
+        var holes = new List<LinearRing>();
+        var ringIndex = 0;
+
         foreach (var ringCoords in coords.EnumerateArray())
         {
             var coordinates = ParseCoordinateArray(ringCoords);
-            if (coordinates.Length < 4)
-                continue;
-            rings.Add(_geometryFactory.CreateLinearRing(coordinates));
+            if (ringIndex == 0)
+            {
+                if (coordinates.Length < 4)
+                {
+                    // Degenerate exterior ring — the polygon cannot be constructed.
+                    return null;
+                }
+
+                shell = _geometryFactory.CreateLinearRing(coordinates);
+            }
+            else if (coordinates.Length >= 4)
+            {
+                holes.Add(_geometryFactory.CreateLinearRing(coordinates));
+            }
+            // Interior rings with < 4 positions are silently skipped (degenerate
+            // holes do not affect exterior membership).
+
+            ringIndex++;
         }
 
-        if (rings.Count == 0)
+        if (shell is null)
             return _geometryFactory.CreatePolygon();
 
-        var shell = rings[0];
-        var holes = rings.Count > 1 ? rings.Skip(1).ToArray() : null;
-        return _geometryFactory.CreatePolygon(shell, holes);
+        return _geometryFactory.CreatePolygon(shell, holes.Count > 0 ? holes.ToArray() : null);
     }
 
     private MultiPolygon ParseMultiPolygon(JsonElement coords)
@@ -707,7 +727,7 @@ internal sealed class StreamingGeoJsonReader
         var polygons = new List<Polygon>();
         foreach (var polyCoords in coords.EnumerateArray())
         {
-            var polygon = ParsePolygon(polyCoords) as Polygon;
+            var polygon = ParsePolygon(polyCoords);
             if (polygon != null)
                 polygons.Add(polygon);
         }

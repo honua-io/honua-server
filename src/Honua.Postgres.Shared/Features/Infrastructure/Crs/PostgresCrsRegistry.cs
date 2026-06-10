@@ -32,8 +32,10 @@ internal sealed partial class PostgresCrsRegistry : ICrsRegistry
 
     private readonly IDatabaseConnectionProvider _connectionProvider;
     private readonly ILogger<PostgresCrsRegistry> _logger;
-    private static readonly ConcurrentDictionary<int, CrsCacheEntry> _sridCache = new();
-    private static readonly ConcurrentDictionary<string, CrsCacheEntry> _identifierCache = new(StringComparer.OrdinalIgnoreCase);
+    // Instance-scoped caches: each registry is constructed per IDatabaseConnectionProvider,
+    // so custom SRIDs defined differently in separate databases cannot bleed across sources.
+    private readonly ConcurrentDictionary<int, CrsCacheEntry> _sridCache = new();
+    private readonly ConcurrentDictionary<string, CrsCacheEntry> _identifierCache = new(StringComparer.OrdinalIgnoreCase);
 
     public PostgresCrsRegistry(IDatabaseConnectionProvider connectionProvider, ILogger<PostgresCrsRegistry> logger)
     {
@@ -135,7 +137,7 @@ internal sealed partial class PostgresCrsRegistry : ICrsRegistry
         return now - entry.CreatedAt > _cacheRetention;
     }
 
-    private static void CleanupCacheIfNeeded(DateTimeOffset now)
+    private void CleanupCacheIfNeeded(DateTimeOffset now)
     {
         RemoveExpiredEntries(_sridCache, now);
         RemoveExpiredEntries(_identifierCache, now);
@@ -205,7 +207,7 @@ internal sealed partial class PostgresCrsRegistry : ICrsRegistry
                 Wkt = srtext
             };
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (ex is not OperationCanceledException && !IsTransientConnectionError(ex))
         {
             Log.ResolveFailed(_logger, srid, ex);
             return null;
@@ -270,17 +272,18 @@ internal sealed partial class PostgresCrsRegistry : ICrsRegistry
 
     private static AxisOrder DetermineAxisOrder(string? wkt, bool isGeographic)
     {
-        if (!isGeographic)
-        {
-            return AxisOrder.EastNorth;
-        }
-
+        // Consult the WKT AXIS clauses for both geographic and projected CRS:
+        // some projected systems (EPSG:3035, 2193, 2180, 31466 …) are officially
+        // northing,easting and spatial_ref_sys.srtext carries the AXIS elements.
         if (!string.IsNullOrWhiteSpace(wkt) && TryParseAxisOrder(wkt, out var axisOrder))
         {
             return axisOrder;
         }
 
-        return AxisOrder.NorthEast;
+        // Fall back to conventional defaults when no AXIS clauses are present.
+        // Geographic CRS without AXIS → assume north-east (OGC convention for urn: authorities).
+        // Projected CRS without AXIS → assume east-north (the common case).
+        return isGeographic ? AxisOrder.NorthEast : AxisOrder.EastNorth;
     }
 
     private static bool TryParseAxisOrder(string wkt, out AxisOrder axisOrder)
@@ -401,6 +404,31 @@ internal sealed partial class PostgresCrsRegistry : ICrsRegistry
                 definition = default;
                 return false;
         }
+    }
+
+    /// <summary>
+    /// Returns true for transient connection-level failures that should propagate to the
+    /// caller rather than being silently converted to a 'CRS not found' null return.
+    /// Mirrors the SQL states checked by <see cref="Resilience.ResiliencePolicies.IsConnectionError"/>.
+    /// </summary>
+    private static bool IsTransientConnectionError(Exception ex)
+    {
+        // IOException / SocketException covers physical-connection loss.
+        if (ex is System.IO.IOException)
+        {
+            return true;
+        }
+
+        // NpgsqlException with a connection-class SQL state is a server-side connection error.
+        if (ex is NpgsqlException npgsql)
+        {
+            return npgsql.SqlState is "57P03"  // cannot_connect_now
+                or "08000"  // connection_exception
+                or "08003"  // connection_does_not_exist
+                or "08006"; // connection_failure
+        }
+
+        return false;
     }
 
     private static partial class Log

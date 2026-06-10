@@ -333,6 +333,7 @@ internal sealed partial class GeoServerImportService
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
+                Log.ApplyStepFailed(_logger, "feature-copy", step.SourceId, ex);
                 return CreateExecutionStepResult(
                     step,
                     "failed",
@@ -410,6 +411,7 @@ internal sealed partial class GeoServerImportService
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            Log.ApplyStepFailed(_logger, "layer-publish", step.SourceId, ex);
             return CreateExecutionStepResult(
                 step,
                 "failed",
@@ -464,6 +466,7 @@ internal sealed partial class GeoServerImportService
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            Log.ApplyStepFailed(_logger, "conflict-recovery", step.SourceId, ex);
             return CreateExecutionStepResult(
                 step,
                 "failed",
@@ -659,6 +662,7 @@ internal sealed partial class GeoServerImportService
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
+                Log.ApplyStepFailed(_logger, "data-source", sourceId, ex);
                 results.Add(CreateExecutionStepResult(
                     syntheticStep,
                     "failed",
@@ -889,6 +893,7 @@ internal sealed partial class GeoServerImportService
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            Log.ApplyStepFailed(_logger, "style", step.SourceId, ex);
             return CreateExecutionStepResult(
                 step,
                 "failed",
@@ -1116,6 +1121,7 @@ internal sealed partial class GeoServerImportService
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            Log.ApplyStepFailed(_logger, step.Kind, step.SourceId, ex);
             return CreateExecutionStepResult(
                 step,
                 "failed",

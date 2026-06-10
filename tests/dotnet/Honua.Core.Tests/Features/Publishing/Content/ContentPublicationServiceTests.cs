@@ -193,18 +193,18 @@ public sealed class ContentPublicationServiceTests
         var result = await service.UpdatePolicyAsync(published.Route.PublicationId, new UpdatePublicationPolicyRequest
         {
             Visibility = ContentPublicationVisibility.Public,
-            CreatePublicLink = new ContentPublicLinkRequest { Label = "share", Token = "raw-token" },
+            CreatePublicLink = new ContentPublicLinkRequest { Label = "share", Token = "raw-token-0123456789" },
         }, Actor, null);
 
-        result.CreatedPublicLinkToken.Should().Be("raw-token");
+        result.CreatedPublicLinkToken.Should().Be("raw-token-0123456789");
         result.CreatedPublicLinkId.Should().NotBeNullOrEmpty();
         result.Detail.Route.Policy.Visibility.Should().Be(ContentPublicationVisibility.Public);
         result.Detail.Route.Policy.PublicLink.Enabled.Should().BeTrue();
 
         var link = result.Detail.Route.Policy.PublicLink.Links.Should().ContainSingle().Subject;
         link.TokenHash.Should().NotBeNullOrEmpty();
-        link.TokenHash.Should().NotContain("raw-token");
-        ContentPublicationCrypto.TokenMatchesHash("raw-token", link.TokenHash!).Should().BeTrue();
+        link.TokenHash.Should().NotContain("raw-token-0123456789");
+        ContentPublicationCrypto.TokenMatchesHash("raw-token-0123456789", link.TokenHash!).Should().BeTrue();
     }
 
     [UnitTest]

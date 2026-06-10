@@ -27,13 +27,24 @@ public sealed class SceneAccessEnvelopeServiceTests
         int? ttlMinutes = null,
         string? signingKey = null)
     {
-        var options = Options.Create(new SceneAccessSigningOptions
+        var options = Monitor(new SceneAccessSigningOptions
         {
             SigningKey = signingKey ?? SigningKey,
             TokenTtlMinutes = ttlMinutes ?? SceneAccessSigningOptions.DefaultTokenTtlMinutes,
             RefreshAfterFractionOfTtl = SceneAccessSigningOptions.DefaultRefreshAfterFraction
         });
         return new SceneAccessEnvelopeService(options, timeProvider ?? new TestTimeProvider());
+
+    }
+
+    private static StaticOptionsMonitor Monitor(SceneAccessSigningOptions value)
+        => new StaticOptionsMonitor(value);
+
+    private sealed class StaticOptionsMonitor(SceneAccessSigningOptions value) : IOptionsMonitor<SceneAccessSigningOptions>
+    {
+        public SceneAccessSigningOptions CurrentValue => value;
+        public SceneAccessSigningOptions Get(string? name) => value;
+        public IDisposable? OnChange(Action<SceneAccessSigningOptions, string?> listener) => null;
     }
 
     [UnitTest]
@@ -175,13 +186,14 @@ public sealed class SceneAccessEnvelopeServiceTests
     }
 
     [UnitTest]
-    public void Constructor_ThrowsWhenSigningKeyMissing()
+    public void Issue_ThrowsWhenSigningKeyMissing()
     {
-        var options = Options.Create(new SceneAccessSigningOptions
+        var options = Monitor(new SceneAccessSigningOptions
         {
             SigningKey = string.Empty
         });
-        Action act = () => _ = new SceneAccessEnvelopeService(options, new TestTimeProvider());
+        var service = new SceneAccessEnvelopeService(options, new TestTimeProvider());
+        Action act = () => _ = service.Issue(SceneId);
 
         act.Should().Throw<InvalidOperationException>()
             .WithMessage("*SigningKey*");
@@ -192,19 +204,20 @@ public sealed class SceneAccessEnvelopeServiceTests
     [InlineData(-1)]
     [InlineData(SceneAccessSigningOptions.MaxTokenTtlMinutes + 1)]
     [Trait("Category", "Unit")]
-    public void Constructor_ThrowsWhenTokenTtlMinutesOutOfRange(int ttlMinutes)
+    public void Issue_ThrowsWhenTokenTtlMinutesOutOfRange(int ttlMinutes)
     {
         // Out-of-range TTL must throw InvalidOperationException so the scene
         // endpoints' catch (InvalidOperationException) blocks can surface a
         // structured 500 + OptionsMisconfigured log. Data-annotation validation
         // would throw OptionsValidationException, which the catch sites do not
         // intercept.
-        var options = Options.Create(new SceneAccessSigningOptions
+        var options = Monitor(new SceneAccessSigningOptions
         {
             SigningKey = SigningKey,
             TokenTtlMinutes = ttlMinutes
         });
-        Action act = () => _ = new SceneAccessEnvelopeService(options, new TestTimeProvider());
+        var service = new SceneAccessEnvelopeService(options, new TestTimeProvider());
+        Action act = () => _ = service.Issue(SceneId);
 
         act.Should().Throw<InvalidOperationException>()
             .WithMessage("*TokenTtlMinutes*");
@@ -215,14 +228,15 @@ public sealed class SceneAccessEnvelopeServiceTests
     [InlineData(1.01)]
     [InlineData(double.NaN)]
     [Trait("Category", "Unit")]
-    public void Constructor_ThrowsWhenRefreshFractionOutOfRange(double fraction)
+    public void Issue_ThrowsWhenRefreshFractionOutOfRange(double fraction)
     {
-        var options = Options.Create(new SceneAccessSigningOptions
+        var options = Monitor(new SceneAccessSigningOptions
         {
             SigningKey = SigningKey,
             RefreshAfterFractionOfTtl = fraction
         });
-        Action act = () => _ = new SceneAccessEnvelopeService(options, new TestTimeProvider());
+        var service = new SceneAccessEnvelopeService(options, new TestTimeProvider());
+        Action act = () => _ = service.Issue(SceneId);
 
         act.Should().Throw<InvalidOperationException>()
             .WithMessage("*RefreshAfterFractionOfTtl*");

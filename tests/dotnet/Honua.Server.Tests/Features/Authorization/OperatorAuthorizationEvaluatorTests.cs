@@ -5,6 +5,7 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.TestKit.Attributes;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -18,8 +19,11 @@ public sealed class OperatorAuthorizationEvaluatorTests
     public OperatorAuthorizationEvaluatorTests()
     {
         var rbacOptions = Options.Create(new RbacOptions { RoleClaimType = "roles" });
+        var services = new ServiceCollection();
+        services.AddScoped<IRoleStore>(_ => _roleStore);
+        var scopeFactory = services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
         _evaluator = new OperatorAuthorizationEvaluator(
-            _roleStore,
+            scopeFactory,
             rbacOptions,
             NullLogger<OperatorAuthorizationEvaluator>.Instance);
     }

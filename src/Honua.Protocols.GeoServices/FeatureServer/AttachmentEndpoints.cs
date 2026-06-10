@@ -192,6 +192,19 @@ internal static partial class AttachmentEndpoints
             return;
         }
 
+        // Cap objectIds to MaxRecordCount to prevent an unbounded N+1 query fan-out
+        // (one attachmentStore.ListAsync per id). Mirrors the ResolveMaxRelatedRecordsObjectIdCount
+        // cap used on queryRelatedRecords.
+        var queryLimits = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value.Query;
+        var maxObjectIdCount = Math.Max(1, queryLimits.MaxRecordCount);
+        if (featureIds.Length > maxObjectIdCount)
+        {
+            await RouteValidationHelpers.WriteValidationErrorAsync(
+                context,
+                $"objectIds may contain at most {maxObjectIdCount} values; {featureIds.Length} were supplied.");
+            return;
+        }
+
         if (!TryParseReturnUrl(values, out var returnUrl, out var returnUrlError))
         {
             await RouteValidationHelpers.WriteValidationErrorAsync(context, returnUrlError ?? "returnUrl must be a boolean value");

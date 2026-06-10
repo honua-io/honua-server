@@ -11,6 +11,7 @@ using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Geoprocessing;
 
@@ -22,11 +23,12 @@ namespace Honua.Geoprocessing;
 internal sealed partial class GeoprocessingJobTerminalCallback(
     IUniversalProgressStore progressStore,
     IProcessCatalog processCatalog,
+    IOptionsMonitor<GeoprocessingExecutorOptions> executorOptions,
     IGeoprocessingResultPackageStore? resultPackageStore,
     IServiceScopeFactory serviceScopeFactory,
     ILogger<GeoprocessingJobTerminalCallback> logger) : IJobTerminalCallback
 {
-    private static readonly TimeSpan ProgressRetention = TimeSpan.FromDays(7);
+    private TimeSpan ProgressRetention => executorOptions.CurrentValue.ResultRetention;
 
     public async ValueTask OnTerminalAsync(ExecutionJobRecord job, CancellationToken cancellationToken)
     {

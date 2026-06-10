@@ -106,7 +106,7 @@ public sealed partial class AdaptiveSampler : IAdaptiveSampler, IDisposable
             ActivityKind = activityKind,
             Timestamp = DateTime.UtcNow,
             CurrentMetrics = _metricsCollector.GetCurrentMetrics(),
-            HistoricalPattern = HistoricalPatternTracker.GetPattern(operationName),
+            HistoricalPattern = HistoricalPatternTracker.GetPattern(),
             TemporalContext = TemporalPatternAnalyzer.GetCurrentContext(),
             PredictedLoad = _loadForecaster.GetPredictedLoad()
         });
@@ -373,23 +373,13 @@ public sealed partial class AdaptiveSampler : IAdaptiveSampler, IDisposable
     /// </summary>
     private void RecordOperationPattern(string operationName, double samplingRate, bool wasSampled)
     {
-        var pattern = _operationPatterns.AddOrUpdate(operationName,
-            _ => new OperationPattern
-            {
-                OperationName = operationName,
-                TotalInvocations = 1,
-                SampledCount = wasSampled ? 1 : 0,
-                LastSeen = DateTime.UtcNow,
-                AverageSamplingRate = samplingRate
-            },
-            (_, existing) =>
-            {
-                existing.TotalInvocations++;
-                if (wasSampled) existing.SampledCount++;
-                existing.LastSeen = DateTime.UtcNow;
-                existing.AverageSamplingRate = ((existing.AverageSamplingRate * existing.TotalInvocations) + samplingRate) / (existing.TotalInvocations + 1);
-                return existing;
-            });
+        // Mutating a shared pattern inside AddOrUpdate is not thread-safe (the update factory can
+        // run concurrently and provides no mutual exclusion), so record through Interlocked
+        // counters on the pattern instance instead.
+        var pattern = _operationPatterns.GetOrAdd(
+            operationName,
+            static name => new OperationPattern { OperationName = name });
+        pattern.Record(samplingRate, wasSampled);
     }
 
     /// <summary>
@@ -616,17 +606,18 @@ internal sealed class HistoricalPatternTracker : IDisposable
         return 0.0; // No adjustment if no pattern found
     }
 
-    public static HistoricalPattern GetPattern(string operationName)
+    // Simple constant pattern for now - could be enhanced with operation-specific patterns.
+    // A single cached instance is returned because GetPattern sits on the per-Activity sampling
+    // hot path and consumers only read the constant load-factor/hours data.
+    private static readonly HistoricalPattern DefaultPattern = new()
     {
-        // Simple pattern for now - could be enhanced with operation-specific patterns
-        return new HistoricalPattern
-        {
-            OperationName = operationName,
-            AverageLoadFactor = 1.0,
-            PeakHours = new[] { TimeSpan.FromHours(9), TimeSpan.FromHours(14) },
-            LowActivityHours = new[] { TimeSpan.FromHours(2), TimeSpan.FromHours(5) }
-        };
-    }
+        OperationName = string.Empty,
+        AverageLoadFactor = 1.0,
+        PeakHours = new[] { TimeSpan.FromHours(9), TimeSpan.FromHours(14) },
+        LowActivityHours = new[] { TimeSpan.FromHours(2), TimeSpan.FromHours(5) }
+    };
+
+    public static HistoricalPattern GetPattern() => DefaultPattern;
 
     private void AnalyzePatterns(object? state)
     {
@@ -699,16 +690,31 @@ internal sealed class TemporalPatternAnalyzer : IDisposable
         UpdatePatterns();
     }
 
+    // Cached per minute: GetCurrentContext sits on the per-Activity sampling hot path and every
+    // consumer reads the context at hour-or-coarser granularity, so a fresh allocation per call
+    // is pure GC pressure. The minute stamp lives inside the instance so the check is atomic.
+    private static TemporalContext? _cachedContext;
+
     public static TemporalContext GetCurrentContext()
     {
         var now = DateTime.UtcNow;
-        return new TemporalContext
+        var minuteStamp = now.Ticks / TimeSpan.TicksPerMinute;
+        var cached = Volatile.Read(ref _cachedContext);
+        if (cached is not null && cached.MinuteStamp == minuteStamp)
         {
+            return cached;
+        }
+
+        var context = new TemporalContext
+        {
+            MinuteStamp = minuteStamp,
             TimeOfDay = now.TimeOfDay,
             DayOfWeek = now.DayOfWeek,
             IsBusinessHours = IsBusinessHours(now),
             IsWeekend = now.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday
         };
+        Volatile.Write(ref _cachedContext, context);
+        return context;
     }
 
     public double GetSamplingAdjustment(TemporalContext context)
@@ -775,6 +781,7 @@ internal sealed class PredictiveLoadForecaster : IDisposable
     private readonly LinearRegression _cpuPredictor = new();
     private readonly LinearRegression _memoryPredictor = new();
     private readonly LinearRegression _requestPredictor = new();
+    private PredictedLoad? _cachedPrediction;
 
     public void RecordLoadData(DateTime timestamp, SystemMetrics metrics, double errorRate)
     {
@@ -796,14 +803,26 @@ internal sealed class PredictiveLoadForecaster : IDisposable
         }
 
         UpdatePredictors();
+
+        // Invalidate the cached prediction so the next GetPredictedLoad reflects the refresh.
+        Volatile.Write(ref _cachedPrediction, null);
     }
 
     public PredictedLoad GetPredictedLoad()
     {
+        // The prediction only changes when the regressions are refreshed (once per evaluation
+        // window, in RecordLoadData), while this getter runs on the per-Activity sampling hot
+        // path — so reuse the cached instance between refreshes instead of allocating per call.
+        var cached = Volatile.Read(ref _cachedPrediction);
+        if (cached is not null)
+        {
+            return cached;
+        }
+
         var now = DateTime.UtcNow;
         var futureTimestamp = now.AddMinutes(5); // 5-minute prediction
 
-        return new PredictedLoad
+        var prediction = new PredictedLoad
         {
             PredictionTime = futureTimestamp,
             PredictedCpuUsage = _cpuPredictor.Predict(),
@@ -811,6 +830,8 @@ internal sealed class PredictiveLoadForecaster : IDisposable
             PredictedActiveRequests = (int)_requestPredictor.Predict(),
             Confidence = CalculatePredictionConfidence()
         };
+        Volatile.Write(ref _cachedPrediction, prediction);
+        return prediction;
     }
 
     public static double GetPredictiveAdjustment(PredictedLoad predicted, SystemMetrics current)
@@ -910,8 +931,11 @@ internal sealed class MLSamplingDecisionEngine : IDisposable
 
     public void TriggerLearning(List<OperationPattern> patterns)
     {
-        // Simple learning algorithm - could be enhanced with more sophisticated ML
-        var avgSuccessRate = patterns.Count > 0 ? patterns.Average(p => (double)p.SampledCount / p.TotalInvocations) : 0.5;
+        // Simple learning algorithm - could be enhanced with more sophisticated ML.
+        // Filter zero-invocation patterns: a pattern can be observed between its GetOrAdd and
+        // first Record, and 0/0 would poison the average (and _globalConfidence) with NaN.
+        var measurable = patterns.Where(p => p.TotalInvocations > 0).ToList();
+        var avgSuccessRate = measurable.Count > 0 ? measurable.Average(p => (double)p.SampledCount / p.TotalInvocations) : 0.5;
 
         // Adjust global confidence based on success patterns
         _globalConfidence = (_globalConfidence + avgSuccessRate) / 2.0;
@@ -1035,6 +1059,8 @@ internal sealed class TemporalDataPoint
 
 internal sealed class TemporalContext
 {
+    /// <summary>Minute-of-epoch stamp used to invalidate the cached instance.</summary>
+    public long MinuteStamp { get; set; }
     public TimeSpan TimeOfDay { get; set; }
     public DayOfWeek DayOfWeek { get; set; }
     public bool IsBusinessHours { get; set; }
@@ -1061,11 +1087,33 @@ internal sealed class PredictedLoad
 
 internal sealed class OperationPattern
 {
+    private long _totalInvocations;
+    private long _sampledCount;
+    private long _lastSeenTicks;
+    private double _averageSamplingRate;
+
     public string OperationName { get; set; } = string.Empty;
-    public int TotalInvocations { get; set; }
-    public int SampledCount { get; set; }
-    public DateTime LastSeen { get; set; }
-    public double AverageSamplingRate { get; set; }
+    public long TotalInvocations => Volatile.Read(ref _totalInvocations);
+    public long SampledCount => Volatile.Read(ref _sampledCount);
+    public DateTime LastSeen => new(Volatile.Read(ref _lastSeenTicks), DateTimeKind.Utc);
+    public double AverageSamplingRate => Volatile.Read(ref _averageSamplingRate);
+
+    /// <summary>Records one sampling decision; safe to call concurrently.</summary>
+    public void Record(double samplingRate, bool wasSampled)
+    {
+        var total = Interlocked.Increment(ref _totalInvocations);
+        if (wasSampled)
+        {
+            Interlocked.Increment(ref _sampledCount);
+        }
+
+        Volatile.Write(ref _lastSeenTicks, DateTime.UtcNow.Ticks);
+
+        // Incremental running average. A lost update under contention only nudges telemetry
+        // quality; the counters above stay exact.
+        var current = Volatile.Read(ref _averageSamplingRate);
+        Volatile.Write(ref _averageSamplingRate, current + ((samplingRate - current) / total));
+    }
 }
 
 internal sealed class MLSamplingContext

@@ -3,7 +3,6 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
-using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Temporal.Abstractions;
 using Honua.Core.Features.Temporal.Domain;
 
@@ -85,12 +84,25 @@ public sealed partial class TemporalHistoryService
         var changes = ImmutableArray.CreateBuilder<TemporalFeatureDiff>(pageGroups.Count);
         int added = 0, removed = 0, attributeChanged = 0, geometryChanged = 0;
 
+        // Batch-fetch the current snapshots for the page's surviving features with a single
+        // ObjectIds query instead of one feature read per changed object (avoids up to
+        // NormalizeLimit round-trips per diff page).
+        var survivingIds = new HashSet<long>();
+        foreach (var group in pageGroups)
+        {
+            if (group.NetOperation != TemporalChangeKind.Delete)
+            {
+                survivingIds.Add(group.ObjectId);
+            }
+        }
+
+        var attributesById = await FetchAttributesByIdAsync(storageLayerId, survivingIds, cancellationToken)
+            .ConfigureAwait(false);
+
         foreach (var group in pageGroups)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var diff = await BuildFeatureDiffAsync(serviceId, layerId, storageLayerId, group, cancellationToken)
-                .ConfigureAwait(false);
-            changes.Add(diff);
+            changes.Add(BuildFeatureDiff(serviceId, layerId, group, attributesById));
         }
 
         // Summary counts are derived from the full window, not just the page. Recompute per-class totals
@@ -314,26 +326,25 @@ public sealed partial class TemporalHistoryService
             RequiresApproval: requiresApproval);
     }
 
-    private async Task<TemporalFeatureDiff> BuildFeatureDiffAsync(
+    private TemporalFeatureDiff BuildFeatureDiff(
         string serviceId,
         int layerId,
-        int storageLayerId,
         ObjectChangeGroup group,
-        CancellationToken cancellationToken)
+        IReadOnlyDictionary<long, IReadOnlyDictionary<string, object?>> attributesById)
     {
         var classes = ImmutableArray.CreateBuilder<TemporalDiffChangeClass>();
         var fieldChanges = ImmutableArray<TemporalFieldChange>.Empty;
         TemporalDiffChangeClass primary;
         var geometryChanged = group.GeometryChanged;
 
+        attributesById.TryGetValue(group.ObjectId, out var currentAttributes);
+
         switch (group.NetOperation)
         {
             case TemporalChangeKind.Insert:
                 primary = TemporalDiffChangeClass.Added;
                 classes.Add(TemporalDiffChangeClass.Added);
-                fieldChanges = await BuildCurrentSnapshotFieldChangesAsync(
-                    serviceId, layerId, storageLayerId, group.ObjectId, isAdd: true, cancellationToken)
-                    .ConfigureAwait(false);
+                fieldChanges = BuildCurrentSnapshotFieldChanges(serviceId, layerId, currentAttributes);
                 break;
             case TemporalChangeKind.Delete:
                 primary = TemporalDiffChangeClass.Removed;
@@ -347,9 +358,7 @@ public sealed partial class TemporalHistoryService
                     classes.Add(TemporalDiffChangeClass.GeometryChanged);
                 }
 
-                fieldChanges = await BuildCurrentSnapshotFieldChangesAsync(
-                    serviceId, layerId, storageLayerId, group.ObjectId, isAdd: false, cancellationToken)
-                    .ConfigureAwait(false);
+                fieldChanges = BuildCurrentSnapshotFieldChanges(serviceId, layerId, currentAttributes);
                 break;
         }
 
@@ -362,24 +371,21 @@ public sealed partial class TemporalHistoryService
             Attribution: group.Attribution);
     }
 
-    // Surfaces the CURRENT attribute snapshot as the "new" side of a diff for surviving features, masked
-    // per policy. Prior-snapshot values are unavailable from the change log, so OldValue is null.
-    private async Task<ImmutableArray<TemporalFieldChange>> BuildCurrentSnapshotFieldChangesAsync(
+    // Surfaces the CURRENT attribute snapshot (batch-prefetched per diff page) as the "new" side of a
+    // diff for surviving features, masked per policy. Prior-snapshot values are unavailable from the
+    // change log, so OldValue is null.
+    private ImmutableArray<TemporalFieldChange> BuildCurrentSnapshotFieldChanges(
         string serviceId,
         int layerId,
-        int storageLayerId,
-        long objectId,
-        bool isAdd,
-        CancellationToken cancellationToken)
+        IReadOnlyDictionary<string, object?>? attributes)
     {
-        var feature = await _featureReader.GetAsync(storageLayerId, objectId, cancellationToken).ConfigureAwait(false);
-        if (feature is not { } present)
+        if (attributes is null)
         {
             return ImmutableArray<TemporalFieldChange>.Empty;
         }
 
-        var builder = ImmutableArray.CreateBuilder<TemporalFieldChange>(present.Attributes.Count);
-        foreach (var (field, value) in present.Attributes)
+        var builder = ImmutableArray.CreateBuilder<TemporalFieldChange>(attributes.Count);
+        foreach (var (field, value) in attributes)
         {
             var masked = _maskingPolicy.IsFieldMasked(serviceId, layerId, field);
             builder.Add(new TemporalFieldChange(
@@ -389,7 +395,6 @@ public sealed partial class TemporalHistoryService
                 Masked: masked));
         }
 
-        _ = isAdd;
         return builder.ToImmutable();
     }
 

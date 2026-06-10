@@ -599,6 +599,18 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         SceneGeometryKind? expectedKind = null;
         var nonDegenerateCount = 0;
 
+        // Track raw vertex count to catch pathological high-vertex polygon layers
+        // before GeometryTileBuilder buffers them. The builder allocates positions
+        // as List<double> (3 doubles/vertex) then converts to float[]; the byte
+        // array is new byte[floatCount * 4], so int overflow occurs when the total
+        // emitted float component count exceeds int.MaxValue (≈ 178M vertices for
+        // positions alone). We cap substantially below that to give a clear,
+        // typed SCENE_FEATURE_LIMIT_EXCEEDED 400 instead of an opaque OOM / 503.
+        // Note: extrusion multiplies polygon vertices roughly 9x at write time;
+        // this cap is on input (pre-extrusion) vertices.
+        var totalVertexCount = 0L;
+        const long MaxTotalVertices = 50_000_000L;
+
         await foreach (var feature in _featureSource
             .StreamAsync(resource, storageLayerId, includeAttributes, cancellationToken)
             .ConfigureAwait(false))
@@ -635,6 +647,14 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
             if (WillProduceVertices(feature))
             {
                 nonDegenerateCount++;
+            }
+
+            totalVertexCount += feature.Geometry.Vertices.Count;
+            if (totalVertexCount > MaxTotalVertices)
+            {
+                throw new ValidationException(
+                    $"{SceneGenerationErrorCodes.FeatureLimitExceeded}: Layer {storageLayerId} exceeds the {MaxTotalVertices:N0}-vertex v1 limit; " +
+                    "reduce feature count or simplify geometry before publishing.");
             }
 
             foreach (var vertex in feature.Geometry.Vertices)

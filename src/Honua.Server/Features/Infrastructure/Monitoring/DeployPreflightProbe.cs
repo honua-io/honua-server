@@ -20,6 +20,7 @@ internal sealed class DeployPreflightProbe(
     IDatabaseMigrationRunner migrationRunner,
     MigrationState migrationState,
     DatabaseCompatibilityState databaseCompatibilityState,
+    ILogger<DeployPreflightProbe> logger,
     IConnectionSecretResolver? secretResolver = null) : IDeployPreflightProbe
 {
     private const string MigrationPlanUnavailableMessage = "Migration planning is temporarily unavailable.";
@@ -91,8 +92,12 @@ internal sealed class DeployPreflightProbe(
                 PlanError = plan.Successful ? null : MigrationPlanUnavailableMessage
             };
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            // The client only sees the generic degraded message; log the underlying
+            // failure so operators can diagnose why coordinated deploys are blocked.
+            DeployPreflightProbeLog.MigrationPlanningFailed(logger, ex);
+
             return new DeployPreflightMigrationSnapshot
             {
                 LifecycleStatus = GetMigrationStatusLabel(migrationState.Status),
@@ -177,6 +182,18 @@ internal sealed class DeployPreflightProbe(
             ErrorMessage = result.ErrorMessage
         };
     }
+}
+
+/// <summary>
+/// Source-generated logging for <see cref="DeployPreflightProbe"/>.
+/// </summary>
+internal static partial class DeployPreflightProbeLog
+{
+    [LoggerMessage(
+        EventId = 7405,
+        Level = LogLevel.Warning,
+        Message = "Deploy preflight migration planning failed; reporting degraded migration snapshot")]
+    public static partial void MigrationPlanningFailed(ILogger logger, Exception exception);
 }
 
 internal sealed class DeployPreflightSnapshot

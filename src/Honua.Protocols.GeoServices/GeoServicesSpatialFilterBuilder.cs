@@ -32,10 +32,10 @@ internal static class GeoServicesSpatialFilterBuilder
                 throw new ArgumentException("Distance parameter is required for distance-based spatial queries");
             }
 
-            var unit = ParseDistanceUnit(queryParams.Units);
+            var (distance, unit) = NormalizeDistance(queryParams.Distance.Value, queryParams.Units);
             return SpatialFilter.CreateDistanceFilter(
                 wkbBytes,
-                queryParams.Distance.Value,
+                distance,
                 unit,
                 relationship == SpatialRelationship.WithinDistance,
                 inputSrid) with
@@ -55,10 +55,10 @@ internal static class GeoServicesSpatialFilterBuilder
         // is left to that relationship's exact predicate.
         if (queryParams.Distance is > 0 && relationship == SpatialRelationship.Intersects)
         {
-            var unit = ParseDistanceUnit(queryParams.Units);
+            var (distance, unit) = NormalizeDistance(queryParams.Distance.Value, queryParams.Units);
             return SpatialFilter.CreateDistanceFilter(
                 wkbBytes,
-                queryParams.Distance.Value,
+                distance,
                 unit,
                 withinDistance: true,
                 inputSrid) with
@@ -109,19 +109,39 @@ internal static class GeoServicesSpatialFilterBuilder
         };
     }
 
-    private static DistanceUnit ParseDistanceUnit(string? units)
+    /// <summary>
+    /// Esri <c>esriSRUnit_NauticalMile</c>: the international nautical mile, exactly 1852 m.
+    /// </summary>
+    private const double MetersPerNauticalMile = 1852.0;
+
+    /// <summary>
+    /// Esri <c>esriSRUnit_USNauticalMile</c>: the US nautical mile, 1853.248 m.
+    /// </summary>
+    private const double MetersPerUsNauticalMile = 1853.248;
+
+    /// <summary>
+    /// Normalizes the Esri <c>units</c> token and distance into the canonical
+    /// <see cref="DistanceUnit"/> the store understands. Nautical-mile units have no
+    /// canonical enum member, so they are converted to meters here at the protocol
+    /// adapter. Unrecognized unit tokens are rejected (a silent meters fallback would
+    /// return wrong answers — e.g. a nautical-mile radius shrunk 1852x).
+    /// </summary>
+    private static (double Distance, DistanceUnit Unit) NormalizeDistance(double distance, string? units)
     {
         return units?.ToLowerInvariant() switch
         {
-            "esrisrunit_meter" or null => DistanceUnit.Meters,
-            "esrisrunit_foot" => DistanceUnit.Feet,
-            "esrisrunit_kilometer" => DistanceUnit.Kilometers,
-            "esrisrunit_statutemile" => DistanceUnit.Miles,
-            "meters" or "m" => DistanceUnit.Meters,
-            "feet" or "ft" => DistanceUnit.Feet,
-            "kilometers" or "km" => DistanceUnit.Kilometers,
-            "miles" or "mi" => DistanceUnit.Miles,
-            _ => DistanceUnit.Meters
+            "esrisrunit_meter" or null => (distance, DistanceUnit.Meters),
+            "esrisrunit_foot" => (distance, DistanceUnit.Feet),
+            "esrisrunit_kilometer" => (distance, DistanceUnit.Kilometers),
+            "esrisrunit_statutemile" => (distance, DistanceUnit.Miles),
+            "esrisrunit_nauticalmile" => (distance * MetersPerNauticalMile, DistanceUnit.Meters),
+            "esrisrunit_usnauticalmile" => (distance * MetersPerUsNauticalMile, DistanceUnit.Meters),
+            "meters" or "m" => (distance, DistanceUnit.Meters),
+            "feet" or "ft" => (distance, DistanceUnit.Feet),
+            "kilometers" or "km" => (distance, DistanceUnit.Kilometers),
+            "miles" or "mi" => (distance, DistanceUnit.Miles),
+            "nauticalmiles" or "nm" => (distance * MetersPerNauticalMile, DistanceUnit.Meters),
+            _ => throw new ArgumentException($"Unsupported distance units: {units}")
         };
     }
 }

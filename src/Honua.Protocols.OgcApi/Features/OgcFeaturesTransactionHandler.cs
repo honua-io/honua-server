@@ -257,19 +257,29 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                         && (preparedOperation.Feature?.Geometry is { Length: > 0 }
                             || (preparedOperation.OperationKind == BatchOperationKind.Update
                                 && preparedOperation.ExistingHadGeometry));
-                    await _mutationEventService.PublishAsync(
-                        context,
-                        layerId,
-                        objectId,
-                        eventOperation,
-                        HonuaTelemetry.Protocols.OgcFeatures,
-                        CancellationToken.None,
-                        serviceProtocol: OgcFeaturesProtocolName,
-                        requestId: $"{context.TraceIdentifier}:{operation.Id ?? "batch"}",
-                        mutationFeature: preparedOperation?.OperationKind == BatchOperationKind.Delete
-                            ? null
-                            : preparedOperation?.Feature,
-                        geometryChanged: inlineGeometryChanged).ConfigureAwait(false);
+                    // Best-effort: the edit is already committed, so a publish failure must
+                    // not fail the request or stop events for the remaining operations
+                    // (mirrors OgcFeaturesCrudHandler.TryPublishFeatureChangeAsync).
+                    try
+                    {
+                        await _mutationEventService.PublishAsync(
+                            context,
+                            layerId,
+                            objectId,
+                            eventOperation,
+                            HonuaTelemetry.Protocols.OgcFeatures,
+                            CancellationToken.None,
+                            serviceProtocol: OgcFeaturesProtocolName,
+                            requestId: $"{context.TraceIdentifier}:{operation.Id ?? "batch"}",
+                            mutationFeature: preparedOperation?.OperationKind == BatchOperationKind.Delete
+                                ? null
+                                : preparedOperation?.Feature,
+                            geometryChanged: inlineGeometryChanged).ConfigureAwait(false);
+                    }
+                    catch (Exception publishEx)
+                    {
+                        Log.FeatureChangePublishFailed(_logger, layerId, objectId, publishEx);
+                    }
                 }
             }
 
@@ -502,16 +512,25 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 // value the outbox scope used so consumers see a consistent contract:
                 // any Replace that overwrites or clears a non-null existing geometry
                 // reports GeometryChanged=true, while null-to-null replace stays false.
-                await _mutationEventService.PublishAsync(
-                    context,
-                    layerId,
-                    updated.Value.Id,
-                    "update",
-                    HonuaTelemetry.Protocols.OgcFeatures,
-                    CancellationToken.None,
-                    mutationFeature: updated.Value,
-                    serviceProtocol: OgcFeaturesProtocolName,
-                    geometryChanged: geometryChangedForReplace).ConfigureAwait(false);
+                // Best-effort: the edit is already committed, so a publish failure must
+                // not surface as a 500 (mirrors OgcFeaturesCrudHandler.TryPublishFeatureChangeAsync).
+                try
+                {
+                    await _mutationEventService.PublishAsync(
+                        context,
+                        layerId,
+                        updated.Value.Id,
+                        "update",
+                        HonuaTelemetry.Protocols.OgcFeatures,
+                        CancellationToken.None,
+                        mutationFeature: updated.Value,
+                        serviceProtocol: OgcFeaturesProtocolName,
+                        geometryChanged: geometryChangedForReplace).ConfigureAwait(false);
+                }
+                catch (Exception publishEx)
+                {
+                    Log.FeatureChangePublishFailed(_logger, layerId, updated.Value.Id, publishEx);
+                }
                 HonuaTelemetry.SetSuccess(activity);
                 return Results.Json(response, OgcJsonContext.Default.GeoJsonFeature, contentType: MediaTypes.GeoJson);
             }
@@ -815,15 +834,24 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 var response = ToOgcFeature(responseFeature.Value, resource, inputCrs.AxisOrder, updateLinks);
 
                 await _mutationEventService.InvalidateLayerAsync(null, layerId, CancellationToken.None);
-                await _mutationEventService.PublishAsync(
-                    context,
-                    layerId,
-                    updated.Value.Id,
-                    "update",
-                    HonuaTelemetry.Protocols.OgcFeatures,
-                    CancellationToken.None,
-                    mutationFeature: updated.Value,
-                    serviceProtocol: OgcFeaturesProtocolName).ConfigureAwait(false);
+                // Best-effort: the edit is already committed, so a publish failure must
+                // not surface as a 500 (mirrors OgcFeaturesCrudHandler.TryPublishFeatureChangeAsync).
+                try
+                {
+                    await _mutationEventService.PublishAsync(
+                        context,
+                        layerId,
+                        updated.Value.Id,
+                        "update",
+                        HonuaTelemetry.Protocols.OgcFeatures,
+                        CancellationToken.None,
+                        mutationFeature: updated.Value,
+                        serviceProtocol: OgcFeaturesProtocolName).ConfigureAwait(false);
+                }
+                catch (Exception publishEx)
+                {
+                    Log.FeatureChangePublishFailed(_logger, layerId, updated.Value.Id, publishEx);
+                }
                 HonuaTelemetry.SetSuccess(activity);
                 return Results.Json(response, OgcJsonContext.Default.GeoJsonFeature, contentType: MediaTypes.GeoJson);
             }
@@ -2026,5 +2054,8 @@ internal sealed partial class OgcFeaturesTransactionHandler(
 
         [LoggerMessage(EventId = 5229, Level = LogLevel.Warning, Message = "OGC patch feature invalid payload for collection {CollectionId}, feature {FeatureId}: {Reason}")]
         public static partial void PatchFeatureInvalidPayload(ILogger logger, string collectionId, string featureId, string reason);
+
+        [LoggerMessage(EventId = 5233, Level = LogLevel.Warning, Message = "Feature-change publish failed after OGC mutation succeeded for layer {LayerId}, object {ObjectId}.")]
+        public static partial void FeatureChangePublishFailed(ILogger logger, int layerId, long objectId, Exception exception);
     }
 }

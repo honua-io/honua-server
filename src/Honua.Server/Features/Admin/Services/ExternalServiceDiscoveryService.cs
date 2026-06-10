@@ -3,6 +3,7 @@
 
 using System.Net;
 using System.Net.Http.Json;
+using System.Net.Sockets;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -26,6 +27,89 @@ internal sealed partial class ExternalServiceDiscoveryService(
     private const int MaximumTimeoutSeconds = 120;
     private const int MaxCatalogServices = 250;
     private const int CatalogConcurrency = 6;
+
+    /// <summary>
+    /// Upper bound on a single JSON discovery response. The XML path is already bounded
+    /// (<see cref="CreateSecureXmlReaderSettings"/> caps the document at 2M characters); this is the
+    /// matching guard for JSON so a hostile or buggy external service cannot exhaust server memory
+    /// with a multi-GB body.
+    /// </summary>
+    internal const long MaxJsonResponseBytes = 8 * 1024 * 1024;
+
+    /// <summary>
+    /// Primary handler for the <see cref="HttpClientName"/> client. SSRF hardening for the admin
+    /// discovery surface: redirects are never followed (a remote 302 could point the request at a
+    /// private/loopback/cloud-metadata address — or downgrade to plain HTTP — after the pre-request
+    /// network guard has passed), and connections are pinned to a freshly resolved, guard-validated
+    /// address so DNS rebinding between the guard check and the connect cannot reach a disallowed
+    /// network address. Mirrors <c>ArcGisRestClient.CreatePinnedDnsHttpMessageHandler</c>.
+    /// </summary>
+    internal static HttpMessageHandler CreatePinnedDnsHttpMessageHandler()
+        => new SocketsHttpHandler
+        {
+            AllowAutoRedirect = false,
+            ConnectCallback = static (context, cancellationToken) =>
+                ConnectWithValidatedAddressAsync(context, cancellationToken)
+        };
+
+    private static async ValueTask<Stream> ConnectWithValidatedAddressAsync(
+        SocketsHttpConnectionContext context,
+        CancellationToken cancellationToken)
+    {
+        var host = context.DnsEndPoint.Host;
+        IPAddress[] addresses;
+        if (IPAddress.TryParse(host, out var literalAddress))
+        {
+            addresses = [literalAddress];
+        }
+        else
+        {
+            addresses = await Dns.GetHostAddressesAsync(host, cancellationToken).ConfigureAwait(false);
+        }
+
+        // Re-run the network guard against the addresses this connection will actually use.
+        var hostUri = new UriBuilder(Uri.UriSchemeHttps, host).Uri;
+        var disallowed = await NetworkAddressValidator.IsDisallowedAddressAsync(
+                hostUri,
+                (_, _) => Task.FromResult(addresses),
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (disallowed || addresses.Length == 0)
+        {
+            throw new HttpRequestException(
+                "External service host resolves to a private, loopback, or unresolvable network address, which is not allowed.");
+        }
+
+        Exception? lastException = null;
+        foreach (var address in addresses)
+        {
+            var socket = new Socket(address.AddressFamily, SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
+            var connected = false;
+            try
+            {
+                await socket.ConnectAsync(address, context.DnsEndPoint.Port, cancellationToken).ConfigureAwait(false);
+                connected = true;
+                return new NetworkStream(socket, ownsSocket: true);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex) when (ex is SocketException or ObjectDisposedException)
+            {
+                lastException = ex;
+            }
+            finally
+            {
+                if (!connected)
+                {
+                    socket.Dispose();
+                }
+            }
+        }
+
+        throw new HttpRequestException("Unable to establish a connection to the external service host.", lastException);
+    }
 
     public async Task<ExternalServiceDiscoveryResponse> DiscoverAsync(
         ExternalServiceDiscoveryRequest request,
@@ -456,10 +540,48 @@ internal sealed partial class ExternalServiceDiscoveryService(
                 $"External service returned status {(int)response.StatusCode} during discovery.");
         }
 
-        var result = await response.Content
-            .ReadFromJsonAsync(jsonTypeInfo, timeoutCts.Token)
-            .ConfigureAwait(false);
+        // ResponseHeadersRead bypasses HttpClient.MaxResponseContentBufferSize, so bound the body
+        // explicitly before deserializing (the XML path is bounded by the secure reader settings).
+        using var buffered = await ReadBoundedContentAsync(response.Content, timeoutCts.Token).ConfigureAwait(false);
+        var result = JsonSerializer.Deserialize(buffered, jsonTypeInfo);
         return result ?? throw new InvalidOperationException("External service returned an empty JSON response.");
+    }
+
+    private static async Task<MemoryStream> ReadBoundedContentAsync(HttpContent content, CancellationToken cancellationToken)
+    {
+        if (content.Headers.ContentLength is > MaxJsonResponseBytes)
+        {
+            throw new HttpRequestException("External service returned a response larger than the allowed limit during discovery.");
+        }
+
+        var source = await content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        await using (source.ConfigureAwait(false))
+        {
+            var buffered = new MemoryStream();
+            try
+            {
+                var buffer = new byte[81920];
+                int read;
+                while ((read = await source.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
+                {
+                    if (buffered.Length + read > MaxJsonResponseBytes)
+                    {
+                        throw new HttpRequestException(
+                            "External service returned a response larger than the allowed limit during discovery.");
+                    }
+
+                    buffered.Write(buffer, 0, read);
+                }
+
+                buffered.Position = 0;
+                return buffered;
+            }
+            catch
+            {
+                await buffered.DisposeAsync().ConfigureAwait(false);
+                throw;
+            }
+        }
     }
 
     private async Task<int?> TryGetFeatureCountAsync(

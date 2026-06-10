@@ -375,31 +375,31 @@ public class ArcGisRestProviderResolutionTests
 
         public string? LastLayerMetadataUrl { get; private set; }
 
-        public Task<ArcGisRestQueryResponse> QueryAsync(string url, CancellationToken cancellationToken)
+        public Task<ArcGisRestQueryResponse> QueryAsync(string url, string? authorizationHeader, CancellationToken cancellationToken)
         {
             LastQueryUrl = url;
             return Task.FromResult(QueryResponse);
         }
 
-        public Task<ArcGisRestCountResponse> QueryCountAsync(string url, CancellationToken cancellationToken)
+        public Task<ArcGisRestCountResponse> QueryCountAsync(string url, string? authorizationHeader, CancellationToken cancellationToken)
         {
             LastCountUrl = url;
             return Task.FromResult(CountResponse);
         }
 
-        public Task<ArcGisRestExtentResponse> QueryExtentAsync(string url, CancellationToken cancellationToken)
+        public Task<ArcGisRestExtentResponse> QueryExtentAsync(string url, string? authorizationHeader, CancellationToken cancellationToken)
         {
             LastExtentUrl = url;
             return Task.FromResult(ExtentResponse);
         }
 
-        public Task<ArcGisRestObjectIdsResponse> QueryObjectIdsAsync(string url, CancellationToken cancellationToken)
+        public Task<ArcGisRestObjectIdsResponse> QueryObjectIdsAsync(string url, string? authorizationHeader, CancellationToken cancellationToken)
         {
             LastObjectIdsUrl = url;
             return Task.FromResult(ObjectIdsResponse);
         }
 
-        public Task<ArcGisRestLayerResponse> GetLayerMetadataAsync(string url, CancellationToken cancellationToken)
+        public Task<ArcGisRestLayerResponse> GetLayerMetadataAsync(string url, string? authorizationHeader, CancellationToken cancellationToken)
         {
             LastLayerMetadataUrl = url;
             return Task.FromResult(LayerResponse);

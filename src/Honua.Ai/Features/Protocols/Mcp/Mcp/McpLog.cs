@@ -47,4 +47,13 @@ internal static partial class McpLog
 
     [LoggerMessage(8162, LogLevel.Debug, "MCP promotion list read: ResourceFamily={ResourceFamily}, Count={Count}, Truncated={Truncated}")]
     public static partial void PromotionListRead(ILogger logger, string resourceFamily, int count, bool truncated);
+
+    [LoggerMessage(8163, LogLevel.Warning, "MCP tool invocation failed unexpectedly: ToolName={ToolName}")]
+    public static partial void ToolFailedUnexpected(ILogger logger, string toolName, Exception exception);
+
+    [LoggerMessage(8164, LogLevel.Warning, "MCP resource read failed unexpectedly: ResourceFamily={ResourceFamily}, Uri={Uri}")]
+    public static partial void ResourceReadFailed(ILogger logger, string resourceFamily, string uri, Exception exception);
+
+    [LoggerMessage(8165, LogLevel.Warning, "MCP dispatch failed unexpectedly: Method={Method}")]
+    public static partial void DispatchFailed(ILogger logger, string method, Exception exception);
 }

@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Concurrent;
 using Honua.Core.Features.Security.Domain;
 
 namespace Honua.ArcGisRest.Features.FeatureStore.Services;
@@ -26,9 +27,21 @@ internal static class ArcGisRestServiceLocator
     /// </summary>
     public const string ServiceUrlPropertyKey = "serviceUrl";
 
+    // Cache of raw URL → normalized URL to avoid a blocking DNS lookup on every
+    // per-query call to Resolve(). NormalizeServiceRootUrl performs DNS resolution
+    // to validate the host against private-range blocklists; doing this on every
+    // QueryAsync/CountAsync call blocks thread-pool threads under DNS latency.
+    // The cache is process-scoped and never evicted — service URLs come from
+    // admin-configured DataConnections and are stable for the lifetime of the process.
+    // Thread-safe: ConcurrentDictionary ensures at most one normalization per distinct URL.
+    private static readonly ConcurrentDictionary<string, string> _normalizedUrlCache =
+        new(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>
     /// Resolves the canonical service root URL (FeatureServer/MapServer) and
     /// optional API token from the supplied <paramref name="connection"/>.
+    /// URL validation (including DNS-based private-range check) is performed once
+    /// per distinct raw URL and cached for the lifetime of the process.
     /// </summary>
     /// <param name="connection">Secure connection bound by the metadata layer.</param>
     /// <returns>Canonical service URL and optional API token.</returns>
@@ -44,7 +57,7 @@ internal static class ArcGisRestServiceLocator
         }
 
         var token = ReadStringProperty(connection, TokenPropertyKey);
-        var normalized = ArcGisRestUrlValidator.NormalizeServiceRootUrl(rawUrl);
+        var normalized = _normalizedUrlCache.GetOrAdd(rawUrl, static u => ArcGisRestUrlValidator.NormalizeServiceRootUrl(u));
         return new ArcGisRestServiceLocation(normalized, token);
     }
 

@@ -24,6 +24,13 @@ public sealed class VisibilityAnalysisService : IVisibilityAnalysisService
     public const int DefaultLineOfSightSampleCount = 128;
 
     /// <summary>
+    /// Upper bound on line-of-sight profile samples. Without it the request's
+    /// sample count would become its own <see cref="ProfileSamplingOptions.MaxSampleCount"/>,
+    /// letting a single request drive an unbounded DB sampling query.
+    /// </summary>
+    public const int MaxLineOfSightSampleCount = 2048;
+
+    /// <summary>
     /// Default and bounding values for viewshed ray casting. The defaults keep
     /// a full-radius viewshed at a few thousand profile samples to avoid
     /// runaway cost.
@@ -63,7 +70,7 @@ public sealed class VisibilityAnalysisService : IVisibilityAnalysisService
         CancellationToken cancellationToken = default)
     {
         var resolvedSampleCount = sampleCount is { } count && count >= 2
-            ? count
+            ? Math.Min(count, MaxLineOfSightSampleCount)
             : DefaultLineOfSightSampleCount;
 
         var profile = await SampleLineAsync(

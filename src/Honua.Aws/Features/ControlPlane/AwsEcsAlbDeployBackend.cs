@@ -529,19 +529,25 @@ internal sealed partial class AwsEcsAlbDeployBackend(
                 .ConfigureAwait(false);
             var observedTaskDefinition = canaryServiceState.TaskDefinitionArn;
 
-            await ecsClient.UpdateServiceTaskDefinitionAsync(
-                    target.Cluster!,
-                    target.CanaryService!,
-                    spec.DesiredRevision,
-                    target.Region,
-                    cancellationToken)
-                .ConfigureAwait(false);
-
+            // Write ALB weights first so the listener rule reflects the desired
+            // canary share before the ECS service starts rolling to the new task
+            // definition. This prevents the canary service from briefly receiving
+            // whatever share the rule currently carries if the prior rollout left
+            // the rule in a non-zero canary state, and ensures that if the ALB
+            // call fails the ECS service has not yet been mutated.
             var canaryShare = canaryWeight ?? 100;
             var stableShare = 100 - canaryShare;
             await albClient.UpdateListenerRuleWeightsAsync(
                     target.ListenerRuleArn!,
                     BuildWeights(target.CanaryTargetGroupArn!, canaryShare, target.StableTargetGroupArn!, stableShare),
+                    target.Region,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            await ecsClient.UpdateServiceTaskDefinitionAsync(
+                    target.Cluster!,
+                    target.CanaryService!,
+                    spec.DesiredRevision,
                     target.Region,
                     cancellationToken)
                 .ConfigureAwait(false);

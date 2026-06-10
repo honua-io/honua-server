@@ -39,7 +39,13 @@ internal sealed partial class FeatureChangeWebhookDispatcher(
     private readonly ILogger<FeatureChangeWebhookDispatcher> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     private readonly RedisLeaseCoordinator _leaseCoordinator = new(redis, DispatchLeaseKey, DispatchLeaseDuration);
     private readonly IFeatureChangeEventStoreHealth? _storeHealth = store as IFeatureChangeEventStoreHealth;
-    private readonly ConcurrentDictionary<string, byte> _completedDeliveries = new(StringComparer.Ordinal);
+    // In-memory fallback for the Redis completed-delivery markers. Values are completion
+    // timestamps (UTC ticks) so entries can be expired with the same TTL the Redis path
+    // uses instead of growing without bound for the lifetime of the process.
+    private readonly ConcurrentDictionary<string, long> _completedDeliveries = new(StringComparer.Ordinal);
+    private const int CompletedDeliveriesSweepThreshold = 1_000;
+    private static readonly TimeSpan CompletedDeliveriesSweepInterval = TimeSpan.FromMinutes(1);
+    private long _lastCompletedDeliveriesSweepTicks;
     private int _invalidConfigurationLogged;
     private int _eventStoreUnavailableLogged;
     private int _unsafeDistributedModeLogged;
@@ -381,7 +387,33 @@ internal sealed partial class FeatureChangeWebhookDispatcher(
             return;
         }
 
-        _completedDeliveries[eventId] = 0;
+        SweepExpiredCompletedDeliveries();
+        _completedDeliveries[eventId] = DateTimeOffset.UtcNow.UtcTicks;
+    }
+
+    private void SweepExpiredCompletedDeliveries()
+    {
+        if (_completedDeliveries.Count < CompletedDeliveriesSweepThreshold)
+        {
+            return;
+        }
+
+        var nowTicks = DateTimeOffset.UtcNow.UtcTicks;
+        var lastSweepTicks = Volatile.Read(ref _lastCompletedDeliveriesSweepTicks);
+        if (nowTicks - lastSweepTicks < CompletedDeliveriesSweepInterval.Ticks ||
+            Interlocked.CompareExchange(ref _lastCompletedDeliveriesSweepTicks, nowTicks, lastSweepTicks) != lastSweepTicks)
+        {
+            return;
+        }
+
+        var expirationCutoff = nowTicks - DeliveryCompletedTtl.Ticks;
+        foreach (var entry in _completedDeliveries)
+        {
+            if (entry.Value <= expirationCutoff)
+            {
+                _completedDeliveries.TryRemove(entry);
+            }
+        }
     }
 
     private async Task<long> LoadDeliveredCursorAsync(CancellationToken cancellationToken)

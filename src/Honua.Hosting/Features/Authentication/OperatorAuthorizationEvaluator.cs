@@ -3,6 +3,7 @@ using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using AccessDecision = Honua.Core.Features.Security.Domain.AccessDecision;
 
@@ -12,8 +13,14 @@ namespace Honua.Infrastructure.Authentication;
 /// Evaluates operator-scoped resource authorization using convention mapping from
 /// the existing <see cref="IRoleStore"/> permission grants.
 /// </summary>
+/// <remarks>
+/// Registered as a singleton. <see cref="IRoleStore"/> is resolved per call via
+/// <see cref="IServiceScopeFactory"/> so that a scoped store implementation
+/// (e.g. PostgresRoleStore, which captures a scoped
+/// <c>IDatabaseConnectionProvider</c>) works correctly once durable RBAC lands.
+/// </remarks>
 internal sealed class OperatorAuthorizationEvaluator(
-    IRoleStore roleStore,
+    IServiceScopeFactory serviceScopeFactory,
     IOptions<RbacOptions> rbacOptions,
     ILogger<OperatorAuthorizationEvaluator> logger) : IOperatorAuthorizationEvaluator
 {
@@ -119,9 +126,11 @@ internal sealed class OperatorAuthorizationEvaluator(
             return AccessDecision.Forbidden("No operator-eligible roles assigned.");
         }
 
-        // IRoleStore is singleton (InMemoryRoleStore) and returns completed tasks.
-        // When a persistent store is introduced (#498), a per-request caching layer
-        // should resolve permissions once and pass them through scoped context.
+        // Resolve IRoleStore per call via a short-lived scope so this singleton
+        // evaluator works correctly whether the active implementation is the
+        // in-memory singleton store or the scoped PostgresRoleStore (#498).
+        await using var scope = serviceScopeFactory.CreateAsyncScope();
+        var roleStore = scope.ServiceProvider.GetRequiredService<IRoleStore>();
         var effective = await roleStore.GetEffectivePermissionsAsync(
             userId ?? string.Empty, roleNames, cancellationToken).ConfigureAwait(false);
 

@@ -459,7 +459,6 @@ internal sealed partial class ODataStreamingQueryHandler(
 
             // Set up streaming response
             context.Response.ContentType = ODataUtilityService.GetODataContentType(context.Request, format);
-            context.Response.Headers["Transfer-Encoding"] = "chunked";
             ODataUtilityService.SetODataHeaders(context);
             if (applyTrackChangesPreference)
             {
@@ -476,6 +475,7 @@ internal sealed partial class ODataStreamingQueryHandler(
                 resource.ReadSrid() ?? 4326,
                 axisOrder,
                 pagination,
+                topValue,
                 selectedFields,
                 filter,
                 select,
@@ -509,6 +509,9 @@ internal sealed partial class ODataStreamingQueryHandler(
             HonuaTelemetry.RecordException(featureActivity, ex);
             if (context.Response.HasStarted)
             {
+                // Response streaming has already started; abort the connection so HTTP/1.1
+                // chunked framing terminates abnormally and clients detect truncation.
+                context.Abort();
                 return Results.Empty;
             }
 
@@ -520,6 +523,9 @@ internal sealed partial class ODataStreamingQueryHandler(
             HonuaTelemetry.RecordException(featureActivity, ex);
             if (context.Response.HasStarted)
             {
+                // Response streaming has already started; abort the connection so HTTP/1.1
+                // chunked framing terminates abnormally and clients detect truncation.
+                context.Abort();
                 return Results.Empty;
             }
 
@@ -542,6 +548,7 @@ internal sealed partial class ODataStreamingQueryHandler(
         int? layerSrid,
         AxisOrder axisOrder,
         PaginationValues pagination,
+        int? clientTop,
         HashSet<string>? selectedFields,
         string? filter,
         string? select,
@@ -569,15 +576,16 @@ internal sealed partial class ODataStreamingQueryHandler(
         // Start OData response
         writer.WriteStartObject();
 
-        if (count == true && totalCount.HasValue)
-        {
-            writer.WriteNumber("@odata.count", totalCount.Value);
-        }
-
+        // OData JSON Format v4.01 §4.5.1: @odata.context MUST be the first property.
         var baseUrl = ODataUtilityService.GetBaseUrl(context.Request);
         if (includeContext)
         {
             writer.WriteString("@odata.context", ODataUtilityService.BuildContextUrl(baseUrl, "Features", select: select, expand: expand));
+        }
+
+        if (count == true && totalCount.HasValue)
+        {
+            writer.WriteNumber("@odata.count", totalCount.Value);
         }
 
         // Start value array
@@ -616,9 +624,12 @@ internal sealed partial class ODataStreamingQueryHandler(
         // End value array
         writer.WriteEndArray();
 
-        var shouldPaginate = totalCount.HasValue
-            ? ODataUtilityService.ShouldPaginate(streamedCount, pagination.Offset, totalCount.Value, pagination.Limit)
-            : hasMoreResults;
+        // When the client specified $top, suppress nextLink once all requested items have been
+        // delivered — OData v4.01 §11.2.6.7: "The final partial set MUST NOT contain a next link."
+        var clientTopSatisfied = clientTop.HasValue && (long)pagination.Offset + streamedCount >= clientTop.Value;
+        var shouldPaginate = !clientTopSatisfied && (totalCount.HasValue
+            ? ODataUtilityService.ShouldPaginate(streamedCount, pagination.Offset, totalCount.Value, pagination.Limit, clientTop)
+            : hasMoreResults);
 
         if (shouldPaginate)
         {

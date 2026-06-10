@@ -161,6 +161,22 @@ internal static class MgrsConverter
             throw new FormatException($"Numeric location in '{mgrs}' must have an even number of digits.");
         }
 
+        // 5 easting + 5 northing digits (1m precision) is the maximum the grid defines;
+        // also reject non-digit tails up front so long.Parse below cannot throw
+        // FormatException/OverflowException with a misleading message.
+        if (digits.Length > 10)
+        {
+            throw new FormatException($"Numeric location in '{mgrs}' exceeds the maximum precision of 10 digits.");
+        }
+
+        foreach (var ch in digits)
+        {
+            if (!char.IsAsciiDigit(ch))
+            {
+                throw new FormatException($"Numeric location in '{mgrs}' must contain only digits.");
+            }
+        }
+
         var precision = digits.Length / 2;
         double gridEasting = 0;
         double gridNorthing = 0;

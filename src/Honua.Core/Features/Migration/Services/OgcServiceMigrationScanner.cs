@@ -69,6 +69,32 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
         };
     }
 
+    /// <summary>
+    /// Sets the ambient allow-unsafe-local-URLs flag observed by handlers created via
+    /// <see cref="CreatePinnedDnsHttpMessageHandler"/> for the current async flow.
+    /// Callers that share those handlers (tile-cache export, coverage import) must scope
+    /// their requests with this; otherwise connections to loopback/private addresses are
+    /// rejected even when the request explicitly allowed them. Dispose to restore the
+    /// previous value.
+    /// </summary>
+    /// <param name="allowUnsafeLocalUrls">Whether loopback/private addresses are permitted.</param>
+    /// <returns>Scope that restores the previous flag value on dispose.</returns>
+    public static IDisposable CreateUnsafeLocalUrlScope(bool allowUnsafeLocalUrls)
+        => new UnsafeLocalUrlScope(allowUnsafeLocalUrls);
+
+    private sealed class UnsafeLocalUrlScope : IDisposable
+    {
+        private readonly bool _previous;
+
+        public UnsafeLocalUrlScope(bool allowUnsafeLocalUrls)
+        {
+            _previous = UnsafeLocalUrlsAllowed.Value;
+            UnsafeLocalUrlsAllowed.Value = allowUnsafeLocalUrls;
+        }
+
+        public void Dispose() => UnsafeLocalUrlsAllowed.Value = _previous;
+    }
+
     /// <inheritdoc />
     public async Task<MigrationSourceInventoryArtifact> ScanSourceAsync(
         OgcServiceScanRequest request,
@@ -128,6 +154,22 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
         }
     }
 
+    /// <summary>
+    /// Fetches a remote document as a string with a response-size ceiling. Scans run against
+    /// arbitrary operator-supplied services, so an unbounded <c>GetStringAsync</c> would let a
+    /// hostile or broken source stream a multi-GB document into memory.
+    /// </summary>
+    private async Task<string> GetBoundedStringAsync(Uri url, CancellationToken cancellationToken)
+    {
+        using var response = await _httpClient
+            .GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+            .ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        return await MigrationHttpContentReader
+            .ReadStringWithLimitAsync(response, MigrationHttpContentReader.DefaultMaxResponseBytes, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     private async Task<MigrationSourceInventoryArtifact> BuildXmlBackedInventoryAsync(
         OgcServiceScanRequest request,
         string normalizedServiceType,
@@ -135,7 +177,7 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
         Uri capabilitiesUrl,
         CancellationToken cancellationToken)
     {
-        var capabilitiesXml = await _httpClient.GetStringAsync(capabilitiesUrl, cancellationToken).ConfigureAwait(false);
+        var capabilitiesXml = await GetBoundedStringAsync(capabilitiesUrl, cancellationToken).ConfigureAwait(false);
         var capabilities = XDocument.Parse(capabilitiesXml, LoadOptions.None);
         return normalizedServiceType switch
         {
@@ -204,7 +246,7 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
         CancellationToken cancellationToken)
     {
         var collectionsUri = BuildOgcApiCoveragesCollectionsUrl(serviceUri);
-        var payload = await _httpClient.GetStringAsync(collectionsUri, cancellationToken).ConfigureAwait(false);
+        var payload = await GetBoundedStringAsync(collectionsUri, cancellationToken).ConfigureAwait(false);
         using var document = JsonDocument.Parse(payload);
         var root = document.RootElement;
         var serviceMetadata = new OgcCoverageServiceMetadata
@@ -686,7 +728,7 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
             var url = BuildDescribeFeatureTypeUrl(serviceUri, version, featureTypeName);
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds <= 0 ? 60 : timeoutSeconds));
-            var schemaXml = await _httpClient.GetStringAsync(url, timeout.Token).ConfigureAwait(false);
+            var schemaXml = await GetBoundedStringAsync(url, timeout.Token).ConfigureAwait(false);
             var schema = XDocument.Parse(schemaXml, LoadOptions.None);
             var fields = ExtractFields(schema, featureTypeName);
             return (fields.Length > 0, fields, fields.Length > 0 ? string.Empty : "DescribeFeatureType returned no importable field metadata.");
@@ -710,7 +752,7 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
             var url = BuildDescribeCoverageUrl(serviceUri, version, coverageId);
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds <= 0 ? 60 : timeoutSeconds));
-            var coverageXml = await _httpClient.GetStringAsync(url, timeout.Token).ConfigureAwait(false);
+            var coverageXml = await GetBoundedStringAsync(url, timeout.Token).ConfigureAwait(false);
             var document = XDocument.Parse(coverageXml, LoadOptions.None);
             return BuildCoverageDescription(coverageId, document, serviceFormats);
         }
