@@ -4,7 +4,7 @@ You'll pick a managed-cloud deployment pattern for Honua — ECS/Fargate, Lambda
 
 **Prerequisites:** A PostGIS database (RDS or Azure Database for PostgreSQL Flexible Server), the required env vars from [Configure Honua Server](configuration.md) (`ConnectionStrings__DefaultConnection`, `HONUA_ADMIN_PASSWORD`, `Security__ConnectionEncryption__MasterKey`, `Cors__AllowedOrigins__0`), and TLS terminated at the edge (ALB, API Gateway, Front Door) — Honua does not terminate TLS.
 
-Infrastructure-as-code for all of these patterns lives in the separate [honua-terraform](https://github.com/honua-io/honua-terraform) repository.
+Infrastructure-as-code for all of these patterns ships as private Terraform modules (honua-iac), available to customers through support.
 
 ## Pick a pattern
 

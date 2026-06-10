@@ -13,7 +13,7 @@ Honua is developed as a family of repositories around this server. This page map
 | [honua-sdk-python](https://github.com/honua-io/honua-sdk-python) | Python SDK for the control plane and data APIs |
 | [honua-mobile](https://github.com/honua-io/honua-mobile) | .NET MAUI-first mobile SDK with GeoPackage/offline field-collection foundation |
 | [honua-helm](https://github.com/honua-io/honua-helm) | Helm chart for Kubernetes deployment |
-| [honua-terraform](https://github.com/honua-io/honua-terraform) | Terraform modules, environments, and validation CI |
+| honua-iac (private) | Terraform modules, environments, and validation CI — available to customers through support |
 | [geospatial-grpc](https://github.com/honua-io/geospatial-grpc) | Open gRPC protocol definitions (`geospatial.v1`) for feature services, spatial types, and forms — the canonical `.proto` source the server consumes |
 | [geospatial-mcp](https://github.com/honua-io/geospatial-mcp) | Open geospatial MCP standard for analyst, map, and app-builder agent workflows |
 
@@ -32,4 +32,4 @@ Current SDK package lines are pre-release (alpha); pin exact versions and valida
 
 ## Deployment tooling
 
-[honua-helm](https://github.com/honua-io/honua-helm) and [honua-terraform](https://github.com/honua-io/honua-terraform) package the server for Kubernetes and for AWS/Azure infrastructure respectively. They are infrastructure surfaces around the same container image documented in [Architecture](architecture.md); start with the [deployment guides](../guides/deploy/docker-compose.md).
+[honua-helm](https://github.com/honua-io/honua-helm) and the private Terraform modules (honua-iac, available to customers) package the server for Kubernetes and for AWS/Azure infrastructure respectively. They are infrastructure surfaces around the same container image documented in [Architecture](architecture.md); start with the [deployment guides](../guides/deploy/docker-compose.md).

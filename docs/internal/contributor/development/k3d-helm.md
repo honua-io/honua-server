@@ -24,5 +24,5 @@ helpers.
 
 - [`honua-helm`](https://github.com/honua-io/honua-helm) for Helm charts and
   local Kubernetes workflows
-- [`honua-terraform`](https://github.com/honua-io/honua-terraform) for
+- `honua-iac` (private) for
   Terraform infrastructure provisioning

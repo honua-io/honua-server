@@ -42,4 +42,4 @@ curl http://localhost:8080/healthz/ready
 
 ## Ecosystem
 
-[honua-sdk-js](https://github.com/honua-io/honua-sdk-js) · [honua-sdk-dotnet](https://github.com/honua-io/honua-sdk-dotnet) · Honua Console (coming soon) · [honua-helm](https://github.com/honua-io/honua-helm) / [honua-terraform](https://github.com/honua-io/honua-terraform) — see the [ecosystem overview](concepts/ecosystem.md).
+[honua-sdk-js](https://github.com/honua-io/honua-sdk-js) · [honua-sdk-dotnet](https://github.com/honua-io/honua-sdk-dotnet) · Honua Console (coming soon) · [honua-helm](https://github.com/honua-io/honua-helm) / Terraform modules (private) — see the [ecosystem overview](concepts/ecosystem.md).
