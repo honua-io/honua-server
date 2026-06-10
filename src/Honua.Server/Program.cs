@@ -439,13 +439,10 @@ builder.Services.TryAddSingleton<IShareExportDestinationResolver, UnsupportedSha
 builder.Services.TryAddSingleton<IShareExportStore, InMemoryShareExportStore>();
 builder.Services.TryAddSingleton<IShareTrafficStore, InMemoryShareTrafficStore>();
 
-// Register control plane IAM services (in-memory implementations until #496, #498, #355 land)
-builder.Services.AddSingleton<Honua.Core.Features.Identity.Abstractions.IOidcProviderStore,
-    Honua.Server.Features.Admin.Services.InMemoryOidcProviderStore>();
-builder.Services.AddSingleton<Honua.Core.Features.Identity.Abstractions.IUserStore,
-    Honua.Server.Features.Admin.Services.InMemoryUserStore>();
-builder.Services.AddSingleton<Honua.Core.Features.Authorization.Abstractions.IRoleStore,
-    Honua.Server.Features.Admin.Services.InMemoryRoleStore>();
+// Register control plane IAM in-memory defaults. Uses TryAdd so a durable provider
+// implementation registered earlier (e.g. PostgresRoleStore from AddPostgreSqlServices)
+// wins — otherwise the later default would shadow it and grants would not persist (#1575).
+builder.Services.AddInMemoryControlPlaneIamDefaults();
 // Canonical per-operation permission resolver (#1375): the shared authorization
 // seam over EffectivePermissions. Scoped so it can consume the (scoped) Postgres
 // role store when durable RBAC is active.
