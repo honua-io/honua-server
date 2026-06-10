@@ -90,7 +90,9 @@ internal sealed class AnalysisReportService : IAnalysisReportService
         activity?.SetTag("report.job_id", jobId);
         activity?.SetTag("report.contract_version", ReportingConstants.ContractVersionV1);
 
-        _jobService.EnsureCallerAuthorized(principal, OperatorResourceType.Job, OperatorOperation.Read);
+        await _jobService
+            .EnsureCallerAuthorizedAsync(principal, OperatorResourceType.Job, OperatorOperation.Read, cancellationToken)
+            .ConfigureAwait(false);
 
         var package = await _jobService
             .GetJobResultsAsync(jobId, principal, cancellationToken)

@@ -67,6 +67,21 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
     private static void WriteGraph(WebAppFixture fixture, TestMetadataV2GraphProvider provider, MetadataV2Graph graph)
         => provider.SetGraph(graph, etag: null, schema: fixture.MetadataGraphSchema);
 
+    private static InvalidOperationException MissingResourceMutation(
+        int layerIndex,
+        string resourceId,
+        string mutation)
+        => new(
+            $"Cannot apply {mutation}: resource '{resourceId}' for layer {layerIndex} was not found in the test V2 graph.");
+
+    private static InvalidOperationException MissingServiceMutation(string serviceName, string mutation)
+        => new(
+            $"Cannot apply {mutation}: service '{serviceName}' was not found in the test V2 graph.");
+
+    private static InvalidOperationException MissingLayerMutation(int layerIndex, string mutation)
+        => new(
+            $"Cannot apply {mutation}: no publications for layer {layerIndex} were found in the test V2 graph.");
+
     /// <summary>
     /// Updates the canonical resource published at <paramref name="layerIndex"/> with any
     /// of the supplied metadata slots. <see cref="WebAppFixture.UpdateV2ResourceMetadata"/>
@@ -163,7 +178,7 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
 
         if (!mutated)
         {
-            return;
+            throw MissingResourceMutation(layerIndex, pub.ResourceId, nameof(UpdateResourceMetadata));
         }
 
         var updatedGraph = snapshot.Graph with
@@ -212,7 +227,7 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
 
         if (!mutated)
         {
-            return;
+            throw MissingResourceMutation(layerIndex, pub.ResourceId, nameof(UpdateResourceSchemaField));
         }
 
         var updatedGraph = snapshot.Graph with
@@ -256,7 +271,7 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
 
         if (!mutated)
         {
-            return;
+            throw MissingResourceMutation(layerIndex, pub.ResourceId, nameof(UpdateResourceSubtypes));
         }
 
         var updatedGraph = snapshot.Graph with
@@ -273,14 +288,15 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
     /// enforcement can be exercised end-to-end against the served graph
     /// (honua-server#1271).
     /// </summary>
-    internal static void UpdateResourceAttributeRules(
+    internal static async Task UpdateResourceAttributeRulesAsync(
         WebAppFixture fixture,
         int layerIndex,
-        IReadOnlyList<MetadataV2AttributeRule>? attributeRules)
+        IReadOnlyList<MetadataV2AttributeRule>? attributeRules,
+        CancellationToken cancellationToken = default)
     {
         var provider = RequireProvider(fixture);
 
-        var snapshot = provider.GetCurrentAsync().AsTask().GetAwaiter().GetResult();
+        var snapshot = await provider.GetCurrentAsync(cancellationToken);
         var pub = snapshot.Graph.Publications.FirstOrDefault(p => p.LayerIndex == layerIndex);
         if (pub is null)
         {
@@ -306,7 +322,7 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
 
         if (!mutated)
         {
-            return;
+            throw MissingResourceMutation(layerIndex, pub.ResourceId, nameof(UpdateResourceAttributeRulesAsync));
         }
 
         var updatedGraph = snapshot.Graph with
@@ -351,7 +367,7 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
 
         if (!mutated)
         {
-            return;
+            throw MissingResourceMutation(layerIndex, pub.ResourceId, nameof(UpdateResourceName));
         }
 
         var updatedGraph = snapshot.Graph with
@@ -406,7 +422,7 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
 
         if (!mutated)
         {
-            return;
+            throw MissingServiceMutation(serviceName, nameof(UpdateServiceMetadata));
         }
 
         var updatedGraph = snapshot.Graph with
@@ -433,7 +449,7 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
             .ToHashSet(StringComparer.Ordinal);
         if (affectedResourceIds.Count == 0)
         {
-            return;
+            throw MissingLayerMutation(layerIndex, nameof(SetLayerEnabled));
         }
 
         var status = enabled

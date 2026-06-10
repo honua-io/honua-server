@@ -57,7 +57,7 @@ internal sealed partial class ConsoleJobService(
 
         foreach (var job in page.Items)
         {
-            if (!CanRead(context, job.OperationId))
+            if (!await CanReadAsync(context, job.OperationId, cancellationToken).ConfigureAwait(false))
             {
                 continue;
             }
@@ -486,7 +486,7 @@ internal sealed partial class ConsoleJobService(
         CancellationToken cancellationToken)
     {
         var job = await RequireJobStore().GetAsync(jobId, cancellationToken).ConfigureAwait(false);
-        if (job == null || !CanRead(context, job.OperationId))
+        if (job == null || !await CanReadAsync(context, job.OperationId, cancellationToken).ConfigureAwait(false))
         {
             return null;
         }
@@ -498,13 +498,22 @@ internal sealed partial class ConsoleJobService(
         => serviceProvider.GetService<IExecutionJobStore>()
             ?? throw new ConsoleJobServiceUnavailableException("Execution job store is unavailable.");
 
-    private bool CanRead(HttpContext context, string jobId)
-        => approvalGate.CheckAuthorization(context.User, new()
-        {
-            ResourceType = OperatorResourceType.Job,
-            Operation = OperatorOperation.Read,
-            ResourceId = jobId
-        }).IsAllowed;
+    private async Task<bool> CanReadAsync(
+        HttpContext context,
+        string jobId,
+        CancellationToken cancellationToken)
+    {
+        var decision = await approvalGate.CheckAuthorizationAsync(
+            context.User,
+            new OperatorAuthorizationRequest
+            {
+                ResourceType = OperatorResourceType.Job,
+                Operation = OperatorOperation.Read,
+                ResourceId = jobId
+            },
+            cancellationToken).ConfigureAwait(false);
+        return decision.IsAllowed;
+    }
 
     private static ExecutionJobQuery ToExecutionQuery(ConsoleJobQueryRequest request)
         => new()
@@ -671,12 +680,15 @@ internal sealed partial class ConsoleJobService(
         ExecutionJobRecord job,
         CancellationToken cancellationToken)
     {
-        var executeDecision = approvalGate.CheckAuthorization(context.User, new()
-        {
-            ResourceType = OperatorResourceType.Job,
-            Operation = OperatorOperation.Execute,
-            ResourceId = job.OperationId
-        });
+        var executeDecision = await approvalGate.CheckAuthorizationAsync(
+            context.User,
+            new OperatorAuthorizationRequest
+            {
+                ResourceType = OperatorResourceType.Job,
+                Operation = OperatorOperation.Execute,
+                ResourceId = job.OperationId
+            },
+            cancellationToken).ConfigureAwait(false);
         var cancelApproval = approvalGate.CheckApproval(context.User, new()
         {
             ResourceType = OperatorResourceType.Job,

@@ -64,10 +64,9 @@ internal sealed partial class StreamingFileImportService
         }
         catch (Exception ex) when (ex is InvalidDataException or NotSupportedException or ArgumentException)
         {
-            // Preserve the specific validation message (malformed geo metadata,
-            // missing primary column, etc.) instead of collapsing to "Import failed."
+            // Preserve specific validation messages after stripping unsafe environment details.
             ImportLog.ImportFailedWithException(_logger, ex, jobId, tableName);
-            return new GeoParquetPrepResult(scratch, null, null, warnings, ex.Message);
+            return new GeoParquetPrepResult(scratch, null, null, warnings, SanitizeImportValidationMessage(ex));
         }
 
         var updatedWarnings = parquetMeta.Warnings;

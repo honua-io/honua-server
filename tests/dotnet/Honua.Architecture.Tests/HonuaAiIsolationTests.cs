@@ -79,13 +79,7 @@ public sealed class HonuaAiIsolationTests
             "Honua.ServiceDefaults",
         };
 
-        var document = XDocument.Load(csprojPath);
-        var referenced = document
-            .Descendants("ProjectReference")
-            .Select(element => element.Attribute("Include")?.Value)
-            .Where(value => !string.IsNullOrWhiteSpace(value))
-            .Select(value => Path.GetFileNameWithoutExtension(value!.Replace('\\', '/'))!)
-            .ToList();
+        var referenced = ArchitectureTestHelpers.DirectProjectReferenceNames(csprojPath);
 
         referenced
             .Should()

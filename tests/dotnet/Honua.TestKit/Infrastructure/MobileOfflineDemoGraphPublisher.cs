@@ -36,13 +36,14 @@ public static class MobileOfflineDemoGraphPublisher
     /// Replaces the mobile-offline service/resources/bindings/publications in the supplied
     /// graph with FeatureServer and OGC API Features projections of layers 68910/68920.
     /// </summary>
-    public static void Publish(
+    public static async Task PublishAsync(
         TestMetadataV2GraphProvider provider,
-        bool includeAttributesAccessor = true)
+        bool includeAttributesAccessor = true,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(provider);
 
-        var snapshot = provider.GetCurrentAsync().AsTask().GetAwaiter().GetResult();
+        var snapshot = await provider.GetCurrentAsync(cancellationToken);
         var graph = snapshot.Graph;
 
         var accessPolicy = new AccessPolicy

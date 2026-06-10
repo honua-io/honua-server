@@ -56,7 +56,7 @@ internal abstract class NotImplementedToolBase : IMcpTool, IStubMcpTool
         InputSchema = McpToolSchemas.EmptyObjectSchema
     };
 
-    public Task<McpToolsCallResult> InvokeAsync(
+    public async Task<McpToolsCallResult> InvokeAsync(
         HttpContext httpContext,
         JsonElement? arguments,
         CancellationToken cancellationToken)
@@ -65,7 +65,9 @@ internal abstract class NotImplementedToolBase : IMcpTool, IStubMcpTool
         McpLog.StubToolInvoked(_logger, Name, BlockedBy);
 
         var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
-        _jobService.EnsureCallerAuthorized(principal, AuthorizedResource, AuthorizedOperation);
+        await _jobService
+            .EnsureCallerAuthorizedAsync(principal, AuthorizedResource, AuthorizedOperation, cancellationToken)
+            .ConfigureAwait(false);
 
         ValidateEmptyObjectArguments(arguments);
 
@@ -78,7 +80,7 @@ internal abstract class NotImplementedToolBase : IMcpTool, IStubMcpTool
             NextSteps = NextSteps
         };
 
-        return Task.FromResult(McpToolHelpers.SuccessResult(output, McpJsonContext.Default.McpNotImplementedOutput));
+        return McpToolHelpers.SuccessResult(output, McpJsonContext.Default.McpNotImplementedOutput);
     }
 
     private static void ValidateEmptyObjectArguments(JsonElement? arguments)

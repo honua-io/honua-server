@@ -130,15 +130,34 @@ public sealed record ImportResult
 /// </summary>
 public static class ImportValidationErrorCodes
 {
+    /// <summary>The source dataset contained no features.</summary>
     public const string EmptyDataset = "import.empty_dataset";
+
+    /// <summary>A feature was missing required geometry.</summary>
     public const string GeometryMissing = "import.geometry_missing";
+
+    /// <summary>A feature had an unrecognized geometry type.</summary>
     public const string GeometryUnknownType = "import.geometry_unknown_type";
+
+    /// <summary>A feature had invalid geometry.</summary>
     public const string GeometryInvalid = "import.geometry_invalid";
+
+    /// <summary>The source GeoJSON document was invalid.</summary>
     public const string InvalidGeoJson = "import.geojson_invalid";
+
+    /// <summary>The GeoJSON document exceeded the validation size limit.</summary>
     public const string GeoJsonValidationTooLarge = "import.geojson_validation_too_large";
+
+    /// <summary>A source spatial reference identifier was required but not provided.</summary>
     public const string SourceSridRequired = "import.source_srid_required";
+
+    /// <summary>The supplied source spatial reference identifier is not supported.</summary>
     public const string SourceSridUnsupported = "import.source_srid_unsupported";
+
+    /// <summary>The requested target spatial reference identifier is not supported.</summary>
     public const string TargetSridUnsupported = "import.target_srid_unsupported";
+
+    /// <summary>The requested projection transformation is not supported.</summary>
     public const string ProjectionUnsupported = "import.projection_unsupported";
 }
 
@@ -147,14 +166,26 @@ public static class ImportValidationErrorCodes
 /// </summary>
 public sealed record ImportValidationIssue
 {
+    /// <summary>Gets the stable machine-readable validation error code.</summary>
     public required string Code { get; init; }
 
+    /// <summary>Gets the human-readable validation message.</summary>
     public required string Message { get; init; }
 
+    /// <summary>Gets the zero-based index of the offending feature, when known.</summary>
     public int? FeatureIndex { get; init; }
 
+    /// <summary>Gets the name of the offending field, when known.</summary>
     public string? Field { get; init; }
 
+    /// <summary>
+    /// Creates an <see cref="ImportValidationIssue"/> with the supplied details.
+    /// </summary>
+    /// <param name="code">The stable machine-readable validation error code.</param>
+    /// <param name="message">The human-readable validation message.</param>
+    /// <param name="featureIndex">The zero-based index of the offending feature, when known.</param>
+    /// <param name="field">The name of the offending field, when known.</param>
+    /// <returns>A populated <see cref="ImportValidationIssue"/>.</returns>
     public static ImportValidationIssue Create(
         string code,
         string message,

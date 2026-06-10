@@ -15,6 +15,7 @@ public abstract class ConfigurationValidator<
     [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] TOptions> : IValidateOptions<TOptions>
     where TOptions : class
 {
+    /// <inheritdoc />
     public ValidateOptionsResult Validate(string? name, TOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);

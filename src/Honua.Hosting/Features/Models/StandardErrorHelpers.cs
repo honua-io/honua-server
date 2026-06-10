@@ -168,6 +168,23 @@ internal static class StandardErrorHelpers
     }
 
     /// <summary>
+    /// Creates a Payload Too Large error response.
+    /// </summary>
+    /// <param name="context">The HTTP context for protocol detection.</param>
+    /// <param name="detail">The error detail message.</param>
+    /// <param name="additionalDetails">Optional additional details.</param>
+    /// <returns>A protocol-specific Payload Too Large response.</returns>
+    internal static IResult CreatePayloadTooLarge(HttpContext context, string detail, IReadOnlyList<string>? additionalDetails = null)
+    {
+        var errorResponse = new StandardErrorResponse(
+            StatusCodes.Status413PayloadTooLarge,
+            "Payload Too Large",
+            detail,
+            additionalDetails);
+        return StandardErrorResponseFormatter.FormatError(context, errorResponse);
+    }
+
+    /// <summary>
     /// Creates an Unprocessable Entity error response.
     /// </summary>
     /// <param name="context">The HTTP context for protocol detection.</param>

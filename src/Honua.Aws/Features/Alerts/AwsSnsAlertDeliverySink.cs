@@ -70,13 +70,13 @@ internal sealed class AwsSnsPublisher : ISnsPublisher, IDisposable
             var retryable = (int)response.HttpStatusCode >= 500;
             return new SnsPublishResult(false, retryable, $"SNS publish responded with {(int)response.HttpStatusCode}.");
         }
-        catch (AuthorizationErrorException ex)
+        catch (AuthorizationErrorException)
         {
-            return new SnsPublishResult(false, false, $"SNS authorization failed: {ex.Message}");
+            return new SnsPublishResult(false, false, "SNS authorization failed.");
         }
-        catch (NotFoundException ex)
+        catch (NotFoundException)
         {
-            return new SnsPublishResult(false, false, $"SNS topic not found: {ex.Message}");
+            return new SnsPublishResult(false, false, "SNS topic not found.");
         }
     }
 }
@@ -134,13 +134,13 @@ internal sealed class AwsSnsAlertDeliverySink : IAlertDeliverySink
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             return new AlertDeliveryResult
             {
                 Succeeded = false,
                 Retryable = true,
-                Error = ex.Message
+                Error = "SNS alert delivery failed."
             };
         }
     }

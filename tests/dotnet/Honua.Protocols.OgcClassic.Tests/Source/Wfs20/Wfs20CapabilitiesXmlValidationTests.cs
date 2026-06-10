@@ -3,8 +3,6 @@
 
 using FluentAssertions;
 using Honua.Protocols.Ogc.Classic.Wfs20.Models;
-using Honua.Protocols.Ogc.Classic.Wfs20.Services;
-using System.Reflection;
 using System.Xml;
 using System.Xml.Serialization;
 
@@ -75,11 +73,6 @@ public class Wfs20CapabilitiesXmlValidationTests
 
     private static WfsCapabilities CreateWfsCapabilitiesWithFilterCapabilities()
     {
-        var type = typeof(Wfs20Handler);
-        var method = type.GetMethod("BuildFilterCapabilities",
-            BindingFlags.NonPublic | BindingFlags.Static);
-        var filterCapabilities = (FilterCapabilities)method!.Invoke(null, null)!;
-
         return new WfsCapabilities
         {
             Version = "2.0.0",
@@ -93,7 +86,7 @@ public class Wfs20CapabilitiesXmlValidationTests
             {
                 ProviderName = "Honua"
             },
-            FilterCapabilities = filterCapabilities
+            FilterCapabilities = Wfs20FilterCapabilitiesFactory.Build()
         };
     }
 

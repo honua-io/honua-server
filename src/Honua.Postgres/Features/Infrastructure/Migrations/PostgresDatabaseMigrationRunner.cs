@@ -13,6 +13,7 @@ namespace Honua.Postgres.Features.Infrastructure.Migrations;
 internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
 {
     private const long MigrationLockKey = 8_044_282_257_919_950_151;
+    private const string SafeMigrationFailureMessage = "Database migration failed.";
     private static readonly TimeSpan _migrationLockWaitTimeout = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan _migrationLockRetryDelay = TimeSpan.FromSeconds(1);
 
@@ -34,7 +35,7 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
         }
         catch (Exception ex)
         {
-            return Task.FromResult(DatabaseMigrationPlan.Failed(ex, ex.Message));
+            return Task.FromResult(DatabaseMigrationPlan.Failed(ex, SafeMigrationFailureMessage));
         }
     }
 
@@ -69,7 +70,7 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
             if (!result.Successful)
             {
                 var error = result.Error ?? new InvalidOperationException("Database migration failed.");
-                return DatabaseMigrationResult.Failed(error, error.Message, appliedScripts);
+                return DatabaseMigrationResult.Failed(error, SafeMigrationFailureMessage, appliedScripts);
             }
 
             return DatabaseMigrationResult.Succeeded(appliedScripts);

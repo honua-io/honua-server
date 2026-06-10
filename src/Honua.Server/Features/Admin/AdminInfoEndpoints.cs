@@ -154,6 +154,9 @@ internal static class AdminInfoEndpoints
     }
 }
 
+/// <summary>
+/// Version metadata returned by the admin version endpoint.
+/// </summary>
 public sealed record AdminVersionResponse
 {
     [JsonPropertyName("version")]
@@ -169,6 +172,9 @@ public sealed record AdminVersionResponse
     public DateTimeOffset ServerTime { get; init; }
 }
 
+/// <summary>
+/// Capability and SDK-compatibility metadata returned by the admin capabilities endpoint.
+/// </summary>
 public sealed record AdminCapabilitiesResponse
 {
     [JsonPropertyName("metadataApiVersion")]

@@ -517,30 +517,30 @@ public sealed class ConfigurationDiscoveryService
                         result.InvalidSecrets++;
                         result.Issues.Add(new SecretValidationIssue
                         {
-                            SecretReference = secretRef,
+                            SecretReference = MaskSecretReference(secretRef),
                             Issue = "Secret reference cannot be resolved",
                             Severity = "Warning"
                         });
                     }
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
                     result.InvalidSecrets++;
                     result.Issues.Add(new SecretValidationIssue
                     {
-                        SecretReference = secretRef,
-                        Issue = ex.Message,
+                        SecretReference = MaskSecretReference(secretRef),
+                        Issue = "Secret reference validation failed.",
                         Severity = "Error"
                     });
                 }
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             result.Issues.Add(new SecretValidationIssue
             {
                 SecretReference = "N/A",
-                Issue = $"Secret validation failed: {ex.Message}",
+                Issue = "Secret validation failed.",
                 Severity = "Error"
             });
         }
@@ -584,6 +584,22 @@ public sealed class ConfigurationDiscoveryService
         var knownProviders = new[] { "env", "azure", "aws", "vault", "config" };
 
         return knownProviders.Contains(provider, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static string MaskSecretReference(string secretReference)
+    {
+        if (string.IsNullOrWhiteSpace(secretReference))
+        {
+            return "[redacted-secret-reference]";
+        }
+
+        var colonIndex = secretReference.IndexOf(':', StringComparison.Ordinal);
+        if (colonIndex <= 0)
+        {
+            return "[redacted-secret-reference]";
+        }
+
+        return $"{secretReference[..colonIndex]}:[redacted]";
     }
 
     /// <summary>

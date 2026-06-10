@@ -72,6 +72,10 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
                 return GeocodeResults.Success<IReadOnlyList<GeocodeCandidate>>(
                     results, provider.Name, stopwatch.Elapsed.TotalMilliseconds);
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
                 stopwatch.Stop();
@@ -91,7 +95,7 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
             }
         }
 
-        var errorMessage = lastException?.Message ?? "No providers available for forward geocoding";
+        var errorMessage = BuildFailureMessage(lastException, "forward geocoding");
         var failedProviderName = attemptedProviders.LastOrDefault() ?? "unknown";
 
         GeocodeCoordinatorLog.AllAttemptsFailed(
@@ -152,6 +156,10 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
                 return GeocodeResults.Success<ReverseGeocodeMatch?>(
                     result, provider.Name, stopwatch.Elapsed.TotalMilliseconds);
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
                 stopwatch.Stop();
@@ -171,7 +179,7 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
             }
         }
 
-        var errorMessage = lastException?.Message ?? "No providers available for reverse geocoding";
+        var errorMessage = BuildFailureMessage(lastException, "reverse geocoding");
         var failedProviderName = attemptedProviders.LastOrDefault() ?? "unknown";
 
         GeocodeCoordinatorLog.AllAttemptsFailed(
@@ -225,6 +233,10 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
                 return GeocodeResults.Success<IReadOnlyList<GeocodeSuggestion>>(
                     results, provider.Name, stopwatch.Elapsed.TotalMilliseconds);
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
                 stopwatch.Stop();
@@ -244,7 +256,7 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
             }
         }
 
-        var errorMessage = lastException?.Message ?? "No providers available for suggestions";
+        var errorMessage = BuildFailureMessage(lastException, "suggestions");
         var failedProviderName = attemptedProviders.LastOrDefault() ?? "unknown";
 
         GeocodeCoordinatorLog.AllAttemptsFailed(
@@ -294,6 +306,10 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
                 return GeocodeResults.Success<IReadOnlyList<GeocodeCandidate>>(
                     results, provider.Name, stopwatch.Elapsed.TotalMilliseconds);
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
                 stopwatch.Stop();
@@ -313,7 +329,7 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
             }
         }
 
-        var errorMessage = lastException?.Message ?? "No providers available for batch geocoding";
+        var errorMessage = BuildFailureMessage(lastException, "batch geocoding");
         var failedProviderName = attemptedProviders.LastOrDefault() ?? "unknown";
 
         GeocodeCoordinatorLog.AllAttemptsFailed(
@@ -366,6 +382,22 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
         }
 
         return providers;
+    }
+
+    private static string BuildFailureMessage(Exception? exception, string operation)
+    {
+        if (exception is null)
+        {
+            return $"No providers available for {operation}.";
+        }
+
+        return exception switch
+        {
+            GeocodeRequestException requestException => requestException.Message,
+            GeocodeRateLimitException => "Geocoding provider rate limit was exceeded.",
+            GeocodeAuthenticationException => "Geocoding provider authentication failed.",
+            _ => $"Geocoding provider failed while performing {operation}."
+        };
     }
 }
 

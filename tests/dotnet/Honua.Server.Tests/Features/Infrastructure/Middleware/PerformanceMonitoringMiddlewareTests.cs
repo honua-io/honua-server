@@ -33,7 +33,7 @@ public class PerformanceMonitoringMiddlewareTests
         performanceMonitor.StartOperation(Arg.Any<string>()).Returns(operationScope);
         operationScope.WithTag(Arg.Any<string>(), Arg.Any<string>()).Returns(operationScope);
 
-        var app = CreateTestApp(services =>
+        var app = await CreateTestAppAsync(services =>
         {
             services.AddSingleton(performanceMonitor);
             services.Configure<PerformanceMonitoringOptions>(opt =>
@@ -66,7 +66,7 @@ public class PerformanceMonitoringMiddlewareTests
         performanceMonitor.StartOperation(Arg.Any<string>()).Returns(operationScope);
         operationScope.WithTag(Arg.Any<string>(), Arg.Any<string>()).Returns(operationScope);
 
-        var app = CreateTestApp(services =>
+        var app = await CreateTestAppAsync(services =>
         {
             services.AddSingleton(performanceMonitor);
             services.Configure<PerformanceMonitoringOptions>(opt =>
@@ -99,7 +99,7 @@ public class PerformanceMonitoringMiddlewareTests
         performanceMonitor.StartOperation(Arg.Any<string>()).Returns(operationScope);
         operationScope.WithTag(Arg.Any<string>(), Arg.Any<string>()).Returns(operationScope);
 
-        var app = CreateTestApp(services =>
+        var app = await CreateTestAppAsync(services =>
         {
             services.AddSingleton(performanceMonitor);
             services.Configure<PerformanceMonitoringOptions>(opt =>
@@ -130,7 +130,7 @@ public class PerformanceMonitoringMiddlewareTests
         var systemMetricsCollector = Substitute.For<ISystemMetricsCollector>();
         systemMetricsCollector.TrackRequest().Returns(Substitute.For<IDisposable>());
 
-        var app = CreateTestApp(services =>
+        var app = await CreateTestAppAsync(services =>
         {
             services.AddSingleton(performanceMonitor);
             services.AddSingleton(systemMetricsCollector);
@@ -165,7 +165,7 @@ public class PerformanceMonitoringMiddlewareTests
                 Arg.Any<IDictionary<string, string>>()))
             .Do(callInfo => detailedTags = callInfo.ArgAt<IDictionary<string, string>>(2));
 
-        var app = CreateTestApp(services =>
+        var app = await CreateTestAppAsync(services =>
         {
             services.AddSingleton(performanceMonitor);
             services.Configure<PerformanceMonitoringOptions>(opt =>
@@ -198,7 +198,7 @@ public class PerformanceMonitoringMiddlewareTests
         performanceMonitor.StartOperation(Arg.Any<string>()).Returns(operationScope);
         operationScope.WithTag(Arg.Any<string>(), Arg.Any<string>()).Returns(operationScope);
 
-        var app = CreateTestApp(services =>
+        var app = await CreateTestAppAsync(services =>
         {
             services.AddSingleton(performanceMonitor);
             services.Configure<PerformanceMonitoringOptions>(opt =>
@@ -241,7 +241,7 @@ public class PerformanceMonitoringMiddlewareTests
         Assert.True(true, "Active request counting is handled by .NET Metrics API");
     }
 
-    private HttpClient CreateTestApp(
+    private async Task<HttpClient> CreateTestAppAsync(
         Action<IServiceCollection>? configureServices = null,
         bool addSlowEndpoint = false,
         bool addErrorEndpoint = false,
@@ -295,7 +295,7 @@ public class PerformanceMonitoringMiddlewareTests
             app.MapGet("/timeout", (HttpContext _) => Results.StatusCode(StatusCodes.Status408RequestTimeout));
         }
 
-        app.StartAsync().GetAwaiter().GetResult();
+        await app.StartAsync();
         return app.GetTestClient();
     }
 

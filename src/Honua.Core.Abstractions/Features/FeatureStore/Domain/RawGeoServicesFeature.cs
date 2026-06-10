@@ -33,9 +33,26 @@ public readonly record struct RawGeoServicesFeature
     /// </summary>
     public double? Y { get; init; }
 
+    /// <summary>
+    /// Creates a feature using the object id as the public identifier.
+    /// </summary>
+    /// <param name="id">The internal object id.</param>
+    /// <param name="attributesJson">Attributes encoded as a raw JSON object, or null.</param>
+    /// <param name="x">Projected point x coordinate.</param>
+    /// <param name="y">Projected point y coordinate.</param>
+    /// <returns>The constructed feature payload.</returns>
     public static RawGeoServicesFeature Create(long id, string? attributesJson, double? x, double? y)
         => new() { Id = id, AttributesJson = attributesJson, X = x, Y = y };
 
+    /// <summary>
+    /// Creates a feature with an explicit public identifier JSON scalar.
+    /// </summary>
+    /// <param name="id">The internal object id.</param>
+    /// <param name="publicIdJson">Public id encoded as a raw JSON scalar, or null.</param>
+    /// <param name="attributesJson">Attributes encoded as a raw JSON object, or null.</param>
+    /// <param name="x">Projected point x coordinate.</param>
+    /// <param name="y">Projected point y coordinate.</param>
+    /// <returns>The constructed feature payload.</returns>
     public static RawGeoServicesFeature Create(long id, string? publicIdJson, string? attributesJson, double? x, double? y)
         => new() { Id = id, PublicIdJson = publicIdJson, AttributesJson = attributesJson, X = x, Y = y };
 }

@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Queries.Filters;
 using Honua.MySql.Queries.Filters;
@@ -211,7 +212,7 @@ public class MySqlSqlFilterTranslatorTests
 
         var ex = Assert.Throws<NotSupportedException>(() => _translator.Translate(filter, resource));
         Assert.Contains("EPSG:4326 or SRID 0", ex.Message, StringComparison.Ordinal);
-        Assert.Contains(layerSrid.ToString(System.Globalization.CultureInfo.InvariantCulture), ex.Message, StringComparison.Ordinal);
+        Assert.Contains(layerSrid.ToString(CultureInfo.InvariantCulture), ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]

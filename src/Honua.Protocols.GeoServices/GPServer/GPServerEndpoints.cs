@@ -81,7 +81,7 @@ internal static class GPServerEndpoints
 
         // Async submit job (POST + GET per Esri GP contract)
         // HANDLER-AUTHORIZED (#1144): the handler calls
-        // IGeoprocessingJobService.EnsureCallerAuthorized before reading the
+        // IGeoprocessingJobService.EnsureCallerAuthorizedAsync before reading the
         // request body, so 401/403 are returned ahead of 400 for unauth
         // callers. Marked AllowAnonymous to record the explicit decision.
         endpoints.MapPost($"{RouteBase}/{{taskName}}/submitJob",
@@ -105,7 +105,7 @@ internal static class GPServerEndpoints
         // (GPServerExecutionPolicy.SyncEligibleProcessIds) run inline and return
         // the result envelope on the same request; async-only tasks get a 400 with
         // a capability message pointing at submitJob. HANDLER-AUTHORIZED: the
-        // handler calls IGeoprocessingJobService.EnsureCallerAuthorized before
+        // handler calls IGeoprocessingJobService.EnsureCallerAuthorizedAsync before
         // reading the body, mirroring the submitJob pattern, so 401/403 are
         // returned ahead of 400 for unauth callers. Marked AllowAnonymous so the
         // audit guard records the explicit decision.
@@ -266,10 +266,11 @@ internal static class GPServerEndpoints
 
             // Auth must precede parameter reading to guarantee 401/403 before 400
             // on invalid input from unauthenticated callers (see IGeoprocessingJobService contract).
-            jobService.EnsureCallerAuthorized(
+            await jobService.EnsureCallerAuthorizedAsync(
                 context.User,
                 OperatorResourceType.Process,
-                OperatorOperation.Execute);
+                OperatorOperation.Execute,
+                ct).ConfigureAwait(false);
 
             var contentTypeError = ValidateFormPostContentType(context);
             if (contentTypeError is not null)
@@ -365,10 +366,11 @@ internal static class GPServerEndpoints
             }
 
             // Auth must precede parameter reading to guarantee 401/403 before 400.
-            jobService.EnsureCallerAuthorized(
+            await jobService.EnsureCallerAuthorizedAsync(
                 context.User,
                 OperatorResourceType.Process,
-                OperatorOperation.Execute);
+                OperatorOperation.Execute,
+                ct).ConfigureAwait(false);
 
             var contentTypeError = ValidateFormPostContentType(context);
             if (contentTypeError is not null)

@@ -143,7 +143,7 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
             return new BatchComputeSubmissionResult
             {
                 Status = ExecutionJobStatus.Failed,
-                Message = $"Kubernetes Job submission failed: {ex.Message}"
+                Message = "Kubernetes Job submission failed."
             };
         }
     }
@@ -215,7 +215,7 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
                 Status = job.Status,
                 ProviderOperationId = job.ProviderOperationId,
                 PercentComplete = job.PercentComplete,
-                Message = $"Kubernetes API unavailable: {ex.Message}"
+                Message = "Kubernetes API unavailable."
             };
         }
     }
@@ -301,7 +301,7 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
                 Status = job.Status,
                 ProviderOperationId = job.ProviderOperationId,
                 PercentComplete = job.PercentComplete,
-                Message = $"Kubernetes Job cancellation failed: {ex.Message}"
+                Message = "Kubernetes Job cancellation failed."
             };
         }
     }

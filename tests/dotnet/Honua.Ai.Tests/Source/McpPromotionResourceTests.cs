@@ -204,8 +204,11 @@ public sealed class McpPromotionResourceTests
     public async Task PublishedServiceResource_AuthenticatedButUnauthorized_ThrowsPermissionDenied()
     {
         _jobService
-            .When(s => s.EnsureCallerAuthorized(
-                Arg.Any<ClaimsPrincipal>(), OperatorResourceType.PublishedService, OperatorOperation.Read))
+            .When(s => s.EnsureCallerAuthorizedAsync(
+                Arg.Any<ClaimsPrincipal>(),
+                OperatorResourceType.PublishedService,
+                OperatorOperation.Read,
+                Arg.Any<CancellationToken>()))
             .Do(_ => throw new GeoprocessingAuthorizationException(requiresAuthentication: false));
 
         var resource = BuildPublishedServiceResource();

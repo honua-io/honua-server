@@ -3,8 +3,6 @@
 
 using FluentAssertions;
 using Honua.Protocols.Ogc.Classic.Wfs20.Models;
-using Honua.Protocols.Ogc.Classic.Wfs20.Services;
-using System.Reflection;
 using System.Xml;
 using System.Xml.Serialization;
 
@@ -19,7 +17,7 @@ public class Wfs20EnhancedFilterCapabilitiesTests
     public void BuildFilterCapabilities_ShouldAdvertiseMinimumTemporalConformance()
     {
         // Act
-        var filterCapabilities = InvokeBuildFilterCapabilities();
+        var filterCapabilities = Wfs20FilterCapabilitiesFactory.Build();
 
         // Assert
         filterCapabilities.Should().NotBeNull();
@@ -43,7 +41,7 @@ public class Wfs20EnhancedFilterCapabilitiesTests
     public void BuildFilterCapabilities_ShouldAdvertiseSupportedComparisonOperatorsOnly()
     {
         // Act
-        var filterCapabilities = InvokeBuildFilterCapabilities();
+        var filterCapabilities = Wfs20FilterCapabilitiesFactory.Build();
 
         // Assert
         filterCapabilities.Should().NotBeNull();
@@ -82,7 +80,7 @@ public class Wfs20EnhancedFilterCapabilitiesTests
     public void BuildFilterCapabilities_ShouldAdvertiseSupportedSpatialOperatorsOnly()
     {
         // Act
-        var filterCapabilities = InvokeBuildFilterCapabilities();
+        var filterCapabilities = Wfs20FilterCapabilitiesFactory.Build();
 
         // Assert
         filterCapabilities.Should().NotBeNull();
@@ -119,7 +117,7 @@ public class Wfs20EnhancedFilterCapabilitiesTests
     public void BuildFilterCapabilities_ShouldNotAdvertiseUnsupportedFunctions()
     {
         // Act
-        var filterCapabilities = InvokeBuildFilterCapabilities();
+        var filterCapabilities = Wfs20FilterCapabilitiesFactory.Build();
 
         // Assert
         filterCapabilities.Should().NotBeNull();
@@ -130,7 +128,7 @@ public class Wfs20EnhancedFilterCapabilitiesTests
     public void BuildFilterCapabilities_ShouldIncludeEnhancedConformanceConstraints()
     {
         // Act
-        var filterCapabilities = InvokeBuildFilterCapabilities();
+        var filterCapabilities = Wfs20FilterCapabilitiesFactory.Build();
 
         // Assert
         filterCapabilities.Should().NotBeNull();
@@ -179,7 +177,7 @@ public class Wfs20EnhancedFilterCapabilitiesTests
     public void FilterCapabilities_ShouldSerializeToValidXml()
     {
         // Act
-        var filterCapabilities = InvokeBuildFilterCapabilities();
+        var filterCapabilities = Wfs20FilterCapabilitiesFactory.Build();
 
         // Assert - Should serialize without errors
         var serializer = new XmlSerializer(typeof(FilterCapabilities));
@@ -199,19 +197,5 @@ public class Wfs20EnhancedFilterCapabilitiesTests
         xml.Should().Contain("ComparisonOperators");
         xml.Should().NotContain("<Functions");
         xml.Should().NotContain("ST_NumGeometries");
-    }
-
-    /// <summary>
-    /// Uses reflection to invoke the private BuildFilterCapabilities method
-    /// </summary>
-    private static FilterCapabilities InvokeBuildFilterCapabilities()
-    {
-        var type = typeof(Wfs20Handler);
-        var method = type.GetMethod("BuildFilterCapabilities", BindingFlags.NonPublic | BindingFlags.Static);
-
-        method.Should().NotBeNull("BuildFilterCapabilities method should exist");
-
-        var result = method!.Invoke(null, null);
-        return (FilterCapabilities)result!;
     }
 }

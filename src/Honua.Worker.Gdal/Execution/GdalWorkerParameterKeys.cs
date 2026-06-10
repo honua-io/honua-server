@@ -13,7 +13,7 @@ namespace Honua.Worker.Gdal.Execution;
 /// convention (<c>honua.geoprocessing.step.0.&lt;name&gt;</c>) so a job authored
 /// for the lean path is shaped identically for the native path.
 /// </summary>
-public static class GdalWorkerParameterKeys
+internal static class GdalWorkerParameterKeys
 {
     /// <summary>
     /// Step-input prefix matching the lean geoprocessing submit path

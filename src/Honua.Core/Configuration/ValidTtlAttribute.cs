@@ -7,6 +7,11 @@ namespace Honua.Core.Configuration;
 /// </summary>
 public class ValidTtlAttribute : ValidationAttribute
 {
+    /// <summary>
+    /// Initializes a new instance of the <see cref="ValidTtlAttribute"/> class.
+    /// </summary>
+    /// <param name="minSeconds">The minimum allowed TTL, in seconds.</param>
+    /// <param name="maxHours">The maximum allowed TTL, in hours.</param>
     public ValidTtlAttribute(double minSeconds = 1, double maxHours = 24)
     {
         MinimumTtl = TimeSpan.FromSeconds(minSeconds);
@@ -33,6 +38,7 @@ public class ValidTtlAttribute : ValidationAttribute
     /// </summary>
     public bool WarnInDevelopment { get; set; }
 
+    /// <inheritdoc />
     public override bool IsValid(object? value)
     {
         if (value is null)
@@ -48,6 +54,7 @@ public class ValidTtlAttribute : ValidationAttribute
         return ttl >= MinimumTtl && ttl <= MaximumTtl;
     }
 
+    /// <inheritdoc />
     public override string FormatErrorMessage(string name)
     {
         return $"{name} must be between {MinimumTtl.TotalSeconds} seconds and {MaximumTtl.TotalHours} hours.";

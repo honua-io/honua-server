@@ -26,14 +26,14 @@ public sealed class ImageServerMosaicIntegrationTests
     [Operation(Operations.Query)]
     public async Task QueryCatalog_ListsAllRastersWithAcquisitionDates()
     {
-        var fixture = await CreateFixtureAsync().ConfigureAwait(false);
+        var fixture = await CreateFixtureAsync();
         try
         {
             var response = await fixture.Client.GetAsync(
                 $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/query?f=json&returnGeometry=false");
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
-            using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync().ConfigureAwait(false));
+            using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             var features = json.RootElement.GetProperty("features");
             features.GetArrayLength().Should().Be(3);
 
@@ -57,7 +57,7 @@ public sealed class ImageServerMosaicIntegrationTests
         }
         finally
         {
-            await fixture.DisposeAsync().ConfigureAwait(false);
+            await fixture.DisposeAsync();
         }
     }
 
@@ -66,19 +66,19 @@ public sealed class ImageServerMosaicIntegrationTests
     [Operation(Operations.Identify)]
     public async Task Identify_UsesSpatialMosaicSelectionAcrossMultipleRasters()
     {
-        var fixture = await CreateFixtureAsync().ConfigureAwait(false);
+        var fixture = await CreateFixtureAsync();
         try
         {
             var response = await fixture.Client.GetAsync(
                 $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/identify?geometry=3.5,1&geometryType=esriGeometryPoint&f=json");
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
-            using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync().ConfigureAwait(false));
+            using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             json.RootElement.GetProperty("properties").GetProperty("Band_1").GetDouble().Should().Be(40);
         }
         finally
         {
-            await fixture.DisposeAsync().ConfigureAwait(false);
+            await fixture.DisposeAsync();
         }
     }
 
@@ -87,7 +87,7 @@ public sealed class ImageServerMosaicIntegrationTests
     [Operation(Operations.Identify)]
     public async Task Identify_WithNewestMergeRule_ReturnsNewestRasterValueAndCatalogItems()
     {
-        var fixture = await CreateFixtureAsync().ConfigureAwait(false);
+        var fixture = await CreateFixtureAsync();
         try
         {
             var response = await fixture.Client.GetAsync(
@@ -95,7 +95,7 @@ public sealed class ImageServerMosaicIntegrationTests
                 "?geometry=1.5,1&geometryType=esriGeometryPoint&returnCatalogItems=true&mosaicRule=newest&f=json");
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
-            using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync().ConfigureAwait(false));
+            using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
 
             json.RootElement.GetProperty("name").GetString().Should().Contain("mosaic");
             json.RootElement.GetProperty("properties").GetProperty("Band_1").GetDouble().Should().Be(5);
@@ -103,7 +103,7 @@ public sealed class ImageServerMosaicIntegrationTests
         }
         finally
         {
-            await fixture.DisposeAsync().ConfigureAwait(false);
+            await fixture.DisposeAsync();
         }
     }
 
@@ -112,7 +112,7 @@ public sealed class ImageServerMosaicIntegrationTests
     [Operation(Operations.Identify)]
     public async Task Identify_WithMaxMergeRule_ReturnsMaximumPixelValue()
     {
-        var fixture = await CreateFixtureAsync().ConfigureAwait(false);
+        var fixture = await CreateFixtureAsync();
         try
         {
             var response = await fixture.Client.GetAsync(
@@ -120,12 +120,12 @@ public sealed class ImageServerMosaicIntegrationTests
                 "?geometry=1.5,1&geometryType=esriGeometryPoint&mosaicRule=max&f=json");
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
-            using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync().ConfigureAwait(false));
+            using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             json.RootElement.GetProperty("properties").GetProperty("Band_1").GetDouble().Should().Be(20);
         }
         finally
         {
-            await fixture.DisposeAsync().ConfigureAwait(false);
+            await fixture.DisposeAsync();
         }
     }
 
@@ -134,7 +134,7 @@ public sealed class ImageServerMosaicIntegrationTests
     [Operation(Operations.Identify)]
     public async Task Identify_WithTimeOnCommunityEdition_ReturnsPaymentRequired()
     {
-        var fixture = await CreateFixtureAsync(HonuaEdition.Community).ConfigureAwait(false);
+        var fixture = await CreateFixtureAsync(HonuaEdition.Community);
         try
         {
             var response = await fixture.Client.GetAsync(
@@ -145,7 +145,7 @@ public sealed class ImageServerMosaicIntegrationTests
         }
         finally
         {
-            await fixture.DisposeAsync().ConfigureAwait(false);
+            await fixture.DisposeAsync();
         }
     }
 
@@ -154,7 +154,7 @@ public sealed class ImageServerMosaicIntegrationTests
     [Operation(Operations.Identify)]
     public async Task Identify_WithTimeOnProEdition_WhenNewestLayerSnapshotMissesPoint_ReturnsNoData()
     {
-        var fixture = await CreateFixtureAsync(HonuaEdition.Pro).ConfigureAwait(false);
+        var fixture = await CreateFixtureAsync(HonuaEdition.Pro);
         try
         {
             var response = await fixture.Client.GetAsync(
@@ -165,12 +165,12 @@ public sealed class ImageServerMosaicIntegrationTests
             // location does not intersect any raster for the active spatial/temporal selection,
             // matching getSamples. Returning 404 here breaks the ArcGIS JS/Python SDK identify call.
             response.StatusCode.Should().Be(HttpStatusCode.OK);
-            using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync().ConfigureAwait(false));
+            using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             json.RootElement.GetProperty("value").GetString().Should().Be("NoData");
         }
         finally
         {
-            await fixture.DisposeAsync().ConfigureAwait(false);
+            await fixture.DisposeAsync();
         }
     }
 
@@ -179,13 +179,13 @@ public sealed class ImageServerMosaicIntegrationTests
     [Operation(Operations.GetServiceInfo)]
     public async Task GetServiceInfo_AggregatesExtentAndTimeExtentAcrossLayerRasters()
     {
-        var fixture = await CreateFixtureAsync().ConfigureAwait(false);
+        var fixture = await CreateFixtureAsync();
         try
         {
             var response = await fixture.Client.GetAsync($"/rest/services/{WebAppFixture.TestLayerId}/ImageServer?f=json");
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
-            using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync().ConfigureAwait(false));
+            using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             var extent = json.RootElement.GetProperty("extent");
             extent.GetProperty("xmin").GetDouble().Should().Be(0);
             extent.GetProperty("xmax").GetDouble().Should().Be(4);
@@ -198,7 +198,7 @@ public sealed class ImageServerMosaicIntegrationTests
         }
         finally
         {
-            await fixture.DisposeAsync().ConfigureAwait(false);
+            await fixture.DisposeAsync();
         }
     }
 
@@ -207,7 +207,7 @@ public sealed class ImageServerMosaicIntegrationTests
     [Operation(Operations.Export)]
     public async Task ExportImage_AsInlineJpegMosaic_AppliesCompressionQuality()
     {
-        var fixture = await CreateFixtureAsync().ConfigureAwait(false);
+        var fixture = await CreateFixtureAsync();
         try
         {
             var response = await fixture.Client.GetAsync(
@@ -216,11 +216,11 @@ public sealed class ImageServerMosaicIntegrationTests
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             response.Content.Headers.ContentType?.MediaType.Should().Be("image/jpeg");
-            (await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false)).Should().NotBeEmpty();
+            (await response.Content.ReadAsByteArrayAsync()).Should().NotBeEmpty();
         }
         finally
         {
-            await fixture.DisposeAsync().ConfigureAwait(false);
+            await fixture.DisposeAsync();
         }
     }
 
@@ -228,10 +228,10 @@ public sealed class ImageServerMosaicIntegrationTests
     [Operation(Operations.Query, Operations.PerformanceTesting)]
     public async Task QueryRasters_ForTenOverlappingRasters_CompletesWithinTwoSeconds()
     {
-        var fixture = await CreateFixtureAsync().ConfigureAwait(false);
+        var fixture = await CreateFixtureAsync();
         try
         {
-            await RasterIntegrationTestData.SeedOverlappingRasterStackAsync(fixture, count: 10).ConfigureAwait(false);
+            await RasterIntegrationTestData.SeedOverlappingRasterStackAsync(fixture, count: 10);
             var store = fixture.GetService<IRasterStore>();
             var query = new RasterSelectionQuery
             {
@@ -239,10 +239,10 @@ public sealed class ImageServerMosaicIntegrationTests
                 GeometrySrid = 4326
             };
 
-            _ = await store.QueryRastersAsync(WebAppFixture.TestLayerId, query).ConfigureAwait(false);
+            _ = await store.QueryRastersAsync(WebAppFixture.TestLayerId, query);
 
             var stopwatch = Stopwatch.StartNew();
-            var rasters = await store.QueryRastersAsync(WebAppFixture.TestLayerId, query).ConfigureAwait(false);
+            var rasters = await store.QueryRastersAsync(WebAppFixture.TestLayerId, query);
             stopwatch.Stop();
 
             rasters.Should().HaveCount(10);
@@ -250,7 +250,7 @@ public sealed class ImageServerMosaicIntegrationTests
         }
         finally
         {
-            await fixture.DisposeAsync().ConfigureAwait(false);
+            await fixture.DisposeAsync();
         }
     }
 
@@ -262,9 +262,8 @@ public sealed class ImageServerMosaicIntegrationTests
             fixture.ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(edition.Value));
         }
 
-        await fixture.InitializeAsync().ConfigureAwait(false);
-        await RasterIntegrationTestData.SeedIssue522MosaicAsync(fixture).ConfigureAwait(false);
+        await fixture.InitializeAsync();
+        await RasterIntegrationTestData.SeedIssue522MosaicAsync(fixture);
         return fixture;
     }
-
 }

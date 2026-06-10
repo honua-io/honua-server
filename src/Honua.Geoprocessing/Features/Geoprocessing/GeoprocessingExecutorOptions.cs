@@ -26,6 +26,14 @@ internal sealed class GeoprocessingExecutorOptions
     public long MaxArtifactBytes { get; set; } = 50L * 1024L * 1024L;
 
     /// <summary>
+    /// Root directory under which file-sink executors may create output files.
+    /// Caller-supplied sink paths are always resolved relative to this directory;
+    /// absolute paths and traversal outside the root are rejected.
+    /// </summary>
+    public string OutputRootDirectory { get; set; } =
+        Path.Combine(Path.GetTempPath(), "honua-geoprocessing-outputs");
+
+    /// <summary>
     /// Retention TTL applied to durable geoprocessing result packages produced
     /// by built-in executors. Mirrors the default Redis store retention so
     /// configuration here is authoritative for both reads and writes.

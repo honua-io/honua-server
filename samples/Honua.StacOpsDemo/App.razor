@@ -392,7 +392,7 @@
         {
             return;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             if (!load.IsActive || _disposed)
             {
@@ -400,7 +400,7 @@
             }
 
             _snapshot = null;
-            _errorMessage = ex.Message;
+            _errorMessage = "Unable to load the STAC operations demo data.";
         }
         finally
         {

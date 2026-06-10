@@ -56,7 +56,9 @@ internal sealed class GroundCandidatesTool : IMcpTool
         McpLog.ToolInvoked(_logger, ToolName, WorkflowFamily);
 
         var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
-        _jobService.EnsureCallerAuthorized(principal, OperatorResourceType.Catalog, OperatorOperation.Discover);
+        await _jobService
+            .EnsureCallerAuthorizedAsync(principal, OperatorResourceType.Catalog, OperatorOperation.Discover, cancellationToken)
+            .ConfigureAwait(false);
 
         var argument = McpToolHelpers.ParseArguments(arguments, GroundingJsonContext.Default.McpGroundCandidatesArgument);
         var request = GroundingToolMapper.ToDomain(argument);

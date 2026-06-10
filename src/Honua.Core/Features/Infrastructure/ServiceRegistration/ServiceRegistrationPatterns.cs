@@ -59,8 +59,10 @@ public static class ServiceRegistrationPatterns
 /// </summary>
 public class DictionaryPooledObjectPolicy : PooledObjectPolicy<Dictionary<string, object?>>
 {
+    /// <inheritdoc />
     public override Dictionary<string, object?> Create() => new(StringComparer.OrdinalIgnoreCase);
 
+    /// <inheritdoc />
     public override bool Return(Dictionary<string, object?> obj)
     {
         obj.Clear();
@@ -73,7 +75,9 @@ public class DictionaryPooledObjectPolicy : PooledObjectPolicy<Dictionary<string
 /// </summary>
 public class DefaultPooledObjectPolicy<T> : PooledObjectPolicy<T> where T : class, new()
 {
+    /// <inheritdoc />
     public override T Create() => new();
 
+    /// <inheritdoc />
     public override bool Return(T obj) => true;
 }

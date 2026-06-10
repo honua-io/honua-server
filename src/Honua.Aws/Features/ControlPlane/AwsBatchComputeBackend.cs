@@ -278,7 +278,7 @@ internal sealed partial class AwsBatchComputeBackend(
             {
                 Status = ExecutionJobStatus.Queued,
                 ProviderOperationId = PendingSubmissionMarkerPrefix + jobName,
-                Message = $"AWS Batch submission outcome is uncertain for job '{jobName}' in queue '{jobQueue}': {ex.Message}. Reconciliation will verify whether the provider accepted the job."
+                Message = "AWS Batch submission outcome is uncertain. Reconciliation will verify whether the provider accepted the job."
             };
         }
         catch (AmazonServiceException ex)
@@ -294,7 +294,7 @@ internal sealed partial class AwsBatchComputeBackend(
             {
                 Status = ExecutionJobStatus.Failed,
                 ProviderOperationId = null,
-                Message = $"AWS Batch rejected job submission: {ex.Message}"
+                Message = "AWS Batch rejected job submission."
             };
         }
     }
@@ -372,7 +372,7 @@ internal sealed partial class AwsBatchComputeBackend(
                 Status = job.Status,
                 ProviderOperationId = providerId,
                 PercentComplete = job.PercentComplete,
-                Message = $"AWS Batch observation failed: {ex.Message}"
+                Message = "AWS Batch observation failed."
             };
         }
     }
@@ -461,7 +461,7 @@ internal sealed partial class AwsBatchComputeBackend(
                 Status = job.Status,
                 ProviderOperationId = job.ProviderOperationId,
                 PercentComplete = job.PercentComplete,
-                Message = $"AWS Batch discovery failed for pending job '{pendingJobName}': {ex.Message}"
+                Message = "AWS Batch discovery failed for a pending job."
             };
         }
     }
@@ -583,7 +583,7 @@ internal sealed partial class AwsBatchComputeBackend(
                 Status = job.Status,
                 ProviderOperationId = providerId,
                 PercentComplete = job.PercentComplete,
-                Message = $"AWS Batch cancellation failed: {ex.Message}"
+                Message = "AWS Batch cancellation failed."
             };
         }
     }
@@ -667,7 +667,7 @@ internal sealed partial class AwsBatchComputeBackend(
                 Status = job.Status,
                 ProviderOperationId = job.ProviderOperationId,
                 PercentComplete = job.PercentComplete,
-                Message = $"AWS Batch discovery failed during cancellation for pending job '{pendingJobName}': {ex.Message}"
+                Message = "AWS Batch discovery failed during cancellation for a pending job."
             };
         }
     }

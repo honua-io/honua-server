@@ -130,7 +130,10 @@ internal static class OgcWcsImportEndpoints
         }
         catch (ArgumentException ex)
         {
-            await AdminResponseWriter.WriteErrorAsync(context, ex.Message, StatusCodes.Status400BadRequest);
+            await AdminResponseWriter.WriteErrorAsync(
+                context,
+                ImportValidationErrorMessage.FromArgument(ex, "Invalid WCS import request."),
+                StatusCodes.Status400BadRequest);
         }
         catch (HttpRequestException)
         {

@@ -18,21 +18,65 @@ namespace Honua.TestKit.Attributes;
 [TraitDiscoverer("Honua.TestKit.Attributes.CloudTestDiscoverer", "Honua.TestKit")]
 public sealed class CloudTestAttribute : FactAttribute, ITraitAttribute
 {
+    private readonly string[] _requiredEnvironmentVariables;
+    private string[] _requiredTrueEnvironmentVariables = [];
+    private string[] _skipWhenFalseEnvironmentVariables = [];
+
     public CloudTestAttribute(params string[] requiredEnvironmentVariables)
     {
-        if (requiredEnvironmentVariables.Length == 0)
-        {
-            return;
-        }
+        _requiredEnvironmentVariables = requiredEnvironmentVariables;
+        RefreshSkipReason();
+    }
 
-        var missing = requiredEnvironmentVariables
+    public string[] RequiredTrueEnvironmentVariables
+    {
+        get => _requiredTrueEnvironmentVariables;
+        set
+        {
+            _requiredTrueEnvironmentVariables = value ?? [];
+            RefreshSkipReason();
+        }
+    }
+
+    public string[] SkipWhenFalseEnvironmentVariables
+    {
+        get => _skipWhenFalseEnvironmentVariables;
+        set
+        {
+            _skipWhenFalseEnvironmentVariables = value ?? [];
+            RefreshSkipReason();
+        }
+    }
+
+    private void RefreshSkipReason()
+    {
+        var missing = _requiredEnvironmentVariables
             .Where(name => string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(name)))
             .ToArray();
+        var requiredTrue = _requiredTrueEnvironmentVariables
+            .Where(name => !string.Equals(Environment.GetEnvironmentVariable(name), "true", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        var explicitlyFalse = _skipWhenFalseEnvironmentVariables
+            .Where(name => string.Equals(Environment.GetEnvironmentVariable(name), "false", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
 
+        var reasons = new List<string>();
         if (missing.Length > 0)
         {
-            Skip = $"Missing required environment variables: {string.Join(", ", missing)}";
+            reasons.Add($"Missing required environment variables: {string.Join(", ", missing)}");
         }
+
+        if (requiredTrue.Length > 0)
+        {
+            reasons.Add($"Environment variables must be set to true: {string.Join(", ", requiredTrue)}");
+        }
+
+        if (explicitlyFalse.Length > 0)
+        {
+            reasons.Add($"Environment variables explicitly disabled this validation: {string.Join(", ", explicitlyFalse)}");
+        }
+
+        Skip = reasons.Count == 0 ? null : string.Join("; ", reasons);
     }
 }
 

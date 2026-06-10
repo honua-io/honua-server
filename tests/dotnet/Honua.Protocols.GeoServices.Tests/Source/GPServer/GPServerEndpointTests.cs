@@ -37,8 +37,15 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     private const string PointWkbBase64 = "AQEAAAAAAAAAAAAAAAAAAAAAAAAA";
     private const string ServiceId = WebAppFixture.TestServiceId;
 
-    private readonly WebAppFixture _fixture = new();
+    private readonly InMemoryExecutionJobStore _jobStore = new();
+    private readonly WebAppFixture _fixture;
     private HttpClient _client = null!;
+
+    public GPServerEndpointTests()
+    {
+        _fixture = new WebAppFixture()
+            .ReplaceService<IExecutionJobStore>(_jobStore);
+    }
 
     public async Task InitializeAsync()
     {
@@ -780,12 +787,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     public async Task JobStatus_WithMismatchedService_ReturnsNotFound()
     {
         // Create a job directly via the store with GPServer binding metadata.
-        var jobStore = _fixture.GetOptionalService<IExecutionJobStore>();
-        if (jobStore == null)
-        {
-            // Without Redis, skip binding validation — store unavailable
-            return;
-        }
+        var jobStore = _fixture.GetService<IExecutionJobStore>();
 
         var jobId = $"gpbind-svc-{Guid.NewGuid():N}";
         var jobRecord = new ExecutionJobRecord
@@ -808,11 +810,8 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
             }
         };
 
-        var created = await jobStore.TryCreateAsync(jobRecord);
-        if (!created)
-        {
-            return;
-        }
+        var created = await jobStore!.TryCreateAsync(jobRecord);
+        created.Should().BeTrue("the binding-validation fixture job must be created");
 
         // Query status under a different service — should be rejected
         var statusResponse = await _client.GetAsync(
@@ -827,12 +826,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     public async Task JobStatus_WithMismatchedTask_ReturnsNotFound()
     {
         // Create a job directly via the store with GPServer binding metadata.
-        var jobStore = _fixture.GetOptionalService<IExecutionJobStore>();
-        if (jobStore == null)
-        {
-            // Without Redis, skip binding validation — store unavailable
-            return;
-        }
+        var jobStore = _fixture.GetService<IExecutionJobStore>();
 
         var jobId = $"gpbind-task-{Guid.NewGuid():N}";
         var jobRecord = new ExecutionJobRecord
@@ -855,11 +849,8 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
             }
         };
 
-        var created = await jobStore.TryCreateAsync(jobRecord);
-        if (!created)
-        {
-            return;
-        }
+        var created = await jobStore!.TryCreateAsync(jobRecord);
+        created.Should().BeTrue("the binding-validation fixture job must be created");
 
         // Query status under a different task — should be rejected
         var statusResponse = await _client.GetAsync(
@@ -879,12 +870,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     {
         // Write a job record directly to the store without GPServer binding metadata.
         // This simulates a gRPC-submitted job that should not be visible via GPServer routes.
-        var jobStore = _fixture.GetOptionalService<IExecutionJobStore>();
-        if (jobStore == null)
-        {
-            // Without Redis, skip — store unavailable
-            return;
-        }
+        var jobStore = _fixture.GetService<IExecutionJobStore>();
 
         var jobId = $"grpc-test-{Guid.NewGuid():N}";
         var jobRecord = new ExecutionJobRecord
@@ -903,11 +889,8 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
             }
         };
 
-        var created = await jobStore.TryCreateAsync(jobRecord);
-        if (!created)
-        {
-            return;
-        }
+        var created = await jobStore!.TryCreateAsync(jobRecord);
+        created.Should().BeTrue("the cross-protocol fixture job must be created");
 
         // Access via GPServer route — should be rejected (no GPServer binding metadata)
         var response = await _client.GetAsync(
@@ -1097,9 +1080,12 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
 
     private sealed class TimeoutGeoprocessingJobService : IGeoprocessingJobService
     {
-        public void EnsureCallerAuthorized(ClaimsPrincipal principal, OperatorResourceType resourceType, OperatorOperation operation)
-        {
-        }
+        public Task EnsureCallerAuthorizedAsync(
+            ClaimsPrincipal principal,
+            OperatorResourceType resourceType,
+            OperatorOperation operation,
+            CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
 
         public PlanValidationResult ValidatePlan(AnalysisPlan plan, ClaimsPrincipal principal)
             => throw new NotSupportedException();
@@ -1139,9 +1125,12 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
 
     private sealed class PreconditionFailedGeoprocessingJobService : IGeoprocessingJobService
     {
-        public void EnsureCallerAuthorized(ClaimsPrincipal principal, OperatorResourceType resourceType, OperatorOperation operation)
-        {
-        }
+        public Task EnsureCallerAuthorizedAsync(
+            ClaimsPrincipal principal,
+            OperatorResourceType resourceType,
+            OperatorOperation operation,
+            CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
 
         public PlanValidationResult ValidatePlan(AnalysisPlan plan, ClaimsPrincipal principal)
             => throw new NotSupportedException();
@@ -1183,9 +1172,12 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
 
         public IReadOnlyDictionary<string, string>? LastProtocolMetadata { get; private set; }
 
-        public void EnsureCallerAuthorized(ClaimsPrincipal principal, OperatorResourceType resourceType, OperatorOperation operation)
-        {
-        }
+        public Task EnsureCallerAuthorizedAsync(
+            ClaimsPrincipal principal,
+            OperatorResourceType resourceType,
+            OperatorOperation operation,
+            CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
 
         public PlanValidationResult ValidatePlan(AnalysisPlan plan, ClaimsPrincipal principal)
             => throw new NotSupportedException();
@@ -1286,9 +1278,12 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
                 ExecutedAt = DateTimeOffset.UtcNow
             });
 
-        public void EnsureCallerAuthorized(ClaimsPrincipal principal, OperatorResourceType resourceType, OperatorOperation operation)
-        {
-        }
+        public Task EnsureCallerAuthorizedAsync(
+            ClaimsPrincipal principal,
+            OperatorResourceType resourceType,
+            OperatorOperation operation,
+            CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
 
         public PlanValidationResult ValidatePlan(AnalysisPlan plan, ClaimsPrincipal principal)
             => throw new NotSupportedException();
@@ -1355,9 +1350,12 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
                     ExecutedAt = DateTimeOffset.UtcNow
                 });
 
-        public void EnsureCallerAuthorized(ClaimsPrincipal principal, OperatorResourceType resourceType, OperatorOperation operation)
-        {
-        }
+        public Task EnsureCallerAuthorizedAsync(
+            ClaimsPrincipal principal,
+            OperatorResourceType resourceType,
+            OperatorOperation operation,
+            CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
 
         public PlanValidationResult ValidatePlan(AnalysisPlan plan, ClaimsPrincipal principal)
             => throw new NotSupportedException();
@@ -1461,5 +1459,92 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
             int layerId,
             CancellationToken cancellationToken = default)
             => throw exception;
+    }
+
+    private sealed class InMemoryExecutionJobStore : IExecutionJobStore
+    {
+        private readonly Dictionary<string, ExecutionJobRecord> _jobs = new(StringComparer.Ordinal);
+
+        public Task<bool> TryAcquireLeaseAsync(
+            string operationId,
+            string ownerId,
+            TimeSpan leaseDuration,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(true);
+
+        public Task<bool> RenewLeaseAsync(
+            string operationId,
+            string ownerId,
+            TimeSpan leaseDuration,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(true);
+
+        public Task ReleaseLeaseAsync(
+            string operationId,
+            string ownerId,
+            CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task<bool> TryCreateAsync(
+            ExecutionJobRecord job,
+            TimeSpan? ttl = null,
+            CancellationToken cancellationToken = default)
+        {
+            if (_jobs.ContainsKey(job.OperationId))
+            {
+                return Task.FromResult(false);
+            }
+
+            _jobs[job.OperationId] = job;
+            return Task.FromResult(true);
+        }
+
+        public Task<ExecutionJobRecord?> GetAsync(
+            string operationId,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(_jobs.TryGetValue(operationId, out var job) ? job : null);
+
+        public Task SetAsync(
+            ExecutionJobRecord job,
+            TimeSpan? ttl = null,
+            CancellationToken cancellationToken = default)
+        {
+            _jobs[job.OperationId] = job with { Version = job.Version + 1 };
+            return Task.CompletedTask;
+        }
+
+        public Task<bool> TrySetAsync(
+            ExecutionJobRecord job,
+            TimeSpan? ttl = null,
+            CancellationToken cancellationToken = default)
+        {
+            _jobs[job.OperationId] = job with { Version = job.Version + 1 };
+            return Task.FromResult(true);
+        }
+
+        public Task<ExecutionJobPage> QueryAsync(
+            ExecutionJobQuery query,
+            CancellationToken cancellationToken = default)
+        {
+            var items = _jobs.Values
+                .Where(job => query.Statuses.Count == 0 || query.Statuses.Contains(job.Status))
+                .Where(job => !query.Kind.HasValue || job.Spec.Kind == query.Kind.Value)
+                .OrderByDescending(job => job.CreatedAt)
+                .Take(query.Limit)
+                .ToArray();
+
+            return Task.FromResult(new ExecutionJobPage
+            {
+                Items = items,
+                NextCursor = null
+            });
+        }
+
+        public Task<IReadOnlyList<ExecutionJobRecord>> ListActiveAsync(
+            ExecutionJobKind? kind = null,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<ExecutionJobRecord>>(_jobs.Values
+                .Where(job => !kind.HasValue || job.Spec.Kind == kind.Value)
+                .ToArray());
     }
 }

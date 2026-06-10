@@ -31,6 +31,7 @@
     <ProjectReference Include="..\Honua.Ai.Tests\Honua.Ai.Tests.csproj" />
     <ProjectReference Include="..\Honua.Protocols.Scene.Tests\Honua.Protocols.Scene.Tests.csproj" />
     <ProjectReference Include="..\Honua.Protocols.Stac.Tests\Honua.Protocols.Stac.Tests.csproj" />
+    <ProjectReference Include="..\Honua.Worker.Gdal.Tests\Honua.Worker.Gdal.Tests.csproj" />
   </ItemGroup>
 
   <ItemGroup>

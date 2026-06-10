@@ -264,8 +264,15 @@ public sealed class WebAppFixture : IAsyncLifetime
     /// published at <paramref name="layerIndex"/>. Delegates to
     /// <see cref="Mixins.WebAppFixtureMetadataV2GraphMutationMixin"/>.
     /// </summary>
-    public void UpdateV2ResourceAttributeRules(int layerIndex, IReadOnlyList<MetadataV2AttributeRule>? attributeRules)
-        => Honua.TestKit.Mixins.WebAppFixtureMetadataV2GraphMutationMixin.UpdateResourceAttributeRules(this, layerIndex, attributeRules);
+    public Task UpdateV2ResourceAttributeRulesAsync(
+        int layerIndex,
+        IReadOnlyList<MetadataV2AttributeRule>? attributeRules,
+        CancellationToken cancellationToken = default)
+        => Honua.TestKit.Mixins.WebAppFixtureMetadataV2GraphMutationMixin.UpdateResourceAttributeRulesAsync(
+            this,
+            layerIndex,
+            attributeRules,
+            cancellationToken);
 
     /// <summary>
     /// V2-aware helper that renames the canonical resource bound to the publication with

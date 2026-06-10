@@ -94,7 +94,7 @@ internal sealed partial class GeoservicesImportService
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     Log.InventoryResourceScanFailed(_logger, normalizedUrl, resourceReference.Id, resourceReference.Kind, ex);
-                    completenessWarnings.Add($"Failed to scan {resourceReference.Kind} {resourceReference.Id}: {ex.Message}");
+                    completenessWarnings.Add($"Failed to scan {resourceReference.Kind} {resourceReference.Id}.");
                     missingArtifacts.Add($"{resourceReference.Kind}:{resourceReference.Id}");
                 }
             }
@@ -200,7 +200,7 @@ internal sealed partial class GeoservicesImportService
                 normalizedUrl,
                 "unknown",
                 ImportCompatibilityCodes.ArcGisServiceError,
-                ex.Message,
+                "The ArcGIS service could not be scanned.",
                 ExtractServiceType(normalizedUrl),
                 HasCredentialMaterial(request.Credentials));
         }

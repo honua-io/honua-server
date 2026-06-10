@@ -1,10 +1,21 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
 using Honua.Core.Features.Security.Domain;
+using Honua.TestKit.Attributes;
+using System.Text.Json;
 using Xunit;
 
 namespace Honua.Core.Security.Tests;
 
+/// <summary>
+/// Tests for <see cref="DataConnection"/> verifying provider-name normalization
+/// and that encrypted-credential construction enforces strict SSL/TLS transport
+/// modes when <see cref="DataConnection.SslRequired"/> is set.
+/// </summary>
 public sealed class DataConnectionTests
 {
+    [SecurityTest]
     [Theory]
     [InlineData(null, "postgis")]
     [InlineData("", "postgis")]
@@ -19,10 +30,11 @@ public sealed class DataConnectionTests
         Assert.Equal(expected, connection.NormalizedProvider);
     }
 
+    [SecurityTest]
     [Theory]
     [InlineData(SslMode.Allow)]
     [InlineData(SslMode.Prefer)]
-    public void CreateWithEncryptedCredentialsSslRequiredRejectsFallbackModes(SslMode sslMode)
+    public void CreateWithEncryptedCredentials_SslRequiredWithFallbackMode_ThrowsInvalidOperationException(SslMode sslMode)
     {
         var exception = Assert.Throws<InvalidOperationException>(() =>
             DataConnection.CreateWithEncryptedCredentials(
@@ -40,11 +52,12 @@ public sealed class DataConnectionTests
         Assert.Equal("SSL mode must require encrypted transport when SslRequired is true", exception.Message);
     }
 
+    [SecurityTest]
     [Theory]
     [InlineData(SslMode.Require)]
     [InlineData(SslMode.VerifyCa)]
     [InlineData(SslMode.VerifyFull)]
-    public void CreateWithEncryptedCredentialsSslRequiredAllowsStrictModes(SslMode sslMode)
+    public void CreateWithEncryptedCredentials_SslRequiredWithStrictMode_PreservesSslMode(SslMode sslMode)
     {
         var connection = DataConnection.CreateWithEncryptedCredentials(
             name: "analytics",
@@ -60,5 +73,28 @@ public sealed class DataConnectionTests
 
         Assert.Equal(sslMode, connection.SslMode);
         Assert.Equal("postgis", connection.NormalizedProvider);
+    }
+
+    [SecurityTest]
+    [Fact]
+    public void Serialize_DoesNotEmitRawConnectionString()
+    {
+        var connection = new DataConnection
+        {
+            Name = "analytics",
+            ConnectionString = "Host=db.example.com;Username=app;Password=secret",
+            SecretRef = "vault://connections/analytics",
+            Properties = new Dictionary<string, object>
+            {
+                ["token"] = "secret-token"
+            }
+        };
+
+        var json = JsonSerializer.Serialize(connection);
+
+        Assert.DoesNotContain("ConnectionString", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Password=secret", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("secret-token", json, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("SecretRef", json, StringComparison.OrdinalIgnoreCase);
     }
 }

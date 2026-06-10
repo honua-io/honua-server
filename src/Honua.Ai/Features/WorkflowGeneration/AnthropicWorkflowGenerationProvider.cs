@@ -189,12 +189,12 @@ internal sealed class AnthropicWorkflowGenerationProvider : IWorkflowGenerationP
         catch (HttpRequestException ex)
         {
             WorkflowGenerationLog.GenerationFailed(_logger, _providerId, ex.Message);
-            return WorkflowGenerationProposal.Error($"HTTP request failed: {ex.Message}", _providerId, model);
+            return WorkflowGenerationProposal.Error("Provider request failed.", _providerId, model);
         }
         catch (JsonException ex)
         {
             WorkflowGenerationLog.GenerationFailed(_logger, _providerId, ex.Message);
-            return WorkflowGenerationProposal.Error($"Failed to parse provider response: {ex.Message}", _providerId, model);
+            return WorkflowGenerationProposal.Error("Provider response could not be parsed.", _providerId, model);
         }
     }
 

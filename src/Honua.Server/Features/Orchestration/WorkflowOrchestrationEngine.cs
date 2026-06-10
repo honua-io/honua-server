@@ -264,7 +264,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
                         catch (Exception ex)
                         {
                             OrchestrationLog.WorkflowStepCancelJobFailed(_logger, run.RunId, s.StepId, s.JobId!, ex);
-                            AddOrReplaceCancelWarning(warnings, s.StepId, s.JobId!, ex.Message);
+                            AddOrReplaceCancelWarning(warnings, s.StepId, s.JobId!, "Job cancellation failed.");
                             continue;
                         }
                     }
@@ -369,7 +369,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
                     catch (Exception ex)
                     {
                         OrchestrationLog.WorkflowStepCancelJobFailed(_logger, run.RunId, s.StepId, s.JobId!, ex);
-                        AddOrReplaceCancelWarning(mismatchWarnings, s.StepId, s.JobId!, ex.Message);
+                        AddOrReplaceCancelWarning(mismatchWarnings, s.StepId, s.JobId!, "Job cancellation failed.");
                         continue;
                     }
                 }
@@ -439,7 +439,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
                     catch (Exception ex)
                     {
                         OrchestrationLog.WorkflowStepCancelJobFailed(_logger, run.RunId, state.StepId, state.JobId!, ex);
-                        AddOrReplaceCancelWarning(warnings, state.StepId, state.JobId!, ex.Message);
+                        AddOrReplaceCancelWarning(warnings, state.StepId, state.JobId!, "Job cancellation failed.");
                         changed = true;
                         continue;
                     }
@@ -632,7 +632,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
                 AttemptCount = attemptNumber,
                 NextAttemptAt = scheduledAt,
                 CompletedAt = IsStepTerminal(newStatus) ? now : null,
-                ErrorMessage = ex.Message,
+                ErrorMessage = "Workflow step submission failed.",
                 ResolvedInputs = bindingResolution.ResolvedValues,
                 StartedAt = newStatus == WorkflowStepStatus.Pending ? null : state.StartedAt,
                 JobId = newStatus == WorkflowStepStatus.Pending ? null : state.JobId
@@ -696,7 +696,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             OrchestrationLog.WorkflowStepObservationTransientFailure(_logger, run.RunId, state.StepId, state.JobId!, ex);
-            AddOrReplaceObservationWarning(warnings, state.StepId, state.JobId!, ex.Message);
+            AddOrReplaceObservationWarning(warnings, state.StepId, state.JobId!, "Job state could not be observed.");
             return null;
         }
 
@@ -752,7 +752,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
                             OutputArtifacts = null,
                             ErrorMessage =
                                 $"Step '{state.StepId}' job succeeded but artifact retrieval failed; " +
-                                $"downstream bindings cannot be resolved: {artifactsFailure.Message}"
+                                "downstream bindings cannot be resolved."
                         };
                     }
 
