@@ -6,7 +6,7 @@ Lookup material for Honua's public surfaces: protocols, the admin API, configura
 
 | Section | Contents |
 | --- | --- |
-| [Protocols](protocols/ogc-apis.md) | Per-protocol references: OGC APIs, classic OGC (WMS/WFS/WCS/WMTS), GeoServices REST, OData, STAC, vector tiles, terrain, 3D Tiles/scenes, gRPC. |
+| [Protocols](protocols/ogc-apis.md) | Per-protocol references: OGC APIs, classic OGC (WMS/WFS/WCS/WMTS), GeoServices REST, OData, STAC, vector tiles, [cloud-native formats (COG, PMTiles, Zarr, HDF5/NetCDF)](protocols/cloud-native-formats.md), terrain, 3D Tiles/scenes, gRPC. MCP for AI agents is covered in the [MCP guide](../guides/connect/ai-agents-mcp.md) and [protocol overview](../concepts/protocols.md#mcp). |
 | [Admin API](admin-api/overview.md) | Control-plane usage: connections and layers, imports and jobs, styles, forms, users/roles/licensing. |
 | [Configuration](configuration/environment-variables.md) | The canonical [environment variable reference](configuration/environment-variables.md) and [data source providers](configuration/data-sources/README.md). |
 | [Compatibility](compatibility/ogc-conformance.md) | [OGC conformance](compatibility/ogc-conformance.md), [GeoServices parity](compatibility/geoservices-parity.md), [client compatibility](compatibility/clients.md). |

@@ -28,8 +28,21 @@ Honua serves every published layer through multiple protocols at once — the sa
 | 3D Tiles scenes | `/scenes/{sceneId}/tileset.json` | CesiumJS, 3D Tiles clients | Serving hosted or generated OGC 3D Tiles tilesets |
 | gRPC (`geospatial.v1`) | port `8081` (h2c), gRPC-Web on `8080` | Honua SDKs, mobile, services | High-throughput programmatic access from SDK clients |
 | MCP | `/mcp` | AI agents | Agents validate, plan, and run geoprocessing via JSON-RPC |
+| PMTiles | `/api/v1/tiles/pmtiles/{artifactId}` | MapLibre, serverless tile hosting | Single-file tile archives served with HTTP range requests |
+| Cloud rasters (COG) | registered via admin API, served via ImageServer / WCS / OGC Coverages | Raster pipelines | Cloud-optimized GeoTIFFs in S3/Azure served without copying |
 
 Protocols are enabled per service; a layer is reachable through every protocol its service lists. Read-only providers expose the same surfaces minus write operations. See [Data model](data-model.md).
+
+## Cloud-native formats
+
+Beyond the protocol endpoints, Honua works directly with the cloud-native geospatial format family — see the [cloud-native formats reference](../reference/protocols/cloud-native-formats.md) for endpoints and current status per format:
+
+- **COG (Cloud-Optimized GeoTIFF)** — file import, plus in-place registration of rasters living in S3/Azure; served through ImageServer, WCS 2.0.1, and OGC API Coverages.
+- **PMTiles** — tile archives produced by tile-operations jobs and served with HTTP range requests for serverless/CDN hosting.
+- **GeoParquet / GeoArrow / FlatGeobuf** — import formats and FeatureServer query output formats (`f=parquet|arrow|fgb`) for analytics and notebook workflows.
+- **Zarr** — store registration and catalog metadata (`/api/v1/admin/zarr-stores`); protocol serving is not yet exposed.
+- **Cloud-optimized HDF5 / NetCDF4** — multidimensional coverage registration and catalog metadata (`/api/v1/admin/multidim-coverages`); the reader is build-optional and protocol serving is not yet exposed.
+- **STAC** — the catalog surface (`/stac`) for discovering these assets.
 
 ## GeoServices REST (Esri-compatible)
 

@@ -77,6 +77,7 @@
   - [OData](reference/protocols/odata.md)
   - [STAC](reference/protocols/stac.md)
   - [Vector tiles](reference/protocols/vector-tiles.md)
+  - [Cloud-native formats](reference/protocols/cloud-native-formats.md)
   - [Terrain & elevation](reference/protocols/terrain-and-elevation.md)
   - [3D Tiles & scenes](reference/protocols/3d-tiles-and-scenes.md)
   - [gRPC](reference/protocols/grpc.md)
