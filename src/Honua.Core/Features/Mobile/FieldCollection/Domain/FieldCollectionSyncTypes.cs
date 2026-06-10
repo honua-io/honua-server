@@ -9,8 +9,13 @@ namespace Honua.Core.Features.Mobile.FieldCollection.Domain;
 /// </summary>
 public enum FieldCollectionChangeOperation : short
 {
+    /// <summary>The change inserts a new feature.</summary>
     Insert = 1,
+
+    /// <summary>The change updates an existing feature.</summary>
     Update = 2,
+
+    /// <summary>The change deletes an existing feature.</summary>
     Delete = 3,
 }
 
@@ -19,8 +24,13 @@ public enum FieldCollectionChangeOperation : short
 /// </summary>
 public enum FieldCollectionPushOutcome : short
 {
+    /// <summary>The change was applied successfully.</summary>
     Applied = 1,
+
+    /// <summary>The change conflicted with the current server state.</summary>
     Conflict = 2,
+
+    /// <summary>The change was rejected by validation or policy.</summary>
     Rejected = 3,
 }
 
@@ -30,10 +40,19 @@ public enum FieldCollectionPushOutcome : short
 /// </summary>
 public enum FieldCollectionConflictType : short
 {
+    /// <summary>No conflict occurred.</summary>
     None = 0,
+
+    /// <summary>Both the client and server updated the feature.</summary>
     UpdateUpdate = 1,
+
+    /// <summary>The client updated a feature that the server deleted.</summary>
     UpdateDelete = 2,
+
+    /// <summary>The client deleted a feature that the server updated.</summary>
     DeleteUpdate = 3,
+
+    /// <summary>Both the client and server deleted the feature.</summary>
     DeleteDelete = 4,
 }
 
@@ -42,11 +61,22 @@ public enum FieldCollectionConflictType : short
 /// </summary>
 public sealed record FieldCollectionChange
 {
+    /// <summary>Gets the monotonic server generation this change belongs to.</summary>
     public required long Generation { get; init; }
+
+    /// <summary>Gets the identifier of the feature affected by the change.</summary>
     public required string FeatureId { get; init; }
+
+    /// <summary>Gets the identifier of the layer that contains the feature.</summary>
     public required int LayerId { get; init; }
+
+    /// <summary>Gets the operation applied to the feature.</summary>
     public required FieldCollectionChangeOperation Operation { get; init; }
+
+    /// <summary>Gets the server-assigned version of the feature after the change.</summary>
     public required long Version { get; init; }
+
+    /// <summary>Gets the timestamp at which the change was recorded.</summary>
     public required DateTimeOffset Timestamp { get; init; }
 
     /// <summary>
@@ -60,9 +90,16 @@ public sealed record FieldCollectionChange
 /// </summary>
 public sealed record FieldCollectionChangesPage
 {
+    /// <summary>Gets the ordered changes contained in this page.</summary>
     public required IReadOnlyList<FieldCollectionChange> Changes { get; init; }
+
+    /// <summary>Gets the current server generation at the time the page was produced.</summary>
     public required long ServerGeneration { get; init; }
+
+    /// <summary>Gets the cursor to use when requesting the next page.</summary>
     public required long NextCursor { get; init; }
+
+    /// <summary>Gets a value indicating whether more changes remain after this page.</summary>
     public required bool HasMore { get; init; }
 }
 
@@ -71,9 +108,16 @@ public sealed record FieldCollectionChangesPage
 /// </summary>
 public sealed record FieldCollectionPushRequest
 {
+    /// <summary>Gets the client-assigned identifier that idempotently identifies this change.</summary>
     public required string ChangeId { get; init; }
+
+    /// <summary>Gets the identifier of the feature affected by the change.</summary>
     public required string FeatureId { get; init; }
+
+    /// <summary>Gets the identifier of the layer that contains the feature.</summary>
     public required int LayerId { get; init; }
+
+    /// <summary>Gets the operation the client wants to apply to the feature.</summary>
     public required FieldCollectionChangeOperation Operation { get; init; }
 
     /// <summary>
@@ -83,6 +127,7 @@ public sealed record FieldCollectionPushRequest
     /// </summary>
     public long? BaseVersion { get; init; }
 
+    /// <summary>Gets the optional client timestamp at which the change was made.</summary>
     public DateTimeOffset? Timestamp { get; init; }
 
     /// <summary>
@@ -96,8 +141,13 @@ public sealed record FieldCollectionPushRequest
 /// </summary>
 public sealed record FieldCollectionPushResult
 {
+    /// <summary>Gets the client-assigned identifier of the change this result corresponds to.</summary>
     public required string ChangeId { get; init; }
+
+    /// <summary>Gets the outcome of applying the change.</summary>
     public required FieldCollectionPushOutcome Outcome { get; init; }
+
+    /// <summary>Gets the server generation after the push was processed.</summary>
     public required long ServerGeneration { get; init; }
 
     /// <summary>
@@ -105,6 +155,7 @@ public sealed record FieldCollectionPushResult
     /// </summary>
     public long? Version { get; init; }
 
+    /// <summary>Gets the conflict classification when the push could not be applied.</summary>
     public FieldCollectionConflictType ConflictType { get; init; }
 
     /// <summary>
@@ -130,6 +181,9 @@ public sealed record FieldCollectionPushResult
 /// </summary>
 public sealed record FieldCollectionSyncCursor
 {
+    /// <summary>Gets the identifier of the client this cursor belongs to.</summary>
     public required string ClientId { get; init; }
+
+    /// <summary>Gets the last server generation the client has synchronized.</summary>
     public required long LastSyncGeneration { get; init; }
 }

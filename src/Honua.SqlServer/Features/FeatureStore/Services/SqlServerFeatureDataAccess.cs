@@ -159,7 +159,7 @@ internal sealed class SqlServerFeatureDataAccess
             command.Parameters.AddWithValue(name, value);
         }
 
-        SqlServerFeatureLog.QueryPrepared(_logger, query.Sql, query.WhereParameters.Count);
+        SqlServerFeatureLog.QueryPrepared(_logger, query.WhereParameters.Count);
         return command;
     }
 }

@@ -95,9 +95,7 @@ public sealed class GeoPackagePreviewTests
             });
 
             result.Success.Should().BeFalse();
-            result.ErrorMessage.Should().Contain("multiple feature layers");
-            result.ErrorMessage.Should().Contain("sample_layer");
-            result.ErrorMessage.Should().Contain("second_layer");
+            result.ErrorMessage.Should().Be("Invalid GeoPackage import request.");
         }
         finally
         {

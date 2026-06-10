@@ -240,9 +240,9 @@ internal static class GPServerEsriInputTranslation
         {
             geometry = JsonSerializer.Deserialize(rawJson, FeatureServerJsonContext.Default.GeoServicesGeometry);
         }
-        catch (JsonException ex)
+        catch (JsonException)
         {
-            error = ex.Message;
+            error = "Geometry JSON could not be parsed.";
             return false;
         }
 
@@ -263,9 +263,9 @@ internal static class GPServerEsriInputTranslation
             spatialReference = srid;
             return true;
         }
-        catch (ArgumentException ex)
+        catch (ArgumentException)
         {
-            error = ex.Message;
+            error = "Geometry could not be converted.";
             return false;
         }
     }

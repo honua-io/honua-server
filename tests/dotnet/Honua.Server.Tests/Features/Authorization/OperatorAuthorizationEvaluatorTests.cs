@@ -48,7 +48,7 @@ public sealed class OperatorAuthorizationEvaluatorTests
     }
 
     [UnitTest]
-    public void Evaluate_UnauthenticatedPrincipal_RequiresAuth()
+    public async Task Evaluate_UnauthenticatedPrincipal_RequiresAuth()
     {
         var principal = new ClaimsPrincipal(new ClaimsIdentity());
         var request = new OperatorAuthorizationRequest
@@ -57,14 +57,14 @@ public sealed class OperatorAuthorizationEvaluatorTests
             Operation = OperatorOperation.Execute
         };
 
-        var decision = _evaluator.Evaluate(principal, request);
+        var decision = await _evaluator.EvaluateAsync(principal, request);
 
         decision.IsAllowed.Should().BeFalse();
         decision.RequiresAuthentication.Should().BeTrue();
     }
 
     [UnitTest]
-    public void Evaluate_AdminRole_AllowedForAnyResource()
+    public async Task Evaluate_AdminRole_AllowedForAnyResource()
     {
         var principal = CreatePrincipal("user-1", "admin");
         var request = new OperatorAuthorizationRequest
@@ -73,13 +73,13 @@ public sealed class OperatorAuthorizationEvaluatorTests
             Operation = OperatorOperation.Publish
         };
 
-        var decision = _evaluator.Evaluate(principal, request);
+        var decision = await _evaluator.EvaluateAsync(principal, request);
 
         decision.IsAllowed.Should().BeTrue();
     }
 
     [UnitTest]
-    public void Evaluate_AdminRoleCaseInsensitive_AllowedForAnyResource()
+    public async Task Evaluate_AdminRoleCaseInsensitive_AllowedForAnyResource()
     {
         var principal = CreatePrincipal("user-1", "Admin");
         var request = new OperatorAuthorizationRequest
@@ -88,13 +88,13 @@ public sealed class OperatorAuthorizationEvaluatorTests
             Operation = OperatorOperation.Create
         };
 
-        var decision = _evaluator.Evaluate(principal, request);
+        var decision = await _evaluator.EvaluateAsync(principal, request);
 
         decision.IsAllowed.Should().BeTrue();
     }
 
     [UnitTest]
-    public void Evaluate_PersonalWorkspace_OwnerAllowed()
+    public async Task Evaluate_PersonalWorkspace_OwnerAllowed()
     {
         _roleStore.AddGrant("operator", "workspace", "*", "read");
         var principal = CreatePrincipal("user-1", "operator");
@@ -106,13 +106,13 @@ public sealed class OperatorAuthorizationEvaluatorTests
             WorkspaceOwnerId = "user-1"
         };
 
-        var decision = _evaluator.Evaluate(principal, request);
+        var decision = await _evaluator.EvaluateAsync(principal, request);
 
         decision.IsAllowed.Should().BeTrue();
     }
 
     [UnitTest]
-    public void Evaluate_PersonalWorkspace_NonOwnerDenied()
+    public async Task Evaluate_PersonalWorkspace_NonOwnerDenied()
     {
         _roleStore.AddGrant("operator", "workspace", "*", "read");
         var principal = CreatePrincipal("user-2", "operator");
@@ -124,14 +124,14 @@ public sealed class OperatorAuthorizationEvaluatorTests
             WorkspaceOwnerId = "user-1"
         };
 
-        var decision = _evaluator.Evaluate(principal, request);
+        var decision = await _evaluator.EvaluateAsync(principal, request);
 
         decision.IsAllowed.Should().BeFalse();
         decision.RequiresAuthentication.Should().BeFalse();
     }
 
     [UnitTest]
-    public void Evaluate_PersonalWorkspace_MissingOwnerDenied()
+    public async Task Evaluate_PersonalWorkspace_MissingOwnerDenied()
     {
         _roleStore.AddGrant("operator", "workspace", "*", "read");
         var principal = CreatePrincipal("user-1", "operator");
@@ -143,14 +143,14 @@ public sealed class OperatorAuthorizationEvaluatorTests
             WorkspaceOwnerId = null
         };
 
-        var decision = _evaluator.Evaluate(principal, request);
+        var decision = await _evaluator.EvaluateAsync(principal, request);
 
         decision.IsAllowed.Should().BeFalse();
         decision.RequiresAuthentication.Should().BeFalse();
     }
 
     [UnitTest]
-    public void Evaluate_WildcardGrant_MatchesAllResourceTypes()
+    public async Task Evaluate_WildcardGrant_MatchesAllResourceTypes()
     {
         _roleStore.AddGrant("viewer", "*", "*", "read");
         var principal = CreatePrincipal("user-1", "viewer");
@@ -166,13 +166,13 @@ public sealed class OperatorAuthorizationEvaluatorTests
                     : null
             };
 
-            _evaluator.Evaluate(principal, request).IsAllowed.Should().BeTrue(
+            (await _evaluator.EvaluateAsync(principal, request)).IsAllowed.Should().BeTrue(
                 $"wildcard grant should match {resourceType}.Read");
         }
     }
 
     [UnitTest]
-    public void Evaluate_SpecificResourceTypeGrant_MatchesOnly()
+    public async Task Evaluate_SpecificResourceTypeGrant_MatchesOnly()
     {
         _roleStore.AddGrant("executor", "process", "*", "execute");
         var principal = CreatePrincipal("user-1", "executor");
@@ -182,18 +182,18 @@ public sealed class OperatorAuthorizationEvaluatorTests
             ResourceType = OperatorResourceType.Process,
             Operation = OperatorOperation.Execute
         };
-        _evaluator.Evaluate(principal, allowed).IsAllowed.Should().BeTrue();
+        (await _evaluator.EvaluateAsync(principal, allowed)).IsAllowed.Should().BeTrue();
 
         var denied = new OperatorAuthorizationRequest
         {
             ResourceType = OperatorResourceType.Deployment,
             Operation = OperatorOperation.Execute
         };
-        _evaluator.Evaluate(principal, denied).IsAllowed.Should().BeFalse();
+        (await _evaluator.EvaluateAsync(principal, denied)).IsAllowed.Should().BeFalse();
     }
 
     [UnitTest]
-    public void Evaluate_SpecificResourceId_MatchesExact()
+    public async Task Evaluate_SpecificResourceId_MatchesExact()
     {
         _roleStore.AddGrant("scoped", "process", "proc-42", "execute");
         var principal = CreatePrincipal("user-1", "scoped");
@@ -204,7 +204,7 @@ public sealed class OperatorAuthorizationEvaluatorTests
             ResourceId = "proc-42",
             Operation = OperatorOperation.Execute
         };
-        _evaluator.Evaluate(principal, matchingRequest).IsAllowed.Should().BeTrue();
+        (await _evaluator.EvaluateAsync(principal, matchingRequest)).IsAllowed.Should().BeTrue();
 
         var nonMatchingRequest = new OperatorAuthorizationRequest
         {
@@ -212,11 +212,11 @@ public sealed class OperatorAuthorizationEvaluatorTests
             ResourceId = "proc-99",
             Operation = OperatorOperation.Execute
         };
-        _evaluator.Evaluate(principal, nonMatchingRequest).IsAllowed.Should().BeFalse();
+        (await _evaluator.EvaluateAsync(principal, nonMatchingRequest)).IsAllowed.Should().BeFalse();
     }
 
     [UnitTest]
-    public void Evaluate_NullResourceId_ScopedGrant_Denied()
+    public async Task Evaluate_NullResourceId_ScopedGrant_Denied()
     {
         _roleStore.AddGrant("scoped", "process", "proc-42", "execute");
         var principal = CreatePrincipal("user-1", "scoped");
@@ -228,11 +228,11 @@ public sealed class OperatorAuthorizationEvaluatorTests
             Operation = OperatorOperation.Execute
         };
 
-        _evaluator.Evaluate(principal, request).IsAllowed.Should().BeFalse();
+        (await _evaluator.EvaluateAsync(principal, request)).IsAllowed.Should().BeFalse();
     }
 
     [UnitTest]
-    public void Evaluate_NullResourceId_WildcardGrant_Allowed()
+    public async Task Evaluate_NullResourceId_WildcardGrant_Allowed()
     {
         _roleStore.AddGrant("executor", "process", "*", "execute");
         var principal = CreatePrincipal("user-1", "executor");
@@ -244,11 +244,11 @@ public sealed class OperatorAuthorizationEvaluatorTests
             Operation = OperatorOperation.Execute
         };
 
-        _evaluator.Evaluate(principal, request).IsAllowed.Should().BeTrue();
+        (await _evaluator.EvaluateAsync(principal, request)).IsAllowed.Should().BeTrue();
     }
 
     [UnitTest]
-    public void Evaluate_NoRoles_Forbidden()
+    public async Task Evaluate_NoRoles_Forbidden()
     {
         var principal = CreatePrincipal("user-1");
         var request = new OperatorAuthorizationRequest
@@ -257,14 +257,14 @@ public sealed class OperatorAuthorizationEvaluatorTests
             Operation = OperatorOperation.Discover
         };
 
-        var decision = _evaluator.Evaluate(principal, request);
+        var decision = await _evaluator.EvaluateAsync(principal, request);
 
         decision.IsAllowed.Should().BeFalse();
         decision.RequiresAuthentication.Should().BeFalse();
     }
 
     [UnitTest]
-    public void Evaluate_UnrecognizedServiceString_DeniesGracefully()
+    public async Task Evaluate_UnrecognizedServiceString_DeniesGracefully()
     {
         _roleStore.AddGrant("tester", "unknown-service", "*", "read");
         var principal = CreatePrincipal("user-1", "tester");
@@ -275,11 +275,11 @@ public sealed class OperatorAuthorizationEvaluatorTests
             Operation = OperatorOperation.Read
         };
 
-        _evaluator.Evaluate(principal, request).IsAllowed.Should().BeFalse();
+        (await _evaluator.EvaluateAsync(principal, request)).IsAllowed.Should().BeFalse();
     }
 
     [UnitTest]
-    public void Evaluate_WildcardOperationGrant_MatchesAllOperations()
+    public async Task Evaluate_WildcardOperationGrant_MatchesAllOperations()
     {
         _roleStore.AddGrant("full-process", "process", "*", "*");
         var principal = CreatePrincipal("user-1", "full-process");
@@ -292,13 +292,13 @@ public sealed class OperatorAuthorizationEvaluatorTests
                 Operation = op
             };
 
-            _evaluator.Evaluate(principal, request).IsAllowed.Should().BeTrue(
+            (await _evaluator.EvaluateAsync(principal, request)).IsAllowed.Should().BeTrue(
                 $"wildcard operation grant should match Process.{op}");
         }
     }
 
     [UnitTest]
-    public void Evaluate_CaseInsensitiveConventionMapping_Works()
+    public async Task Evaluate_CaseInsensitiveConventionMapping_Works()
     {
         _roleStore.AddGrant("caser", "Catalog", "*", "Discover");
         var principal = CreatePrincipal("user-1", "caser");
@@ -309,37 +309,37 @@ public sealed class OperatorAuthorizationEvaluatorTests
             Operation = OperatorOperation.Discover
         };
 
-        _evaluator.Evaluate(principal, request).IsAllowed.Should().BeTrue();
+        (await _evaluator.EvaluateAsync(principal, request)).IsAllowed.Should().BeTrue();
     }
 
     [UnitTest]
-    public void Evaluate_MultipleRoles_CombinesPermissions()
+    public async Task Evaluate_MultipleRoles_CombinesPermissions()
     {
         _roleStore.AddGrant("reader", "catalog", "*", "read");
         _roleStore.AddGrant("executor", "process", "*", "execute");
         var principal = CreatePrincipal("user-1", "reader", "executor");
 
-        _evaluator.Evaluate(principal, new OperatorAuthorizationRequest
+        (await _evaluator.EvaluateAsync(principal, new OperatorAuthorizationRequest
         {
             ResourceType = OperatorResourceType.Catalog,
             Operation = OperatorOperation.Read
-        }).IsAllowed.Should().BeTrue();
+        })).IsAllowed.Should().BeTrue();
 
-        _evaluator.Evaluate(principal, new OperatorAuthorizationRequest
+        (await _evaluator.EvaluateAsync(principal, new OperatorAuthorizationRequest
         {
             ResourceType = OperatorResourceType.Process,
             Operation = OperatorOperation.Execute
-        }).IsAllowed.Should().BeTrue();
+        })).IsAllowed.Should().BeTrue();
 
-        _evaluator.Evaluate(principal, new OperatorAuthorizationRequest
+        (await _evaluator.EvaluateAsync(principal, new OperatorAuthorizationRequest
         {
             ResourceType = OperatorResourceType.Deployment,
             Operation = OperatorOperation.Publish
-        }).IsAllowed.Should().BeFalse();
+        })).IsAllowed.Should().BeFalse();
     }
 
     [UnitTest]
-    public void Evaluate_StandardRoleClaim_AdminBypassed()
+    public async Task Evaluate_StandardRoleClaim_AdminBypassed()
     {
         var principal = CreatePrincipalWithStandardRoleClaim("user-1", "admin");
         var request = new OperatorAuthorizationRequest
@@ -348,11 +348,11 @@ public sealed class OperatorAuthorizationEvaluatorTests
             Operation = OperatorOperation.Publish
         };
 
-        _evaluator.Evaluate(principal, request).IsAllowed.Should().BeTrue();
+        (await _evaluator.EvaluateAsync(principal, request)).IsAllowed.Should().BeTrue();
     }
 
     [UnitTest]
-    public void Evaluate_StandardRoleClaim_GrantMatched()
+    public async Task Evaluate_StandardRoleClaim_GrantMatched()
     {
         _roleStore.AddGrant("operator", "process", "*", "execute");
         var principal = CreatePrincipalWithStandardRoleClaim("user-1", "operator");
@@ -362,11 +362,11 @@ public sealed class OperatorAuthorizationEvaluatorTests
             Operation = OperatorOperation.Execute
         };
 
-        _evaluator.Evaluate(principal, request).IsAllowed.Should().BeTrue();
+        (await _evaluator.EvaluateAsync(principal, request)).IsAllowed.Should().BeTrue();
     }
 
     [UnitTest]
-    public void Evaluate_MixedRoleClaims_CombinesPermissions()
+    public async Task Evaluate_MixedRoleClaims_CombinesPermissions()
     {
         _roleStore.AddGrant("reader", "catalog", "*", "read");
         _roleStore.AddGrant("executor", "process", "*", "execute");
@@ -379,21 +379,21 @@ public sealed class OperatorAuthorizationEvaluatorTests
         };
         var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, "TestScheme"));
 
-        _evaluator.Evaluate(principal, new OperatorAuthorizationRequest
+        (await _evaluator.EvaluateAsync(principal, new OperatorAuthorizationRequest
         {
             ResourceType = OperatorResourceType.Catalog,
             Operation = OperatorOperation.Read
-        }).IsAllowed.Should().BeTrue();
+        })).IsAllowed.Should().BeTrue();
 
-        _evaluator.Evaluate(principal, new OperatorAuthorizationRequest
+        (await _evaluator.EvaluateAsync(principal, new OperatorAuthorizationRequest
         {
             ResourceType = OperatorResourceType.Process,
             Operation = OperatorOperation.Execute
-        }).IsAllowed.Should().BeTrue();
+        })).IsAllowed.Should().BeTrue();
     }
 
     [UnitTest]
-    public void Evaluate_PublicWorkspaceRead_UnauthenticatedAllowed()
+    public async Task Evaluate_PublicWorkspaceRead_UnauthenticatedAllowed()
     {
         var principal = new ClaimsPrincipal(new ClaimsIdentity());
         var request = new OperatorAuthorizationRequest
@@ -404,13 +404,13 @@ public sealed class OperatorAuthorizationEvaluatorTests
             ResourceId = "ws-public-1"
         };
 
-        var decision = _evaluator.Evaluate(principal, request);
+        var decision = await _evaluator.EvaluateAsync(principal, request);
 
         decision.IsAllowed.Should().BeTrue();
     }
 
     [UnitTest]
-    public void Evaluate_PublicWorkspaceDiscover_UnauthenticatedAllowed()
+    public async Task Evaluate_PublicWorkspaceDiscover_UnauthenticatedAllowed()
     {
         var principal = new ClaimsPrincipal(new ClaimsIdentity());
         var request = new OperatorAuthorizationRequest
@@ -420,13 +420,13 @@ public sealed class OperatorAuthorizationEvaluatorTests
             WorkspaceVisibility = WorkspaceVisibility.Public
         };
 
-        var decision = _evaluator.Evaluate(principal, request);
+        var decision = await _evaluator.EvaluateAsync(principal, request);
 
         decision.IsAllowed.Should().BeTrue();
     }
 
     [UnitTest]
-    public void Evaluate_PublicWorkspaceCreate_UnauthenticatedRequiresAuth()
+    public async Task Evaluate_PublicWorkspaceCreate_UnauthenticatedRequiresAuth()
     {
         var principal = new ClaimsPrincipal(new ClaimsIdentity());
         var request = new OperatorAuthorizationRequest
@@ -436,7 +436,7 @@ public sealed class OperatorAuthorizationEvaluatorTests
             WorkspaceVisibility = WorkspaceVisibility.Public
         };
 
-        var decision = _evaluator.Evaluate(principal, request);
+        var decision = await _evaluator.EvaluateAsync(principal, request);
 
         decision.IsAllowed.Should().BeFalse();
         decision.RequiresAuthentication.Should().BeTrue();
@@ -447,7 +447,7 @@ public sealed class OperatorAuthorizationEvaluatorTests
     [InlineData(OperatorOperation.Execute)]
     [InlineData(OperatorOperation.Promote)]
     [InlineData(OperatorOperation.Publish)]
-    public void Evaluate_PublicWorkspaceMutation_AuthenticatedWithGrant_Denied(OperatorOperation operation)
+    public async Task Evaluate_PublicWorkspaceMutation_AuthenticatedWithGrant_Denied(OperatorOperation operation)
     {
         _roleStore.AddGrant("operator", "workspace", "*", "*");
         var principal = CreatePrincipal("user-1", "operator");
@@ -459,14 +459,14 @@ public sealed class OperatorAuthorizationEvaluatorTests
             ResourceId = "ws-public-1"
         };
 
-        var decision = _evaluator.Evaluate(principal, request);
+        var decision = await _evaluator.EvaluateAsync(principal, request);
 
         decision.IsAllowed.Should().BeFalse();
         decision.RequiresAuthentication.Should().BeFalse();
     }
 
     [UnitTest]
-    public void Evaluate_SharedWorkspace_MatchingScope_Allowed()
+    public async Task Evaluate_SharedWorkspace_MatchingScope_Allowed()
     {
         _roleStore.AddGrant("operator", "workspace", "*", "read");
         var principal = CreatePrincipalWithScopeClaim("user-1", "team-alpha", "operator");
@@ -478,13 +478,13 @@ public sealed class OperatorAuthorizationEvaluatorTests
             WorkspaceScopeId = "team-alpha"
         };
 
-        var decision = _evaluator.Evaluate(principal, request);
+        var decision = await _evaluator.EvaluateAsync(principal, request);
 
         decision.IsAllowed.Should().BeTrue();
     }
 
     [UnitTest]
-    public void Evaluate_SharedWorkspace_NonMatchingScope_Denied()
+    public async Task Evaluate_SharedWorkspace_NonMatchingScope_Denied()
     {
         _roleStore.AddGrant("operator", "workspace", "*", "read");
         var principal = CreatePrincipalWithScopeClaim("user-1", "team-alpha", "operator");
@@ -496,14 +496,14 @@ public sealed class OperatorAuthorizationEvaluatorTests
             WorkspaceScopeId = "team-beta"
         };
 
-        var decision = _evaluator.Evaluate(principal, request);
+        var decision = await _evaluator.EvaluateAsync(principal, request);
 
         decision.IsAllowed.Should().BeFalse();
         decision.RequiresAuthentication.Should().BeFalse();
     }
 
     [UnitTest]
-    public void Evaluate_SharedWorkspace_MissingScopeId_Denied()
+    public async Task Evaluate_SharedWorkspace_MissingScopeId_Denied()
     {
         _roleStore.AddGrant("operator", "workspace", "*", "read");
         var principal = CreatePrincipalWithScopeClaim("user-1", "team-alpha", "operator");
@@ -515,14 +515,14 @@ public sealed class OperatorAuthorizationEvaluatorTests
             WorkspaceScopeId = null
         };
 
-        var decision = _evaluator.Evaluate(principal, request);
+        var decision = await _evaluator.EvaluateAsync(principal, request);
 
         decision.IsAllowed.Should().BeFalse();
         decision.RequiresAuthentication.Should().BeFalse();
     }
 
     [UnitTest]
-    public void Evaluate_Workspace_MissingVisibility_Denied()
+    public async Task Evaluate_Workspace_MissingVisibility_Denied()
     {
         _roleStore.AddGrant("operator", "workspace", "*", "read");
         var principal = CreatePrincipal("user-1", "operator");
@@ -533,14 +533,14 @@ public sealed class OperatorAuthorizationEvaluatorTests
             WorkspaceVisibility = null
         };
 
-        var decision = _evaluator.Evaluate(principal, request);
+        var decision = await _evaluator.EvaluateAsync(principal, request);
 
         decision.IsAllowed.Should().BeFalse();
         decision.RequiresAuthentication.Should().BeFalse();
     }
 
     [UnitTest]
-    public void Evaluate_OrganizationWorkspace_AuthenticatedWithGrant_Allowed()
+    public async Task Evaluate_OrganizationWorkspace_AuthenticatedWithGrant_Allowed()
     {
         _roleStore.AddGrant("operator", "workspace", "*", "read");
         var principal = CreatePrincipal("user-1", "operator");
@@ -551,7 +551,7 @@ public sealed class OperatorAuthorizationEvaluatorTests
             WorkspaceVisibility = WorkspaceVisibility.Organization
         };
 
-        var decision = _evaluator.Evaluate(principal, request);
+        var decision = await _evaluator.EvaluateAsync(principal, request);
 
         decision.IsAllowed.Should().BeTrue();
     }

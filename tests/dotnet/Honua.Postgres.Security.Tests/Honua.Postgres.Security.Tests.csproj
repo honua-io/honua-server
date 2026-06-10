@@ -6,11 +6,12 @@
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
-    <NoWarn>$(NoWarn);CS1591;IDE0005;IDE0073</NoWarn>
+    <NoWarn>$(NoWarn);CS1591;IDE0073</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="../../../src/Honua.Postgres/Honua.Postgres.csproj" />
+    <ProjectReference Include="../Honua.TestKit/Honua.TestKit.csproj" />
   </ItemGroup>
 
   <ItemGroup>

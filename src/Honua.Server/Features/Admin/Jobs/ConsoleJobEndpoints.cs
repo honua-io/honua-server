@@ -70,7 +70,8 @@ internal static class ConsoleJobEndpoints
         CancellationToken cancellationToken)
     {
         SetNoStore(context);
-        if (!AuthorizeRead(context, resourceId: null, out var authResult))
+        var authResult = await AuthorizeReadAsync(context, resourceId: null).ConfigureAwait(false);
+        if (authResult is not null)
         {
             return authResult;
         }
@@ -102,7 +103,8 @@ internal static class ConsoleJobEndpoints
         CancellationToken cancellationToken)
     {
         SetNoStore(context);
-        if (!AuthorizeRead(context, jobId, out var authResult))
+        var authResult = await AuthorizeReadAsync(context, jobId).ConfigureAwait(false);
+        if (authResult is not null)
         {
             return authResult;
         }
@@ -133,7 +135,8 @@ internal static class ConsoleJobEndpoints
         CancellationToken cancellationToken)
     {
         SetNoStore(context);
-        if (!AuthorizeRead(context, jobId, out var authResult))
+        var authResult = await AuthorizeReadAsync(context, jobId).ConfigureAwait(false);
+        if (authResult is not null)
         {
             return authResult;
         }
@@ -174,7 +177,8 @@ internal static class ConsoleJobEndpoints
         CancellationToken cancellationToken)
     {
         SetNoStore(context);
-        if (!AuthorizeRead(context, jobId, out var authResult))
+        var authResult = await AuthorizeReadAsync(context, jobId).ConfigureAwait(false);
+        if (authResult is not null)
         {
             return authResult;
         }
@@ -213,7 +217,8 @@ internal static class ConsoleJobEndpoints
         CancellationToken cancellationToken)
     {
         SetNoStore(context);
-        if (!AuthorizeRead(context, jobId, out var authResult))
+        var authResult = await AuthorizeReadAsync(context, jobId).ConfigureAwait(false);
+        if (authResult is not null)
         {
             return authResult;
         }
@@ -260,7 +265,8 @@ internal static class ConsoleJobEndpoints
         CancellationToken cancellationToken)
     {
         SetNoStore(context);
-        if (!AuthorizeExecute(context, jobId, out var authResult))
+        var authResult = await AuthorizeExecuteAsync(context, jobId).ConfigureAwait(false);
+        if (authResult is not null)
         {
             return authResult;
         }
@@ -350,28 +356,24 @@ internal static class ConsoleJobEndpoints
         return true;
     }
 
-    private static bool AuthorizeRead(HttpContext context, string? resourceId, out IResult result)
+    private static Task<IResult?> AuthorizeReadAsync(HttpContext context, string? resourceId)
     {
         var gate = context.RequestServices.GetRequiredService<OperatorApprovalGate>();
-        var denied = gate.EvaluateAuthorization(
+        return gate.EvaluateAuthorizationAsync(
             context,
             OperatorResourceType.Job,
             OperatorOperation.Read,
             resourceId);
-        result = denied ?? Results.Empty;
-        return denied == null;
     }
 
-    private static bool AuthorizeExecute(HttpContext context, string resourceId, out IResult result)
+    private static Task<IResult?> AuthorizeExecuteAsync(HttpContext context, string resourceId)
     {
         var gate = context.RequestServices.GetRequiredService<OperatorApprovalGate>();
-        var denied = gate.EvaluateAuthorization(
+        return gate.EvaluateAuthorizationAsync(
             context,
             OperatorResourceType.Job,
             OperatorOperation.Execute,
             resourceId);
-        result = denied ?? Results.Empty;
-        return denied == null;
     }
 
     private static IResult BadRequest(string detail)

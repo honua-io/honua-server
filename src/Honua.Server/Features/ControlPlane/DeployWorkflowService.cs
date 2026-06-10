@@ -244,7 +244,7 @@ internal sealed partial class DeployWorkflowService
                 {
                     throw;
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
                     operation = operation with
                     {
@@ -252,7 +252,7 @@ internal sealed partial class DeployWorkflowService
                         UpdatedAt = DateTimeOffset.UtcNow,
                         CompletedAt = DateTimeOffset.UtcNow,
                         CurrentPhase = "Backend submission failed.",
-                        ErrorMessage = ex.Message
+                        ErrorMessage = "Backend submission failed."
                     };
                 }
 
@@ -331,7 +331,7 @@ internal sealed partial class DeployWorkflowService
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             var failed = operation with
             {
@@ -339,7 +339,7 @@ internal sealed partial class DeployWorkflowService
                 UpdatedAt = DateTimeOffset.UtcNow,
                 CompletedAt = DateTimeOffset.UtcNow,
                 CurrentPhase = "Backend submission failed.",
-                ErrorMessage = ex.Message,
+                ErrorMessage = "Backend submission failed.",
                 Audit = MergeSubmissionAudit(operation.Audit, requestedBy, reason)
             };
 

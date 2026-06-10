@@ -13,10 +13,13 @@ namespace Honua.Server.Features.Admin.Services;
 /// </summary>
 internal sealed class StartupConnectivityTestService
 {
+    public const string HttpClientName = "StartupConnectivity";
+
     private readonly ISecretProvider _secretProvider;
     private readonly IConnectionSecretResolver _connectionSecretResolver;
     private readonly IServiceProvider _serviceProvider;
     private readonly IConfiguration _configuration;
+    private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<StartupConnectivityTestService> _logger;
 
     public StartupConnectivityTestService(
@@ -24,12 +27,14 @@ internal sealed class StartupConnectivityTestService
         IConnectionSecretResolver connectionSecretResolver,
         IServiceProvider serviceProvider,
         IConfiguration configuration,
+        IHttpClientFactory httpClientFactory,
         ILogger<StartupConnectivityTestService> logger)
     {
         _secretProvider = secretProvider;
         _connectionSecretResolver = connectionSecretResolver;
         _serviceProvider = serviceProvider;
         _configuration = configuration;
+        _httpClientFactory = httpClientFactory;
         _logger = logger;
     }
 
@@ -83,7 +88,7 @@ internal sealed class StartupConnectivityTestService
             result.EndTime = DateTimeOffset.UtcNow;
             result.Duration = stopwatch.Elapsed;
             result.OverallSuccess = false;
-            result.GeneralError = ex.Message;
+            result.GeneralError = SanitizeConnectivityError(ex, "Connectivity testing failed");
             return result;
         }
     }
@@ -120,7 +125,7 @@ internal sealed class StartupConnectivityTestService
         catch (Exception ex)
         {
             secretProviderTest.Success = false;
-            secretProviderTest.Error = ex.Message;
+            secretProviderTest.Error = SanitizeConnectivityError(ex, "Secret provider test failed");
         }
 
         result.Tests.Add(secretProviderTest);
@@ -149,7 +154,7 @@ internal sealed class StartupConnectivityTestService
             catch (Exception ex)
             {
                 test.Success = false;
-                test.Error = ex.Message;
+                test.Error = SanitizeConnectivityError(ex, "Secret reference test failed");
             }
 
             result.Tests.Add(test);
@@ -209,7 +214,7 @@ internal sealed class StartupConnectivityTestService
             catch (Exception ex)
             {
                 test.Success = false;
-                test.Error = ex.Message;
+                test.Error = SanitizeConnectivityError(ex, "Database connectivity test failed");
             }
 
             result.Tests.Add(test);
@@ -252,7 +257,7 @@ internal sealed class StartupConnectivityTestService
         catch (Exception ex)
         {
             test.Success = false;
-            test.Error = $"Database connection failed: {ex.Message}";
+            test.Error = SanitizeConnectivityError(ex, "Database connection failed");
         }
     }
 
@@ -274,8 +279,7 @@ internal sealed class StartupConnectivityTestService
 
             try
             {
-                using var httpClient = new HttpClient();
-                httpClient.Timeout = TimeSpan.FromSeconds(10);
+                var httpClient = _httpClientFactory.CreateClient(HttpClientName);
 
                 using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
                 using var combinedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
@@ -283,13 +287,13 @@ internal sealed class StartupConnectivityTestService
                 var response = await httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, combinedCts.Token);
 
                 test.Success = response.IsSuccessStatusCode;
-                test.Details.Add("URL", url);
+                test.Details.Add("URL", RedactUrl(url));
                 test.Details.Add("Status Code", ((int)response.StatusCode).ToString(System.Globalization.CultureInfo.InvariantCulture));
                 test.Details.Add("Response Time", $"{httpClient.Timeout.TotalMilliseconds}ms max");
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    test.Error = $"HTTP {(int)response.StatusCode} {response.ReasonPhrase}";
+                    test.Error = $"HTTP {(int)response.StatusCode}";
                 }
             }
             catch (OperationCanceledException)
@@ -300,7 +304,7 @@ internal sealed class StartupConnectivityTestService
             catch (Exception ex)
             {
                 test.Success = false;
-                test.Error = ex.Message;
+                test.Error = SanitizeConnectivityError(ex, "External service connectivity test failed");
             }
 
             result.Tests.Add(test);
@@ -356,7 +360,7 @@ internal sealed class StartupConnectivityTestService
         catch (Exception ex)
         {
             test.Success = false;
-            test.Error = ex.Message;
+            test.Error = SanitizeConnectivityError(ex, "Cache connectivity test failed");
         }
 
         result.Tests.Add(test);
@@ -402,7 +406,7 @@ internal sealed class StartupConnectivityTestService
             catch (Exception ex)
             {
                 test.Success = false;
-                test.Error = ex.Message;
+                test.Error = SanitizeConnectivityError(ex, "Cloud storage configuration test failed");
             }
 
             result.Tests.Add(test);
@@ -488,6 +492,19 @@ internal sealed class StartupConnectivityTestService
         }
         return "***";
     }
+
+    private static string RedactUrl(string url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+        {
+            return "[redacted-url]";
+        }
+
+        return uri.GetComponents(UriComponents.SchemeAndServer, UriFormat.UriEscaped);
+    }
+
+    private static string SanitizeConnectivityError(Exception exception, string fallback)
+        => $"{fallback} ({exception.GetType().Name}).";
 }
 
 /// <summary>

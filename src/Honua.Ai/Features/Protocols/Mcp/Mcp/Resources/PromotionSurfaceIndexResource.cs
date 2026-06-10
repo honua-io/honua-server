@@ -169,8 +169,9 @@ internal sealed class PromotionSurfaceIndexResource : IMcpResource
         CancellationToken cancellationToken)
     {
         McpTelemetry.EnrichActivity("ListPublishedServices");
-        _jobService.EnsureCallerAuthorized(
-            principal, OperatorResourceType.PublishedService, OperatorOperation.Read);
+        await _jobService.EnsureCallerAuthorizedAsync(
+                principal, OperatorResourceType.PublishedService, OperatorOperation.Read, cancellationToken)
+            .ConfigureAwait(false);
         McpLog.ResourceRead(_logger, McpTelemetry.ResourceFamily.PublishedServices, uri);
 
         // ListActiveAsync only excludes decommissioned services, so we narrow to the
@@ -222,8 +223,9 @@ internal sealed class PromotionSurfaceIndexResource : IMcpResource
         CancellationToken cancellationToken)
     {
         McpTelemetry.EnrichActivity("ListDeployments");
-        _jobService.EnsureCallerAuthorized(
-            principal, OperatorResourceType.Deployment, OperatorOperation.Read);
+        await _jobService.EnsureCallerAuthorizedAsync(
+                principal, OperatorResourceType.Deployment, OperatorOperation.Read, cancellationToken)
+            .ConfigureAwait(false);
         McpLog.ResourceRead(_logger, McpTelemetry.ResourceFamily.Deployments, uri);
 
         // ListActiveAsync excludes Retired and Superseded but still surfaces
@@ -279,8 +281,9 @@ internal sealed class PromotionSurfaceIndexResource : IMcpResource
         McpTelemetry.EnrichActivity(packageKind == DeploymentSourceKind.MapPackage
             ? "ListMapPackages"
             : "ListAppPackages");
-        _jobService.EnsureCallerAuthorized(
-            principal, OperatorResourceType.Package, OperatorOperation.Read);
+        await _jobService.EnsureCallerAuthorizedAsync(
+                principal, OperatorResourceType.Package, OperatorOperation.Read, cancellationToken)
+            .ConfigureAwait(false);
         var listFamily = packageKind == DeploymentSourceKind.MapPackage
             ? McpTelemetry.ResourceFamily.MapPackages
             : McpTelemetry.ResourceFamily.AppPackages;

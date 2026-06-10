@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Reflection;
 using FluentAssertions;
 using Honua.Server;
 using Honua.TestKit.Attributes;
@@ -39,27 +38,11 @@ public sealed class OperationCoverageTests
         // e.g. the Mcp operation tests now live in Honua.Protocols.Mcp.Tests.
         var operations = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var testAssembly in ArchitectureTestHelpers.IntegrationTestAssemblies())
+        foreach (var method in ArchitectureTestHelpers.IntegrationTestMethods())
         {
-            foreach (var type in ArchitectureTestHelpers.GetTypesSafely(testAssembly))
+            foreach (var attr in method.GetCustomAttributes(typeof(InterfaceOperationAttribute), inherit: true).Cast<InterfaceOperationAttribute>())
             {
-                var classHasIntegration = type.GetCustomAttributes(typeof(IntegrationTestAttribute), inherit: true).Length > 0;
-
-                foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static))
-                {
-                    var methodHasIntegration = classHasIntegration ||
-                        method.GetCustomAttributes(typeof(IntegrationTestAttribute), inherit: true).Length > 0;
-
-                    if (!methodHasIntegration)
-                    {
-                        continue;
-                    }
-
-                    foreach (var attr in method.GetCustomAttributes(typeof(InterfaceOperationAttribute), inherit: true).Cast<InterfaceOperationAttribute>())
-                    {
-                        operations.Add(FormatKey(attr.Protocol, attr.Operation));
-                    }
-                }
+                operations.Add(FormatKey(attr.Protocol, attr.Operation));
             }
         }
 

@@ -16,7 +16,7 @@ namespace Honua.Server.Tests.Features.Protocols.Scene;
 /// are easy to diagnose.
 /// </summary>
 [Protocol(TestProtocols.Scene)]
-public sealed class SceneAssetResolverTests : IAsyncLifetime, IDisposable
+public sealed class SceneAssetResolverTests : IDisposable
 {
     private readonly string _root;
     private readonly string _siblingRoot;
@@ -38,10 +38,6 @@ public sealed class SceneAssetResolverTests : IAsyncLifetime, IDisposable
         _siblingSecretPath = Path.Combine(_siblingRoot, "secret.txt");
         File.WriteAllText(_siblingSecretPath, "should not be reachable");
     }
-
-    public Task InitializeAsync() => Task.CompletedTask;
-
-    public Task DisposeAsync() => Task.CompletedTask;
 
     public void Dispose()
     {
@@ -218,10 +214,9 @@ public sealed class SceneAssetResolverTests : IAsyncLifetime, IDisposable
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or PlatformNotSupportedException)
         {
-            // The current OS or user cannot create symlinks (e.g., Windows
-            // without Developer Mode). Skip silently — Linux CI still proves
-            // the resolver path.
-            return;
+            throw new InvalidOperationException(
+                "Scene symlink-escape coverage requires filesystem symlink support.",
+                ex);
         }
 
         try

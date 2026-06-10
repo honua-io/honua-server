@@ -29,8 +29,10 @@ public sealed class FileSinkExecutorTests
     [UnitTest]
     public async Task GeoJsonFileSink_WritesFeatureCollectionFile()
     {
-        var executor = new GeoJsonFileSinkExecutor(Options());
-        var path = Path.Combine(Path.GetTempPath(), $"honua-geoetl-sink-{Guid.NewGuid():N}.geojson");
+        var root = CreateOutputRoot();
+        var relativePath = "out/sink.geojson";
+        var path = Path.Combine(root, "out", "sink.geojson");
+        var executor = new GeoJsonFileSinkExecutor(Options(root));
         try
         {
             var input = BuildInputUri(
@@ -38,7 +40,7 @@ public sealed class FileSinkExecutorTests
                 Feature(Point(3, 4), ("name", "b")));
 
             var (status, uri) = await RunAsync(
-                executor, GeoJsonFileSinkExecutor.HandledProcessId, ("input", input), ("path", path));
+                executor, GeoJsonFileSinkExecutor.HandledProcessId, ("input", input), ("path", relativePath));
 
             status.Should().Be(ExecutionJobStatus.Succeeded);
             uri.Should().StartWith("data:application/json;base64,");
@@ -50,9 +52,9 @@ public sealed class FileSinkExecutorTests
         }
         finally
         {
-            if (File.Exists(path))
+            if (Directory.Exists(root))
             {
-                File.Delete(path);
+                Directory.Delete(root, recursive: true);
             }
         }
     }
@@ -67,10 +69,38 @@ public sealed class FileSinkExecutorTests
     }
 
     [UnitTest]
+    public async Task GeoJsonFileSink_AbsolutePath_FailsCleanly()
+    {
+        var root = CreateOutputRoot();
+        var executor = new GeoJsonFileSinkExecutor(Options(root));
+        try
+        {
+            var absolutePath = Path.Combine(Path.GetTempPath(), $"honua-geoetl-sink-{Guid.NewGuid():N}.geojson");
+
+            var (status, _) = await RunAsync(
+                executor,
+                GeoJsonFileSinkExecutor.HandledProcessId,
+                ("input", BuildInputUri(Feature(Point(0, 0)))),
+                ("path", absolutePath));
+
+            status.Should().Be(ExecutionJobStatus.Failed);
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [UnitTest]
     public async Task QuarantineSink_TagsRowsAndNeverThrows()
     {
-        var executor = new QuarantineSinkExecutor(Options());
-        var path = Path.Combine(Path.GetTempPath(), $"honua-geoetl-dlq-{Guid.NewGuid():N}.geojson");
+        var root = CreateOutputRoot();
+        var relativePath = "dlq/quarantine.geojson";
+        var path = Path.Combine(root, "dlq", "quarantine.geojson");
+        var executor = new QuarantineSinkExecutor(Options(root));
         try
         {
             var input = BuildInputUri(
@@ -79,7 +109,7 @@ public sealed class FileSinkExecutorTests
 
             var (status, uri) = await RunAsync(
                 executor, QuarantineSinkExecutor.HandledProcessId,
-                ("input", input), ("path", path), ("batchId", "batch-123"));
+                ("input", input), ("path", relativePath), ("batchId", "batch-123"));
 
             status.Should().Be(ExecutionJobStatus.Succeeded);
             uri.Should().StartWith("data:application/json;base64,");
@@ -92,9 +122,9 @@ public sealed class FileSinkExecutorTests
         }
         finally
         {
-            if (File.Exists(path))
+            if (Directory.Exists(root))
             {
-                File.Delete(path);
+                Directory.Delete(root, recursive: true);
             }
         }
     }
@@ -103,16 +133,25 @@ public sealed class FileSinkExecutorTests
     // Helpers
     // -------------------------------------------------------------------------
 
-    private static IOptionsMonitor<GeoprocessingExecutorOptions> Options()
+    private static IOptionsMonitor<GeoprocessingExecutorOptions> Options(string? outputRootDirectory = null)
     {
         var options = new GeoprocessingExecutorOptions
         {
             MaxArtifactBytes = 50L * 1024L * 1024L,
-            ResultRetention = TimeSpan.FromDays(7)
+            ResultRetention = TimeSpan.FromDays(7),
+            OutputRootDirectory = outputRootDirectory
+                ?? Path.Combine(Path.GetTempPath(), "honua-geoprocessing-outputs")
         };
         var monitor = Substitute.For<IOptionsMonitor<GeoprocessingExecutorOptions>>();
         monitor.CurrentValue.Returns(options);
         return monitor;
+    }
+
+    private static string CreateOutputRoot()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"honua-geoetl-sink-root-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        return root;
     }
 
     private static Point Point(double x, double y)

@@ -228,9 +228,9 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
 
             return published;
         }
-        catch (LayerPublishingException ex)
+        catch (LayerPublishingException)
         {
-            warnings.Add($"AutoPublish was requested, but publishing did not complete: {ex.Message}");
+            warnings.Add("AutoPublish was requested, but publishing did not complete.");
             return null;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

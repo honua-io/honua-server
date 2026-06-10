@@ -92,6 +92,7 @@ public abstract class OptionsValidator<
         }
     }
 
+    /// <inheritdoc />
     public ValidateOptionsResult Validate(string? name, T options)
     {
         ArgumentNullException.ThrowIfNull(options);

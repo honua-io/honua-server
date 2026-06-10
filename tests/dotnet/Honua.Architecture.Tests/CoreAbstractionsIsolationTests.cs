@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Reflection;
-using System.Xml.Linq;
 using FluentAssertions;
 using NetArchTest.Rules;
 using Xunit;
@@ -60,13 +59,7 @@ public sealed class CoreAbstractionsIsolationTests
 
         File.Exists(csprojPath).Should().BeTrue("Honua.Core.Abstractions.csproj must exist at the canonical path");
 
-        var document = XDocument.Load(csprojPath);
-        var packageReferences = document
-            .Descendants("PackageReference")
-            .Select(element => element.Attribute("Include")?.Value)
-            .Where(value => !string.IsNullOrWhiteSpace(value))
-            .Select(value => value!)
-            .ToList();
+        var packageReferences = ArchitectureTestHelpers.DirectPackageReferenceNames(csprojPath);
 
         foreach (var banned in BannedPackages)
         {
@@ -175,13 +168,7 @@ public sealed class CoreAbstractionsIsolationTests
 
         File.Exists(csprojPath).Should().BeTrue("Honua.Core.csproj must exist at the canonical path");
 
-        var document = XDocument.Load(csprojPath);
-        var packageReferences = document
-            .Descendants("PackageReference")
-            .Select(element => element.Attribute("Include")?.Value)
-            .Where(value => !string.IsNullOrWhiteSpace(value))
-            .Select(value => value!)
-            .ToList();
+        var packageReferences = ArchitectureTestHelpers.DirectPackageReferenceNames(csprojPath);
 
         foreach (var banned in CoreBannedGeometryPackages)
         {
@@ -204,18 +191,12 @@ public sealed class CoreAbstractionsIsolationTests
             "Honua.Core.Abstractions",
             "Honua.Core.Abstractions.csproj");
 
-        var document = XDocument.Load(csprojPath);
-        var projectReferences = document
-            .Descendants("ProjectReference")
-            .Select(element => element.Attribute("Include")?.Value)
-            .Where(value => !string.IsNullOrWhiteSpace(value))
-            .Select(value => value!)
-            .ToList();
+        var projectReferences = ArchitectureTestHelpers.DirectProjectReferenceNames(csprojPath);
 
         projectReferences
             .Should()
             .NotContain(
-                value => value.Contains("Honua.Core.csproj", StringComparison.OrdinalIgnoreCase),
+                name => name.Equals("Honua.Core", StringComparison.OrdinalIgnoreCase),
                 "Honua.Core.Abstractions must not depend on Honua.Core (the dependency direction is reversed by design)");
     }
 }

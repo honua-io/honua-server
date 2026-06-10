@@ -12,7 +12,6 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
-using Npgsql;
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 
@@ -91,14 +90,6 @@ internal sealed partial class FeatureServerQueryExecutor
         {
             throw new InvalidOperationException("Invalid query format.", ex);
         }
-        catch (PostgresException ex) when (QueryExceptionClassifier.IsInvalidQuerySyntax(ex))
-        {
-            throw new InvalidOperationException("Invalid query syntax.", ex);
-        }
-        catch (NpgsqlException ex)
-        {
-            throw new InvalidOperationException("Query execution failed.", ex);
-        }
     }
 
     private static async Task<(ReadOnlyMemory<byte> Payload, int Count)> QueryRawGeoServicesPointJsonWithValidationAsync(
@@ -131,14 +122,6 @@ internal sealed partial class FeatureServerQueryExecutor
         catch (FormatException ex)
         {
             throw new InvalidOperationException("Invalid query format.", ex);
-        }
-        catch (PostgresException ex) when (QueryExceptionClassifier.IsInvalidQuerySyntax(ex))
-        {
-            throw new InvalidOperationException("Invalid query syntax.", ex);
-        }
-        catch (NpgsqlException ex)
-        {
-            throw new InvalidOperationException("Query execution failed.", ex);
         }
     }
 
@@ -322,14 +305,6 @@ internal sealed partial class FeatureServerQueryExecutor
         {
             throw new InvalidOperationException("Invalid query format.", ex);
         }
-        catch (PostgresException ex) when (QueryExceptionClassifier.IsInvalidQuerySyntax(ex))
-        {
-            throw new InvalidOperationException("Invalid query syntax.", ex);
-        }
-        catch (NpgsqlException ex)
-        {
-            throw new InvalidOperationException("Query execution failed.", ex);
-        }
     }
 
     public async Task<byte[]?> QueryGeobufWithValidationAsync(
@@ -364,14 +339,6 @@ internal sealed partial class FeatureServerQueryExecutor
         catch (FormatException ex)
         {
             throw new InvalidOperationException("Invalid query format.", ex);
-        }
-        catch (PostgresException ex) when (QueryExceptionClassifier.IsInvalidQuerySyntax(ex))
-        {
-            throw new InvalidOperationException("Invalid query syntax.", ex);
-        }
-        catch (NpgsqlException ex)
-        {
-            throw new InvalidOperationException("Query execution failed.", ex);
         }
     }
 

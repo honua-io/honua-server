@@ -56,8 +56,11 @@ public sealed class McpToolDelegationTests
         result.StructuredContent!.Value.GetProperty("requiresApproval").GetBoolean().Should().BeTrue();
         result.StructuredContent!.Value.GetProperty("warnings").GetArrayLength().Should().Be(1);
 
-        _jobService.Received(1).EnsureCallerAuthorized(
-            Arg.Any<ClaimsPrincipal>(), OperatorResourceType.Process, OperatorOperation.Read);
+        await _jobService.Received(1).EnsureCallerAuthorizedAsync(
+            Arg.Any<ClaimsPrincipal>(),
+            OperatorResourceType.Process,
+            OperatorOperation.Read,
+            Arg.Any<CancellationToken>());
         _jobService.Received(1).ValidatePlan(
             Arg.Is<AnalysisPlan>(p => p.PlanId == "plan-1"), Arg.Any<ClaimsPrincipal>());
     }
@@ -90,8 +93,11 @@ public sealed class McpToolDelegationTests
         artifacts[0].GetString().Should().Be(nameof(ArtifactKind.FeatureLayer));
         structured.GetProperty("sideEffects").GetArrayLength().Should().Be(1);
 
-        _jobService.Received(1).EnsureCallerAuthorized(
-            Arg.Any<ClaimsPrincipal>(), OperatorResourceType.Process, OperatorOperation.Read);
+        await _jobService.Received(1).EnsureCallerAuthorizedAsync(
+            Arg.Any<ClaimsPrincipal>(),
+            OperatorResourceType.Process,
+            OperatorOperation.Read,
+            Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -138,8 +144,11 @@ public sealed class McpToolDelegationTests
         structured.GetProperty("status").GetString().Should().Be(nameof(ExecutionJobStatus.Queued));
         structured.GetProperty("resourceUri").GetString().Should().Be("honua://jobs/job-xyz");
 
-        _jobService.Received(1).EnsureCallerAuthorized(
-            Arg.Any<ClaimsPrincipal>(), OperatorResourceType.Process, OperatorOperation.Execute);
+        await _jobService.Received(1).EnsureCallerAuthorizedAsync(
+            Arg.Any<ClaimsPrincipal>(),
+            OperatorResourceType.Process,
+            OperatorOperation.Execute,
+            Arg.Any<CancellationToken>());
         await _jobService.Received(1).SubmitJobAsync(
             Arg.Is<AnalysisPlan>(p => p.PlanId == "plan-1"),
             "idem-key-1",

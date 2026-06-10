@@ -15,7 +15,6 @@ using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
-using Npgsql;
 using NSubstitute;
 using System.Collections.Immutable;
 using System.Text.Json;
@@ -134,18 +133,19 @@ public sealed class FeatureServerQueryExecutorTests
     }
 
     [Fact]
-    public async Task QueryFlatGeobufWithValidationAsync_WhenReaderThrowsNpgsqlException_ThrowsInvalidOperationException()
+    public async Task QueryFlatGeobufWithValidationAsync_WhenReaderThrowsProviderException_PropagatesOriginalException()
     {
+        var expected = new InvalidOperationException("Provider connection dropped");
         var featureReader = Substitute.For<IFeatureReader>();
         featureReader.QueryFlatGeobufAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromException<byte[]?>(new NpgsqlException("Connection dropped")));
+            .Returns(Task.FromException<byte[]?>(expected));
 
         var sut = CreateSut(featureReader);
 
         Func<Task> act = () => sut.QueryFlatGeobufWithValidationAsync(1, default, CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Query execution failed.");
+        var thrown = await act.Should().ThrowExactlyAsync<InvalidOperationException>();
+        thrown.Which.Should().BeSameAs(expected);
     }
 
     [Fact]
@@ -176,33 +176,35 @@ public sealed class FeatureServerQueryExecutorTests
     }
 
     [Fact]
-    public async Task QueryGeobufWithValidationAsync_WhenReaderThrowsNpgsqlException_ThrowsInvalidOperationException()
+    public async Task QueryGeobufWithValidationAsync_WhenReaderThrowsProviderException_PropagatesOriginalException()
     {
+        var expected = new InvalidOperationException("Provider connection dropped");
         var featureReader = Substitute.For<IFeatureReader, IGeobufFeatureStore>();
         ((IGeobufFeatureStore)featureReader).QueryGeobufAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromException<byte[]?>(new NpgsqlException("Connection dropped")));
+            .Returns(Task.FromException<byte[]?>(expected));
 
         var sut = CreateSut(featureReader);
 
         Func<Task> act = () => sut.QueryGeobufWithValidationAsync(1, default, CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Query execution failed.");
+        var thrown = await act.Should().ThrowExactlyAsync<InvalidOperationException>();
+        thrown.Which.Should().BeSameAs(expected);
     }
 
     [Fact]
-    public async Task QueryWithValidationAsync_WhenReaderThrowsNpgsqlException_ThrowsInvalidOperationException()
+    public async Task QueryWithValidationAsync_WhenReaderThrowsProviderException_PropagatesOriginalException()
     {
+        var expected = new InvalidOperationException("Provider connection dropped");
         var featureReader = Substitute.For<IFeatureReader>();
         featureReader.QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromException<QueryResult<Feature>>(new NpgsqlException("Connection dropped")));
+            .Returns(Task.FromException<QueryResult<Feature>>(expected));
 
         var sut = CreateSut(featureReader);
 
         Func<Task> act = () => sut.QueryWithValidationAsync(1, default, CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Query execution failed.");
+        var thrown = await act.Should().ThrowExactlyAsync<InvalidOperationException>();
+        thrown.Which.Should().BeSameAs(expected);
     }
 
     [Fact]

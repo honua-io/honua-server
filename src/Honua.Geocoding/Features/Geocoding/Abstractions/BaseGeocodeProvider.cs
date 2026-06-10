@@ -78,14 +78,14 @@ internal abstract class BaseGeocodeProvider : IGeocodeProvider
                 ResponseTimeMs = stopwatch.Elapsed.TotalMilliseconds
             };
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             stopwatch.Stop();
 
             return new GeocodeProviderHealth(
                 ProviderName: Name,
                 IsHealthy: false,
-                ErrorMessage: ex.Message,
+                ErrorMessage: "Provider health check failed.",
                 LastChecked: DateTime.UtcNow)
             {
                 ResponseTimeMs = stopwatch.Elapsed.TotalMilliseconds

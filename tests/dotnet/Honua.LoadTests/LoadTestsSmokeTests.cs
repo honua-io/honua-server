@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.LoadTests.Scenarios;
+using Honua.TestKit.Attributes;
+using Honua.TestKit.Performance;
 using NBomber.Contracts;
 using Xunit;
 
@@ -23,7 +25,7 @@ namespace Honua.LoadTests;
 /// </summary>
 public sealed class LoadTestsSmokeTests
 {
-    [Fact]
+    [UnitTest]
     public void StacSearchScenario_IsDiscoverableAndConfigured()
     {
         var props = StacSearchLoadScenario.Build();
@@ -33,7 +35,7 @@ public sealed class LoadTestsSmokeTests
         Assert.NotEmpty(props.LoadSimulations);
     }
 
-    [Fact]
+    [UnitTest]
     public void TilesScenario_IsDiscoverableAndConfigured()
     {
         var props = TilesLoadScenario.Build();
@@ -44,7 +46,7 @@ public sealed class LoadTestsSmokeTests
         Assert.NotEmpty(TilesLoadScenario.TileCoordinates);
     }
 
-    [Fact]
+    [UnitTest]
     public void FeaturesPaginationScenario_IsDiscoverableAndConfigured()
     {
         var props = FeaturesPaginationLoadScenario.Build();
@@ -60,7 +62,7 @@ public sealed class LoadTestsSmokeTests
             FeaturesPaginationLoadScenario.OffsetWalk[^1]);
     }
 
-    [Fact]
+    [UnitTest]
     public void Settings_DefaultBaseUrl_WhenEnvVarUnset()
     {
         var originalTarget = Environment.GetEnvironmentVariable(LoadScenarioSettings.TargetEnvVar);
@@ -73,5 +75,13 @@ public sealed class LoadTestsSmokeTests
         {
             Environment.SetEnvironmentVariable(LoadScenarioSettings.TargetEnvVar, originalTarget);
         }
+    }
+
+    [UnitTest]
+    public void CliScenarioAllowlist_MatchesRegisteredLoadSuite()
+    {
+        Assert.Equal(
+            LoadTestScenarios.ScenarioNames.OrderBy(static name => name, StringComparer.Ordinal),
+            Program.KnownScenarios.OrderBy(static name => name, StringComparer.Ordinal));
     }
 }

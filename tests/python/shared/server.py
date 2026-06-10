@@ -105,6 +105,10 @@ class HonuaServer:
             "HONUA_SKIP_MIGRATIONS": "true",
             # Disable HTTPS redirection for tests
             "ASPNETCORE_FORWARDEDHEADERS_ENABLED": "false",
+            # Test/dev-only license override (honua-server#1577): grant Pro entitlements so this
+            # out-of-process fixture server can exercise edition-gated features (e.g. feature
+            # editing, #1548). Honoured only outside Production; this fixture runs as "Test".
+            "Licensing__DevGrantEdition": "Pro",
         })
         # Keep protocol/client compatibility runs focused on external behavior.
         # Query-cache behavior is covered separately in dedicated .NET tests.

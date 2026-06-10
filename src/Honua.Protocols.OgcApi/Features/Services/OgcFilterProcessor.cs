@@ -37,7 +37,7 @@ internal sealed partial class OgcFilterProcessor
     /// <summary>
     /// Result of filter processing operation.
     /// </summary>
-    public sealed class FilterProcessingResult
+    internal sealed class FilterProcessingResult
     {
         public bool IsSuccess { get; init; }
         public string? ErrorMessage { get; init; }

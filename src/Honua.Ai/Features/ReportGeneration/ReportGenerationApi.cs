@@ -98,74 +98,98 @@ public sealed record GenerateReportContentRequest
     public ReportGenerationAnswer[] Answers { get; init => field = value ?? []; } = [];
 }
 
+/// <summary>A single prior conversation turn supplied to ground a report-generation refine request.</summary>
 public sealed record ReportGenerationConversationTurn
 {
+    /// <summary>Role of the turn author (for example <c>user</c> or <c>assistant</c>).</summary>
     [JsonPropertyName("role")]
     public string Role { get; init; } = string.Empty;
 
+    /// <summary>Natural-language content of the turn.</summary>
     [JsonPropertyName("content")]
     public string Content { get; init; } = string.Empty;
 }
 
+/// <summary>An answer selecting one option for a previously emitted clarification question.</summary>
 public sealed record ReportGenerationAnswer
 {
+    /// <summary>Identifier of the clarification question being answered.</summary>
     [JsonPropertyName("questionId")]
     public string QuestionId { get; init; } = string.Empty;
 
+    /// <summary>Identifier of the chosen option.</summary>
     [JsonPropertyName("optionId")]
     public string OptionId { get; init; } = string.Empty;
 }
 
+/// <summary>A clarification question returned when the prompt is ambiguous and needs operator input.</summary>
 public sealed record ReportGenerationClarification
 {
+    /// <summary>Stable identifier of the clarification question.</summary>
     [JsonPropertyName("id")]
     public string Id { get; init; } = string.Empty;
 
+    /// <summary>Clarification kind discriminator.</summary>
     [JsonPropertyName("kind")]
     public string Kind { get; init; } = string.Empty;
 
+    /// <summary>Human-readable prompt presented to the operator.</summary>
     [JsonPropertyName("prompt")]
     public string Prompt { get; init; } = string.Empty;
 
+    /// <summary>Optional explanation of why the clarification is required.</summary>
     [JsonPropertyName("reason")]
     public string? Reason { get; init; }
 
+    /// <summary>Selectable answer choices for the clarification.</summary>
     [JsonPropertyName("choices")]
     public IReadOnlyList<ReportGenerationClarificationChoice> Choices { get; init; } = [];
 }
 
+/// <summary>A selectable choice for a <see cref="ReportGenerationClarification"/>.</summary>
 public sealed record ReportGenerationClarificationChoice
 {
+    /// <summary>Stable identifier of the choice.</summary>
     [JsonPropertyName("id")]
     public string Id { get; init; } = string.Empty;
 
+    /// <summary>Human-readable label for the choice.</summary>
     [JsonPropertyName("label")]
     public string Label { get; init; } = string.Empty;
 
+    /// <summary>Optional description of the effect selecting this choice has on generation.</summary>
     [JsonPropertyName("effect")]
     public string? Effect { get; init; }
 }
 
+/// <summary>Reports the availability state of a generation capability for the current request.</summary>
 public sealed record ReportGenerationCapabilityState
 {
+    /// <summary>Capability name.</summary>
     [JsonPropertyName("name")]
     public string Name { get; init; } = string.Empty;
 
+    /// <summary>Capability state (for example <c>available</c> or <c>unavailable</c>).</summary>
     [JsonPropertyName("state")]
     public string State { get; init; } = string.Empty;
 
+    /// <summary>Optional reason explaining the reported state.</summary>
     [JsonPropertyName("reason")]
     public string? Reason { get; init; }
 }
 
+/// <summary>Token and latency usage metrics for a report-generation request.</summary>
 public sealed record ReportGenerationUsage
 {
+    /// <summary>Prompt tokens consumed, when reported by the provider.</summary>
     [JsonPropertyName("promptTokens")]
     public int? PromptTokens { get; init; }
 
+    /// <summary>Completion tokens produced, when reported by the provider.</summary>
     [JsonPropertyName("completionTokens")]
     public int? CompletionTokens { get; init; }
 
+    /// <summary>End-to-end latency in milliseconds, when measured.</summary>
     [JsonPropertyName("latencyMs")]
     public int? LatencyMs { get; init; }
 }

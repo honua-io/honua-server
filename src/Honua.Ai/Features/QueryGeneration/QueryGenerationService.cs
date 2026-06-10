@@ -211,13 +211,13 @@ public sealed class QueryGenerationService : IQueryGenerationService
         {
             throw;
         }
-        catch (HttpRequestException ex)
+        catch (HttpRequestException)
         {
-            return ErrorProposal($"HTTP request failed: {ex.Message}");
+            return ErrorProposal("Provider request failed.");
         }
-        catch (JsonException ex)
+        catch (JsonException)
         {
-            return ErrorProposal($"Failed to parse provider response: {ex.Message}");
+            return ErrorProposal("Provider response could not be parsed.");
         }
     }
 

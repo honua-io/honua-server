@@ -99,8 +99,6 @@ internal sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
 
             if (!response.IsSuccessStatusCode)
             {
-                var errorContent = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-
                 throw new GeocodeProviderException($"Azure Maps API returned {response.StatusCode}: {response.ReasonPhrase}")
                 {
                     ProviderName = Name,

@@ -371,7 +371,7 @@ public sealed class KubernetesJobBatchComputeBackendTests
         var result = await backend.StartAsync(job);
 
         result.Status.Should().Be(ExecutionJobStatus.Failed);
-        result.Message.Should().Contain("cluster unreachable");
+        result.Message.Should().Be("Kubernetes Job submission failed.");
     }
 
     [Fact]
@@ -386,7 +386,7 @@ public sealed class KubernetesJobBatchComputeBackendTests
         var result = await backend.StartAsync(job);
 
         result.Status.Should().Be(ExecutionJobStatus.Failed);
-        result.Message.Should().Contain("no API server endpoint");
+        result.Message.Should().Be("Kubernetes Job submission failed.");
     }
 
     [Fact]
@@ -401,7 +401,7 @@ public sealed class KubernetesJobBatchComputeBackendTests
         var result = await backend.StartAsync(job);
 
         result.Status.Should().Be(ExecutionJobStatus.Failed);
-        result.Message.Should().Contain("Invalid URI");
+        result.Message.Should().Be("Kubernetes Job submission failed.");
     }
 
     [Fact]
@@ -426,7 +426,7 @@ public sealed class KubernetesJobBatchComputeBackendTests
         var observation = await backend.ObserveAsync(job);
 
         observation.Status.Should().Be(ExecutionJobStatus.Running);
-        observation.Message.Should().Contain("ApiServerUrl");
+        observation.Message.Should().Be("Kubernetes API unavailable.");
     }
 
     [Fact]
@@ -445,7 +445,7 @@ public sealed class KubernetesJobBatchComputeBackendTests
         var observation = await backend.CancelAsync(job);
 
         observation.Status.Should().Be(ExecutionJobStatus.Running);
-        observation.Message.Should().Contain("bearer token file");
+        observation.Message.Should().Be("Kubernetes Job cancellation failed.");
     }
 
     [Fact]
@@ -913,7 +913,7 @@ public sealed class KubernetesJobBatchComputeBackendTests
         var observation = await backend.CancelAsync(job);
 
         observation.Status.Should().Be(ExecutionJobStatus.Running);
-        observation.Message.Should().Contain("boom");
+        observation.Message.Should().Be("Kubernetes Job cancellation failed.");
     }
 
     [Fact]

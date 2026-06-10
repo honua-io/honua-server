@@ -463,7 +463,7 @@ internal sealed partial class AzureBatchDataPlaneClient : IAzureBatchClient
             // preserves durable state on observe/cancel instead of promoting the job to
             // Failed while Azure Batch may still be hosting it.
             throw new HttpRequestException(
-                $"Azure Batch credential acquisition failed: {ex.Message}",
+                "Azure Batch credential acquisition failed.",
                 ex);
         }
 

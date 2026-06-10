@@ -78,7 +78,7 @@ public sealed class GeoprocessingJobServiceTests
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public void ValidatePlan_DoesNotCheckAuth_AdapterResponsibility()
     {
-        // Auth is the adapter's responsibility (EnsureCallerAuthorized) so the
+        // Auth is the adapter's responsibility (EnsureCallerAuthorizedAsync) so the
         // service method must succeed even when the evaluator would deny access.
         _authEvaluator
             .EvaluateAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>(), Arg.Any<CancellationToken>())
@@ -1051,7 +1051,7 @@ public sealed class GeoprocessingJobServiceTests
             Arg.Is<ExecutionJobRecord>(j =>
                 j.Status == ExecutionJobStatus.Failed &&
                 j.Version == 1 &&
-                j.ErrorMessage!.Contains("Redis unavailable")),
+                j.ErrorMessage == "Submission failed."),
             Arg.Any<TimeSpan?>(),
             Arg.Any<CancellationToken>());
     }
@@ -1758,7 +1758,7 @@ public sealed class GeoprocessingJobServiceTests
         await _jobStore.Received().TrySetAsync(
             Arg.Is<ExecutionJobRecord>(j =>
                 j.Status == ExecutionJobStatus.Failed &&
-                j.ErrorMessage!.Contains("Backend unavailable")),
+                j.ErrorMessage == "Submission failed."),
             Arg.Any<TimeSpan?>(),
             Arg.Any<CancellationToken>());
     }

@@ -13,8 +13,16 @@
       transitively. Namespaces preserved (Honua.Server.Features.*) so cross-
       module references in the Server orchestration layer keep compiling
       without a using-clause sweep.
+
+      NoWarn is intentionally limited to the IL trim/AOT analyzer codes that the
+      Azure.* SDKs (Identity, Storage.Blobs, Messaging.EventGrid/EventHubs) emit
+      because those packages are not annotated trim/AOT-safe. Code-quality codes
+      (CS1591, IDE00xx, CA*) are not suppressed: every type here is internal so
+      CS1591 cannot fire, and the source builds clean under the analyzers, so the
+      suppression is unnecessary. The IL codes are retained because the upstream
+      Azure SDK surface is not annotated for trimming/AOT.
     -->
-    <NoWarn>$(NoWarn);CS1591;IL2104;IL2026;IL3002;IL3050;CA1041;CA1000;CA1862;IDE0051;IDE0052;IDE0005;CA1844;IL2075</NoWarn>
+    <NoWarn>$(NoWarn);IL2104;IL2026;IL3002;IL3050;IL2075</NoWarn>
     <RootNamespace>Honua.Azure</RootNamespace>
   </PropertyGroup>
 

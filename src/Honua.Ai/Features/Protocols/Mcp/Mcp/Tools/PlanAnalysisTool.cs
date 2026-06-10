@@ -56,7 +56,9 @@ internal sealed class PlanAnalysisTool : IMcpTool
         McpLog.ToolInvoked(_logger, ToolName, WorkflowFamily);
 
         var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
-        _jobService.EnsureCallerAuthorized(principal, OperatorResourceType.Process, OperatorOperation.Read);
+        await _jobService
+            .EnsureCallerAuthorizedAsync(principal, OperatorResourceType.Process, OperatorOperation.Read, cancellationToken)
+            .ConfigureAwait(false);
 
         var argument = McpToolHelpers.ParseArguments(arguments, McpJsonContext.Default.McpPlanAnalysisArgument);
         if (string.IsNullOrWhiteSpace(argument.Intent))

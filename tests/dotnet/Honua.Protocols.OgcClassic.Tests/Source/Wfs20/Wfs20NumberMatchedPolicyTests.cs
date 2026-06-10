@@ -33,6 +33,7 @@ public sealed class Wfs20NumberMatchedPolicyTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
     public async Task Wfs_GetFeature_GeoJsonOutput_WithUnknownNumberMatchedPolicy_OmitsNumberMatched()
     {
         const string outputFormat = "application/geo%2Bjson";
@@ -58,6 +59,7 @@ public sealed class Wfs20NumberMatchedPolicyTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
     public async Task Wfs_GetFeature_ResultTypeHits_WithUnknownNumberMatchedPolicy_StillReturnsExactCount()
     {
         var response = await _fixture.Client.GetAsync(

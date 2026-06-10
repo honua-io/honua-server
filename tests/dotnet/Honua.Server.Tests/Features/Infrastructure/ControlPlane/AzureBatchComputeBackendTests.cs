@@ -130,7 +130,7 @@ public sealed class AzureBatchComputeBackendTests
         var submission = await backend.StartAsync(CreateJob());
 
         submission.Status.Should().Be(ExecutionJobStatus.Failed);
-        submission.Message.Should().Contain("account denied");
+        submission.Message.Should().Be("Azure Batch rejected job submission.");
         // Preserve the deterministic JobId so a late-accepted job can still be observed and
         // cancelled during reconciliation rather than orphaned at the provider.
         submission.ProviderOperationId.Should().NotBeNullOrWhiteSpace();
@@ -276,7 +276,6 @@ public sealed class AzureBatchComputeBackendTests
 
         submission.Status.Should().Be(ExecutionJobStatus.Failed);
         submission.Message.Should().Contain("not reachable");
-        submission.Message.Should().Contain("pool not found");
     }
 
     [Fact]
@@ -588,7 +587,7 @@ public sealed class AzureBatchComputeBackendTests
         var observation = await backend.CancelAsync(job);
 
         observation.Status.Should().Be(ExecutionJobStatus.Running);
-        observation.Message.Should().Contain("service unavailable");
+        observation.Message.Should().Be("Azure Batch cancellation failed.");
     }
 
     [Fact]
@@ -613,7 +612,7 @@ public sealed class AzureBatchComputeBackendTests
 
         observation.Status.Should().Be(ExecutionJobStatus.Running,
             "credential failures during cancel must preserve durable state for the next reconciliation cycle");
-        observation.Message.Should().Contain("credential acquisition failed");
+        observation.Message.Should().Be("Azure Batch cancellation failed.");
     }
 
     [Fact]
@@ -634,7 +633,7 @@ public sealed class AzureBatchComputeBackendTests
 
         observation.Status.Should().Be(ExecutionJobStatus.Running,
             "credential failures during observe must preserve durable state for the next reconciliation cycle");
-        observation.Message.Should().Contain("credential acquisition failed");
+        observation.Message.Should().Be("Azure Batch observation failed.");
     }
 
     [Fact]

@@ -161,22 +161,22 @@ internal sealed class BackgroundOtlpProbe : BackgroundService
             using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
             Volatile.Write(ref _snapshot, MapResponseToSnapshot(response, now));
         }
-        catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+        catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             Volatile.Write(ref _snapshot, new OtlpProbeSnapshot
             {
                 State = OtlpProbeState.Unreachable,
                 ProbedAt = now,
-                LastError = $"timeout after {ProbeTimeoutSeconds}s: {ex.Message}"
+                LastError = $"timeout after {ProbeTimeoutSeconds}s"
             });
         }
-        catch (HttpRequestException ex)
+        catch (HttpRequestException)
         {
             Volatile.Write(ref _snapshot, new OtlpProbeSnapshot
             {
                 State = OtlpProbeState.Unreachable,
                 ProbedAt = now,
-                LastError = ex.Message
+                LastError = "OTLP endpoint could not be reached."
             });
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

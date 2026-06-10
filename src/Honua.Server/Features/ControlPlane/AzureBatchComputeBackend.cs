@@ -122,7 +122,7 @@ internal sealed partial class AzureBatchComputeBackend(
                 {
                     Status = ExecutionJobStatus.Queued,
                     ProviderOperationId = submission.JobId,
-                    Message = $"Azure Batch submission outcome is uncertain for job '{submission.JobId}': {ex.Message}. Reconciliation will verify whether the provider accepted the job."
+                    Message = "Azure Batch submission outcome is uncertain. Reconciliation will verify whether the provider accepted the job."
                 };
             }
 
@@ -130,7 +130,7 @@ internal sealed partial class AzureBatchComputeBackend(
             {
                 Status = ExecutionJobStatus.Failed,
                 ProviderOperationId = submission.JobId,
-                Message = $"Azure Batch rejected job submission: {ex.Message}"
+                Message = "Azure Batch rejected job submission."
             };
         }
     }
@@ -159,7 +159,7 @@ internal sealed partial class AzureBatchComputeBackend(
                 Status = job.Status,
                 ProviderOperationId = providerJobId,
                 PercentComplete = job.PercentComplete,
-                Message = $"Azure Batch observation failed: {ex.Message}"
+                Message = "Azure Batch observation failed."
             };
         }
     }
@@ -203,7 +203,7 @@ internal sealed partial class AzureBatchComputeBackend(
                 Status = job.Status,
                 ProviderOperationId = providerJobId,
                 PercentComplete = job.PercentComplete,
-                Message = $"Azure Batch cancellation failed: {ex.Message}"
+                Message = "Azure Batch cancellation failed."
             };
         }
     }
@@ -384,7 +384,7 @@ internal sealed partial class AzureBatchComputeBackend(
             {
                 Status = ExecutionJobStatus.Failed,
                 ProviderOperationId = submissionJobId,
-                Message = $"Azure Batch pool '{poolId}' is not reachable: {ex.Message}"
+                Message = $"Azure Batch pool '{poolId}' is not reachable."
             };
         }
 

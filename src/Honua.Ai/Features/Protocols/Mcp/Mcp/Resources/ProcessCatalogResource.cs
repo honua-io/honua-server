@@ -57,14 +57,16 @@ internal sealed class ProcessCatalogResource : IMcpResource
 
     public bool CanHandle(string uri) => string.Equals(uri, Uri, StringComparison.Ordinal);
 
-    public Task<McpResourcesReadResult> ReadAsync(
+    public async Task<McpResourcesReadResult> ReadAsync(
         HttpContext httpContext,
         string uri,
         CancellationToken cancellationToken)
     {
         McpTelemetry.EnrichActivity("GetProcessCatalog");
         var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
-        _jobService.EnsureCallerAuthorized(principal, OperatorResourceType.Catalog, OperatorOperation.Discover);
+        await _jobService
+            .EnsureCallerAuthorizedAsync(principal, OperatorResourceType.Catalog, OperatorOperation.Discover, cancellationToken)
+            .ConfigureAwait(false);
         McpLog.ResourceRead(_logger, Family, uri);
 
         var processes = _processCatalog
@@ -82,7 +84,7 @@ internal sealed class ProcessCatalogResource : IMcpResource
         };
 
         var result = McpResourceHelpers.SingleJsonContent(uri, resource, McpJsonContext.Default.McpProcessCatalogResource);
-        return Task.FromResult(result);
+        return result;
     }
 
     private static string ResolveCatalogVersion(IProcessCatalog catalog) =>

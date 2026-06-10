@@ -8,7 +8,7 @@ namespace Honua.Worker.Gdal.Execution;
 /// <summary>
 /// Configuration guardrails for the heavyweight GDAL worker executors.
 /// </summary>
-public sealed class GdalWorkerOptions
+internal sealed class GdalWorkerOptions
 {
     /// <summary>
     /// Configuration section name.

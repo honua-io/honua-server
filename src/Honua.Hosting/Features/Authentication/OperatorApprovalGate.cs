@@ -28,20 +28,23 @@ internal sealed class OperatorApprovalGate(
     /// Evaluates operator authorization and returns a structured error result if denied; null if allowed.
     /// Uses ProblemDetails (RFC 9457) format for admin API surfaces.
     /// </summary>
-    public IResult? EvaluateAuthorization(
+    public async Task<IResult?> EvaluateAuthorizationAsync(
         HttpContext context,
         OperatorResourceType resourceType,
         OperatorOperation operation,
         string? resourceId = null,
         bool isDestructive = false)
     {
-        var decision = CheckAuthorization(context.User, new OperatorAuthorizationRequest
-        {
-            ResourceType = resourceType,
-            Operation = operation,
-            ResourceId = resourceId,
-            IsDestructive = isDestructive
-        });
+        var decision = await CheckAuthorizationAsync(
+            context.User,
+            new OperatorAuthorizationRequest
+            {
+                ResourceType = resourceType,
+                Operation = operation,
+                ResourceId = resourceId,
+                IsDestructive = isDestructive
+            },
+            context.RequestAborted).ConfigureAwait(false);
 
         if (decision.IsAllowed) return null;
 
@@ -122,9 +125,12 @@ internal sealed class OperatorApprovalGate(
     /// Transport-neutral authorization check. Returns the raw <see cref="AccessDecision"/>
     /// for callers that need to format responses in protocol-specific formats (OGC, OData, etc.).
     /// </summary>
-    public AccessDecision CheckAuthorization(ClaimsPrincipal principal, OperatorAuthorizationRequest request)
+    public async Task<AccessDecision> CheckAuthorizationAsync(
+        ClaimsPrincipal principal,
+        OperatorAuthorizationRequest request,
+        CancellationToken cancellationToken = default)
     {
-        var decision = authEvaluator.EvaluateAsync(principal, request).ConfigureAwait(false).GetAwaiter().GetResult();
+        var decision = await authEvaluator.EvaluateAsync(principal, request, cancellationToken).ConfigureAwait(false);
         EnrichAuthorizationActivity(request, decision.IsAllowed ? "allowed" : "denied");
         return decision;
     }

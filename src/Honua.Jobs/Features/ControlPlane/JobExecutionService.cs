@@ -20,6 +20,7 @@ internal sealed partial class JobExecutionService(
     IExecutionLogStore? logStore,
     ILogger<JobExecutionService> logger) : BackgroundService
 {
+    private const string SafeExecutionFailureMessage = "Job execution failed.";
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan LogRetention = TimeSpan.FromDays(7);
 
@@ -260,7 +261,12 @@ internal sealed partial class JobExecutionService(
                 // Executor returned failure — route through retry policy.
                 // Thread executor warnings so they are persisted on terminal
                 // failure and logged to structured execution logs on retry.
-                await AbandonJobAsync(running, workerId, result.ErrorMessage ?? "Execution failed.",
+                if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
+                {
+                    Log.JobExecutorReturnedFailure(logger, operationId, result.ErrorMessage);
+                }
+
+                await AbandonJobAsync(running, workerId, SafeExecutionFailureMessage,
                     CancellationToken.None, result.Warnings).ConfigureAwait(false);
             }
         }
@@ -309,7 +315,7 @@ internal sealed partial class JobExecutionService(
             await StopHeartbeatPumpAsync().ConfigureAwait(false);
             Log.JobExecutionFailed(logger, operationId, ex);
             // Execution exception — route through retry policy.
-            await AbandonJobAsync(running, workerId, ex.Message, CancellationToken.None).ConfigureAwait(false);
+            await AbandonJobAsync(running, workerId, SafeExecutionFailureMessage, CancellationToken.None).ConfigureAwait(false);
         }
         finally
         {
@@ -341,7 +347,9 @@ internal sealed partial class JobExecutionService(
             Status = result.Status,
             UpdatedAt = now,
             CompletedAt = now,
-            ErrorMessage = result.ErrorMessage,
+            ErrorMessage = result.Status == ExecutionJobStatus.Failed
+                ? SafeExecutionFailureMessage
+                : null,
             Warnings = result.Warnings,
             PercentComplete = result.Status == ExecutionJobStatus.Succeeded ? 100 : job.PercentComplete,
             CurrentPhase = result.Status == ExecutionJobStatus.Succeeded ? "Completed" : "Failed"
@@ -623,7 +631,7 @@ internal sealed partial class JobExecutionService(
                 Status = ExecutionJobStatus.Failed,
                 UpdatedAt = now,
                 CompletedAt = now,
-                ErrorMessage = $"Job abandoned: {reason}",
+                ErrorMessage = SafeExecutionFailureMessage,
                 Warnings = warnings ?? latestBeforeFail.Warnings,
                 CurrentPhase = "Failed (abandoned)"
             };
@@ -777,6 +785,9 @@ internal sealed partial class JobExecutionService(
 
         [LoggerMessage(9073, LogLevel.Warning, "Log retention set failed for terminal job {OperationId}; execution logs may expire early")]
         public static partial void LogRetentionFailed(ILogger logger, string operationId, Exception exception);
+
+        [LoggerMessage(9074, LogLevel.Warning, "Job executor returned failure: {OperationId}, Error={ErrorMessage}")]
+        public static partial void JobExecutorReturnedFailure(ILogger logger, string operationId, string errorMessage);
     }
 }
 

@@ -51,6 +51,29 @@ internal abstract class CloudFileStorageBase : ICloudFileStorage
     public Task<IReadOnlyList<UploadProgress>> GetActiveUploadsAsync(CancellationToken cancellationToken = default)
         => ProgressStore.GetActiveUploadsAsync(cancellationToken);
 
+    protected SerializedUploadProgressWriter CreateProgressWriter(string uploadId)
+        => new(ProgressStore, Logger, uploadId);
+
+    protected void ReportProgressToCaller(
+        IProgress<UploadProgress>? progressReporter,
+        string uploadId,
+        UploadProgress progress)
+    {
+        if (progressReporter is null)
+        {
+            return;
+        }
+
+        try
+        {
+            progressReporter.Report(progress);
+        }
+        catch (Exception ex)
+        {
+            FileStorageLog.ProgressUpdateFailed(Logger, ex, uploadId);
+        }
+    }
+
     public Task<bool> CancelUploadAsync(string uploadId, CancellationToken cancellationToken = default)
         => CancelUploadInternalAsync(uploadId, cancellationToken);
 
@@ -105,7 +128,7 @@ internal abstract class CloudFileStorageBase : ICloudFileStorage
             }
             else
             {
-                failedFiles[file.FileName] = result.ErrorMessage ?? "Unknown error";
+                failedFiles[file.FileName] = "File upload failed.";
 
                 if (!request.ContinueOnError)
                 {
@@ -237,7 +260,7 @@ internal abstract class CloudFileStorageBase : ICloudFileStorage
             CurrentPhase = "Failed"
         };
         await ProgressStore.SetProgressAsync(uploadId, failedProgress, TimeSpan.FromMinutes(10), CancellationToken.None);
-        request.Progress?.Report(failedProgress);
+        ReportProgressToCaller(request.Progress, uploadId, failedProgress);
         FileStorageLog.FileUploadFailed(Logger, ex, request.FileName);
         return UploadResult.CreateFailure(resultMessage, stopwatch.Elapsed);
     }
@@ -262,7 +285,79 @@ internal abstract class CloudFileStorageBase : ICloudFileStorage
             CurrentPhase = "Cancelled"
         };
         await ProgressStore.SetProgressAsync(uploadId, cancelledProgress, TimeSpan.FromMinutes(10), CancellationToken.None);
-        request.Progress?.Report(cancelledProgress);
+        ReportProgressToCaller(request.Progress, uploadId, cancelledProgress);
+    }
+
+    protected sealed class SerializedUploadProgressWriter
+    {
+        private readonly IUploadProgressStore _progressStore;
+        private readonly ILogger _logger;
+        private readonly string _uploadId;
+        private readonly object _gate = new();
+        private Task _tail = Task.CompletedTask;
+        private bool _closed;
+
+        public SerializedUploadProgressWriter(
+            IUploadProgressStore progressStore,
+            ILogger logger,
+            string uploadId)
+        {
+            _progressStore = progressStore;
+            _logger = logger;
+            _uploadId = uploadId;
+        }
+
+        public void Report(UploadProgress progress)
+        {
+            lock (_gate)
+            {
+                if (_closed)
+                {
+                    return;
+                }
+
+                var previous = _tail;
+                _tail = StoreAfterPreviousAsync(previous, progress);
+            }
+        }
+
+        public Task CloseAndDrainAsync()
+        {
+            lock (_gate)
+            {
+                _closed = true;
+                return _tail;
+            }
+        }
+
+        private async Task StoreAfterPreviousAsync(Task previous, UploadProgress progress)
+        {
+            try
+            {
+                await previous.ConfigureAwait(false);
+            }
+            catch
+            {
+                // StoreAsync logs and swallows persistence failures; this keeps
+                // the serialized chain intact if a future change lets one escape.
+            }
+
+            await StoreAsync(progress).ConfigureAwait(false);
+        }
+
+        private async Task StoreAsync(UploadProgress progress)
+        {
+            try
+            {
+                await _progressStore
+                    .SetProgressAsync(_uploadId, progress, TimeSpan.FromHours(1), CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                FileStorageLog.ProgressUpdateFailed(_logger, ex, _uploadId);
+            }
+        }
     }
 
     protected async Task<bool> CancelUploadInternalAsync(string uploadId, CancellationToken cancellationToken)

@@ -52,7 +52,7 @@ public sealed class ReportingOfflineGuaranteeTests
     public void EmbeddedReportCss_ShipsAsEmbeddedResource()
     {
         var cssPath = Path.Combine(
-            ResolveRepoRoot(),
+            ArchitectureTestHelpers.ResolveRepositoryRoot(),
             "src",
             "Honua.Core",
             "Features",
@@ -64,14 +64,14 @@ public sealed class ReportingOfflineGuaranteeTests
             $"Embedded report CSS must live at {cssPath}; the HTML renderer reads it via GetManifestResourceStream.");
 
         var csproj = File.ReadAllText(
-            Path.Combine(ResolveRepoRoot(), "src", "Honua.Core", "Honua.Core.csproj"));
+            Path.Combine(ArchitectureTestHelpers.ResolveRepositoryRoot(), "src", "Honua.Core", "Honua.Core.csproj"));
         csproj.Should().Contain("Features/Reporting/Templates/Resources/report.css",
             "report.css must be registered as <EmbeddedResource /> so the HTML renderer can inline it.");
     }
 
     private static string ResolveGoldensDirectory()
     {
-        var repoRoot = ResolveRepoRoot();
+        var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
         return Path.Combine(
             repoRoot,
             "tests",
@@ -80,19 +80,5 @@ public sealed class ReportingOfflineGuaranteeTests
             "Features",
             "Reporting",
             "Goldens");
-    }
-
-    private static string ResolveRepoRoot()
-    {
-        var current = new DirectoryInfo(Directory.GetCurrentDirectory());
-        while (current is not null)
-        {
-            if (File.Exists(Path.Combine(current.FullName, "Honua.sln")))
-            {
-                return current.FullName;
-            }
-            current = current.Parent;
-        }
-        throw new InvalidOperationException("Could not locate Honua.sln from the current test directory.");
     }
 }

@@ -12,6 +12,13 @@ using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Tests.Features.Protocols.Scene;
 
+/// <summary>
+/// HTTP integration coverage for the OpenUSD scene manifest export endpoint
+/// (<c>GET /scenes/{sceneId}/exports/openusd/stage.usda</c>): deterministic
+/// <c>.usda</c> output and ETag, Pro/Enterprise gating, protected-scene auth
+/// and private caching, conditional requests, validation failures, and that
+/// OpenUSD is not advertised as a runtime scene capability.
+/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Scene)]
 public sealed class SceneOpenUsdManifestEndpointTests

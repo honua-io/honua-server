@@ -58,6 +58,15 @@ internal sealed class QuarantineSinkExecutor(IOptionsMonitor<GeoprocessingExecut
             return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: {pathError}");
         }
 
+        if (!SinkPathResolver.TryResolveOutputPath(
+            _options.CurrentValue.OutputRootDirectory,
+            path,
+            out var resolvedPath,
+            out var pathResolutionError))
+        {
+            return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: {pathResolutionError}");
+        }
+
         if (!FeatureCollectionArtifact.TryParseDataUri(inputUri, out var source, out var parseError))
         {
             return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: 'input' {parseError}");
@@ -72,9 +81,10 @@ internal sealed class QuarantineSinkExecutor(IOptionsMonitor<GeoprocessingExecut
         long quarantined = 0;
         try
         {
+            Directory.CreateDirectory(Path.GetDirectoryName(resolvedPath)!);
             var geoJsonWriter = new GeoJsonWriter();
             await using var stream = new FileStream(
-                path, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: 65536, useAsync: true);
+                resolvedPath, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: 65536, useAsync: true);
             await using var textWriter = new StreamWriter(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
             using var jsonWriter = new JsonTextWriter(textWriter);
 
@@ -95,7 +105,7 @@ internal sealed class QuarantineSinkExecutor(IOptionsMonitor<GeoprocessingExecut
                 catch (Exception ex) when (ex is JsonException or ArgumentException or InvalidOperationException)
                 {
                     // Even the dead-letter write must not abort the job — record a placeholder.
-                    geoJsonWriter.Write(Placeholder(batchId, reasonField, ex.Message), jsonWriter);
+                    geoJsonWriter.Write(Placeholder(batchId, reasonField, "Feature could not be serialized."), jsonWriter);
                 }
 
                 quarantined++;
@@ -112,7 +122,7 @@ internal sealed class QuarantineSinkExecutor(IOptionsMonitor<GeoprocessingExecut
 
         cancellationToken.ThrowIfCancellationRequested();
         await context.PublishArtifactAsync(
-            SinkResultArtifact.Build(HandledProcessId, ("path", path), ("featuresQuarantined", quarantined)),
+            SinkResultArtifact.Build(HandledProcessId, ("path", resolvedPath), ("featuresQuarantined", quarantined)),
             cancellationToken).ConfigureAwait(false);
         await context.ReportProgressAsync(100, $"{HandledProcessId} completed", cancellationToken).ConfigureAwait(false);
 

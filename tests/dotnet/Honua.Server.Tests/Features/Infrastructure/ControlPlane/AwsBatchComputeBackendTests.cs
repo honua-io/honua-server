@@ -484,7 +484,7 @@ public sealed class AwsBatchComputeBackendTests
 
         submission.Status.Should().Be(ExecutionJobStatus.Queued);
         submission.ProviderOperationId.Should().StartWith(AwsBatchComputeBackend.PendingSubmissionMarkerPrefix);
-        submission.Message.Should().Contain("credential acquisition failed");
+        submission.Message.Should().Contain("outcome is uncertain");
     }
 
     [Fact]
@@ -505,7 +505,7 @@ public sealed class AwsBatchComputeBackendTests
         var submission = await backend.StartAsync(CreateJob());
 
         submission.Status.Should().Be(ExecutionJobStatus.Failed);
-        submission.Message.Should().Contain("job definition revision is not registered");
+        submission.Message.Should().Be("AWS Batch rejected job submission.");
     }
 
     [Fact]
@@ -527,7 +527,6 @@ public sealed class AwsBatchComputeBackendTests
             "credential failures during observe must preserve durable state for the next reconciliation cycle");
         observation.ProviderOperationId.Should().Be("aws-job-1");
         observation.Message.Should().Contain("observation failed");
-        observation.Message.Should().Contain("credential acquisition failed");
     }
 
     [Fact]
@@ -1043,7 +1042,7 @@ public sealed class AwsBatchComputeBackendTests
 
         submission.Status.Should().Be(ExecutionJobStatus.Queued);
         submission.ProviderOperationId.Should().StartWith(AwsBatchComputeBackend.PendingSubmissionMarkerPrefix);
-        submission.Message.Should().Contain("Unable to resolve identity");
+        submission.Message.Should().Contain("outcome is uncertain");
     }
 
     [Fact]
@@ -1063,7 +1062,6 @@ public sealed class AwsBatchComputeBackendTests
 
         observation.Status.Should().Be(ExecutionJobStatus.Running);
         observation.Message.Should().Contain("observation failed");
-        observation.Message.Should().Contain("identity resolution failed");
     }
 
     [Fact]
@@ -1101,7 +1099,6 @@ public sealed class AwsBatchComputeBackendTests
 
         observation.Status.Should().Be(ExecutionJobStatus.Provisioning);
         observation.Message.Should().Contain("discovery failed");
-        observation.Message.Should().Contain("credential provider chain");
     }
 
     [Fact]

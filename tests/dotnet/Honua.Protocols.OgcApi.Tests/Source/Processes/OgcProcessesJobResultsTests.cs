@@ -159,9 +159,12 @@ public sealed class OgcProcessesJobResultsTests : IAsyncLifetime
                 ExecutedAt = DateTimeOffset.UtcNow
             });
 
-        public void EnsureCallerAuthorized(ClaimsPrincipal principal, OperatorResourceType resourceType, OperatorOperation operation)
-        {
-        }
+        public Task EnsureCallerAuthorizedAsync(
+            ClaimsPrincipal principal,
+            OperatorResourceType resourceType,
+            OperatorOperation operation,
+            CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
 
         public PlanValidationResult ValidatePlan(AnalysisPlan plan, ClaimsPrincipal principal)
             => throw new NotSupportedException();

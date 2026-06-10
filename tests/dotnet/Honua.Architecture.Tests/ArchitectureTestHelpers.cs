@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Reflection;
+using System.Xml.Linq;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Architecture.Tests;
 
@@ -10,6 +12,15 @@ namespace Honua.Architecture.Tests;
 /// </summary>
 internal static class ArchitectureTestHelpers
 {
+    private const BindingFlags TestMemberFlags =
+        BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static;
+
+    private static readonly Type[] ApiCoverageAttributeTypes =
+    [
+        typeof(IntegrationTestAttribute),
+        typeof(Honua.Worker.Gdal.Tests.GdalCliFactAttribute)
+    ];
+
     /// <summary>
     /// Returns all types from an assembly, gracefully handling <see cref="ReflectionTypeLoadException"/>
     /// which can occur when optional dependencies are not present.
@@ -49,7 +60,13 @@ internal static class ArchitectureTestHelpers
         // Honua.Ai, not a standalone Honua.Protocols.Mcp), so it holds endpoint /
         // operation coverage that the scans must see alongside the Server.Tests
         // and per-protocol Honua.Protocols.*.Tests assemblies.
-        var patterns = new[] { "Honua.Server.Tests.dll", "Honua.Protocols.*.Tests.dll", "Honua.Ai.Tests.dll" };
+        var patterns = new[]
+        {
+            "Honua.Server.Tests.dll",
+            "Honua.Protocols.*.Tests.dll",
+            "Honua.Ai.Tests.dll",
+            "Honua.Worker.Gdal.Tests.dll"
+        };
 
         var assemblies = new List<Assembly>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -77,6 +94,49 @@ internal static class ArchitectureTestHelpers
     }
 
     /// <summary>
+    /// Returns true when the method or its declaring test class carries one of
+    /// the test attributes that participates in API/operation coverage checks.
+    /// </summary>
+    internal static bool IsIntegrationTestMethod(Type type, MethodInfo method)
+        => HasApiCoverageAttribute(type) || HasApiCoverageAttribute(method);
+
+    /// <summary>
+    /// Returns true when the type or any of its test methods carries one of the
+    /// test attributes that participates in API/operation coverage checks.
+    /// </summary>
+    internal static bool IsIntegrationTestClass(Type type)
+        => HasApiCoverageAttribute(type) ||
+           type.GetMethods(TestMemberFlags).Any(method => IsIntegrationTestMethod(type, method));
+
+    /// <summary>
+    /// Enumerates every method across all integration-test assemblies
+    /// (<see cref="IntegrationTestAssemblies"/>) that is marked with an integration
+    /// category attribute or sits on a class marked with one. Endpoint- and
+    /// operation-coverage scans share this discovery loop so the reflection
+    /// traversal lives in one place.
+    /// </summary>
+    internal static IEnumerable<MethodInfo> IntegrationTestMethods()
+    {
+        foreach (var testAssembly in IntegrationTestAssemblies())
+        {
+            foreach (var type in GetTypesSafely(testAssembly))
+            {
+                foreach (var method in type.GetMethods(TestMemberFlags))
+                {
+                    if (IsIntegrationTestMethod(type, method))
+                    {
+                        yield return method;
+                    }
+                }
+            }
+        }
+    }
+
+    private static bool HasApiCoverageAttribute(MemberInfo member)
+        => member.CustomAttributes.Any(attribute =>
+            ApiCoverageAttributeTypes.Any(type => attribute.AttributeType == type));
+
+    /// <summary>
     /// Resolves the repository root by walking upward until Honua.sln is found.
     /// </summary>
     internal static string ResolveRepositoryRoot()
@@ -94,4 +154,31 @@ internal static class ArchitectureTestHelpers
 
         return directory.FullName;
     }
+
+    /// <summary>
+    /// Returns the bare project names (filename without extension) of every direct
+    /// <c>&lt;ProjectReference&gt;</c> declared in the given csproj. Blank includes are
+    /// skipped and Windows path separators are normalized so the result is stable
+    /// across platforms.
+    /// </summary>
+    internal static IReadOnlyList<string> DirectProjectReferenceNames(string csprojPath)
+        => DirectReferenceValues(csprojPath, "ProjectReference")
+            .Select(value => Path.GetFileNameWithoutExtension(value.Replace('\\', '/'))!)
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .ToList();
+
+    /// <summary>
+    /// Returns the raw <c>Include</c> values of every direct
+    /// <c>&lt;PackageReference&gt;</c> declared in the given csproj. Blank includes are
+    /// skipped.
+    /// </summary>
+    internal static IReadOnlyList<string> DirectPackageReferenceNames(string csprojPath)
+        => DirectReferenceValues(csprojPath, "PackageReference").ToList();
+
+    private static IEnumerable<string> DirectReferenceValues(string csprojPath, string elementName)
+        => XDocument.Load(csprojPath)
+            .Descendants(elementName)
+            .Select(element => element.Attribute("Include")?.Value)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value!);
 }

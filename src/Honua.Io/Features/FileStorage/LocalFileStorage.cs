@@ -54,6 +54,7 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         var stopwatch = Stopwatch.StartNew();
         var uploadId = request.UploadId;
         var linkedCancellationSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        SerializedUploadProgressWriter? progressWriter = null;
 
         // Store cancellation token for potential cancellation
         UploadCancellationTokens[uploadId] = linkedCancellationSource;
@@ -67,7 +68,7 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
             await ProgressStore.SetProgressAsync(uploadId, initialProgress, TimeSpan.FromHours(1), cancellationToken);
 
             // Report initial progress if callback provided
-            request.Progress?.Report(initialProgress);
+            ReportProgressToCaller(request.Progress, uploadId, initialProgress);
 
             string fileId;
             string storagePath;
@@ -105,28 +106,13 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
                 Stream sourceStream = request.Content;
                 if (request.Progress != null)
                 {
-                    async Task ReportProgressAsync(UploadProgress progress)
+                    var writer = CreateProgressWriter(uploadId);
+                    progressWriter = writer;
+                    var progressTracker = new Progress<UploadProgress>(progress =>
                     {
-                        try
-                        {
-                            await ProgressStore.SetProgressAsync(uploadId, progress, TimeSpan.FromHours(1), CancellationToken.None);
-                        }
-                        catch (Exception ex)
-                        {
-                            FileStorageLog.ProgressUpdateFailed(Logger, ex, uploadId);
-                        }
-
-                        try
-                        {
-                            request.Progress.Report(progress);
-                        }
-                        catch (Exception ex)
-                        {
-                            FileStorageLog.ProgressUpdateFailed(Logger, ex, uploadId);
-                        }
-                    }
-
-                    var progressTracker = new Progress<UploadProgress>(progress => _ = ReportProgressAsync(progress));
+                        writer.Report(progress);
+                        ReportProgressToCaller(request.Progress, uploadId, progress);
+                    });
                     sourceStream = new ProgressTrackingStream(request.Content, progressTracker, uploadId, request.FileName, totalBytes);
                 }
 
@@ -140,6 +126,11 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
 
                 contentHash = Convert.ToHexString(hashAlgorithm.Hash ?? []);
                 sizeBytes = fileStream.Length;
+            }
+
+            if (progressWriter != null)
+            {
+                await progressWriter.CloseAndDrainAsync().ConfigureAwait(false);
             }
 
             var uploadedAt = DateTimeOffset.UtcNow;
@@ -179,7 +170,7 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
                 CurrentPhase = "Upload completed"
             };
             await ProgressStore.SetProgressAsync(uploadId, completedProgress, TimeSpan.FromHours(1), cancellationToken);
-            request.Progress?.Report(completedProgress);
+            ReportProgressToCaller(request.Progress, uploadId, completedProgress);
 
             stopwatch.Stop();
             FileStorageLog.FileUploaded(
@@ -194,13 +185,24 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         catch (OperationCanceledException) when (linkedCancellationSource.Token.IsCancellationRequested)
         {
             stopwatch.Stop();
+            if (progressWriter != null)
+            {
+                await progressWriter.CloseAndDrainAsync().ConfigureAwait(false);
+            }
+
             var startedAt = DateTimeOffset.UtcNow - stopwatch.Elapsed;
             await ReportCancelledUploadAsync(uploadId, request, request.SizeBytes ?? 0, startedAt);
             throw;
         }
         catch (ArgumentException ex) when (string.Equals(ex.ParamName, "folder", StringComparison.Ordinal))
         {
+            if (progressWriter != null)
+            {
+                await progressWriter.CloseAndDrainAsync().ConfigureAwait(false);
+            }
+
             var startedAt = DateTimeOffset.UtcNow - stopwatch.Elapsed;
+            var (progressMessage, resultMessage) = ResolveArgumentFailureMessages(ex);
             return await ReportFailedUploadAsync(
                 uploadId,
                 request,
@@ -208,11 +210,16 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
                 request.SizeBytes ?? 0,
                 startedAt,
                 ex,
-                ex.Message,
-                ex.Message);
+                progressMessage,
+                resultMessage);
         }
         catch (Exception ex)
         {
+            if (progressWriter != null)
+            {
+                await progressWriter.CloseAndDrainAsync().ConfigureAwait(false);
+            }
+
             var startedAt = DateTimeOffset.UtcNow - stopwatch.Elapsed;
             return await ReportFailedUploadAsync(
                 uploadId,

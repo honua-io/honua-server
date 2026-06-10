@@ -88,7 +88,7 @@ internal sealed class ImageServerCatalogQueryHandler
             catch (ImageServerCatalogFilterException ex)
             {
                 ImageServerLog.InvalidCatalogQueryParameters(_logger, layerId, ex.Message);
-                return StandardErrorHelpers.CreateBadRequest(context, ex.Message);
+                return StandardErrorHelpers.CreateBadRequest(context, "Invalid ImageServer catalog query filter.");
             }
 
             ImageServerLog.CatalogQueryCompleted(_logger, layerId, page.Items.Count, page.TotalCount);

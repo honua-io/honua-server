@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Infrastructure.Validation;
+
 namespace Honua.ArcGisRest.Features.FeatureStore.Services;
 
 /// <summary>
@@ -27,34 +29,15 @@ internal static class ArcGisRestUrlValidator
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(url);
 
-        if (!Uri.TryCreate(url.Trim(), UriKind.Absolute, out var uri))
+        var validation = OutboundHttpUrlValidator.ValidateConfiguration(url.Trim());
+        if (!validation.IsValid || validation.Uri is null)
         {
             throw new ArgumentException(
-                "ArcGIS service URL must be a valid absolute HTTPS URL.",
+                $"ArcGIS service URL {validation.ErrorMessage}",
                 nameof(url));
         }
 
-        if (uri.Scheme != Uri.UriSchemeHttps)
-        {
-            throw new ArgumentException(
-                "ArcGIS service URL must use HTTPS.",
-                nameof(url));
-        }
-
-        if (!string.IsNullOrWhiteSpace(uri.UserInfo))
-        {
-            throw new ArgumentException(
-                "ArcGIS service URL must not include embedded credentials.",
-                nameof(url));
-        }
-
-        if (uri.IsLoopback || IsLocalhostHostName(uri.Host))
-        {
-            throw new ArgumentException(
-                "ArcGIS service URL must not target a loopback host.",
-                nameof(url));
-        }
-
+        var uri = validation.Uri;
         var normalized = uri.GetLeftPart(UriPartial.Path).TrimEnd('/');
         if (!IsServiceRootUrl(normalized))
         {
@@ -76,8 +59,4 @@ internal static class ArcGisRestUrlValidator
         return tail.Equals("FeatureServer", StringComparison.OrdinalIgnoreCase)
             || tail.Equals("MapServer", StringComparison.OrdinalIgnoreCase);
     }
-
-    private static bool IsLocalhostHostName(string host)
-        => string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase)
-           || host.EndsWith(".localhost", StringComparison.OrdinalIgnoreCase);
 }

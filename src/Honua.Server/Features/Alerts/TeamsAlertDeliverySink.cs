@@ -121,13 +121,13 @@ internal sealed class TeamsAlertDeliverySink : IAlertDeliverySink
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             return new AlertDeliveryResult
             {
                 Succeeded = false,
                 Retryable = true,
-                Error = ex.Message
+                Error = "Teams delivery failed."
             };
         }
     }

@@ -3,8 +3,6 @@
 
 using System.Collections;
 using System.Data.Common;
-using System.Diagnostics.CodeAnalysis;
-using System.Reflection;
 
 namespace Honua.Core.Features.Infrastructure.Session;
 
@@ -14,7 +12,6 @@ namespace Honua.Core.Features.Infrastructure.Session;
 /// <list type="bullet">
 ///   <item><description><c>null</c> — no parameters.</description></item>
 ///   <item><description><c>IReadOnlyDictionary&lt;string, object?&gt;</c> or any <see cref="IDictionary"/>.</description></item>
-///   <item><description>Anonymous / POCO objects — public readable properties are read by reflection.</description></item>
 /// </list>
 /// </summary>
 public static class ParameterBinder
@@ -22,15 +19,6 @@ public static class ParameterBinder
     /// <summary>
     /// Binds <paramref name="parameters"/> onto <paramref name="command"/>.
     /// </summary>
-    [UnconditionalSuppressMessage(
-        "Trimming",
-        "IL2075:'this' argument does not satisfy 'DynamicallyAccessedMemberTypes.PublicProperties'",
-        Justification =
-            "Reflection only reads the public instance property getters of the supplied parameters " +
-            "object (dapper-style binding). Every caller of the IDatabaseSession abstraction passes " +
-            "anonymous types, dictionaries, or POCOs that are constructed in-assembly, so the trimmer " +
-            "preserves their public properties for the instances that reach this method. No properties " +
-            "are discovered on types that are not otherwise instantiated, so binding stays trim-safe.")]
     public static void Bind(DbCommand command, object? parameters)
     {
         ArgumentNullException.ThrowIfNull(command);
@@ -64,17 +52,8 @@ public static class ParameterBinder
             return;
         }
 
-        var properties = parameters.GetType().GetProperties(BindingFlags.Instance | BindingFlags.Public);
-        foreach (var property in properties)
-        {
-            if (!property.CanRead)
-            {
-                continue;
-            }
-
-            var value = property.GetValue(parameters);
-            AddParameter(command, property.Name, value);
-        }
+        throw new NotSupportedException(
+            "Database session parameters must be provided as an IReadOnlyDictionary<string, object?> or IDictionary.");
     }
 
     private static void AddParameter(DbCommand command, string name, object? value)

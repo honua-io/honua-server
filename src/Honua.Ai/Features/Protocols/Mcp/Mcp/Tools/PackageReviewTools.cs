@@ -53,7 +53,9 @@ internal abstract class PackageReviewToolBase : IMcpTool
         McpLog.ToolInvoked(_logger, Name, WorkflowFamily);
 
         var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
-        _jobService.EnsureCallerAuthorized(principal, OperatorResourceType.Process, OperatorOperation.Read);
+        await _jobService
+            .EnsureCallerAuthorizedAsync(principal, OperatorResourceType.Process, OperatorOperation.Read, cancellationToken)
+            .ConfigureAwait(false);
 
         var request = McpToolHelpers.ParseArguments(arguments, McpJsonContext.Default.PackageReviewRequest)
             .WithPreviewPlan(IncludePreviewPlan);
