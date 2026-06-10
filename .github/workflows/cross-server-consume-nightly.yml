@@ -59,23 +59,23 @@ jobs:
         run: |
           bash scripts/ci/generate-cross-server-gap-report.sh \
             tests/TestResults/cross-server-consume.trx \
-            docs/compatibility/cross-server-consume-gap-report.md
+            docs/internal/compatibility/cross-server-consume-gap-report.md
 
       - name: Write gap report summary
-        if: always() && hashFiles('docs/compatibility/cross-server-consume-gap-report.md') != ''
-        run: cat docs/compatibility/cross-server-consume-gap-report.md >> "$GITHUB_STEP_SUMMARY"
+        if: always() && hashFiles('docs/internal/compatibility/cross-server-consume-gap-report.md') != ''
+        run: cat docs/internal/compatibility/cross-server-consume-gap-report.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Commit refreshed gap report
-        if: always() && hashFiles('docs/compatibility/cross-server-consume-gap-report.md') != ''
+        if: always() && hashFiles('docs/internal/compatibility/cross-server-consume-gap-report.md') != ''
         run: |
-          if git diff --quiet -- docs/compatibility/cross-server-consume-gap-report.md; then
+          if git diff --quiet -- docs/internal/compatibility/cross-server-consume-gap-report.md; then
             echo "Gap report unchanged."
             exit 0
           fi
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add docs/compatibility/cross-server-consume-gap-report.md
+          git add docs/internal/compatibility/cross-server-consume-gap-report.md
           git commit -m "docs: refresh cross-server consume gap report"
           git push origin HEAD:${GITHUB_REF_NAME} || \
             echo "::warning::Could not push cross-server consume gap report; create a PR manually if needed."
@@ -87,7 +87,7 @@ jobs:
           name: cross-server-consume-${{ github.run_id }}
           path: |
             tests/TestResults/cross-server-consume.trx
-            docs/compatibility/cross-server-consume-gap-report.md
+            docs/internal/compatibility/cross-server-consume-gap-report.md
 
       - name: Fail on consume test failure
         if: steps.consume-tests.outcome == 'failure'

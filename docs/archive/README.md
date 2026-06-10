@@ -11,7 +11,7 @@ Rules:
 Archive indexes:
 
 - [Contributor archive](contributor/README.md) — historical contributor guidance, audit notes, and migration kits
-- [Developer archive](developer/) — archived developer-facing contracts and workflow notes
-- [Features archive](features/) — superseded feature-specific hardening notes
-- [Operations archive](operations/) — retained operational runbooks no longer used as current guidance
-- [Root archive](root/) — repository-root reports and one-off implementation summaries moved out of the root
+- [Developer archive](developer) — archived developer-facing contracts and workflow notes
+- [Features archive](features) — superseded feature-specific hardening notes
+- [Operations archive](operations) — retained operational runbooks no longer used as current guidance
+- [Root archive](root) — repository-root reports and one-off implementation summaries moved out of the root

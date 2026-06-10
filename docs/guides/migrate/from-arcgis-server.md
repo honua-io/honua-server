@@ -1,0 +1,324 @@
+# Migration Toolkit
+
+The migration toolkit is the operator workflow for moving GIS services into
+Honua without treating discovery as proof of cutover readiness. It uses a
+deterministic artifact chain:
+
+1. `MigrationSourceInventoryArtifact` captures what the source advertised.
+2. `MigrationManifestArtifact` translates that inventory into target Honua
+   intent and explicit manual-review or unsupported items.
+3. `MigrationParityEvidenceArtifact` summarizes capability, style, data, and
+   cutover-readiness evidence.
+4. `MigrationCostPerformanceEvidenceArtifact` captures fixture size,
+   throughput, source request volume, retries, resume behavior, resource use,
+   artifact size, manual-review ratio, and recovery/idempotency outcomes
+   without embedding private source URLs, credentials, or source data.
+5. `MigrationAcceptanceEvidenceArtifact` indexes the per-source artifacts for
+   a release or nightly acceptance suite and fails the suite when required
+   source families are missing.
+
+These artifacts are stable intermediate contracts for the migration epic
+(honua-server#646). The manifest slice is tracked by honua-server#651, and
+the parity and evidence-pack slice is tracked by honua-server#652.
+
+## Stable Contract Catalogue
+
+The migration toolkit contracts below are the stable admin and SDK handoff
+surface tracked by honua-server#880:
+
+| Contract | Artifact kind and version | Owning source |
+|---|---|---|
+| Source inventory | `honua.migration.source-inventory` v1.0 | `src/Honua.Core/Features/Import/Domain/MigrationSourceInventoryArtifact.cs` |
+| Migration manifest | `honua.migration.manifest` v1.0 | `src/Honua.Core/Features/Import/Domain/MigrationManifestArtifact.cs` |
+| Parity evidence pack | `honua.migration.parity-evidence-pack` v1.0 | `src/Honua.Core/Features/Import/Domain/MigrationParityEvidenceArtifact.cs` |
+| Cutover readiness summary | embedded in `honua.migration.parity-evidence-pack` v1.0 as `cutoverReadiness` | `src/Honua.Core/Features/Import/Domain/MigrationParityEvidenceArtifact.cs` |
+| Cost/performance evidence | `honua.migration.cost-performance-evidence` v1.0 | `src/Honua.Core/Features/Import/Domain/MigrationCostPerformanceEvidenceArtifact.cs` |
+| Acceptance evidence suite | `honua.migration.acceptance-evidence-suite` v1.0 | `src/Honua.Core/Features/Import/Domain/MigrationAcceptanceEvidenceArtifact.cs` |
+
+The admin HTTP surface currently exposed for this artifact chain is
+`POST /api/v1/admin/import/scan`, with `?export=json` returning indented JSON
+as an attachment. By default the endpoint returns
+`MigrationSourceInventoryArtifact`. Set request field `artifactSet` to `all`
+to return an envelope containing the source inventory, generated
+`MigrationManifestArtifact`, and generated `MigrationParityEvidenceArtifact`.
+The manifest and parity evidence remain deterministic planning artifacts; this
+route does not mutate the target catalog or copy source data by itself.
+
+## Artifact Flow
+
+Run the source scanner first. GeoServer REST, ArcGIS GeoServices REST, and OGC
+service scans produce the same top-level source inventory contract, so
+downstream review tooling can work against one artifact shape.
+
+GeoServer source inventories emit advertised WMS/WFS service endpoints as
+external dependencies, preserve GeoServer layer capabilities on resources, and
+link styles by REST metadata URL plus SLD content URL instead of embedding raw
+SLD bodies. Setting `includeStyleContent` lets the scanner inspect SLD/SE
+documents for compatibility warnings and external graphic dependencies; the
+inventory remains a deterministic planning artifact, not a style translation
+payload.
+
+Translate the reviewed inventory into a manifest before planning a pilot.
+The manifest does not claim that unsupported source items are migrated:
+incompatible resources are excluded from `targetResources` and emitted under
+`unsupportedItems`; partially compatible resources are emitted with the
+`manual-review` action and a matching `manualReviewItems` entry.
+Protocol-specific planning metadata is carried alongside those target
+resources. WFS feature targets identify `migrationMode: feature-import` and
+the WFS source protocol, while WMS/WMTS render-only inventories emit
+`servicePlans` for manual review of service metadata, styles, tile matrices,
+and captured endpoints without claiming a data-copy target.
+
+Generate parity evidence after the manifest has been produced. A missing
+manifest leaves data parity `unknown`; it is never treated as a pass.
+
+Generate cost/performance evidence from the same deterministic source family
+fixture used by the acceptance suite. The fixture profile must declare the
+source family and size (`small`, `medium`, or `large`) plus expected resource,
+feature, or coverage counts where they apply. Current server-owned source
+families are:
+
+| Source family | Fixture expectation |
+|---|---|
+| `arcgis-geoservices-rest` | Feature service and map service fixtures with representative layer metadata, query volume, and renderer complexity. |
+| `geoserver-rest` | Workspace/layer/style fixtures that exercise REST inventory, manifest generation, and dry-run/apply paths. |
+| `ogc-feature` | OGC API Features or WFS fixtures with feature counts, schemas, CRS metadata, and paging behavior. |
+| `ogc-map-tile-metadata` | WMS/WMTS metadata fixtures for service, style, layer, CRS, and tile matrix planning. |
+| `coverage` | Coverage/raster fixtures where coverage inventory or import planning is supported. |
+
+Each run classifies scan, manifest, apply, and import phases against the
+configured threshold profile. The artifact records duration, source request
+count, bytes read/written, retry and resume counts, CPU, peak memory, database
+growth, evidence artifact size, resource/feature/coverage counts, derived
+throughput, and manual-review ratio. Missing required phases or recovery
+scenarios classify as `warn`; invalid negative metrics or failed recovery
+classify as `fail`.
+
+Recovery evidence is explicit because "minimal risk" claims depend on it. The
+required recovery scenarios are `source-failure`, `job-cancellation`,
+`transient-network-error`, and `repeated-apply-attempt`. Source failure,
+cancel, and transient network scenarios must show successful recovery and
+observed resume behavior. Repeated apply must show idempotent replay. Keep live
+external-source runs supplemental; release evidence should prefer deterministic
+fixtures so thresholds remain stable.
+
+## OGC Service Migration Scope
+
+OGC consume compatibility and OGC migration are separate claims. Cross-server
+consume probes prove Honua can read reference OGC services; they are not proof
+that a source has been imported or that cutover is ready.
+
+For OGC sources, use `sourceKind` values `ogc-wfs`, `ogc-wms`, or `ogc-wmts`.
+The first implemented data-copy planning path is WFS. WFS 2.0.0, 1.1.0, and
+1.0.0 scans read GetCapabilities, enumerate feature types, and attempt
+DescribeFeatureType so the inventory can emit fields, geometry type, CRS
+metadata, capabilities, manifest targets, and parity evidence.
+
+WMS and WMTS scans are metadata and planning paths only. They capture layers,
+styles, WMS GetMap/GetFeatureInfo operation metadata, WMTS GetTile and
+ResourceURL metadata, tile matrix sets, and service endpoints where advertised.
+Render and tile services are marked manual-review or unsupported for automated
+data copy unless paired with a WFS, coverage, database, or file source. This
+keeps render compatibility distinct from applied migration.
+The generated manifest preserves those render-only services as
+`servicePlans`, so operators can review equivalent Honua map/tile publication
+work without confusing it with automated feature import.
+The inventory also emits `fidelityClassifications` so parity evidence can show
+which WFS schema items are automated candidates and which WMS/WMTS render,
+style, endpoint, or tile-matrix constructs require manual review or are
+unsupported for data copy.
+
+Build an acceptance evidence suite only after each representative source has
+inventory, manifest, and parity evidence. The suite is an index and gate, not a
+replacement for the source-specific artifacts. It records covered source kinds,
+required source kinds, per-source automation classification, stage state, and
+blocking gaps. Use required source kinds for website or release claims so the
+suite fails when ArcGIS, GeoServer, or OGC evidence is absent.
+
+WCS and OGC API Coverages migration planning is tracked separately from WFS,
+WMS, and WMTS. The first coverage slice is documented in
+[OGC Coverage Migration](../../archive/operator/ogc-coverage-migration.md); it captures coverage
+metadata, output formats, CRS/subset metadata, bands/ranges, and temporal
+dimensions without claiming end-to-end coverage import or parity.
+
+Build an acceptance evidence suite only after each representative source has
+inventory, manifest, and parity evidence. The suite is an index and gate, not a
+replacement for the source-specific artifacts. It records covered source kinds,
+required source kinds, per-source automation classification, stage state, and
+blocking gaps. Use required source kinds for website or release claims so the
+suite fails when ArcGIS, GeoServer, or OGC evidence is absent.
+
+## State Values
+
+Every parity and readiness item uses one of these state values:
+
+| State | Meaning |
+|---|---|
+| `pass` | Evidence is present and satisfies the check. |
+| `fail` | Evidence is present and shows the check failed. |
+| `unknown` | Evidence is missing or not yet reviewed. |
+| `not-applicable` | The check does not apply to this migration. |
+
+Overall state aggregation is conservative: any `fail` makes the evidence
+pack fail; otherwise any `unknown` keeps the evidence pack unknown. Missing
+operator attestations therefore block cutover readiness until they are
+recorded explicitly.
+
+## Manifest Review
+
+Use the manifest as the technical planning contract before pilot migration:
+
+- Review `targetResources` for target service and resource names.
+- Review `servicePlans` for WMS/WMTS metadata, style, tile matrix, and endpoint
+  work that must be completed manually.
+- Review `styleActions` before importing or recreating styles.
+- Resolve every `manualReviewItems` entry or record a waiver.
+- Remove or route around every `unsupportedItems` entry before cutover.
+
+The manifest carries copied field, capability, style, dependency, and spatial
+reference identifiers from the inventory. It does not mutate server catalog
+state by itself.
+
+## Parity Evidence
+
+The parity evidence pack groups generated checks into:
+
+- `capability`: source capabilities and unsupported source behaviors.
+- `style`: source style/renderer portability.
+- `data`: manifest target evidence for each migratable source resource.
+- `cutoverReadiness`: operator attestations required before traffic moves.
+
+Operator attestations are supplied separately as
+`MigrationReadinessAttestation` JSON. Use
+[migration-cutover-readiness-template.json](../deploy/examples/migration-cutover-readiness-template.json)
+as the starting point and keep items `unknown` until evidence exists.
+
+## Acceptance Suite
+
+The acceptance suite is generated by `MigrationAcceptanceEvidenceBuilder` from
+one input per representative source. Each input points at or embeds:
+
+- source inventory,
+- migration manifest,
+- parity evidence,
+- readiness attestation, and
+- optional performance/cost evidence.
+
+The builder can generate a manifest and parity evidence from inventory when a
+caller has not supplied them, but release evidence should persist every artifact
+separately so reviewers can inspect the full chain. The suite classifies each
+entry as `automated`, `assisted`, `manual-review`, or `unsupported`. With the
+default gate options, any non-automated entry creates a blocking gap; this
+prevents an automated-migration claim from accidentally relying on assisted,
+manual-review, or unsupported evidence. Use required source kinds for website
+or release claims so the suite fails when ArcGIS, GeoServer, or OGC evidence is
+absent.
+
+Cost/performance evidence should be linked from `EvidenceReferences` next to
+the source inventory, manifest, parity, apply/dry-run, publish, and readiness
+artifacts. Do not use "minimal cost", "minimal risk", or equivalent wording in
+release or website copy unless the linked acceptance suite includes passing or
+explicitly reviewed cost/performance artifacts for the claimed source families.
+
+Each entry also carries the canonical acceptance stages:
+
+| Stage | Evidence expectation |
+|---|---|
+| `scan` | `MigrationSourceInventoryArtifact` exists and is linked or embedded. |
+| `manifest` | `MigrationManifestArtifact` exists and is linked or embedded. |
+| `apply-dry-run` | Source-specific apply or dry-run lane completed, with evidence attached. |
+| `publish` | Target Honua resources were published or staged for parity, with evidence attached. |
+| `parity` | `MigrationParityEvidenceArtifact` exists and has the expected state. |
+| `readiness` | Cutover readiness attestation state is recorded. |
+
+The scaffold does not implement source-specific apply, dry-run, or publish
+workers. Until those lanes attach explicit stage evidence, `apply-dry-run` and
+`publish` remain `unknown`, and the suite is not a passing end-to-end migration
+claim. Use this to distinguish current compatibility and planning evidence from
+future automated migration evidence produced by follow-on source importers.
+
+## Pilot And Cutover
+
+Use the Markdown checklist in
+[Migration Pilot And Cutover Checklist](migration-pilot-cutover-checklist.md)
+for human review, and keep the JSON readiness attestation with the migration
+artifacts so automated checks can consume it later. Use
+[migration-cutover-readiness-template.json](../deploy/examples/migration-cutover-readiness-template.json)
+as the empty starting point and
+[migration-cutover-readiness-example.json](../deploy/examples/migration-cutover-readiness-example.json)
+as a deterministic reference for a completed attestation.
+
+The generated readiness checklist contains these stable item IDs:
+
+| ID | Purpose |
+|---|---|
+| `inventory-confirmed` | Source inventory has been reviewed with the source owner. |
+| `manifest-reviewed` | Target manifest actions and gaps have been reviewed. |
+| `parity-report-reviewed` | The generated evidence pack has been reviewed. |
+| `known-gaps-accepted` | Fail or unknown items have explicit approval or waiver. |
+| `rollback-plan-documented` | Rollback or traffic restoration plan is documented. |
+| `traffic-switch-planned` | DNS, load-balancer, or client endpoint change is scheduled. |
+
+## Rollback Notes
+
+The `rollback-plan-documented` readiness item asserts that a rollback plan
+exists for the source system and the customer traffic path. This section
+describes what that plan must record. Honua does not execute the rollback;
+execution lives in customer- and team-owned runbooks outside this server slice.
+
+A complete migration rollback plan must record:
+
+- **Restore point**: Database snapshot or backup identifier and the timestamp
+  the snapshot was taken. Confirm the snapshot is retained through the cutover
+  validation window.
+- **Source traffic reversion**: DNS, load-balancer, or API gateway steps that
+  return traffic to the source system, including the expected propagation
+  window for each change.
+- **Cache invalidation**: CDN, tile cache, or client cache purge required after
+  reversion so clients do not retain Honua-served responses for source-served
+  routes.
+- **Escalation path**: Named owner and after-hours contact for each dependent
+  team (source owner, application owner, network or DNS owner, on-call lead).
+- **Rollback timing**: Latest acceptable point-of-no-return before cutover
+  proceeds, and the maximum validation window after cutover during which
+  rollback remains the documented response to a regression.
+- **Decision owner**: The single named individual who authorises rollback
+  execution, with a documented backup if that individual is unavailable.
+
+Record the link to the rollback plan document in the `evidence` field of the
+`rollback-plan-documented` readiness item. Do not mark the item `pass` until
+the linked document covers all six points above.
+
+## Admin And SDK Follow-Up
+
+The server contracts in this slice are the stabilized handoff point for
+admin UI and SDK work tracked by honua-server#880. Downstream UX should use
+the artifact contracts above instead of inventing source-specific manifest
+or readiness shapes.
+
+Repo-owned downstream implementation tickets:
+
+| Surface | Ticket | Scope |
+|---|---|---|
+| Admin UI | honua-io/honua-server-admin#79 | Trigger inventory scans, render inventory review, and display manifest, parity evidence, and readiness artifacts. |
+| JavaScript/TypeScript SDK | honua-io/honua-sdk-js#105 | Add scan methods and typed artifact models. |
+| .NET SDK | honua-io/honua-sdk-dotnet#134 | Add scan methods, typed artifact models, and source-generated JSON support where applicable. |
+| Python SDK | honua-io/honua-sdk-python#49 | Add scan methods and typed artifact models. |
+
+Server implementation remains unblocked by these downstream tickets. If an
+admin UI or SDK workflow needs managed manifest, parity, readiness persistence,
+job orchestration, or another server route, file a new bounded `honua-server`
+child issue instead of expanding the downstream ticket.
+
+## Non-Goals
+
+This slice does not perform live source mutation, Honua catalog publishing,
+data copying, traffic switching, admin UI implementation, SDK release work,
+or managed cutover orchestration. Those remain separate implementation
+tickets under the migration epic.
+
+## Related Docs
+
+- [GeoServer to Honua Migration Guide](from-geoserver.md)
+- [ArcGIS Migration Inventory Discovery](arcgis-inventory-discovery.md)
+- [SLD Migration Reference](../style/import-sld-styles.md)

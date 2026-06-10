@@ -54,7 +54,7 @@ Honua Server provides OpenAPI specifications for OGC APIs and a curated, version
 - Resize with one of `resolution`, `scale-factor`, or `scale-size`; derived outputs are capped at 8192 pixels per axis
 - Follow coverage response `Link` alternates that preserve the request query while switching between GeoTIFF and PNG
 
-See the [OGC API Coverages Coverage](../../gis/specifications/ogc-api-coverages-coverage.md) document for supported parameters and MVP deferrals.
+See the [OGC API Coverages Coverage](../../reference/protocols/specifications/ogc-api-coverages-coverage.md) document for supported parameters and MVP deferrals.
 
 {% swagger src="ogc-api-coverages.json" %}
 {% endswagger %}
@@ -71,7 +71,7 @@ See the [OGC API Coverages Coverage](../../gis/specifications/ogc-api-coverages-
 - List, poll, and dismiss jobs (`GET /jobs`, `GET /jobs/{jobId}`, `DELETE /jobs/{jobId}`)
 - Retrieve results when available (`GET /jobs/{jobId}/results`)
 
-> **V1 notes**: Async-only (sync returns `501`). Single canonical process (`honua-geoprocessing`). Job lifecycle and execution routes require Redis-backed durable storage (`503` when unavailable). Results endpoint returns `200 OK` with a document-mode JSON body on success — empty `{}` until the canonical process declares value-typed outputs and the execution engine populates result storage. See the [OGC API Processes Coverage](../../gis/specifications/ogc-api-processes-coverage.md) for conformance classes, endpoint details, and V1 limitations.
+> **V1 notes**: Async-only (sync returns `501`). Single canonical process (`honua-geoprocessing`). Job lifecycle and execution routes require Redis-backed durable storage (`503` when unavailable). Results endpoint returns `200 OK` with a document-mode JSON body on success — empty `{}` until the canonical process declares value-typed outputs and the execution engine populates result storage. See the [OGC API Processes Coverage](../../reference/protocols/specifications/ogc-api-processes-coverage.md) for conformance classes, endpoint details, and V1 limitations.
 
 ---
 
@@ -82,7 +82,7 @@ See the [OGC API Coverages Coverage](../../gis/specifications/ogc-api-coverages-
 **Authentication**: Optional; anonymous callers receive the public/default tenant view
 **Response Types**: `application/json`, `application/vnd.honua.capability-manifest+json`
 
-Use the capability manifest when Console, MCP, QGIS plugins, native hosts, or SDK clients need to decide whether package families, temporal features, offline sync, realtime streams, jobs, GitOps, native transports, gRPC, mTLS, uploads, edits, or analysis controls should be enabled for the current request scope. The response is generated per request, is marked `no-store`, and is informational only; operation endpoints remain the source of truth for authorization. See [Capability Manifest](../capability-manifest.md) for the field contract and stable capability ids.
+Use the capability manifest when Console, MCP, QGIS plugins, native hosts, or SDK clients need to decide whether package families, temporal features, offline sync, realtime streams, jobs, GitOps, native transports, gRPC, mTLS, uploads, edits, or analysis controls should be enabled for the current request scope. The response is generated per request, is marked `no-store`, and is informational only; operation endpoints remain the source of truth for authorization. See [Capability Manifest](../../reference/admin-api/capability-manifest.md) for the field contract and stable capability ids.
 
 ## Server Management API
 
@@ -93,10 +93,10 @@ Use the capability manifest when Console, MCP, QGIS plugins, native hosts, or SD
 **Authentication**: API Key, OIDC bearer token, or optional HTTP Basic compatibility mode
 
 > **Note**: The runtime admin OpenAPI endpoint serves this bundled `admin-api.json` contract snapshot.
-> Use the [Server Management API guide](../../operator/CONTROL_PLANE_API.md) and `/api/v1/admin/config` for operational guidance.
+> Use the [Server Management API guide](../../reference/admin-api/overview.md) and `/api/v1/admin/config` for operational guidance.
 > The saved-query and analysis-package content surface lives beside the admin
 > API under `/api/v1/analysis/**`; its current markdown contract is
-> [Analysis Content](../../admin-api/analysis-content.md) until it is promoted
+> [Analysis Content](../../internal/admin-api/analysis-content.md) until it is promoted
 > into the generated control-plane OpenAPI snapshot.
 >
 > **Migration scanner note**: `POST /api/v1/admin/import/scan` returns the inventory artifact itself, not the usual admin envelope, and a `200` response can still carry `scanCompleteness.status = "failed"`.
@@ -109,19 +109,19 @@ Use the capability manifest when Console, MCP, QGIS plugins, native hosts, or SD
 > (`/api/v1/studio/**`) require the same admin authorization posture but are not
 > part of this `/api/v1/admin` OpenAPI snapshot. Console workflow package
 > contracts are maintained in
-> [Console Workflow Packages](../../admin-api/console-workflow-packages.md),
+> [Console Workflow Packages](../../internal/admin-api/console-workflow-packages.md),
 > the Studio package lifecycle contract is maintained in
-> [Studio Package Lifecycle API](../../admin-api/studio-package-lifecycle.md),
+> [Studio Package Lifecycle API](../../internal/admin-api/studio-package-lifecycle.md),
 > and the map/dashboard/report/generated-app publication route contract is
 > maintained in
-> [Content Publication Registry API](../../admin-api/content-publication-registry.md)
+> [Content Publication Registry API](../../internal/admin-api/content-publication-registry.md)
 > until dedicated Console and Studio OpenAPI documents are published.
 >
 > **Runtime capability discovery**: `GET /api/v1/capabilities/manifest` is a
 > public, request-scoped discovery contract outside the admin OpenAPI snapshot.
 > It accepts optional `environment` and `workspaceId` hints and returns package,
 > transport, policy, entitlement, and limit state for Console, SDK, MCP, QGIS,
-> and native-host clients. See [Capability Manifest](../capability-manifest.md).
+> and native-host clients. See [Capability Manifest](../../reference/admin-api/capability-manifest.md).
 
 **What you can do**:
 - Manage database connections (create, test, list)
@@ -152,7 +152,7 @@ Use the capability manifest when Console, MCP, QGIS plugins, native hosts, or SD
 
 > **Note**: FeatureServer, MapServer, and ImageServer endpoints follow Esri REST conventions and provide service-specific self-describing metadata. Geometry Service currently exposes operation endpoints only; Honua does not implement the root GeometryServer metadata resource.
 >
-> For detailed endpoint reference, start with the [GeoServices REST Parity landing page](../../gis/geoservices-rest-parity.md), use the [machine-readable parity JSON](../../gis/data/geoservices-rest-parity.json) when tooling needs the same contract, and then drill into the [FeatureServer](../../gis/feature-server-matrix.md), [MapServer](../../gis/map-server-matrix.md), [ImageServer](../../gis/image-server-matrix.md), and [Geometry Service](../../gis/geometry-service-matrix.md) matrices.
+> For detailed endpoint reference, start with the [GeoServices REST Parity landing page](../../reference/compatibility/geoservices-parity.md), use the [machine-readable parity JSON](../../gis/data/geoservices-rest-parity.json) when tooling needs the same contract, and then drill into the [FeatureServer](../../reference/compatibility/feature-server-matrix.md), [MapServer](../../reference/compatibility/map-server-matrix.md), [ImageServer](../../reference/compatibility/image-server-matrix.md), and [Geometry Service](../../reference/compatibility/geometry-service-matrix.md) matrices.
 
 ## Vector Tiles (MVT)
 
@@ -162,7 +162,7 @@ Use the capability manifest when Console, MCP, QGIS plugins, native hosts, or SD
 
 > **Note**: Vector tile endpoints provide TileJSON metadata for client configuration.
 >
-> For usage examples, see the [API Examples Guide](../API_EXAMPLES.md#vector-tiles-mvt).
+> For usage examples, see the [API Examples Guide](../../guides/query-analyze/query-features.md#vector-tiles-mvt).
 
 ## FieldCollection Mobile Sync API
 
@@ -175,7 +175,7 @@ Use the capability manifest when Console, MCP, QGIS plugins, native hosts, or SD
 > offline sync clients. The pull endpoint is a pure read; the per-client
 > cursor is advanced only by an explicit `POST /sync-cursor` after local
 > persistence succeeds. The contract is documented in
-> [FieldCollection Mobile Sync API](../fieldcollection-mobile-sync-api.md) and
+> [FieldCollection Mobile Sync API](../../internal/developer/fieldcollection-mobile-sync-api.md) and
 > registered in the [public interface proof](../../gis/data/public-interface-proof.json)
 > under the `fieldcollection-mobile-sync` surface.
 
@@ -190,7 +190,7 @@ Use the capability manifest when Console, MCP, QGIS plugins, native hosts, or SD
 > discovery, and idempotent JSON-compatible or multipart submissions with attachment outcomes. The
 > bundled `admin-api.json` snapshot does not yet include the Forms routes or schemas, so the
 > response and usage contract is documented in
-> [Form Package API](../form-package-api.md). Offline-policy responses point to
+> [Form Package API](../../reference/admin-api/forms.md). Offline-policy responses point to
 > the existing FeatureServer replica and FieldCollection mobile sync routes
 > instead of defining a separate form-only sync protocol.
 
@@ -238,14 +238,14 @@ Control-plane SDK governance and contract diff checks:
 
 ## Related Documentation
 
-- [**Geospatial Data APIs**](../../gis/STANDARDS_APIS.md) - Protocol overview and selection guide
-- [**Server Management API**](../../operator/CONTROL_PLANE_API.md) - Admin API guide and key workflows
-- [**Console Job Observability**](../../admin-api/console-job-observability.md) - Durable job viewer contract for Console and admin integrations
-- [**Analysis Content**](../../admin-api/analysis-content.md) - Saved-query and analysis-package versions, preview artifacts, runs/reruns, artifact bindings, and safe failed-job diagnostics
-- [**Control Plane Versioning Policy**](../CONTROL_PLANE_VERSIONING_POLICY.md) - Breaking-change and deprecation lifecycle
-- [**Control Plane Migration Guide**](../CONTROL_PLANE_MIGRATION_GUIDE.md) - SDK quickstart and upgrade steps
-- [**API Examples**](../API_EXAMPLES.md) - Code examples for the major shipped protocols
-- [**Integration Patterns**](../INTEGRATION_PATTERNS.md) - Common integration approaches
+- [**Geospatial Data APIs**](../../concepts/protocols.md) - Protocol overview and selection guide
+- [**Server Management API**](../../reference/admin-api/overview.md) - Admin API guide and key workflows
+- [**Console Job Observability**](../../internal/admin-api/console-job-observability.md) - Durable job viewer contract for Console and admin integrations
+- [**Analysis Content**](../../internal/admin-api/analysis-content.md) - Saved-query and analysis-package versions, preview artifacts, runs/reruns, artifact bindings, and safe failed-job diagnostics
+- [**Control Plane Versioning Policy**](../../reference/versioning-and-support.md) - Breaking-change and deprecation lifecycle
+- [**Control Plane Migration Guide**](../../reference/control-plane-migration-guide.md) - SDK quickstart and upgrade steps
+- [**API Examples**](../../guides/query-analyze/query-features.md) - Code examples for the major shipped protocols
+- [**Integration Patterns**](../../reference/integration-patterns.md) - Common integration approaches
 
 ---
 *Interactive API documentation powered by OpenAPI 3.0 specifications versioned with the Honua Server codebase.*

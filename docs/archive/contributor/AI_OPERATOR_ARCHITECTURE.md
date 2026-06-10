@@ -19,7 +19,7 @@ gather requirements, plan analysis, execute geoprocessing, produce maps, and
 compose applications.
 
 AI-driven source-data editing is not allowed in the primary operator contract.
-See [ADR-0028: AI-Driven Data Editing Is Not Allowed](../../contributor/adr/0028-ai-data-editing-not-allowed.md).
+See [ADR-0028: AI-Driven Data Editing Is Not Allowed](../../internal/contributor/adr/0028-ai-data-editing-not-allowed.md).
 
 ## Problem Statement
 
@@ -500,7 +500,7 @@ The evaluation suite should measure:
 
 Phase 1 of this strategy is implemented by the end-to-end operator eval harness
 in `tests/dotnet/Honua.TestKit/Eval/` (see
-[TestKit → Operator Eval Harness](../../contributor/testkit.md#end-to-end-operator-eval-harness)).
+[TestKit → Operator Eval Harness](../../internal/contributor/testkit.md#end-to-end-operator-eval-harness)).
 Scenarios declared under `tests/dotnet/eval/scenarios/` drive the canonical runtime
 and every protocol adapter through the deterministic stage model and emit a
 versioned `eval-report.json` that `honua-devops-31` consumes as the canonical
@@ -521,12 +521,12 @@ Those are downstream design tasks.
 
 ## Related Documents
 
-- [ADR-0002: MapLibre as Canonical Style Format](../../contributor/adr/0002-maplibre-canonical-style.md)
-- [ADR-0009: Shared Filter AST for Multi-Protocol Support](../../contributor/adr/0009-shared-filter-ast.md)
-- [ADR-0025: Multi-Provider Operation Architecture](../../contributor/adr/0025-multi-provider-operation-architecture.md)
-- [ADR-0026: AI-First Operator Contract as Primary Public Contract](../../contributor/adr/0026-ai-first-operator-contract.md)
-- [ADR-0027: Deterministic Intent, Clarification, and Plan Validation Workflow](../../contributor/adr/0027-deterministic-intent-clarification-workflow.md)
-- [ADR-0029: Geoprocess Canonical Model Mappings](../../contributor/adr/0029-geoprocess-canonical-model-mappings.md)
+- [ADR-0002: MapLibre as Canonical Style Format](../../internal/contributor/adr/0002-maplibre-canonical-style.md)
+- [ADR-0009: Shared Filter AST for Multi-Protocol Support](../../internal/contributor/adr/0009-shared-filter-ast.md)
+- [ADR-0025: Multi-Provider Operation Architecture](../../internal/contributor/adr/0025-multi-provider-operation-architecture.md)
+- [ADR-0026: AI-First Operator Contract as Primary Public Contract](../../internal/contributor/adr/0026-ai-first-operator-contract.md)
+- [ADR-0027: Deterministic Intent, Clarification, and Plan Validation Workflow](../../internal/contributor/adr/0027-deterministic-intent-clarification-workflow.md)
+- [ADR-0029: Geoprocess Canonical Model Mappings](../../internal/contributor/adr/0029-geoprocess-canonical-model-mappings.md)
 - [AI Operator Contract](../developer/AI_OPERATOR_CONTRACT.md)
 - [Deterministic Operator Workflow Results](../developer/DETERMINISTIC_OPERATOR_WORKFLOW_RESULTS.md)
-- [Geoprocess Framework Analysis](../../gis/geoprocess-framework-analysis.md)
+- [Geoprocess Framework Analysis](../../guides/query-analyze/run-geoprocessing.md)
