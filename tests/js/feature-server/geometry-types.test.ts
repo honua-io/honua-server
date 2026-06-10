@@ -28,7 +28,12 @@ let geometryGenerator: GeometryGenerator;
 const createdObjectIds: number[] = [];
 
 beforeAll(() => {
-  client = new FeatureServerClient();
+  // This suite adds point/line/polygon features to a single layer, which requires a 'Mixed'
+  // (unconstrained) layer under the edit-time geometry-type enforcement. In CI the shared layer 0 is a
+  // Point layer (esri-leaflet's FeatureLayer needs a concrete geometryType), so target the dedicated
+  // Mixed layer via HONUA_MIXED_LAYER_ID; locally the provisioned default layer is already Mixed.
+  const mixedLayerId = process.env.HONUA_MIXED_LAYER_ID;
+  client = new FeatureServerClient(mixedLayerId ? { layerId: Number.parseInt(mixedLayerId, 10) } : {});
   geometryGenerator = new GeometryGenerator();
 });
 
