@@ -311,7 +311,7 @@ validated while those stages still report `Skipped`. Results are emitted as a
 versioned `eval-report.json`
 (`reportSchemaVersion = "1"`) so downstream automation can treat the harness
 as a stable gate. See the
-[TestKit Operator Eval Harness](../../contributor/testkit.md#end-to-end-operator-eval-harness)
+[TestKit Operator Eval Harness](../../internal/contributor/testkit.md#end-to-end-operator-eval-harness)
 section for scenario authoring and report contract details.
 
 ## Progress Tracking
@@ -382,6 +382,6 @@ Non-promoted artifacts in expired workspaces are deleted during the sweep.
 
 - [AI Operator Contract](AI_OPERATOR_CONTRACT.md)
 - [AI-First Operator Architecture](../contributor/AI_OPERATOR_ARCHITECTURE.md)
-- [ADR-0029: Geoprocess Canonical Model Mappings](../../contributor/adr/0029-geoprocess-canonical-model-mappings.md)
-- [Geoprocess Framework Analysis](../../gis/geoprocess-framework-analysis.md)
-- [MCP Server](../../developer/MCP_SERVER.md)
+- [ADR-0029: Geoprocess Canonical Model Mappings](../../internal/contributor/adr/0029-geoprocess-canonical-model-mappings.md)
+- [Geoprocess Framework Analysis](../../guides/query-analyze/run-geoprocessing.md)
+- [MCP Server](../../guides/connect/ai-agents-mcp.md)

@@ -2,7 +2,7 @@ name: OGC KML 2.2 CITE Conformance Tests
 
 on:
   # Tier: nightly — conformance suites are external and heavyweight.
-  # PR/push triggers removed in #485. See docs/ci/gate-model.md.
+  # PR/push triggers removed in #485. See docs/internal/ci/gate-model.md.
   schedule:
     # Run weekly to track KML conformance drift (Friday 03:00 UTC)
     - cron: '0 3 * * 5'

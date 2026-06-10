@@ -152,7 +152,7 @@ jobs:
               comment += 'Edit your PR description to address these issues — this check re-runs automatically.\n';
             }
 
-            comment += '\n---\n*PR validation — see [template guide](../blob/trunk/.github/pull_request_template.md) and [gate model](../blob/trunk/docs/ci/gate-model.md)*';
+            comment += '\n---\n*PR validation — see [template guide](../blob/trunk/.github/pull_request_template.md) and [gate model](../blob/trunk/docs/internal/ci/gate-model.md)*';
 
             // Upsert validation comment
             const { data: comments } = await github.rest.issues.listComments({
@@ -1240,7 +1240,7 @@ jobs:
       # Test code lives in honua-sdk-js; this repo provides only CI jobs,
       # seed data, and docs (AC 8). The action inspects package.json
       # BEFORE npm ci so the skip path cannot fail on missing deps.
-      # See docs/contributor/mcp-certification.md.
+      # See docs/internal/contributor/mcp-certification.md.
       - name: Setup Honua MCP environment
         id: setup
         uses: ./.github/actions/setup-honua-mcp
