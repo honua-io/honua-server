@@ -18,32 +18,32 @@ Connect to Honua from desktop GIS applications and consume geospatial services.
 ## Data & Import
 
 - [Data Modeling Guide](../../concepts/data-model.md) — Spatial data modeling best practices
-- [FileGDB Import](../../guides/publish/filegdb-import-workflow.md) — File Geodatabase packaging and upload
+- [FileGDB Import](../../guides/publish/import-files.md) — File Geodatabase packaging and upload
 - [Raster Overview](../../guides/publish/publish-rasters.md) — Raster import, COG registration/direct serving, and remaining mosaic/catalog roadmap status
-- [Cloud-Optimized HDF5 / NetCDF4 Support](../../guides/publish/cloud-optimized-hdf-netcdf-support.md) — MVP registration / validation surface for multidimensional coverage sources
+- [Cloud-Optimized HDF5 / NetCDF4 Support](../../guides/publish/publish-rasters.md) — MVP registration / validation surface for multidimensional coverage sources
 - [Terrain-RGB Tiles](../../guides/publish/publish-terrain-and-elevation.md) — DEM/raster elevation tiles for MapLibre/Mapbox `raster-dem` clients
 - [Hosted 3D Tiles Scenes](../../guides/publish/publish-3d-scenes.md) — Already-hosted OGC 3D Tiles tilesets for CesiumJS and other 3D Tiles clients
 - [OpenUSD and Omniverse Export Path](../../internal/spikes/openusd-omniverse-export-path.md) — Spike recommendation for a conservative USDA stage-manifest path for Honua scenes
 - [Point Cloud, Drone, and Reality-Capture Ingest](../../internal/spikes/point-cloud-reality-capture-ingest.md) — Spike recommendation for a pre-tiled-first ingest path with bounded follow-ups for COPC streaming and CPU/GPU PDAL conversion
-- [3D Tiles Generation Pipeline (v1)](../../guides/publish/scene-generation.md) — Deterministic OGC 3D Tiles 1.1 tilesets produced from PostGIS feature layers via the admin publishing path
-- [Extruded 3D Feature Layers (v1)](../../guides/publish/extruded-3d-feature-layers.md) — Height-driven extrusion metadata on FeatureServer layers (precedes 3D Tiles generation)
+- [3D Tiles Generation Pipeline (v1)](../../guides/publish/publish-3d-scenes.md) — Deterministic OGC 3D Tiles 1.1 tilesets produced from PostGIS feature layers via the admin publishing path
+- [Extruded 3D Feature Layers (v1)](../../guides/publish/publish-3d-scenes.md) — Height-driven extrusion metadata on FeatureServer layers (precedes 3D Tiles generation)
 - [Elevation Query and Profile API](../../reference/protocols/terrain-and-elevation.md) — Numeric point/line elevation lookup over registered raster datasets
 
 ## Protocol Coverage
 
 - [GeoServices REST Parity](../../reference/compatibility/geoservices-parity.md) — Canonical landing page for FeatureServer, MapServer, ImageServer, Geometry Service, and GPServer
 - [GeoServices REST Parity Data (JSON)](../../gis/data/geoservices-rest-parity.json) — Machine-readable export of the same parity contract
-- [FeatureServer Matrix](../../reference/compatibility/feature-server-matrix.md) — Esri FeatureServer endpoint coverage
-- [MapServer Matrix](../../reference/compatibility/map-server-matrix.md) — MapServer, WMS 1.3, WMTS 1.0 coverage
-- [ImageServer Matrix](../../reference/compatibility/image-server-matrix.md) — Esri ImageServer endpoint coverage
-- [Geometry Service Matrix](../../reference/compatibility/geometry-service-matrix.md) — Geometry operations plus Honua supplemental `area` and `length` routes
+- [FeatureServer Matrix](../../reference/compatibility/geoservices-parity.md) — Esri FeatureServer endpoint coverage
+- [MapServer Matrix](../../reference/compatibility/geoservices-parity.md) — MapServer, WMS 1.3, WMTS 1.0 coverage
+- [ImageServer Matrix](../../reference/compatibility/geoservices-parity.md) — Esri ImageServer endpoint coverage
+- [Geometry Service Matrix](../../reference/compatibility/geoservices-parity.md) — Geometry operations plus Honua supplemental `area` and `length` routes
 - [Geoprocess Framework Analysis](../../guides/query-analyze/run-geoprocessing.md) — GPServer, OGC API Processes, and GeoServer WPS mapped to Honua canonical model
-- [OGC API Features](../../reference/protocols/specifications/ogc-api-features-coverage.md) — Parts [1](../../reference/protocols/specifications/ogc-api-features-part1-core.md), [2](../../reference/protocols/specifications/ogc-api-features-part2-crs.md), [3](../../reference/protocols/specifications/ogc-api-features-part3-filtering.md)
-- [OGC API Tiles](../../reference/protocols/specifications/ogc-api-tiles-coverage.md)
-- [OGC API Coverages](../../reference/protocols/specifications/ogc-api-coverages-coverage.md) — modern REST/JSON raster coverage discovery, schema, and export
-- [OGC API Processes](../../reference/protocols/specifications/ogc-api-processes-coverage.md) — async geoprocessing adapter over canonical runtime
-- [WCS 2.0.1](../../reference/protocols/specifications/wcs-2.0.1-coverage.md) — raw raster/coverage export over the shared raster store
-- [OData v4](../../reference/protocols/specifications/odata-v4-coverage.md)
+- [OGC API Features](../../reference/protocols/ogc-apis.md) — Parts [1](../../reference/protocols/ogc-apis.md), [2](../../reference/protocols/ogc-apis.md), [3](../../reference/protocols/ogc-apis.md)
+- [OGC API Tiles](../../reference/protocols/ogc-apis.md)
+- [OGC API Coverages](../../reference/protocols/ogc-apis.md) — modern REST/JSON raster coverage discovery, schema, and export
+- [OGC API Processes](../../reference/protocols/ogc-apis.md) — async geoprocessing adapter over canonical runtime
+- [WCS 2.0.1](../../reference/protocols/wms-wfs-wcs-wmts.md) — raw raster/coverage export over the shared raster store
+- [OData v4](../../reference/protocols/odata.md)
 
 ## Styling
 

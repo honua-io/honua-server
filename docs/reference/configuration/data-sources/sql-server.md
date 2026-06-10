@@ -1,4 +1,4 @@
-# SQL Server Spatial Provider
+# SQL Server provider
 
 Honua exposes SQL Server (`geometry` and `geography`) tables as read-only feature layers
 through the shared `IFeatureDataProvider` seam. SQL Server is the Tier 1 enterprise backend

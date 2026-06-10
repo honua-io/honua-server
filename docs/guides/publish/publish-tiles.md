@@ -1,150 +1,102 @@
-# Tile Operations Runbook
+# Publish tiles
 
-This runbook covers asynchronous tile lifecycle jobs for cache management, priming, and archive generation.
+You'll have a published layer serving vector tiles, a seeded tile cache, and (optionally) a durable PMTiles artifact in about 10 minutes.
 
-## Supported Operations
+**Prerequisites:** A running server ([quickstart](../../get-started/quickstart.md)), admin credentials ([authentication](../secure/authentication.md)), and a published layer ([Publish layers](publish-layers.md)).
 
-Start jobs through:
+Every published layer serves Mapbox Vector Tiles immediately; tile operations jobs manage the cache and produce PMTiles archives asynchronously.
 
-`POST /api/v1/admin/tile-operations/jobs`
+## Steps
 
-`operation` must be one of:
-
-- `seed`
-- `warm`
-- `invalidate`
-- `purge`
-- `archive`
-- `publish`
-
-Request scope options:
-
-- `serviceId`
-- `layerId`
-- `minZoom` / `maxZoom`
-- `bbox` (`[minLon,minLat,maxLon,maxLat]`)
-- `tileMatrixSetId` (currently `WebMercatorQuad`)
-- `maxTiles` safety cap for seed/warm
-
-## Job Control Endpoints
-
-- `GET /api/v1/admin/tile-operations/jobs/{jobId}` status/progress
-- `GET /api/v1/admin/tile-operations/jobs?activeOnly=true|false` list jobs
-- `POST /api/v1/admin/tile-operations/jobs/{jobId}/cancel` cancel queued/running jobs
-- `POST /api/v1/admin/tile-operations/jobs/{jobId}/retry` retry failed/cancelled jobs
-
-## Operational Notes
-
-- Jobs are tracked via the unified operations progress store as `OperationType.TileCache` (`OperationType.PMTilesArchive` for `archive` jobs, `OperationType.PMTilesPublish` for `publish` jobs).
-- `seed`/`warm` currently target MVT generation through the standard tile provider.
-- `invalidate`/`purge` use output cache invalidation scopes (layer/service/global metadata).
-- `archive` generates a PMTiles v3 archive from tile outputs and uploads it to cloud storage as a temporary admin download (24h TTL). Partial generation failures still produce a downloadable archive (random per-job key, 24h TTL).
-- `publish` generates a durable PMTiles artifact at a deterministic key with no TTL and returns a provider-agnostic descriptor for browser MapLibre/PMTiles consumption. Unlike `archive`, `publish` aborts before upload if any tiles fail to generate (`Publish aborted before upload: N tiles failed during generation.`), so a previously good artifact at the deterministic key is never overwritten with bytes that miss the failed tiles. See [PMTiles Publishing](pmtiles-publishing.md).
-- Retry creates a new job ID while preserving the original request parameters.
-
-## Metrics
-
-Prometheus/OpenTelemetry surfaces include:
-
-- `honua.tile.jobs.queue_depth`
-- `honua.tile.jobs.total` (tagged by `operation`, `status`)
-- `honua.tile.jobs.duration_ms`
-- `honua.tile.jobs.tiles_processed`
-- `honua.tile.archives.total` (count of generated PMTiles archives — incremented by both `archive` and `publish` jobs)
-- `honua.tile.archives.size_bytes` (size histogram for generated PMTiles archives — recorded by both `archive` and `publish` jobs)
-
-## Example: Invalidate a Layer
+### 1. Fetch tile metadata and a tile
 
 ```bash
-curl -X POST https://<host>/api/v1/admin/tile-operations/jobs \
-  -H "Content-Type: application/json" \
-  -d '{"operation":"invalidate","serviceId":"MyService","layerId":3}'
+HONUA_URL=http://localhost:8080
+LAYER_ID=1
+curl "$HONUA_URL/tiles/$LAYER_ID/tile.json"
 ```
 
-## Example: Seed Tiles
+The TileJSON `tiles` template is `/tiles/{layerId}/{z}/{x}/{y}.mvt`. Point any MapLibre vector source at the `tile.json` URL; the source-layer name is `layer`.
+
+### 2. Seed the cache
 
 ```bash
-curl -X POST https://<host>/api/v1/admin/tile-operations/jobs \
-  -H "Content-Type: application/json" \
-  -d '{
-    "operation":"seed",
-    "layerId":3,
-    "minZoom":8,
-    "maxZoom":10,
-    "bbox":[-123.0,37.0,-121.0,38.0],
-    "maxTiles":2000
-  }'
+HONUA_API_KEY=your-admin-api-key
+curl -X POST -H "X-API-Key: $HONUA_API_KEY" -H "Content-Type: application/json" \
+  -d '{"operation":"seed","layerId":1,"minZoom":8,"maxZoom":12,"bbox":[-123.0,37.0,-121.0,38.0],"maxTiles":5000}' \
+  "$HONUA_URL/api/v1/admin/tile-operations/jobs"
 ```
 
-## PMTiles Archive Generation
+`operation` is one of `seed`, `warm`, `invalidate`, `purge`, `archive`, `publish`; scope with `serviceId`, `layerId`, `minZoom`/`maxZoom`, `bbox`, `tileMatrixSetId` (currently `WebMercatorQuad`), and the `maxTiles` safety cap. `warm` re-primes existing cache entries on the same request shape.
 
-Generate a PMTiles v3 archive from existing tile outputs. The archive is built by fetching tiles through the standard tile provider, assembling them into a sorted Hilbert-curve-indexed PMTiles v3 file, and uploading the result to cloud storage.
-
-### Request
+### 3. Poll the job
 
 ```bash
-curl -X POST https://<host>/api/v1/admin/tile-operations/jobs \
-  -H "Content-Type: application/json" \
-  -d '{
-    "operation": "archive",
-    "layerId": 3,
-    "minZoom": 0,
-    "maxZoom": 10,
-    "bbox": [-123.0, 37.0, -121.0, 38.0],
-    "maxTiles": 5000
-  }'
+JOB_ID=paste-jobid-from-step-2
+curl -H "X-API-Key: $HONUA_API_KEY" "$HONUA_URL/api/v1/admin/tile-operations/jobs/$JOB_ID"
 ```
 
-The `archive` operation requires `layerId` (single-layer archives only for this release).
+List jobs with `GET .../jobs?activeOnly=true`, cancel with `POST .../jobs/{jobId}/cancel`, retry failed/cancelled jobs with `POST .../jobs/{jobId}/retry` (retry creates a new job id with the original parameters).
 
-### Archive-Specific Response Fields
-
-When querying job status (`GET /api/v1/admin/tile-operations/jobs/{jobId}`), archive jobs include:
-
-| Field | Description |
-|-------|-------------|
-| `archiveFileId` | Cloud storage file ID for the generated archive |
-| `downloadUrl` | Time-limited presigned URL to download the `.pmtiles` file (24h expiry) |
-| `archiveSizeBytes` | Final archive size in bytes |
-
-### Validation
-
-Download the archive and inspect with `pmtiles show`:
+### 4. Invalidate after data changes
 
 ```bash
-curl -o output.pmtiles "<downloadUrl>"
-pmtiles show output.pmtiles
+curl -X POST -H "X-API-Key: $HONUA_API_KEY" -H "Content-Type: application/json" \
+  -d '{"operation":"invalidate","layerId":1}' \
+  "$HONUA_URL/api/v1/admin/tile-operations/jobs"
 ```
 
-### Notes
+`invalidate` and `purge` evict output-cache entries at layer, service, or global scope; re-seed afterward for hot areas.
 
-- Archives are stored with a 24-hour TTL in cloud storage.
-- If cloud storage is not configured, both `archiveFileId` and `downloadUrl` will be null.
-- This operation generates tiles on-demand (does not read from cache). For large tile sets, use `maxTiles` to limit scope.
-- The archive uses PMTiles v3 format with MVT tile type and tiles sorted by Hilbert curve index.
-
-## Durable PMTiles Publish
-
-`operation: "publish"` writes a durable PMTiles artifact for browser-based MapLibre/PMTiles
-consumption. See [PMTiles Publishing](pmtiles-publishing.md) for storage configuration,
-URL strategies (`SignedUrl` / `PublicUrl` / `RangeProxy`), and required object-store CORS
-headers.
-
-### Request
+## Verify
 
 ```bash
-curl -X POST https://<host>/api/v1/admin/tile-operations/jobs \
-  -H "Content-Type: application/json" \
-  -d '{
-    "operation": "publish",
-    "serviceId": "world",
-    "layerId": 42,
-    "minZoom": 0,
-    "maxZoom": 12
-  }'
+curl -s -o tile.mvt -w "%{http_code} %{content_type}\n" "$HONUA_URL/tiles/$LAYER_ID/12/655/1583.mvt"
 ```
 
-Completed job status returns a `publishedArtifact` descriptor with provider, bucket,
-object key, content type, size, URL strategy, browser-usable access URL, and MapLibre
-source hints (bounds, minzoom, maxzoom).
+```text
+200 application/vnd.mapbox-vector-tile
+```
 
+## PMTiles
+
+Two job operations produce PMTiles v3 archives from a layer's tiles:
+
+| Concern | `archive` | `publish` |
+| --- | --- | --- |
+| Lifetime | 24-hour TTL, random key | Durable, deterministic key (`{prefix}/pmtiles/{serviceId}/{layerId}/{tms}.pmtiles`) |
+| Result | `archiveFileId`, `downloadUrl`, `archiveSizeBytes` | `publishedArtifact` descriptor |
+| Audience | Operator download | Browser MapLibre/PMTiles clients |
+| Partial tile failures | Tolerated | Job fails before upload (never overwrites a good artifact) |
+
+```bash
+curl -X POST -H "X-API-Key: $HONUA_API_KEY" -H "Content-Type: application/json" \
+  -d '{"operation":"publish","serviceId":"default","layerId":1,"minZoom":0,"maxZoom":12}' \
+  "$HONUA_URL/api/v1/admin/tile-operations/jobs"
+```
+
+The completed job status carries `publishedArtifact` with `accessUrl`, `bounds`, `minZoom`/`maxZoom`, and storage details — everything a client needs for a `pmtiles://{accessUrl}` MapLibre source. Re-publishing the same `(serviceId, layerId, tileMatrixSetId)` overwrites the artifact.
+
+How clients reach the artifact is set by `FileStorage:PMTilesPublish:UrlStrategy`:
+
+- `SignedUrl` (default) — presigned/SAS URL, lifetime from `SignedUrlLifetime` (S3 IAM presign caps at 7 days); re-run publish to rotate the URL.
+- `PublicUrl` — `{PublicBucketBaseUrl}/{objectKey}` for publicly readable buckets; never expires.
+- `RangeProxy` — server-relative `/api/v1/tiles/pmtiles/{artifactId}`; range reads proxy through Honua, no storage credentials reach the browser.
+
+For `SignedUrl`/`PublicUrl`, the bucket CORS policy must allow `GET`/`HEAD` with the `Range` request header and expose `Accept-Ranges`, `Content-Range`, `Content-Length`, `ETag`, and `Last-Modified`.
+
+## Troubleshoot
+
+- **Tile request returns `404`** — the layer id is unknown or disabled; check `GET /api/v1/admin/connections/{id}/layers`.
+- **Seed job completes with warnings** — individual tile failures are listed per `z/x/y` in the job progress; commonly bad geometries at high zooms.
+- **`archive`/`publish` fails with a cloud storage error** — both operations require configured cloud file storage; `archiveFileId`/`downloadUrl` are null without it.
+- **`Publish aborted before upload: N tiles failed during generation.`** — fix the failing tiles (or narrow `bbox`/zoom range) and re-run; the previous artifact is untouched.
+- **Browser cannot read the PMTiles artifact** — usually missing bucket CORS headers for `Range` requests, or an expired `SignedUrl`; re-publish or switch strategy.
+
+More help: [troubleshooting](../deploy/troubleshooting.md).
+
+## Next steps
+
+- [Style maps](../style/style-maps.md) — styles consume the same MVT endpoints.
+- [Publish layers](publish-layers.md) — publish more layers to tile.
+- [Operations](../deploy/backup-and-restore.md) — job orchestration and monitoring.

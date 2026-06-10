@@ -1,221 +1,95 @@
-# Feature Change Webhooks
+# React to feature changes
 
-This runbook covers operational setup for feature-change notifications and replay.
+Receive an event for every feature insert, update, and delete — pushed to your endpoint as a signed webhook or streamed live over WebSocket/SSE.
 
-## Overview
+**Prerequisites:** A writable layer (see [Edit features](edit-features.md)). Streaming requires a Pro or Enterprise license — Community returns `403` and advertises `enabled=false`. Webhook configuration requires restart access to the server's environment; replay and session admin require an admin API key.
 
-Honua emits normalized feature-write events for:
+Every write — FeatureServer, OGC API Features, OData (including `$batch`), WFS 2.0 transactions, and gRPC `ApplyEdits` — publishes one normalized envelope: `eventId`, `timestamp`, `serviceId`, `layerId`, `objectId`, `operation` (`insert`|`update`|`delete`), `protocol`, `requestId`, plus geometry/attributes when available. Delivery is at-least-once on every channel; always dedupe on `eventId`.
 
-- FeatureServer edits (`applyEdits`, `addFeatures`, `updateFeatures`, `deleteFeatures`)
-- gRPC `FeatureService.ApplyEdits` (Adds / Updates / Deletes batches)
-- OGC API Features writes (Create, Replace, Patch, Delete, batch)
-- WFS 2.0 `Transaction` (Insert, Replace, Update, Delete)
-- OData writes (including successful `$batch` mutations)
+## Steps
 
-Each event envelope includes:
+### 1. Configure a webhook destination
 
-- `eventId`
-- `timestamp`
-- `serviceId`
-- `layerId`
-- `objectId`
-- `operation` (`insert`, `update`, `delete`) — producers may use `create` internally;
-  the canonical event boundary normalizes to `insert` so consumers always receive the
-  values listed here.
-- `protocol`
-- `requestId`
+Webhooks are configured through server settings (environment variables), not the admin API:
 
-Delivery is at-least-once. Consumers must treat `eventId` as the idempotency key.
+```bash
+FeatureChangeEvents__Webhook__Enabled=true
+FeatureChangeEvents__Webhook__Url=https://hooks.example.com/honua
+FeatureChangeEvents__Webhook__Secret=$WEBHOOK_HMAC_SECRET
+FeatureChangeEvents__Webhook__MaxAttempts=5
+```
 
-## Configuration
+The URL must be HTTPS, carry no embedded credentials, and resolve to a public address — private/loopback targets are rejected at startup. Retries use exponential backoff (`InitialBackoffMs`/`MaxBackoffMs`/`RequestTimeoutSeconds` tune it).
 
-Configure via `FeatureChangeEvents`:
+### 2. Verify webhook signatures in your receiver
 
-- `FeatureChangeEvents:MaxRetainedEvents` in-memory replay retention (default `20000`)
-- `FeatureChangeEvents:Webhook:Enabled` enable outbound webhook delivery
-- `FeatureChangeEvents:Webhook:Url` destination URL
-- `FeatureChangeEvents:Webhook:Secret` HMAC secret
-- `FeatureChangeEvents:Webhook:MaxAttempts` retries (default `5`)
-- `FeatureChangeEvents:Webhook:InitialBackoffMs` exponential backoff base (default `500`)
-- `FeatureChangeEvents:Webhook:MaxBackoffMs` max backoff (default `30000`)
-- `FeatureChangeEvents:Webhook:RequestTimeoutSeconds` per-attempt timeout (default `15`)
+Each delivery carries `X-Honua-Event-Id`, `X-Honua-Event-Timestamp` (unix seconds), `Idempotency-Key` (= the event id), and `X-Honua-Signature: sha256=<hex>` — an HMAC-SHA256 of `<timestamp>.<raw-json-body>` using your configured secret:
 
-## Transactional Outbox
+```bash
+printf '%s.%s' "$TIMESTAMP" "$RAW_BODY" | openssl dgst -sha256 -hmac "$WEBHOOK_HMAC_SECRET"
+```
 
-Mutations on capable backends record event intent atomically with the row mutation
-in `honua.feature_change_outbox` (migration `024_CreateFeatureChangeOutbox.sql`). A
-multi-node-safe dispatcher claims rows with `SELECT ... FOR UPDATE SKIP LOCKED` and
-republishes them through the same canonical event publisher consumed by replay,
-streaming, and webhook delivery.
+### 3. Stream over SSE
 
-When the outbox is active the protocol-layer post-commit publish becomes a no-op:
-the dispatcher owns delivery, so the request path never publishes a duplicate
-alongside the dispatcher. Delivery is still at-least-once — a recovered claim,
-a retry after `MarkDispatchedAsync` returned stale, or a retry after a
-publish-then-mark race may re-emit the same `eventId`, and consumers must
-continue to dedupe on it. On non-capable backends the existing post-commit
-publish + Redis retry queue remain in place unchanged (best-effort durability
-with a small loss window if the process crashes between commit and append).
+```bash
+BASE=http://localhost:8080
+curl -N -H "Accept: text/event-stream" "$BASE/api/v1/streaming/features?layers=0"
+```
 
-Row state machine: `pending` → `claimed` → `dispatched` | `failed` → `claimed`
-(retry) | `dead_lettered`. `outbox_id` (the row's primary key) is internal;
-consumers continue to dedupe on the canonical `eventId` carried in the published
-envelope, which is reused across dispatcher retries.
+SSE subscriptions are fixed by query parameters (`serviceId`, `layers`, `bbox`, `filter` CQL2, `datetime`) at connect time; each `feature-change` event's SSE `id:` is a cursor, so `EventSource` reconnects resume automatically (or pass `cursor=` explicitly).
 
-The persisted row's `operation` column reflects the producer-side vocabulary
-(`create`, `update`, `delete`); `InMemoryFeatureChangeEventStore.AppendAsync`
-normalizes `create` to `insert` at the canonical event boundary so webhook and
-replay consumers always see the canonical values listed above. The outbox table
-itself is the only place an operator querying directly will see `create`.
+### 4. Stream over WebSocket with dynamic subscriptions
 
-Durability guarantees:
+Connect a WebSocket to `GET /api/v1/streaming/features`, then send JSON control frames:
 
-- **Strict publish.** The dispatcher uses `IFeatureChangeEventPublisher.PublishStrictAsync`,
-  which surfaces durable-store append failures instead of silently swapping them
-  for a best-effort retry-queue enqueue. A failed publish leaves the outbox row
-  in `claimed`/`failed` and the next pass re-dispatches it; the durability
-  guarantee never silently transfers from the multi-node-safe outbox to the
-  in-process retry queue.
-- **Claim-owner-bound terminal updates.** `MarkDispatchedAsync` and `MarkFailedAsync`
-  filter on `status='claimed' AND claim_node_id=@owner`, so a stalled worker whose
-  lease was reset by `RecoverExpiredClaimsAsync` and re-claimed elsewhere cannot
-  overwrite the new owner's terminal state. Stale-claim outcomes are logged at
-  Information level and skipped without inflating dispatch/failure counters.
-- **Mutation-time event timestamps.** `EventPayload.Timestamp` and the row's
-  `created_at` are pinned to mutation time (captured once in `BuildEntry`) so a
-  delayed or retried dispatch publishes the same timestamp as the inline path.
-  Replay `from`/`to` filtering uses `FeatureChangeEvent.Timestamp` and therefore
-  remains correct for rows that linger in the outbox before delivery.
-- **Atomic outbox write on non-rollback batches.** GeoServices `applyEdits` and
-  WFS transactions with `RollbackOnFailure=false` previously autocommitted the
-  row mutation and appended the outbox row from a separate connection. Each
-  row's mutation + outbox INSERT now runs inside a per-row transaction so a
-  crash between commit and append cannot leave a committed feature row without
-  its CDC envelope. Batch-transactional and outbox-inactive paths still use
-  the autocommit fast path.
-- **Wiring guard against silent CDC loss.** When a protocol handler opens an
-  outbox scope but the data-access layer has no `IFeatureChangeOutboxRepository`
-  registered (a misconfiguration of the Postgres feature-store DI), the
-  mutation throws `InvalidOperationException` rather than falling through to
-  the autocommit fast path. Falling through would silently commit the feature
-  row without recording its CDC envelope — exactly the durability gap the
-  outbox is meant to close. The capability provider and the outbox repository
-  must be registered together; an operator who sees this exception should
-  re-check that both `PostgresOutboxCapabilityProvider` and
-  `PostgresFeatureChangeOutboxRepository` are in the service collection.
-- **Per-row request and geometry-intent correlation.** Atomic batches (OData
-  `$batch` atomic groups, OGC Features Transactions, GeoServices `applyEdits`,
-  gRPC `ApplyEdits`, WFS 2.0 transactions) thread per-row `requestId` and
-  `geometryChanged` queues into the outbox scope so each emitted envelope
-  carries the same correlation the inline post-commit publish would have used.
-  `geometryChanged` is sourced from the originating request intent rather than
-  inferred from the post-mutation snapshot, so PATCH-style updates that
-  preserve existing geometry report `geometryChanged=false`. Replace-style
-  operations (OData PUT, OGC Features Replace and batch updates, WFS 2.0
-  Replace) report `geometryChanged=true` whenever the operation either supplies
-  a new geometry or overwrites an existing non-null geometry — including the
-  body-less Replace that clears existing geometry. For OData `$batch` PUT, OGC
-  Features Replace and batch updates, and WFS 2.0 Replace, the only no-change
-  case is null-to-null, which stays `false`. The single OData CRUD PUT path
-  skips the existing-row pre-fetch and uses `replace OR GeometrySpecified`
-  directly, so a PUT against a row that was already geometry-null over-reports
-  as `geometryChanged=true` — accepted as a benign delta-signal trade-off
-  rather than a stronger guarantee.
-- **Layer-CRS fallback for SRID-less mutation WKB.** Protocol handlers thread
-  `layer.SpatialReference.ToSrid()` (which prefers `LatestWkid` over the legacy
-  `Wkid`) into the outbox scope as the geometry-CRS fallback, matching the
-  inline post-commit publish path. On layers like `Wkid=102100/LatestWkid=3857`,
-  outbox-dispatched envelopes therefore publish `geometryCrs=3857` (the same
-  SRID the inline path emits on non-outbox backends) rather than the deprecated
-  WKID. The fallback only kicks in when the mutation WKB carries no embedded
-  SRID (gRPC `ApplyEdits` and WFS Transactions both use a default
-  `WKBWriter` with `handleSRID:false`); WKB that already carries an SRID wins.
+```json
+{"type":"subscribe","subscriptionId":"alpha","layerId":0,"bbox":[-158,21,-157,22],"filter":"status = 'active'","cursor":1234}
+```
 
-Backend capability:
+One socket carries many subscriptions; the server answers with `status`, `heartbeat`, `error`, and `feature-change` frames, and `cursor` triggers replay of missed events before live delivery. Unfiltered all-layer streams require admin access; everyone else subscribes to explicit service or layer scopes.
 
-- **PostgreSQL**: full transactional outbox.
-- **SQL Server**: read-only in current slice; no outbox required (capability provider
-  reports the limitation at startup).
-- **DuckDB**: read-only; no outbox required (capability provider reports the
-  limitation at startup).
+### 5. Replay missed events (recovery)
 
-Tune via `FeatureChangeEvents:Outbox`:
+```bash
+curl -H "X-API-Key: $HONUA_ADMIN_PASSWORD" \
+  "$BASE/api/v1/admin/feature-events/replay?limit=100"
+```
 
-- `BatchSize` rows per dispatch pass (default `32`)
-- `IdlePollIntervalMs` sleep when batch is empty (default `1000`)
-- `ClaimTtlSeconds` lease before another node may reclaim (default `30`)
-- `RecoveryIntervalSeconds` cadence for resetting expired claims (default `30`)
-- `MaxRetries` attempts before dead-letter (default `5`)
-- `DegradedBacklogThreshold` rows above which readiness reports `Degraded` (default `1000`)
-- `UnhealthyDeadLetterThreshold` dead-lettered rows that flip readiness to `Unhealthy` (default `1`)
+Page with `cursor` (and optional `from`/`to` ISO 8601 bounds, `limit` 1–1000): process each event idempotently, persist the returned `nextCursor`, repeat while `hasMore=true`. Retention is in-memory and capped by `FeatureChangeEvents__MaxRetainedEvents` (default 20000); on PostgreSQL a transactional outbox makes publication atomic with the row mutation.
 
-All seven settings are validated at startup; a non-positive value fails the
-host with an explicit message rather than silently disabling the dispatcher.
+### 6. Manage live sessions (admin)
 
-Operational signals:
+```bash
+curl -H "X-API-Key: $HONUA_ADMIN_PASSWORD" "$BASE/api/v1/admin/streaming/features/sessions"
+```
 
-- `honua.outbox.dispatched_total`, `honua.outbox.failed_total`, `honua.outbox.dead_lettered_total`
-- `honua.outbox.pending_count`, `honua.outbox.dead_lettered_count`, `honua.outbox.oldest_pending_age_seconds`
-- `honua.outbox.recovered_claims_total`
-- Health check `feature-change-outbox` on `/healthz/ready` (tags `outbox`, `events`).
-  Reports `Healthy` when the dispatcher is running and the backlog is below
-  `DegradedBacklogThreshold`, `Degraded` once the backlog crosses that threshold,
-  and `Unhealthy` when dead-lettered rows reach `UnhealthyDeadLetterThreshold`
-  or the dispatcher is not running. Dead-letter `Unhealthy` is evaluated before
-  the storage-poll branch, so a known dead-letter snapshot stays `Unhealthy`
-  even when the latest claim/recovery/backlog query happened to fail — the
-  triage signal outranks the transient storage-poll signal. On non-capable
-  providers the check stays `Healthy` and surfaces the capability limitation
-  as its description so smoke probes do not flap.
-- Storage-poll failure surfacing. The dispatcher tracks each storage kind
-  independently (`claim`, `recovery`, `backlog`) and exposes
-  `IsStoragePollFailing` plus a per-kind success/failure timestamp pair on
-  `IOutboxHealth`. Per-kind tracking is required because a successful backlog
-  refresh after a failed claim must NOT clear the still-failing claim — a
-  single shared timestamp pair would let the later success mask the earlier
-  failure even though no rows are being dispatched. Whenever any kind has a
-  failure timestamp newer than its own most recent success (or no success at
-  all), the readiness probe returns `Unhealthy` if no backlog snapshot has
-  been captured (cold-start failure, e.g. missing table or permissions) and
-  `Degraded` when a prior pass had succeeded but the latest poll failed (the
-  cached backlog snapshot may be stale). A subsequent successful pass on the
-  same kind naturally clears the flag without operator intervention. The probe
-  payload includes per-kind `last_<kind>_poll_success_at` /
-  `last_<kind>_poll_failure_at` plus aggregate `last_storage_failure_at` and
-  `last_successful_poll_at` so dashboards and alerts can correlate the
-  transition with downstream symptoms.
+`DELETE /api/v1/admin/streaming/features/sessions/{sessionId}` force-disconnects one.
 
-## Webhook Signature
+## Verify
 
-For each delivery Honua sends:
+```bash
+curl "$BASE/api/v1/streaming/features/capabilities"
+```
 
-- `X-Honua-Event-Id: <eventId>`
-- `X-Honua-Event-Timestamp: <unix-seconds>`
-- `X-Honua-Signature: sha256=<hex-hmac>`
-- `Idempotency-Key: <eventId>`
+```json
+{ "enabled": true, "transports": ["websocket", "sse"], "replay": { "supported": true }, "layers": [ { "layerId": 0, "canSubscribe": true } ] }
+```
 
-Signature payload is:
+Then insert a feature in another terminal ([Edit features](edit-features.md)) and watch the `feature-change` event arrive on your open SSE stream.
 
-`<timestamp>.<raw-json-body>`
+## Troubleshoot
 
-HMAC algorithm: `HMAC-SHA256` using `FeatureChangeEvents:Webhook:Secret`.
+| Symptom | Fix |
+|---|---|
+| `403` before the stream connects | Community edition fails closed; streaming needs Pro or Enterprise. Capabilities reports `enabled=false`. |
+| `401` on an unfiltered stream | All-layer streams require admin. Subscribe with explicit `layers=` / `serviceId=` scopes instead. |
+| `503` on connect | `FeatureStreaming__MaxConcurrentSessions` is exhausted; raise it or free sessions via the admin sessions endpoint. |
+| Webhook never fires | The URL must be HTTPS and publicly resolvable — private, loopback, or unresolvable addresses are rejected. Check startup logs and your receiver's signature validation. |
+| Duplicate events | Expected: delivery is at-least-once (and once per matching subscription). Dedupe on `eventId` (or `(subscriptionId, eventId)` for multi-subscription sockets). |
 
-## Replay / Recovery
+More general failures: [Troubleshooting](../deploy/troubleshooting.md).
 
-Use admin replay endpoint:
+## Next steps
 
-`GET /api/v1/admin/feature-events/replay`
-
-Query parameters:
-
-- `cursor` return events after cursor
-- `from` / `to` ISO8601 time window
-- `limit` max events (1..1000)
-
-Typical recovery loop:
-
-1. Load last durable cursor from consumer state.
-2. Call replay with `cursor` and `limit`.
-3. Process each event idempotently keyed by `eventId`.
-4. Persist returned `nextCursor`.
-5. Repeat while `hasMore=true`.
+- [Edit features](edit-features.md)
+- [Monitoring](../deploy/monitoring.md)

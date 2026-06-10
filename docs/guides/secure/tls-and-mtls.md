@@ -1,101 +1,122 @@
-# TLS Connection Guide
+# Terminate TLS and require client certificates
 
-Honua uses Npgsql for PostgreSQL connectivity. This guide covers TLS/SSL configuration for managed and self-hosted PostgreSQL deployments.
+Encrypt every hop — browser to edge, edge to Honua, Honua to PostgreSQL — and optionally require mTLS client certificates on admin and native surfaces.
 
-## Npgsql SSL Mode Options
+**Prerequisites:** A reverse proxy or load balancer you control (nginx, ALB, Application Gateway, ingress), and an admin API key for the trust-management endpoints.
 
-| SSL Mode | Description | Use Case |
-|----------|-------------|----------|
-| `Disable` | No encryption | Local development only |
-| `Allow` | Prefer plaintext, accept TLS if required by server | Not recommended |
-| `Prefer` | Prefer TLS, fall back to plaintext | Development environments |
-| `Require` | Require TLS, skip certificate verification | Trusted network environments |
-| `VerifyCA` | Require TLS, verify the server certificate CA | Managed services with custom CAs |
-| `VerifyFull` | Require TLS, verify CA and hostname | Production (recommended) |
+## Steps
 
-## AWS Aurora PostgreSQL
+### 1. Terminate TLS at the edge
 
-Aurora PostgreSQL supports and enforces TLS by default. Use `SSL Mode=VerifyFull` with the AWS RDS CA bundle for production deployments.
-
-### Connection String Example
-
-```
-Host=my-cluster.cluster-abc123.us-east-1.rds.amazonaws.com;Port=5432;Database=honua;Username=honua_app;Password=<password>;SSL Mode=VerifyFull;Root Certificate=/path/to/aws-rds-ca-bundle.pem
-```
-
-### CA Certificate
-
-Download the RDS CA bundle from the [AWS documentation](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/UsingWithRDS.SSL.html):
+Terminate TLS at your proxy/load balancer — Honua binds plain HTTP behind it — then tell Honua about the proxy so client IPs and public URLs resolve correctly:
 
 ```bash
-# Global bundle (all regions)
-curl -o /etc/ssl/certs/aws-rds-ca-bundle.pem \
-  https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
+ForwardedHeaders__Enabled=true
+ForwardedHeaders__ForwardLimit=2
+ForwardedHeaders__KnownProxies__0=10.0.0.10
+PUBLIC_BASE_URL=https://gis.example.com
+SecurityHeaders__EnableHsts=true
+SecurityHeaders__HstsMaxAge=31536000
 ```
 
-For containers, mount the CA certificate as a volume or include it in the image.
+`KnownProxies` must list only trusted hops; `PUBLIC_BASE_URL` drives absolute links and `Location` headers (the request `Host` header is never reflected). Direct Kestrel HTTPS is supported, but the proxy-first pattern keeps certificate rotation out of the app.
 
-## Azure Database for PostgreSQL
+### 2. Encrypt the database connection
 
-Azure Flexible Server uses DigiCert Global Root G2 as the certificate authority. Use `SSL Mode=VerifyFull` for production.
-
-### Connection String Example
-
-```
-Host=my-server.postgres.database.azure.com;Port=5432;Database=honua;Username=honua_app;Password=<password>;SSL Mode=VerifyFull;Root Certificate=/path/to/DigiCertGlobalRootG2.crt.pem
-```
-
-### CA Certificate
-
-Download the DigiCert Global Root G2 certificate:
+Honua connects to PostgreSQL via Npgsql. In production use full verification:
 
 ```bash
-curl -o /etc/ssl/certs/DigiCertGlobalRootG2.crt.pem \
-  https://cacerts.digicert.com/DigiCertGlobalRootG2.crt.pem
+ConnectionStrings__DefaultConnection="Host=db.example.com;Port=5432;Database=honua;Username=honua_app;Password=$DB_PASSWORD;SSL Mode=VerifyFull;Root Certificate=/etc/ssl/certs/rds-ca.pem;Trust Server Certificate=false"
 ```
 
-Azure also supports the Microsoft RSA Root Certificate Authority 2017 for newer deployments. Check your server's SSL settings in the Azure portal.
+| SSL mode | Use |
+|---|---|
+| `Require` | Encrypted, no cert verification — internal/staging only |
+| `VerifyCA` | Verifies the server CA — managed services with custom CAs |
+| `VerifyFull` | Verifies CA and hostname — production |
 
-## Self-Hosted PostgreSQL
+For AWS RDS/Aurora download the bundle from `https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem`; for Azure Flexible Server use DigiCert Global Root G2 (`https://cacerts.digicert.com/DigiCertGlobalRootG2.crt.pem`). Mount the file into the container and reference it via `Root Certificate`.
 
-For self-hosted deployments, configure TLS based on your security requirements:
+### 3. Choose an mTLS enforcement mode
 
-| Environment | Recommended SSL Mode | Notes |
-|-------------|---------------------|-------|
-| Local development | `Disable` or `Prefer` | Encryption optional |
-| Staging / Internal | `Require` | Encrypted, no certificate verification |
-| Production | `VerifyFull` | Full verification with your CA |
+Client-certificate authentication is server-side validation of the *caller's* certificate, aimed at native operator clients and the admin surface:
 
-### Self-Signed Certificates
-
-If using self-signed certificates for internal deployments:
-
-```
-Host=pg-server.internal;Port=5432;Database=honua;Username=honua_app;Password=<password>;SSL Mode=VerifyFull;Root Certificate=/path/to/ca.crt;Trust Server Certificate=false
+```bash
+Authentication__ClientCertificates__Mode=RequiredForAdmin
 ```
 
-## Trust Store Paths by Platform
+| Mode | Behavior |
+|---|---|
+| `Disabled` | Ignore client certificates (default) |
+| `Optional` | A valid mapped certificate is one more admin auth scheme; API key/OIDC still work |
+| `RequiredForAdmin` | Certificate required for admin path prefixes (default `/api/v1/admin`) |
+| `RequiredForNative` | Certificate required for the native gRPC services |
+| `RequiredForEnvironment` | Both admin and native surfaces |
 
-| Platform | Default CA Path |
-|----------|----------------|
-| Linux (Debian/Ubuntu) | `/etc/ssl/certs/` |
-| Linux (RHEL/CentOS) | `/etc/pki/tls/certs/` |
-| Alpine Linux | `/etc/ssl/certs/` |
-| Windows | Windows Certificate Store (automatic) |
-| macOS | System Keychain (automatic) |
+### 4. Define a trust profile and principal mapping
 
-For Docker containers, add the CA certificate to the container's trust store or reference it via the `Root Certificate` connection string parameter.
+A trust profile says which issuers to trust; principal mappings turn a certificate SAN into a Honua principal with roles:
 
-## Npgsql Connection String Reference
+```bash
+Authentication__ClientCertificates__TrustProfiles__0__ProfileId=prod-native
+Authentication__ClientCertificates__TrustProfiles__0__EnvironmentId=prod
+Authentication__ClientCertificates__TrustProfiles__0__AcceptedIssuerSubjects__0=CN=Honua Prod Operator CA
+Authentication__ClientCertificates__TrustProfiles__0__RequireChainTrust=true
+Authentication__ClientCertificates__TrustProfiles__0__AllowedSanTypes__0=SanUri
+Authentication__ClientCertificates__TrustProfiles__0__PrincipalMappings__0__MappingId=prod-console-admin
+Authentication__ClientCertificates__TrustProfiles__0__PrincipalMappings__0__MatchType=SanUri
+Authentication__ClientCertificates__TrustProfiles__0__PrincipalMappings__0__MatchValue=spiffe://honua/prod/console-admin
+Authentication__ClientCertificates__TrustProfiles__0__PrincipalMappings__0__PrincipalId=native-prod-admin
+Authentication__ClientCertificates__TrustProfiles__0__PrincipalMappings__0__Roles__0=admin
+```
 
-Key TLS-related parameters for Npgsql:
+`AcceptedIssuerSubjects` alone is forgeable, so the server requires `RequireChainTrust=true` with it; for a private CA not in the OS trust store, add `CustomTrustAnchorCertificates`. Prefer SAN URI/email mappings over subject fallback. The mapped principal must still satisfy admin RBAC.
 
-| Parameter | Description |
-|-----------|-------------|
-| `SSL Mode` | TLS mode (see table above) |
-| `Root Certificate` | Path to CA certificate file |
-| `Trust Server Certificate` | When `true`, skip certificate validation (not for production) |
-| `Client Certificate` | Path to client certificate for mTLS |
-| `Client Certificate Key` | Path to client certificate private key |
+### 5. Forward certificates from a trusted proxy (optional)
 
-See the [Npgsql documentation](https://www.npgsql.org/doc/security.html) for the complete reference.
+If TLS (including the client handshake) terminates at the proxy, enable forwarded certificates only when the proxy strips inbound spoofed headers:
+
+```bash
+Authentication__ClientCertificates__ForwardedCertificate__Enabled=true
+Authentication__ClientCertificates__ForwardedCertificate__HeaderName=X-Forwarded-Client-Cert
+Authentication__ClientCertificates__ForwardedCertificate__TrustedProxyNetworks__0=10.0.0.0/24
+```
+
+Headers arriving from outside `TrustedProxyNetworks` are rejected with `client_certificate_forwarding_untrusted`.
+
+### 6. Manage trust at runtime
+
+Profiles, mappings, and revocations are also manageable without restarts under `/api/v1/admin/security/client-certificates/*` (list/create/update/delete profiles, `.../mappings`, `.../revocations` by SHA-256 fingerprint or issuer+serial). Mirror admin mutations back into your configuration source so they survive restarts and multi-node rollout.
+
+## Verify
+
+Probe a certificate without storing it:
+
+```bash
+curl -X POST "https://gis.example.com/api/v1/admin/security/client-certificates/validate" \
+  -H "X-API-Key: $HONUA_ADMIN_PASSWORD" -H "Content-Type: application/json" \
+  -d "{\"certificate\":\"$(base64 -w0 client.der)\",\"encoding\":\"base64Der\"}"
+```
+
+```json
+{ "success": true, "data": { "valid": true, "profileId": "prod-native" } }
+```
+
+Untrusted certificates return `200` with `data.valid=false` and a stable `data.code`. Then hit a protected admin route with and without the certificate: failures return `401` problem details with codes like `client_certificate_missing`.
+
+## Troubleshoot
+
+| Symptom | Fix |
+|---|---|
+| `client_certificate_untrusted_issuer` / `_untrusted_chain` | The chain must build cryptographically; add intermediates or configure `CustomTrustAnchorCertificates` for a private CA. |
+| `client_certificate_forwarding_untrusted` behind a proxy | The immediate peer IP is outside `TrustedProxyNetworks`; when `ForwardedHeaders__Enabled=true` Honua checks the pre-rewrite peer IP, so list the proxy's real address. |
+| Profile rejected at startup or upsert (`400`) | Enabled profiles need an issuer subject, thumbprint, or custom anchor — and `AcceptedIssuerSubjects` requires `RequireChainTrust=true`. |
+| Browser/gRPC-Web users prompted for certificates | They shouldn't be: required native modes exempt `application/grpc-web*` requests; only native HTTP/2 gRPC and admin paths are enforced. |
+| Native gRPC mTLS fails locally | mTLS-required modes need HTTPS/HTTP2 to Kestrel (or trusted TLS termination); local h2c ports cannot satisfy them. |
+
+More general failures: [Troubleshooting](../deploy/troubleshooting.md).
+
+## Next steps
+
+- [Production security checklist](production-checklist.md)
+- [Authenticate clients](authentication.md)

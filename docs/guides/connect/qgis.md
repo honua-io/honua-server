@@ -1,207 +1,67 @@
-# QGIS Getting Started with Honua
+# Connect QGIS to Honua
 
-Connect QGIS to Honua Server via OGC API Features and query geospatial data in under 5 minutes.
+Add Honua layers to a QGIS project over OGC API Features, WMS/WMTS, or WFS, then filter them with the standard QGIS tools.
 
-## Prerequisites
+**Prerequisites:** a running server ([quickstart](../../get-started/quickstart.md)) and a published layer ([publish layers](../publish/publish-layers.md)). QGIS 3.34 LTR or later is assumed for menu names.
 
-- [QGIS](https://qgis.org/en/site/forusers/download.html) 3.28+ installed
-- Docker and Docker Compose (v2+)
+## Steps
 
-## 1. Start Honua Server
+### Option A — OGC API Features (recommended)
 
-```bash
-docker compose up -d
-```
+1. Open the Data Source Manager (**Layer → Data Source Manager**, or `Ctrl+L`) and select the **WFS / OGC API - Features** tab.
+2. Click **New** to create a connection.
+3. Enter a name (for example `Honua`) and the URL `http://localhost:8080/ogc/features`, then click **OK**.
+4. Click **Connect**. QGIS reads the landing page and lists the published collections.
+5. Select a collection and click **Add**. The features load onto the map canvas.
 
-Wait for the server to be ready:
+> Collection ids are currently the numeric layer ids (for example `0`).
 
-```bash
-curl -s http://localhost:8080/healthz/ready
-# Expected: Ready
-```
+### Option B — WMS or WMTS (rendered maps and cached tiles)
 
-## 2. Import Sample Data
+Honua serves WMS 1.1.1/1.3 and WMTS 1.0 per service at `/ogc/services/{serviceId}/wms` and `/ogc/services/{serviceId}/wmts` (the ArcGIS-style aliases `/rest/services/{serviceId}/MapServer/WMS` and `.../MapServer/WMTS` work too).
 
-Upload a GeoJSON file through the Admin API. Save this as `sample.geojson`:
+1. In the Data Source Manager, select the **WMS/WMTS** tab and click **New**.
+2. Enter a name and the URL for your service, for example `http://localhost:8080/ogc/services/my-service/wms` (or the `/wmts` URL for tiles), then click **OK**.
+3. Click **Connect**, select a layer (WMS) or tile layer (WMTS), and click **Add**.
 
-```json
-{
-  "type": "FeatureCollection",
-  "features": [
-    {
-      "type": "Feature",
-      "properties": { "name": "City Hall", "category": "government", "population": 50000 },
-      "geometry": { "type": "Point", "coordinates": [-122.4194, 37.7749] }
-    },
-    {
-      "type": "Feature",
-      "properties": { "name": "Central Park", "category": "park", "population": 0 },
-      "geometry": { "type": "Point", "coordinates": [-73.9654, 40.7829] }
-    },
-    {
-      "type": "Feature",
-      "properties": { "name": "Library", "category": "education", "population": 1200 },
-      "geometry": { "type": "Point", "coordinates": [-87.6298, 41.8781] }
-    }
-  ]
-}
-```
+WMTS currently serves the WebMercatorQuad tile matrix set only.
 
-Import it:
+### Option C — WFS 2.0 (legacy clients)
+
+1. In the **WFS / OGC API - Features** tab, click **New**.
+2. Enter the URL `http://localhost:8080/wfs` and click **OK**, then **Connect**.
+3. Select a feature type and click **Add**.
+
+QGIS negotiates the WFS version automatically. Honua also answers WFS 1.1.0 and 1.0.0 read-only requests on the same URL; append `VERSION=1.1.0` to the URL to pin a legacy version.
+
+### Filter a layer
+
+1. Right-click the layer → **Filter…**.
+2. Enter an expression such as `"category" = 'park'` and click **OK**. The canvas updates to the matching subset; QGIS pushes the filter to the server where the provider supports it.
+3. To inspect attributes, right-click the layer → **Open Attribute Table** (`F6`).
+
+## Verify
+
+Confirm the endpoints QGIS uses respond outside QGIS:
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/admin/import/upload \
-  -F "file=@sample.geojson" \
-  -F "TableName=places"
+BASE=http://localhost:8080
+curl -s "$BASE/ogc/features/collections" | head
+curl -s "$BASE/wfs?service=WFS&request=GetCapabilities" | head
 ```
 
-## 3. Publish the Imported Layer
+In QGIS, the layer should draw on the canvas and the attribute table should list features.
 
-The upload creates a database table. To make it available as an OGC collection, register a connection and publish the layer.
+## Troubleshoot
 
-**Register a connection** (skip if you already have one). Use the default credentials from the root `docker-compose.yml`:
+- **Connection refused** — the server is not running or port 8080 is blocked. Check `curl http://localhost:8080/healthz/ready`. See [troubleshooting](../deploy/troubleshooting.md).
+- **No collections listed** — no layers are published yet, or the layer's protocols exclude OGC API Features. Re-check [publish layers](../publish/publish-layers.md).
+- **401/403 when connecting** — your deployment requires auth. Add credentials under **Authentication** in the QGIS connection dialog (API key header or Basic, matching your server config).
+- **WMS/WMTS connection fails with 404** — the URL must include a service id: `/ogc/services/{serviceId}/wms`, not `/wms`.
+- **Layer draws in the wrong place** — check the layer CRS; Honua serves EPSG:4326 by default and QGIS reprojects to the project CRS.
 
-```bash
-curl -X POST http://localhost:8080/api/v1/admin/connections \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "local",
-    "host": "postgres",
-    "port": 5432,
-    "databaseName": "honua_dev",
-    "username": "honua_user",
-    "password": "honua_password",
-    "sslMode": "Prefer"
-  }'
-# Note the connectionId from the response: { "success": true, "data": { "connectionId": "..." } }
-```
+## Next steps
 
-**Discover the imported table** to confirm its schema:
-
-```bash
-curl -s http://localhost:8080/api/v1/admin/connections/{connectionId}/tables | jq '.data'
-# Look for the "places" table — note the schema (typically "honua")
-```
-
-**Publish the imported table** (replace `{connectionId}` and `{schema}` with the discovered values):
-
-```bash
-curl -X POST http://localhost:8080/api/v1/admin/connections/{connectionId}/layers \
-  -H "Content-Type: application/json" \
-  -d '{ "schema": "{schema}", "table": "places", "layerName": "places" }'
-```
-
-## 4. Connect QGIS to Honua
-
-1. Open QGIS
-2. Go to **Layer > Add Layer > Add OGC API Features Layer** (or press `Ctrl+L` and select the **OGC API Features** tab)
-3. Click **New** to create a connection:
-   - **Name:** `Honua Local`
-   - **URL:** `http://localhost:8080/ogc/features`
-4. Click **Connect**
-
-QGIS discovers available collections from the Honua landing page.
-
-## 5. Add a Layer
-
-1. In the connection browser, expand the collections list
-2. Select your imported collection (e.g., `places`)
-3. Click **Add** to load it as a map layer
-
-The features appear on the map canvas and in the attribute table.
-
-## 6. Query Features
-
-### Attribute Filter
-
-1. Right-click the layer > **Filter...**
-2. Enter a filter expression:
-   ```
-   "category" = 'park'
-   ```
-3. Click **OK** -- the map updates to show only matching features
-
-### Spatial Filter
-
-1. Use the **Sketching tool** or **Select by Rectangle** to define a bounding box
-2. Right-click the layer > **Filter...** and add a spatial constraint, or use the **Query Builder** with a bbox expression
-
-### View Attributes
-
-1. Right-click the layer > **Open Attribute Table** (or press `F6`)
-2. Browse feature attributes, sort columns, and select individual features
-
-## 7. Export Data
-
-1. Right-click the layer > **Export > Save Features As...**
-2. Choose format: GeoPackage, GeoJSON, CSV, or Shapefile
-3. Set CRS if needed (default: EPSG:4326)
-4. Click **OK**
-
-## Using the QGIS Project Template
-
-A pre-configured QGIS project template source is available in the repository:
-
-```
-docs/user/client-templates/qgis/Honua-Desktop-Smoke.qgs.template
-```
-
-For repeatable certification runs, prefer the generated workflow pack at `artifacts/client-compat/<service>-<timestamp>/pack/templates/desktop/qgis/`.
-
-To use the repo sources directly:
-
-```bash
-mkdir -p /tmp/honua-client-templates/desktop/qgis
-cp docs/gis/client-templates/.env.example /tmp/honua-client-templates/.env
-cp docs/user/client-templates/qgis/Honua-Desktop-Smoke.qgs.template /tmp/honua-client-templates/desktop/qgis/
-
-cd /tmp/honua-client-templates
-# Edit .env with your server URL and collection ID (`HONUA_COLLECTION_ID` is currently the numeric layer id)
-
-set -a; source .env; set +a
-envsubst < desktop/qgis/Honua-Desktop-Smoke.qgs.template > desktop/qgis/Honua-Desktop-Smoke.qgs
-```
-
-Open the generated `.qgs` file in QGIS, or package it as `.qgz` using the client-template runbook.
-
-## Alternative: Connect via WFS
-
-QGIS also supports WFS 2.0 connections to Honua. This is validated nightly by the automated PyQGIS compatibility suite. Honua additionally accepts WFS 1.1.0 and WFS 1.0.0 read-only requests against the same `/wfs` endpoint, which legacy QGIS releases pinned to those versions can use without a server-side change.
-
-1. Go to **Layer > Add Layer > Add WFS / OGC API - Features Layer** (or press `Ctrl+L` and select the **WFS / OGC API Features** tab)
-2. Click **New** to create a connection:
-   - **Name:** `Honua WFS`
-   - **URL:** `http://localhost:8080/wfs`
-3. Click **Connect**
-4. Select a feature type and click **Add**
-
-QGIS negotiates the WFS version with the server. To force a legacy version (for example, when reproducing an older client trace), append `VERSION=1.1.0` or `VERSION=1.0.0` to the URL. WFS uses GetCapabilities for type discovery and supports attribute and spatial filtering via the QGIS WFS provider.
-
-## Verify OGC API Features Endpoints
-
-These endpoints are used by QGIS under the hood:
-
-| What QGIS Does | Endpoint |
-|---|---|
-| Discover collections | `GET /ogc/features/collections` |
-| Get collection metadata | `GET /ogc/features/collections/{id}` |
-| Fetch features | `GET /ogc/features/collections/{id}/items` |
-| Get queryable properties | `GET /ogc/features/collections/{id}/queryables` |
-| Get API spec | `GET /openapi.json` |
-
-## Troubleshooting
-
-**Connection refused**: Ensure the Docker container is running and port 8080 is accessible.
-
-**No collections found**: Verify data has been imported. Check the admin API:
-```bash
-curl http://localhost:8080/api/v1/admin/connections
-```
-
-**CRS mismatch**: Honua serves data in EPSG:4326 by default. QGIS will reproject to the project CRS automatically.
-
-## Next Steps
-
-- Explore the [API Examples](../query-analyze/query-features.md) for curl-based access patterns
-- Review the [OGC API Features Coverage](../../reference/protocols/specifications/ogc-api-features-coverage.md) for supported parameters
-- Try the [Interactive API Explorer](http://localhost:8080/docs) to test endpoints directly
+- [Query features from the command line](../query-analyze/query-features.md)
+- [Style maps](../style/style-maps.md)
+- [Client compatibility matrix](../../reference/compatibility/clients.md)

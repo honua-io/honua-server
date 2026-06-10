@@ -13,12 +13,12 @@ redirects:
   # Legacy paths (pre-restructure)
   user/STANDARDS_APIS: concepts/protocols.md
   user/CONTROL_PLANE_API: reference/admin-api/overview.md
-  devops/DEPLOYMENT_SCENARIOS: guides/deploy/deployment-scenarios.md
+  devops/DEPLOYMENT_SCENARIOS: guides/deploy/cloud-deployments.md
   # Operator guide
   operator/README: archive/README.md
   operator/infrastructure: guides/deploy/kubernetes.md
   operator/docker-compose: guides/deploy/docker-compose.md
-  operator/DEPLOYMENT_SCENARIOS: guides/deploy/deployment-scenarios.md
+  operator/DEPLOYMENT_SCENARIOS: guides/deploy/cloud-deployments.md
   operator/database-support-matrix: reference/configuration/data-sources/README.md
   operator/duckdb-provider: reference/configuration/data-sources/duckdb.md
   operator/sqlserver-provider: reference/configuration/data-sources/sql-server.md
@@ -26,56 +26,56 @@ redirects:
   operator/mysql-provider: reference/configuration/data-sources/mysql-mariadb.md
   operator/tls-connection-guide: guides/secure/tls-and-mtls.md
   operator/security: guides/secure/authentication.md
-  operator/client-certificate-authentication: guides/secure/client-certificate-authentication.md
+  operator/client-certificate-authentication: guides/secure/tls-and-mtls.md
   operator/compliance-framework: guides/secure/compliance.md
-  operator/http-client-resilience: guides/deploy/http-client-resilience.md
+  operator/http-client-resilience: guides/deploy/scaling-and-performance.md
   operator/monitoring: guides/deploy/monitoring.md
-  operator/operations: guides/deploy/operations.md
+  operator/operations: guides/deploy/backup-and-restore.md
   operator/CONTROL_PLANE_API: reference/admin-api/overview.md
-  operator/arcgis-inventory-discovery: guides/migrate/arcgis-inventory-discovery.md
+  operator/arcgis-inventory-discovery: guides/migrate/from-arcgis-server.md
   operator/feature-change-webhooks: guides/edit/react-to-changes.md
-  operator/feature-streaming: guides/edit/feature-streaming.md
+  operator/feature-streaming: guides/edit/react-to-changes.md
   operator/tile-operations-runbook: guides/publish/publish-tiles.md
   operator/sld-migration: guides/style/import-sld-styles.md
-  operator/pmtiles-publishing: guides/publish/pmtiles-publishing.md
+  operator/pmtiles-publishing: guides/publish/publish-tiles.md
   operator/troubleshooting: guides/deploy/troubleshooting.md
   operator/runbooks/UPGRADE_AND_ROLLBACK: guides/deploy/upgrade-and-rollback.md
   # GIS user guide
   gis/README: archive/README.md
   gis/STANDARDS_APIS: concepts/protocols.md
   gis/DATA_MODELING_GUIDE: concepts/data-model.md
-  gis/FILEGDB_IMPORT_WORKFLOW: guides/publish/filegdb-import-workflow.md
+  gis/FILEGDB_IMPORT_WORKFLOW: guides/publish/import-files.md
   gis/raster-overview: guides/publish/publish-rasters.md
-  gis/cloud-optimized-hdf-netcdf-support: guides/publish/cloud-optimized-hdf-netcdf-support.md
+  gis/cloud-optimized-hdf-netcdf-support: guides/publish/publish-rasters.md
   gis/terrain-tiles: guides/publish/publish-terrain-and-elevation.md
   gis/scenes-3dtiles: guides/publish/publish-3d-scenes.md
   gis/openusd-omniverse-export-path: internal/README.md
   gis/point-cloud-reality-capture-ingest: internal/README.md
   gis/citygml-bim-building-scene-layer-ingest: internal/README.md
-  gis/scene-generation: guides/publish/scene-generation.md
+  gis/scene-generation: guides/publish/publish-3d-scenes.md
   gis/elevation-api: reference/protocols/terrain-and-elevation.md
   gis/MVP_COMPATIBILITY_CONTRACT: reference/compatibility/clients.md
   gis/style-engine-protocol-consumption: guides/style/style-maps.md
   gis/tutorials/qgis-getting-started: guides/connect/qgis.md
   gis/tutorials/geoserver-migration-guide: guides/migrate/from-geoserver.md
   gis/geoservices-rest-parity: reference/compatibility/geoservices-parity.md
-  gis/feature-server-matrix: reference/compatibility/feature-server-matrix.md
-  gis/map-server-matrix: reference/compatibility/map-server-matrix.md
-  gis/image-server-matrix: reference/compatibility/image-server-matrix.md
-  gis/specifications/ogc-api-features-coverage: reference/protocols/specifications/ogc-api-features-coverage.md
-  gis/specifications/ogc-api-tiles-coverage: reference/protocols/specifications/ogc-api-tiles-coverage.md
-  gis/specifications/ogc-api-processes-coverage: reference/protocols/specifications/ogc-api-processes-coverage.md
-  gis/specifications/ogc-api-records-coverage: reference/protocols/specifications/ogc-api-records-coverage.md
-  gis/specifications/wcs-2.0.1-coverage: reference/protocols/specifications/wcs-2.0.1-coverage.md
-  gis/specifications/odata-v4-coverage: reference/protocols/specifications/odata-v4-coverage.md
-  gis/geometry-service-matrix: reference/compatibility/geometry-service-matrix.md
+  gis/feature-server-matrix: reference/compatibility/geoservices-parity.md
+  gis/map-server-matrix: reference/compatibility/geoservices-parity.md
+  gis/image-server-matrix: reference/compatibility/geoservices-parity.md
+  gis/specifications/ogc-api-features-coverage: reference/protocols/ogc-apis.md
+  gis/specifications/ogc-api-tiles-coverage: reference/protocols/ogc-apis.md
+  gis/specifications/ogc-api-processes-coverage: reference/protocols/ogc-apis.md
+  gis/specifications/ogc-api-records-coverage: reference/protocols/ogc-apis.md
+  gis/specifications/wcs-2.0.1-coverage: reference/protocols/wms-wfs-wcs-wmts.md
+  gis/specifications/odata-v4-coverage: reference/protocols/odata.md
+  gis/geometry-service-matrix: reference/compatibility/geoservices-parity.md
   gis/geoprocess-framework-analysis: guides/query-analyze/run-geoprocessing.md
   compatibility/cross-server-consume-gap-report: internal/README.md
   # Developer guide
   developer/README: archive/README.md
   developer/API_EXAMPLES: guides/query-analyze/query-features.md
   developer/INTEGRATION_PATTERNS: reference/integration-patterns.md
-  developer/capability-manifest: reference/admin-api/capability-manifest.md
+  developer/capability-manifest: reference/admin-api/overview.md
   developer/metadata-catalog-parity-matrix: internal/README.md
   developer/share-export-traffic-api: internal/README.md
   developer/form-package-api: reference/admin-api/forms.md
@@ -125,3 +125,30 @@ redirects:
   security/base-url-and-open-redirect-handling: internal/README.md
   security/code-scanning-2026-Q2-remediation: internal/README.md
   evidence/README: internal/README.md
+  # Transitional paths (existed between the restructure and the content rewrite)
+  concepts/license-migration: concepts/editions-and-licensing.md
+  guides/publish/filegdb-import-workflow: guides/publish/import-files.md
+  guides/publish/cloud-optimized-hdf-netcdf-support: guides/publish/publish-rasters.md
+  guides/publish/scene-generation: guides/publish/publish-3d-scenes.md
+  guides/publish/extruded-3d-feature-layers: guides/publish/publish-3d-scenes.md
+  guides/publish/pmtiles-publishing: guides/publish/publish-tiles.md
+  guides/edit/feature-streaming: guides/edit/react-to-changes.md
+  guides/secure/client-certificate-authentication: guides/secure/tls-and-mtls.md
+  guides/migrate/arcgis-inventory-discovery: guides/migrate/from-arcgis-server.md
+  guides/migrate/migration-pilot-cutover-checklist: guides/migrate/from-arcgis-server.md
+  guides/deploy/deployment-scenarios: guides/deploy/cloud-deployments.md
+  guides/deploy/http-client-resilience: guides/deploy/scaling-and-performance.md
+  guides/deploy/operations: guides/deploy/backup-and-restore.md
+  reference/admin-api/capability-manifest: reference/admin-api/overview.md
+  reference/admin-api/license-key-rotation: reference/admin-api/users-roles-licensing.md
+  reference/protocols/specifications/README: reference/protocols/ogc-apis.md
+  reference/protocols/specifications/ogc-api-features-coverage: reference/protocols/ogc-apis.md
+  reference/protocols/specifications/ogc-api-features-part1-core: reference/protocols/ogc-apis.md
+  reference/protocols/specifications/ogc-api-features-part2-crs: reference/protocols/ogc-apis.md
+  reference/protocols/specifications/ogc-api-features-part3-filtering: reference/protocols/ogc-apis.md
+  reference/protocols/specifications/ogc-api-tiles-coverage: reference/protocols/ogc-apis.md
+  reference/protocols/specifications/ogc-api-coverages-coverage: reference/protocols/ogc-apis.md
+  reference/protocols/specifications/ogc-api-processes-coverage: reference/protocols/ogc-apis.md
+  reference/protocols/specifications/ogc-api-records-coverage: reference/protocols/ogc-apis.md
+  reference/protocols/specifications/wcs-2.0.1-coverage: reference/protocols/wms-wfs-wcs-wmts.md
+  reference/protocols/specifications/odata-v4-coverage: reference/protocols/odata.md

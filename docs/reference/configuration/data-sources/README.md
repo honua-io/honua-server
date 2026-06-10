@@ -1,91 +1,40 @@
-# Database Support Matrix
+# Data sources
 
-Honua's primary provider requires PostgreSQL with PostGIS. This page documents tested engine/extension versions and provider-specific guidance for managed Postgres deployments.
+Honua serves data from one primary provider (PostgreSQL/PostGIS by default) plus optional read-only providers that plug in alongside it through the shared feature-provider router. PostGIS is the only full read/write backend; the others are read/query slices for serving data in place.
 
-For read-only analytical and reference workloads, Honua also supports an embedded [DuckDB provider](duckdb.md) that requires no external database infrastructure.
+## Provider capability matrix
 
-For organizations with authoritative spatial data already in SQL Server, Honua offers a read-only [SQL Server provider](sql-server.md) that plugs in alongside the primary backend.
+| Provider | Access | Selected by | Notes |
+| --- | --- | --- | --- |
+| [PostGIS](postgis.md) | Full read/write | `DataSource__Provider=postgres` (default) | Edits, statistics, native MVT/FlatGeobuf/Geobuf/GeoParquet/GeoArrow output, analytics, raster. |
+| [DuckDB](duckdb.md) | Read-only (primary) | `DataSource__Provider=duckdb` | Embedded single-file database for analytical and reference layers; no external infrastructure. |
+| [SQL Server](sql-server.md) | Read/query only (additional) | Layer connection resolves to `sqlserver`/`mssql` | `geometry`/`geography` tables; no edits, native MVT, encoded exports, or statistics. |
+| [Oracle](oracle.md) | Read/query only (additional) | Layer connection resolves to `oracle`/`oracledb` | Standard `SDO_GEOMETRY` only; ArcSDE `ST_Geometry` and versioned tables are refused. Not Native AOT compatible. |
+| [MySQL/MariaDB](mysql-mariadb.md) | Read/query only (primary) | `DataSource__Provider=mysql` | MySQL 8.0.11+ / MariaDB 10.6+; no edits, statistics, encoded exports, streaming GeoJSON, KNN, temporal filters, or cross-SRID transforms. |
 
-For read-only serving of standard Oracle Spatial (`SDO_GEOMETRY`) tables, see the [Oracle provider](oracle.md). ArcSDE `ST_Geometry`, SDE-binary formats, and versioned enterprise-geodatabase tables are detected and refused; standard Oracle Spatial / Locator tables are served through the shared catalog binding flow.
+Provider selection variables are listed in the [environment variable reference](../environment-variables.md#database-and-providers).
 
-For read/query-only access to MySQL 8.0.11+ and MariaDB 10.6+ tables, see the [MySQL/MariaDB provider](mysql-mariadb.md). It is a thin slice with no edits, statistics, native output formats, streaming GeoJSON, KNN, temporal (`datetime`) filters, or cross-SRID `ST_Transform`. `GetExtentAsync` is supported for Point and Polygon/MultiPolygon layers only.
+## Tested PostgreSQL configurations
 
-## Tested Configurations
-
-| Provider | Engine Version | PostGIS Version | CI Status |
-|----------|---------------|-----------------|-----------|
+| Provider | Engine version | PostGIS version | CI status |
+| --- | --- | --- | --- |
 | Self-hosted | PostgreSQL 16.x | PostGIS 3.4 | Tested |
 | Self-hosted | PostgreSQL 17.x | PostGIS 3.5 | Tested |
 | Self-hosted | PostgreSQL 18.x | PostGIS 3.6 | Tested |
 | AWS Aurora PostgreSQL | 16.x | PostGIS 3.4 | Tested (CI proxy) |
 | Azure Database for PostgreSQL Flexible Server | 16.x, 17.x | PostGIS 3.5 | Tested (CI proxy) |
 
-CI uses `postgis/postgis` Docker images as version-level proxies for managed service behavior. True managed-service validation requires deployment to actual Aurora/Azure instances.
+CI uses `postgis/postgis` Docker images as version-level proxies for managed-service behavior. True managed-service validation requires deployment to actual Aurora/Azure instances.
 
-## Required Extensions
+## Other supported engine versions
 
-| Extension | Required | Purpose |
-|-----------|----------|---------|
-| `postgis` | Yes | Spatial operations, geometry types, spatial indexing |
-| `postgis_raster` | For raster features | Raster data storage and analysis |
-| `pgcrypto` | Yes | Cryptographic functions for secure identifiers |
-| `unaccent` | Yes | Search normalization (accent-insensitive text search) |
+| Provider | Versions |
+| --- | --- |
+| SQL Server | See [SQL Server provider](sql-server.md#supported-versions). |
+| Oracle | See [Oracle provider](oracle.md). |
+| MySQL/MariaDB | MySQL 8.0.11+, MariaDB 10.6+ — see [MySQL/MariaDB provider](mysql-mariadb.md). |
+| DuckDB | Embedded; bundled with the server — see [DuckDB provider](duckdb.md). |
 
-Honua validates PostGIS presence at startup and will fail fast in all non-Development environments (Staging, Production, etc.) if `postgis` is not installed. In Development mode the server logs a warning and continues. Missing `postgis_raster` produces a warning but does not block startup.
+## PostGIS requirements and managed-Postgres setup
 
-## Provider-Specific Setup
-
-### AWS Aurora PostgreSQL
-
-1. **Create a custom DB cluster parameter group** (or modify the default):
-   - Set `shared_preload_libraries` to include `pg_stat_statements` (optional, for monitoring).
-   - Aurora PostgreSQL bundles PostGIS; enable it via the parameter group.
-
-2. **Enable extensions** on your database:
-   ```sql
-   CREATE EXTENSION IF NOT EXISTS postgis;
-   CREATE EXTENSION IF NOT EXISTS postgis_raster;
-   CREATE EXTENSION IF NOT EXISTS pgcrypto;
-   CREATE EXTENSION IF NOT EXISTS unaccent;
-   ```
-
-3. **Connection pooling**: Aurora provides a built-in PgBouncer-compatible endpoint. Use the cluster writer endpoint for Honua's primary connection. Read replicas are not application-level load-balanced by Honua.
-
-4. **Failover**: Honua expects a single primary endpoint. Aurora automatic failover updates the cluster DNS endpoint; no application-level routing changes are needed.
-
-### Azure Database for PostgreSQL Flexible Server
-
-1. **Enable extensions** via the Azure portal or CLI:
-   - Navigate to **Server parameters** and set the `azure.extensions` parameter to include `POSTGIS`, `POSTGIS_RASTER`, `PGCRYPTO`, `UNACCENT`.
-   - Apply the configuration change (may require a server restart).
-
-2. **Create extensions** on your database:
-   ```sql
-   CREATE EXTENSION IF NOT EXISTS postgis;
-   CREATE EXTENSION IF NOT EXISTS postgis_raster;
-   CREATE EXTENSION IF NOT EXISTS pgcrypto;
-   CREATE EXTENSION IF NOT EXISTS unaccent;
-   ```
-
-3. **Connection pooling**: Azure Flexible Server supports built-in PgBouncer. Enable it via the server **Networking** settings if connection pooling is needed. Honua works with both direct and pooled connections.
-
-4. **High availability**: Configure zone-redundant HA in Azure. Honua connects to the primary endpoint; failover is transparent at the DNS level.
-
-## Connection Guidance
-
-- Honua expects a single primary (read-write) database connection.
-- Read replicas are not utilized for query load-balancing at the application layer.
-- Connection string format: `Host=<endpoint>;Port=5432;Database=<db>;Username=<user>;Password=<pass>`
-- For TLS configuration, see [TLS Connection Guide](../../../guides/secure/tls-and-mtls.md).
-
-## Startup Validation
-
-Honua performs a PostGIS preflight check at startup:
-
-1. Queries `SELECT version()` for the engine version.
-2. Queries `pg_extension` for installed extensions.
-3. Logs engine and PostGIS versions for operator visibility.
-4. **Non-Development environments**: Fails fast (CrashLoopBackOff) if PostGIS is missing.
-5. **Development mode**: Logs a warning and continues.
-
-The preflight result is available via the deploy preflight admin API (`GET /api/v1/admin/deploy/preflight?includeDiagnostics=true`) in the `databaseCompatibility` field.
+Required extensions, connection-string format, Aurora and Azure Flexible Server setup, pooling, and startup validation moved to the dedicated [PostGIS page](postgis.md).

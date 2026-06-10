@@ -1,248 +1,73 @@
-# Integration Patterns
+# Integration patterns
 
-This guide helps you choose a sensible integration approach for Honua Server and gives short, practical starter snippets. It is intentionally concise.
+Cross-cutting patterns for building integrations against Honua: choosing a surface, discovering capabilities at runtime, paginating correctly, reacting to changes (polling vs webhooks), authenticating, and keeping batch loads idempotent. Protocol-specific request/response details live in the [protocol references](protocols/ogc-apis.md).
 
-**Scope**: Picking a pattern, understanding tradeoffs, and getting a minimal working integration. For full protocol details and request/response examples, use the links at the end.
+## Choosing a surface
 
-## **Integration Decision Matrix**
+| Pattern | Best protocol | Notes |
+| --- | --- | --- |
+| Interactive queries and CRUD | OGC API Features | Standards-compliant JSON/GeoJSON; CQL2 filtering. |
+| Esri clients and tooling | GeoServices REST (`/rest/services`) | FeatureServer for data, MapServer for maps. |
+| BI tools (Power BI, Excel) | OData v4 (`/odata`) | `$filter`, `$select`, `$count`. |
+| Bulk/columnar analytics export | FeatureServer `f=parquet` / `f=arrow` | GeoParquet and Arrow IPC, PostGIS-backed layers. |
+| High-throughput service-to-service | gRPC `geospatial.v1` | Streaming queries and edits ([reference](protocols/grpc.md)). |
+| Batch ingest | Admin import API | File/URL imports with jobs ([formats](data-formats.md)). |
 
-| Pattern | Use Case | Complexity | Best Protocol | Benefits |
-|---------|----------|------------|---------------|----------|
-| **Direct API** | Simple CRUD and queries | Low | OGC API Features | Standards-compliant, simple |
-| **SDK Wrapper** | App integration | Medium | Multiple protocols | Type safety, shared errors |
-| **ETL Pipeline** | Batch sync and backfills | Medium | OData v4 + FeatureServer (writes) + MapServer (optional) | Scheduled processing |
-| **Event-Driven** | Real-time updates | High | Webhooks + API | Reactive, scalable |
-| **Microservice** | Service architecture | High | All protocols | Decoupled, fault-tolerant |
+## Runtime capability discovery
 
-```mermaid
-graph TD
-    A[Choose Integration] --> B{Data Flow}
+Fetch `GET /api/v1/capabilities/manifest` before rendering feature-specific controls instead of hardcoding assumptions. The manifest is public, request-scoped, and `no-store`; it reports package families, temporal/sync/realtime/jobs/transport availability, runtime limits, and reason codes for the current tenant and principal. Treat it as discovery only — authorization still happens at the operation endpoint. Contract and stable ids: [admin API overview](admin-api/overview.md).
 
-    B -->|One-time| C[Batch Import]
-    B -->|Scheduled| D[ETL Pipeline]
-    B -->|Real-time| E[Event-Driven]
-    B -->|Interactive| F[Direct API]
+## Authentication patterns
 
-    C --> G[File Upload or Esri Import]
-    D --> H[Scheduled Jobs and Data Sync]
-    E --> I[Webhooks and Queues]
-    F --> J[REST APIs or Gateway]
-```
+- **API keys** — send `X-API-Key` on admin and protected data requests; manage keys via `/api/v1/admin/api-keys` (create, rotate, revoke). Scope keys to least privilege and rotate on a schedule.
+- **OIDC** — configure an identity provider for interactive users; see [authentication guide](../guides/secure/authentication.md).
+- **ArcGIS clients** — the opt-in Portal OAuth2 bridge (`/sharing/rest/oauth2/*`) brokers ArcGIS named-user sign-in to your OIDC provider; register every redirect URI explicitly.
+- **mTLS** — client-certificate authentication for native/admin surfaces; see [TLS and mTLS](../guides/secure/tls-and-mtls.md).
 
----
+## Pagination and result completeness
 
-## **Runtime Capability Discovery**
+- Query endpoints apply `maxRecordCount` (default 2 000 per the shipped templates); page with `resultOffset`/`resultRecordCount` (GeoServices) or `limit` + `next` links (OGC API Features).
+- JSON responses set `exceededTransferLimit` when truncated; **binary formats (GeoParquet, Arrow, FlatGeobuf) carry no truncation flag** — compare the returned row count against `maxRecordCount`, or call `returnCountOnly=true` first.
+- For full-table exports prefer the async export job surface (`.../layers/{layerId}/export`) or paged `f=parquet` pulls.
 
-Clients that need to render feature-specific controls should fetch `GET /api/v1/capabilities/manifest` before relying on hardcoded assumptions. The manifest is public, request-scoped, and marked `no-store`; it reports package families, temporal/sync/realtime/jobs/GitOps/transport/mTLS availability, runtime limits, and policy or entitlement reason codes for the current tenant, optional `environment`, optional `workspaceId`, and principal. Treat it as informational UI/bootstrap data only. Authorization still happens at the operation endpoint. See [Capability Manifest](admin-api/capability-manifest.md) for the response contract and stable ids.
+## Reacting to changes: polling vs webhooks
 
-## **Pattern 1: Direct API Integration**
+**Polling** — re-query on an interval with an indexed change filter (e.g. an `updated_at` column) and page through results. Simple, works everywhere, but latency equals the poll interval and wide intervals miss intermediate states.
 
-**Best for**: Simple apps, prototypes, direct client access
-**Complexity**: Low
-**Protocols**: OGC API Features (recommended), FeatureServer REST, MapServer REST (maps)
+**Webhooks** — enable outbound feature-change webhooks and let Honua push edits to you:
 
-### **Frontend Web Application (OGC API Features)**
+| Variable | Purpose |
+| --- | --- |
+| `FeatureChangeEvents__Webhook__Enabled` | Enable delivery. |
+| `FeatureChangeEvents__Webhook__Url` | Absolute target URL. |
+| `FeatureChangeEvents__Webhook__Secret` | Shared HMAC secret — verify the signature on every delivery. |
+| `FeatureChangeEvents__Webhook__MaxAttempts` | Delivery attempts per event (default 5, exponential backoff). |
 
-```javascript
-export async function fetchFeatures(collectionId, { bbox, limit = 100, filter }) {
-  const params = new URLSearchParams({ limit });
-  if (bbox) params.append('bbox', bbox.join(','));
-  if (filter) {
-    params.append('filter', filter);
-    params.append('filter-lang', 'cql2-text');
-  }
+Keep the webhook handler thin: verify the signature, enqueue, return fast — process from the queue so delivery retries do not pile up behind slow handlers. Deliveries can arrive more than once; key processing on the event id.
 
-  const response = await fetch(
-    `${process.env.HONUA_URL}/ogc/features/collections/${collectionId}/items?${params}`
-  );
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return response.json();
-}
-```
+## ETL and idempotent loads
 
-### **GIS Clients (ArcGIS/QGIS)**
-
-- **ArcGIS Pro (data)**: `http://<host>/rest/services/{id}/FeatureServer`
-- **ArcGIS Pro (maps)**: `http://<host>/rest/services/{id}/MapServer`
-- **QGIS (OGC API Features)**: `http://<host>/ogc/features`
-
----
-
-## **Pattern 2: SDK/Client Library Pattern**
-
-**Best for**: Shared client code across web, mobile, and server apps
-**Complexity**: Medium
-**Protocols**: OGC API Features + FeatureServer (optional) + MapServer (optional)
-
-### **Minimal TypeScript Client**
-
-```typescript
-export class HonuaClient {
-  constructor(private baseUrl: string, private apiKey?: string) {}
-
-  private async request(path: string, options: RequestInit = {}) {
-    const headers = { 'Content-Type': 'application/json', ...options.headers } as Record<string, string>;
-    if (this.apiKey) headers['X-API-Key'] = this.apiKey;
-    const response = await fetch(`${this.baseUrl}${path}`, { ...options, headers });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return response.json();
-  }
-
-  getFeatures(collectionId: string, query = '') {
-    const suffix = query ? `?${query}` : '';
-    return this.request(`/ogc/features/collections/${collectionId}/items${suffix}`);
-  }
-
-  createFeature(collectionId: string, feature: unknown) {
-    return this.request(`/ogc/features/collections/${collectionId}/items`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/geo+json' },
-      body: JSON.stringify(feature)
-    });
-  }
-}
-```
-
-**Keep SDKs small**: focus on request building, auth, and error translation. Let app code handle domain rules.
-
-### **Runtime Capability Discovery**
-
-Clients that expose optional package, temporal, sync, realtime, native transport, mTLS, GitOps, job, upload, edit, or analysis workflows should call `GET /api/v1/capabilities/manifest` before enabling those controls. Use `capabilities[].id`, `transports.items[].id`, `available`, and `reasonCode` to explain unsupported or currently unavailable states. Treat the manifest as discovery only; the operation endpoint remains authoritative for authorization and resource validation.
-
----
-
-## **Pattern 3: ETL Pipeline Integration**
-
-**Best for**: Scheduled syncs, batch imports, backfills
-**Complexity**: Medium
-**Protocols**: OData v4 (read), FeatureServer (write), MapServer (optional rendering), Admin API (management)
-
-### **Minimal ETL Loop (Python)**
+Extract with OData or OGC API Features, transform to GeoJSON, load through FeatureServer edits:
 
 ```python
 import requests
 
-HONUA = "http://localhost:8080"
-API_KEY = "your-api-key"
-
-# Extract from a source system (DB, SaaS API, file, etc.)
-source_rows = fetch_source_rows()
-
-# Transform into GeoJSON Features
-features = [row_to_feature(row) for row in source_rows]
-
-# Load into Honua
 resp = requests.post(
-    f"{HONUA}/rest/services/1/FeatureServer/0/addFeatures",
+    "http://localhost:8080/rest/services/1/FeatureServer/0/addFeatures",
     json={"features": features},
-    headers={"X-API-Key": API_KEY}
+    headers={"X-API-Key": API_KEY},
 )
 resp.raise_for_status()
 ```
 
-### **Analytics Export (GeoParquet or GeoArrow)**
+- Make loads idempotent: key features on a stable source identifier and update-or-insert rather than blind-appending, so a re-run after a partial failure converges instead of duplicating.
+- Respect edit limits (`Limits__Edits__MaxFeaturesPerEdit`, default 500 per operation) and batch accordingly.
+- For columnar hand-off to analytics stacks, export with `f=parquet` (GeoParquet 1.1.0, WKB geometry, EPSG:4326 unless `returnGeometry=false`) or `f=arrow` (Arrow IPC with `geoarrow.wkb` metadata) and read directly into pandas/GeoPandas, DuckDB, or Polars.
+- Orchestrate with your existing platform (Airflow, Dagster, Prefect); server-side geoprocessing sources/transforms/sinks can also run pipelines as jobs ([geoprocessing operations](geoprocessing-operations.md)).
 
-```python
-import requests
+## Related pages
 
-HONUA = "http://localhost:8080"
-
-# Export features as GeoParquet for columnar analytics
-resp = requests.get(
-    f"{HONUA}/rest/services/1/FeatureServer/0/query",
-    params={"where": "1=1", "outFields": "*", "f": "parquet"}
-)
-resp.raise_for_status()
-
-with open("features.parquet", "wb") as f:
-    f.write(resp.content)
-
-# Load directly into DuckDB, pandas, or geopandas
-import geopandas as gpd
-gdf = gpd.read_parquet("features.parquet")
-```
-
-Use `f=parquet` (or `Accept: application/vnd.apache.parquet`) to get GeoParquet 1.1.0 output with WKB-encoded geometry and CRS metadata. Ideal for analytics pipelines, data science notebooks, and bulk data exchange. Non-4326 `outSR` is rejected when the GeoParquet response includes a geometry column; it is allowed when `returnGeometry=false` or the layer has no geometry. When `outSR` is omitted, coordinates are automatically reprojected to EPSG:4326.
-
-For interactive analytics or zero-copy ingestion into Arrow-aware tools (PyArrow, DuckDB, Polars), prefer `f=arrow` (or `Accept: application/vnd.apache.arrow.stream`). The response is an Arrow IPC stream with the geometry column annotated as the `geoarrow.wkb` extension type and schema-level `geo` metadata mirroring the GeoParquet column schema. Same EPSG:4326 / `returnM` / `returnZ` rules apply as `parquet`; runtime-computed attributes such as the KNN `distance` column are included.
-
-```python
-import io
-import pyarrow.ipc as ipc
-import requests
-
-resp = requests.get(
-    f"{HONUA}/rest/services/1/FeatureServer/0/query",
-    params={"where": "1=1", "outFields": "*", "f": "arrow"}
-)
-resp.raise_for_status()
-
-with ipc.open_stream(io.BytesIO(resp.content)) as reader:
-    table = reader.read_all()
-```
-
-> **Truncation note:** The query endpoint applies `maxRecordCount` by default (typically 2 000 features). Binary formats like GeoParquet do not include an `exceededTransferLimit` flag. To verify completeness, compare the row count in the returned file against the service's `maxRecordCount`. For larger exports, page with `resultOffset`/`resultRecordCount` or first call `returnCountOnly=true` to check the total.
-
-**Orchestrators**: Use Airflow, Dagster, Prefect, or your existing ETL platform. The goal is consistent extraction, idempotent loads, and observability.
-
-> **Roadmap note:** An in-product, pipeline-as-code GeoETL surface (scheduled / event-triggered, declarative JSON definitions, versioning, dry-run, row-level error capture, soft-delete-batch rollback) is the planned in-server alternative to external orchestrators. It is a Pro/Enterprise capability layered on the durable job substrate and is decomposed into reviewable child tickets. See [GeoETL Roadmap](../internal/contributor/geoetl-roadmap.md) and [ADR-0038](../internal/contributor/adr/0038-geoetl-pipeline-architecture-and-runtime-boundary.md). Until those child tickets land, external orchestrators remain the supported pattern.
-
----
-
-## **Pattern 4: Event-Driven Integration**
-
-**Best for**: Real-time updates and reactive systems
-**Complexity**: High
-**Protocols**: Webhooks + any protocol for data sync
-
-### **Webhook -> Queue -> Worker (Conceptual)**
-
-```python
-# 1) Webhook handler receives event
-@app.post("/webhook")
-async def handle_event(event: dict):
-    await queue.publish(event)
-    return {"ok": True}
-
-# 2) Worker consumes and syncs
-async def worker_loop():
-    event = await queue.consume()
-    feature = transform_event_to_feature(event)
-    await honua.create_feature(collection_id="assets", feature=feature)
-```
-
-**Key decision**: separate ingest from sync so spikes don't overload your API.
-
----
-
-## **Pattern 5: Microservice Integration**
-
-**Best for**: Service-oriented architectures, API gateways
-**Complexity**: High
-**Protocols**: All protocols behind a gateway
-
-### **Gateway Resolver (TypeScript)**
-
-```typescript
-@Resolver()
-class FeaturesResolver {
-  constructor(private honua: HonuaClient) {}
-
-  @Query(() => [Feature])
-  async features(@Arg("collectionId") id: string) {
-    const result = await this.honua.getFeatures(id);
-    return result.features;
-  }
-}
-```
-
-**When to use**: Only when you already have a gateway or strict service boundaries. Otherwise, direct API is simpler.
-
----
-
-## **Related Documentation**
-
-- [Geospatial API Examples](../guides/query-analyze/query-features.md)
-- [Protocols Overview](../concepts/protocols.md)
-- [Admin API Reference](admin-api/overview.md)
-- [Platform Overview](../concepts/architecture.md)
+- [Query features guide](../guides/query-analyze/query-features.md)
+- [Export data guide](../guides/query-analyze/export-data.md)
+- [Admin API overview](admin-api/overview.md)
+- [Data formats](data-formats.md)

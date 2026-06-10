@@ -6,19 +6,19 @@ Deploy, configure, monitor, and manage Honua Server.
 
 - [Infrastructure & Deployment](../../guides/deploy/kubernetes.md) — Docker Compose, Kubernetes, cloud deployment
 - [Docker Compose Reference](../../guides/deploy/docker-compose.md) — Local and evaluation setup
-- [Deployment Scenarios](../../guides/deploy/deployment-scenarios.md) — Patterns by team size
+- [Deployment Scenarios](../../guides/deploy/cloud-deployments.md) — Patterns by team size
 - [STAC Ops Demo](../../../samples/Honua.StacOpsDemo/README.md) — One-click local sample for STAC health, extension drift, and cache-awareness review
 
 ## Configuration
 
 - [Environment Variables](../../../.env.example) — Complete configuration reference
 - [Security](../../guides/secure/authentication.md) — Authentication, authorization, CORS, CSP
-- [Client Certificate Authentication](../../guides/secure/client-certificate-authentication.md) — Native/admin mTLS modes, trust profiles, mappings, revocations, and response contracts
+- [Client Certificate Authentication](../../guides/secure/tls-and-mtls.md) — Native/admin mTLS modes, trust profiles, mappings, revocations, and response contracts
 - [Compliance Framework](../../guides/secure/compliance.md) — SOC 2 / FedRAMP readiness evidence, data residency policy + dry-run, compliance key-version rotation, report export
 - [Audit Coverage Matrix](../../internal/operator/audit-coverage-matrix.md) — Which operations emit audit events (admin actions, destructive writes, authentication/authorization) and where emission lives
-- [HTTP Client Resilience](../../guides/deploy/http-client-resilience.md) — Retry, circuit breaker, and timeout tuning for external services
+- [HTTP Client Resilience](../../guides/deploy/scaling-and-performance.md) — Retry, circuit breaker, and timeout tuning for external services
 - [Feature Change Webhooks](../../guides/edit/react-to-changes.md) — Event notification setup
-- [Feature Streaming](../../guides/edit/feature-streaming.md) — WebSocket/SSE feature-change subscriptions
+- [Feature Streaming](../../guides/edit/react-to-changes.md) — WebSocket/SSE feature-change subscriptions
 
 ## Database
 
@@ -34,11 +34,11 @@ Deploy, configure, monitor, and manage Honua Server.
 - [Control Plane API](../../reference/admin-api/overview.md) — Admin REST API for connections, layers, services, and migration inventory scans
 - [Console Job Observability](../../internal/admin-api/console-job-observability.md) — Durable job history, details, logs, artifacts, actions, cancellation, retry, and Operate event correlation for Console job viewers
 - [Migration Toolkit](../../guides/migrate/from-arcgis-server.md) — Inventory, manifest, parity evidence, and cutover readiness artifact workflow
-- [ArcGIS Inventory Discovery](../../guides/migrate/arcgis-inventory-discovery.md) — Deterministic FeatureServer/MapServer inventory artifact, JSON export, and compatibility codes
+- [ArcGIS Inventory Discovery](../../guides/migrate/from-arcgis-server.md) — Deterministic FeatureServer/MapServer inventory artifact, JSON export, and compatibility codes
 - [GeoServer Migration Guide](../../guides/migrate/from-geoserver.md) — Discovery scanner workflow, compatibility review, dry-run validation, and bounded catalog apply
 - [Tile Operations](../../guides/publish/publish-tiles.md) — Vector tile seeding, warming, invalidation, archive
-- [PMTiles Publishing](../../guides/publish/pmtiles-publishing.md) — Durable PMTiles artifacts for MapLibre/PMTiles browser clients
-- [Operations](../../guides/deploy/operations.md) — Backups, migrations, connection pooling, query tuning, job orchestration, workflow orchestration, workspace lifecycle
+- [PMTiles Publishing](../../guides/publish/publish-tiles.md) — Durable PMTiles artifacts for MapLibre/PMTiles browser clients
+- [Operations](../../guides/deploy/backup-and-restore.md) — Backups, migrations, connection pooling, query tuning, job orchestration, workflow orchestration, workspace lifecycle
 
 ## Monitoring
 

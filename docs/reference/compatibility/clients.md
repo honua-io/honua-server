@@ -1,74 +1,80 @@
-# MVP Compatibility and Limitations (Launch Contract)
+# Supported clients and known limitations
 
-This page is the launch-facing compatibility contract for Honua open-core MVP.
-Use this page first, then drill into the linked protocol matrices/spec docs.
-For GeoServices REST specifically, start with [GeoServices REST Parity](geoservices-parity.md), use [data/geoservices-rest-parity.json](../../gis/data/geoservices-rest-parity.json) for machine-readable review, and then drill into the service-specific matrices.
+This page lists the clients Honua Server is tested against, the protocol each one
+uses, and the honest list of current gaps. Tested versions come from the pinned
+[client template version matrix](../../gis/CLIENT_TEMPLATE_VERSION_MATRIX.md) and the
+[cross-client certification matrix](../../gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md);
+rows without checked-in evidence are marked accordingly rather than claimed.
 
-## Launch Summary
+## Client × protocol matrix
 
-| Protocol | MVP status | Supported now | Partial / unsupported highlights | Deep reference |
-|---|---|---|---|---|
-| GeoServices REST FeatureServer | Supported with partial parity | Query, edits, attachments, related records, domains, replica endpoints, calculate, validateSQL, append, query bins/top features/date bins, estimates, GeoParquet and GeoArrow IPC query export | Advanced Esri operations remain partial/unsupported (asset management, 3D queries, advanced SQL options, full offline parity) | [FeatureServer Coverage Matrix](feature-server-matrix.md) |
-| GeoServices REST MapServer | Supported with partial parity | Export/identify/legend/find/query/tiles, generateKml, WMS 1.1.1/1.3, WMTS 1.0 (KVP + RESTful) | WMS 1.1.1 CITE Basic evidence pending; WMTS scope limited to WebMercatorQuad; some optional response properties not populated | [MapServer Coverage Matrix](map-server-matrix.md) |
-| GeoServices REST ImageServer | Supported with partial parity | Service metadata (with `timeInfo`), exportImage, identify, tile, raster catalog `query`, `computeStatisticsHistograms`, `legend`, `computeClass` raster-function chain validation | Catalog mutation, export tiles, find/queryBoundary, measure/project, AOI clipping for stats/histograms, full raster catalog child resources, WMTS, richer metadata resources | [ImageServer Coverage Matrix](image-server-matrix.md) |
-| WCS 2.0.1 | Supported with partial parity | KVP `GetCapabilities`, `DescribeCoverage`, and `GetCoverage` for WCS-enabled raster layers at `/rest/services/{id}/ImageServer/WCS` and `/ogc/services/{serviceId}/wcs`; `image/tiff`, `image/png`, `image/jpeg`; `SUBSET`/`BBOX` spatial trim; optional `SUBSETTINGCRS`/`BBOXCRS` and `OUTPUTCRS` | Thin slice over the primary raster only; capabilities CRS advertisement is derived from visible coverage native CRSs; one-axis `SUBSET` is native-CRS only; range subset/band selection, scaling/interpolation extensions, XML POST, NetCDF, temporal/multidimensional slicing, and WCS-specific mosaic selection are not implemented | [WCS 2.0.1 Coverage](../protocols/specifications/wcs-2.0.1-coverage.md) |
-| OGC API Coverages | Supported with MVP scope | Landing/conformance/OpenAPI, accessible raster coverage collection listing, collection metadata with `itemType: "coverage"`, schema with selectable `band_N` fields, and coverage retrieval as GeoTIFF by default or PNG by `f=png` / `Accept: image/png`; supports `bbox`, `bbox-crs`, output `crs`, `properties`, `resolution`, `scale-factor`, and `scale-size` | Thin REST/JSON adapter over the primary raster in the shared raster store; collection/schema/coverage routes are not output-cached; `datetime`, `subset`, `scale-axes`, NetCDF, JPEG, CoverageJSON, multipart responses, per-scene selection, and tiled coverage delivery are not implemented | [OGC API Coverages Coverage](../protocols/specifications/ogc-api-coverages-coverage.md) |
-| GeoServices REST Geometry Service | Supported with partial parity | Buffer, simplify, project, intersect, union, clip, difference, supplemental `area`/`length` routes | No GeometryServer root metadata endpoint; most Esri geometry operations remain unimplemented; Honua `area`/`length` routes are not Esri canonical paths | [Geometry Service Matrix](geometry-service-matrix.md) |
-| GeoServices REST GPServer | Supported with partial parity | PrintingTools (Export Web Map, Layout Templates); generic GPServer adapter: catalog-backed service info and task metadata, async `submitJob`, job status, job cancel, and per-parameter result retrieval over canonical process runtime. Plan validation uses the built-in `IProcessCatalog` (34 seeded processes across `geometry.*`, `analytics.*`, `surface.*`, `raster.*`, `conversion.*`, `generalization.*`, `data-management.*`) | Generic built-in tasks are async-only and do not publish a generic `execute` route yet; result packages are synthesized from terminal job state when a persisted package is absent; heavyweight `surface.*` / `raster.*` work stays on the canonical worker boundary pending per-task projection into the GPServer surface; GP environment controls (`env:*`) are rejected; `context` is preserved as protocol metadata but not interpreted yet | [Geoprocess Framework Analysis](../../guides/query-analyze/run-geoprocessing.md) |
-| OGC API Features | Supported (CITE certified) | Core collections/items, transactions, CQL2 filtering, CRS, OpenAPI | 137/137 CITE tests passing; coverage varies by optional extensions | [OGC API Features Coverage](../protocols/specifications/ogc-api-features-coverage.md) |
-| OGC API Tiles | Supported (CITE certified) | Landing/conformance/collections, tilesets, vector/raster tiles | 16/16 CITE tests passing; 7 conformance classes | [OGC API Tiles Coverage](../protocols/specifications/ogc-api-tiles-coverage.md) |
-| OGC API Maps | Supported | Conformance, dataset map, collection map, map tiles, temporal raster mosaic via the `datetime` query parameter accepting RFC 3339 instants and intervals — `start/end`, `../end`, `start/..` (requires active `raster.temporal-mosaic`; inactive entitlement returns 402 Payment Required). Temporal selection uses newest effective acquisition batch before bbox windowing. | 32/32 conformance tests passing; `…/conf/datetime` advertised | Styled-map conformance class not claimed; `/ogc/maps/collections/{id}/styles/{styleId}/map` is not implemented; mixed-date raster scenes can leave coverage gaps until per-pixel temporal mosaicking is implemented |
-| OGC API Processes | Supported (async-only) | Landing/conformance, process list/describe, async execution, job list/status/dismiss, job results (empty document on success); plan submissions are validated against the built-in `IProcessCatalog` (34 seeded processes across `geometry.*`, `analytics.*`, `surface.*`, `raster.*`, `conversion.*`, `generalization.*`, `data-management.*`) at the adapter boundary; heavyweight `surface.*` / `raster.*` entries are catalog- and validation-only today (handler/executor wiring that would dispatch them into `ISurfaceAnalysisService` / `IRasterStore.ComputeZonalStatisticsAsync` on the canonical worker boundary, optionally via the #727 executor adapters, is follow-on work); destructive `data-management.*` plans route through the operator approval gate before execution | V1: async-only (sync returns 501), single canonical process projection (`honua-geoprocessing`) pending per-process OGC surface projection, results endpoint returns document-mode JSON (empty `{}` on success until the canonical process declares value-typed outputs; `404` non-terminal, `500` failed, `410` dismissed), `limit`-only job list filter, Redis-backed job store required for execution and job routes | [OGC API Processes Coverage](../protocols/specifications/ogc-api-processes-coverage.md) |
-| WMS 1.3 | Supported (CITE certified) | GetCapabilities, GetMap, GetFeatureInfo | 227/227 CITE tests passing | [MapServer Coverage Matrix](map-server-matrix.md) |
-| WMS 1.1.1 | Supported, CITE pending | GetCapabilities, GetMap, GetFeatureInfo | Uses `SRS`, `X/Y`, 1.1.1 service exceptions, and lon/lat `EPSG:4326` BBOX order; Basic CITE evidence pending | [MapServer Coverage Matrix](map-server-matrix.md) |
-| WMTS 1.0 | Supported (CITE certified) | GetCapabilities, GetTile, GetFeatureInfo (KVP + RESTful) | 118/118 CITE tests passing; WebMercatorQuad only | [MapServer Coverage Matrix](map-server-matrix.md) |
-| WFS 2.0 | Supported with partial parity | GetCapabilities, DescribeFeatureType, GetFeature, query/export paths exercised by GDAL/OGR and QGIS | Optional operations and full transaction parity remain partial/unsupported | [WFS 2.0 CITE Guide](../../internal/contributor/cite-runbook.md#wfs-20) |
-| WFS 1.1.0 | Supported, CITE pending | GetCapabilities, DescribeFeatureType, GetFeature over GET and POST | Read-only compatibility; Basic CITE evidence pending | [Legacy OGC CITE Guide](../../archive/contributor/cite-legacy-ogc-conformance-testing.md) |
-| WFS 1.0.0 | Supported, CITE pending | GetCapabilities, DescribeFeatureType, GetFeature | Read-only compatibility; Basic CITE evidence pending | [Legacy OGC CITE Guide](../../archive/contributor/cite-legacy-ogc-conformance-testing.md) |
-| OData v4 | Supported with partial parity | Core entities/metadata/query, `$batch`, `$apply`, `$search`, `$skiptoken`, `$deltatoken`, spatial functions | Delta change-tracking is timestamp-based (MVP-level); PUT not supported | [OData v4 Coverage](../protocols/specifications/odata-v4-coverage.md) |
-| Vector Tiles (MVT) | Supported | PostGIS-native `ST_AsMVT` generation, TileJSON metadata, auto-generated MapLibre styles; automated browser render proof via Playwright (merge-blocking) | — | — |
-| Terrain-RGB elevation tiles | Supported | TileJSON 3.0 metadata at `/terrain/{datasetId}/tile.json` and 256x256 WebMercator XYZ Terrain-RGB PNG tiles at `/terrain/{datasetId}/{z}/{x}/{y}.png`; no-data and uncovered pixels encode as `[0,0,0]` (`-10000m`) | V1 supports registered PostGIS raster/DEM sources with one numeric elevation band and one usable CRS per dataset; no quantized mesh, I3S, 3D Tiles, hydrology, or terrain analysis surface | [Terrain-RGB Elevation Tiles](../../guides/publish/publish-terrain-and-elevation.md) |
-| OGC 3D Tiles (hosted) | Supported | GET/HEAD on `/scenes/{sceneId}/tileset.json` and `/scenes/{sceneId}/{*assetPath}` for already-hosted tilesets; serves `.json`, `.b3dm`/`.i3dm`/`.pnts`/`.cmpt`/`.bin` (`application/octet-stream`), `.glb` (`model/gltf-binary`), `.gltf` (`model/gltf+json`), and `.png/.jpg/.jpeg/.webp/.ktx/.ktx2/.basis` images with deterministic ETags, `Last-Modified`, `Accept-Ranges: bytes`, access-policy-aware `Cache-Control` (public scenes `public, max-age=…`; protected scenes `private, max-age=…`, varying by `Authorization, X-API-Key` for credential-authorized requests, by tokenized URL when `?token=` is used, or by `X-Honua-Token` for header-token requests), and `If-None-Match` (`304`); scene access policy enforced on every root and nested asset request; Postgres-backed admin scene dataset registry at `/api/v1/admin/scenes` (configuration `Scenes` block retained as a local-dev fallback). Browser-safe rendering of protected scenes is supported via short-lived signed access envelopes issued at `POST /scenes/{sceneId}/access-envelope` and presented as `?token=` (CesiumJS-friendly) or `X-Honua-Token` on nested asset requests (`honua-server-849`). | Visual admin UI on the registry is a separate `honua-server-admin` ticket; I3S/Scene Layer is a separate Enterprise track (`honua-server-843`); access envelope tokens are coarse-grained (scene-level, single server-side HMAC key) with no per-token revocation inside the TTL window. | [Hosted 3D Tiles Scenes](../../guides/publish/publish-3d-scenes.md), [Scene Dataset Registry](../../internal/admin-api/scene-dataset-registry.md) |
-| OGC 3D Tiles (generation) | Supported with v1 scope | `POST /api/v1/admin/scenes/generate` converts a registered PostGIS feature layer (Polygon/MultiPolygon/Point/MultiPoint/LineString/MultiLineString) into a deterministic OGC 3D Tiles 1.1 tileset (`tileset.json` + single `tile_0000.glb`) under `{SceneGeneration:OutputRoot}/{sceneId}/`, projects vertices through ECEF (EPSG:4978), preserves Z values and 2D extrusion (`#841`) input, surfaces selected attributes via `EXT_structural_metadata`, and registers the result with the scene dataset registry (`#844`); stable `SCENE_*` problem-detail codes for layer/CRS/geometry/feature-cap/conflict failures | V1 emits a single tile per job (no LOD/spatial partitioning); fan triangulation drops polygon inner rings; hard 50 000-feature cap (configurable via `SceneGeneration:MaxFeatureCount`); job execution is synchronous on the admin endpoint with no durable `IPublishIntentStore` tracking; client-supplied glTF/GLB model assets, CityGML/IFC ingestion, and native I3S output remain deferred | [3D Tiles Generation Pipeline](../../guides/publish/scene-generation.md) |
-| Elevation Query / Profile API | Supported | Point lookup at `/elevation/{datasetId}/value` returns elevation, source raster ids, source SRID/pixel type/no-data value, plus `noData`/`outOfBounds`; profile lookup at `/elevation/{datasetId}/profile` returns ordered distance/elevation samples for a WKT LineString. Profile sampling runs as one PostGIS query that transforms the input line to WGS 84 (geography requires SRID 4326), then `generate_series` + spheroid-aware `ST_LineInterpolatePoint(geog, frac, true)` + geodesic `::geography` arc length + `ST_Value`. When only `interval` is supplied, the SQL derives the effective sample count as `ceil(geodesicLengthMeters / interval) + 1` clamped to `[2, MaxSampleCount]`. Default-SRID inputs (`srid` omitted or `4326`) are validated against lon `[-180, 180]` / lat `[-90, 90]` at the edge so out-of-range coordinates surface as `422`. Source rasters are validated to declare one positive SRID registered in the spatial reference registry; mixed or unregistered source SRIDs surface as `422` instead of provider-side transform exceptions. Errors use the shared `application/problem+json` envelope | Band 1 only; vertical unit/datum surfaced as nullable with an explicit "meters by assumption" note; no vertical datum transformation; GET-only with WKT line input (`POST` body deferred); no exact response output caching; profile endpoint requires PostGIS 3.4+ (geography overload of `ST_LineInterpolatePoint`); requires a single registered source CRS across all rasters in the dataset | [Elevation Query and Profile API](../protocols/terrain-and-elevation.md) |
-| I3S / ArcGIS Scene Layer | Not implemented — Enterprise roadmap | None | No production I3S serving in open-core MVP. Compatibility spike (`honua-server-843`) targets I3S 1.7 against ArcGIS Pro 2.x/3.x and ArcGIS Online Scene Viewer; sequenced behind `honua-server-842` (3D Tiles generation). The protected scene access envelope (`honua-server-849`) is delivered and is the auth gate any future I3S surface will reuse. When unlicensed, planned `SceneServer` routes return `402 Payment Required` with an Enterprise entitlement message rather than `404`. | [I3S Compatibility Matrix](../../internal/spikes/i3s-compatibility-matrix.md) |
-| OpenUSD / Omniverse scene export | Preview — Pro gated | `GET /scenes/{sceneId}/exports/openusd/stage.usda` emits a deterministic USDA text-format stage manifest for a hosted scene. The manifest preserves scene identity, source URLs, CRS/extent/unit metadata, allowlisted project metadata, and observation sidecar metadata without embedding credentials, filesystem paths, or current access-envelope tokens. Protected scenes reuse the scene access policy and return private/no-store-compatible cache headers. | Preview manifest only: no production USD geometry conversion, USDC/USDZ packaging, Omniverse/Nucleus publishing, Unreal runtime integration, or claim of render parity with CesiumJS. `tileset.json` and `observations.json` metadata reads use source-generated JSON contexts; OpenUSD runtime bindings are not on the server request path. | [OpenUSD and Omniverse Export Path](../../internal/spikes/openusd-omniverse-export-path.md) |
-| STAC API | Supported | Catalog, collections, items, item lookup, GET/POST search with fields, sortby, CQL2 filtering | ETag on catalog/collection metadata only; `bbox`/`intersects` remain CRS84 while CQL2 `filter-crs` and explicit geometry CRS accept registry-backed EPSG identifiers; no STAC transaction extensions | [STAC API (STANDARDS_APIS.md)](../../concepts/protocols.md#stac-api) |
-| GDAL/OGR (ogrinfo / ogr2ogr) | Supported | OAPIF and WFS 2.0 discovery, read, query, and export workflows through GDAL/OGR clients | Tested with GDAL 3.4+ against OGC API Features and WFS 2.0 endpoints | — |
-| KML 2.2 (format) | CITE validated | `MapServer/generateKml` output validated against OGC KML 2.2 schema | Format-level conformance; always EPSG:4326 | [KML 2.2 CITE Guide](../../internal/contributor/cite-runbook.md#kml-22-format-level) |
-| GML 3.2 (format) | CITE validated | OGC API Features GML content negotiation validated against OGC GML 3.2 schema | Format-level conformance via `Accept: application/gml+xml; version=3.2` | [GML 3.2 CITE Guide](../../internal/contributor/cite-runbook.md#gml-32-format-level) |
-| GeoPackage 1.2 (format) | CITE validated | Admin layer export GeoPackage validated against OGC GeoPackage 1.2 spec | Format-level conformance; requires admin auth for export | [GeoPackage 1.2 CITE Guide](../../internal/contributor/cite-runbook.md#geopackage-12-format-level) |
+| Client | Protocols | Tested version | Evidence and guides |
+|---|---|---|---|
+| ArcGIS Pro | GeoServices REST FeatureServer, MapServer | 3.4.0 (2026-04-02 evidence) | [Connect ArcGIS Pro](../../guides/connect/arcgis-pro.md); [version matrix](../../gis/CLIENT_TEMPLATE_VERSION_MATRIX.md) |
+| QGIS | OGC API Features, WFS 2.0, WMS, WMTS | 3.40.0 (manual smoke) + nightly automated PyQGIS runs | [Connect QGIS](../../guides/connect/qgis.md); [version matrix](../../gis/CLIENT_TEMPLATE_VERSION_MATRIX.md) |
+| MapLibre GL JS | Vector tiles (MVT), TileJSON, auto-generated styles | 4.7.1 baseline; re-certified per CI run at the installed version | [Version matrix](../../gis/CLIENT_TEMPLATE_VERSION_MATRIX.md); [publish tiles](../../guides/publish/publish-tiles.md) |
+| Esri Leaflet | FeatureServer, MapServer | 3.0.19 (lockfile-resolved, automated Playwright suite) | [Certification matrix](../../gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md#esri-leaflet-browser-sub-lane) |
+| CesiumJS | WMS, WMTS, OGC API Tiles, OGC API Maps (imagery providers), hosted 3D Tiles | Automated Playwright suite; version not pinned in the evidence matrix | [Certification matrix](../../gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md); [publish 3D scenes](../../guides/publish/publish-3d-scenes.md) |
+| Power BI Desktop | OData v4 | 2.142.1053.0 (2026-04-02 evidence) | [Connect Excel and Power BI](../../guides/connect/excel-power-bi.md); [version matrix](../../gis/CLIENT_TEMPLATE_VERSION_MATRIX.md) |
+| Excel | OData v4 | 2402 (Build 17328.20174) (2026-04-02 evidence) | [Connect Excel and Power BI](../../guides/connect/excel-power-bi.md); [version matrix](../../gis/CLIENT_TEMPLATE_VERSION_MATRIX.md) |
+| Tableau | OData v4 | Not verified — no checked-in certification evidence; the OData v4 surface Tableau consumes is the same one certified for Power BI/Excel | [OData v4 coverage](../protocols/odata.md) |
+| GeoPandas / Python | OGC API Features, FeatureServer (incl. GeoParquet/GeoArrow query export), STAC | Automated pytest suite (server-side validation); client version not pinned | [Integration patterns](../integration-patterns.md) |
+| GDAL/OGR (`ogrinfo`/`ogr2ogr`) | OGC API Features, WFS 2.0 | GDAL 3.4+ | [Migrating from GeoServer](../../guides/migrate/from-geoserver.md) |
+| gRPC SDKs | `Geospatial.V1` gRPC surface | Generated from the stable proto contract; no per-client version matrix | [gRPC reference](../protocols/grpc.md) |
+| AI agents / MCP | MCP over admin + query surfaces | — | [Connect AI agents](../../guides/connect/ai-agents-mcp.md) |
 
-## FeatureServer Replication Limitations (MVP)
+ArcGIS Pro, QGIS (manual lane), Power BI, and Excel evidence is the checked-in
+2026-04-02 immutable certification snapshot; PyQGIS, MapLibre, Esri Leaflet, and
+Cesium lanes are re-certified automatically in CI. See the
+[certification matrix](../../gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md) for the
+per-lane test-case coverage (connection, auth, discovery, schema, query, paging,
+geometry fidelity, error handling, rendering).
 
-Replication endpoints are available, but MVP replication is limited and should be treated as preview behavior:
+## Known limitations
 
-- `createReplica`, `extractChanges`, `synchronizeReplica`, `unRegisterReplica` are implemented.
-- Replica registration state uses distributed cache when available, with in-memory fallback.
-- `extractChanges` uses MVP semantics:
-- first sync reports full add set
-- subsequent syncs do not provide full DB-level incremental change tracking parity
-- Sync upload/download/bidirectional flows are supported, but this is not a full ArcGIS enterprise offline geodatabase replacement.
+Current gaps, stated as fact. Protocol-level Esri parity detail lives in
+[GeoServices REST parity](geoservices-parity.md); OGC pass rates live in
+[OGC conformance](ogc-conformance.md).
 
-Recommended use during MVP:
-- short-lived sync workflows
-- client compatibility validation
-- controlled operational scenarios where full historical change tracking is not required
+- **FeatureServer replication is MVP-scoped.** `createReplica`, `extractChanges`,
+  `synchronizeReplica`, and `unRegisterReplica` are implemented, but the first sync
+  reports the full add set and later syncs do not provide DB-level incremental
+  change tracking. Suitable for short-lived sync and client validation, not a full
+  ArcGIS offline-geodatabase replacement.
+- **WMS 1.1.1 has no CITE evidence yet.** It is served (with `SRS`, `X`/`Y`, and
+  lon/lat EPSG:4326 BBOX order) but only WMS 1.3 is CITE-certified.
+- **WMTS scope is WebMercatorQuad only** on the GeoServices `MapServer/WMTS` alias
+  and the `/ogc` classic surface.
+- **OGC API Processes is async-only.** Synchronous execution returns `501`; results
+  are document-mode JSON; a Redis-backed job store is required for execution and
+  job routes.
+- **OGC API Maps does not claim the styled-map conformance class**, and temporal
+  raster mosaics use newest-batch semantics — layers with mixed-date scenes can show
+  coverage gaps under a `datetime` filter until per-pixel temporal mosaicking lands.
+- **WCS 2.0.1 is a thin slice over the primary raster.** Range subset/band
+  selection, scaling/interpolation extensions, XML POST, NetCDF, and
+  temporal/multidimensional slicing are not implemented.
+- **OGC API Coverages is MVP-scoped**: GeoTIFF/PNG retrieval with bbox/CRS/scale
+  parameters; `datetime`, `subset`, CoverageJSON, NetCDF, and tiled coverage
+  delivery are not implemented.
+- **OData v4 delta tracking is timestamp-based** (MVP-level) and `PUT` is not
+  supported.
+- **GeoServices GPServer built-in tasks are async-only** with no generic `execute`
+  route; GP environment controls (`env:*`) are rejected; heavyweight `surface.*` /
+  `raster.*` processes are catalog/validation-only pending executor wiring.
+- **I3S / ArcGIS Scene Layer is not implemented** (Enterprise roadmap). Unlicensed
+  `SceneServer` routes return `402` with an entitlement message. CesiumJS-oriented
+  3D Tiles hosting and v1 generation are supported instead — generation emits a
+  single tile per job (no LOD), drops polygon inner rings, and caps at 50,000
+  features by default.
+- **Terrain/elevation v1 limits**: one numeric elevation band and one usable CRS
+  per dataset; no quantized mesh, hydrology, or terrain analysis; elevation queries
+  are band-1, GET-only, with no vertical datum transformation.
+- **STAC API has no transaction extensions**; `bbox`/`intersects` remain CRS84.
+- **OpenUSD/Omniverse export is a preview manifest only** (Pro-gated): no USD
+  geometry conversion, USDZ packaging, or Nucleus publishing.
 
-## Versioning Policies
-
-- **Control-plane/admin APIs**: Path-versioned with deprecation lifecycle, preview channels, and OpenAPI contract governance. See [CONTROL_PLANE_VERSIONING_POLICY.md](../versioning-and-support.md).
-- **Standards APIs**: Stable protocol paths defined by external specifications, not path-versioned by Honua. See [STANDARDS_APIS.md — Versioning and Compatibility Policy](../../concepts/protocols.md#versioning-and-compatibility-policy).
-
-## Release Ownership
-
-Each release must update compatibility notes and caveats:
-- [Release Checklist](../../internal/contributor/RELEASE_CHECKLIST.md)
-
-This checklist requires:
-- refreshed supported/partial/unsupported status
-- validated [Public Interface Proof Ledger](../../gis/data/public-interface-proof.json) against the shipped runtime surface (see [Quality Model](../../internal/contributor/public-interface-quality-model.md))
-- tested client versions from compatibility certification
-- known caveats and workarounds
-- client template validation via [Client Templates + Manual Smoke Runbook](../../gis/CLIENT_TEMPLATE_RUNBOOK.md)
-- cross-client certification evidence per the [Evidence Specification](../../gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md)
+Each release re-validates this page via the
+[release checklist](../../internal/contributor/RELEASE_CHECKLIST.md), which requires
+refreshed supported/partial status, tested client versions, and certification
+evidence per the [evidence specification](../../gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md).

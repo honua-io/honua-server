@@ -2,7 +2,7 @@
 
 This matrix defines the shared certification vocabulary for cross-client interoperability testing. It establishes a common core of test cases that all client lanes must address, plus lane-specific extensions.
 
-**Scope boundary**: this matrix tracks _client interoperability_ — whether a given client can successfully consume Honua Server APIs. It does not replace the [FeatureServer Coverage Matrix](../reference/compatibility/feature-server-matrix.md), [MapServer Coverage Matrix](../reference/compatibility/map-server-matrix.md), or OGC coverage docs, which track _server API parity_.
+**Scope boundary**: this matrix tracks _client interoperability_ — whether a given client can successfully consume Honua Server APIs. It does not replace the [FeatureServer Coverage Matrix](../reference/compatibility/geoservices-parity.md), [MapServer Coverage Matrix](../reference/compatibility/geoservices-parity.md), or OGC coverage docs, which track _server API parity_.
 
 ## Certification Categories
 

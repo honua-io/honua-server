@@ -12,8 +12,8 @@ Stabilize first, diagnose second, document after. Prefer safe, reversible change
 
 ## Licensing Runbooks
 
-- [License Migration](../../concepts/license-migration.md) — move from any pre-existing license format to the unified Ed25519-signed JSON envelope (ADR-0033), including startup/upload validation and bounded re-issue guidance
-- [License Key Rotation](../../reference/admin-api/license-key-rotation.md) — additive Ed25519 signing key rotation, including the smoke test required by the acceptance criteria
+- [License Migration](../../concepts/editions-and-licensing.md) — move from any pre-existing license format to the unified Ed25519-signed JSON envelope (ADR-0033), including startup/upload validation and bounded re-issue guidance
+- [License Key Rotation](../../reference/admin-api/users-roles-licensing.md) — additive Ed25519 signing key rotation, including the smoke test required by the acceptance criteria
 - [Marketplace Operations](../../internal/operator/MARKETPLACE_OPERATIONS.md) — AWS and Azure marketplace adapter health: webhook 10s SLA, metering reconciliation, lifecycle failures
 
 ---

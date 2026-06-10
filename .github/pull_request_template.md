@@ -22,7 +22,7 @@ Fixes #
 - [ ] Manual testing performed
 
 ## Gate Impact
-<!-- Which CI tiers does this PR affect? Check all that apply. See docs/ci/gate-model.md. -->
+<!-- Which CI tiers does this PR affect? Check all that apply. See docs/internal/ci/gate-model.md. -->
 - [ ] PR gates (build, test, governance)
 - [ ] Nightly gates (conformance, performance, security)
 - [ ] Release gates (packaging, publishing)

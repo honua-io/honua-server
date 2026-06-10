@@ -1,57 +1,146 @@
-# GeoServices REST Parity
+# GeoServices REST parity
 
-This is the canonical GeoServices REST landing page for Honua Server.
-Start here, then use the linked drill-down pages for endpoint-level parameters, limitations, and implementation evidence.
+Honua serves the Esri GeoServices REST API at compatible paths so ArcGIS Pro, the
+ArcGIS SDKs, Esri Leaflet, and the ArcGIS API for Python can connect without
+modification. This page summarizes endpoint-level parity per service; the
+machine-readable source is
+[`docs/gis/data/geoservices-rest-parity.json`](../../gis/data/geoservices-rest-parity.json).
 
-Published artifacts:
-- Human-readable landing page: this page
-- Service drill-down pages: [FeatureServer](feature-server-matrix.md), [MapServer](map-server-matrix.md), [ImageServer](image-server-matrix.md), [Geometry Service](geometry-service-matrix.md), [GeocodeServer](../../internal/spikes/geocode-server-matrix.md)
-- Machine-readable parity export: [data/geoservices-rest-parity.json](../../gis/data/geoservices-rest-parity.json)
+Status vocabulary:
 
-## Status vocabulary
-
-- Implemented: the Esri operation/resource exists in Honua at a compatible path and the documented behavior is supported.
-- Partial: the Esri operation/resource exists, but Honua only supports a subset of the documented parameters or behavior.
-- Not implemented: the Esri operation/resource is not exposed by Honua.
+- **Implemented** — the Esri operation exists at a compatible path and the documented behavior is supported.
+- **Partial** — the operation exists, but only a subset of documented parameters or behavior is supported.
+- **Stub** — the route exists and returns the spec-shaped response, but the backing data model is deferred; read-style stubs return empty/`false` results and mutation stubs return HTTP 400 rather than fabricating success.
+- **Not implemented** — the operation is not exposed.
 
 ## Service summary
 
-| Service | Honua parity | Implemented surface | Explicit gaps called out here | Drill-down |
-| --- | --- | --- | --- | --- |
-| FeatureServer | Supported with partial parity | Query, edits, attachments, related records, domains, replication, estimates, calculate, validate SQL, append, bins/date bins/top features, spatial analytics extensions (Pro) | Cleanup change tracking, contingent values, shared templates, asset/3D operations, broader ArcGIS SQL parity | [FeatureServer Matrix](feature-server-matrix.md) |
-| MapServer | Supported with partial parity | Service/layer metadata, all layers and tables, export, identify, find, legend, query, query domains, feature child resource, per-layer generate renderer, query related records, query attachments, tiles, generateKml, WMS, WMTS | Export tiles, estimate export tile size, service-level generate renderer, query legends, query analytic, dynamic layer, several Esri child resources | [MapServer Matrix](map-server-matrix.md) |
-| ImageServer | Supported with partial parity | Service metadata (with mosaic `timeInfo`), exportImage, identify, tile, raster catalog `query`, `computeStatisticsHistograms`, `legend`, `computeClass` raster-function chain validation, WCS 2.0.1 KVP | Catalog mutation, export tiles, find/queryBoundary, measure/project, AOI clipping for stats/histograms, full raster catalog child resources, WMTS, richer metadata resources, WCS range subset/band selection/scaling/temporal extensions, full WCS CRS advertisement | [ImageServer Matrix](image-server-matrix.md) |
-| Geometry Service | Complete | Root `GeometryServer` metadata resource plus the full ArcGIS operation set: buffer, simplify, project, intersect, union, clip, difference, areasAndLengths, lengths, distance, relation, densify, convexHull, generalize, labelPoints, cut, trimExtend, offset, autoComplete, reshape, findTransformations, to/fromGeoCoordinateString | No operation-level gaps. Parameter-level caveats only: `clip` uses the clip-geometry envelope, `findTransformations` returns an empty list (PROJ-backed projection), GeoCoordinateString supports MGRS/USNG | [Geometry Service Matrix](geometry-service-matrix.md) |
-| GeocodeServer | Supported with partial parity | Service metadata, findAddressCandidates, reverseGeocode, suggest, geocodeAddresses (batch); honors `searchExtent` (forward/suggest), `location` bias (suggest), `langCode` (reverse) where providers support them | `outFields` projection, `magicKey` round-trip, `category` filtering, `forStorage`/`matchOutOfRange`, non-default `outSR` reprojection, `candidateFields`/`categories` metadata | [GeocodeServer Matrix](../../internal/spikes/geocode-server-matrix.md) |
-| Portal Sharing | Supported (token-issuance slice only) | `POST`/`GET /sharing/rest/generateToken` issuing opaque tokens bound to referer or client IP, consumable on `/rest/services/*` via `?token=`, `Authorization: Bearer`, or `X-Esri-Authorization: Bearer`. HTTPS-only by default, distributed-cache backed, Community-tier (`identity.portal-token` entitlement). | OAuth2 named-user flow, item editing, and the broader Portal Sharing item/group/community surface are deferred to follow-on tickets. | [Security](../../guides/secure/authentication.md#authentication) |
-| GPServer | Supported with partial parity | PrintingTools GPServer surface (Export Web Map Task, Get Layout Templates Info Task). Generic GPServer adapter (#723): catalog-backed service info, task metadata, async submitJob, job status, job result route, and cancel job over the canonical process runtime. The built-in `IProcessCatalog` seeds 34 processes across `geometry.*`, `analytics.*`, `surface.*`, `raster.*`, `conversion.*`, `generalization.*`, and `data-management.*` (#735, #736, #737) used for canonical plan validation; first-slice process migration evidence projects deterministic vector ids and result contracts; heavyweight `surface.*` and `raster.*` workloads remain assisted/catalog-only; destructive `data-management.*` ids route through the operator approval gate before execution. | Generic built-in tasks are async-only and do not publish a generic `execute` route yet. Per-parameter result retrieval route is registered, but actual output delivery still depends on execution-engine/result-storage support. GP environment controls (`env:*`) are rejected; `context` is preserved as protocol metadata but not interpreted yet. | [Geoprocess Framework Analysis](../../guides/query-analyze/run-geoprocessing.md); [Process Migration Evidence](../../internal/contributor/process-migration-evidence.md) |
+| Service | Parity | Implemented surface | Headline gaps |
+| --- | --- | --- | --- |
+| [FeatureServer](#featureserver) | Partial | Query (7 output formats), edits, attachments, related records, domains, replication, estimates, calculate, validateSQL, append, bins/date bins/top features, generateRenderer, spatial analytics extensions (Pro) | Change tracking, contingent-value/shared-template/asset data models, 3D queries, true curves |
+| [MapServer](#mapserver--wms--wmts) | Partial | Export, identify, find, legend, query, tiles, generateKml, WMS 1.3/1.1.1, WMTS 1.0 | Export tiles, dynamic layers, several child resources; WMTS is WebMercatorQuad-only |
+| [ImageServer](#imageserver) | Partial | Service metadata, exportImage, identify, tile, catalog query, statistics/histograms, getSamples, legend, WCS 2.0.1 KVP | Catalog mutation, export tiles, measure/project, renderingRule execution, AOI clipping for stats, WMTS |
+| [Geometry Service](#geometry-service) | Complete | Root metadata plus all 23 ArcGIS geometry operations | None at operation level; parameter-level caveats only |
+| GeocodeServer | Partial | Service metadata, findAddressCandidates, reverseGeocode, suggest, geocodeAddresses | `outFields`, `magicKey` round-trip, `category` filtering, non-default `outSR` — see [GeocodeServer matrix](../../internal/spikes/geocode-server-matrix.md) |
+| GPServer | Partial | PrintingTools; generic adapter with catalog-backed task metadata, async submitJob, job status/cancel/results over 34 seeded processes | Async-only, no generic `execute` route; `env:*` rejected — see [run geoprocessing](../../guides/query-analyze/run-geoprocessing.md) |
+| Portal Sharing | Partial (token slice) | `generateToken` issuing opaque tokens consumable on `/rest/services/*` | OAuth2 named-user flow, item/group/community surface — see [authentication](../../guides/secure/authentication.md) |
 
-## Evidence map
+## FeatureServer
 
-| Service | Endpoint mapping | Primary tests |
+Esri spec: [Feature Service](https://developers.arcgis.com/rest/services-reference/enterprise/feature-service/).
+
+### Operations
+
+| Operation(s) | Status | Notes |
 | --- | --- | --- |
-| GPServer | [PrintingTools endpoints](../../../src/Honua.Server/Features/PrintingTools/PrintingToolsEndpoints.cs), [GPServer adapter](../../../src/Honua.Server/Features/Protocols/GeoServices/GPServer/GPServerEndpoints.cs), canonical model: [geoprocess framework analysis](../../guides/query-analyze/run-geoprocessing.md), adapter mapping: [ADR-0029](../../internal/contributor/adr/0029-geoprocess-canonical-model-mappings.md) | [PrintingTools tests](../../../tests/dotnet/Honua.Server.Tests/Features/PrintingTools/PrintingToolsEndpointTests.cs), [GPServer adapter tests](../../../tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/GPServer/GPServerEndpointTests.cs), [gRPC process service](../../../tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/GrpcProcessServiceTests.cs), [integration](../../../tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/GrpcProcessServiceIntegrationTests.cs) |
-| FeatureServer | [FeatureServer endpoints](../../../src/Honua.Server/Features/Protocols/GeoServices/FeatureServer/FeatureServerEndpoints.cs), [query handlers](../../../src/Honua.Server/Features/Protocols/GeoServices/FeatureServer/FeatureServerRequestHandlers.Query.cs), [edit handlers](../../../src/Honua.Server/Features/Protocols/GeoServices/FeatureServer/FeatureServerRequestHandlers.Edits.cs), [replication handlers](../../../src/Honua.Server/Features/Protocols/GeoServices/FeatureServer/FeatureServerRequestHandlers.Replication.cs), [attachment endpoints](../../../src/Honua.Server/Features/Protocols/GeoServices/FeatureServer/AttachmentEndpoints.cs), [spatial analytics endpoints](../../../src/Honua.Server/Features/SpatialAnalytics/SpatialAnalyticsEndpoints.cs) | [query parameters](../../../tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/FeatureServer/FeatureServerQueryParameterTests.cs), [replication](../../../tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/FeatureServer/FeatureServerReplicationTests.cs), [maintenance](../../../tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/FeatureServer/FeatureServerMaintenanceTests.cs), [spatial analytics REST](../../../tests/dotnet/Honua.Server.Tests/Features/SpatialAnalytics/SpatialAnalyticsRestTests.cs), [spatial analytics reader availability](../../../tests/dotnet/Honua.Server.Tests/Features/SpatialAnalytics/SpatialAnalyticsReaderAvailabilityTests.cs) |
-| MapServer | [MapServer endpoints](../../../src/Honua.Server/Features/Protocols/GeoServices/MapServer/MapServerEndpoints.cs), [export handler](../../../src/Honua.Server/Features/Protocols/GeoServices/MapServer/MapServerRequestHandlers.Export.cs), [identify handler](../../../src/Honua.Server/Features/Protocols/GeoServices/MapServer/MapServerRequestHandlers.Identify.cs), OGC compatibility aliases: [WMS handler](../../../src/Honua.Server/Features/Protocols/Ogc/Classic/OgcClassicRequestHandlers.Wms.cs), [WMTS handler](../../../src/Honua.Server/Features/Protocols/Ogc/Classic/OgcClassicRequestHandlers.Wmts.cs) | [endpoint coverage](../../../tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/MapServer/MapServerEndpointTests.cs), [tiles](../../../tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/MapServer/MapServerTileEndpointTests.cs), [WMS](../../../tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Classic/OgcClassicWmsTests.cs), [WMTS](../../../tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Classic/OgcClassicWmtsTests.cs) |
-| ImageServer | [ImageServer endpoints](../../../src/Honua.Server/Features/Protocols/GeoServices/ImageServer/ImageServerEndpoints.cs), [metadata handler](../../../src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Handlers/ImageServerMetadataHandler.cs), [export handler](../../../src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Handlers/ImageServerExportHandler.cs), [identify handler](../../../src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Handlers/ImageServerIdentifyHandler.cs), [tile handler](../../../src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Handlers/ImageServerTileHandler.cs), [catalog query handler](../../../src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Handlers/ImageServerCatalogQueryHandler.cs), [statistics/histograms handler](../../../src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Handlers/ImageServerStatisticsHistogramsHandler.cs), [legend handler](../../../src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Handlers/ImageServerLegendHandler.cs), [analyze handler](../../../src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Handlers/ImageServerAnalyzeHandler.cs), [WCS 2.0.1 adapter](../../../src/Honua.Server/Features/Protocols/Ogc/Classic/Wcs20/Wcs20Handler.cs) | [basic coverage](../../../tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerBasicTests.cs), [parameter validation](../../../tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerParameterValidationTests.cs), [error handling](../../../tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerErrorHandlingTests.cs), [endpoint coverage](../../../tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerEndpointsTests.cs), [mosaic integration](../../../tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerMosaicIntegrationTests.cs), [catalog query](../../../tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerCatalogQueryHandlerTests.cs), [statistics/histograms](../../../tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerStatisticsHistogramsHandlerTests.cs), [legend](../../../tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerLegendHandlerTests.cs), [analyze](../../../tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerAnalyzeHandlerTests.cs), [WCS 2.0.1](../../../tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Classic/Wcs20/Wcs20EndpointsTests.cs) |
-| Geometry Service | [geometry endpoints](../../../src/Honua.Server/Features/Protocols/GeoServices/GeometryService/GeometryServiceEndpoints.cs), [request parser](../../../src/Honua.Server/Features/Protocols/GeoServices/GeometryService/Services/GeometryServiceRequestParser.cs), [operation handler](../../../src/Honua.Server/Features/Protocols/GeoServices/GeometryService/Services/GeometryServiceHandler.cs) | [buffer](../../../tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/GeometryService/GeometryServiceBufferTests.cs), [project](../../../tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/GeometryService/GeometryServiceProjectTests.cs), [simplify](../../../tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/GeometryService/GeometryServiceSimplifyTests.cs), [advanced operations](../../../tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/GeometryService/GeometryServiceAdvancedOperationsTests.cs) |
-| Portal Sharing | [`/sharing/rest` endpoints](../../../src/Honua.Protocols.GeoServices/Sharing/SharingRestEndpoints.cs), [issuer abstraction](../../../src/Honua.Core/Features/Authorization/Abstractions/IPortalTokenIssuer.cs), [issuer implementation](../../../src/Honua.Hosting/Features/Authentication/PortalTokenIssuer.cs), [auth handler](../../../src/Honua.Hosting/Features/Authentication/PortalTokenAuthenticationHandler.cs), [bridge middleware + scheme wiring](../../../src/Honua.Hosting/Features/Authentication/PortalTokenAuthenticationExtensions.cs) | [endpoint integration](../../../tests/dotnet/Honua.Server.Tests/Features/Sharing/SharingRestTokenTests.cs), [issuer unit tests](../../../tests/dotnet/Honua.Server.Tests/Infrastructure/Authentication/PortalTokenIssuerTests.cs) |
-| GeocodeServer | [GeocodingEndpoints](../../../src/Honua.Server/Features/Geocoding/GeocodingEndpoints.cs), [GeocodingHandler](../../../src/Honua.Server/Features/Geocoding/GeocodingHandler.cs), canonical models: [GeocodeModels](../../../src/Honua.Geocoding/Features/Geocoding/Domain/GeocodeModels.cs) | [GeocodingEndpointTests](../../../tests/dotnet/Honua.Server.Tests/Features/Geocoding/GeocodingEndpointTests.cs) |
+| Service metadata; layer metadata | Implemented | Dynamic capabilities string; `editFieldsInfo`, `editingInfo`, `templates`, `timeInfo`, `allowGeometryUpdates`, `supportsStatistics`, normalized `supportedQueryFormats` incl. binary formats. |
+| Query (service + layer), queryDomains, relationships, getEstimates (service + layer) | Implemented | Service-level query delegates to a target layer via `layerId`/`layers`. |
+| applyEdits (service + layer), addFeatures, updateFeatures, deleteFeatures, append (service + layer), calculate, validateSQL | Implemented | Multi-layer batch edits; `rollbackOnFailure` defaults `false` for applyEdits, `true` for standalone endpoints; deleteFeatures supports `objectIds`, `where`, and spatial filters. |
+| queryRelatedRecords, queryAttachments | Implemented | Full filter facets (`attachmentTypes`, `keywords`, `size`, `definitionExpression`); `globalIds` rejected with 400 (integer object IDs only). |
+| addAttachment, updateAttachment, deleteAttachments, attachment download | Implemented | Form-data upload; binary download at `.../{featureId}/attachments/{attachmentId}`. |
+| createReplica, extractChanges, synchronizeReplica, unRegisterReplica | Implemented (MVP semantics) | First sync reports full adds; later syncs lack DB-level incremental change tracking. See [known limitations](clients.md#known-limitations). |
+| generateRenderer | Implemented | Simple renderer by default; `classificationDef` generates class-breaks (equal interval, quantile, natural breaks, standard deviation) or unique-value renderers. |
+| queryBins, queryDateBins, queryTopFeatures | Implemented | queryDateBins requires the `temporal.histogram` entitlement. |
+| queryClusters, spatialJoin, queryBufferAggregate, queryDensity, temporalExtent | Implemented (Honua extensions) | No Esri equivalent. Analytics ops are Pro-entitlement-gated (`analytics.*`, HTTP 402 when inactive), return GeoJSON in EPSG:4326, and are bounded by configurable limits. Return 501 on stores without an analytics reader (DuckDB, MySQL/MariaDB). |
+| queryContingentValues, sharedTemplates (+ query/add/update/delete), htmlPopup, image | Stub | Routes exist and return spec-shaped documents, but Honua has no contingent-value, shared-template, popup, or feature-image store — reads return empty documents; mutations return 400. |
+| hasAssets, queryAssets, cleanupAssets, uploadAssets, convert3D, query3D, metadata/update | Stub | No layer asset store or 3D pipeline; reads return empty/`false`, mutations/conversions return 400. |
+| cleanupChangeTracking | Not implemented | No change-tracking tables exist to clean up. |
 
-## Source specifications
+### Layer query parameters
 
-- [Esri Feature Service](https://developers.arcgis.com/rest/services-reference/enterprise/feature-service/)
-- [Esri Layer (Feature Service)](https://developers.arcgis.com/rest/services-reference/enterprise/layer-feature-service/)
-- [Esri Map Service](https://developers.arcgis.com/rest/services-reference/enterprise/map-service/)
-- [Esri Layer / Table (Map Service)](https://developers.arcgis.com/rest/services-reference/enterprise/layer-table/)
-- [Esri Image Service](https://developers.arcgis.com/rest/services-reference/enterprise/image-service/)
-- [Esri Geometry Service](https://developers.arcgis.com/rest/services-reference/enterprise/geometry-service/)
-- [Esri Geocode Service](https://developers.arcgis.com/rest/services-reference/enterprise/geocode-service/)
-- [Esri GP Service](https://developers.arcgis.com/rest/services-reference/enterprise/gp-service/)
-- [Esri GP Task](https://developers.arcgis.com/rest/services-reference/enterprise/gp-task/)
-- [OGC WCS 2.0.1](../protocols/specifications/wcs-2.0.1-coverage.md)
+| Area | Status | Notes |
+| --- | --- | --- |
+| `where`, `objectIds`, spatial filters (`geometry`, `geometryType`, `spatialRel`, `distance`, `units`), `inSR`/`outSR`, pagination, `outFields`, `orderByFields`, output flags (`returnGeometry`, `returnIdsOnly`, `returnCountOnly`, `returnExtentOnly`, `returnZ`, `returnM`), `returnDistinctValues`, `outStatistics` + `groupByFieldsForStatistics` + `having`, `time`/`timeRelation`, `geometryPrecision`, `maxAllowableOffset`, `nearestCount`/`returnDistance` | Implemented | ArcGIS SQL `where` parser; KNN via `nearestCount`; statistics support COUNT/SUM/MIN/MAX/AVG/STDDEV/VAR with GROUP BY and post-aggregation HAVING. |
+| Output formats `f=json/pjson/geojson/pbf/fgb/geobuf/parquet/arrow` | Implemented | GeoJSON/GeoParquet/GeoArrow require EPSG:4326 when geometry is present; `parquet`/`arrow` always strip M values; `fgb`/`geobuf` need native store support and ignore precision/simplification parameters; special query modes always return JSON. |
+| `resultType`, `sqlFormat`, `gdbVersion`, `quantizationParameters`, `datumTransformation` | Partial | Accepted for client compatibility; `gdbVersion`/`quantizationParameters` (for `f=json`/`geojson`)/`datumTransformation` are ignored. Layer metadata honestly advertises `supportsCoordinatesQuantization=false`; `f=pbf` does return a quantized `transform`. |
+| `returnCentroid`, `returnTrueCurves`, `returnExceededLimitFeatures` | Not implemented | Rejected with 400. |
 
-## Upkeep
+### applyEdits parameters
 
-- When GeoServices routes, parameter handling, or response shapes change, update the relevant drill-down page and [data/geoservices-rest-parity.json](../../gis/data/geoservices-rest-parity.json) in the same PR.
-- Release owners verify these parity docs during the [Release Checklist](../../internal/contributor/RELEASE_CHECKLIST.md#compatibility-contract-updates-required).
+`adds`/`updates`/`deletes` and `rollbackOnFailure` are implemented (object-ID-keyed).
+`useGlobalIds`, `gdbVersion`, `returnEditMoment`, and `attachments` are rejected with
+400; session/async/upload-style parameters (`assetMaps`, `sessionID`, `async`,
+`editsUploadId`, ...) are silently ignored. queryRelatedRecords rejects
+`returnTrueCurves`, `gdbVersion`, and `historicMoment` with 400.
+
+## MapServer + WMS / WMTS
+
+Esri spec: [Map Service](https://developers.arcgis.com/rest/services-reference/enterprise/map-service/).
+
+### Operations
+
+| Operation(s) | Status | Notes |
+| --- | --- | --- |
+| Service metadata, layer metadata, allLayersAndTables, queryDomains, feature child resource | Implemented | Includes `drawingInfo`, `tileInfo`, scale ranges; `parentLayerId`/`subLayerIds` are always flat (`-1`/`null`) — no group layers. |
+| export | Implemented | `bbox`, `size`, `dpi`, `format` (png/png8/png24/png32/jpg/gif), `transparent`, `layers`, `bboxSR`/`imageSR`, `layerDefs`, `dynamicLayers`, `time`/`layerTimeOptions`, `backgroundColor`, `f=image\|json\|pjson`. `gdbVersion`, `maxAllowableOffset`, `geometryPrecision`, `returnZ`, `returnM` are accepted but ignored. |
+| identify, find | Implemented | All geometry types, `mapExtent`, `imageDisplay`, `tolerance`, `layerDefs`, `dynamicLayers`, `time`/`timeRelation`. `find` searches string fields with SQL LIKE. |
+| Layer query, service query, generateRenderer (per layer), queryRelatedRecords, queryAttachments | Implemented | Thin adapters delegating to the FeatureServer handlers — same parameter coverage as the [FeatureServer section](#featureserver). |
+| legend, generateKml, tile | Implemented | Legend swatch images; `f=kml`/`f=kmz`; dynamic PNG tiles at `.../MapServer/tile/{z}/{y}/{x}`. |
+| WMS | Implemented | WMS 1.3.0 and 1.1.1 GetCapabilities/GetMap/GetFeatureInfo (KVP) at `.../MapServer/WMS` and `/ogc/services/{serviceId}/wms`. Time-aware layers advertise a `time` dimension. WMS 1.3 is CITE-certified (199/199); 1.1.1 has no CITE evidence yet. |
+| WMTS | Partial | GetCapabilities/GetTile/GetFeatureInfo (KVP + RESTful) at `.../MapServer/WMTS` and `/ogc/services/{serviceId}/wmts`; WebMercatorQuad only. WMTS 1.0 is CITE-certified (60/60). |
+| estimateExportTilesSize, exportTiles, generateRenderer (service-level), queryLegends, queryAnalytic, dynamicLayer, image/KML-image/job child resources, `exts/*` | Not implemented | |
+
+## ImageServer
+
+Esri spec: [Image Service](https://developers.arcgis.com/rest/services-reference/enterprise/image-service/).
+Routes are layer-scoped: `{id}` in `GET /rest/services/{id}/ImageServer` is the
+raster layer identifier.
+
+### Operations
+
+| Operation(s) | Status | Notes |
+| --- | --- | --- |
+| Service metadata | Implemented | Aggregate mosaic extent/statistics, `timeInfo` when acquisition dates exist, `tileInfo`, output-cached. `objectIdField`/`fields`/`rasterFunctionInfos` root properties not yet populated. |
+| tile, computeHistograms, getSamples | Implemented | PNG/JPEG/TIFF tiles, zoom 0–28, multi-raster mosaic; getSamples caps at 1000 samples. |
+| exportImage | Partial | JSON envelope with temporary `href` by default; `f=image` streams bytes. `bandIds`, `noData`, mosaic + single-instant `time` supported; `pixelType` validated but not applied; non-empty `renderingRule` returns 501; `bmp`/`gif` rejected with 400. |
+| identify | Partial | Point/envelope/polygon (area geometries identify at the envelope centroid); `returnCatalogItems`; `pixelSize` echoed but pyramid selection deferred; `renderingRule` not applied. |
+| query (raster catalog) | Partial | Esri-compatible catalog features with `where`, spatial filter, `outSR`, `orderByFields`, `outFields`, paging, and shaping flags. Filters run in-memory at footprint-envelope granularity. |
+| computeStatisticsHistograms | Partial | Per-band stats + histograms with `rasterIds`, `bandIds` (Honua extension), `mosaicRule`, `time`, `histogramParameters.size`. AOI clipping via `geometry` not yet honoured — analysis covers the full selected raster/mosaic. |
+| computeClassStatistics | Partial | Route validates input; computation returns 501 until the signature pipeline lands. |
+| computeClass (Honua extension) | Implemented (validation only) | Validates `renderingRule` raster-function chains (`Identity`, `Stretch`, `Clip`, depth ≤ 8) and returns planned execution metadata; the executor is not wired into exportImage. |
+| addRasters, deleteRasters, updateRaster, uploads, downloadRasters, exportTiles, find, measure, project, queryBoundary, calculateVolume, computeCacheInfo, computeMultidimensionalInfo, computePixelLocation, computeTiePoints, validate | Not implemented | Raster ingestion happens through the Honua admin API (`/api/v1/admin/import/raster`, `/api/v1/admin/cloud-rasters`) instead. |
+
+### Child resources
+
+| Resource(s) | Status | Notes |
+| --- | --- | --- |
+| keyProperties, multidimensionalInfo, statistics, histograms, rasterFunctionInfos, rasterAttributeTable | Implemented | Spec-shaped documents from the shared raster store; non-applicable cases return spec-correct empty documents (e.g. `{"variables": []}`), not 404s. |
+| legend | Partial | Fixed 5-class equal-interval ramp from band-1 statistics; `renderingRule` overrides ignored. |
+| WCS | Partial | WCS 2.0.1 KVP GetCapabilities/DescribeCoverage/GetCoverage over the primary raster (`image/tiff`/`png`/`jpeg`, `SUBSET`/`BBOX`, `OUTPUTCRS`). Range subset, scaling, temporal slicing not implemented. WCS 2.0 core is CITE-certified (82/82). |
+| colormap, `info/*`, imageSupportData, KML image, raster catalog item resources (`{rasterId}/*`), rasterFile, slices, WMTS | Not implemented | |
+
+Mosaic semantics: rasters are selected by footprint intersection; merge strategy is
+request `mosaicRule`, then the layer default, then `newest`
+(`newest`/`oldest`/`average`/`max`/`min` via PostGIS `ST_Union`). Temporal `time`
+filters use newest-batch semantics (see [known limitations](clients.md#known-limitations)).
+
+## Geometry Service
+
+Esri spec: [Geometry Service](https://developers.arcgis.com/rest/services-reference/enterprise/geometry-service/).
+All operations are served at the canonical Esri route
+`/rest/services/Utilities/Geometry/GeometryServer/<operation>` (GET + POST) over
+NetTopologySuite, a PROJ-backed projection service, and a geography-based geodesic
+measurement path. The live surface was verified end-to-end through the ArcGIS API
+for Python (`arcgis.geometry`).
+
+| Operation(s) | Status | Notes |
+| --- | --- | --- |
+| Root `GeometryServer` metadata | Implemented | ArcGIS-style descriptor (`currentVersion`, `maxBufferCount`, ...) so ArcGIS Pro / SDK discovery handshakes complete. |
+| buffer, simplify, project, intersect, union, clip, difference, areasAndLengths, lengths, distance, relation, densify, convexHull, generalize, labelPoints, cut, trimExtend, offset, autoComplete, reshape, findTransformations, toGeoCoordinateString, fromGeoCoordinateString | Implemented | Full ArcGIS operation set: geodesic buffer/area/length/distance, datum transforms (e.g. 4326 → 4267), DE-9IM relations, MGRS/USNG round-trips, the `bufferSR` cascade. No operation-level gaps. |
+
+Parameter-level caveats (the complete list):
+
+- `f` supports `json`/`pjson` only; `f=html` is rejected.
+- `clip` uses the envelope of the clip geometry, not its full shape.
+- `findTransformations` returns an empty list — CRS transformation runs through the
+  PROJ pipeline rather than a discrete Esri transformation catalog; `project` still
+  applies the correct datum transform directly.
+- `toGeoCoordinateString`/`fromGeoCoordinateString` support `MGRS` and `USNG`;
+  `UTM`, `GARS`, `GEOREF`, `DD`, `DDM`, and `DMS` return a clear 400.
+
+## Sources and upkeep
+
+- Machine-readable parity export: [`docs/gis/data/geoservices-rest-parity.json`](../../gis/data/geoservices-rest-parity.json) — update it in the same PR as any GeoServices route or behavior change.
+- [GeocodeServer matrix](../../internal/spikes/geocode-server-matrix.md), [run geoprocessing](../../guides/query-analyze/run-geoprocessing.md), [authentication](../../guides/secure/authentication.md) — drill-downs for the services not detailed on this page.
+- [Supported clients](clients.md) — which Esri clients are certified against this surface.
+- Release owners verify this page during the [release checklist](../../internal/contributor/RELEASE_CHECKLIST.md).
