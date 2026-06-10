@@ -259,6 +259,10 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
             var pagesFetched = 0;
             var featuresImported = 0;
             var featuresSkipped = 0;
+            // Running index across ALL pages: synthetic ids derived from it must be unique
+            // for the whole run, otherwise the sink's upsert on source_feature_id silently
+            // overwrites unidentified features from earlier pages.
+            var featureIndex = 0;
             var truncated = false;
             long? sourceFeatureCountReported = null;
             Uri? nextUri = itemsUri;
@@ -312,7 +316,6 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
                 }
 
                 var batch = new List<OgcApiFeaturesSinkFeature>(featuresElement.GetArrayLength());
-                var pageIndex = 0;
                 foreach (var feature in featuresElement.EnumerateArray())
                 {
                     if (maxFeatures > 0 && featuresImported + batch.Count >= maxFeatures)
@@ -321,7 +324,7 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
                         break;
                     }
 
-                    var projected = TryProjectFeature(feature, request.CollectionId, pageIndex, warnings);
+                    var projected = TryProjectFeature(feature, request.CollectionId, featureIndex, warnings);
                     if (projected != null)
                     {
                         batch.Add(projected);
@@ -331,7 +334,7 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
                         featuresSkipped++;
                     }
 
-                    pageIndex++;
+                    featureIndex++;
                 }
 
                 if (batch.Count > 0)
@@ -677,7 +680,7 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
     private static OgcApiFeaturesSinkFeature? TryProjectFeature(
         JsonElement feature,
         string collectionId,
-        int pageIndex,
+        int featureIndex,
         List<string> warnings)
     {
         if (feature.ValueKind != JsonValueKind.Object)
@@ -698,10 +701,10 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
 
         if (string.IsNullOrWhiteSpace(sourceId))
         {
-            sourceId = $"{collectionId}.synthetic.{pageIndex}";
+            sourceId = $"{collectionId}.synthetic.{featureIndex}";
             if (warnings.Count < 50)
             {
-                warnings.Add($"Synthesized identifier for unidentified feature at page-index {pageIndex}.");
+                warnings.Add($"Synthesized identifier for unidentified feature at feature-index {featureIndex}.");
             }
         }
 

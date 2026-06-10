@@ -207,10 +207,11 @@ internal sealed partial class RedisExecutionJobStore(
 
             var lowestScore = (long)entries[^1].Score;
             var processedAtLowestScore = 0;
+
+            // Collect candidates that pass the cursor filter, then batch-fetch with MGET.
+            var candidates = new List<(SortedSetEntry Entry, string JobId)>(entries.Length);
             foreach (var entry in entries)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-
                 var jobId = entry.Element.ToString();
                 var score = (long)entry.Score;
                 if (score == lowestScore)
@@ -223,19 +224,40 @@ internal sealed partial class RedisExecutionJobStore(
                     continue;
                 }
 
-                var job = await GetAsync(jobId, cancellationToken).ConfigureAwait(false);
-                if (job == null)
-                {
-                    staleMembers.Add(entry.Element);
-                    continue;
-                }
+                candidates.Add((entry, jobId));
+            }
 
-                if (MatchesQuery(query, job))
+            if (candidates.Count > 0)
+            {
+                var keys = candidates.ConvertAll(c => (RedisKey)GetJobKey(c.JobId));
+                var payloads = await _database.StringGetAsync([.. keys]).ConfigureAwait(false);
+
+                for (var i = 0; i < candidates.Count; i++)
                 {
-                    results.Add(job);
-                    if (results.Count > limit)
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    var (entry, jobId) = candidates[i];
+                    var payload = payloads[i];
+                    if (!payload.HasValue)
                     {
-                        break;
+                        staleMembers.Add(entry.Element);
+                        continue;
+                    }
+
+                    var job = JsonSerializer.Deserialize(payload.ToString(), ControlPlaneJsonContext.Default.ExecutionJobRecord);
+                    if (job == null)
+                    {
+                        staleMembers.Add(entry.Element);
+                        continue;
+                    }
+
+                    if (MatchesQuery(query, job))
+                    {
+                        results.Add(job);
+                        if (results.Count > limit)
+                        {
+                            break;
+                        }
                     }
                 }
             }
@@ -289,26 +311,44 @@ internal sealed partial class RedisExecutionJobStore(
 
         var activeKey = kind.HasValue ? GetKindActiveKey(kind.Value) : ActiveJobsKey;
         var jobIds = await _database.SetMembersAsync(activeKey).ConfigureAwait(false);
-        var jobs = new List<ExecutionJobRecord>(jobIds.Length);
+
+        var validIds = new List<RedisValue>(jobIds.Length);
+        foreach (var jobId in jobIds)
+        {
+            if (jobId.HasValue)
+            {
+                validIds.Add(jobId);
+            }
+        }
+
+        var jobs = new List<ExecutionJobRecord>(validIds.Count);
         var staleIds = new List<RedisValue>();
 
-        foreach (var jobId in jobIds)
+        if (validIds.Count > 0)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (!jobId.HasValue)
-            {
-                continue;
-            }
+            var keys = validIds.ConvertAll(id => (RedisKey)GetJobKey(id.ToString()!));
+            var payloads = await _database.StringGetAsync([.. keys]).ConfigureAwait(false);
 
-            var job = await GetAsync(jobId.ToString(), cancellationToken).ConfigureAwait(false);
-            if (job == null || IsTerminal(job.Status))
+            for (var i = 0; i < validIds.Count; i++)
             {
-                staleIds.Add(jobId);
-                continue;
-            }
+                var payload = payloads[i];
+                if (!payload.HasValue)
+                {
+                    staleIds.Add(validIds[i]);
+                    continue;
+                }
 
-            jobs.Add(job);
+                var job = JsonSerializer.Deserialize(payload.ToString(), ControlPlaneJsonContext.Default.ExecutionJobRecord);
+                if (job == null || IsTerminal(job.Status))
+                {
+                    staleIds.Add(validIds[i]);
+                    continue;
+                }
+
+                jobs.Add(job);
+            }
         }
 
         if (staleIds.Count > 0)

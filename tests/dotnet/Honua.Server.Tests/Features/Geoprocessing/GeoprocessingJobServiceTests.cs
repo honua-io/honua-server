@@ -17,6 +17,7 @@ using Honua.ControlPlane;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Honua.TestKit.Helpers;
 using NSubstitute;
 
@@ -53,6 +54,7 @@ public sealed class GeoprocessingJobServiceTests
             _authEvaluator, _approvalEvaluator,
             new BuiltInProcessCatalog(),
             NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
             _jobStore, _jobQueue,
             resultPackageStore: _resultPackageStore);
     }
@@ -237,6 +239,7 @@ public sealed class GeoprocessingJobServiceTests
             _authEvaluator, _approvalEvaluator,
             new BuiltInProcessCatalog(),
             NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
             jobStore: null);
 
         var act = async () => await sut.SubmitJobAsync(CreateValidPlan(), null, CreatePrincipal());
@@ -359,6 +362,7 @@ public sealed class GeoprocessingJobServiceTests
             _approvalEvaluator,
             new BuiltInProcessCatalog(),
             NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
             _jobStore,
             workloadRegistry: workloadRegistry,
             backends: [backend]);
@@ -424,6 +428,7 @@ public sealed class GeoprocessingJobServiceTests
             _approvalEvaluator,
             new BuiltInProcessCatalog(),
             NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
             _jobStore,
             _jobQueue,
             workloadRegistry: workloadRegistry,
@@ -699,6 +704,7 @@ public sealed class GeoprocessingJobServiceTests
             _approvalEvaluator,
             new BuiltInProcessCatalog(),
             NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
             _jobStore,
             _jobQueue);
 
@@ -1089,6 +1095,7 @@ public sealed class GeoprocessingJobServiceTests
             _approvalEvaluator,
             new BuiltInProcessCatalog(),
             NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
             _jobStore,
             backends: [backend]);
 
@@ -1133,6 +1140,7 @@ public sealed class GeoprocessingJobServiceTests
             _approvalEvaluator,
             new BuiltInProcessCatalog(),
             NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
             _jobStore,
             backends: [backend]);
 
@@ -1178,6 +1186,7 @@ public sealed class GeoprocessingJobServiceTests
             _approvalEvaluator,
             new BuiltInProcessCatalog(),
             NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
             _jobStore,
             backends: [backend]);
 
@@ -1227,6 +1236,7 @@ public sealed class GeoprocessingJobServiceTests
             _approvalEvaluator,
             new BuiltInProcessCatalog(),
             NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
             _jobStore,
             backends: [backend]);
 
@@ -1279,6 +1289,7 @@ public sealed class GeoprocessingJobServiceTests
             _approvalEvaluator,
             new BuiltInProcessCatalog(),
             NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
             _jobStore,
             backends: [backend]);
 
@@ -1325,6 +1336,7 @@ public sealed class GeoprocessingJobServiceTests
             _approvalEvaluator,
             new BuiltInProcessCatalog(),
             NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
             _jobStore,
             backends: [backend]);
 
@@ -1371,6 +1383,7 @@ public sealed class GeoprocessingJobServiceTests
             _approvalEvaluator,
             new BuiltInProcessCatalog(),
             NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
             _jobStore,
             backends: [backend]);
 
@@ -1418,6 +1431,7 @@ public sealed class GeoprocessingJobServiceTests
             _approvalEvaluator,
             new BuiltInProcessCatalog(),
             NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
             _jobStore,
             backends: [backend]);
 
@@ -1469,6 +1483,7 @@ public sealed class GeoprocessingJobServiceTests
             _approvalEvaluator,
             new BuiltInProcessCatalog(),
             NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
             _jobStore,
             backends: [backend]);
 
@@ -1520,6 +1535,7 @@ public sealed class GeoprocessingJobServiceTests
             _approvalEvaluator,
             new BuiltInProcessCatalog(),
             NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
             _jobStore,
             backends: [backend]);
 
@@ -1589,6 +1605,7 @@ public sealed class GeoprocessingJobServiceTests
             _approvalEvaluator,
             new BuiltInProcessCatalog(),
             NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
             _jobStore,
             backends: [backend]);
 
@@ -1637,6 +1654,7 @@ public sealed class GeoprocessingJobServiceTests
             _approvalEvaluator,
             new BuiltInProcessCatalog(),
             NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
             _jobStore,
             backends: [backend]);
 
@@ -1689,6 +1707,7 @@ public sealed class GeoprocessingJobServiceTests
             _approvalEvaluator,
             new BuiltInProcessCatalog(),
             NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
             _jobStore,
             workloadRegistry: workloadRegistry,
             backends: [backend]);
@@ -1747,6 +1766,7 @@ public sealed class GeoprocessingJobServiceTests
             _approvalEvaluator,
             new BuiltInProcessCatalog(),
             NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
             _jobStore,
             workloadRegistry: workloadRegistry,
             backends: [backend]);
@@ -1787,6 +1807,7 @@ public sealed class GeoprocessingJobServiceTests
             _approvalEvaluator,
             new BuiltInProcessCatalog(),
             NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
             _jobStore,
             admissionEvaluator: admission);
 
@@ -1821,6 +1842,7 @@ public sealed class GeoprocessingJobServiceTests
             _approvalEvaluator,
             new BuiltInProcessCatalog(),
             NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
             _jobStore,
             admissionEvaluator: admission);
 
@@ -1879,6 +1901,7 @@ public sealed class GeoprocessingJobServiceTests
             _approvalEvaluator,
             new BuiltInProcessCatalog(),
             NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
             _jobStore,
             backends: [backend]);
 
@@ -1934,6 +1957,7 @@ public sealed class GeoprocessingJobServiceTests
             _approvalEvaluator,
             new BuiltInProcessCatalog(),
             NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
             _jobStore,
             backends: [backend]);
 
@@ -2002,6 +2026,7 @@ public sealed class GeoprocessingJobServiceTests
             _approvalEvaluator,
             new BuiltInProcessCatalog(),
             NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
             _jobStore,
             workloadRegistry: workloadRegistry,
             backends: [backend]);
@@ -2049,6 +2074,7 @@ public sealed class GeoprocessingJobServiceTests
             _approvalEvaluator,
             new BuiltInProcessCatalog(),
             NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
             _jobStore,
             backends: [backend]);
 
@@ -2094,6 +2120,7 @@ public sealed class GeoprocessingJobServiceTests
             _approvalEvaluator,
             new BuiltInProcessCatalog(),
             NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
             _jobStore,
             backends: [backend]);
 
@@ -2137,6 +2164,7 @@ public sealed class GeoprocessingJobServiceTests
             _approvalEvaluator,
             new BuiltInProcessCatalog(),
             NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
             _jobStore,
             backends: [backend]);
 
@@ -2189,6 +2217,7 @@ public sealed class GeoprocessingJobServiceTests
             _approvalEvaluator,
             new BuiltInProcessCatalog(),
             NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
             _jobStore,
             backends: [backend]);
 
@@ -2286,6 +2315,16 @@ public sealed class GeoprocessingJobServiceTests
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
+
+    private static readonly IOptionsMonitor<GeoprocessingExecutorOptions> DefaultExecutorOptions =
+        new StaticOptionsMonitor<GeoprocessingExecutorOptions>(new GeoprocessingExecutorOptions());
+
+    private sealed class StaticOptionsMonitor<T>(T value) : IOptionsMonitor<T>
+    {
+        public T CurrentValue => value;
+        public T Get(string? name) => value;
+        public IDisposable? OnChange(Action<T, string?> listener) => null;
+    }
 
     private static AnalysisPlan CreateValidPlan() => new()
     {

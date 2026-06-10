@@ -288,8 +288,16 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
     {
         if (_cancellationTokens.TryGetValue(jobId, out var cts) && !cts.IsCancellationRequested)
         {
-            cts.Cancel();
-            return Task.FromResult(true);
+            try
+            {
+                cts.Cancel();
+                return Task.FromResult(true);
+            }
+            catch (ObjectDisposedException)
+            {
+                // The job completed and disposed its CTS between the lookup and Cancel();
+                // report "nothing to cancel" instead of surfacing the race as a 500.
+            }
         }
 
         return Task.FromResult(false);
@@ -564,32 +572,42 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
         }
         var formatName = format.ToString();
 
-        string jobId;
-        while (true)
-        {
-            jobId = Guid.NewGuid().ToString("N")[..8];
-            var progress = ImportProgress.CreateInitial(
-                jobId,
-                request.TableName,
-                format,
-                fileSize,
-                request.FileName,
-                request.SourceKind,
-                request.SourceUrl,
-                request.CloudFileId,
-                request.UploadId);
+        // A full 128-bit Guid makes collisions unrealistic (the store write is a plain set, not
+        // add-if-absent, so a colliding id would silently overwrite another job's progress).
+        var jobId = Guid.NewGuid().ToString("N");
+        var initialProgress = ImportProgress.CreateInitial(
+            jobId,
+            request.TableName,
+            format,
+            fileSize,
+            request.FileName,
+            request.SourceKind,
+            request.SourceUrl,
+            request.CloudFileId,
+            request.UploadId);
 
-            // Store initial progress in unified store
+        // Store initial progress in the unified store. The write is retried a bounded number of
+        // times for transient store failures; cancellation propagates and an unreachable store
+        // fails the queue call instead of spinning (and log-flooding) forever.
+        const int MaxQueueAttempts = 3;
+        for (var attempt = 1; ; attempt++)
+        {
             try
             {
-                await _progressStore.SetProgressAsync(jobId, progress, TimeSpan.FromDays(1), cancellationToken);
+                await _progressStore.SetProgressAsync(jobId, initialProgress, TimeSpan.FromDays(1), cancellationToken);
                 break;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {
                 UniversalImportJobLog.ProgressUpdateFailed(_logger, jobId, ex);
-                // Try with a different job ID
-                continue;
+                if (attempt >= MaxQueueAttempts)
+                {
+                    throw;
+                }
             }
         }
 
@@ -641,7 +659,14 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
             }
             catch
             {
+                // The background job will never start: clean up the bookkeeping created above and
+                // best-effort mark the stored Queued progress as failed so it does not linger in
+                // GetActiveJobsAsync for the full TTL with no job behind it.
                 TryDeleteTempFile(tempFilePath);
+                _jobs.TryRemove(jobId, out _);
+                _cancellationTokens.TryRemove(jobId, out _);
+                cts.Dispose();
+                await TryMarkProgressFailedAsync(jobId);
                 throw;
             }
 
@@ -823,8 +848,16 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
     {
         if (_cancellationTokens.TryGetValue(jobId, out var cts) && !cts.IsCancellationRequested)
         {
-            cts.Cancel();
-            return Task.FromResult(true);
+            try
+            {
+                cts.Cancel();
+                return Task.FromResult(true);
+            }
+            catch (ObjectDisposedException)
+            {
+                // The job completed and disposed its CTS between the lookup and Cancel();
+                // report "nothing to cancel" instead of surfacing the race as a 500.
+            }
         }
 
         return Task.FromResult(false);
@@ -834,6 +867,32 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
     public async Task<IReadOnlyList<ImportProgress>> GetActiveJobsAsync(CancellationToken cancellationToken = default)
     {
         return await _progressStore.GetActiveOperationsAsync<ImportProgress>(OperationType.Import, cancellationToken);
+    }
+
+    // Best-effort transition of a stored Queued progress record to Failed when the job can no
+    // longer run (e.g. staging the upload to a temp file failed before background processing
+    // started). Failures here are logged, never thrown: the caller is already propagating the
+    // original error.
+    private async Task TryMarkProgressFailedAsync(string jobId)
+    {
+        try
+        {
+            var current = await _progressStore.GetProgressAsync<ImportProgress>(jobId, CancellationToken.None);
+            if (current is not null)
+            {
+                var failed = current with
+                {
+                    Status = ImportStatus.Failed,
+                    CompletedAt = DateTimeOffset.UtcNow,
+                    ErrorMessage = SafeImportFailureMessage
+                };
+                await _progressStore.SetProgressAsync(jobId, failed, TimeSpan.FromDays(1), CancellationToken.None);
+            }
+        }
+        catch (Exception ex)
+        {
+            UniversalImportJobLog.ProgressUpdateFailed(_logger, jobId, ex);
+        }
     }
 
     private void RecordJobMetrics(

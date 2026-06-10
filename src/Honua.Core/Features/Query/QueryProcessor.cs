@@ -539,8 +539,18 @@ public sealed class QueryProcessor : IQueryProcessor
             }
             catch (Exception ex)
             {
+                // Falling back is only safe when the caller supplied an explicit SQL
+                // fragment alongside the expression. Expression-only filters (the normal
+                // CQL2/OGC/where-clause path) have no fragment; swallowing the failure
+                // there would silently execute the query with NO filter at all,
+                // over-exposing data instead of surfacing an error.
+                if (query.Filter?.GetSqlFragment() is not { } fallbackFragment)
+                {
+                    throw;
+                }
+
                 QueryLog.FilterTranslationFailed(_logger, ex);
-                sqlFilter = query.Filter?.GetSqlFragment();
+                sqlFilter = fallbackFragment;
             }
         }
         else if (query.Filter?.GetSqlFragment() is { } sqlFragment)

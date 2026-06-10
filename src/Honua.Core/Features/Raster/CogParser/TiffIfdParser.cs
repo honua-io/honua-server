@@ -12,6 +12,12 @@ namespace Honua.Core.Features.Raster.CogParser;
 /// </summary>
 internal sealed class TiffIfdParser
 {
+    /// <summary>
+    /// Maximum number of entries accepted in a single IFD (classic TIFF's ushort ceiling,
+    /// also enforced for BigTIFF to bound buffer sizes against crafted files).
+    /// </summary>
+    public const int MaxIfdEntryCount = 65535;
+
     private readonly bool _isLittleEndian;
     private readonly bool _isBigTiff;
 
@@ -115,7 +121,7 @@ internal sealed class TiffIfdParser
             dataStart = 2;
         }
 
-        if (entryCount > 65535)
+        if (entryCount > MaxIfdEntryCount)
         {
             throw new InvalidDataException($"IFD entry count {entryCount} exceeds maximum.");
         }
@@ -140,6 +146,30 @@ internal sealed class TiffIfdParser
         }
 
         return (entries, nextIfdOffset);
+    }
+
+    /// <summary>
+    /// Reads the declared entry count at the start of an IFD without parsing the entries,
+    /// so callers can re-read the IFD at its exact size when it exceeds their estimate.
+    /// </summary>
+    public long ReadIfdEntryCount(ReadOnlySpan<byte> ifdData)
+    {
+        if (_isBigTiff)
+        {
+            if (ifdData.Length < 8)
+            {
+                throw new InvalidDataException("Buffer too small for BigTIFF IFD entry count.");
+            }
+
+            return ReadInt64(ifdData, 0, _isLittleEndian);
+        }
+
+        if (ifdData.Length < 2)
+        {
+            throw new InvalidDataException("Buffer too small for TIFF IFD entry count.");
+        }
+
+        return ReadUInt16(ifdData, 0, _isLittleEndian);
     }
 
     /// <summary>

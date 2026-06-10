@@ -569,7 +569,8 @@ builder.Services.AddSingleton<Honua.Core.Features.FeatureStore.Abstractions.IVer
         sp.GetRequiredService<ILogger<Honua.Infrastructure.Coordination.RedisVersionLock>>()));
 builder.Services.AddSingleton<Honua.Core.Features.FeatureStore.Abstractions.IVersionJobStore>(sp =>
     new Honua.Infrastructure.Coordination.RedisVersionJobStore(
-        sp.GetService<StackExchange.Redis.IConnectionMultiplexer>()));
+        sp.GetService<StackExchange.Redis.IConnectionMultiplexer>(),
+        sp.GetRequiredService<ILogger<Honua.Infrastructure.Coordination.RedisVersionJobStore>>()));
 builder.Services.AddSingleton<Honua.Core.Features.FeatureStore.Abstractions.IVersionJobRunner,
     Honua.Core.Features.FeatureStore.Services.VersionJobRunner>();
 builder.Services.AddScoped<Honua.Protocols.GeoServices.FeatureServer.IReplicaStore>(sp =>

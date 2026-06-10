@@ -118,13 +118,19 @@ internal static class ItemEndpoints
 
             if (!string.IsNullOrWhiteSpace(datetime))
             {
-                var temporalFilter = StacFilterHelpers.ParseDatetime(datetime, resource);
-                if (temporalFilter is null)
+                if (!StacFilterHelpers.IsValidDatetimeSyntax(datetime))
                 {
                     StacTelemetry.SetFailed(activity, "invalid_datetime");
                     return StandardErrorHelpers.CreateBadRequest(context, "Invalid datetime parameter.");
                 }
-                query = query with { TemporalFilter = temporalFilter };
+
+                // ParseDatetime returns null when this resource has no temporal field;
+                // skip the temporal filter rather than rejecting the request.
+                var temporalFilter = StacFilterHelpers.ParseDatetime(datetime, resource);
+                if (temporalFilter is not null)
+                {
+                    query = query with { TemporalFilter = temporalFilter };
+                }
             }
 
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
@@ -293,11 +299,15 @@ internal static class ItemEndpoints
         string itemId,
         CancellationToken cancellationToken)
     {
+        // Limit the id scan to a small upper-bound so that non-unique id columns (or providers
+        // that ignore SqlFilter) cannot produce an unbounded result set followed by N+1 per-id
+        // feature fetches on a public read endpoint.
         var query = new FeatureQuery
         {
             SqlFilter = new SqlFragment(
                 "attributes->>'stac_id' = @p0 OR attributes->>'item_id' = @p0 OR attributes->>'id' = @p0",
-                [itemId])
+                [itemId]),
+            Limit = 50
         };
 
         var objectIds = await featureReader.QueryObjectIdsAsync(layerId, query, cancellationToken);

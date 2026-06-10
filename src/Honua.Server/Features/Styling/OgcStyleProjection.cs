@@ -49,6 +49,7 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
 
         var summaries = new List<OgcStyleSummary>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
+        var candidates = new List<(string StyleId, MetadataV2Resource Resource, int StorageLayerId)>();
         foreach (var resource in snapshot.Graph.Resources)
         {
             var styleId = resource.Metadata.Name;
@@ -63,16 +64,30 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
                 continue;
             }
 
-            // Phase 1: a collection projects to an OGC style only when it has a
-            // genuinely stored MapLibre style. Read the canonical store directly so the
-            // in-memory default style synthesized for unstyled layers does not appear.
-            var stored = await _styleCatalog.GetLayerStyleAsync(storageLayerId.Value, cancellationToken).ConfigureAwait(false);
-            if (stored is null || string.IsNullOrWhiteSpace(stored.MapLibreStyleJson))
-            {
-                continue;
-            }
+            candidates.Add((styleId, resource, storageLayerId.Value));
+        }
 
-            summaries.Add(new OgcStyleSummary(styleId, ResolveTitle(resource)));
+        // Phase 1: a collection projects to an OGC style only when it has a
+        // genuinely stored MapLibre style. Read the canonical store directly so the
+        // in-memory default style synthesized for unstyled layers does not appear.
+        // Fetch with bounded fan-out rather than one store round trip per resource
+        // in sequence, so listing latency does not grow linearly with catalog size.
+        // (A batch lookup on ILayerStyleCatalog would collapse this to one query.)
+        const int lookupFanOut = 16;
+        for (var offset = 0; offset < candidates.Count; offset += lookupFanOut)
+        {
+            var batch = candidates.GetRange(offset, Math.Min(lookupFanOut, candidates.Count - offset));
+            var stored = await Task.WhenAll(
+                batch.Select(candidate => _styleCatalog.GetLayerStyleAsync(candidate.StorageLayerId, cancellationToken)))
+                .ConfigureAwait(false);
+
+            for (var i = 0; i < batch.Count; i++)
+            {
+                if (stored[i] is { } style && !string.IsNullOrWhiteSpace(style.MapLibreStyleJson))
+                {
+                    summaries.Add(new OgcStyleSummary(batch[i].StyleId, ResolveTitle(batch[i].Resource)));
+                }
+            }
         }
 
         // Phase 2: also surface standalone catalog styles that are not already

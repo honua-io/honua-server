@@ -9,6 +9,7 @@ using Honua.Core.Features.Security.Abstractions;
 using Honua.Import.Models;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Licensing;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Migration.Services;
@@ -69,6 +70,14 @@ internal static partial class GeoServerImportEndpoints
     /// </summary>
     private static async Task HandleDiscoverService(HttpContext context)
     {
+        var entitlementGate = LicenseGate.RequireEntitlement(
+            context, "import.geoserver", "GeoServer Import");
+        if (entitlementGate is not null)
+        {
+            await entitlementGate.ExecuteAsync(context);
+            return;
+        }
+
         var cancellationToken = context.RequestAborted;
 
         GeoServerDiscoveryApiRequest? request;
@@ -144,6 +153,14 @@ internal static partial class GeoServerImportEndpoints
     /// </summary>
     private static async Task HandleStartImport(HttpContext context)
     {
+        var entitlementGate = LicenseGate.RequireEntitlement(
+            context, "import.geoserver", "GeoServer Import");
+        if (entitlementGate is not null)
+        {
+            await entitlementGate.ExecuteAsync(context);
+            return;
+        }
+
         var cancellationToken = context.RequestAborted;
         GeoServerImportJobManager? jobManager = null;
         string? jobId = null;

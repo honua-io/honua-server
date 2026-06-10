@@ -15,6 +15,7 @@ using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Tiles;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
 using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Ogc.Api.Features;
@@ -36,7 +37,6 @@ internal static partial class TilesEndpoints
 {
     private const string OgcApiTilesProtocol = MetadataV2ServiceProtocols.OgcApiTiles;
     private const int MaxCollectionsPerDatasetRasterTileRequest = 16;
-    private static readonly WKBWriter BboxWkbWriter = new();
 
     public static IEndpointRouteBuilder MapTilesEndpoints(this IEndpointRouteBuilder endpoints)
     {
@@ -217,6 +217,11 @@ internal static partial class TilesEndpoints
         [FromServices] IOptions<TileOptions> tileOptions,
         [FromServices] IOptions<LimitsOptions> limitsOptions)
     {
+        if (!TryRequireTenantContext(context, out var tenantError))
+        {
+            return tenantError!;
+        }
+
         var request = context.Request;
         var f = OgcCommonUtilities.GetQueryValue(request, "f");
         var datetime = OgcCommonUtilities.GetQueryValue(request, "datetime");
@@ -859,7 +864,9 @@ internal static partial class TilesEndpoints
             ]);
 
             var multiPolygon = geometryFactory.CreateMultiPolygon([westernHemisphere, easternHemisphere]);
-            return SpatialFilter.Create(BboxWkbWriter.Write(multiPolygon), SpatialRelationship.Intersects, srid);
+            // WKBWriter is not documented as thread-safe; construct per call like
+            // the other writer call sites in this slice (antimeridian path only).
+            return SpatialFilter.Create(new WKBWriter().Write(multiPolygon), SpatialRelationship.Intersects, srid);
         }
 
         return SpatialFilterHelpers.CreateBboxSpatialFilter(bounds.XMin, bounds.YMin, bounds.XMax, bounds.YMax, srid);
@@ -1091,10 +1098,15 @@ internal static partial class TilesEndpoints
                     continue;
                 }
 
-                var decision = AccessPolicyHelpers.EvaluateAccess(
+                // Tiles are a read surface: consult the per-operation resolver for
+                // the query grant first (#1376), matching ResolveCollectionLayer so
+                // both tile routes enforce the same authorization.
+                var decision = await AccessPolicyHelpers.EvaluateResourceAccessAsync(
                     context,
-                    resource.AccessPolicy,
-                    service.AccessPolicy);
+                    resource,
+                    service,
+                    AuthorizationOperation.Query,
+                    cancellationToken).ConfigureAwait(false);
 
                 if (decision.IsAllowed)
                 {
@@ -1425,6 +1437,7 @@ internal static partial class TilesEndpoints
                 $"Unsupported subset-crs '{subsetCrs}'. Only the CRS matching the tile matrix set is supported.");
         }
 
+        var entitlementChecked = false;
         foreach (var layer in layers)
         {
             if (!OgcTemporalFilterParser.TryParse(datetime, layer.Resource, out var temporalFilter, out var errorMessage))
@@ -1433,6 +1446,23 @@ internal static partial class TilesEndpoints
                     ? $"Collection '{layer.CollectionId}' cannot satisfy the requested datetime filter. {errorMessage ?? "Invalid datetime parameter."}"
                     : errorMessage ?? "Invalid datetime parameter.";
                 return StandardErrorHelpers.CreateBadRequest(context, detail);
+            }
+
+            // Time-filtered tiles are a Pro capability. Mirror the GeoServices
+            // FeatureServer tile gate (temporal.time-series-tiles), enforced
+            // only when the datetime parameter produces an actual filter.
+            if (temporalFilter is not null && !entitlementChecked)
+            {
+                var entitlementError = LicenseGate.RequireEntitlement(
+                    context,
+                    "temporal.time-series-tiles",
+                    "Time-filtered vector tiles");
+                if (entitlementError is not null)
+                {
+                    return entitlementError;
+                }
+
+                entitlementChecked = true;
             }
 
             parsedTemporalFilters[layer.StorageLayerId] = temporalFilter;
@@ -1569,7 +1599,7 @@ internal static partial class TilesEndpoints
 
         error = StandardErrorHelpers.CreateForbidden(
             context,
-            "Tenant context is required to access collection tiles.");
+            "Tenant context is required to access tiles.");
         return false;
     }
 

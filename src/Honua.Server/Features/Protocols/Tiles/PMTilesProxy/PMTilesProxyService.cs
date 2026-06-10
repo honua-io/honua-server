@@ -16,6 +16,15 @@ namespace Honua.Server.Features.Protocols.Tiles.PMTilesProxy;
 internal sealed class PMTilesProxyService
 {
     private const long MaxRangeLength = 64 * 1024 * 1024; // 64 MiB cap per range request
+
+    // Cap on how many bytes the download fallback may read-and-discard to reach
+    // the range start when the provider stream is not seekable. PMTiles clients
+    // routinely request small ranges at large offsets (directories live at the
+    // archive tail), so without this budget a provider with no ICloudRangeReader
+    // would download an entire multi-GB archive from cloud storage to serve a few
+    // KiB — a bandwidth amplification path on an unauthenticated endpoint. Ranges
+    // beyond the budget are rejected as unsatisfiable instead.
+    private const long MaxDownloadFallbackSkip = 8 * 1024 * 1024; // 8 MiB
     internal const string PMTilesContentType = "application/vnd.pmtiles";
     internal const string OperationMetadataKey = "operation";
     internal const string PublishOperationValue = "publish";
@@ -145,7 +154,16 @@ internal sealed class PMTilesProxyService
         }
         else
         {
-            payload = await ReadRangeViaDownloadAsync(metadata, start, length, cancellationToken).ConfigureAwait(false);
+            var fallback = await ReadRangeViaDownloadAsync(metadata, start, length, cancellationToken).ConfigureAwait(false);
+            if (fallback.SkipBudgetExceeded)
+            {
+                // No range reader is registered for this provider and the object
+                // stream cannot seek to the requested offset within the skip
+                // budget. Reject rather than downloading the whole object.
+                return PMTilesRangeResult.Unsatisfiable(totalSize);
+            }
+
+            payload = fallback.Payload;
         }
 
         if (payload is null)
@@ -185,7 +203,7 @@ internal sealed class PMTilesProxyService
         return await _cloudStorage.DownloadAsync(artifactId, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<byte[]?> ReadRangeViaDownloadAsync(
+    private async Task<DownloadFallbackResult> ReadRangeViaDownloadAsync(
         CloudFile metadata,
         long start,
         long length,
@@ -194,7 +212,7 @@ internal sealed class PMTilesProxyService
         var stream = await _cloudStorage.DownloadAsync(metadata.FileId, cancellationToken).ConfigureAwait(false);
         if (stream is null)
         {
-            return null;
+            return DownloadFallbackResult.Missing;
         }
 
         await using var _ = stream.ConfigureAwait(false);
@@ -202,6 +220,13 @@ internal sealed class PMTilesProxyService
         if (stream.CanSeek)
         {
             stream.Position = start;
+        }
+        else if (start > MaxDownloadFallbackSkip)
+        {
+            // The range starts beyond the skip budget on a non-seekable stream:
+            // reaching it would download (and discard) the prefix of the whole
+            // object. Bail out before pulling the object body.
+            return DownloadFallbackResult.OverSkipBudget;
         }
         else
         {
@@ -237,7 +262,19 @@ internal sealed class PMTilesProxyService
             Array.Resize(ref payload, totalRead);
         }
 
-        return payload;
+        return DownloadFallbackResult.Read(payload);
+    }
+
+    /// <summary>
+    /// Result of the download-fallback range read: either the materialized payload,
+    /// a missing underlying object (null payload), or a refusal because reaching the
+    /// range start would exceed <see cref="MaxDownloadFallbackSkip"/>.
+    /// </summary>
+    private readonly record struct DownloadFallbackResult(byte[]? Payload, bool SkipBudgetExceeded)
+    {
+        public static DownloadFallbackResult Missing => new(null, false);
+        public static DownloadFallbackResult OverSkipBudget => new(null, true);
+        public static DownloadFallbackResult Read(byte[] payload) => new(payload, false);
     }
 
     private string ResolveBucket(CloudStorageProvider provider) => provider switch

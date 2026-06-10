@@ -124,8 +124,18 @@ public sealed class MetadataV2GraphIndex
     {
         ArgumentNullException.ThrowIfNull(graph);
 
-        var catalogsById = graph.Catalogs.ToDictionary(c => c.Metadata.Id, StringComparer.Ordinal);
-        var resourcesById = graph.Resources.ToDictionary(r => r.Metadata.Id, StringComparer.Ordinal);
+        // First-wins on duplicate Metadata.Id values: graph validation surfaces duplicates as soft
+        // errors rather than preventing persistence, so loading a graph with duplicate ids (e.g. a
+        // hand-edited file fixture or a legacy snapshot) must not crash with an opaque
+        // ArgumentException from ToDictionary. The TryAdd strategy here matches the documented
+        // strategy on the name / storage-layer-id maps below and keeps the index deterministic
+        // even on a bad graph.
+        var catalogsById = new Dictionary<string, MetadataV2Catalog>(StringComparer.Ordinal);
+        foreach (var c in graph.Catalogs) catalogsById.TryAdd(c.Metadata.Id, c);
+
+        var resourcesById = new Dictionary<string, MetadataV2Resource>(StringComparer.Ordinal);
+        foreach (var r in graph.Resources) resourcesById.TryAdd(r.Metadata.Id, r);
+
         // Multiple resources may share the same display name (different IDs / namespaces).
         // First-wins keeps the index deterministic and avoids ArgumentException on construction.
         var resourcesByName = new Dictionary<string, MetadataV2Resource>(StringComparer.OrdinalIgnoreCase);
@@ -136,8 +146,12 @@ public sealed class MetadataV2GraphIndex
                 resourcesByName.TryAdd(r.Metadata.Name, r);
             }
         }
-        var connectionsById = graph.Connections.ToDictionary(c => c.Metadata.Id, StringComparer.Ordinal);
-        var storageBindingsById = graph.StorageBindings.ToDictionary(s => s.Metadata.Id, StringComparer.Ordinal);
+
+        var connectionsById = new Dictionary<string, MetadataV2Connection>(StringComparer.Ordinal);
+        foreach (var c in graph.Connections) connectionsById.TryAdd(c.Metadata.Id, c);
+
+        var storageBindingsById = new Dictionary<string, MetadataV2StorageBinding>(StringComparer.Ordinal);
+        foreach (var s in graph.StorageBindings) storageBindingsById.TryAdd(s.Metadata.Id, s);
         var storageBindingsByResource = graph.StorageBindings.ToLookup(s => s.ResourceId, StringComparer.Ordinal);
 
         var storageBindingsByStorageLayerId = new Dictionary<int, MetadataV2StorageBinding>();
@@ -154,7 +168,9 @@ public sealed class MetadataV2GraphIndex
             }
         }
 
-        var servicesById = graph.Services.ToDictionary(s => s.Metadata.Id, StringComparer.Ordinal);
+        var servicesById = new Dictionary<string, MetadataV2Service>(StringComparer.Ordinal);
+        foreach (var s in graph.Services) servicesById.TryAdd(s.Metadata.Id, s);
+
         // Multiple V2 services may share the same display name when the same logical
         // service is exposed through multiple protocols (e.g. an OGC API Features
         // service + an Esri Feature Service for the same dataset). First-wins keeps
@@ -168,13 +184,23 @@ public sealed class MetadataV2GraphIndex
                 servicesByName.TryAdd(s.Metadata.Name, s);
             }
         }
-        var publicationsById = graph.Publications.ToDictionary(p => p.Metadata.Id, StringComparer.Ordinal);
+
+        var publicationsById = new Dictionary<string, MetadataV2Publication>(StringComparer.Ordinal);
+        foreach (var p in graph.Publications) publicationsById.TryAdd(p.Metadata.Id, p);
+
         var publicationsByService = graph.Publications.ToLookup(p => p.ServiceId, StringComparer.Ordinal);
         var publicationsByResource = graph.Publications.ToLookup(p => p.ResourceId, StringComparer.Ordinal);
-        var projectionProfilesById = graph.ProjectionProfiles.ToDictionary(p => p.Metadata.Id, StringComparer.Ordinal);
+
+        var projectionProfilesById = new Dictionary<string, MetadataV2ProjectionProfile>(StringComparer.Ordinal);
+        foreach (var p in graph.ProjectionProfiles) projectionProfilesById.TryAdd(p.Metadata.Id, p);
+
         var projectionProfilesByTarget = graph.ProjectionProfiles.ToLookup(p => p.Target, StringComparer.OrdinalIgnoreCase);
-        var policiesById = graph.Policies.ToDictionary(p => p.Metadata.Id, StringComparer.Ordinal);
-        var rolesById = graph.Roles.ToDictionary(r => r.Metadata.Id, StringComparer.Ordinal);
+
+        var policiesById = new Dictionary<string, MetadataV2Policy>(StringComparer.Ordinal);
+        foreach (var p in graph.Policies) policiesById.TryAdd(p.Metadata.Id, p);
+
+        var rolesById = new Dictionary<string, MetadataV2Role>(StringComparer.Ordinal);
+        foreach (var r in graph.Roles) rolesById.TryAdd(r.Metadata.Id, r);
 
         // Flatten (resource, styleResourceId) pairs into a reverse lookup so
         // callers can answer "which resources use style X?" in O(1).

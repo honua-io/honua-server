@@ -12,6 +12,11 @@ namespace Honua.Core.Features.Console.Collaboration.Services;
 /// </summary>
 public sealed class InMemoryStudioMapCollaborationStore : IStudioMapCollaborationStore
 {
+    // The activity feed is append-only on every thread create/reply/resolve and this store can be
+    // the long-lived production fallback when no Postgres backing is registered, so cap it to the
+    // most recent events globally. Readers already Take(limit), so trimming old history is safe.
+    private const int MaxActivityEvents = 10_000;
+
     private readonly object _gate = new();
     private readonly Dictionary<Guid, StudioMapCommentThread> _threads = new();
     private readonly List<StudioMapActivityEvent> _activity = new();
@@ -198,6 +203,12 @@ public sealed class InMemoryStudioMapCollaborationStore : IStudioMapCollaboratio
         Guid threadId,
         DateTimeOffset occurredAt)
     {
+        if (_activity.Count >= MaxActivityEvents)
+        {
+            // Events are appended in clock order, so the oldest live at the front.
+            _activity.RemoveRange(0, _activity.Count - MaxActivityEvents + 1);
+        }
+
         _activity.Add(new StudioMapActivityEvent
         {
             EventId = Guid.NewGuid(),

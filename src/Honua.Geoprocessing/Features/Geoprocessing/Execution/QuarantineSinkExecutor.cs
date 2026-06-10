@@ -19,13 +19,28 @@ namespace Honua.Geoprocessing.Execution;
 /// rejected rows route here instead of aborting the run. Reconciled from the GeoETL
 /// baseline QuarantineSinkConnector onto the #1185 process/executor contract.
 /// </summary>
-internal sealed class QuarantineSinkExecutor(IOptionsMonitor<GeoprocessingExecutorOptions> options) : IJobExecutor
+internal sealed partial class QuarantineSinkExecutor : IJobExecutor
 {
     internal const string HandledProcessId = "sink.quarantine";
 
     private const string DefaultReasonField = "_quarantine_reason";
 
-    private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _options = options;
+    private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _options;
+    private readonly ILogger<QuarantineSinkExecutor> _logger;
+
+    public QuarantineSinkExecutor(
+        IOptionsMonitor<GeoprocessingExecutorOptions> options,
+        ILogger<QuarantineSinkExecutor> logger)
+    {
+        _options = options;
+        _logger = logger;
+    }
+
+    // Test-friendly overload; production DI always resolves the logger.
+    internal QuarantineSinkExecutor(IOptionsMonitor<GeoprocessingExecutorOptions> options)
+        : this(options, Microsoft.Extensions.Logging.Abstractions.NullLogger<QuarantineSinkExecutor>.Instance)
+    {
+    }
 
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 
@@ -67,7 +82,7 @@ internal sealed class QuarantineSinkExecutor(IOptionsMonitor<GeoprocessingExecut
             return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: {pathResolutionError}");
         }
 
-        if (!FeatureCollectionArtifact.TryParseDataUri(inputUri, out var source, out var parseError))
+        if (!FeatureCollectionArtifact.TryParseDataUri(inputUri, out var source, out var parseError, _options.CurrentValue.MaxArtifactBytes))
         {
             return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: 'input' {parseError}");
         }
@@ -117,12 +132,13 @@ internal sealed class QuarantineSinkExecutor(IOptionsMonitor<GeoprocessingExecut
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
         {
+            Log.SinkWriteFailed(_logger, job.OperationId, HandledProcessId, ex);
             return JobExecutionResult.Failed($"{HandledProcessId} write failed: {ex.GetType().Name}.");
         }
 
         cancellationToken.ThrowIfCancellationRequested();
         await context.PublishArtifactAsync(
-            SinkResultArtifact.Build(HandledProcessId, ("path", resolvedPath), ("featuresQuarantined", quarantined)),
+            SinkResultArtifact.Build(HandledProcessId, ("path", path), ("featuresQuarantined", quarantined)),
             cancellationToken).ConfigureAwait(false);
         await context.ReportProgressAsync(100, $"{HandledProcessId} completed", cancellationToken).ConfigureAwait(false);
 
@@ -161,5 +177,13 @@ internal sealed class QuarantineSinkExecutor(IOptionsMonitor<GeoprocessingExecut
             { reasonField, $"serialization-failed: {detail}" }
         };
         return new Feature(null, attributes);
+    }
+
+    private static partial class Log
+    {
+        [LoggerMessage(9255, LogLevel.Error,
+            "Sink executor failed job {OperationId} during {ProcessId} write")]
+        public static partial void SinkWriteFailed(
+            ILogger logger, string operationId, string processId, Exception exception);
     }
 }

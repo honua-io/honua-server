@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Text;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.SpatialAnalytics.Domain;
+using Honua.Core.Queries.Filters;
 using Honua.Postgres.Features.Infrastructure;
 using CoreGeometryStorageType = Honua.Core.Features.FeatureStore.Abstractions.GeometryStorageType;
 using CoreParameterizedQuery = Honua.Core.Features.FeatureStore.Domain.ParameterizedQuery;
@@ -58,6 +59,20 @@ internal sealed partial class FeatureQueryBuilder
         FeatureQuery targetQuery,
         SpatialJoinQuery joinQuery,
         CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
+        => BuildSpatialJoinQuery(targetLayerId, targetQuery, joinQuery, joinLayerEnforcedFilter: null, geometryStorageType);
+
+    /// <summary>
+    /// Postgres-specific overload that additionally applies the join layer's
+    /// permanent (row-visibility) filter on the join side of the LEFT JOIN, so
+    /// matchCount, carry-field arrays and join-side statistics cannot aggregate
+    /// rows the join layer's PermanentFilter hides from direct queries.
+    /// </summary>
+    public CoreParameterizedQuery BuildSpatialJoinQuery(
+        int targetLayerId,
+        FeatureQuery targetQuery,
+        SpatialJoinQuery joinQuery,
+        SqlFragment? joinLayerEnforcedFilter,
+        CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
     {
         GuardVersionedReadSupported(targetQuery, "spatial-join");
         var sql = _stringBuilderPool.Get();
@@ -94,6 +109,20 @@ internal sealed partial class FeatureQueryBuilder
             // Bind the join layer id once so the spatial-index lookup is parameterised.
             var joinLayerParam = $"${paramIndex++}";
             parameters.Add(joinQuery.JoinLayerId);
+
+            // The join layer's permanent filter (when present) is applied inside a
+            // derived table below so its unqualified column references
+            // (attributes->>'...') resolve against the join side instead of
+            // colliding with target_src columns in the outer join scope.
+            string? joinEnforcedSql = null;
+            if (joinLayerEnforcedFilter != null)
+            {
+                joinEnforcedSql = ConvertNamedParametersToPositional(joinLayerEnforcedFilter.Sql, ref paramIndex);
+                foreach (var param in joinLayerEnforcedFilter.Parameters)
+                {
+                    parameters.Add(param ?? DBNull.Value);
+                }
+            }
 
             // Join-side operand — decoded with the join layer's own SRID so bytea
             // storage joins produce a valid geometry expression for the PostGIS
@@ -135,11 +164,25 @@ internal sealed partial class FeatureQueryBuilder
             AppendJoinStatisticsColumns(sql, joinQuery.OutStatistics);
 
             sql.Append(" FROM target_src t");
-            sql.Append(CultureInfo.InvariantCulture,
-                $" LEFT JOIN {_tableName} j ON j.{DatabaseSchema.LayerIdColumn} = {joinLayerParam}");
-            sql.Append(CultureInfo.InvariantCulture,
-                $" AND j.{DatabaseSchema.GeometryColumn} IS NOT NULL");
-            sql.Append(CultureInfo.InvariantCulture, $" AND {predicate}");
+            if (joinEnforcedSql != null)
+            {
+                // Derived-table form: layer/geometry/permanent-filter predicates move
+                // into the subquery (equivalent for LEFT JOIN) so the enforced filter's
+                // unqualified column references bind to the join layer's rows.
+                sql.Append(CultureInfo.InvariantCulture,
+                    $" LEFT JOIN (SELECT * FROM {_tableName} WHERE {DatabaseSchema.LayerIdColumn} = {joinLayerParam}");
+                sql.Append(CultureInfo.InvariantCulture,
+                    $" AND {DatabaseSchema.GeometryColumn} IS NOT NULL AND ({joinEnforcedSql})) j");
+                sql.Append(CultureInfo.InvariantCulture, $" ON {predicate}");
+            }
+            else
+            {
+                sql.Append(CultureInfo.InvariantCulture,
+                    $" LEFT JOIN {_tableName} j ON j.{DatabaseSchema.LayerIdColumn} = {joinLayerParam}");
+                sql.Append(CultureInfo.InvariantCulture,
+                    $" AND j.{DatabaseSchema.GeometryColumn} IS NOT NULL");
+                sql.Append(CultureInfo.InvariantCulture, $" AND {predicate}");
+            }
 
             sql.Append(CultureInfo.InvariantCulture,
                 $" GROUP BY t.{DatabaseSchema.ObjectIdColumn}, t.{DatabaseSchema.AttributesColumn}, t.geom");

@@ -15,6 +15,13 @@ namespace Honua.Protocols.Ogc.Api.Features.Services;
 
 internal static class OgcFeatureIdentifierResolver
 {
+    /// <summary>
+    /// Maximum number of values accepted in the <c>ids</c> query parameter, aligned
+    /// with the 1000-operation batch transaction cap. Prevents arbitrarily large IN
+    /// clauses/parameter lists from a single query string.
+    /// </summary>
+    private const int MaxIdsCount = 1000;
+
     private static readonly SqlFragment NoMatchingIdsFilter = new("FALSE", Array.Empty<object?>());
 
     private readonly record struct PublicIdField(string Name, PublicIdFieldType Type);
@@ -156,6 +163,12 @@ internal static class OgcFeatureIdentifierResolver
         if (tokens.Length == 0)
         {
             error = "Parameter 'ids' must contain at least one ID value.";
+            return false;
+        }
+
+        if (tokens.Length > MaxIdsCount)
+        {
+            error = $"Parameter 'ids' must not contain more than {MaxIdsCount} ID values.";
             return false;
         }
 

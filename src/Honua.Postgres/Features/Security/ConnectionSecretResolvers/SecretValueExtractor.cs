@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using Npgsql;
 
 namespace Honua.Postgres.Features.Security.ConnectionSecretResolvers;
 
@@ -84,7 +85,20 @@ internal static class SecretValueExtractor
         }
 
         var port = TryGetIntProperty(root, "port") ?? 5432;
-        connectionString = $"Host={host};Port={port};Username={username};Password={password};Database={database}";
+
+        // Build via NpgsqlConnectionStringBuilder so values containing ';' or '='
+        // (Secrets Manager generated passwords can include both) are quoted/escaped
+        // instead of corrupting the string or injecting extra connection parameters.
+        var builder = new NpgsqlConnectionStringBuilder
+        {
+            Host = host,
+            Port = port,
+            Username = username,
+            Password = password,
+            Database = database
+        };
+
+        connectionString = builder.ConnectionString;
         return true;
     }
 

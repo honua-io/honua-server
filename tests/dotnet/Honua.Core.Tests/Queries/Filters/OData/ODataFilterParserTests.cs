@@ -237,14 +237,16 @@ public class ODataFilterParserTests
     }
 
     [Fact]
-    public void Parse_DoubleLiteral_StoredAsDouble()
+    public void Parse_DecimalLiteral_StoredAsDecimal()
     {
+        // OData v4 ABNF: a dot-only numeric literal (no exponent) is Edm.Decimal;
+        // only scientific-notation forms carry Edm.Double semantics.
         var result = _parser.Parse("rating eq 42.0");
 
         var binary = (BinaryExpression)result;
         var literal = (Literal)binary.Right;
-        literal.Value.Should().BeOfType<double>();
-        literal.Value.Should().Be(42.0);
+        literal.Value.Should().BeOfType<decimal>();
+        literal.Value.Should().Be(42.0m);
         literal.Type.Should().Be(LiteralType.Number);
     }
 

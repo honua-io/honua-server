@@ -4,6 +4,7 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
 using Amazon.Lambda.Model;
+using Amazon.Runtime;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 
@@ -106,49 +107,62 @@ internal sealed partial class AwsLambdaGitOpsDeployBackend(
         var functionName = ResolveFunctionName(spec);
         var aliasName = ResolveAliasName(spec.Parameters);
         var region = ResolveRegion(spec.Parameters);
-        var aliasState = await aliasClient.GetAliasAsync(functionName, aliasName, region, cancellationToken).ConfigureAwait(false);
-        _ = TryResolveCanaryWeightFraction(spec.Parameters, out var canaryWeightFraction, out _);
-        var currentStableVersion = aliasState.FunctionVersion;
 
-        if (canaryWeightFraction.HasValue &&
-            !string.IsNullOrWhiteSpace(currentStableVersion) &&
-            !string.Equals(currentStableVersion, spec.DesiredRevision, StringComparison.Ordinal))
+        try
         {
-            await aliasClient.UpdateAliasAsync(
-                    functionName,
-                    aliasName,
-                    currentStableVersion,
-                    new Dictionary<string, double>(StringComparer.Ordinal)
-                    {
-                        [spec.DesiredRevision] = canaryWeightFraction.Value
-                    },
-                    region,
-                    cancellationToken)
-                .ConfigureAwait(false);
-        }
-        else if (!string.Equals(aliasState.FunctionVersion, spec.DesiredRevision, StringComparison.Ordinal) ||
-                 aliasState.AdditionalVersionWeights.Count > 0)
-        {
-            await aliasClient.UpdateAliasAsync(
-                    functionName,
-                    aliasName,
-                    spec.DesiredRevision,
-                    null,
-                    region,
-                    cancellationToken)
-                .ConfigureAwait(false);
-        }
+            var aliasState = await aliasClient.GetAliasAsync(functionName, aliasName, region, cancellationToken).ConfigureAwait(false);
+            _ = TryResolveCanaryWeightFraction(spec.Parameters, out var canaryWeightFraction, out _);
+            var currentStableVersion = aliasState.FunctionVersion;
 
-        Log.OperationSubmitted(logger, operation.OperationId, spec.TargetId, functionName, aliasName, spec.DesiredRevision);
-        return new DeploySubmissionResult
+            if (canaryWeightFraction.HasValue &&
+                !string.IsNullOrWhiteSpace(currentStableVersion) &&
+                !string.Equals(currentStableVersion, spec.DesiredRevision, StringComparison.Ordinal))
+            {
+                await aliasClient.UpdateAliasAsync(
+                        functionName,
+                        aliasName,
+                        currentStableVersion,
+                        new Dictionary<string, double>(StringComparer.Ordinal)
+                        {
+                            [spec.DesiredRevision] = canaryWeightFraction.Value
+                        },
+                        region,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            else if (!string.Equals(aliasState.FunctionVersion, spec.DesiredRevision, StringComparison.Ordinal) ||
+                     aliasState.AdditionalVersionWeights.Count > 0)
+            {
+                await aliasClient.UpdateAliasAsync(
+                        functionName,
+                        aliasName,
+                        spec.DesiredRevision,
+                        null,
+                        region,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            Log.OperationSubmitted(logger, operation.OperationId, spec.TargetId, functionName, aliasName, spec.DesiredRevision);
+            return new DeploySubmissionResult
+            {
+                Status = WorkflowOperationStatus.Submitted,
+                ProviderOperationId = aliasState.AliasArn ?? $"{functionName}:{aliasName}",
+                ObservedRevision = aliasState.FunctionVersion,
+                Message = canaryWeightFraction.HasValue && !string.IsNullOrWhiteSpace(currentStableVersion) && !string.Equals(currentStableVersion, spec.DesiredRevision, StringComparison.Ordinal)
+                    ? $"Lambda alias '{aliasName}' is routing {Math.Round(canaryWeightFraction.Value * 100, 3):0.###}% of traffic to published version '{spec.DesiredRevision}'."
+                    : $"Lambda alias '{aliasName}' is moving to published version '{spec.DesiredRevision}'."
+            };
+        }
+        catch (Exception ex) when (ex is AmazonServiceException or AmazonClientException)
         {
-            Status = WorkflowOperationStatus.Submitted,
-            ProviderOperationId = aliasState.AliasArn ?? $"{functionName}:{aliasName}",
-            ObservedRevision = aliasState.FunctionVersion,
-            Message = canaryWeightFraction.HasValue && !string.IsNullOrWhiteSpace(currentStableVersion) && !string.Equals(currentStableVersion, spec.DesiredRevision, StringComparison.Ordinal)
-                ? $"Lambda alias '{aliasName}' is routing {Math.Round(canaryWeightFraction.Value * 100, 3):0.###}% of traffic to published version '{spec.DesiredRevision}'."
-                : $"Lambda alias '{aliasName}' is moving to published version '{spec.DesiredRevision}'."
-        };
+            Log.AwsCallFailed(logger, operation.OperationId, spec.TargetId, ex.Message);
+            return new DeploySubmissionResult
+            {
+                Status = WorkflowOperationStatus.Failed,
+                Message = "Lambda alias update failed due to a transient AWS error. Check the deploy controller logs for details."
+            };
+        }
     }
 
     public async Task<DeployObservation> ObserveAsync(
@@ -242,6 +256,17 @@ internal sealed partial class AwsLambdaGitOpsDeployBackend(
                 Message = "Lambda alias was not found."
             };
         }
+        catch (Exception ex) when (ex is AmazonServiceException or AmazonClientException)
+        {
+            Log.AwsCallFailed(logger, operation.OperationId, spec.TargetId, ex.Message);
+            return new DeployObservation
+            {
+                Status = operation.Status,
+                ProviderOperationId = operation.ProviderOperationId,
+                ObservedRevision = operation.ObservedState,
+                Message = "Lambda alias lookup failed due to a transient AWS error. The reconciler will retry."
+            };
+        }
     }
 
     public async Task<DeployObservation> PromoteAsync(
@@ -255,27 +280,42 @@ internal sealed partial class AwsLambdaGitOpsDeployBackend(
         var functionName = ResolveFunctionName(spec);
         var aliasName = ResolveAliasName(spec.Parameters);
         var region = ResolveRegion(spec.Parameters);
-        var updatedAlias = await aliasClient.UpdateAliasAsync(
-                functionName,
-                aliasName,
-                spec.DesiredRevision,
-                null,
-                region,
-                cancellationToken)
-            .ConfigureAwait(false);
 
-        var hasWeightedTraffic = updatedAlias.AdditionalVersionWeights.Count > 0;
-        return new DeployObservation
+        try
         {
-            Status = string.Equals(updatedAlias.FunctionVersion, spec.DesiredRevision, StringComparison.Ordinal) && !hasWeightedTraffic
-                ? WorkflowOperationStatus.Succeeded
-                : WorkflowOperationStatus.Reconciling,
-            ProviderOperationId = updatedAlias.AliasArn ?? operation.ProviderOperationId,
-            ObservedRevision = updatedAlias.FunctionVersion,
-            Message = hasWeightedTraffic
-                ? $"Lambda alias '{aliasName}' is still draining weighted canary traffic before full promotion to version '{spec.DesiredRevision}'."
-                : $"Lambda alias '{aliasName}' has been promoted to published version '{spec.DesiredRevision}'."
-        };
+            var updatedAlias = await aliasClient.UpdateAliasAsync(
+                    functionName,
+                    aliasName,
+                    spec.DesiredRevision,
+                    null,
+                    region,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            var hasWeightedTraffic = updatedAlias.AdditionalVersionWeights.Count > 0;
+            return new DeployObservation
+            {
+                Status = string.Equals(updatedAlias.FunctionVersion, spec.DesiredRevision, StringComparison.Ordinal) && !hasWeightedTraffic
+                    ? WorkflowOperationStatus.Succeeded
+                    : WorkflowOperationStatus.Reconciling,
+                ProviderOperationId = updatedAlias.AliasArn ?? operation.ProviderOperationId,
+                ObservedRevision = updatedAlias.FunctionVersion,
+                Message = hasWeightedTraffic
+                    ? $"Lambda alias '{aliasName}' is still draining weighted canary traffic before full promotion to version '{spec.DesiredRevision}'."
+                    : $"Lambda alias '{aliasName}' has been promoted to published version '{spec.DesiredRevision}'."
+            };
+        }
+        catch (Exception ex) when (ex is AmazonServiceException or AmazonClientException)
+        {
+            Log.AwsCallFailed(logger, operation.OperationId, spec.TargetId, ex.Message);
+            return new DeployObservation
+            {
+                Status = operation.Status,
+                ProviderOperationId = operation.ProviderOperationId,
+                ObservedRevision = operation.ObservedState,
+                Message = "Lambda alias promotion failed due to a transient AWS error. The reconciler will retry."
+            };
+        }
     }
 
     public async Task<DeployObservation> RollbackAsync(
@@ -301,23 +341,38 @@ internal sealed partial class AwsLambdaGitOpsDeployBackend(
         var functionName = ResolveFunctionName(spec);
         var aliasName = ResolveAliasName(spec.Parameters);
         var region = ResolveRegion(spec.Parameters);
-        var updatedAlias = await aliasClient.UpdateAliasAsync(
-                functionName,
-                aliasName,
-                rollbackVersion,
-                null,
-                region,
-                cancellationToken)
-            .ConfigureAwait(false);
 
-        Log.RollbackRequested(logger, operation.OperationId, spec.TargetId, functionName, aliasName, rollbackVersion);
-        return new DeployObservation
+        try
         {
-            Status = WorkflowOperationStatus.RollbackRequested,
-            ProviderOperationId = updatedAlias.AliasArn ?? operation.ProviderOperationId,
-            ObservedRevision = updatedAlias.FunctionVersion,
-            Message = $"Lambda alias '{aliasName}' is moving back to published version '{rollbackVersion}'."
-        };
+            var updatedAlias = await aliasClient.UpdateAliasAsync(
+                    functionName,
+                    aliasName,
+                    rollbackVersion,
+                    null,
+                    region,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            Log.RollbackRequested(logger, operation.OperationId, spec.TargetId, functionName, aliasName, rollbackVersion);
+            return new DeployObservation
+            {
+                Status = WorkflowOperationStatus.RollbackRequested,
+                ProviderOperationId = updatedAlias.AliasArn ?? operation.ProviderOperationId,
+                ObservedRevision = updatedAlias.FunctionVersion,
+                Message = $"Lambda alias '{aliasName}' is moving back to published version '{rollbackVersion}'."
+            };
+        }
+        catch (Exception ex) when (ex is AmazonServiceException or AmazonClientException)
+        {
+            Log.AwsCallFailed(logger, operation.OperationId, spec.TargetId, ex.Message);
+            return new DeployObservation
+            {
+                Status = operation.Status,
+                ProviderOperationId = operation.ProviderOperationId,
+                ObservedRevision = operation.ObservedState,
+                Message = "Lambda alias rollback failed due to a transient AWS error. The reconciler will retry."
+            };
+        }
     }
 
     private static string ResolveFunctionName(DeployOperationSpec spec)
@@ -402,5 +457,8 @@ internal sealed partial class AwsLambdaGitOpsDeployBackend(
 
         [LoggerMessage(9032, LogLevel.Warning, "Lambda alias lookup failed for workflow operation {OperationId} targeting {TargetId}: {ErrorMessage}")]
         public static partial void AliasLookupFailed(ILogger logger, string operationId, string targetId, string errorMessage);
+
+        [LoggerMessage(9033, LogLevel.Warning, "Transient AWS error in Lambda deploy backend for workflow operation {OperationId} targeting {TargetId}: {ErrorMessage}")]
+        public static partial void AwsCallFailed(ILogger logger, string operationId, string targetId, string errorMessage);
     }
 }

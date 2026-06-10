@@ -252,9 +252,12 @@ internal static partial class MapServerEndpoints
                 return StandardErrorHelpers.CreateBadRequest(context, mapExtentError ?? "Invalid mapExtent parameter. Expected format: xmin,ymin,xmax,ymax");
             }
 
+            // GeoServices mapExtent is always xmin,ymin,xmax,ymax in CRS x/y (EastNorth) order.
+            // Esri clients never send lat/lon-first extents; using the geographic CRS axis
+            // order (NorthEast) silently transposes extents where |lon|<=90.
             if (!TryParseBbox(
                     normalizedMapExtent,
-                    mapExtentCrsDefinition.AxisOrder,
+                    AxisOrder.EastNorth,
                     mapExtentCrsDefinition.IsGeographic,
                     out var mapExtent))
             {
@@ -1102,10 +1105,13 @@ internal static partial class MapServerEndpoints
                 : candidates.Where(l => ids.Contains(l.PublicLayerId));
         }
 
+        // publishedLayers is ordered ascending by PublicLayerId (layer 0 = topmost TOC entry).
+        // TopLayerFirst:true keeps that ascending order so Top mode probes layer 0 first,
+        // matching Esri's "top" identify semantics (return results from the topmost visible layer).
         return new IdentifyLayerSelection(
             mode,
             candidates.Select(l => new IdentifyRenderLayer(l, l.PublicLayerId, null)).ToArray(),
-            TopLayerFirst: false);
+            TopLayerFirst: true);
     }
 
     private static IdentifyLayerDescriptor[] ResolveIdentifyAccessCandidateLayers(

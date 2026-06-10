@@ -45,6 +45,9 @@ public static class ServiceCollectionExtensions
         // GeoTIFF / Cloud Optimized GeoTIFF coverage import service (issue #1030 slice 2).
         // GetCoverage downloads can be large, so the HTTP client uses a long base timeout
         // while the import service applies its own per-request budget from the payload.
+        // The pinned-DNS handler enforces the private/loopback address policy at connect
+        // time (SSRF guard, incl. DNS rebinding and redirects), mirroring the sibling
+        // migration clients; the import service scopes the allow-unsafe-local-URLs flag.
         services.AddResilientHttpClient<OgcCoverageImportService>(
             "ogc-coverage-import",
             HttpResiliencePolicies.SlowServiceDefaults,
@@ -52,7 +55,8 @@ public static class ServiceCollectionExtensions
             {
                 client.DefaultRequestHeaders.Add("User-Agent", "HonuaServer/1.0");
                 client.Timeout = TimeSpan.FromMinutes(10);
-            });
+            },
+            configureHandler: static () => OgcServiceMigrationScanner.CreatePinnedDnsHttpMessageHandler());
         services.TryAddScoped<IOgcCoverageImportService>(serviceProvider =>
             serviceProvider.GetRequiredService<OgcCoverageImportService>());
 

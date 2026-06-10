@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Concurrent;
 using System.Security.Claims;
 using Honua.Core.Features.Authorization.Abstractions;
 using Microsoft.AspNetCore.Authentication;
@@ -11,6 +12,33 @@ using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
 
 namespace Honua.Infrastructure.Authentication;
+
+/// <summary>
+/// Singleton cache of per-authority <see cref="ConfigurationManager{T}"/> instances used by
+/// <see cref="OidcPortalCredentialVerifier"/>. Caching these singletons means that the
+/// JWKS/metadata discovery result (including the signing keys) is retained across requests
+/// instead of being fetched once per DI scope.
+/// </summary>
+internal sealed class OidcConfigurationManagerCache
+{
+    private readonly ConcurrentDictionary<string, ConfigurationManager<OpenIdConnectConfiguration>> _managers =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Returns the shared <see cref="ConfigurationManager{T}"/> for the given
+    /// <paramref name="metadataAddress"/>, creating it on first use.
+    /// </summary>
+    public ConfigurationManager<OpenIdConnectConfiguration> GetOrCreate(
+        string metadataAddress,
+        bool requireHttps)
+    {
+        return _managers.GetOrAdd(metadataAddress, addr =>
+            new ConfigurationManager<OpenIdConnectConfiguration>(
+                addr,
+                new OpenIdConnectConfigurationRetriever(),
+                new HttpDocumentRetriever { RequireHttps = requireHttps }));
+    }
+}
 
 /// <summary>
 /// OIDC-backed <see cref="IPortalCredentialVerifier"/> (#1370). A Portal named-user
@@ -54,13 +82,18 @@ internal sealed class OidcPortalCredentialVerifier : IPortalCredentialVerifier
     /// <param name="oidcOptions">The OIDC authentication options.</param>
     /// <param name="claimsTransformation">The shared OIDC claims transformation
     /// used to normalize provider claims into application claims.</param>
+    /// <param name="configurationManagerCache">Singleton cache of per-authority
+    /// <see cref="ConfigurationManager{T}"/> instances so JWKS metadata is shared
+    /// across request scopes rather than fetched on every credential check.</param>
     /// <param name="logger">Diagnostics logger.</param>
     public OidcPortalCredentialVerifier(
         IOptions<OidcAuthenticationOptions> oidcOptions,
         IClaimsTransformation claimsTransformation,
+        OidcConfigurationManagerCache configurationManagerCache,
         ILogger<OidcPortalCredentialVerifier> logger)
     {
         ArgumentNullException.ThrowIfNull(oidcOptions);
+        ArgumentNullException.ThrowIfNull(configurationManagerCache);
         _oidcOptions = oidcOptions.Value ?? throw new ArgumentNullException(nameof(oidcOptions));
         _claimsTransformation = claimsTransformation ?? throw new ArgumentNullException(nameof(claimsTransformation));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -71,10 +104,11 @@ internal sealed class OidcPortalCredentialVerifier : IPortalCredentialVerifier
         if (!string.IsNullOrWhiteSpace(authority))
         {
             var metadataAddress = authority.TrimEnd('/') + "/.well-known/openid-configuration";
-            _configurationManager = new ConfigurationManager<OpenIdConnectConfiguration>(
+            // Obtain the shared ConfigurationManager so its JWKS/metadata cache is
+            // retained across request scopes (the verifier is registered AddScoped).
+            _configurationManager = configurationManagerCache.GetOrCreate(
                 metadataAddress,
-                new OpenIdConnectConfigurationRetriever(),
-                new HttpDocumentRetriever { RequireHttps = _oidcOptions.RequireHttps });
+                _oidcOptions.RequireHttps);
         }
     }
 

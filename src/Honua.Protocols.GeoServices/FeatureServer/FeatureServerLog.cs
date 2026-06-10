@@ -284,6 +284,18 @@ internal static partial class FeatureServerLog
     public static partial void FeatureDeleteFailed(ILogger logger, int index, string errorMessage, Exception exception);
 
     /// <summary>
+    /// Logs when reading the pre-delete feature snapshot fails. The snapshot only
+    /// enriches delete events/plugin hooks, so the failure is non-fatal but should
+    /// be visible to operators.
+    /// </summary>
+    /// <param name="logger">The logger instance.</param>
+    /// <param name="layerId">The storage layer identifier.</param>
+    /// <param name="objectId">The object id of the feature being deleted.</param>
+    /// <param name="exception">The exception that caused the failure.</param>
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Failed to read pre-delete snapshot for layer {LayerId} objectId {ObjectId}; delete events will omit the feature payload")]
+    public static partial void DeleteSnapshotReadFailed(ILogger logger, int layerId, long objectId, Exception exception);
+
+    /// <summary>
     /// Logs when an attribute rule's Arcade expression is outside the supported safe
     /// subset and is routed out of scope (skipped) on the edit path rather than enforced.
     /// </summary>

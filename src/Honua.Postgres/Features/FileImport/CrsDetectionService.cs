@@ -308,9 +308,13 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
 
     private static partial class CrsLog
     {
+        // Warning, not Debug: this catch only fires on infrastructure failures (an unknown
+        // SRID returns a null scalar, not an exception). At Debug a transient DB outage made
+        // every import fail with a misleading "SRID is not registered" error while the real
+        // cause was invisible at production log levels.
         [LoggerMessage(
             EventId = 7430,
-            Level = LogLevel.Debug,
+            Level = LogLevel.Warning,
             Message = "SRID validation failed for srid={Srid}, rejecting to prevent data corruption")]
         public static partial void SridValidationFailed(ILogger logger, Exception exception, int srid);
 

@@ -380,7 +380,13 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
         NpgsqlTransaction transaction,
         CancellationToken cancellationToken)
     {
-        var sql = $"SELECT etag FROM {_currentTable} WHERE environment = @environment";
+        // FOR UPDATE serializes concurrent SaveAsync calls on the environment's current row.
+        // Without it the etag check is a TOCTOU race: two writers carrying the same
+        // expectedEtag both pass the comparison, compute the same next revision, and the
+        // second snapshot upsert silently overwrites the first writer's document. With the
+        // row lock the loser blocks until the winner commits, observes the winner's etag,
+        // and surfaces the existing mismatch InvalidOperationException instead.
+        var sql = $"SELECT etag FROM {_currentTable} WHERE environment = @environment FOR UPDATE";
         await using var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.AddWithValue("@environment", _environment);
         var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);

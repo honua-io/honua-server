@@ -31,10 +31,21 @@ internal static class FeatureCollectionArtifact
     /// malformed input so executors can surface a clean job failure rather than
     /// throwing.
     /// </summary>
+    /// <param name="value">The data URI string to parse.</param>
+    /// <param name="features">The parsed feature collection on success.</param>
+    /// <param name="error">A descriptive error on failure.</param>
+    /// <param name="maxDecodedBytes">
+    /// Optional ceiling on the decoded payload size in bytes. When set the
+    /// base64 payload length is checked before decoding (base64 is ~4/3 of the
+    /// decoded size) so an over-limit input is rejected without allocating the
+    /// full decoded buffer. Mirrors the output ceiling enforced by executors via
+    /// <see cref="GeoprocessingExecutorOptions.MaxArtifactBytes"/>.
+    /// </param>
     public static bool TryParseDataUri(
         string? value,
         out FeatureCollection features,
-        out string error)
+        out string error,
+        long maxDecodedBytes = long.MaxValue)
     {
         features = new FeatureCollection();
         error = "";
@@ -52,6 +63,16 @@ internal static class FeatureCollectionArtifact
         }
 
         var payload = value[DataUriPrefix.Length..];
+
+        // Guard against over-limit inputs before allocating the full decoded buffer.
+        // Base64 encodes 3 bytes as 4 characters, so payload.Length * 3 / 4 is an
+        // upper bound on the decoded byte count (padding may shorten it slightly).
+        if (maxDecodedBytes < long.MaxValue && (long)payload.Length > maxDecodedBytes / 3L * 4L + 4L)
+        {
+            error = $"data URI payload exceeds the configured size limit ({maxDecodedBytes} bytes decoded)";
+            return false;
+        }
+
         byte[] bytes;
         try
         {
@@ -66,6 +87,12 @@ internal static class FeatureCollectionArtifact
         if (bytes.Length == 0)
         {
             error = "data URI payload decoded to zero bytes";
+            return false;
+        }
+
+        if (maxDecodedBytes < long.MaxValue && bytes.Length > maxDecodedBytes)
+        {
+            error = $"data URI payload decoded size {bytes.Length} bytes exceeds the configured size limit ({maxDecodedBytes} bytes)";
             return false;
         }
 

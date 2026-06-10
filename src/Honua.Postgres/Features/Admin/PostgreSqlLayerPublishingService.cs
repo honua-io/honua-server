@@ -274,6 +274,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         await EnsureServiceAsync(connection, transaction, serviceName, srid, request.ConnectionId, cancellationToken);
+        await AcquireLayerPublishLockAsync(connection, transaction, schema, table, cancellationToken);
         var existingLayerId = await FindExistingLayerAsync(connection, transaction, schema, table, cancellationToken);
         if (existingLayerId.HasValue)
         {

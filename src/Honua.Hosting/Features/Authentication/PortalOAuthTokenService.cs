@@ -67,16 +67,34 @@ internal sealed class PortalOAuthTokenService(
             return PortalOAuthTokenResult.Failure("invalid_grant", "Authorization code is invalid or expired.");
         }
 
-        if (!string.IsNullOrWhiteSpace(request.ClientId) &&
-            !string.Equals(record.ClientId, request.ClientId, StringComparison.Ordinal))
+        // RFC 6749 §4.1.3: client_id and redirect_uri bindings are mandatory when the
+        // authorization code carries them; omitting them from the token request must not
+        // bypass the checks (an attacker who exfiltrates a code would otherwise redeem it
+        // without proving they are the legitimate client).
+        if (!string.IsNullOrWhiteSpace(record.ClientId))
         {
-            return PortalOAuthTokenResult.Failure("invalid_grant", "Authorization code was issued to a different client.");
+            if (string.IsNullOrWhiteSpace(request.ClientId))
+            {
+                return PortalOAuthTokenResult.Failure("invalid_grant", "client_id is required for this authorization code.");
+            }
+
+            if (!string.Equals(record.ClientId, request.ClientId, StringComparison.Ordinal))
+            {
+                return PortalOAuthTokenResult.Failure("invalid_grant", "Authorization code was issued to a different client.");
+            }
         }
 
-        if (!string.IsNullOrWhiteSpace(request.RedirectUri) &&
-            !string.Equals(record.RedirectUri, request.RedirectUri, StringComparison.Ordinal))
+        if (!string.IsNullOrWhiteSpace(record.RedirectUri))
         {
-            return PortalOAuthTokenResult.Failure("invalid_grant", "redirect_uri does not match the authorization request.");
+            if (string.IsNullOrWhiteSpace(request.RedirectUri))
+            {
+                return PortalOAuthTokenResult.Failure("invalid_grant", "redirect_uri is required because it was included in the authorization request.");
+            }
+
+            if (!string.Equals(record.RedirectUri, request.RedirectUri, StringComparison.Ordinal))
+            {
+                return PortalOAuthTokenResult.Failure("invalid_grant", "redirect_uri does not match the authorization request.");
+            }
         }
 
         // Hard PKCE requirement (#1484): when enabled, an authorization code that was
@@ -119,10 +137,20 @@ internal sealed class PortalOAuthTokenService(
             return PortalOAuthTokenResult.Failure("invalid_grant", "Refresh token is invalid or expired.");
         }
 
-        if (!string.IsNullOrWhiteSpace(request.ClientId) &&
-            !string.Equals(record.ClientId, request.ClientId, StringComparison.Ordinal))
+        // RFC 6749 §6: refresh_token grants must include client_id when the record
+        // carries one — without PKCE on refresh tokens the client_id is the only
+        // binding preventing a stolen token from being replayed by any caller.
+        if (!string.IsNullOrWhiteSpace(record.ClientId))
         {
-            return PortalOAuthTokenResult.Failure("invalid_grant", "Refresh token was issued to a different client.");
+            if (string.IsNullOrWhiteSpace(request.ClientId))
+            {
+                return PortalOAuthTokenResult.Failure("invalid_grant", "client_id is required for this refresh token.");
+            }
+
+            if (!string.Equals(record.ClientId, request.ClientId, StringComparison.Ordinal))
+            {
+                return PortalOAuthTokenResult.Failure("invalid_grant", "Refresh token was issued to a different client.");
+            }
         }
 
         // Refresh-token rotation (#1484): when enabled (the default) the presented

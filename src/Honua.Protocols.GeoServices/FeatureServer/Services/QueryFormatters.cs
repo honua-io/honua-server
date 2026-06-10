@@ -14,6 +14,7 @@ using Honua.Infrastructure.GeoJson;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Services;
 using Microsoft.Extensions.Options;
+using NetTopologySuite.Algorithm;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 using NtsGeometryType = NetTopologySuite.IO.GeometryType;
@@ -808,9 +809,13 @@ internal sealed class QueryFormatter : IQueryFormatter
     {
         var rings = new List<double[][]>();
 
+        // RFC 7946 §3.1.6 (right-hand rule): exterior rings MUST be counter-clockwise
+        // and holes clockwise. Stored geometry commonly carries the Esri convention
+        // (CW exteriors) unchanged from applyEdits, so normalize here — the mirror
+        // image of GeoServicesGeometryConverter.BuildRingCoordinates on the Esri-JSON path.
         if (polygon.ExteriorRing != null && !polygon.ExteriorRing.IsEmpty)
         {
-            rings.Add(BuildLineStringCoordinates(polygon.ExteriorRing));
+            rings.Add(BuildGeoJsonRingCoordinates(polygon.ExteriorRing, counterClockwise: true));
         }
 
         for (var i = 0; i < polygon.NumInteriorRings; i++)
@@ -818,11 +823,28 @@ internal sealed class QueryFormatter : IQueryFormatter
             var interiorRing = polygon.GetInteriorRingN(i);
             if (interiorRing != null && !interiorRing.IsEmpty)
             {
-                rings.Add(BuildLineStringCoordinates(interiorRing));
+                rings.Add(BuildGeoJsonRingCoordinates(interiorRing, counterClockwise: false));
             }
         }
 
         return rings.ToArray();
+    }
+
+    private static double[][] BuildGeoJsonRingCoordinates(LineString ring, bool counterClockwise)
+    {
+        var coords = BuildLineStringCoordinates(ring);
+        if (coords.Length < 4)
+        {
+            return coords;
+        }
+
+        var isCcw = Orientation.IsCCW(ring.Coordinates);
+        if (counterClockwise != isCcw)
+        {
+            Array.Reverse(coords);
+        }
+
+        return coords;
     }
 
     private static double[][] BuildMultiPointCoordinates(MultiPoint multiPoint)
@@ -919,7 +941,7 @@ internal sealed class StreamingQueryFormatter
         _geometryLimits = limitsOptions?.Value?.Geometry ?? new GeometryLimits();
     }
 
-    public async Task StreamAsGeoServicesJsonAsync(
+    public Task StreamAsGeoServicesJsonAsync(
         IAsyncEnumerable<Feature> features,
         MetadataV2Resource resource,
         bool returnGeometry,
@@ -930,6 +952,39 @@ internal sealed class StreamingQueryFormatter
         double? maxAllowableOffset,
         string[]? outFields,
         bool hasMoreResults,
+        PipeWriter outputStream,
+        CancellationToken cancellationToken = default)
+        => StreamAsGeoServicesJsonAsync(
+            features,
+            resource,
+            returnGeometry,
+            outputSrid,
+            returnZ,
+            returnM,
+            geometryPrecision,
+            maxAllowableOffset,
+            outFields,
+            () => hasMoreResults,
+            outputStream,
+            cancellationToken);
+
+    /// <summary>
+    /// Streams the GeoServices f=json response. <paramref name="hasMoreResults"/> is
+    /// evaluated AFTER the feature enumeration completes (exceededTransferLimit is
+    /// written after the features array), so the flag can be produced by a pass-through
+    /// limit probe without buffering the result set.
+    /// </summary>
+    public async Task StreamAsGeoServicesJsonAsync(
+        IAsyncEnumerable<Feature> features,
+        MetadataV2Resource resource,
+        bool returnGeometry,
+        int? outputSrid,
+        bool returnZ,
+        bool returnM,
+        int? geometryPrecision,
+        double? maxAllowableOffset,
+        string[]? outFields,
+        Func<bool> hasMoreResults,
         PipeWriter outputStream,
         CancellationToken cancellationToken = default)
     {
@@ -1023,14 +1078,14 @@ internal sealed class StreamingQueryFormatter
         // Always emit exceededTransferLimit (including false). Esri's GeoServices query
         // contract always returns this field; omitting the false case made the ArcGIS API
         // for Python paginator dereference a missing value (fetched >= None -> TypeError).
-        writer.WriteBoolean("exceededTransferLimit", hasMoreResults);
+        writer.WriteBoolean("exceededTransferLimit", hasMoreResults());
 
         writer.WriteEndObject();
 
         await writer.FlushAsync(cancellationToken);
     }
 
-    public async Task StreamAsGeoJsonAsync(
+    public Task StreamAsGeoJsonAsync(
         IAsyncEnumerable<Feature> features,
         MetadataV2Resource resource,
         bool returnGeometry,
@@ -1040,6 +1095,37 @@ internal sealed class StreamingQueryFormatter
         double? maxAllowableOffset,
         string[]? outFields,
         bool hasMoreResults,
+        PipeWriter outputStream,
+        CancellationToken cancellationToken = default)
+        => StreamAsGeoJsonAsync(
+            features,
+            resource,
+            returnGeometry,
+            returnZ,
+            returnM,
+            geometryPrecision,
+            maxAllowableOffset,
+            outFields,
+            () => hasMoreResults,
+            outputStream,
+            cancellationToken);
+
+    /// <summary>
+    /// Streams the GeoJSON response. <paramref name="hasMoreResults"/> is evaluated
+    /// AFTER the feature enumeration completes (exceededTransferLimit is written after
+    /// the features array), so the flag can be produced by a pass-through limit probe
+    /// without buffering the result set.
+    /// </summary>
+    public async Task StreamAsGeoJsonAsync(
+        IAsyncEnumerable<Feature> features,
+        MetadataV2Resource resource,
+        bool returnGeometry,
+        bool returnZ,
+        bool returnM,
+        int? geometryPrecision,
+        double? maxAllowableOffset,
+        string[]? outFields,
+        Func<bool> hasMoreResults,
         PipeWriter outputStream,
         CancellationToken cancellationToken = default)
     {
@@ -1086,7 +1172,7 @@ internal sealed class StreamingQueryFormatter
 
         writer.WriteEndArray();
 
-        if (hasMoreResults)
+        if (hasMoreResults())
         {
             // Top-level only; the nested `properties` object duplicated this flag and is
             // not part of the GeoJSON spec.

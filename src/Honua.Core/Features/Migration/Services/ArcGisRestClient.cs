@@ -101,8 +101,11 @@ internal sealed partial class ArcGisRestClient
                         credentials);
                     layers.Add(layerInfo);
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
                 {
+                    // Per-layer failures (including per-request timeouts) degrade to a
+                    // warning, but caller cancellation must abort the whole discovery
+                    // instead of logging every remaining layer as failed.
                     Log.LayerDiscoveryFailed(_logger, layer.Id, layer.Name ?? "unknown", ex);
                 }
             }
@@ -405,13 +408,17 @@ internal sealed partial class ArcGisRestClient
                 using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 timeoutCts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
                 using var request = CreateGetRequest(url, credentials);
-                return await _httpClient.SendAsync(request, timeoutCts.Token).ConfigureAwait(false);
+                return await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeoutCts.Token).ConfigureAwait(false);
             },
             cancellationToken).ConfigureAwait(false);
         ThrowIfAuthenticationFailure(response, url, credentials);
         response.EnsureSuccessStatusCode();
 
-        var content = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        // Bound the buffered body: the URL is operator-supplied, so response size is
+        // source-controlled and must not be read into memory without a ceiling.
+        var content = await MigrationHttpContentReader
+            .ReadStringWithLimitAsync(response, MigrationHttpContentReader.DefaultMaxResponseBytes, cancellationToken)
+            .ConfigureAwait(false);
 
         try
         {

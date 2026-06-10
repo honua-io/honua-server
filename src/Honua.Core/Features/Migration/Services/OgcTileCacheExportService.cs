@@ -79,6 +79,13 @@ public sealed partial class OgcTileCacheExportService : IOgcTileCacheExportServi
             throw new ArgumentException("MinZoom/MaxZoom must form a non-negative inclusive range.", nameof(request));
         }
 
+        // The tile-fetch HttpClient shares the scanner's pinned-DNS handler, whose connect
+        // callback reads the scanner's ambient allow-unsafe-local-URLs flag. The scanner only
+        // scopes that flag around the scan itself, so without this scope every tile fetch
+        // against an explicitly-allowed loopback/private WMTS would be rejected with
+        // "disallowed network address" after a successful scan.
+        using var unsafeLocalUrlScope = OgcServiceMigrationScanner.CreateUnsafeLocalUrlScope(request.AllowUnsafeLocalUrls);
+
         var stopwatch = Stopwatch.StartNew();
         var jobId = string.IsNullOrWhiteSpace(request.JobId)
             ? Guid.NewGuid().ToString("N")[..8]

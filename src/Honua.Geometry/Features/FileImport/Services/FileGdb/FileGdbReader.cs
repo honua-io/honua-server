@@ -118,6 +118,14 @@ internal static class FileGdbReader
         {
             yield break;
         }
+        catch (EndOfStreamException)
+        {
+            yield break;
+        }
+        catch (IOException)
+        {
+            yield break;
+        }
 
         using (tableReader)
         {
@@ -313,6 +321,14 @@ internal static class FileGdbReader
             tableReader = GdbTableReader.Open(tablePath);
         }
         catch (InvalidDataException)
+        {
+            return null;
+        }
+        catch (EndOfStreamException)
+        {
+            return null;
+        }
+        catch (IOException)
         {
             return null;
         }

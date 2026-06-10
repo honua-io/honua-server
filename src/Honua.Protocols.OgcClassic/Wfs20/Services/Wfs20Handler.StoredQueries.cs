@@ -43,6 +43,12 @@ namespace Honua.Protocols.Ogc.Classic.Wfs20.Services;
 /// </summary>
 internal sealed partial class Wfs20Handler
 {
+    // Hard cap on managed stored queries to prevent unbounded memory growth.
+    // WFS 2.0 CITE Manage-Stored-Queries conformance requires mutation operations to
+    // succeed but does not mandate unlimited cardinality. Reject CreateStoredQuery once
+    // the process-wide count reaches this threshold and return OperationProcessingFailed.
+    private const int MaxManagedStoredQueryCount = 1000;
+
     private static readonly ConcurrentDictionary<string, StoredQueryDefinition> ManagedStoredQueries =
         new(StringComparer.OrdinalIgnoreCase);
 
@@ -139,6 +145,15 @@ internal sealed partial class Wfs20Handler
                 "DuplicateStoredQueryIdValue",
                 $"Stored query '{id}' already exists.",
                 id);
+        }
+
+        if (ManagedStoredQueries.Count >= MaxManagedStoredQueryCount)
+        {
+            return Wfs20ErrorResults.CreateBadRequest(
+                context,
+                "OperationProcessingFailed",
+                $"The maximum number of managed stored queries ({MaxManagedStoredQueryCount.ToString(CultureInfo.InvariantCulture)}) has been reached.",
+                "storedquery_id");
         }
 
         var queryExpressionText = definitionElement.Elements()

@@ -94,13 +94,32 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
             // update/delete uploads can conflict; inserts use server-assigned ids and cannot collide
             // on an existing (layerId, objectId) key here (duplicate-insert detection is owned by the
             // edit pipeline's uniqueness handling and #1287).
-            var serverChanges = await _changeTracker
-                .GetChangesSinceAsync(request.BaseGeneration, [layer.StorageLayerId], cancellationToken)
-                .ConfigureAwait(false);
-            var serverByObjectId = new Dictionary<long, FeatureChangeOperation>();
-            foreach (var change in serverChanges)
+            var uploadedObjectIds = new HashSet<long>();
+            foreach (var edit in edits)
             {
-                serverByObjectId[change.ObjectId] = change.Operation;
+                if (edit.Kind != FeatureEditOperationKind.Create && edit.ObjectId is { } uploadedId)
+                {
+                    uploadedObjectIds.Add(uploadedId);
+                }
+            }
+
+            // Only the uploaded ids can ever be probed below, so keep the conflict map bounded by the
+            // upload size rather than by the full server change history since the base generation.
+            // (Pushing the id filter into IChangeTracker/SQL so a long-offline replica does not
+            // materialize the entire change log is a provider-side follow-up.)
+            var serverByObjectId = new Dictionary<long, FeatureChangeOperation>();
+            if (uploadedObjectIds.Count > 0)
+            {
+                var serverChanges = await _changeTracker
+                    .GetChangesSinceAsync(request.BaseGeneration, [layer.StorageLayerId], cancellationToken)
+                    .ConfigureAwait(false);
+                foreach (var change in serverChanges)
+                {
+                    if (uploadedObjectIds.Contains(change.ObjectId))
+                    {
+                        serverByObjectId[change.ObjectId] = change.Operation;
+                    }
+                }
             }
 
             var editsToApply = ImmutableArray.CreateBuilder<ReplicaUploadEdit>(edits.Length);

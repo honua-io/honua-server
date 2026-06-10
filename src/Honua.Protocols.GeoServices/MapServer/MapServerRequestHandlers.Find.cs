@@ -27,6 +27,11 @@ internal static partial class MapServerEndpoints
 {
     private const string InvalidFindRequestMessage = "Invalid find request parameters.";
 
+    // Upper bound on rows scanned per layer when the search text cannot be pushed
+    // into SQL (unusual field names, provider translation failure). Without it a
+    // find request that matches nothing reads the entire table through the server.
+    private const int MaxFindScannedRowsPerLayer = 10_000;
+
     private sealed record FindLayerDescriptor(
         int PublicLayerId,
         int StorageLayerId,
@@ -218,21 +223,28 @@ internal static partial class MapServerEndpoints
                 var displayField = ResolveDisplayField(layer.Resource, objectIdField);
 
                 SqlFragment? layerSqlFilter = null;
-                if (!string.IsNullOrWhiteSpace(layerDef))
+                if (!string.IsNullOrWhiteSpace(layerDef) &&
+                    !TryTranslateFindFilter(filterExpressionService, layer.Resource, layerDef, out layerSqlFilter))
                 {
-                    var parseResult = filterExpressionService.Parse(FilterLanguage.ArcGisSql, layerDef);
-                    if (!parseResult.IsSuccess)
-                    {
-                        continue;
-                    }
+                    continue;
+                }
 
-                    var translationResult = filterExpressionService.Translate(parseResult.Expression, layer.Resource);
-                    if (!translationResult.IsSuccess)
-                    {
-                        continue;
-                    }
-
-                    layerSqlFilter = translationResult.SqlFilter;
+                // Push the search text into SQL so the database filters rows instead of the
+                // server scanning the whole table; when the clause cannot be built or
+                // translated (unusual field names, provider limitations) fall back to a
+                // capped in-memory scan. The in-memory match below still decides which
+                // field(s) produced each result.
+                var searchPushedDown = false;
+                var searchWhere = BuildFindSearchWhereClause(fieldsToSearch, searchText, contains);
+                if (searchWhere is not null &&
+                    TryTranslateFindFilter(
+                        filterExpressionService,
+                        layer.Resource,
+                        CombineDefinitionExpressions(layerDef, searchWhere)!,
+                        out var combinedFilter))
+                {
+                    layerSqlFilter = combinedFilter;
+                    searchPushedDown = true;
                 }
 
                 var outFields = fieldsToSearch
@@ -327,6 +339,10 @@ internal static partial class MapServerEndpoints
                     }
 
                     offset += queryResult.Items.Length;
+                    if (!searchPushedDown && offset >= MaxFindScannedRowsPerLayer)
+                    {
+                        break;
+                    }
                 }
             }
 
@@ -488,12 +504,77 @@ internal static partial class MapServerEndpoints
         => value.Replace("'", "''", StringComparison.Ordinal);
 
     /// <summary>
-    /// Escapes LIKE wildcard characters (% and _) in a value that is already
-    /// quote-escaped, so they are treated as literal characters.
+    /// Escapes LIKE wildcard characters (backslash, % and _) in a value that is
+    /// already quote-escaped, so they are treated as literal characters.
     /// </summary>
     private static string EscapeLikeWildcards(string value)
-        => value.Replace("%", "\\%", StringComparison.Ordinal)
+        => value.Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("%", "\\%", StringComparison.Ordinal)
             .Replace("_", "\\_", StringComparison.Ordinal);
+
+    /// <summary>
+    /// Builds an ArcGIS SQL where clause that ORs a case-insensitive match of
+    /// <paramref name="searchText"/> across the searched string fields, or returns
+    /// <c>null</c> when any field name is not a plain identifier (the caller then
+    /// falls back to the capped in-memory scan).
+    /// </summary>
+    private static string? BuildFindSearchWhereClause(
+        MetadataV2Field[] fieldsToSearch,
+        string searchText,
+        bool contains)
+    {
+        if (fieldsToSearch.Any(static field => !IsPlainSqlIdentifier(field.Name)))
+        {
+            return null;
+        }
+
+        var literal = EscapeSqlStringLiteral(searchText);
+        var conditions = fieldsToSearch.Select(field => contains
+            ? $"UPPER({field.Name}) LIKE UPPER('%{EscapeLikeWildcards(literal)}%')"
+            : $"UPPER({field.Name}) = UPPER('{literal}')");
+        return $"({string.Join(" OR ", conditions)})";
+    }
+
+    private static bool IsPlainSqlIdentifier(string name)
+    {
+        if (string.IsNullOrEmpty(name) || (!char.IsAsciiLetter(name[0]) && name[0] != '_'))
+        {
+            return false;
+        }
+
+        foreach (var ch in name.AsSpan(1))
+        {
+            if (!char.IsAsciiLetterOrDigit(ch) && ch != '_')
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool TryTranslateFindFilter(
+        IFilterExpressionService filterExpressionService,
+        MetadataV2Resource resource,
+        string whereClause,
+        out SqlFragment? sqlFilter)
+    {
+        sqlFilter = null;
+        var parseResult = filterExpressionService.Parse(FilterLanguage.ArcGisSql, whereClause);
+        if (!parseResult.IsSuccess)
+        {
+            return false;
+        }
+
+        var translationResult = filterExpressionService.Translate(parseResult.Expression, resource);
+        if (!translationResult.IsSuccess)
+        {
+            return false;
+        }
+
+        sqlFilter = translationResult.SqlFilter;
+        return true;
+    }
 
     private static bool TryMatchSearchField(
         Feature feature,

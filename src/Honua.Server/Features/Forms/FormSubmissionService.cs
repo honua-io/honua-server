@@ -516,6 +516,18 @@ internal sealed class FormSubmissionService
                 continue;
             }
 
+            // UploadAttachmentsAsync persists the client-declared descriptor content type when one
+            // is present, so validate that effective value against the same allowlists: otherwise a
+            // blocked type (e.g. text/html) could be smuggled past the policy behind an innocuous
+            // multipart part content type and later be served for the stored attachment.
+            var effectiveContentType = GetEffectiveContentType(descriptor, file);
+            if (!string.Equals(effectiveContentType, file.ContentType, StringComparison.OrdinalIgnoreCase) &&
+                !AttachmentContentTypeAllowed(policy, fieldPolicy, effectiveContentType))
+            {
+                AddAttachmentIssue(issues, outcomes, descriptor, "attachmentContentTypeNotAllowed", $"Attachment content type '{effectiveContentType}' is not allowed.");
+                continue;
+            }
+
             var validation = await FileUploadSecurity.ValidateFileAsync(
                 GetEffectiveFileName(descriptor, file),
                 file.ContentType,
@@ -766,7 +778,7 @@ internal sealed class FormSubmissionService
                     storageLayerId,
                     targetFeatureId.Value,
                     FileUploadSecurity.SanitizeFileName(GetEffectiveFileName(descriptor, file)),
-                    descriptor.ContentType ?? file.ContentType,
+                    GetEffectiveContentType(descriptor, file),
                     stream,
                     descriptor.FieldId,
                     cancellationToken).ConfigureAwait(false);
@@ -946,6 +958,14 @@ internal sealed class FormSubmissionService
 
     private static string GetEffectiveFileName(FormSubmissionAttachmentDescriptor descriptor, IFormFile file)
         => string.IsNullOrWhiteSpace(descriptor.Filename) ? file.FileName : descriptor.Filename!;
+
+    /// <summary>
+    /// The content type that is persisted for an attachment: the client-declared descriptor value
+    /// when present, otherwise the multipart part's content type. Validation and upload must agree
+    /// on this value so the allowlist checks cover what is actually stored.
+    /// </summary>
+    private static string GetEffectiveContentType(FormSubmissionAttachmentDescriptor descriptor, IFormFile file)
+        => string.IsNullOrWhiteSpace(descriptor.ContentType) ? file.ContentType : descriptor.ContentType!;
 
     private static (Dictionary<string, IFormFile> ByPartName, HashSet<string> DuplicatePartNames) BuildFilePartLookup(
         IFormFileCollection files)

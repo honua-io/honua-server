@@ -151,7 +151,9 @@ public sealed record GeoServerDataStoreInfo
     public required string Type { get; init; }
 
     /// <summary>
-    /// Connection parameters for the datastore.
+    /// Connection parameters for the datastore. Sensitive entries (passwords, users, secrets,
+    /// keys) are redacted at the capture point (<c>GeoServerRestClient.GetDataStoreDetailsAsync</c>)
+    /// before this contract is populated, so the values are safe to serialize to API clients.
     /// </summary>
     public IReadOnlyDictionary<string, object> ConnectionParameters { get; init; } = new Dictionary<string, object>();
 

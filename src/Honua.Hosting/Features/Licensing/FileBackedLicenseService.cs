@@ -51,7 +51,48 @@ internal sealed class FileBackedLicenseService :
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
-    public LicenseSnapshot GetSnapshot() => Volatile.Read(ref _snapshot);
+    public LicenseSnapshot GetSnapshot()
+    {
+        var snapshot = Volatile.Read(ref _snapshot);
+        if (snapshot.ValidationState != LicenseValidationState.Valid ||
+            !snapshot.ExpiresAt.HasValue ||
+            snapshot.ExpiresAt.Value > DateTimeOffset.UtcNow)
+        {
+            return snapshot;
+        }
+
+        // The license expired while the server was running. Republish an expired
+        // snapshot so entitlement checks and health reporting reflect reality without
+        // requiring a restart.
+        var expired = CreateExpiredSnapshot(snapshot);
+        if (ReferenceEquals(Interlocked.CompareExchange(ref _snapshot, expired, snapshot), snapshot))
+        {
+            LicenseRuntimeLog.LicenseExpired(_logger, snapshot.LicenseId, snapshot.ExpiresAt);
+            return expired;
+        }
+
+        // Another thread published a newer snapshot concurrently; use that one.
+        return Volatile.Read(ref _snapshot);
+    }
+
+    private LicenseSnapshot CreateExpiredSnapshot(LicenseSnapshot current)
+    {
+        var payload = new SignedLicensePayload
+        {
+            LicenseId = current.LicenseId,
+            LicensedTo = current.LicensedTo,
+            IssuedAt = current.IssuedAt,
+            ExpiresAt = current.ExpiresAt
+        };
+
+        return CreateSnapshot(
+            HonuaEdition.Community,
+            isValid: false,
+            LicenseValidationState.Expired,
+            NextSnapshotVersion(),
+            payload,
+            current.KeyId);
+    }
 
     internal static async Task<LicenseSnapshot> LoadBootstrapSnapshotAsync(
         IConfiguration configuration,
@@ -257,9 +298,20 @@ internal sealed class FileBackedLicenseService :
                 Directory.CreateDirectory(directory);
             }
 
-            var tempPath = options.LicensePath + ".tmp";
-            await File.WriteAllBytesAsync(tempPath, licenseData, cancellationToken).ConfigureAwait(false);
-            File.Move(tempPath, options.LicensePath, overwrite: true);
+            // Unique temp file per upload so concurrent admin uploads cannot interleave
+            // writes/moves on the same temporary path.
+            var tempPath = $"{options.LicensePath}.{Guid.NewGuid():N}.tmp";
+            try
+            {
+                await File.WriteAllBytesAsync(tempPath, licenseData, cancellationToken).ConfigureAwait(false);
+                File.Move(tempPath, options.LicensePath, overwrite: true);
+            }
+            catch
+            {
+                TryDeleteFile(tempPath);
+                throw;
+            }
+
             PublishSnapshot(result.Snapshot);
             LogValidationResult(result);
             return new LicenseUploadResult(true, "License applied.");
@@ -268,6 +320,20 @@ internal sealed class FileBackedLicenseService :
         {
             LicenseRuntimeLog.LicenseUploadSaveFailed(_logger, ex);
             return new LicenseUploadResult(false, "License upload could not be saved. See server logs for details.");
+        }
+    }
+
+    private static void TryDeleteFile(string path)
+    {
+        try
+        {
+            File.Delete(path);
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
         }
     }
 

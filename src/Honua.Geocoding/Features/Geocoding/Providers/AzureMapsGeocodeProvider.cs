@@ -47,6 +47,13 @@ internal sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
 
         // Configure HTTP client
         _httpClient.Timeout = TimeSpan.FromSeconds(configuration.TimeoutSeconds);
+
+        // Send the subscription key as a request header so it is not emitted in the
+        // URL (and therefore not captured by default HttpClient request-logging or
+        // outbound proxy access logs).  Azure Maps accepts `subscription-key` as
+        // either a query-string parameter or an HTTP header; the header form is
+        // preferred for secrets.
+        _httpClient.DefaultRequestHeaders.Add("subscription-key", configuration.SubscriptionKey);
     }
 
     /// <inheritdoc />
@@ -268,7 +275,6 @@ internal sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
             // Simple health check using a known address
             var url = $"{_configuration.BaseUrl.TrimEnd('/')}/search/address/json?" +
                       $"api-version={_configuration.ApiVersion}" +
-                      $"&subscription-key={Uri.EscapeDataString(_configuration.SubscriptionKey)}" +
                       "&query=1%20Microsoft%20Way%2C%20Redmond%2C%20WA" +
                       "&limit=1";
 
@@ -329,7 +335,6 @@ internal sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
 
         var url = $"{baseUrl}/search/address/json?" +
                   $"api-version={_configuration.ApiVersion}" +
-                  $"&subscription-key={Uri.EscapeDataString(_configuration.SubscriptionKey)}" +
                   $"&query={Uri.EscapeDataString(request.Query)}" +
                   $"&limit={maxResults}";
 
@@ -350,8 +355,11 @@ internal sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
 
         if (request.SearchBounds != null)
         {
-            url += $"&bbox={request.SearchBounds.XMin:F6},{request.SearchBounds.YMin:F6}," +
-                   $"{request.SearchBounds.XMax:F6},{request.SearchBounds.YMax:F6}";
+            url += "&bbox=" +
+                   request.SearchBounds.XMin.ToString("F6", CultureInfo.InvariantCulture) + "," +
+                   request.SearchBounds.YMin.ToString("F6", CultureInfo.InvariantCulture) + "," +
+                   request.SearchBounds.XMax.ToString("F6", CultureInfo.InvariantCulture) + "," +
+                   request.SearchBounds.YMax.ToString("F6", CultureInfo.InvariantCulture);
         }
 
         return url;
@@ -363,7 +371,6 @@ internal sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
 
         var url = $"{baseUrl}/search/address/reverse/json?" +
                   $"api-version={_configuration.ApiVersion}" +
-                  $"&subscription-key={Uri.EscapeDataString(_configuration.SubscriptionKey)}" +
                   $"&query={request.Y.ToString("F6", CultureInfo.InvariantCulture)},{request.X.ToString("F6", CultureInfo.InvariantCulture)}";
 
         if (!string.IsNullOrWhiteSpace(_configuration.Language))
@@ -386,7 +393,6 @@ internal sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
 
         var url = $"{baseUrl}/search/address/json?" +
                   $"api-version={_configuration.ApiVersion}" +
-                  $"&subscription-key={Uri.EscapeDataString(_configuration.SubscriptionKey)}" +
                   $"&query={Uri.EscapeDataString(request.Text)}" +
                   $"&limit={maxResults}" +
                   "&typeahead=true";
@@ -408,13 +414,17 @@ internal sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
 
         if (request.BiasLocation != null)
         {
-            url += $"&lat={request.BiasLocation.Y:F6}&lon={request.BiasLocation.X:F6}";
+            url += "&lat=" + request.BiasLocation.Y.ToString("F6", CultureInfo.InvariantCulture) +
+                   "&lon=" + request.BiasLocation.X.ToString("F6", CultureInfo.InvariantCulture);
         }
 
         if (request.SearchBounds != null)
         {
-            url += $"&bbox={request.SearchBounds.XMin:F6},{request.SearchBounds.YMin:F6}," +
-                   $"{request.SearchBounds.XMax:F6},{request.SearchBounds.YMax:F6}";
+            url += "&bbox=" +
+                   request.SearchBounds.XMin.ToString("F6", CultureInfo.InvariantCulture) + "," +
+                   request.SearchBounds.YMin.ToString("F6", CultureInfo.InvariantCulture) + "," +
+                   request.SearchBounds.XMax.ToString("F6", CultureInfo.InvariantCulture) + "," +
+                   request.SearchBounds.YMax.ToString("F6", CultureInfo.InvariantCulture);
         }
 
         return url;

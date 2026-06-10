@@ -28,8 +28,6 @@ namespace Honua.Geoprocessing;
 /// </summary>
 internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 {
-    private static readonly TimeSpan ProgressRetention = TimeSpan.FromDays(7);
-
     private readonly IExecutionJobStore? _jobStore;
     private readonly IJobQueue? _jobQueue;
     private readonly IUniversalProgressStore _progressStore;
@@ -43,6 +41,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     private readonly IExecutionAdmissionEvaluator? _admissionEvaluator;
     private readonly IGeoprocessingResultPackageStore? _resultPackageStore;
     private readonly ILogger<GeoprocessingJobService> _logger;
+    private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _executorOptions;
 
     public GeoprocessingJobService(
         IUniversalProgressStore progressStore,
@@ -51,6 +50,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         IOperatorApprovalEvaluator approvalEvaluator,
         IProcessCatalog processCatalog,
         ILogger<GeoprocessingJobService> logger,
+        IOptionsMonitor<GeoprocessingExecutorOptions> executorOptions,
         IExecutionJobStore? jobStore = null,
         IJobQueue? jobQueue = null,
         IOptions<LimitsOptions>? limitsOptions = null,
@@ -66,6 +66,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         _processCatalog = processCatalog;
         _analyticsLimits = limitsOptions?.Value.Analytics ?? new AnalyticsLimits();
         _logger = logger;
+        _executorOptions = executorOptions;
         _jobStore = jobStore;
         _jobQueue = jobQueue;
         _workloadRegistry = workloadRegistry;
@@ -73,6 +74,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         _admissionEvaluator = admissionEvaluator;
         _resultPackageStore = resultPackageStore;
     }
+
+    private TimeSpan ProgressRetention => _executorOptions.CurrentValue.ResultRetention;
 
     public Task EnsureCallerAuthorizedAsync(
         ClaimsPrincipal principal,
@@ -235,7 +238,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             var existing = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
             if (existing != null)
             {
-                EnsureMatchingIdempotentRequest(existing, requestFingerprint);
+                EnsureMatchingIdempotentRequest(existing, requestFingerprint, principal);
                 EnsureSubmissionDidNotRollback(existing);
                 GeoprocessingServiceLog.JobSubmittedIdempotent(_logger, jobId);
                 return existing;
@@ -1186,8 +1189,19 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         return Convert.ToHexString(SHA256.HashData(buffer.ToArray())).ToLowerInvariant();
     }
 
-    private static void EnsureMatchingIdempotentRequest(ExecutionJobRecord existing, string requestFingerprint)
+    private static void EnsureMatchingIdempotentRequest(
+        ExecutionJobRecord existing, string requestFingerprint, ClaimsPrincipal principal)
     {
+        // Reject cross-principal replay: a different caller must not silently
+        // receive another principal's job via an idempotency-key collision.
+        var requestedBy = existing.Audit.RequestedBy;
+        var callerName = principal.Identity?.Name;
+        if (!string.IsNullOrWhiteSpace(requestedBy)
+            && !string.Equals(requestedBy, callerName, StringComparison.Ordinal))
+        {
+            throw new GeoprocessingIdempotencyConflictException();
+        }
+
         var existingFingerprint = existing.Audit.RequestFingerprint;
         if (!string.IsNullOrWhiteSpace(existingFingerprint) &&
             string.Equals(existingFingerprint, requestFingerprint, StringComparison.Ordinal))

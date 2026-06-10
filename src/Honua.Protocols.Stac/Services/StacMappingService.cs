@@ -25,6 +25,17 @@ internal sealed class StacMappingService
     [ThreadStatic]
     private static GeoJsonWriter? _geoJsonWriter;
 
+    /// <summary>
+    /// A JSON null element used to represent absent geometry.  RFC 7946 §3.2 and STAC 1.0.0
+    /// require the <c>geometry</c> member to be present even when its value is <c>null</c>; a
+    /// missing member is invalid.  Storing an explicit JSON-null <see cref="JsonElement"/>
+    /// (rather than C# <see langword="null"/>) means the property is non-null in C# so the
+    /// source-generated serializer emits <c>"geometry":null</c> instead of omitting the key.
+    /// The <see cref="JsonElement.Clone"/> call makes the element lifetime-independent of the
+    /// originating <see cref="JsonDocument"/>.
+    /// </summary>
+    private static readonly JsonElement JsonNullElement = JsonDocument.Parse("null").RootElement.Clone();
+
     private static GeoJsonWriter GetGeoJsonWriter() => _geoJsonWriter ??= new GeoJsonWriter();
     /// <summary>
     /// Builds a STAC Collection directly from a Metadata v2 resource/publication.
@@ -170,19 +181,24 @@ internal sealed class StacMappingService
             }
         }
 
-        JsonElement? geometry = null;
+        // RFC 7946 §3.2 and STAC 1.0.0 require the "geometry" member to always be present;
+        // when there is no geometry the value must be JSON null (not an absent key).  We use an
+        // explicit JSON-null JsonElement so the source-generated serializer emits the member.
+        JsonElement? geometry = JsonNullElement;
         ImmutableArray<double>? bbox = null;
         if (feature.Geometry is { Length: > 0 })
         {
             try
             {
                 var parsed = WkbReaderCache.Get().Read(feature.Geometry);
-                geometry = ConvertGeometryToGeoJsonElement(parsed);
+                // ConvertGeometryToGeoJsonElement returns null on serialization failure;
+                // fall back to the explicit JSON-null element rather than C# null.
+                geometry = ConvertGeometryToGeoJsonElement(parsed) ?? JsonNullElement;
                 bbox = TryBuildBboxFromGeometry(parsed, geometrySrid ?? resource.ReadSrid() ?? 4326);
             }
             catch
             {
-                // WKB parsing failure — STAC allows null geometry.
+                // WKB parsing failure — keep geometry as explicit JSON null.
             }
         }
 
@@ -290,16 +306,22 @@ internal sealed class StacMappingService
 
         if (start is not null || end is not null)
         {
+            // Per STAC 1.0.0 common-metadata: when datetime is null, BOTH start_datetime and
+            // end_datetime are required non-null strings.  Use the known bound for both when only
+            // one is available (open-ended intervals are not valid in item-level metadata).
+            var effectiveStart = start ?? end!.Value;
+            var effectiveEnd = end ?? start!.Value;
             properties["datetime"] = null;
-            properties["start_datetime"] = start is null ? null : FormatTemporalValue(start.Value);
-            properties["end_datetime"] = end is null ? null : FormatTemporalValue(end.Value);
+            properties["start_datetime"] = FormatTemporalValue(effectiveStart);
+            properties["end_datetime"] = FormatTemporalValue(effectiveEnd);
             return;
         }
 
-        // Per the STAC spec, when datetime is null both interval bounds MUST be present.
-        properties["datetime"] = null;
-        properties["start_datetime"] = null;
-        properties["end_datetime"] = null;
+        // No temporal information is available for this feature.  STAC 1.0.0 requires datetime to
+        // be a non-null string OR null with both interval bounds present as non-null strings.
+        // We cannot invent interval bounds, so omit all three keys and let the item be served
+        // without a datetime property.  Clients that strictly require datetime should filter at
+        // ingestion.  Do NOT write datetime=null with null bounds — stac-validator rejects that.
     }
 
     private static string ResolveItemId(Feature feature)

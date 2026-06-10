@@ -4,6 +4,7 @@
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Alerts;
 using Honua.TestKit.Attributes;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Alerts;
@@ -23,7 +24,7 @@ public sealed class AwsSqsAlertDeliverySinkTests
     public async Task DeliverAsync_WithNoQueueUrlConfigured_ReturnsNonRetryableFailure()
     {
         var publisher = new FakeSqsPublisher();
-        var sink = new AwsSqsAlertDeliverySink(publisher, Options.Create(new AlertDeliveryOptions()));
+        var sink = new AwsSqsAlertDeliverySink(publisher, Options.Create(new AlertDeliveryOptions()), NullLogger<AwsSqsAlertDeliverySink>.Instance);
 
         var result = await sink.DeliverAsync(
             AlertTestFixtures.CreateDispatchItem(AlertChannelType.AwsSqs),
@@ -42,7 +43,7 @@ public sealed class AwsSqsAlertDeliverySinkTests
             SendMessageAsyncHandler = static (_, _, _, _) => Task.FromResult(new SqsPublishResult(true, false, null))
         };
 
-        var sink = new AwsSqsAlertDeliverySink(publisher, Options.Create(CreateOptionsWithSqs()));
+        var sink = new AwsSqsAlertDeliverySink(publisher, Options.Create(CreateOptionsWithSqs()), NullLogger<AwsSqsAlertDeliverySink>.Instance);
         var result = await sink.DeliverAsync(
             AlertTestFixtures.CreateDispatchItem(AlertChannelType.AwsSqs),
             AlertTestFixtures.CreateAlertEvent());
@@ -59,7 +60,7 @@ public sealed class AwsSqsAlertDeliverySinkTests
             SendMessageAsyncHandler = static (_, _, _, _) => Task.FromResult(new SqsPublishResult(false, true, "SQS send responded with 500."))
         };
 
-        var sink = new AwsSqsAlertDeliverySink(publisher, Options.Create(CreateOptionsWithSqs()));
+        var sink = new AwsSqsAlertDeliverySink(publisher, Options.Create(CreateOptionsWithSqs()), NullLogger<AwsSqsAlertDeliverySink>.Instance);
         var result = await sink.DeliverAsync(
             AlertTestFixtures.CreateDispatchItem(AlertChannelType.AwsSqs),
             AlertTestFixtures.CreateAlertEvent());
@@ -76,7 +77,7 @@ public sealed class AwsSqsAlertDeliverySinkTests
             SendMessageAsyncHandler = static (_, _, _, _) => Task.FromResult(new SqsPublishResult(false, false, "SQS queue not found: test"))
         };
 
-        var sink = new AwsSqsAlertDeliverySink(publisher, Options.Create(CreateOptionsWithSqs()));
+        var sink = new AwsSqsAlertDeliverySink(publisher, Options.Create(CreateOptionsWithSqs()), NullLogger<AwsSqsAlertDeliverySink>.Instance);
         var result = await sink.DeliverAsync(
             AlertTestFixtures.CreateDispatchItem(AlertChannelType.AwsSqs),
             AlertTestFixtures.CreateAlertEvent());
@@ -92,7 +93,7 @@ public sealed class AwsSqsAlertDeliverySinkTests
         var publisher = new FakeSqsPublisher();
 
         var overrideUrl = "https://sqs.us-east-1.amazonaws.com/123456/override-queue";
-        var sink = new AwsSqsAlertDeliverySink(publisher, Options.Create(CreateOptionsWithSqs()));
+        var sink = new AwsSqsAlertDeliverySink(publisher, Options.Create(CreateOptionsWithSqs()), NullLogger<AwsSqsAlertDeliverySink>.Instance);
 
         await sink.DeliverAsync(
             AlertTestFixtures.CreateDispatchItem(AlertChannelType.AwsSqs, destination: overrideUrl),
@@ -106,7 +107,7 @@ public sealed class AwsSqsAlertDeliverySinkTests
     {
         var publisher = new FakeSqsPublisher();
 
-        var sink = new AwsSqsAlertDeliverySink(publisher, Options.Create(CreateOptionsWithSqs()));
+        var sink = new AwsSqsAlertDeliverySink(publisher, Options.Create(CreateOptionsWithSqs()), NullLogger<AwsSqsAlertDeliverySink>.Instance);
         await sink.DeliverAsync(
             AlertTestFixtures.CreateDispatchItem(AlertChannelType.AwsSqs),
             AlertTestFixtures.CreateAlertEvent());
@@ -122,7 +123,7 @@ public sealed class AwsSqsAlertDeliverySinkTests
     public void ChannelType_ReturnsAwsSqs()
     {
         var publisher = new FakeSqsPublisher();
-        var sink = new AwsSqsAlertDeliverySink(publisher, Options.Create(new AlertDeliveryOptions()));
+        var sink = new AwsSqsAlertDeliverySink(publisher, Options.Create(new AlertDeliveryOptions()), NullLogger<AwsSqsAlertDeliverySink>.Instance);
         Assert.Equal(AlertChannelType.AwsSqs, sink.ChannelType);
     }
 }

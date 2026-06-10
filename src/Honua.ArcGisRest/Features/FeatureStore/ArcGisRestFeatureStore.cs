@@ -97,13 +97,13 @@ internal sealed class ArcGisRestFeatureStore : IFeatureDataProvider, IFeatureRea
     public async Task<QueryResult<Feature>> QueryAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
         var context = ResolveBinding(layerId);
+        var authHeader = ArcGisRestQueryParameters.BuildAuthorizationHeader(context.ServiceLocation.Token);
         var url = ArcGisRestQueryParameters.BuildFeatureQueryUrl(
             context.ServiceLocation.ServiceUrl,
             context.ArcGisLayerId,
-            query,
-            context.ServiceLocation.Token);
+            query);
 
-        var response = await _client.QueryAsync(url, cancellationToken).ConfigureAwait(false);
+        var response = await _client.QueryAsync(url, authHeader, cancellationToken).ConfigureAwait(false);
         EnsureNoUpstreamError(response.Error);
 
         var geometryType = ResolveDeclaredGeometryType(context.Resource);
@@ -119,7 +119,29 @@ internal sealed class ArcGisRestFeatureStore : IFeatureDataProvider, IFeatureRea
         }
 
         var built = items.ToImmutable();
-        return QueryResult<Feature>.Create(built.Length, built, response.ExceededTransferLimit);
+
+        // When ExceededTransferLimit is false the upstream returned all matching records
+        // in this response; the page length equals the total count. When more results exist
+        // we need the true total so callers (SearchEndpoints.ExecuteSearchAcrossPublicationsAsync,
+        // OGC Features next-link computation) can report numberMatched and generate correct
+        // next-page links. Issue a returnCountOnly request to get the accurate total.
+        long totalCount;
+        if (!response.ExceededTransferLimit)
+        {
+            totalCount = built.Length;
+        }
+        else
+        {
+            var countUrl = ArcGisRestQueryParameters.BuildCountUrl(
+                context.ServiceLocation.ServiceUrl,
+                context.ArcGisLayerId,
+                query);
+            var countResponse = await _client.QueryCountAsync(countUrl, authHeader, cancellationToken).ConfigureAwait(false);
+            EnsureNoUpstreamError(countResponse.Error);
+            totalCount = countResponse.Count;
+        }
+
+        return QueryResult<Feature>.Create(totalCount, built, response.ExceededTransferLimit);
     }
 
     /// <inheritdoc />
@@ -134,13 +156,13 @@ internal sealed class ArcGisRestFeatureStore : IFeatureDataProvider, IFeatureRea
     public async Task<ImmutableArray<long>> QueryObjectIdsAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
         var context = ResolveBinding(layerId);
+        var authHeader = ArcGisRestQueryParameters.BuildAuthorizationHeader(context.ServiceLocation.Token);
         var url = ArcGisRestQueryParameters.BuildObjectIdsUrl(
             context.ServiceLocation.ServiceUrl,
             context.ArcGisLayerId,
-            query,
-            context.ServiceLocation.Token);
+            query);
 
-        var response = await _client.QueryObjectIdsAsync(url, cancellationToken).ConfigureAwait(false);
+        var response = await _client.QueryObjectIdsAsync(url, authHeader, cancellationToken).ConfigureAwait(false);
         EnsureNoUpstreamError(response.Error);
 
         return response.ObjectIds is { Length: > 0 } ids
@@ -152,13 +174,13 @@ internal sealed class ArcGisRestFeatureStore : IFeatureDataProvider, IFeatureRea
     public async Task<long> CountAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
         var context = ResolveBinding(layerId);
+        var authHeader = ArcGisRestQueryParameters.BuildAuthorizationHeader(context.ServiceLocation.Token);
         var url = ArcGisRestQueryParameters.BuildCountUrl(
             context.ServiceLocation.ServiceUrl,
             context.ArcGisLayerId,
-            query,
-            context.ServiceLocation.Token);
+            query);
 
-        var response = await _client.QueryCountAsync(url, cancellationToken).ConfigureAwait(false);
+        var response = await _client.QueryCountAsync(url, authHeader, cancellationToken).ConfigureAwait(false);
         EnsureNoUpstreamError(response.Error);
         return response.Count;
     }
@@ -168,13 +190,13 @@ internal sealed class ArcGisRestFeatureStore : IFeatureDataProvider, IFeatureRea
     {
         var context = ResolveBinding(layerId);
         var effectiveQuery = query ?? new FeatureQuery();
+        var authHeader = ArcGisRestQueryParameters.BuildAuthorizationHeader(context.ServiceLocation.Token);
         var url = ArcGisRestQueryParameters.BuildExtentUrl(
             context.ServiceLocation.ServiceUrl,
             context.ArcGisLayerId,
-            effectiveQuery,
-            context.ServiceLocation.Token);
+            effectiveQuery);
 
-        var response = await _client.QueryExtentAsync(url, cancellationToken).ConfigureAwait(false);
+        var response = await _client.QueryExtentAsync(url, authHeader, cancellationToken).ConfigureAwait(false);
         EnsureNoUpstreamError(response.Error);
 
         if (response.Extent is not { } extent)
@@ -381,8 +403,15 @@ internal sealed class ArcGisRestFeatureStore : IFeatureDataProvider, IFeatureRea
             return;
         }
 
+        // Include the upstream message so diagnostics do not require reproducing the request.
+        // The message is internal-facing; shared error mapping prevents it from being leaked
+        // to HTTP clients.
+        var detail = string.IsNullOrWhiteSpace(error.Message)
+            ? string.Empty
+            : $": {error.Message}";
+
         throw new InvalidOperationException(
-            $"ArcGIS REST service returned error {error.Code}.");
+            $"ArcGIS REST service returned error {error.Code}{detail}");
     }
 
     private static NotSupportedException NotSupported(string operation, int layerId)

@@ -299,6 +299,7 @@ public sealed class GeoServicesSqlParser
                 do
                 {
                     args.Add(ParseExpression());
+                    FilterParserGuard.EnsureInListSize(args.Count, "GeoServicesSQL function argument");
                 }
                 while (Match(TokenType.Comma));
             }
@@ -341,6 +342,7 @@ public sealed class GeoServicesSqlParser
             do
             {
                 values.Add(ParseAdditive());
+                FilterParserGuard.EnsureInListSize(values.Count, "GeoServicesSQL");
             }
             while (Match(TokenType.Comma));
         }
@@ -649,6 +651,7 @@ public sealed class GeoServicesSqlParser
                 return;
             }
 
+            FilterParserGuard.EnsureIdentifierLength(text.Length, "GeoServicesSQL identifier");
             AddToken(TokenType.Identifier, text);
         }
 
@@ -666,6 +669,7 @@ public sealed class GeoServicesSqlParser
 
             Advance(); // closing quote
             var value = _source[(_start + 1)..(_current - 1)];
+            FilterParserGuard.EnsureIdentifierLength(value.Length, "GeoServicesSQL quoted identifier");
             AddToken(TokenType.Identifier, value);
         }
 
@@ -683,6 +687,7 @@ public sealed class GeoServicesSqlParser
 
             Advance(); // closing bracket
             var value = _source[(_start + 1)..(_current - 1)];
+            FilterParserGuard.EnsureIdentifierLength(value.Length, "GeoServicesSQL bracket identifier");
             AddToken(TokenType.Identifier, value);
         }
 

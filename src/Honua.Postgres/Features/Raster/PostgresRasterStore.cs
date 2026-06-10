@@ -786,18 +786,32 @@ internal sealed class PostgresRasterStore : IRasterStore
         }
 
         await using var dynCommand = connection.CreateCommand();
+        // Build a 256×256 reference raster exactly aligned to the WebMercatorQuad tile
+        // envelope (EPSG:3857). ST_Resample reprojects the source raster onto that grid so
+        // the output PNG covers exactly ST_TileEnvelope(z,x,y) with nodata for uncovered
+        // pixels — correcting both the projection and the spatial registration that the
+        // previous ST_Clip+ST_Resize approach got wrong (it preserved the clipped source
+        // extent rather than the tile envelope, stretching edge tiles and ignoring CRS).
         dynCommand.CommandText = $"""
             WITH tile_bounds AS (
                 SELECT ST_TileEnvelope(@level, @col, @row) AS geom
+            ),
+            tile_ref AS (
+                SELECT ST_MakeEmptyRaster(
+                    256, 256,
+                    ST_XMin(tb.geom),
+                    ST_YMax(tb.geom),
+                    (ST_XMax(tb.geom) - ST_XMin(tb.geom)) / 256.0,
+                    -((ST_YMax(tb.geom) - ST_YMin(tb.geom)) / 256.0),
+                    0.0, 0.0, 3857
+                ) AS rast
+                FROM tile_bounds tb
             )
             SELECT ST_AsGDALRaster(
-                ST_Resize(
-                    ST_Clip(raster, ST_Transform(tb.geom, ST_SRID(raster))),
-                    256, 256
-                ),
+                ST_Resample(ST_Transform(raster, 3857), tile_ref.rast),
                 '{effectiveTileFormat}'{tileCreationOptions}
             ) AS data
-            FROM {_rasterDataTable}, tile_bounds tb
+            FROM {_rasterDataTable}, tile_bounds tb, tile_ref
             WHERE layer_id = @layerId AND id = @rasterId
               AND ST_Intersects(ST_ConvexHull(raster), ST_Transform(tb.geom, ST_SRID(raster)))
             """;
@@ -858,6 +872,9 @@ internal sealed class PostgresRasterStore : IRasterStore
         }
 
         await using var command = connection.CreateCommand();
+        // Same tile-envelope-aligned approach as GetImageTileAsync: build a 256×256
+        // reference raster in EPSG:3857 and use ST_Resample so the mosaic output covers
+        // exactly ST_TileEnvelope(z,x,y) with nodata for uncovered pixels.
         command.CommandText = $"""
             WITH requested AS (
                 SELECT unnest(@rasterIds) AS raster_id
@@ -865,12 +882,23 @@ internal sealed class PostgresRasterStore : IRasterStore
             tile_bounds AS (
                 SELECT ST_TileEnvelope(@level, @col, @row) AS geom
             ),
+            tile_ref AS (
+                SELECT ST_MakeEmptyRaster(
+                    256, 256,
+                    ST_XMin(tb.geom),
+                    ST_YMax(tb.geom),
+                    (ST_XMax(tb.geom) - ST_XMin(tb.geom)) / 256.0,
+                    -((ST_YMax(tb.geom) - ST_YMin(tb.geom)) / 256.0),
+                    0.0, 0.0, 3857
+                ) AS rast
+                FROM tile_bounds tb
+            ),
             source AS (
-                SELECT ST_Clip(raster, ST_Transform(tb.geom, ST_SRID(raster))) AS rast,
+                SELECT ST_Resample(ST_Transform(raster, 3857), tile_ref.rast) AS rast,
                        id,
                        created_at,
                        COALESCE(acquisition_date, created_at) AS effective_acquisition
-                FROM {_rasterDataTable}, tile_bounds tb
+                FROM {_rasterDataTable}, tile_bounds tb, tile_ref
                 WHERE layer_id = @layerId
                   AND id IN (SELECT raster_id FROM requested)
                   AND ST_Intersects(ST_ConvexHull(raster), ST_Transform(tb.geom, ST_SRID(raster)))
@@ -879,14 +907,10 @@ internal sealed class PostgresRasterStore : IRasterStore
                 SELECT {CreateMosaicAggregateExpression(mergeStrategy)} AS rast
                 FROM source
                 WHERE rast IS NOT NULL
-            ),
-            resized AS (
-                SELECT ST_Resize(rast, 256, 256) AS rast
-                FROM merged
-                WHERE rast IS NOT NULL
             )
             SELECT ST_AsGDALRaster(rast, '{effectiveTileFormat}'{tileCreationOptions}) AS data
-            FROM resized
+            FROM merged
+            WHERE rast IS NOT NULL
             """;
         AddParameter(command, "@layerId", layerId);
         AddParameter(command, "@rasterIds", rasterIds);

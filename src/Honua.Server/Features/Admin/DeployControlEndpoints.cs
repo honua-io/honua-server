@@ -502,9 +502,14 @@ internal static class DeployControlEndpoints
             return context.User.Identity!.Name;
         }
 
-        if (context.Request.Headers.TryGetValue("X-Admin-Principal", out var principal))
+        // Shared admin API-key auth carries no Name claim; attribute the action to the
+        // authenticated key (mirrors AdminApiKeyEndpoints.ResolveCreator). Do not fall back
+        // to caller-supplied headers (e.g. X-Admin-Principal) — they are spoofable and would
+        // let any credential holder fabricate the audit identity for deploy/rollback actions.
+        var apiKeyId = context.User.FindFirst("api_key_id")?.Value;
+        if (!string.IsNullOrWhiteSpace(apiKeyId))
         {
-            return principal.ToString();
+            return $"api-key:{apiKeyId}";
         }
 
         return null;

@@ -291,6 +291,8 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
             return null;
         }
 
+        var mapping = _layerRegistry.GetRequiredMapping(layerId);
+
         return await ExecuteQueryOperationAsync<FeatureExtent?>(
             layerId,
             "get_extent",
@@ -312,7 +314,7 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
                         Convert.ToDouble(reader.GetValue(1), CultureInfo.InvariantCulture),
                         Convert.ToDouble(reader.GetValue(2), CultureInfo.InvariantCulture),
                         Convert.ToDouble(reader.GetValue(3), CultureInfo.InvariantCulture),
-                        featureQuery.OutputSrid ?? featureQuery.SpatialReferenceSrid ?? SpatialConstants.DefaultSrid);
+                        featureQuery.OutputSrid ?? featureQuery.SpatialReferenceSrid ?? mapping.Srid);
                 }
 
                 return null;
@@ -601,12 +603,19 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
         ParameterizedQuery query,
         CancellationToken cancellationToken)
     {
+        DbConnection? connection = null;
+        DbCommand? command = null;
         try
         {
-            var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-            var command = CreateCommand(connection, query);
+            connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+            command = CreateCommand(connection, query);
             var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-            return (connection, command, reader);
+            // Ownership transfers to caller — null out locals so the finally block does not dispose.
+            var ownedConnection = connection;
+            var ownedCommand = command;
+            connection = null;
+            command = null;
+            return (ownedConnection, ownedCommand, reader);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -616,6 +625,18 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
         {
             DuckDbLog.QueryFailed(_logger, operationType, layerId, ex);
             throw CreateSafeQueryException(layerId, operationType, ex);
+        }
+        finally
+        {
+            if (command != null)
+            {
+                await command.DisposeAsync().ConfigureAwait(false);
+            }
+
+            if (connection != null)
+            {
+                await connection.DisposeAsync().ConfigureAwait(false);
+            }
         }
     }
 

@@ -3,6 +3,7 @@
 
 using System.Collections.Concurrent;
 using System.Data;
+using System.Globalization;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
@@ -26,7 +27,9 @@ public interface IDataIntegrityCoordinator
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Acquires a distributed lock for coordinating operations across multiple instances.
+    /// Acquires a named coordination lock. The current implementation is process-local
+    /// (a per-key <see cref="SemaphoreSlim"/>) and does NOT provide cross-instance
+    /// exclusion; multi-node deployments require a Redis- or database-backed lock.
     /// </summary>
     Task<IAsyncDisposable> AcquireDistributedLockAsync(
         string lockKey,
@@ -85,17 +88,38 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
     private readonly NpgsqlDataSource _dataSource;
     private readonly ILogger<DataIntegrityCoordinator> _logger;
 
-    // Global coordination locks for distributed operations
-    private static readonly ConcurrentDictionary<string, SemaphoreSlim> _globalLocks = new();
+    // Global coordination locks for operations within this process (see the
+    // interface remarks: this is process-local, not cross-instance).
+    private static readonly ConcurrentDictionary<string, LockEntry> _globalLocks = new();
     private static readonly ConcurrentDictionary<string, (DateTimeOffset AcquiredAt, string OperationId)> _lockOwnership = new();
     private static readonly Timer _cleanupTimer = new Timer(CleanupExpiredLocks, null, TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(5));
     private static readonly TimeSpan LockTimeout = TimeSpan.FromMinutes(10);
     private static readonly object _cleanupLock = new();
 
+    // Logger captured from the first constructed instance so the timer-driven cleanup
+    // can emit diagnostics (a provider-less `new LoggerFactory()` would discard them).
+    private static ILogger? _cleanupLogger;
+
     public DataIntegrityCoordinator(NpgsqlDataSource dataSource, ILogger<DataIntegrityCoordinator> logger)
     {
         _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _cleanupLogger ??= logger;
+    }
+
+    /// <summary>
+    /// Per-key lock state. <see cref="RefCount"/> counts active holders and waiters and
+    /// is mutated under a lock on the entry; the cleanup timer only removes and disposes
+    /// entries whose ref count is zero, so a semaphore can never be disposed out from
+    /// under a live holder or queued waiter (which would silently break mutual exclusion).
+    /// </summary>
+    private sealed class LockEntry : IDisposable
+    {
+        public readonly SemaphoreSlim Semaphore = new(1, 1);
+        public int RefCount;
+        public bool Removed;
+
+        public void Dispose() => Semaphore.Dispose();
     }
 
     public async Task<T> ExecuteCoordinatedTransactionAsync<T>(
@@ -113,15 +137,21 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
 
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
 
-        // Set transaction timeout if specified
+        await using var dbTransaction = await connection.BeginTransactionAsync(isolationLevel, cancellationToken);
+
+        // Set transaction timeout if specified. SET LOCAL only takes effect inside a
+        // transaction block (outside one PostgreSQL warns and discards the setting),
+        // so this must run after BeginTransactionAsync.
         if (timeout.HasValue)
         {
+            var timeoutMilliseconds = (long)timeout.Value.TotalMilliseconds;
             await using var timeoutCommand = connection.CreateCommand();
-            timeoutCommand.CommandText = $"SET LOCAL statement_timeout = '{timeout.Value.TotalMilliseconds}ms'";
+            timeoutCommand.Transaction = dbTransaction;
+            timeoutCommand.CommandText = string.Create(
+                CultureInfo.InvariantCulture,
+                $"SET LOCAL statement_timeout = '{timeoutMilliseconds}ms'");
             await timeoutCommand.ExecuteNonQueryAsync(cancellationToken);
         }
-
-        await using var dbTransaction = await connection.BeginTransactionAsync(isolationLevel, cancellationToken);
 
         var transaction = new DataIntegrityTransaction(connection, dbTransaction, operationId, _logger);
 
@@ -160,22 +190,55 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
         if (string.IsNullOrEmpty(lockKey))
             throw new ArgumentException("Lock key is required", nameof(lockKey));
 
-        var semaphore = _globalLocks.GetOrAdd(lockKey, _ => new SemaphoreSlim(1, 1));
         var operationId = Guid.NewGuid().ToString("N")[..8];
 
         DataIntegrityCoordinatorLog.AttemptingDistributedLock(_logger, lockKey, operationId);
 
-        var acquired = await semaphore.WaitAsync(timeout, cancellationToken);
+        // Register as a holder/waiter before touching the semaphore so the cleanup
+        // timer cannot remove and dispose the entry while we wait on it. If cleanup
+        // won the race and marked the entry removed, retry against a fresh entry.
+        LockEntry entry;
+        while (true)
+        {
+            entry = _globalLocks.GetOrAdd(lockKey, static _ => new LockEntry());
+            lock (entry)
+            {
+                if (entry.Removed)
+                {
+                    continue;
+                }
+
+                entry.RefCount++;
+                break;
+            }
+        }
+
+        var acquired = false;
+        try
+        {
+            acquired = await entry.Semaphore.WaitAsync(timeout, cancellationToken);
+        }
+        finally
+        {
+            if (!acquired)
+            {
+                lock (entry)
+                {
+                    entry.RefCount--;
+                }
+            }
+        }
+
         if (!acquired)
         {
             throw new TimeoutException($"Failed to acquire distributed lock '{lockKey}' within {timeout}");
         }
 
-        _lockOwnership.TryAdd(lockKey, (DateTimeOffset.UtcNow, operationId));
+        _lockOwnership[lockKey] = (DateTimeOffset.UtcNow, operationId);
 
         DataIntegrityCoordinatorLog.DistributedLockAcquired(_logger, lockKey, operationId);
 
-        return new DistributedLock(lockKey, operationId, semaphore, _logger);
+        return new DistributedLock(lockKey, operationId, entry, _logger);
     }
 
     private sealed class DataIntegrityTransaction : IDataIntegrityTransaction
@@ -324,15 +387,15 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
     {
         private readonly string _lockKey;
         private readonly string _operationId;
-        private readonly SemaphoreSlim _semaphore;
+        private readonly LockEntry _entry;
         private readonly ILogger _logger;
         private bool _disposed;
 
-        public DistributedLock(string lockKey, string operationId, SemaphoreSlim semaphore, ILogger logger)
+        public DistributedLock(string lockKey, string operationId, LockEntry entry, ILogger logger)
         {
             _lockKey = lockKey;
             _operationId = operationId;
-            _semaphore = semaphore;
+            _entry = entry;
             _logger = logger;
         }
 
@@ -343,7 +406,7 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
                 try
                 {
                     _lockOwnership.TryRemove(_lockKey, out _);
-                    _semaphore.Release();
+                    _entry.Semaphore.Release();
 
                     DataIntegrityCoordinatorLog.DistributedLockReleased(_logger, _lockKey, _operationId);
                 }
@@ -353,6 +416,11 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
                 }
                 finally
                 {
+                    lock (_entry)
+                    {
+                        _entry.RefCount--;
+                    }
+
                     _disposed = true;
                 }
             }
@@ -362,26 +430,25 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
     }
 
     /// <summary>
-    /// Cleanup expired locks to prevent memory leaks in static collections
-    /// PERFORMANCE FIX: Enhanced cleanup with bounded waiting to prevent unbounded growth
+    /// Cleanup idle locks to prevent memory leaks in the static collections.
+    /// Only entries with no holders or waiters (ref count zero) are removed and
+    /// disposed: disposing a held semaphore would make the holder's Release()
+    /// throw and let a concurrent caller mint a fresh semaphore for the same key,
+    /// silently breaking mutual exclusion.
     /// </summary>
     private static void CleanupExpiredLocks(object? state)
     {
-        // PERFORMANCE FIX: Use bounded wait instead of silent return to ensure cleanup happens
+        // Use bounded wait instead of silent return to ensure cleanup happens
         var acquired = Monitor.TryEnter(_cleanupLock, TimeSpan.FromSeconds(30));
         if (!acquired)
         {
-            // If we can't acquire the lock within 30 seconds, something is wrong
-            // Log the issue but don't block the timer thread indefinitely
-            try
+            // If we can't acquire the lock within 30 seconds, something is wrong.
+            // Log the issue but don't block the timer thread indefinitely.
+            if (_cleanupLogger is { } blockedLogger)
             {
-                var logger = new LoggerFactory().CreateLogger<DataIntegrityCoordinator>();
-                DataIntegrityCoordinatorLog.CleanupBlocked(logger, _globalLocks.Count, _lockOwnership.Count);
+                DataIntegrityCoordinatorLog.CleanupBlocked(blockedLogger, _globalLocks.Count, _lockOwnership.Count);
             }
-            catch
-            {
-                // Ignore logging errors during cleanup
-            }
+
             return;
         }
 
@@ -399,86 +466,73 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
                 }
             }
 
-            // PERFORMANCE FIX: Enhanced cleanup with memory pressure detection
-            var totalLocks = _globalLocks.Count;
-            var totalOwnership = _lockOwnership.Count;
-
-            // If collections are growing too large, be more aggressive about cleanup
-            if (totalLocks > 1000 || totalOwnership > 1000)
-            {
-                // Aggressive cleanup: also remove locks that exist in _globalLocks but not in _lockOwnership
-                var orphanedLocks = new List<string>();
-                foreach (var lockKey in _globalLocks.Keys)
-                {
-                    if (!_lockOwnership.ContainsKey(lockKey))
-                    {
-                        orphanedLocks.Add(lockKey);
-                    }
-                }
-
-                // Remove orphaned locks (may happen if DistributedLock disposal failed)
-                foreach (var key in orphanedLocks)
-                {
-                    if (_globalLocks.TryRemove(key, out var orphanedSemaphore))
-                    {
-                        try
-                        {
-                            orphanedSemaphore.Dispose();
-                        }
-                        catch
-                        {
-                            // Ignore disposal errors
-                        }
-                    }
-                }
-
-                if (orphanedLocks.Count > 0)
-                {
-                    try
-                    {
-                        var logger = new LoggerFactory().CreateLogger<DataIntegrityCoordinator>();
-                        DataIntegrityCoordinatorLog.OrphanedLocksCleanedUp(logger, orphanedLocks.Count);
-                    }
-                    catch
-                    {
-                        // Ignore logging errors
-                    }
-                }
-            }
-
-            // Remove expired entries and dispose semaphores
+            // Remove expired entries whose locks are idle. Entries that are still
+            // referenced (a legitimately long-running holder or queued waiters)
+            // are left untouched and revisited on a later sweep.
+            var removedCount = 0;
             foreach (var key in expiredKeys)
             {
-                if (_lockOwnership.TryRemove(key, out _) && _globalLocks.TryRemove(key, out var semaphore))
+                if (TryRemoveIdleEntry(key))
                 {
-                    try
-                    {
-                        semaphore.Dispose();
-                    }
-                    catch
-                    {
-                        // Ignore disposal errors
-                    }
+                    _lockOwnership.TryRemove(key, out _);
+                    removedCount++;
                 }
             }
 
-            // Log cleanup stats occasionally (every 20 cleanups)
-            if (expiredKeys.Count > 0 && DateTime.UtcNow.Minute % 20 == 0)
+            // If collections are growing too large, also sweep locks that have no
+            // ownership entry (e.g. an acquire timed out or disposal failed),
+            // using the same ref-count guard.
+            if (_globalLocks.Count > 1000 || _lockOwnership.Count > 1000)
             {
-                try
+                var orphanedRemoved = 0;
+                foreach (var lockKey in _globalLocks.Keys)
                 {
-                    var logger = new LoggerFactory().CreateLogger<DataIntegrityCoordinator>();
-                    DataIntegrityCoordinatorLog.ExpiredLocksCleanedUp(logger, expiredKeys.Count, _globalLocks.Count);
+                    if (!_lockOwnership.ContainsKey(lockKey) && TryRemoveIdleEntry(lockKey))
+                    {
+                        orphanedRemoved++;
+                    }
                 }
-                catch
+
+                if (orphanedRemoved > 0 && _cleanupLogger is { } orphanLogger)
                 {
-                    // Ignore logging errors during cleanup
+                    DataIntegrityCoordinatorLog.OrphanedLocksCleanedUp(orphanLogger, orphanedRemoved);
                 }
+            }
+
+            if (removedCount > 0 && _cleanupLogger is { } expiredLogger)
+            {
+                DataIntegrityCoordinatorLog.ExpiredLocksCleanedUp(expiredLogger, removedCount, _globalLocks.Count);
             }
         }
         finally
         {
             Monitor.Exit(_cleanupLock);
+        }
+    }
+
+    /// <summary>
+    /// Removes and disposes the lock entry for <paramref name="lockKey"/> only when it
+    /// has no holders or waiters. Marks the entry as removed under its lock so a racing
+    /// acquirer that fetched the same instance retries against a fresh entry.
+    /// </summary>
+    private static bool TryRemoveIdleEntry(string lockKey)
+    {
+        if (!_globalLocks.TryGetValue(lockKey, out var entry))
+        {
+            return false;
+        }
+
+        lock (entry)
+        {
+            if (entry.RefCount > 0 || entry.Removed)
+            {
+                return false;
+            }
+
+            entry.Removed = true;
+            _globalLocks.TryRemove(lockKey, out _);
+            entry.Dispose();
+            return true;
         }
     }
 }

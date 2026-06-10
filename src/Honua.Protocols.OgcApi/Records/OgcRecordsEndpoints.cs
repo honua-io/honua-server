@@ -659,7 +659,9 @@ internal static class OgcRecordsEndpoints
             return false;
         }
 
-        if (!double.IsFinite(minX) || !double.IsFinite(minY) || !double.IsFinite(maxX) || !double.IsFinite(maxY) || minX > maxX || minY > maxY)
+        // minX > maxX is permitted: per RFC 7946 §5.2 and the OGC API bbox parameter,
+        // west > east means the box crosses the antimeridian and must be honored.
+        if (!double.IsFinite(minX) || !double.IsFinite(minY) || !double.IsFinite(maxX) || !double.IsFinite(maxY) || minY > maxY)
         {
             error = "bbox values must be finite and ordered as minx,miny,maxx,maxy.";
             return false;
@@ -757,11 +759,18 @@ internal static class OgcRecordsEndpoints
     }
 
     private static bool Intersects(ImmutableArray<double> recordBbox, BboxFilter filter)
-        => recordBbox.Length == 4 &&
-           recordBbox[0] <= filter.MaxX &&
-           recordBbox[2] >= filter.MinX &&
-           recordBbox[1] <= filter.MaxY &&
-           recordBbox[3] >= filter.MinY;
+    {
+        if (recordBbox.Length != 4 || recordBbox[1] > filter.MaxY || recordBbox[3] < filter.MinY)
+        {
+            return false;
+        }
+
+        // A filter with MinX > MaxX crosses the antimeridian (RFC 7946 §5.2) and
+        // represents the union [MinX, 180] ∪ [-180, MaxX].
+        return filter.MinX > filter.MaxX
+            ? recordBbox[2] >= filter.MinX || recordBbox[0] <= filter.MaxX
+            : recordBbox[0] <= filter.MaxX && recordBbox[2] >= filter.MinX;
+    }
 
     private static HashSet<string> SplitCsv(string? value)
         => string.IsNullOrWhiteSpace(value)

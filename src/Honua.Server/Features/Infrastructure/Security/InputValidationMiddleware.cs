@@ -112,6 +112,14 @@ internal sealed class InputValidationMiddleware
             return;
         }
 
+        // Parse the form asynchronously up front so the synchronous HttpRequest.Form
+        // access in ValidateRequest reuses the cached result instead of blocking a
+        // threadpool thread on sync-over-async body I/O (FormFeature.ReadForm).
+        if (context.Request.HasFormContentType && !IsMultipartFormData(context.Request.ContentType))
+        {
+            await context.Request.ReadFormAsync(context.RequestAborted);
+        }
+
         // Validate request inputs
         var validationResult = ValidateRequest(context.Request);
         if (!validationResult.IsValid)

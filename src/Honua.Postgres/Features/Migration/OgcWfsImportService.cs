@@ -38,6 +38,14 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
     private const string DefaultGeoJsonOutputFormat = "application/json";
     private const string SourceKind = "ogc-wfs";
 
+    /// <summary>
+    /// Safety cap on the number of pages fetched per feature type. Prevents infinite loops
+    /// against WFS 1.0/1.1 servers (and some non-conformant 2.0 servers) that ignore the
+    /// startIndex parameter and return the same first page on every request, causing
+    /// <c>hasMore</c> to remain true indefinitely and inserting unbounded duplicate rows.
+    /// </summary>
+    private const int MaxPagesPerFeatureType = 10_000;
+
     private readonly IOgcServiceMigrationScanner _scanner;
     private readonly IDatabaseConnectionProvider _connectionProvider;
     private readonly HttpClient _httpClient;
@@ -290,9 +298,25 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
         var pageNumber = 0;
         var mixedGeometryDetected = false;
 
+        // Track the raw JSON of the first feature of the previous page. Non-conformant
+        // WFS servers that ignore startIndex return the same page on every request; when we
+        // detect two consecutive pages with the same first-feature text we abort the loop
+        // rather than inserting unbounded duplicates (the hard page cap provides backstop).
+        string? previousFirstFeatureRaw = null;
+
         while (hasMore)
         {
             cancellationToken.ThrowIfCancellationRequested();
+
+            if (pageNumber >= MaxPagesPerFeatureType)
+            {
+                perTypeWarnings.Add(
+                    $"WFS paging stopped after {MaxPagesPerFeatureType} pages for feature type '{resource.Name}'. " +
+                    "The server may have returned more features than expected or ignored startIndex; " +
+                    "classify as ManualReview and re-run with a smaller page range if needed.");
+                classification = MigrationFidelityAutomationStatuses.ManualReview;
+                break;
+            }
 
             pageNumber++;
             var url = BuildGetFeatureUrl(serviceUri, version, resource.Name, startIndex, pageSize);
@@ -312,6 +336,21 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
             {
                 break;
             }
+
+            // Detect a server that ignores startIndex by comparing the first feature of
+            // this page against the first feature of the previous page. If they are
+            // identical the server is returning the same response regardless of offset.
+            var currentFirstFeatureRaw = page.Features[0].GetRawText();
+            if (pageNumber > 1 && currentFirstFeatureRaw == previousFirstFeatureRaw)
+            {
+                perTypeWarnings.Add(
+                    $"WFS server for feature type '{resource.Name}' appears to ignore the startIndex parameter " +
+                    "(consecutive pages returned the same first feature). Paging stopped to prevent duplicate inserts. " +
+                    "Use a WFS 2.0-compliant server or import with a where-clause filter to retrieve specific feature ranges.");
+                classification = MigrationFidelityAutomationStatuses.ManualReview;
+                break;
+            }
+            previousFirstFeatureRaw = currentFirstFeatureRaw;
 
             var (pageInserted, pageFailed, pageMixed) = await InsertFeaturesAsync(
                     connection,

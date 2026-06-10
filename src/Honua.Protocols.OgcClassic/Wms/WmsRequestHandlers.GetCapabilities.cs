@@ -7,6 +7,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Helpers;
+using MetadataV2TemporalRange = Honua.Infrastructure.Helpers.TemporalExtentHelpers.MetadataV2TemporalRange;
 using Honua.Infrastructure.Rendering;
 using Honua.Infrastructure.Services;
 using Honua.Protocols.Ogc.Api.Features;
@@ -103,12 +104,62 @@ internal static partial class WmsRequestHandlers
             .AppendLine("</Dimension>");
     }
 
-    private static async Task AppendWmsTemporalDimensionAsync(
+    /// <summary>
+    /// Pre-fetches temporal extent ranges for all time-aware layers concurrently.
+    /// Returns a dictionary keyed by <see cref="WmsLayer.StorageLayerId"/> so the
+    /// capabilities loop can emit dimensions without issuing a DB round-trip per layer.
+    /// </summary>
+    private static async Task<Dictionary<int, MetadataV2TemporalRange>> PrefetchTemporalRangesAsync(
         HttpContext context,
+        IReadOnlyList<WmsLayer> layers,
+        CancellationToken cancellationToken)
+    {
+        var featureReader = context.RequestServices.GetService<IFeatureReader>();
+        if (featureReader is null)
+        {
+            return [];
+        }
+
+        // Identify time-aware layers (gate matches the GetMap/capabilities emission path).
+        var temporalLayers = layers
+            .Where(layer =>
+                !IsCiteLayerNamed(layer, CiteAutosLayerTitle) &&
+                TemporalExtentHelpers.TryResolveOptInTemporalFieldsV2(layer.Resource, out _))
+            .ToArray();
+
+        if (temporalLayers.Length == 0)
+        {
+            return [];
+        }
+
+        // Fan out DB aggregate queries concurrently; each is a MIN/MAX scan on one table.
+        var tasks = temporalLayers.Select(layer =>
+            TemporalExtentHelpers.TryResolveTemporalRangeV2Async(
+                layer.Resource,
+                layer.StorageLayerId,
+                featureReader,
+                cancellationToken));
+
+        var results = await Task.WhenAll(tasks).ConfigureAwait(false);
+
+        var dict = new Dictionary<int, MetadataV2TemporalRange>(temporalLayers.Length);
+        for (var i = 0; i < temporalLayers.Length; i++)
+        {
+            if (results[i] is { } range)
+            {
+                dict[temporalLayers[i].StorageLayerId] = range;
+            }
+        }
+
+        return dict;
+    }
+
+    private static void AppendWmsTemporalDimension(
         StringBuilder sb,
         WmsLayer layer,
         string indent,
-        bool isWms111)
+        bool isWms111,
+        Dictionary<int, MetadataV2TemporalRange> temporalRanges)
     {
         // CITE Autos has its own hardcoded "time" dimension already emitted by
         // AppendWmsCiteDimensions; do not duplicate.
@@ -117,35 +168,14 @@ internal static partial class WmsRequestHandlers
             return;
         }
 
-        // Gate temporal dimension emission on the V2 opt-in resolver: a layer carries a
-        // time dimension only when its Temporal extension declares a StartTimeField that
-        // resolves to a Date/DateTime schema field. Matches the GetMap path (see
-        // TryParseWmsLayerTemporalFilters) so capabilities and request validation share
-        // one definition of "time-aware".
-        if (!TemporalExtentHelpers.TryResolveOptInTemporalFieldsV2(layer.Resource, out _))
+        if (!temporalRanges.TryGetValue(layer.StorageLayerId, out var range) ||
+            !range.HasExtent || range.Min is null || range.Max is null)
         {
             return;
         }
 
-        var featureReader = context.RequestServices.GetService<IFeatureReader>();
-        if (featureReader is null)
-        {
-            return;
-        }
-
-        var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
-        var range = await TemporalExtentHelpers.TryResolveTemporalRangeV2Async(
-            layer.Resource,
-            layer.StorageLayerId,
-            featureReader,
-            cancellationToken).ConfigureAwait(false);
-        if (range is null || !range.Value.HasExtent || range.Value.Min is null || range.Value.Max is null)
-        {
-            return;
-        }
-
-        var min = FormatWmsTemporalInstant(range.Value.Min.Value);
-        var max = FormatWmsTemporalInstant(range.Value.Max.Value);
+        var min = FormatWmsTemporalInstant(range.Min.Value);
+        var max = FormatWmsTemporalInstant(range.Max.Value);
         var extent = $"{min}/{max}/PT0S";
 
         if (isWms111)
@@ -377,6 +407,11 @@ internal static partial class WmsRequestHandlers
             cancellationToken).ConfigureAwait(false) ?? WorldWgs84Extent;
         await AppendWmsGeographicBoundsAsync(context, sb, rootExtent, "      ", isWms111).ConfigureAwait(false);
 
+        // Pre-fetch temporal extent ranges for all time-aware layers concurrently so the
+        // per-layer capabilities loop does not issue a sequential DB round-trip per layer.
+        var temporalRanges = await PrefetchTemporalRangesAsync(
+            context, accessibleLayers, cancellationToken).ConfigureAwait(false);
+
         foreach (var layer in accessibleLayers)
         {
             var layerName = GetWmsLayerDisplayName(layer);
@@ -404,7 +439,7 @@ internal static partial class WmsRequestHandlers
             await AppendWmsGeographicBoundsAsync(context, sb, layerExtent, "        ", isWms111).ConfigureAwait(false);
 
             AppendWmsCiteDimensions(sb, layer, "        ", isWms111);
-            await AppendWmsTemporalDimensionAsync(context, sb, layer, "        ", isWms111).ConfigureAwait(false);
+            AppendWmsTemporalDimension(sb, layer, "        ", isWms111, temporalRanges);
 
             sb.AppendLine("        <MetadataURL type=\"TC211\">");
             sb.AppendLine("          <Format>text/xml</Format>");

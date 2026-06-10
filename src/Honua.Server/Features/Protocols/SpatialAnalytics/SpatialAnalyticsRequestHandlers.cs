@@ -547,10 +547,21 @@ internal static partial class SpatialAnalyticsRequestHandlers
     /// <summary>
     /// Common error result for analytics operations that fail inside the reader.
     /// Keeps the status code / shape consistent with the rest of FeatureServer.
+    /// Validation failures surfaced by the reader (<see cref="ArgumentException"/>)
+    /// map to 400; everything else (connection failures, timeouts, provider bugs)
+    /// is an infrastructure fault and must surface as 500 so 5xx-based alerting
+    /// fires and callers are not told their request was invalid.
     /// </summary>
     private static IResult CreateReaderFailureResult(HttpContext context, string operation, Exception exception)
     {
-        var message = exception is ArgumentException ? exception.Message : "Spatial analytics request failed.";
-        return StandardErrorHelpers.CreateBadRequest(context, $"Spatial analytics {operation} failed", [message]);
+        if (exception is ArgumentException)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, $"Spatial analytics {operation} failed", [exception.Message]);
+        }
+
+        return StandardErrorHelpers.CreateInternalServerError(
+            context,
+            $"Spatial analytics {operation} failed",
+            ["Spatial analytics request failed."]);
     }
 }

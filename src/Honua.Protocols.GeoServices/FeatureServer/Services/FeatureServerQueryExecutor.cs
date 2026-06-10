@@ -342,14 +342,7 @@ internal sealed partial class FeatureServerQueryExecutor
         }
     }
 
-    private async Task<PreparedFeatureStream> PrepareFeatureStreamAsync(
-        int layerId,
-        FeatureQuery query,
-        CancellationToken cancellationToken)
-        => await PrepareFeatureStreamAsync(_streamingFeatureStore, layerId, query, cancellationToken)
-            .ConfigureAwait(false);
-
-    private static async Task<PreparedFeatureStream> PrepareFeatureStreamAsync(
+    private static PreparedFeatureStream PrepareFeatureStream(
         IStreamingFeatureStore streamingFeatureStore,
         int layerId,
         FeatureQuery query,
@@ -359,45 +352,57 @@ internal sealed partial class FeatureServerQueryExecutor
         {
             return new PreparedFeatureStream(
                 streamingFeatureStore.StreamFeaturesAsync(layerId, query, cancellationToken),
-                HasMoreResults: false);
+                HasMoreResults: static () => false);
         }
 
+        // Stream pass-through with a limit+1 probe: yield up to `limit` features and
+        // record whether an extra row was observed. The streaming formatters write
+        // exceededTransferLimit AFTER the features array, so the flag is read only once
+        // enumeration has completed — no need to buffer the page in memory (which would
+        // defeat the streaming path's memory-pressure purpose, since a limit is
+        // effectively always set by the default record count).
         var requestedLimit = Math.Max(0, query.Limit.Value);
         var probeLimit = checked(requestedLimit + 1);
         var probeQuery = query with { Limit = probeLimit };
-        var bufferedFeatures = new List<Feature>(probeLimit);
-
-        await foreach (var feature in streamingFeatureStore.StreamFeaturesAsync(layerId, probeQuery, cancellationToken)
-                           .WithCancellation(cancellationToken))
-        {
-            bufferedFeatures.Add(feature);
-        }
-
-        var hasMoreResults = bufferedFeatures.Count > requestedLimit;
-        if (hasMoreResults)
-        {
-            bufferedFeatures.RemoveAt(bufferedFeatures.Count - 1);
-        }
+        var probe = new LimitProbeState();
 
         return new PreparedFeatureStream(
-            StreamBufferedFeaturesAsync(bufferedFeatures, cancellationToken),
-            hasMoreResults);
+            StreamWithLimitProbeAsync(
+                streamingFeatureStore.StreamFeaturesAsync(layerId, probeQuery, cancellationToken),
+                requestedLimit,
+                probe,
+                cancellationToken),
+            () => probe.HasMoreResults);
     }
 
-    private static async IAsyncEnumerable<Feature> StreamBufferedFeaturesAsync(
-        IReadOnlyList<Feature> features,
+    private static async IAsyncEnumerable<Feature> StreamWithLimitProbeAsync(
+        IAsyncEnumerable<Feature> source,
+        int limit,
+        LimitProbeState probe,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        foreach (var feature in features)
+        var yielded = 0;
+        await foreach (var feature in source.WithCancellation(cancellationToken))
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            if (yielded >= limit)
+            {
+                probe.HasMoreResults = true;
+                yield break;
+            }
+
+            yielded++;
             yield return feature;
         }
     }
 
+    private sealed class LimitProbeState
+    {
+        public bool HasMoreResults;
+    }
+
     private readonly record struct PreparedFeatureStream(
         IAsyncEnumerable<Feature> Features,
-        bool HasMoreResults);
+        Func<bool> HasMoreResults);
 
     public async Task StreamIdsAsync(
         int layerId,

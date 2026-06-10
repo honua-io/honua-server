@@ -34,9 +34,10 @@ internal sealed class PostgresGeometryOperationService(
         await using var connection = await _connectionProvider.OpenConnectionAsync(ct).ConfigureAwait(false);
         var crsMetrics = await GetCrsMetricsAsync(connection, srid, ct).ConfigureAwait(false);
 
+        LatitudeBounds? latitudeBounds = null;
         if (!geodesic && crsMetrics.IsGeographic)
         {
-            var latitudeBounds = await GetGeographicLatitudeBoundsAsync(connection, wkb, srid, ct).ConfigureAwait(false);
+            latitudeBounds = await GetGeographicLatitudeBoundsAsync(connection, wkb, srid, ct).ConfigureAwait(false);
             if (latitudeBounds is { } bounds
                 && (Math.Abs(bounds.MinY) > WebMercatorMaxAbsoluteLatitudeDegrees
                     || Math.Abs(bounds.MaxY) > WebMercatorMaxAbsoluteLatitudeDegrees))
@@ -58,7 +59,17 @@ internal sealed class PostgresGeometryOperationService(
         }
         else if (crsMetrics.IsGeographic)
         {
-            // Planar buffers over geographic CRS need linear units. Buffer in Web Mercator meters, then transform back.
+            // Planar buffers over geographic CRS need linear units. Buffer in Web Mercator meters,
+            // then transform back. Web Mercator's point scale is k = 1/cos(lat), so a distance in
+            // ground meters must be inflated by 1/cos(lat) before buffering in EPSG:3857 — without
+            // this a "1000 m" buffer shrinks to ~707 m on the ground at 45° and ~500 m at 60°.
+            // The geometry's mid-latitude is a good approximation within the ±85.0511° guard above.
+            if (latitudeBounds is { } b)
+            {
+                var midLatitudeRadians = (b.MinY + b.MaxY) / 2.0 * Math.PI / 180.0;
+                distance /= Math.Cos(midLatitudeRadians);
+            }
+
             cmd.CommandText = "SELECT ST_AsBinary(ST_Transform(ST_Buffer(ST_Transform(ST_SetSRID($1::geometry, $2), 3857), $3), $2))";
         }
         else
@@ -388,9 +399,9 @@ internal sealed class PostgresGeometryOperationService(
         await using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
         if (!await reader.ReadAsync(ct).ConfigureAwait(false))
         {
-            var fallback = new CrsMetrics(IsLikelyGeographicSrid(srid), 1.0);
-            _crsMetricsCache.TryAdd(srid, fallback);
-            return fallback;
+            // Do NOT cache the not-found fallback: an SRID registered in spatial_ref_sys
+            // after server start would otherwise be pinned to the heuristic forever.
+            return new CrsMetrics(IsLikelyGeographicSrid(srid), 1.0);
         }
 
         var isGeographic = !reader.IsDBNull(0) && reader.GetBoolean(0);

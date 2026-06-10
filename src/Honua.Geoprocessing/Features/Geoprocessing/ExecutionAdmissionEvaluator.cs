@@ -327,12 +327,34 @@ internal sealed class ExecutionAdmissionEvaluator : IExecutionAdmissionEvaluator
         ExecutionAdmissionRequest request, ExecutionAdmissionOptions options, out int count)
     {
         var key = BuildRateKey(request);
+        var now = _timeProvider.GetUtcNow();
+        var window = TimeSpan.FromSeconds(options.RateWindowSeconds);
         var bucket = _rateBuckets.GetOrAdd(key, static _ => new RateBucket());
-        return bucket.TryClaim(
-            _timeProvider.GetUtcNow(),
-            TimeSpan.FromSeconds(options.RateWindowSeconds),
-            options.MaxSubmissionsPerWindow,
-            out count);
+        var claimed = bucket.TryClaim(now, window, options.MaxSubmissionsPerWindow, out count);
+
+        // Periodically evict idle buckets to prevent the dictionary from growing
+        // without bound in deployments with high-cardinality principals. The sweep
+        // runs once every 1 000 claims and removes buckets that hold no timestamps
+        // within the current window, so long-idle principals are reclaimed promptly.
+        if (System.Threading.Interlocked.Increment(ref _claimCount) % 1_000 == 0)
+        {
+            SweepIdleBuckets(now, window);
+        }
+
+        return claimed;
+    }
+
+    private int _claimCount;
+
+    private void SweepIdleBuckets(DateTimeOffset now, TimeSpan window)
+    {
+        foreach (var (key, bucket) in _rateBuckets)
+        {
+            if (bucket.IsIdle(now, window) && _rateBuckets.TryRemove(key, out _))
+            {
+                ExecutionAdmissionLog.RateBucketEvicted(_logger, key);
+            }
+        }
     }
 
     private static string BuildRateKey(ExecutionAdmissionRequest request)
@@ -371,6 +393,20 @@ internal sealed class ExecutionAdmissionEvaluator : IExecutionAdmissionEvaluator
                 _timestamps.Enqueue(now);
                 count = _timestamps.Count;
                 return true;
+            }
+        }
+
+        /// <summary>
+        /// Returns <c>true</c> when there are no timestamps within the current
+        /// window, meaning this bucket carries no active rate state and can be
+        /// safely evicted from the parent dictionary.
+        /// </summary>
+        public bool IsIdle(DateTimeOffset now, TimeSpan window)
+        {
+            lock (_sync)
+            {
+                Prune(now, window);
+                return _timestamps.Count == 0;
             }
         }
 

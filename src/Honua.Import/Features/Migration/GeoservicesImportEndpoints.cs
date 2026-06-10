@@ -6,6 +6,7 @@ using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Licensing;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Migration.Services;
@@ -66,6 +67,14 @@ internal static partial class GeoservicesImportEndpoints
     /// </summary>
     private static async Task HandleDiscoverService(HttpContext context)
     {
+        var entitlementGate = LicenseGate.RequireEntitlement(
+            context, "import.geoservices", "GeoServices Import");
+        if (entitlementGate is not null)
+        {
+            await entitlementGate.ExecuteAsync(context);
+            return;
+        }
+
         var cancellationToken = context.RequestAborted;
 
         GeoservicesDiscoverRequest? request;
@@ -185,6 +194,14 @@ internal static partial class GeoservicesImportEndpoints
     /// </summary>
     private static async Task HandleStartImport(HttpContext context)
     {
+        var entitlementGate = LicenseGate.RequireEntitlement(
+            context, "import.geoservices", "GeoServices Import");
+        if (entitlementGate is not null)
+        {
+            await entitlementGate.ExecuteAsync(context);
+            return;
+        }
+
         var cancellationToken = context.RequestAborted;
 
         GeoservicesStartImportRequest? request;

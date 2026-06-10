@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Data.Common;
 using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -48,32 +49,46 @@ internal sealed class OracleFeatureDataAccess
         activity?.SetTag("db.operation", "select");
         activity?.SetTag("layer.id", mapping.LayerId);
 
-        await using var connection = await _connectionFactory.OpenAsync(dataConnection, cancellationToken).ConfigureAwait(false);
-        await using var command = CreateCommand(connection, query);
-
-        var features = ImmutableArray.CreateBuilder<Feature>();
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        try
         {
-            var id = reader.IsDBNull(0) ? 0L : Convert.ToInt64(reader.GetValue(0), CultureInfo.InvariantCulture);
-            var wkb = reader.IsDBNull(1) ? null : ReadWkb(reader, 1);
+            await using var connection = await _connectionFactory.OpenAsync(dataConnection, cancellationToken).ConfigureAwait(false);
+            await using var command = CreateCommand(connection, query);
 
-            var attrs = ImmutableDictionary<string, object?>.Empty.ToBuilder();
-            for (var i = 2; i < reader.FieldCount; i++)
+            var features = ImmutableArray.CreateBuilder<Feature>();
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
-                var name = reader.GetName(i);
-                if (i - 2 < attributeColumns.Count)
+                var id = reader.IsDBNull(0) ? 0L : Convert.ToInt64(reader.GetValue(0), CultureInfo.InvariantCulture);
+                var wkb = reader.IsDBNull(1) ? null : ReadWkb(reader, 1);
+
+                var attrs = ImmutableDictionary<string, object?>.Empty.ToBuilder();
+                for (var i = 2; i < reader.FieldCount; i++)
                 {
-                    name = attributeColumns[i - 2];
+                    var name = reader.GetName(i);
+                    if (i - 2 < attributeColumns.Count)
+                    {
+                        name = attributeColumns[i - 2];
+                    }
+
+                    attrs[name] = reader.IsDBNull(i) ? null : reader.GetValue(i);
                 }
 
-                attrs[name] = reader.IsDBNull(i) ? null : reader.GetValue(i);
+                features.Add(Feature.Create(id, wkb, attrs.ToImmutable()));
             }
 
-            features.Add(Feature.Create(id, wkb, attrs.ToImmutable()));
+            return features.ToImmutable();
         }
-
-        return features.ToImmutable();
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is DbException or TimeoutException)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            OracleFeatureLog.QueryFailed(_logger, "select", mapping.LayerId, ex);
+            throw new InvalidOperationException(
+                $"Oracle select query failed for layer {mapping.LayerId}.", ex);
+        }
     }
 
     public async Task<long> ExecuteCountAsync(
@@ -87,16 +102,30 @@ internal sealed class OracleFeatureDataAccess
         activity?.SetTag("db.operation", "count");
         activity?.SetTag("layer.id", mapping.LayerId);
 
-        await using var connection = await _connectionFactory.OpenAsync(dataConnection, cancellationToken).ConfigureAwait(false);
-        await using var command = CreateCommand(connection, query);
-
-        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-        if (result is null || result is DBNull)
+        try
         {
-            return 0L;
-        }
+            await using var connection = await _connectionFactory.OpenAsync(dataConnection, cancellationToken).ConfigureAwait(false);
+            await using var command = CreateCommand(connection, query);
 
-        return Convert.ToInt64(result, CultureInfo.InvariantCulture);
+            var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+            if (result is null || result is DBNull)
+            {
+                return 0L;
+            }
+
+            return Convert.ToInt64(result, CultureInfo.InvariantCulture);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is DbException or TimeoutException)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            OracleFeatureLog.QueryFailed(_logger, "count", mapping.LayerId, ex);
+            throw new InvalidOperationException(
+                $"Oracle count query failed for layer {mapping.LayerId}.", ex);
+        }
     }
 
     public async Task<FeatureExtent?> ExecuteExtentAsync(
@@ -110,29 +139,44 @@ internal sealed class OracleFeatureDataAccess
         activity?.SetTag("db.operation", "extent");
         activity?.SetTag("layer.id", mapping.LayerId);
 
-        await using var connection = await _connectionFactory.OpenAsync(dataConnection, cancellationToken).ConfigureAwait(false);
-        await using var command = CreateCommand(connection, query);
-
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        try
         {
-            return null;
-        }
+            await using var connection = await _connectionFactory.OpenAsync(dataConnection, cancellationToken).ConfigureAwait(false);
+            await using var command = CreateCommand(connection, query);
 
-        if (reader.IsDBNull(0) || reader.IsDBNull(1) || reader.IsDBNull(2) || reader.IsDBNull(3))
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                return null;
+            }
+
+            if (reader.IsDBNull(0) || reader.IsDBNull(1) || reader.IsDBNull(2) || reader.IsDBNull(3))
+            {
+                return null;
+            }
+
+            var minX = Convert.ToDouble(reader.GetValue(0), CultureInfo.InvariantCulture);
+            var minY = Convert.ToDouble(reader.GetValue(1), CultureInfo.InvariantCulture);
+            var maxX = Convert.ToDouble(reader.GetValue(2), CultureInfo.InvariantCulture);
+            var maxY = Convert.ToDouble(reader.GetValue(3), CultureInfo.InvariantCulture);
+
+            return FeatureExtent.Create(minX, minY, maxX, maxY, mapping.Srid ?? 0);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            return null;
+            throw;
         }
-
-        var minX = Convert.ToDouble(reader.GetValue(0), CultureInfo.InvariantCulture);
-        var minY = Convert.ToDouble(reader.GetValue(1), CultureInfo.InvariantCulture);
-        var maxX = Convert.ToDouble(reader.GetValue(2), CultureInfo.InvariantCulture);
-        var maxY = Convert.ToDouble(reader.GetValue(3), CultureInfo.InvariantCulture);
-
-        return FeatureExtent.Create(minX, minY, maxX, maxY, mapping.Srid ?? 0);
+        catch (Exception ex) when (ex is DbException or TimeoutException)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            OracleFeatureLog.QueryFailed(_logger, "extent", mapping.LayerId, ex);
+            throw new InvalidOperationException(
+                $"Oracle extent query failed for layer {mapping.LayerId}.", ex);
+        }
     }
 
     public async Task<ImmutableArray<long>> ExecuteObjectIdsAsync(
+        OracleLayerMapping mapping,
         ParameterizedQuery query,
         DataConnection? dataConnection,
         CancellationToken cancellationToken)
@@ -140,21 +184,36 @@ internal sealed class OracleFeatureDataAccess
         using var activity = _activitySource.StartActivity("oracle.feature.objectids");
         activity?.SetTag("db.system", "oracle");
         activity?.SetTag("db.operation", "objectids");
+        activity?.SetTag("layer.id", mapping.LayerId);
 
-        await using var connection = await _connectionFactory.OpenAsync(dataConnection, cancellationToken).ConfigureAwait(false);
-        await using var command = CreateCommand(connection, query);
-
-        var ids = ImmutableArray.CreateBuilder<long>();
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        try
         {
-            if (!reader.IsDBNull(0))
-            {
-                ids.Add(Convert.ToInt64(reader.GetValue(0), CultureInfo.InvariantCulture));
-            }
-        }
+            await using var connection = await _connectionFactory.OpenAsync(dataConnection, cancellationToken).ConfigureAwait(false);
+            await using var command = CreateCommand(connection, query);
 
-        return ids.ToImmutable();
+            var ids = ImmutableArray.CreateBuilder<long>();
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                if (!reader.IsDBNull(0))
+                {
+                    ids.Add(Convert.ToInt64(reader.GetValue(0), CultureInfo.InvariantCulture));
+                }
+            }
+
+            return ids.ToImmutable();
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is DbException or TimeoutException)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            OracleFeatureLog.QueryFailed(_logger, "objectids", mapping.LayerId, ex);
+            throw new InvalidOperationException(
+                $"Oracle objectids query failed for layer {mapping.LayerId}.", ex);
+        }
     }
 
     private OracleCommand CreateCommand(OracleConnection connection, ParameterizedQuery query)

@@ -18,13 +18,25 @@ namespace Honua.Geoprocessing.Execution;
 /// shape: the executor is the sole worker-side behavior for a single dotted
 /// process id and surfaces automatically as a <c>process:&lt;id&gt;</c> workflow node.
 /// </summary>
-internal abstract class FeatureCollectionTransformExecutor : IJobExecutor
+internal abstract partial class FeatureCollectionTransformExecutor : IJobExecutor
 {
-    private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _options;
+    private protected readonly IOptionsMonitor<GeoprocessingExecutorOptions> _options;
+    private readonly ILogger _logger;
 
-    protected FeatureCollectionTransformExecutor(IOptionsMonitor<GeoprocessingExecutorOptions> options)
+    protected FeatureCollectionTransformExecutor(
+        IOptionsMonitor<GeoprocessingExecutorOptions> options,
+        ILogger logger)
     {
         _options = options;
+        _logger = logger;
+    }
+
+    // Compatibility overload for subclasses that do not inject an ILogger. The
+    // NullLogger silences the log output; subclasses should prefer the two-arg
+    // constructor when they receive ILogger from DI.
+    protected FeatureCollectionTransformExecutor(IOptionsMonitor<GeoprocessingExecutorOptions> options)
+        : this(options, Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance)
+    {
     }
 
     /// <summary>
@@ -59,7 +71,7 @@ internal abstract class FeatureCollectionTransformExecutor : IJobExecutor
             return JobExecutionResult.Failed($"Invalid {ProcessId} inputs: {inputError}");
         }
 
-        if (!FeatureCollectionArtifact.TryParseDataUri(inputUri, out var source, out var parseError))
+        if (!FeatureCollectionArtifact.TryParseDataUri(inputUri, out var source, out var parseError, _options.CurrentValue.MaxArtifactBytes))
         {
             return JobExecutionResult.Failed($"Invalid {ProcessId} inputs: 'input' {parseError}");
         }
@@ -78,6 +90,7 @@ internal abstract class FeatureCollectionTransformExecutor : IJobExecutor
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            Log.TransformComputationFailed(_logger, job.OperationId, ProcessId, ex);
             return JobExecutionResult.Failed($"{ProcessId} computation failed: {ex.GetType().Name}.");
         }
 
@@ -116,6 +129,14 @@ internal abstract class FeatureCollectionTransformExecutor : IJobExecutor
         FeatureCollection source,
         StepInputReader inputs,
         CancellationToken cancellationToken);
+
+    private static partial class Log
+    {
+        [LoggerMessage(9230, LogLevel.Error,
+            "Transform executor failed job {OperationId} during {ProcessId} computation")]
+        public static partial void TransformComputationFailed(
+            ILogger logger, string operationId, string processId, Exception exception);
+    }
 }
 
 /// <summary>

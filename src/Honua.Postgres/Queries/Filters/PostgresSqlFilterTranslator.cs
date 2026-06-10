@@ -243,11 +243,13 @@ internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBa
         return IsLikelyGeographicSrid(context.Wkid);
     }
 
+    // Fallback used only when the translation context does not carry an explicit
+    // IsGeographic flag. Restricted to the well-known, unambiguously geographic codes;
+    // the prior range-rule (4000-4999) swept in EPSG:4978 (geocentric) and projected
+    // variants such as EPSG:4087/4088, mis-routing DWithin to the geography path.
+    // Mirrors PostgresGeometryOperationService.IsLikelyGeographicSrid.
     private static bool IsLikelyGeographicSrid(int srid)
-        => srid == SpatialReference.WGS84.Wkid ||
-           srid == 4269 ||
-           srid == 4267 ||
-           srid is >= 4000 and <= 4999;
+        => srid is 4326 or 4269 or 4267 or 4258 or 4619 or 4283;
 
     private string TranslateGeometryExpression(FilterExpression expression, FilterTranslationContext context)
     {

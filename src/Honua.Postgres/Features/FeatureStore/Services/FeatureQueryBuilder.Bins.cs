@@ -109,9 +109,15 @@ internal sealed partial class FeatureQueryBuilder
             sql.Append(CultureInfo.InvariantCulture,
                 $" FROM {_tableName} WHERE {DatabaseSchema.LayerIdColumn} = $1");
 
+            // Mirror ALL outer-query filters (attribute, temporal, spatial) so the
+            // bucket range is derived from the same row set that gets binned;
+            // otherwise a filtered request computes boundaries spanning the whole
+            // layer and produces skewed/empty buckets.
             var cteParamIndex = paramIndex;
             var cteParameters = new List<object>();
             AppendWhereClause(sql, query, ref cteParamIndex, cteParameters);
+            AppendTemporalFilter(sql, query, ref cteParamIndex, cteParameters);
+            AppendSpatialFilter(sql, query, geometryStorageType, ref cteParamIndex, cteParameters);
 
             sql.Append(") SELECT ");
             sql.Append(CultureInfo.InvariantCulture,
@@ -207,17 +213,18 @@ internal sealed partial class FeatureQueryBuilder
             AppendTemporalFilter(sql, query, ref paramIndex, parameters);
             AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
 
-            sql.Append(" GROUP BY bin_idx, \"lowerBoundary\", \"upperBoundary\"");
-            sql.Append(" HAVING CASE ");
-            for (var i = 0; i < boundaries.Length - 1; i++)
-            {
-                var lower = boundaries[i].ToString(CultureInfo.InvariantCulture);
-                var upper = boundaries[i + 1].ToString(CultureInfo.InvariantCulture);
-                sql.Append(CultureInfo.InvariantCulture,
-                    $"WHEN {numericExpr} >= {lower} AND {numericExpr} {(i == boundaries.Length - 2 ? "<=" : "<")} {upper} THEN {i} ");
-            }
+            // Drop out-of-range / missing values in WHERE rather than HAVING. A HAVING
+            // expression over the raw attribute is rejected by PostgreSQL (SQLSTATE 42803)
+            // unless it is syntactically identical to a grouped expression, which the
+            // previous CASE was not — every fixed-boundaries bins query failed at
+            // execution. Values outside [first, last] (and NULLs) are exactly the rows
+            // whose bin_idx CASE yields NULL, so this WHERE guard is equivalent.
+            var rangeLower = boundaries[0].ToString(CultureInfo.InvariantCulture);
+            var rangeUpper = boundaries[^1].ToString(CultureInfo.InvariantCulture);
+            sql.Append(CultureInfo.InvariantCulture,
+                $" AND {numericExpr} >= {rangeLower} AND {numericExpr} <= {rangeUpper}");
 
-            sql.Append("END IS NOT NULL");
+            sql.Append(" GROUP BY bin_idx, \"lowerBoundary\", \"upperBoundary\"");
             sql.Append(" ORDER BY bin_idx");
 
             return new CoreParameterizedQuery(sql.ToString(), parameters);

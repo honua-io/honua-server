@@ -54,7 +54,7 @@ internal sealed class GeoJsonSourceExecutor(IOptionsMonitor<GeoprocessingExecuto
         string parseError;
         if (inputs.TryGet("input", out var dataUri))
         {
-            if (!FeatureCollectionArtifact.TryParseDataUri(dataUri, out collection, out parseError))
+            if (!FeatureCollectionArtifact.TryParseDataUri(dataUri, out collection, out parseError, _options.CurrentValue.MaxArtifactBytes))
             {
                 return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: 'input' {parseError}");
             }

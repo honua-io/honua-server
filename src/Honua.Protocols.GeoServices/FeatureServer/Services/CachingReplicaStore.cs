@@ -61,9 +61,18 @@ internal sealed partial class CachingReplicaStore : IReplicaStore
             return null;
         }
 
-        // Backfill cache
+        // Backfill cache (best-effort: a cache outage must not fail a read the
+        // authoritative store has already satisfied).
         var state = ToState(record.Value);
-        await _cache.SetAsync(state, cancellationToken: cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await _cache.SetAsync(state, cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Log.CacheWriteFailed(_logger, replicaId, ex);
+        }
+
         return state;
     }
 

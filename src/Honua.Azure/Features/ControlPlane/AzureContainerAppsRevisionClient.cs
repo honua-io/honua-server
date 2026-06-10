@@ -275,10 +275,25 @@ internal sealed class AzureManagementContainerAppsRevisionClient(IHttpClientFact
         byte[]? payload,
         CancellationToken cancellationToken)
     {
-        var accessToken = await _credential.GetTokenAsync(
-                new TokenRequestContext([ManagementScope.ToString()]),
-                cancellationToken)
-            .ConfigureAwait(false);
+        AccessToken accessToken;
+        try
+        {
+            accessToken = await _credential.GetTokenAsync(
+                    new TokenRequestContext([ManagementScope.ToString()]),
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (AuthenticationFailedException ex)
+        {
+            // Normalize credential failures to HttpRequestException with no status code so
+            // they flow through the same recoverable path as transport failures. The backend
+            // treats null-status HttpRequestException as an ambiguous outcome and preserves
+            // durable state on observe/cancel instead of terminalizing the rollout to
+            // ManualInterventionRequired on a transient managed-identity IMDS hiccup.
+            throw new HttpRequestException(
+                "Azure Container Apps management credential acquisition failed.",
+                ex);
+        }
 
         var request = new HttpRequestMessage(method, url);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken.Token);

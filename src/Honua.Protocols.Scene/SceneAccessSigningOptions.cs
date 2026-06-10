@@ -15,7 +15,7 @@ namespace Honua.Protocols.Scene;
 /// it into source.
 /// <para>
 /// All bounds checks (signing-key presence, TTL range, refresh fraction range)
-/// are enforced by the <see cref="SceneAccessEnvelopeService"/> constructor as
+/// are enforced per-call by <see cref="SceneAccessEnvelopeService"/> as
 /// <see cref="InvalidOperationException"/> throws so the scene endpoints'
 /// <c>catch (InvalidOperationException)</c> blocks can surface a structured 500
 /// + <see cref="SceneAccessLog.OptionsMisconfigured"/> log. Data-annotation
