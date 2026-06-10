@@ -12,7 +12,7 @@ Validates that desktop GIS and BI clients can connect to and work with Honua Ser
 >
 > Licensed ArcGIS Pro automation now has a separate scaffold:
 > `scripts/client-compat/arcgis-pro/run-arcgis-pro-evidence.py`, documented in
-> `docs/gis/ARCGIS_PRO_LICENSED_EVIDENCE.md`. It is a manual/scheduled
+> `docs/internal/evidence/ARCGIS_PRO_LICENSED_EVIDENCE.md`. It is a manual/scheduled
 > self-hosted Windows lane and is not part of ordinary PR gates.
 
 ## Prerequisites

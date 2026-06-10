@@ -52,7 +52,7 @@ body:
     id: gate-tier-impact
     attributes:
       label: Gate Tier Impact
-      description: Which CI tiers will this work affect? See docs/ci/gate-model.md.
+      description: Which CI tiers will this work affect? See docs/internal/ci/gate-model.md.
       multiple: true
       options:
         - PR gates (build, test, governance)
