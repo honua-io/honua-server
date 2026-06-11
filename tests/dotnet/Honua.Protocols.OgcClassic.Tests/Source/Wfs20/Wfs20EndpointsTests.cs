@@ -27,7 +27,7 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
 public sealed class Wfs20EndpointsTests : IAsyncLifetime
 {
     private const string GetFeatureByIdStoredQueryId = "urn:ogc:def:query:OGC-WFS::GetFeatureById";
-    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Community);
 
     public async Task InitializeAsync() => await _fixture.InitializeAsync();
 

@@ -82,13 +82,15 @@ public static class FeatureCatalog
     public const string BranchVersioningKey = "editing.branch-versioning";
 
     /// <summary>
-    /// Entitlement key for multi-user feature editing — create/update/delete features via the
-    /// shared edit/transaction pipeline (FeatureServer applyEdits/add/update/delete, OGC API
-    /// Features mutations, WFS-T, OData CRUD, and gRPC edits). Pro-tier; Community deployments
-    /// remain read + serve + one-shot file import (#1548). One-shot file import (<c>import.file</c>)
-    /// and Enterprise branch versioning (<c>editing.branch-versioning</c>) are separate entitlements.
+    /// Entitlement key for editing through the Esri GeoServices FeatureServer write surface —
+    /// applyEdits/addFeatures/updateFeatures/deleteFeatures and the calculate bulk field update.
+    /// Pro-tier (#1591): the Esri-compatibility premium is paid on the write side only. Feature
+    /// editing via the open protocols (OGC API Features mutations, WFS-T, OData CRUD/$batch, and
+    /// gRPC edits) is Community and carries no entitlement gate, while still flowing through the
+    /// shared edit/transaction pipeline. Enterprise branch versioning
+    /// (<c>editing.branch-versioning</c>) is a separate entitlement.
     /// </summary>
-    public const string FeatureEditsKey = "editing.feature-edits";
+    public const string FeatureServerEditsKey = "editing.featureserver-edits";
 
     /// <summary>
     /// Entitlement key for the server plugin/extension SDK (custom feature validators and edit
@@ -238,9 +240,10 @@ public static class FeatureCatalog
         new("printing.layout-templates", "Print Layout Templates", Categories.Printing,
             HonuaEdition.Pro, "Use full print layout templates beyond MAP_ONLY."),
 
-        // Editing — Pro (multi-user feature editing across all write protocols)
-        new(FeatureEditsKey, "Feature Editing", Categories.Editing,
-            HonuaEdition.Pro, "Create, update, and delete features through the shared edit pipeline — FeatureServer applyEdits/add/update/delete, OGC API Features mutations, WFS-T, OData CRUD, and gRPC edits."),
+        // Editing — Pro (Esri GeoServices FeatureServer write surface only; open-protocol
+        // editing via OGC API Features, WFS-T, OData, and gRPC is Community and ungated)
+        new(FeatureServerEditsKey, "FeatureServer Editing", Categories.Editing,
+            HonuaEdition.Pro, "Create, update, and delete features through the Esri GeoServices FeatureServer write surface — applyEdits, addFeatures, updateFeatures, deleteFeatures, and calculate."),
 
         // Editing — Enterprise (Esri-style branch versioning; Postgres-only)
         new(BranchVersioningKey, "Branch Versioning", Categories.Editing,

@@ -14,13 +14,12 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Honua.Server.Tests.Features.Licensing;
 
 /// <summary>
-/// Unit tests for the multi-user feature-editing Pro-tier gate (#1548). Every write
-/// protocol — FeatureServer applyEdits/add/update/delete, OGC API Features mutations,
-/// WFS-T, OData CRUD, and gRPC edits — enforces editing behind the shared
-/// <see cref="LicenseGate"/> using <c>FeatureCatalog.FeatureEditsKey</c>. This mirrors
-/// <c>SpatialAnalyticsEditionGateTests</c>: instead of booting Postgres, the gate
-/// decision is exercised directly with a stub <see cref="ILicenseStatusProvider"/>,
-/// proving Community licenses are blocked with HTTP 402 while Pro / Enterprise pass.
+/// Unit tests for the FeatureServer editing Pro-tier gate (#1591). Only the Esri
+/// GeoServices FeatureServer write surface enforces this entitlement; open-protocol
+/// edits remain Community. This mirrors <c>SpatialAnalyticsEditionGateTests</c>:
+/// instead of booting Postgres, the gate decision is exercised directly with a stub
+/// <see cref="ILicenseStatusProvider"/>, proving Community licenses are blocked with
+/// HTTP 402 while Pro / Enterprise pass.
 /// </summary>
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class FeatureEditsEditionGateTests
@@ -32,7 +31,7 @@ public sealed class FeatureEditsEditionGateTests
         var context = BuildHttpContext(HonuaEdition.Community);
 
         var result = LicenseGate.RequireEntitlement(
-            context, FeatureCatalog.FeatureEditsKey, "Feature editing");
+            context, FeatureCatalog.FeatureServerEditsKey, "FeatureServer editing");
 
         result.Should().NotBeNull();
         AssertPaymentRequired(result!);
@@ -45,7 +44,7 @@ public sealed class FeatureEditsEditionGateTests
         var context = BuildHttpContext(HonuaEdition.Pro);
 
         var result = LicenseGate.RequireEntitlement(
-            context, FeatureCatalog.FeatureEditsKey, "Feature editing");
+            context, FeatureCatalog.FeatureServerEditsKey, "FeatureServer editing");
 
         result.Should().BeNull();
     }
@@ -57,7 +56,7 @@ public sealed class FeatureEditsEditionGateTests
         var context = BuildHttpContext(HonuaEdition.Enterprise);
 
         var result = LicenseGate.RequireEntitlement(
-            context, FeatureCatalog.FeatureEditsKey, "Feature editing");
+            context, FeatureCatalog.FeatureServerEditsKey, "FeatureServer editing");
 
         result.Should().BeNull();
     }
@@ -66,11 +65,9 @@ public sealed class FeatureEditsEditionGateTests
     [Protocol(TestProtocols.FeatureServer)]
     public void IsEntitlementActive_CommunityEdition_IsFalse()
     {
-        // The gRPC ApplyEdits path gates via IsEntitlementActive + a FailedPrecondition
-        // RpcException rather than an IResult, so cover that decision shape too.
         var context = BuildHttpContext(HonuaEdition.Community);
 
-        LicenseGate.IsEntitlementActive(context.RequestServices, FeatureCatalog.FeatureEditsKey)
+        LicenseGate.IsEntitlementActive(context.RequestServices, FeatureCatalog.FeatureServerEditsKey)
             .Should().BeFalse();
     }
 
@@ -80,7 +77,7 @@ public sealed class FeatureEditsEditionGateTests
     {
         var context = BuildHttpContext(HonuaEdition.Pro);
 
-        LicenseGate.IsEntitlementActive(context.RequestServices, FeatureCatalog.FeatureEditsKey)
+        LicenseGate.IsEntitlementActive(context.RequestServices, FeatureCatalog.FeatureServerEditsKey)
             .Should().BeTrue();
     }
 
