@@ -6,7 +6,7 @@ You'll run a production-shaped Honua stack on a single host: pinned image, secre
 
 ## Steps
 
-1. Create the env file. The master key must be at least 32 characters; the stock dev compose does not set `HONUA_ADMIN_PASSWORD`, so production files must pass it explicitly.
+1. Create the env file. The master key must be at least 32 characters; production compose files must pass secrets explicitly rather than relying on the repo-root development defaults.
 
 ```bash
 mkdir -p /opt/honua && cd /opt/honua
@@ -114,7 +114,7 @@ source .env && curl -s -H "X-API-Key: $HONUA_ADMIN_PASSWORD" http://127.0.0.1:80
 
 ## Troubleshoot
 
-- **Admin calls return 401** — `HONUA_ADMIN_PASSWORD` was not passed into the container; the stock dev `docker-compose.yml` never sets it, so check your production file does.
+- **Admin calls return 401** — `HONUA_ADMIN_PASSWORD` was not passed into the container; check your production compose file and secret source.
 - **Startup fails with "Master key must be at least 32 characters"** — lengthen `Security__ConnectionEncryption__MasterKey`.
 - **Browser requests blocked by CORS** — the permissive dev CORS policy is force-disabled inside containers; set `Cors__AllowedOrigins__0` to your app's exact origin.
 - **`503` on OGC Processes or import job routes** — those need Redis; enable the `redis` profile and set `ConnectionStrings__Redis`.

@@ -88,7 +88,7 @@ The browser shows your features drawn over the basemap, centered on the data ext
 
 - **Tile or TileJSON requests return 401** — anonymous read is not enabled on the service (step 1), or the layer was published to a service other than `default`.
 - **404 on `/tiles/{id}/tile.json`** — wrong `layerId`; use the `layerId` from the publish response, and confirm the layer is enabled.
-- **CORS errors in the browser console** — serve `map.html` from an origin listed in `Cors__AllowedOrigins__*` (the quickstart override allows `http://localhost:3000`); `file://` pages are always blocked.
+- **CORS errors in the browser console** — serve `map.html` from an origin listed in `Cors__AllowedOrigins__*` (the repo-root compose defaults allow `http://localhost:3000`); `file://` pages are always blocked.
 - **Map loads but no features visible** — confirm `'source-layer':'layer'` is set on the style layer and that the map view covers your data's bounds.
 - More help: [Troubleshooting](../guides/deploy/troubleshooting.md)
 

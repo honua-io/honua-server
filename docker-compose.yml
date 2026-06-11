@@ -39,6 +39,9 @@ services:
       ASPNETCORE_ENVIRONMENT: Development
       ConnectionStrings__DefaultConnection: "Host=postgres;Database=honua_dev;Username=honua_user;Password=honua_password"
       ConnectionStrings__Redis: "${HONUA_REDIS_URL:-}"
+      # Development-only defaults for the repo quickstart. Override these before
+      # reusing this compose file outside a local developer workstation.
+      HONUA_ADMIN_PASSWORD: "${HONUA_ADMIN_PASSWORD:-quickstart-admin-password}"
       FileStorage__Provider: "${HONUA_STORAGE_PROVIDER:-Local}"
       FileStorage__AwsS3__BucketName: "${HONUA_S3_BUCKET:-}"
       FileStorage__AwsS3__Region: "${HONUA_S3_REGION:-us-east-1}"
@@ -46,8 +49,10 @@ services:
       FileStorage__AwsS3__ForcePathStyle: "${HONUA_S3_FORCE_PATH_STYLE:-true}"
       FileStorage__AwsS3__AccessKeyId: "${HONUA_S3_ACCESS_KEY_ID:-}"
       FileStorage__AwsS3__SecretAccessKey: "${HONUA_S3_SECRET_ACCESS_KEY:-}"
-      Security__ConnectionEncryption__MasterKey: "${HONUA_CONNECTION_ENCRYPTION_MASTER_KEY:-}"
-      Security__ConnectionEncryption__Salt: "${HONUA_CONNECTION_ENCRYPTION_SALT:-}"
+      Security__ConnectionEncryption__MasterKey: "${HONUA_CONNECTION_ENCRYPTION_MASTER_KEY:-honua-compose-dev-master-key-0123456789}"
+      Security__ConnectionEncryption__Salt: "${HONUA_CONNECTION_ENCRYPTION_SALT:-aG9udWEtY29tcG9zZS1kZXYtc2FsdC0yMDI2}"
+      Cors__AllowedOrigins__0: "${HONUA_DEV_CORS_ORIGIN:-http://localhost:3000}"
+      Cors__AllowedOrigins__1: "${HONUA_DEV_ADMIN_CORS_ORIGIN:-http://localhost:5173}"
       Kestrel__Endpoints__Http__Url: "http://+:8080"
       Kestrel__Endpoints__Http__Protocols: "Http1"
       Kestrel__Endpoints__Grpc__Url: "http://+:8081"

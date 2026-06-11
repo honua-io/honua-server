@@ -80,9 +80,9 @@ curl -s -H "X-API-Key: $KEY" "$HONUA/ogc/features/collections/$COLLECTION/items?
 
 ## Troubleshoot
 
-- **401 `Admin authentication not configured`** — `HONUA_ADMIN_PASSWORD` is not set on the container; see the [quickstart](quickstart.md) override file.
+- **401 `Admin authentication not configured`** — `HONUA_ADMIN_PASSWORD` is not set on the server process; the repo-root compose file sets a dev default, but other hosts must pass it explicitly.
 - **400 `Table name is required`** — the multipart form must include a `TableName` field alongside `file`.
-- **`Master key not configured` on step 3** — set `Security__ConnectionEncryption__MasterKey` (32+ characters) on the container; connection credentials are stored encrypted.
+- **`Master key not configured` on step 3** — set `Security__ConnectionEncryption__MasterKey` (32+ characters) on the server process; connection credentials are stored encrypted.
 - **404 publishing the layer** — the connection name in the URL does not exist; list connections with `curl -H "X-API-Key: $KEY" "$HONUA/api/v1/admin/connections"`.
 - **Collection or layer missing from queries** — check the publish response had `"enabled":true`, and re-list `/ogc/features/collections`; queries without `X-API-Key` return 401 until you allow anonymous reads.
 - More help: [Troubleshooting](../guides/deploy/troubleshooting.md)
