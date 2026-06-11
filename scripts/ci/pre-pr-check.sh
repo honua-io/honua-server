@@ -135,6 +135,7 @@ run_unit_project() {
 }
 
 run_unit_project tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj
+run_unit_project tests/dotnet/Honua.Core.Security.Tests/Honua.Core.Security.Tests.csproj
 run_unit_project tests/dotnet/Honua.LoadTests/Honua.LoadTests.csproj
 run_unit_project tests/dotnet/Honua.Postgres.Tests/Honua.Postgres.Tests.csproj
 
