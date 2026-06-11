@@ -750,37 +750,44 @@
         "identify",
         "find",
         "legend",
+        "queryLegends",
         "query",
         "query domains",
+        "generateRenderer (per layer)",
+        "queryAttachments",
+        "queryRelatedRecords",
         "feature child resource",
         "tiles",
+        "storage-backed exportTiles",
         "generateKml",
         "WMS",
         "WMTS"
       ],
       "knownGaps": [
-        "exportTiles",
-        "estimateExportTilesSize",
-        "generateRenderer",
-        "queryAttachments",
-        "queryLegends",
-        "queryRelatedRecords",
+        "full Esri tile-package/job exportTiles semantics",
+        "generateRenderer (service-level)",
+        "queryAnalytic",
+        "dynamicLayer",
+        "image/KML-image/job child resources",
         "additional Esri child resources"
       ],
       "evidence": {
         "code": [
-          "src/Honua.Server/Features/Protocols/GeoServices/MapServer/MapServerEndpoints.cs",
-          "src/Honua.Server/Features/Protocols/GeoServices/MapServer/MapServerRequestHandlers.Export.cs",
-          "src/Honua.Server/Features/Protocols/GeoServices/MapServer/MapServerRequestHandlers.Identify.cs",
-          "src/Honua.Server/Features/Protocols/GeoServices/MapServer/MapServerRequestHandlers.Find.cs",
-          "src/Honua.Server/Features/Protocols/Ogc/Classic/OgcClassicRequestHandlers.Wms.cs",
-          "src/Honua.Server/Features/Protocols/Ogc/Classic/OgcClassicRequestHandlers.Wmts.cs"
+          "src/Honua.Protocols.GeoServices/MapServer/MapServerEndpoints.cs",
+          "src/Honua.Protocols.GeoServices/MapServer/MapServerRequestHandlers.Export.cs",
+          "src/Honua.Protocols.GeoServices/MapServer/MapServerRequestHandlers.ExportTiles.cs",
+          "src/Honua.Protocols.GeoServices/MapServer/MapServerRequestHandlers.Identify.cs",
+          "src/Honua.Protocols.GeoServices/MapServer/MapServerRequestHandlers.Find.cs",
+          "src/Honua.Protocols.GeoServices/MapServer/MapServerRequestHandlers.Legend.cs",
+          "src/Honua.Protocols.GeoServices/MapServer/MapServerRequestHandlers.RelatedAndRenderer.cs",
+          "src/Honua.Protocols.OgcClassic/Wms/WmsRequestHandlers.cs",
+          "src/Honua.Protocols.OgcClassic/Wmts/WmtsRequestHandlers.cs"
         ],
         "tests": [
-          "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/MapServer/MapServerEndpointTests.cs",
-          "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/MapServer/MapServerTileEndpointTests.cs",
-          "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Classic/OgcClassicWmsTests.cs",
-          "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Classic/OgcClassicWmtsTests.cs"
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/MapServer/MapServerEndpointTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/MapServer/MapServerTileEndpointTests.cs",
+          "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wms/OgcClassicWmsTests.cs",
+          "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wmts/OgcClassicWmtsTests.cs"
         ]
       },
       "operations": {
@@ -858,11 +865,26 @@
             "name": "Legend",
             "esriPath": "/rest/services/{serviceId}/MapServer/legend",
             "methods": [
-              "GET"
+              "GET",
+              "POST"
             ],
             "honuaEndpoints": [
-              "GET /rest/services/{serviceId}/MapServer/legend"
+              "GET /rest/services/{serviceId}/MapServer/legend",
+              "POST /rest/services/{serviceId}/MapServer/legend"
             ]
+          },
+          {
+            "name": "Query Legends",
+            "esriPath": "/rest/services/{serviceId}/MapServer/queryLegends",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/MapServer/queryLegends",
+              "POST /rest/services/{serviceId}/MapServer/queryLegends"
+            ],
+            "notes": "Alias over the legend handler; returns Esri-shaped layers[].legend[] swatches."
           },
           {
             "name": "Layer query",
@@ -940,9 +962,74 @@
             "honuaEndpoints": [
               "GET /rest/services/{serviceId}/MapServer/{layerId}/{featureId}"
             ]
+          },
+          {
+            "name": "Generate Renderer (per layer)",
+            "esriPath": "/rest/services/{serviceId}/MapServer/{layerId}/generateRenderer",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/MapServer/{layerId}/generateRenderer",
+              "POST /rest/services/{serviceId}/MapServer/{layerId}/generateRenderer"
+            ],
+            "notes": "Delegates to the FeatureServer generateRenderer contract."
+          },
+          {
+            "name": "Query Attachments",
+            "esriPath": "/rest/services/{serviceId}/MapServer/{layerId}/queryAttachments",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/MapServer/{layerId}/queryAttachments",
+              "POST /rest/services/{serviceId}/MapServer/{layerId}/queryAttachments"
+            ],
+            "notes": "Delegates to the FeatureServer queryAttachments contract."
+          },
+          {
+            "name": "Query Related Records",
+            "esriPath": "/rest/services/{serviceId}/MapServer/{layerId}/queryRelatedRecords",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/MapServer/{layerId}/queryRelatedRecords",
+              "POST /rest/services/{serviceId}/MapServer/{layerId}/queryRelatedRecords"
+            ],
+            "notes": "Delegates to the FeatureServer queryRelatedRecords contract."
           }
         ],
         "partial": [
+          {
+            "name": "Estimate Export Tile Size",
+            "esriPath": "/rest/services/{serviceId}/MapServer/estimateExportTilesSize",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/MapServer/estimateExportTilesSize",
+              "POST /rest/services/{serviceId}/MapServer/estimateExportTilesSize"
+            ],
+            "notes": "Estimates bounded WebMercatorQuad ZIP archive size for the current storage-backed exportTiles implementation."
+          },
+          {
+            "name": "Export Tiles",
+            "esriPath": "/rest/services/{serviceId}/MapServer/exportTiles",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/MapServer/exportTiles",
+              "POST /rest/services/{serviceId}/MapServer/exportTiles"
+            ],
+            "notes": "Exports bounded WebMercatorQuad PNG tiles to a ZIP archive in configured cloud file storage. Full Esri TPK/TPKX/compact cache and async job resources are not implemented."
+          },
           {
             "name": "WMTS",
             "esriPath": "/rest/services/{serviceId}/MapServer/WMTS",
@@ -959,47 +1046,8 @@
         ],
         "notImplemented": [
           {
-            "name": "Estimate Export Tile Size",
-            "esriPath": "/rest/services/{serviceId}/MapServer/estimateExportTilesSize",
-            "methods": [
-              "GET",
-              "POST"
-            ]
-          },
-          {
-            "name": "Export Tiles",
-            "esriPath": "/rest/services/{serviceId}/MapServer/exportTiles",
-            "methods": [
-              "POST"
-            ]
-          },
-          {
-            "name": "Generate Renderer",
+            "name": "Generate Renderer (service level)",
             "esriPath": "/rest/services/{serviceId}/MapServer/generateRenderer",
-            "methods": [
-              "GET",
-              "POST"
-            ]
-          },
-          {
-            "name": "Query Attachments",
-            "esriPath": "/rest/services/{serviceId}/MapServer/{layerId}/queryAttachments",
-            "methods": [
-              "GET",
-              "POST"
-            ]
-          },
-          {
-            "name": "Query Legends",
-            "esriPath": "/rest/services/{serviceId}/MapServer/queryLegends",
-            "methods": [
-              "GET",
-              "POST"
-            ]
-          },
-          {
-            "name": "Query Related Records",
-            "esriPath": "/rest/services/{serviceId}/MapServer/{layerId}/queryRelatedRecords",
             "methods": [
               "GET",
               "POST"

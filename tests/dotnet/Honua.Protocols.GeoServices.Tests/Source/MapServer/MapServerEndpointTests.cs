@@ -8,6 +8,7 @@ using System.Text;
 using System.Text.Json;
 using System.Xml.Linq;
 using FluentAssertions;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Protocols.GeoServices.MapServer.Models;
@@ -229,6 +230,79 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
         export.Extent.Should().NotBeNull();
         export.Href.Should().NotBeNullOrWhiteSpace();
         export.Scale.Should().NotBeNull();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/estimateExportTilesSize")]
+    public async Task MapServer_EstimateExportTilesSize_ReturnsStorageBackedEstimate()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/estimateExportTilesSize?f=json&levels=0&exportExtent=-180,-85,180,85&maxTiles=1");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        var estimate = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.ExportTilesEstimateResponse);
+
+        estimate.Should().NotBeNull();
+        estimate!.TileCount.Should().Be(1);
+        estimate.Size.Should().BeGreaterThan(0);
+        estimate.EstimatedSizeBytes.Should().Be(estimate.Size);
+        estimate.MinZoom.Should().Be(0);
+        estimate.MaxZoom.Should().Be(0);
+        estimate.TilePackage.Should().BeFalse();
+        estimate.StorageFormat.Should().Be("zip");
+        estimate.ContentType.Should().Be("application/zip");
+        estimate.ExceededTransferLimit.Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/exportTiles")]
+    public async Task MapServer_ExportTiles_WritesZipArchiveToCloudStorage()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/exportTiles?f=json&levels=0&exportExtent=-180,-85,180,85&maxTiles=1");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        var export = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.ExportTilesResponse);
+
+        export.Should().NotBeNull();
+        export!.JobStatus.Should().Be("esriJobSucceeded");
+        export.TileCount.Should().Be(1);
+        export.TilePackage.Should().BeFalse();
+        export.StorageFormat.Should().Be("zip");
+        export.ContentType.Should().Be("application/zip");
+        export.ArchiveFileId.Should().NotBeNullOrWhiteSpace();
+        export.DownloadUrl.Should().NotBeNullOrWhiteSpace();
+        export.Files.Should().ContainSingle();
+        export.Results.Should().NotBeNull();
+        export.Results!.OutServiceUrl.Should().NotBeNull();
+
+        var fileId = export.ArchiveFileId!;
+        var storage = _fixture.GetService<ICloudFileStorage>();
+        try
+        {
+            var bytes = await storage.DownloadBytesAsync(fileId);
+
+            bytes.Should().NotBeNull();
+            bytes!.Length.Should().BeGreaterThan(0);
+            using var archive = new ZipArchive(new MemoryStream(bytes), ZipArchiveMode.Read);
+            var tileEntry = archive.GetEntry("0/0/0.png");
+            tileEntry.Should().NotBeNull();
+
+            await using var tileStream = tileEntry!.Open();
+            var pngHeader = new byte[8];
+            var read = await tileStream.ReadAsync(pngHeader.AsMemory(0, pngHeader.Length));
+
+            read.Should().Be(pngHeader.Length);
+            pngHeader.Should().Equal(0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A);
+        }
+        finally
+        {
+            await storage.DeleteAsync(fileId);
+        }
     }
 
     [IntegrationTest]
@@ -851,6 +925,23 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/legend",
             payload);
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        var legend = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.LegendResponse);
+
+        legend.Should().NotBeNull();
+        legend!.Layers.Should().NotBeNullOrEmpty();
+        legend.Layers!.First().Legend.Should().NotBeNullOrEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/queryLegends")]
+    public async Task MapServer_QueryLegends_ReturnsLegendLayers()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/queryLegends?f=json&size=16");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);

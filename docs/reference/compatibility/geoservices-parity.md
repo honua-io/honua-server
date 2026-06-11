@@ -18,7 +18,7 @@ Status vocabulary:
 | Service | Parity | Implemented surface | Headline gaps |
 | --- | --- | --- | --- |
 | [FeatureServer](#featureserver) | Partial | Query (7 output formats), edits, attachments, related records, domains, replication, estimates, calculate, validateSQL, append, bins/date bins/top features, generateRenderer, spatial analytics extensions (Pro) | Change tracking, contingent-value/shared-template/asset data models, 3D queries, true curves |
-| [MapServer](#mapserver--wms--wmts) | Partial | Export, identify, find, legend, query, tiles, generateKml, WMS 1.3/1.1.1, WMTS 1.0 | Export tiles, dynamic layers, several child resources; WMTS is WebMercatorQuad-only |
+| [MapServer](#mapserver--wms--wmts) | Partial | Export, identify, find, legend/queryLegends, query, tiles, storage-backed exportTiles, generateKml, WMS 1.3/1.1.1, WMTS 1.0 | Full Esri tile-package/job export semantics, dynamic layers, several child resources; WMTS is WebMercatorQuad-only |
 | [ImageServer](#imageserver) | Partial | Service metadata, exportImage, identify, tile, catalog query, statistics/histograms, getSamples, legend, WCS 2.0.1 KVP | Catalog mutation, export tiles, measure/project, renderingRule execution, AOI clipping for stats, WMTS |
 | [Geometry Service](#geometry-service) | Complete | Root metadata plus all 23 ArcGIS geometry operations | None at operation level; parameter-level caveats only |
 | GeocodeServer | Partial | Service metadata, findAddressCandidates, reverseGeocode, suggest, geocodeAddresses | `outFields`, `magicKey` round-trip, `category` filtering, non-default `outSR` — see [GeocodeServer matrix](../../internal/spikes/geocode-server-matrix.md) |
@@ -75,10 +75,11 @@ Esri spec: [Map Service](https://developers.arcgis.com/rest/services-reference/e
 | export | Implemented | `bbox`, `size`, `dpi`, `format` (png/png8/png24/png32/jpg/gif), `transparent`, `layers`, `bboxSR`/`imageSR`, `layerDefs`, `dynamicLayers`, `time`/`layerTimeOptions`, `backgroundColor`, `f=image\|json\|pjson`. `gdbVersion`, `maxAllowableOffset`, `geometryPrecision`, `returnZ`, `returnM` are accepted but ignored. |
 | identify, find | Implemented | All geometry types, `mapExtent`, `imageDisplay`, `tolerance`, `layerDefs`, `dynamicLayers`, `time`/`timeRelation`. `find` searches string fields with SQL LIKE. |
 | Layer query, service query, generateRenderer (per layer), queryRelatedRecords, queryAttachments | Implemented | Thin adapters delegating to the FeatureServer handlers — same parameter coverage as the [FeatureServer section](#featureserver). |
-| legend, generateKml, tile | Implemented | Legend swatch images; `f=kml`/`f=kmz`; dynamic PNG tiles at `.../MapServer/tile/{z}/{y}/{x}`. |
+| legend, queryLegends, generateKml, tile | Implemented | Legend swatch images at both legend routes; `f=kml`/`f=kmz`; dynamic PNG tiles at `.../MapServer/tile/{z}/{y}/{x}`. |
+| estimateExportTilesSize, exportTiles | Partial | Estimates and exports bounded WebMercatorQuad PNG tiles as a ZIP archive written through configured cloud file storage (`local`, S3, Azure Blob). This closes common storage-backed tile archive workflows, but does not yet emit Esri TPK/TPKX/compact cache packages or async job child resources. |
 | WMS | Implemented | WMS 1.3.0 and 1.1.1 GetCapabilities/GetMap/GetFeatureInfo (KVP) at `.../MapServer/WMS` and `/ogc/services/{serviceId}/wms`. Time-aware layers advertise a `time` dimension. WMS 1.3 is CITE-certified (199/199); 1.1.1 has no CITE evidence yet. |
 | WMTS | Partial | GetCapabilities/GetTile/GetFeatureInfo (KVP + RESTful) at `.../MapServer/WMTS` and `/ogc/services/{serviceId}/wmts`; WebMercatorQuad only. WMTS 1.0 is CITE-certified (60/60). |
-| estimateExportTilesSize, exportTiles, generateRenderer (service-level), queryLegends, queryAnalytic, dynamicLayer, image/KML-image/job child resources, `exts/*` | Not implemented | |
+| generateRenderer (service-level), queryAnalytic, dynamicLayer, image/KML-image/job child resources, `exts/*` | Not implemented | |
 
 ## ImageServer
 
