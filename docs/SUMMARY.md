@@ -62,6 +62,7 @@
   - [Scaling & performance](guides/deploy/scaling-and-performance.md)
   - [Upgrade & rollback](guides/deploy/upgrade-and-rollback.md)
   - [Troubleshooting](guides/deploy/troubleshooting.md)
+  - [Pilot onboarding](operator/runbooks/PILOT_ONBOARDING.md)
 - Migrate
   - [From ArcGIS Server](guides/migrate/from-arcgis-server.md)
   - [From GeoServer](guides/migrate/from-geoserver.md)

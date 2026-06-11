@@ -54,6 +54,8 @@ curl http://localhost:8080/healthz/ready
 PostGIS starts automatically. Migrations run on first boot. HTTP/1 REST and gRPC-Web are at
 `http://localhost:8080`; native h2c gRPC for SDK/mobile clients is at `http://localhost:8081`.
 
+For a full first-boot walkthrough including Redis requirements, metadata-v2 snapshot activation, and common failure modes, see the [Pilot Onboarding Runbook](docs/operator/runbooks/PILOT_ONBOARDING.md).
+
 **Pre-built image** (bring your own PostGIS):
 
 ```bash
