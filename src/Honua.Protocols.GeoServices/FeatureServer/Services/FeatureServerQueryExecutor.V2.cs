@@ -318,7 +318,8 @@ internal sealed partial class FeatureServerQueryExecutor
                 outFields,
                 preparedStream.HasMoreResults,
                 context.Response.BodyWriter,
-                cancellationToken);
+                returnCentroid: queryParams.ReturnCentroid,
+                cancellationToken: cancellationToken);
         }
 
         await context.Response.CompleteAsync();

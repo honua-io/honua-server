@@ -39,7 +39,8 @@ internal interface IQueryFormatter
         int? geometryPrecision,
         double? maxAllowableOffset,
         string[]? outFields = null,
-        bool suppressObjectId = false);
+        bool suppressObjectId = false,
+        bool returnCentroid = false);
 }
 
 /// <summary>
@@ -69,7 +70,8 @@ internal sealed class QueryFormatter : IQueryFormatter
         int? geometryPrecision,
         double? maxAllowableOffset,
         string[]? outFields = null,
-        bool suppressObjectId = false)
+        bool suppressObjectId = false,
+        bool returnCentroid = false)
     {
         ArgumentNullException.ThrowIfNull(resource);
 
@@ -86,7 +88,7 @@ internal sealed class QueryFormatter : IQueryFormatter
             "geojson" => ValueTask.FromResult<(object response, string contentType)>(
                 FormatAsGeoJson(result, resource, returnGeometry, returnZ, returnM, effectiveLimits, outFields)),
             "json" => ValueTask.FromResult<(object response, string contentType)>(
-                FormatAsGeoServicesJson(result, resource, returnGeometry, outputSrid, returnZ, returnM, effectiveLimits, outFields, suppressObjectId)),
+                FormatAsGeoServicesJson(result, resource, returnGeometry, outputSrid, returnZ, returnM, effectiveLimits, outFields, suppressObjectId, returnCentroid)),
             "parquet" => ValueTask.FromResult<(object response, string contentType)>(
                 FormatParquet(result, resource, returnGeometry, outputSrid, returnZ, returnM, effectiveLimits, outFields)),
             "arrow" => new ValueTask<(object response, string contentType)>(
@@ -100,7 +102,7 @@ internal sealed class QueryFormatter : IQueryFormatter
                     effectiveLimits,
                     outFields)),
             _ => ValueTask.FromResult<(object response, string contentType)>(
-                FormatAsGeoServicesJson(result, resource, returnGeometry, outputSrid, returnZ, returnM, effectiveLimits, outFields, suppressObjectId))
+                FormatAsGeoServicesJson(result, resource, returnGeometry, outputSrid, returnZ, returnM, effectiveLimits, outFields, suppressObjectId, returnCentroid))
         };
     }
 
@@ -160,7 +162,8 @@ internal sealed class QueryFormatter : IQueryFormatter
         bool returnM,
         GeometryLimits geometryLimits,
         string[]? outFields,
-        bool suppressObjectId = false)
+        bool suppressObjectId = false,
+        bool returnCentroid = false)
     {
         var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
         var allDeclaredAttributeFields = resource.SchemaFields
@@ -184,6 +187,7 @@ internal sealed class QueryFormatter : IQueryFormatter
             .Select(f => ConvertToGeoServicesFeature(
                 f,
                 returnGeometry,
+                ShouldReturnCentroid(resource, returnCentroid),
                 outputSrid,
                 outFields,
                 visibleDeclaredAttributeFields,
@@ -262,6 +266,7 @@ internal sealed class QueryFormatter : IQueryFormatter
     private static GeoServicesFeature ConvertToGeoServicesFeature(
         Feature feature,
         bool returnGeometry,
+        bool returnCentroid,
         int? outputSrid,
         string[]? outFields,
         IReadOnlySet<string> declaredAttributeFields,
@@ -309,6 +314,12 @@ internal sealed class QueryFormatter : IQueryFormatter
                     geometryLimits,
                     returnZ,
                     returnM)
+                : null,
+            Centroid = returnCentroid
+                ? GeoServicesGeometryConverter.ConvertWkbToGeoServicesCentroid(
+                    feature.Geometry,
+                    srid: null,
+                    geometryLimits)
                 : null
         };
     }
@@ -904,6 +915,10 @@ internal sealed class QueryFormatter : IQueryFormatter
             _ => "esriGeometryNull"
         };
 
+    internal static bool ShouldReturnCentroid(MetadataV2Resource resource, bool returnCentroid)
+        => returnCentroid &&
+           (resource.ReadGeometryType() is MetadataV2GeometryType.Polygon or MetadataV2GeometryType.MultiPolygon);
+
 }
 
 /// <summary>
@@ -931,6 +946,7 @@ internal sealed class StreamingQueryFormatter
         string[]? outFields,
         bool hasMoreResults,
         PipeWriter outputStream,
+        bool returnCentroid = false,
         CancellationToken cancellationToken = default)
     {
         using var writer = new Utf8JsonWriter(outputStream, new JsonWriterOptions
@@ -962,6 +978,7 @@ internal sealed class StreamingQueryFormatter
         var displayFieldName = QueryFormatter.ResolveDisplayFieldName(resource, queryFields, objectIdFieldName);
         var geometryType = resource.ReadGeometryType();
         var hasGeometry = geometryType != MetadataV2GeometryType.None || resource.FindPrimaryGeometryField() is not null;
+        var shouldReturnCentroid = QueryFormatter.ShouldReturnCentroid(resource, returnCentroid);
 
         writer.WriteStartObject();
 
@@ -1000,6 +1017,7 @@ internal sealed class StreamingQueryFormatter
                 writer,
                 feature,
                 returnGeometry,
+                shouldReturnCentroid,
                 outputSrid,
                 outFieldLookup,
                 allDeclaredAttributeFields,
@@ -1105,6 +1123,7 @@ internal sealed class StreamingQueryFormatter
         Utf8JsonWriter writer,
         Feature feature,
         bool returnGeometry,
+        bool returnCentroid,
         int? outputSrid,
         HashSet<string>? outFieldLookup,
         IReadOnlySet<string> allDeclaredAttributeFields,
@@ -1179,6 +1198,19 @@ internal sealed class StreamingQueryFormatter
                     returnZ,
                     returnM);
                 JsonSerializer.Serialize(writer, geoServicesGeometry, FeatureServerJsonContext.Default.GeoServicesGeometry);
+            }
+        }
+
+        if (returnCentroid)
+        {
+            var centroid = GeoServicesGeometryConverter.ConvertWkbToGeoServicesCentroid(
+                feature.Geometry,
+                srid: null,
+                geometryLimits);
+            if (centroid is not null)
+            {
+                writer.WritePropertyName("centroid");
+                JsonSerializer.Serialize(writer, centroid, FeatureServerJsonContext.Default.GeoServicesGeometry);
             }
         }
 

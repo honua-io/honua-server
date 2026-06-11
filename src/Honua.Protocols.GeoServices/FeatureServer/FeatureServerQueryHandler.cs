@@ -969,7 +969,8 @@ internal sealed partial class FeatureServerQueryHandler(
                     validatedParams.GeometryPrecision,
                     validatedParams.MaxAllowableOffset,
                     outFields,
-                    suppressObjectId: shouldApplyDistinct);
+                    suppressObjectId: shouldApplyDistinct,
+                    returnCentroid: validatedParams.ReturnCentroid);
 
                 FeatureServerLog.QueryCompleted(_logger, serviceId, layerId, result.Items.Length, result.TotalCount);
                 HonuaTelemetry.SetSuccess(featureActivity, result.Items.Length);
@@ -1746,7 +1747,8 @@ internal sealed partial class FeatureServerQueryHandler(
             validatedParams.GeometryPrecision,
             validatedParams.MaxAllowableOffset,
             outFields,
-            suppressObjectId: shouldApplyDistinct).ConfigureAwait(false);
+            suppressObjectId: shouldApplyDistinct,
+            returnCentroid: validatedParams.ReturnCentroid).ConfigureAwait(false);
 
         var response = (QueryResponse)formattedResponse!;
         FeatureServerLog.QueryCompleted(_logger, serviceId, layerId, queryResult.Items.Length, queryResult.TotalCount);
@@ -2270,11 +2272,6 @@ internal sealed partial class FeatureServerQueryHandler(
         // exceededTransferLimit when more rows exist within the page, so the flag needs no
         // special handling. The ArcGIS Maps SDK for .NET ServiceFeatureTable.QueryFeaturesAsync
         // always sends it, so rejecting it broke every .NET FeatureServer client (#1460).
-
-        if (queryParams.ReturnCentroid)
-        {
-            unsupported.Add("returnCentroid");
-        }
 
         if (unsupported.Count == 0)
         {

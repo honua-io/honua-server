@@ -25,7 +25,6 @@ public sealed class FeatureServerQueryParameterTests : IAsyncLifetime
     // them would return output that differs from what the client asked for.
     [Theory]
     [InlineData("returnTrueCurves=true", "returnTrueCurves")]
-    [InlineData("returnCentroid=true", "returnCentroid")]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
     public async Task Query_WithSemanticsChangingUnsupportedParameter_ReturnsBadRequest(string queryParam, string expectedToken)

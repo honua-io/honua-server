@@ -659,11 +659,12 @@
           },
           {
             "name": "having",
-            "status": "rejected"
+            "status": "implemented"
           },
           {
             "name": "returnCentroid",
-            "status": "rejected"
+            "status": "implemented",
+            "notes": "GeoServices JSON responses emit polygon centroids and polygon layer metadata advertises supportsReturningGeometryCentroid."
           },
           {
             "name": "returnTrueCurves",
@@ -671,7 +672,8 @@
           },
           {
             "name": "returnExceededLimitFeatures",
-            "status": "rejected"
+            "status": "ignored",
+            "notes": "Accepted for client compatibility; Honua already reports exceededTransferLimit when more rows exist for the current page."
           },
           {
             "name": "resultType",

@@ -39,6 +39,45 @@ public static class SpatialReferenceTestData
         return Convert.ToInt64(result, CultureInfo.InvariantCulture);
     }
 
+    public static async Task<long> InsertSquarePolygonAsync(
+        PostgresFixture fixture,
+        string schemaName,
+        int layerId,
+        double centerLon,
+        double centerLat,
+        double halfSizeDegrees,
+        string name)
+    {
+        await using var connection = await fixture.GetConnectionAsync(schemaName);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO features (layer_id, geometry, attributes)
+            VALUES (
+                @layerId,
+                ST_Transform(
+                    ST_SetSRID(
+                        ST_MakeEnvelope(
+                            @centerLon - @halfSizeDegrees,
+                            @centerLat - @halfSizeDegrees,
+                            @centerLon + @halfSizeDegrees,
+                            @centerLat + @halfSizeDegrees),
+                        4326),
+                    @srid),
+                jsonb_build_object('name', @name)
+            )
+            RETURNING objectid;
+            """;
+        command.Parameters.AddWithValue("layerId", layerId);
+        command.Parameters.AddWithValue("centerLon", centerLon);
+        command.Parameters.AddWithValue("centerLat", centerLat);
+        command.Parameters.AddWithValue("halfSizeDegrees", halfSizeDegrees);
+        command.Parameters.AddWithValue("srid", SpatialReferenceTestLayerCatalog.LayerSrid);
+        command.Parameters.AddWithValue("name", name);
+
+        var result = await command.ExecuteScalarAsync();
+        return Convert.ToInt64(result, CultureInfo.InvariantCulture);
+    }
+
     public static async Task<int?> GetGeometrySridAsync(PostgresFixture fixture, string schemaName, long objectId, int layerId)
     {
         await using var connection = await fixture.GetConnectionAsync(schemaName);

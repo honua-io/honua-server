@@ -40,7 +40,8 @@ internal sealed class FeatureServerQueryServices(
         int? geometryPrecision,
         double? maxAllowableOffset,
         string[]? outFields,
-        bool suppressObjectId = false)
+        bool suppressObjectId = false,
+        bool returnCentroid = false)
         => _queryFormatter.FormatQueryResultAsync(
             result,
             resource,
@@ -52,5 +53,6 @@ internal sealed class FeatureServerQueryServices(
             geometryPrecision,
             maxAllowableOffset,
             outFields,
-            suppressObjectId);
+            suppressObjectId,
+            returnCentroid);
 }
