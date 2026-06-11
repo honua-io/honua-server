@@ -394,6 +394,153 @@ public class ImageServerEndpointsTests
     }
 
     [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/measure")]
+    [Endpoint("POST /rest/services/{id}/ImageServer/measure")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/measure")]
+    [Endpoint("POST /rest/services/{serviceId}/ImageServer/measure")]
+    [Operation(Operations.Distance)]
+    public async Task Measure_DistanceAndAngle_GetAndPost_ReturnsBasicMensuration()
+    {
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            const string fromGeometry = """{"x":0,"y":0,"spatialReference":{"wkid":3857}}""";
+            const string toGeometry = """{"x":3,"y":4,"spatialReference":{"wkid":3857}}""";
+            var query = string.Join('&',
+            [
+                "f=json",
+                "measureOperation=esriMensurationDistanceAndAngle",
+                "geometryType=esriGeometryPoint",
+                $"fromGeometry={Uri.EscapeDataString(fromGeometry)}",
+                $"toGeometry={Uri.EscapeDataString(toGeometry)}",
+                "linearUnit=esriMeters",
+                "angularUnit=esriDUDecimalDegrees",
+            ]);
+
+            var getResponse = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/measure?{query}");
+
+            getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            AssertDistanceMeasure(await getResponse.Content.ReadAsStringAsync());
+
+            var postResponse = await fixture.Client.PostAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/measure",
+                new FormUrlEncodedContent(
+                [
+                    new KeyValuePair<string, string>("f", "json"),
+                    new KeyValuePair<string, string>("measureOperation", "esriMensurationDistanceAndAngle"),
+                    new KeyValuePair<string, string>("geometryType", "esriGeometryPoint"),
+                    new KeyValuePair<string, string>("fromGeometry", fromGeometry),
+                    new KeyValuePair<string, string>("toGeometry", toGeometry),
+                    new KeyValuePair<string, string>("linearUnit", "esriMeters"),
+                    new KeyValuePair<string, string>("angularUnit", "esriDUDecimalDegrees"),
+                ]));
+
+            postResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            AssertDistanceMeasure(await postResponse.Content.ReadAsStringAsync());
+
+            var serviceId = WebAppFixture.TestServiceId;
+            var serviceGetResponse = await fixture.Client.GetAsync(
+                $"/rest/services/{serviceId}/ImageServer/measure?{query}");
+
+            serviceGetResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            AssertDistanceMeasure(await serviceGetResponse.Content.ReadAsStringAsync());
+
+            var servicePostResponse = await fixture.Client.PostAsync(
+                $"/rest/services/{serviceId}/ImageServer/measure",
+                new FormUrlEncodedContent(
+                [
+                    new KeyValuePair<string, string>("f", "json"),
+                    new KeyValuePair<string, string>("measureOperation", "esriMensurationDistanceAndAngle"),
+                    new KeyValuePair<string, string>("geometryType", "esriGeometryPoint"),
+                    new KeyValuePair<string, string>("fromGeometry", fromGeometry),
+                    new KeyValuePair<string, string>("toGeometry", toGeometry),
+                ]));
+
+            servicePostResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            AssertDistanceMeasure(await servicePostResponse.Content.ReadAsStringAsync());
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/measure")]
+    [Operation(Operations.Distance)]
+    public async Task Measure_AreaAndPerimeterEnvelope_ReturnsBasicMensuration()
+    {
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            const string envelope = """{"xmin":0,"ymin":0,"xmax":10,"ymax":5,"spatialReference":{"wkid":3857}}""";
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/measure?f=json&measureOperation=esriMensurationAreaAndPerimeter&geometryType=esriGeometryEnvelope&fromGeometry={Uri.EscapeDataString(envelope)}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var measure = JsonSerializer.Deserialize(
+                await response.Content.ReadAsStringAsync(),
+                ImageServerJsonContext.Default.ImageServerMeasureResponse);
+
+            measure.Should().NotBeNull();
+            measure!.Area.Should().NotBeNull();
+            measure.Area!.Value.Should().BeApproximately(50d, 1e-9);
+            measure.Area.Unit.Should().Be("esriSquareMeters");
+            measure.Perimeter.Should().NotBeNull();
+            measure.Perimeter!.Value.Should().BeApproximately(30d, 1e-9);
+            measure.Perimeter.Unit.Should().Be("esriMeters");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/measure")]
+    [Operation(Operations.Distance)]
+    public async Task Measure_HeightOperation_ReturnsNotImplemented()
+    {
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            const string fromGeometry = """{"x":0,"y":0,"spatialReference":{"wkid":3857}}""";
+            const string toGeometry = """{"x":3,"y":4,"spatialReference":{"wkid":3857}}""";
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/measure?f=json&measureOperation=esriMensurationHeightFromBaseAndTop&geometryType=esriGeometryPoint&fromGeometry={Uri.EscapeDataString(fromGeometry)}&toGeometry={Uri.EscapeDataString(toGeometry)}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer")]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task GetServiceInfo_WithMeasureRoute_AdvertisesBasicMensuration()
+    {
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer?f=json");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var root = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+            root.GetProperty("capabilities").GetString().Should().Contain("Mensuration");
+            root.GetProperty("mensurationCapabilities").GetString().Should().Be("Basic");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /rest/services/{id}/ImageServer/computeStatisticsHistograms")]
     [Operation(Operations.Query)]
     public async Task ComputeStatisticsHistograms_Get_WithoutGeometry_ReturnsBadRequest()
@@ -1357,6 +1504,23 @@ public class ImageServerEndpointsTests
         image.Center!.X.Should().Be(0);
         image.Center.Y.Should().Be(0);
         image.Center.SpatialReference!.Wkid.Should().Be(4326);
+    }
+
+    private static void AssertDistanceMeasure(string content)
+    {
+        var measure = JsonSerializer.Deserialize(
+            content,
+            ImageServerJsonContext.Default.ImageServerMeasureResponse);
+
+        measure.Should().NotBeNull();
+        measure!.Name.Should().Be("test-raster");
+        measure.SensorName.Should().Be("Unknown");
+        measure.Distance.Should().NotBeNull();
+        measure.Distance!.Value.Should().BeApproximately(5d, 1e-9);
+        measure.Distance.Unit.Should().Be("esriMeters");
+        measure.AzimuthAngle.Should().NotBeNull();
+        measure.AzimuthAngle!.Value.Should().BeApproximately(36.86989764584402d, 1e-9);
+        measure.AzimuthAngle.Unit.Should().Be("esriDUDecimalDegrees");
     }
 
     private static void AssertExportTilesResponse(ImageServerExportTilesResponse? export)

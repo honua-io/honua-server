@@ -1155,6 +1155,7 @@
         "tile",
         "query (raster catalog features)",
         "find",
+        "measure (Basic mensuration)",
         "computeStatisticsHistograms",
         "computeHistograms",
         "getSamples",
@@ -1168,7 +1169,7 @@
         "WCS 2.0.1 KVP"
       ],
       "knownGaps": [
-        "measure",
+        "sensor/DEM-backed ImageServer height and 3D mensuration",
         "full Esri tile-package/job exportTiles semantics",
         "generated ImageServer tile caches",
         "catalog mutation",
@@ -1197,6 +1198,7 @@
           "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerProjectHandler.cs",
           "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerExportTilesHandler.cs",
           "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerFindHandler.cs",
+          "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerMeasureHandler.cs",
           "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Handlers/ImageServerLegendHandler.cs",
           "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Handlers/ImageServerAnalyzeHandler.cs",
           "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Services/ImageServerCatalogReader.cs",
@@ -1296,6 +1298,21 @@
               "POST /rest/services/{serviceId}/ImageServer/find"
             ],
             "notes": "Finds raster catalog images whose footprints contain toGeometry. Supports objectIds, where, inSR, fromGeometry validation, and maxCount. Results return catalog id/name, acquisition date, center, pixel size, rows, and cols; Esri camera/orientation-ranked image selection is deferred until sensor metadata is modeled."
+          },
+          {
+            "name": "Measure",
+            "esriPath": "/rest/services/{id}/ImageServer/measure",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer/measure",
+              "POST /rest/services/{id}/ImageServer/measure",
+              "GET /rest/services/{serviceId}/ImageServer/measure",
+              "POST /rest/services/{serviceId}/ImageServer/measure"
+            ],
+            "notes": "Implements Basic map-space point, distance/azimuth, area/perimeter, and centroid mensuration over point, envelope, and polygon Esri JSON. Sensor/DEM-backed height and 3D operations return 501 until sensor/orientation metadata is modeled."
           },
           {
             "name": "Compute Statistics and Histograms",
@@ -1455,14 +1472,6 @@
           {
             "name": "Download Rasters",
             "esriPath": "/rest/services/{id}/ImageServer/downloadRasters",
-            "methods": [
-              "GET",
-              "POST"
-            ]
-          },
-          {
-            "name": "Measure",
-            "esriPath": "/rest/services/{id}/ImageServer/measure",
             "methods": [
               "GET",
               "POST"
@@ -1787,6 +1796,7 @@
         "WCS single-axis SUBSET fills the omitted axis from the stored raster extent only for native-CRS subsets; callers using a non-native SUBSETTINGCRS/BBOXCRS must supply both axes or use BBOX.",
         "hasMultidimensions is always false until cube ingestion ships; multidimensionalInfo remains absent.",
         "ImageServer find filters by raster catalog footprint and returns catalog metadata; true camera/orientation-ranked image selection is deferred until sensor metadata is modeled.",
+        "ImageServer measure supports Basic map-space mensuration only; sensor/DEM-backed height and 3D mensuration are not implemented.",
         "ImageServer exportTiles writes ZIP archives to configured cloud file storage; Esri TPK/TPKX/compact cache packages and async job resources are not implemented.",
         "Honua does not currently expose ImageServer WMTS."
       ]

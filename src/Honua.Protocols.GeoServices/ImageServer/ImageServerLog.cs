@@ -262,4 +262,22 @@ internal static partial class ImageServerLog
         Level = LogLevel.Error,
         Message = "ImageServer find failed for layer {LayerId}")]
     public static partial void FindFailed(ILogger logger, Exception ex, int layerId);
+
+    [LoggerMessage(
+        EventId = 5842,
+        Level = LogLevel.Warning,
+        Message = "Invalid measure parameters for layer {LayerId}: {ValidationErrors}")]
+    public static partial void InvalidMeasureParameters(ILogger logger, int layerId, string validationErrors);
+
+    [LoggerMessage(
+        EventId = 5843,
+        Level = LogLevel.Information,
+        Message = "ImageServer measure for layer {LayerId} completed operation {Operation} in {ElapsedMs}ms")]
+    public static partial void MeasureCompleted(ILogger logger, int layerId, string operation, double elapsedMs);
+
+    [LoggerMessage(
+        EventId = 5844,
+        Level = LogLevel.Error,
+        Message = "ImageServer measure failed for layer {LayerId}")]
+    public static partial void MeasureFailed(ILogger logger, Exception ex, int layerId);
 }

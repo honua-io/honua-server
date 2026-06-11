@@ -158,10 +158,8 @@ internal sealed class ImageServerMetadataHandler
                 MaxValues = statistics.Select(s => s.MaxValue ?? 0).ToArray(),
                 MeanValues = statistics.Select(s => s.MeanValue ?? 0).ToArray(),
                 StdvValues = statistics.Select(s => s.StandardDeviation ?? 0).ToArray(),
-                // NOTE: Mensuration is intentionally omitted until the /measure endpoint
-                // is implemented. Re-add it alongside the handler so capability advertising
-                // stays in lockstep with routed operations.
-                Capabilities = "Catalog,Image,Metadata,Pixels,Statistics",
+                Capabilities = "Catalog,Image,Metadata,Mensuration,Pixels,Statistics",
+                MensurationCapabilities = "Basic",
                 MaxImageHeight = MaxImageHeight,
                 MaxImageWidth = MaxImageWidth,
                 MaxRecordCount = MaxRecordCount,

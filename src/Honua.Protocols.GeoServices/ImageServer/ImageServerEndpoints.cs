@@ -166,6 +166,26 @@ internal static class ImageServerEndpoints
             .Produces(400)
             .Produces(404);
 
+        group.MapGet("/measure", MeasureGet)
+            .WithDisplayName("Measure Image Service Geometry (GET)")
+            .WithName("ImageServerMeasureGet")
+            .WithSummary("Measure image-service geometry")
+            .WithDescription("ArcGIS ImageServer measure contract for Basic map-space point, distance, area, perimeter, and centroid measurements")
+            .Produces<ImageServerMeasureResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404)
+            .Produces(501);
+
+        group.MapPost("/measure", MeasurePost)
+            .WithDisplayName("Measure Image Service Geometry (POST)")
+            .WithName("ImageServerMeasurePost")
+            .WithSummary("Measure image-service geometry via POST")
+            .WithDescription("POST equivalent of the ArcGIS ImageServer measure endpoint")
+            .Produces<ImageServerMeasureResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404)
+            .Produces(501);
+
         // Compute statistics + histograms for the layer's primary raster
         group.MapGet("/computeStatisticsHistograms", ComputeStatisticsHistogramsGet)
             .WithDisplayName("Compute Statistics Histograms (GET)")
@@ -595,6 +615,23 @@ internal static class ImageServerEndpoints
             .Produces<ImageServerFindResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(400)
             .Produces(404);
+
+        serviceGroup.MapGet("/measure", MeasureGetByService)
+            .WithDisplayName("Measure Image Service Geometry by Service (GET)")
+            .WithName("ImageServerMeasureGetByService")
+            .WithSummary("Measure image-service geometry")
+            .Produces<ImageServerMeasureResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404)
+            .Produces(501);
+        serviceGroup.MapPost("/measure", MeasurePostByService)
+            .WithDisplayName("Measure Image Service Geometry by Service (POST)")
+            .WithName("ImageServerMeasurePostByService")
+            .WithSummary("Measure image-service geometry via POST")
+            .Produces<ImageServerMeasureResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404)
+            .Produces(501);
 
         serviceGroup.MapGet("/computeStatisticsHistograms", ComputeStatisticsHistogramsGetByService)
             .WithDisplayName("Compute Statistics Histograms by Service (GET)")
@@ -1371,6 +1408,80 @@ internal static class ImageServerEndpoints
     {
         var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
         return resolution.ErrorResult ?? await FindPost(resolution.LayerId, context, handler, cancellationToken);
+    }
+
+    /// <summary>
+    /// Measure ImageServer geometry in map space (GET).
+    /// </summary>
+    private static async Task<IResult> MeasureGet(
+        int id,
+        HttpContext context,
+        ImageServerMeasureHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        if (layerError is not null)
+        {
+            return layerError;
+        }
+
+        var values = GeoServicesRequestValueHelpers.ToCaseInsensitiveDictionary(context.Request.Query);
+        if (!IsSupportedJsonResponseFormat(GetString(values, "f")))
+        {
+            return CreateUnsupportedJsonFormatResult(context);
+        }
+
+        return await handler.MeasureAsync(context, id, values, cancellationToken);
+    }
+
+    private static async Task<IResult> MeasureGetByService(
+        string serviceId,
+        HttpContext context,
+        ImageServerMeasureHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        return resolution.ErrorResult ?? await MeasureGet(resolution.LayerId, context, handler, cancellationToken);
+    }
+
+    /// <summary>
+    /// Measure ImageServer geometry in map space (POST).
+    /// </summary>
+    private static async Task<IResult> MeasurePost(
+        int id,
+        HttpContext context,
+        ImageServerMeasureHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        if (layerError is not null)
+        {
+            return layerError;
+        }
+
+        var bodyValues = await ReadPostValuesAsync(context, cancellationToken);
+        if (bodyValues.Error != null)
+        {
+            return bodyValues.Error;
+        }
+
+        var merged = MergeQueryAndBodyValues(context, bodyValues.Values!);
+        if (!IsSupportedJsonResponseFormat(GetString(merged, "f")))
+        {
+            return CreateUnsupportedJsonFormatResult(context);
+        }
+
+        return await handler.MeasureAsync(context, id, merged, cancellationToken);
+    }
+
+    private static async Task<IResult> MeasurePostByService(
+        string serviceId,
+        HttpContext context,
+        ImageServerMeasureHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        return resolution.ErrorResult ?? await MeasurePost(resolution.LayerId, context, handler, cancellationToken);
     }
 
     /// <summary>
