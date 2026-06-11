@@ -280,9 +280,12 @@ public static class VersionManagementServerEndpoints
                 VersionManagementJsonContext.Default.CreateVersionResponse,
                 contentType: "application/json");
         }
-        catch (InvalidOperationException ex)
+        catch (DuplicateVersionNameException ex)
         {
-            return StandardErrorHelpers.CreateConflict(context, ex.Message);
+            return StandardErrorHelpers.CreateConflict(
+                context,
+                ex.Message,
+                [$"Version '{ex.VersionName}' already exists. Choose a different name or delete the existing version first."]);
         }
     }
 

@@ -55,6 +55,15 @@ public readonly record struct UnifiedEditRequest
     public ImmutableDictionary<string, object>? Extensions { get; init; }
 
     /// <summary>
+    /// Optional optimistic-concurrency preconditions keyed by object ID, carried through
+    /// to <see cref="FeatureEditBatch.Preconditions"/> so the feature writer re-validates
+    /// the expected row state inside the write transaction. Adapters that validated an
+    /// If-Match/ETag precondition against a read snapshot should attach the snapshot's
+    /// <see cref="FeatureStateToken"/> here for the targeted update/delete object IDs.
+    /// </summary>
+    public ImmutableArray<FeatureEditPrecondition>? Preconditions { get; init; }
+
+    /// <summary>
     /// Creates a simple create operation.
     /// </summary>
     /// <param name="features">Features to create</param>
@@ -554,12 +563,30 @@ public readonly record struct EditConstraints
     public ImmutableDictionary<string, object>? CustomConstraints { get; init; }
 
     /// <summary>
+    /// Canonical <see cref="FeatureStateToken"/> computed from the snapshot the caller
+    /// validated its protocol precondition against. When set on an update feature, the
+    /// edit pipeline converts it into a <see cref="FeatureEditPrecondition"/> enforced by
+    /// the feature writer inside the write transaction.
+    /// </summary>
+    public string? ExpectedStateToken { get; init; }
+
+    /// <summary>
     /// Creates constraints with ETag.
     /// </summary>
     /// <param name="etag">ETag value</param>
     /// <returns>Edit constraints</returns>
     public static EditConstraints WithETag(string etag)
         => new() { ETag = etag };
+
+    /// <summary>
+    /// Creates constraints carrying an expected canonical state token (and optionally the
+    /// originating protocol ETag) for transactional optimistic-concurrency enforcement.
+    /// </summary>
+    /// <param name="expectedStateToken">Canonical state token from <see cref="FeatureStateToken.Compute"/></param>
+    /// <param name="etag">Optional originating protocol ETag</param>
+    /// <returns>Edit constraints</returns>
+    public static EditConstraints WithExpectedState(string expectedStateToken, string? etag = null)
+        => new() { ExpectedStateToken = expectedStateToken, ETag = etag };
 
     /// <summary>
     /// Creates constraints with version.

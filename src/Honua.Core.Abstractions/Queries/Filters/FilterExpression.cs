@@ -39,7 +39,18 @@ public sealed record Literal(object? Value, LiteralType Type) : FilterExpression
 public sealed record SpatialPredicate(
     SpatialOperator Operator,
     FilterExpression Left,
-    FilterExpression Right) : FilterExpression;
+    FilterExpression Right) : FilterExpression
+{
+    /// <summary>
+    /// True when the originating protocol mandates geodesic (ellipsoidal) evaluation for
+    /// this predicate, e.g. OData <c>geo.intersects</c> over Edm.Geography values.
+    /// SQL translators may route supported operators through geodesic (geography)
+    /// evaluation when the layer context is geographic; protocols with planar-in-CRS
+    /// semantics (CQL2, FES/WFS, GeoServices SQL) leave this false so their
+    /// CITE-validated behavior is unchanged.
+    /// </summary>
+    public bool Geodesic { get; init; }
+}
 
 /// <summary>
 /// Spatial predicate with a distance operand: DWithin, Beyond

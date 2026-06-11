@@ -99,8 +99,7 @@ internal sealed partial class PostgresVersionManager : IVersionManager
         }
         catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
         {
-            throw new InvalidOperationException(
-                $"A version named '{request.VersionName}' already exists for owner '{request.Owner}'.", ex);
+            throw new DuplicateVersionNameException(request.VersionName, ex);
         }
     }
 

@@ -36,7 +36,7 @@ internal sealed partial class StreamingFileImportService
                 SupportedFileFormat.Csv => 4326,
                 SupportedFileFormat.Wkt => await DetectWktSridAsync(stream, cancellationToken),
                 SupportedFileFormat.GeoPackage => await DetectGeoPackageSridAsync(stream, cancellationToken),
-                SupportedFileFormat.FlatGeobuf => await DetectFlatGeobufCrsAsync(stream),
+                SupportedFileFormat.FlatGeobuf => await DetectFlatGeobufCrsAsync(stream, cancellationToken),
                 SupportedFileFormat.FileGdb => null, // CRS detected during preparation via FileGdbReader.DetectSrid
                 _ => null
             };
@@ -58,12 +58,12 @@ internal sealed partial class StreamingFileImportService
     /// parsing via <see cref="ICrsDetectionService.DetectFromWktAsync"/> when the
     /// header embeds CRS as WKT only.
     /// </summary>
-    private async Task<int?> DetectFlatGeobufCrsAsync(Stream stream)
+    private async Task<int?> DetectFlatGeobufCrsAsync(Stream stream, CancellationToken cancellationToken = default)
     {
         var (srid, crsWkt) = FlatGeobufFormatReader.ReadCrsInfo(stream);
         if (srid.HasValue) return srid;
         if (!string.IsNullOrEmpty(crsWkt))
-            return await _crsDetectionService.DetectFromWktAsync(crsWkt);
+            return await _crsDetectionService.DetectFromWktAsync(crsWkt, cancellationToken);
         return null;
     }
 
@@ -107,7 +107,7 @@ internal sealed partial class StreamingFileImportService
             SupportedFileFormat.Wkt => await DetectWktSridAsync(headerStream, cancellationToken),
             // Defensive: currently unreachable — FlatGeobuf non-seekable paths spill to
             // a seekable temp file before reaching here (see the dedicated FlatGeobuf branch above).
-            SupportedFileFormat.FlatGeobuf => await DetectFlatGeobufCrsFromHeaderAsync(header),
+            SupportedFileFormat.FlatGeobuf => await DetectFlatGeobufCrsFromHeaderAsync(header, cancellationToken),
             _ => null
         };
     }
@@ -117,12 +117,12 @@ internal sealed partial class StreamingFileImportService
     /// Currently unreachable — non-seekable FlatGeobuf streams are spilled to
     /// seekable temp files before the header-buffer path.
     /// </summary>
-    private async Task<int?> DetectFlatGeobufCrsFromHeaderAsync(byte[] headerBytes)
+    private async Task<int?> DetectFlatGeobufCrsFromHeaderAsync(byte[] headerBytes, CancellationToken cancellationToken = default)
     {
         var (srid, crsWkt) = FlatGeobufFormatReader.ReadCrsInfoFromHeader(headerBytes);
         if (srid.HasValue) return srid;
         if (!string.IsNullOrEmpty(crsWkt))
-            return await _crsDetectionService.DetectFromWktAsync(crsWkt);
+            return await _crsDetectionService.DetectFromWktAsync(crsWkt, cancellationToken);
         return null;
     }
 

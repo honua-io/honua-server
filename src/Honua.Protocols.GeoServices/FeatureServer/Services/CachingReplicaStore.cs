@@ -45,6 +45,49 @@ internal sealed partial class CachingReplicaStore : IReplicaStore
         }
     }
 
+    public async Task<bool> TrySetSyncStateAsync(
+        ReplicaState replica,
+        long expectedLastSyncGeneration,
+        long expectedUploadBaseGeneration,
+        TimeSpan? ttl = null,
+        CancellationToken cancellationToken = default)
+    {
+        // The authoritative compare-and-set runs against Postgres; the cache is only refreshed
+        // after the conditional write wins so it can never re-introduce a stale cursor.
+        var record = ToRecord(replica);
+        var updated = await _repository
+            .TryUpdateSyncStateAsync(record, expectedLastSyncGeneration, expectedUploadBaseGeneration, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!updated)
+        {
+            // The caller's read (possibly served from this cache) lost a concurrent sync race.
+            // Evict the cached entry best-effort so the retry reads the winner's cursor from
+            // the authoritative store instead of the stale cached state.
+            try
+            {
+                await _cache.RemoveAsync(replica.ReplicaId, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Log.CacheRemoveFailed(_logger, replica.ReplicaId, ex);
+            }
+
+            return false;
+        }
+
+        try
+        {
+            await _cache.SetAsync(replica, ttl, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Log.CacheWriteFailed(_logger, replica.ReplicaId, ex);
+        }
+
+        return true;
+    }
+
     public async Task<ReplicaState?> GetAsync(string replicaId, CancellationToken cancellationToken = default)
     {
         // Read-through: cache first

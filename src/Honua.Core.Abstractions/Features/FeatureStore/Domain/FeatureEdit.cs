@@ -53,6 +53,17 @@ public readonly record struct FeatureEditBatch
     public VersionContext? VersionContext { get; init; }
 
     /// <summary>
+    /// Optional optimistic-concurrency preconditions keyed by object ID. When a batch
+    /// carries a precondition for an object ID, writers must re-validate the stored
+    /// row's <see cref="FeatureStateToken"/> against the expected token inside the same
+    /// transaction (or equivalent synchronization) that applies the update/delete, and
+    /// report a mismatch as <see cref="EditOperationResult.PreconditionFailed"/> without
+    /// applying the operation. Object IDs without a precondition keep last-write-wins
+    /// semantics.
+    /// </summary>
+    public ImmutableArray<FeatureEditPrecondition> Preconditions { get; init; }
+
+    /// <summary>
     /// Initializes a new FeatureEditBatch with default values
     /// </summary>
     public FeatureEditBatch()
@@ -61,6 +72,7 @@ public readonly record struct FeatureEditBatch
         Creates = ImmutableArray<Feature>.Empty;
         Updates = ImmutableArray<Feature>.Empty;
         Deletes = ImmutableArray<long>.Empty;
+        Preconditions = ImmutableArray<FeatureEditPrecondition>.Empty;
     }
 
     /// <summary>
@@ -73,6 +85,7 @@ public readonly record struct FeatureEditBatch
     /// <param name="useGlobalIds">Whether to use global IDs</param>
     /// <param name="operations">Ordered operations to apply when request sequencing must be preserved</param>
     /// <param name="versionContext">Branch version the edit targets; null/DEFAULT uses the byte-identical base write path</param>
+    /// <param name="preconditions">Optional per-object optimistic-concurrency preconditions enforced inside the write transaction</param>
     /// <returns>Edit batch instance</returns>
     public static FeatureEditBatch Create(
         ImmutableArray<Feature> creates = default,
@@ -81,7 +94,8 @@ public readonly record struct FeatureEditBatch
         bool rollbackOnFailure = false,
         bool useGlobalIds = false,
         ImmutableArray<FeatureEditOperation> operations = default,
-        VersionContext? versionContext = null)
+        VersionContext? versionContext = null,
+        ImmutableArray<FeatureEditPrecondition> preconditions = default)
         => new()
         {
             Operations = operations.IsDefault ? ImmutableArray<FeatureEditOperation>.Empty : operations,
@@ -90,7 +104,8 @@ public readonly record struct FeatureEditBatch
             Deletes = deletes.IsDefault ? ImmutableArray<long>.Empty : deletes,
             RollbackOnFailure = rollbackOnFailure,
             UseGlobalIds = useGlobalIds,
-            VersionContext = versionContext
+            VersionContext = versionContext,
+            Preconditions = preconditions.IsDefault ? ImmutableArray<FeatureEditPrecondition>.Empty : preconditions
         };
 
     /// <summary>
@@ -330,6 +345,13 @@ public readonly record struct FeatureEditResult
 public readonly record struct EditOperationResult
 {
     /// <summary>
+    /// Well-known error code reported when an edit operation is rejected because its
+    /// optimistic-concurrency precondition no longer matched the stored row state.
+    /// Mirrors HTTP 412 (Precondition Failed) so protocol adapters can map it directly.
+    /// </summary>
+    public const int PreconditionFailedErrorCode = 412;
+
+    /// <summary>
     /// Object ID of the affected feature
     /// </summary>
     public long? ObjectId { get; init; }
@@ -353,6 +375,13 @@ public readonly record struct EditOperationResult
     /// Error code if operation failed
     /// </summary>
     public int ErrorCode { get; init; }
+
+    /// <summary>
+    /// Whether this operation was rejected because its optimistic-concurrency
+    /// precondition (<see cref="FeatureEditPrecondition"/>) no longer matched the
+    /// stored row state at write time. Protocol adapters map this to HTTP 412.
+    /// </summary>
+    public bool IsPreconditionFailure { get; init; }
 
     /// <summary>
     /// Initializes a new EditOperationResult with default values
@@ -389,5 +418,24 @@ public readonly record struct EditOperationResult
             IsSuccess = false,
             ErrorMessage = errorMessage,
             ErrorCode = errorCode
+        };
+
+    /// <summary>
+    /// Creates a typed precondition-failed operation result. Emitted by feature writers
+    /// when a <see cref="FeatureEditPrecondition"/> attached to the batch no longer
+    /// matches the stored row inside the write transaction; the targeted operation was
+    /// not applied.
+    /// </summary>
+    /// <param name="objectId">Object ID the precondition was attached to</param>
+    /// <param name="errorMessage">Optional error message override</param>
+    /// <returns>Operation result flagged as a precondition failure</returns>
+    public static EditOperationResult PreconditionFailed(long? objectId, string? errorMessage = null)
+        => new()
+        {
+            ObjectId = objectId,
+            IsSuccess = false,
+            ErrorMessage = errorMessage ?? "The feature was modified by another writer; the supplied precondition no longer matches.",
+            ErrorCode = PreconditionFailedErrorCode,
+            IsPreconditionFailure = true
         };
 }

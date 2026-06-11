@@ -269,6 +269,135 @@ public class PostgresSqlFilterTranslatorTests
     }
 
     [Fact]
+    public void Translate_GeodesicIntersects_OnGeographicLayer_UsesGeographyCasts()
+    {
+        // OData geo.intersects (Geodesic=true) over an Edm.Geography layer must
+        // evaluate on the ellipsoid, not in planar degree space.
+        var wkb = new byte[] { 1, 2, 3, 4 };
+        var geometry = new GeometryLiteral(wkb, 4326, "POLYGON((0 0, 1 0, 1 1, 0 0))");
+        var spatial = new SpatialPredicate(
+            SpatialOperator.Intersects,
+            new PropertyReference("geom"),
+            geometry)
+        {
+            Geodesic = true
+        };
+
+        var result = _translator.Translate(spatial, _resource);
+
+        result.Sql.Should().Be("ST_Intersects(\"geom\"::geometry::geography, ST_GeomFromWKB(@p0, @p1)::geography)");
+        result.Parameters.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void Translate_GeodesicIntersects_OnProjectedLayer_KeepsPlanarSemantics()
+    {
+        // Geodesic routing is gated on a geographic layer context; projected layers
+        // stay planar even for OData-originated predicates.
+        var resource = CreateResource(new MetadataV2SpatialReference
+        {
+            Srid = 3857,
+            Crs = "EPSG:3857",
+            IsGeographic = false,
+        });
+        var wkb = new byte[] { 1, 2, 3, 4 };
+        var geometry = new GeometryLiteral(wkb, 3857, "POINT(1 2)");
+        var spatial = new SpatialPredicate(
+            SpatialOperator.Intersects,
+            new PropertyReference("geom"),
+            geometry)
+        {
+            Geodesic = true
+        };
+
+        var result = _translator.Translate(spatial, resource);
+
+        result.Sql.Should().Be("ST_Intersects(\"geom\"::geometry, ST_GeomFromWKB(@p0, @p1))");
+    }
+
+    [Fact]
+    public void Translate_PlanarIntersects_OnGeographicLayer_KeepsPlanarSemantics()
+    {
+        // CQL2/FES predicates never carry the Geodesic flag: the CITE-validated
+        // planar-in-CRS translation must be byte-for-byte unchanged on the same layer.
+        var wkb = new byte[] { 1, 2, 3, 4 };
+        var geometry = new GeometryLiteral(wkb, 4326, "POINT(1 2)");
+        var spatial = new SpatialPredicate(
+            SpatialOperator.Intersects,
+            new PropertyReference("geom"),
+            geometry);
+
+        var result = _translator.Translate(spatial, _resource);
+
+        result.Sql.Should().Be("ST_Intersects(\"geom\"::geometry, ST_GeomFromWKB(@p0, @p1))");
+    }
+
+    [Fact]
+    public void Translate_GeodesicContains_OnGeographicLayer_KeepsPlanarSemantics()
+    {
+        // PostGIS geography supports no Contains/Within/Crosses/Touches/Overlaps;
+        // only Intersects routes through the geography path.
+        var wkb = new byte[] { 1, 2, 3, 4 };
+        var geometry = new GeometryLiteral(wkb, 4326, "POINT(1 2)");
+        var spatial = new SpatialPredicate(
+            SpatialOperator.Contains,
+            new PropertyReference("geom"),
+            geometry)
+        {
+            Geodesic = true
+        };
+
+        var result = _translator.Translate(spatial, _resource);
+
+        result.Sql.Should().Be("ST_Contains(\"geom\"::geometry, ST_GeomFromWKB(@p0, @p1))");
+    }
+
+    [Fact]
+    public void Translate_GeoLengthFunction_UsesGeographyLength()
+    {
+        // OData geo.length: geodesic meters via geography, mirroring GEODISTANCE and
+        // distinct from the planar CQL2/OGC ST_LENGTH translation.
+        var function = new FunctionCall("GEOLENGTH", new FilterExpression[]
+        {
+            new PropertyReference("geom")
+        });
+
+        var result = _translator.Translate(function, _resource);
+
+        result.Sql.Should().Be("ST_Length(\"geom\"::geometry::geography)");
+        result.Parameters.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Translate_GeoLengthFunction_WrongArgumentCount_Throws()
+    {
+        var function = new FunctionCall("GEOLENGTH", new FilterExpression[]
+        {
+            new PropertyReference("geom"),
+            new PropertyReference("geom")
+        });
+
+        var action = () => _translator.Translate(function, _resource);
+
+        action.Should().Throw<ArgumentException>()
+            .WithMessage("*GEOLENGTH*one argument*");
+    }
+
+    [Fact]
+    public void Translate_StLengthFunction_KeepsPlanarLength()
+    {
+        // The CQL2/OGC planar length function is unchanged by the OData GEOLENGTH case.
+        var function = new FunctionCall("ST_LENGTH", new FilterExpression[]
+        {
+            new PropertyReference("geom")
+        });
+
+        var result = _translator.Translate(function, _resource);
+
+        result.Sql.Should().Be("ST_Length(\"geom\"::geometry)");
+    }
+
+    [Fact]
     public void Translate_ArithmeticExpression_ReturnsCorrectSQL()
     {
         // Arrange

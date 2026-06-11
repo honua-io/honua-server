@@ -196,6 +196,24 @@ internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBa
 
     protected override string TranslateSpatial(SpatialPredicate spatial, FilterTranslationContext context)
     {
+        // Protocol-scoped geodesic routing (OData geo.intersects over Edm.Geography):
+        // when the parser marked the predicate geodesic AND the layer context is
+        // geographic, evaluate via geography casts so long edges and
+        // antimeridian-crossing geometries intersect on the ellipsoid instead of in
+        // planar degree space. Restricted to Intersects (the only marked operator
+        // PostGIS geography supports here) and to literal/property operands; CQL2 and
+        // FES/WFS predicates never carry the flag, keeping their CITE-validated
+        // planar-in-CRS semantics byte-for-byte unchanged.
+        if (spatial is { Geodesic: true, Operator: SpatialOperator.Intersects } &&
+            IsGeographicContext(context) &&
+            CanTranslateAsGeography(spatial.Left) &&
+            CanTranslateAsGeography(spatial.Right))
+        {
+            var geographyLeft = TranslateGeographyExpression(spatial.Left, context);
+            var geographyRight = TranslateGeographyExpression(spatial.Right, context);
+            return $"ST_Intersects({geographyLeft}, {geographyRight})";
+        }
+
         var left = TranslateGeometryExpression(spatial.Left, context);
         var right = TranslateGeometryExpression(spatial.Right, context);
         var function = spatial.Operator switch
@@ -420,6 +438,11 @@ internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBa
             return TranslateGeoDistance(function, context);
         }
 
+        if (string.Equals(function.FunctionName, "GEOLENGTH", StringComparison.OrdinalIgnoreCase))
+        {
+            return TranslateGeoLength(function, context);
+        }
+
         var args = function.Arguments.Select(arg => TranslateExpression(arg, context)).ToArray();
         var argString = string.Join(", ", args);
 
@@ -588,6 +611,26 @@ internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBa
         var right = TranslateGeographyExpression(function.Arguments[1], context);
         return $"ST_Distance({left}, {right})";
     }
+
+    // OData geo.length: geodesic length in meters over geography operands, mirroring
+    // the GEODISTANCE treatment above. Distinct from the planar CQL2/OGC "ST_LENGTH"
+    // case in TranslateFunction, which evaluates in the layer CRS's linear unit.
+    private string TranslateGeoLength(FunctionCall function, FilterTranslationContext context)
+    {
+        if (function.Arguments.Count != 1)
+        {
+            throw new ArgumentException("GEOLENGTH requires one argument");
+        }
+
+        var operand = TranslateGeographyExpression(function.Arguments[0], context);
+        return $"ST_Length({operand})";
+    }
+
+    // Geography routing only understands geometry literals and geometry property
+    // references; anything else (nested function calls, arithmetic) falls back to the
+    // planar path rather than failing the whole filter.
+    private static bool CanTranslateAsGeography(FilterExpression expression)
+        => expression is GeometryLiteral or PropertyReference;
 
     private string TranslateGeographyExpression(FilterExpression expression, FilterTranslationContext context)
     {

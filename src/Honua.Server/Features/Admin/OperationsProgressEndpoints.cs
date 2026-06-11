@@ -19,6 +19,7 @@ using Honua.Core.Features.Orchestration.Abstractions;
 using Honua.Core.Features.Orchestration.Domain;
 using Honua.Core.Features.Publishing.Domain;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Core.Features.Temporal.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.ControlPlane;
 using Honua.Infrastructure.Models;
@@ -34,6 +35,12 @@ namespace Honua.Server.Features.Admin;
 /// </summary>
 internal static partial class OperationsProgressEndpoints
 {
+    /// <summary>
+    /// Upper bound on compare-and-set retries when applying a cancellation while the operation's status
+    /// is transitioning concurrently (for example Queued -> Processing).
+    /// </summary>
+    private const int MaxCancelCompareAndSetAttempts = 3;
+
     /// <summary>
     /// Map unified operation progress endpoints.
     /// </summary>
@@ -116,6 +123,7 @@ internal static partial class OperationsProgressEndpoints
             PublishingProgress publishingProgress => Results.Json(publishingProgress, OperationsProgressJsonContext.Default.PublishingProgress),
             WorkflowProgress workflowProgress => Results.Json(workflowProgress, OperationsProgressJsonContext.Default.WorkflowProgress),
             DeploymentProgress deploymentProgress => Results.Json(deploymentProgress, OperationsProgressJsonContext.Default.DeploymentProgress),
+            TemporalCorrectiveJobProgress temporalCorrectiveJobProgress => Results.Json(temporalCorrectiveJobProgress, OperationsProgressJsonContext.Default.TemporalCorrectiveJobProgress),
             _ => Results.Json(progress, OperationsProgressJsonContext.Default.IOperationProgress)
         };
     }
@@ -136,6 +144,7 @@ internal static partial class OperationsProgressEndpoints
             PublishingProgress p => JsonSerializer.SerializeToElement(p, OperationsProgressJsonContext.Default.PublishingProgress),
             WorkflowProgress p => JsonSerializer.SerializeToElement(p, OperationsProgressJsonContext.Default.WorkflowProgress),
             DeploymentProgress p => JsonSerializer.SerializeToElement(p, OperationsProgressJsonContext.Default.DeploymentProgress),
+            TemporalCorrectiveJobProgress p => JsonSerializer.SerializeToElement(p, OperationsProgressJsonContext.Default.TemporalCorrectiveJobProgress),
             _ => JsonSerializer.SerializeToElement(progress, OperationsProgressJsonContext.Default.IOperationProgress)
         };
 
@@ -559,24 +568,6 @@ internal static partial class OperationsProgressEndpoints
                 $"Operation type '{latestProgress.Type}' does not support cancellation");
         }
 
-        // TOCTOU note: a worker-backed job could complete between our re-read
-        // and this write, causing Cancelled to overwrite Completed.  Worker-backed
-        // operations (e.g. print jobs) mitigate this by re-asserting Completed
-        // after their initial write.  A proper fix is compare-and-set semantics
-        // in IUniversalProgressStore (tracked as follow-on).
-        //
-        // Narrow the TOCTOU window: re-read one final time immediately before
-        // writing so a worker Completed write that landed between our earlier
-        // re-read and this point is detected.
-        var preWriteProgress = await progressStore.GetProgressAsync(operationId, cancellationToken);
-        if (preWriteProgress?.Status is OperationStatus.Completed or OperationStatus.Failed)
-        {
-            return ProblemDetailsHelpers.CreateAdminProblem(
-                StatusCodes.Status409Conflict,
-                "Conflict",
-                $"Operation '{operationId}' reached terminal state '{preWriteProgress.Status}' before cancellation could be applied");
-        }
-
         // If this operation is backed by a durable execution job, synchronize the
         // cancellation to the authoritative job store and remove from the queue so
         // the job does not remain claimable after the admin cancel.
@@ -791,18 +782,80 @@ internal static partial class OperationsProgressEndpoints
             }
         }
 
-        var cancelledProgress = latestCancellable.WithCancellation(DateTimeOffset.UtcNow, "Cancelled by user");
-        await progressStore.SetProgressAsync(operationId, cancelledProgress,
-            TimeSpan.FromDays(7), cancellationToken);
-
-        var response = new CancelOperationResponse
+        // Compare-and-set the Cancelled write so a worker's terminal Completed/Failed state that lands
+        // concurrently can never be overwritten (the TOCTOU follow-on tracked from honua-server#1593).
+        // Benign Queued <-> Processing transitions are retried; terminal transitions surface as 409.
+        IOperationProgress observedProgress = latestProgress;
+        ICancellableOperationProgress observedCancellable = latestCancellable;
+        for (var attempt = 0; attempt < MaxCancelCompareAndSetAttempts; attempt++)
         {
-            OperationId = operationId,
-            Message = "Operation cancellation requested",
-            Type = progress.Type
-        };
+            var cancelledProgress = observedCancellable.WithCancellation(DateTimeOffset.UtcNow, "Cancelled by user");
+            var casResult = await progressStore.TrySetProgressAsync(
+                operationId, cancelledProgress, observedProgress.Status, TimeSpan.FromDays(7), cancellationToken);
 
-        return Results.Json(response, OperationsProgressJsonContext.Default.CancelOperationResponse);
+            if (casResult.Outcome == ProgressCompareAndSetOutcome.Updated)
+            {
+                var response = new CancelOperationResponse
+                {
+                    OperationId = operationId,
+                    Message = "Operation cancellation requested",
+                    Type = progress.Type
+                };
+
+                return Results.Json(response, OperationsProgressJsonContext.Default.CancelOperationResponse);
+            }
+
+            if (casResult.Outcome == ProgressCompareAndSetOutcome.NotFound)
+            {
+                return ProblemDetailsHelpers.CreateAdminProblem(
+                    StatusCodes.Status404NotFound,
+                    ProblemDetailsHelpers.GetTitle(StatusCodes.Status404NotFound),
+                    $"Operation '{operationId}' was not found when cancellation was applied (it may have expired)");
+            }
+
+            var current = casResult.CurrentProgress!;
+            if (current.Status is OperationStatus.Completed or OperationStatus.Failed)
+            {
+                return ProblemDetailsHelpers.CreateAdminProblem(
+                    StatusCodes.Status409Conflict,
+                    "Conflict",
+                    $"Operation '{operationId}' reached terminal state '{current.Status}' before cancellation could be applied");
+            }
+
+            if (current.Status is OperationStatus.Cancelled)
+            {
+                var reconcileResult = await TryReconcileDurableCancelAsync(httpContext, operationId, progressStore, cancellationToken);
+                if (reconcileResult != null)
+                {
+                    return reconcileResult;
+                }
+
+                var alreadyCancelled = new CancelOperationResponse
+                {
+                    OperationId = operationId,
+                    Message = "Operation cancellation requested",
+                    Type = progress.Type
+                };
+
+                return Results.Json(alreadyCancelled, OperationsProgressJsonContext.Default.CancelOperationResponse);
+            }
+
+            if (current is not ICancellableOperationProgress currentCancellable)
+            {
+                return ProblemDetailsHelpers.CreateAdminProblem(
+                    StatusCodes.Status400BadRequest,
+                    ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
+                    $"Operation type '{current.Type}' does not support cancellation");
+            }
+
+            observedProgress = current;
+            observedCancellable = currentCancellable;
+        }
+
+        return ProblemDetailsHelpers.CreateAdminProblem(
+            StatusCodes.Status409Conflict,
+            "Conflict",
+            $"Operation '{operationId}' status changed concurrently while cancellation was being applied; retry the cancel request");
     }
 
     /// <summary>
@@ -979,6 +1032,7 @@ internal sealed record OperationsByTypeResponse
 [System.Text.Json.Serialization.JsonSerializable(typeof(DeploymentProgress))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(DeploymentStatus))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(RolloutState))]
+[System.Text.Json.Serialization.JsonSerializable(typeof(TemporalCorrectiveJobProgress))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(CancelOperationResponse))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(ActiveOperationsResponse))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(OperationsByTypeResponse))]
