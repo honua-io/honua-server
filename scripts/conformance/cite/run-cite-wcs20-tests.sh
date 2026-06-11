@@ -1,4 +1,4 @@
-#!/bin/bash
+﻿#!/bin/bash
 
 # WCS 2.0 CITE conformance testing script for Honua Server.
 

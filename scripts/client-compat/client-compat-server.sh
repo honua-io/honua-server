@@ -1,4 +1,4 @@
-#!/bin/bash
+﻿#!/bin/bash
 
 # Client compatibility server setup (WSL side).
 # Builds image, starts Docker Compose, seeds data, and keeps the server

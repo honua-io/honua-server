@@ -1,4 +1,4 @@
-#!/bin/bash
+﻿#!/bin/bash
 
 # GeoPackage 1.2 CITE conformance testing script for Honua Server.
 # Validates GeoPackage file output against the OGC GeoPackage 1.2 specification.

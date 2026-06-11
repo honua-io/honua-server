@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+﻿#!/usr/bin/env bash
 
 # OGC API - Maps conformance verification for Honua Server.
 # This runner uses the server integration conformance suite while

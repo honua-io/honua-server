@@ -1,0 +1,5 @@
+﻿# Ensure shell scripts always use LF line endings (CRLF breaks sh/dash in Linux containers)
+*.sh text eol=lf
+
+# Keep all other text files using platform line endings or git's auto-detection
+* text=auto
