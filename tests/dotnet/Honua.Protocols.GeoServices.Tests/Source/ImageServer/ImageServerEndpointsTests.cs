@@ -2,10 +2,13 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.IO.Compression;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Protocols.GeoServices.ImageServer.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -101,6 +104,29 @@ public class ImageServerEndpointsTests
                 BandValues = new Dictionary<int, object?> { [1] = 42 },
                 HasData = true,
             });
+        return store;
+    }
+
+    private static IRasterStore CreateTileExportRasterStoreSubstitute()
+    {
+        var store = CreateRasterStoreSubstitute();
+        store.GetImageTileAsync(
+                Arg.Any<int>(),
+                Arg.Any<long>(),
+                Arg.Any<int>(),
+                Arg.Any<int>(),
+                Arg.Any<int>(),
+                Arg.Any<RasterFormat>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new RasterResult
+            {
+                Data = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],
+                ContentType = "image/png",
+                Width = 256,
+                Height = 256,
+                Srid = 3857,
+            });
+
         return store;
     }
 
@@ -671,6 +697,146 @@ public class ImageServerEndpointsTests
     }
 
     [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/estimateExportTilesSize")]
+    [Endpoint("POST /rest/services/{id}/ImageServer/estimateExportTilesSize")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/estimateExportTilesSize")]
+    [Endpoint("POST /rest/services/{serviceId}/ImageServer/estimateExportTilesSize")]
+    [Operation(Operations.Export)]
+    public async Task EstimateExportTilesSize_GetAndPost_ReturnsStorageBackedEstimate()
+    {
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            var query = "f=json&levels=0&exportExtent=-180,-85,180,85&maxTiles=1";
+            var getResponse = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/estimateExportTilesSize?{query}");
+
+            getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            var estimate = JsonSerializer.Deserialize(
+                await getResponse.Content.ReadAsStringAsync(),
+                ImageServerJsonContext.Default.ImageServerExportTilesEstimateResponse);
+            AssertExportTilesEstimate(estimate);
+
+            var postResponse = await fixture.Client.PostAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/estimateExportTilesSize",
+                new FormUrlEncodedContent(
+                [
+                    new KeyValuePair<string, string>("f", "json"),
+                    new KeyValuePair<string, string>("levels", "0"),
+                    new KeyValuePair<string, string>("exportExtent", "-180,-85,180,85"),
+                    new KeyValuePair<string, string>("maxTiles", "1"),
+                ]));
+
+            postResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            estimate = JsonSerializer.Deserialize(
+                await postResponse.Content.ReadAsStringAsync(),
+                ImageServerJsonContext.Default.ImageServerExportTilesEstimateResponse);
+            AssertExportTilesEstimate(estimate);
+
+            var serviceId = WebAppFixture.TestServiceId;
+            var serviceGetResponse = await fixture.Client.GetAsync(
+                $"/rest/services/{serviceId}/ImageServer/estimateExportTilesSize?{query}");
+
+            serviceGetResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            estimate = JsonSerializer.Deserialize(
+                await serviceGetResponse.Content.ReadAsStringAsync(),
+                ImageServerJsonContext.Default.ImageServerExportTilesEstimateResponse);
+            AssertExportTilesEstimate(estimate);
+
+            var servicePostResponse = await fixture.Client.PostAsync(
+                $"/rest/services/{serviceId}/ImageServer/estimateExportTilesSize",
+                new FormUrlEncodedContent(
+                [
+                    new KeyValuePair<string, string>("f", "json"),
+                    new KeyValuePair<string, string>("levels", "0"),
+                    new KeyValuePair<string, string>("exportExtent", "-180,-85,180,85"),
+                    new KeyValuePair<string, string>("maxTiles", "1"),
+                ]));
+
+            servicePostResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            estimate = JsonSerializer.Deserialize(
+                await servicePostResponse.Content.ReadAsStringAsync(),
+                ImageServerJsonContext.Default.ImageServerExportTilesEstimateResponse);
+            AssertExportTilesEstimate(estimate);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/exportTiles")]
+    [Endpoint("POST /rest/services/{id}/ImageServer/exportTiles")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/exportTiles")]
+    [Endpoint("POST /rest/services/{serviceId}/ImageServer/exportTiles")]
+    [Operation(Operations.Export)]
+    public async Task ExportTiles_WritesZipArchiveToCloudStorage()
+    {
+        var fixture = await CreateFixtureAsync(CreateTileExportRasterStoreSubstitute());
+        var uploadedFileIds = new List<string>();
+        try
+        {
+            var query = "f=json&levels=0&exportExtent=-180,-85,180,85&maxTiles=1";
+            var getResponse = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/exportTiles?{query}");
+
+            getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            var export = JsonSerializer.Deserialize(
+                await getResponse.Content.ReadAsStringAsync(),
+                ImageServerJsonContext.Default.ImageServerExportTilesResponse);
+            AssertExportTilesResponse(export);
+            uploadedFileIds.Add(export!.ArchiveFileId!);
+
+            var serviceId = WebAppFixture.TestServiceId;
+            var servicePostResponse = await fixture.Client.PostAsync(
+                $"/rest/services/{serviceId}/ImageServer/exportTiles",
+                new FormUrlEncodedContent(
+                [
+                    new KeyValuePair<string, string>("f", "json"),
+                    new KeyValuePair<string, string>("levels", "0"),
+                    new KeyValuePair<string, string>("exportExtent", "-180,-85,180,85"),
+                    new KeyValuePair<string, string>("maxTiles", "1"),
+                ]));
+
+            servicePostResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            export = JsonSerializer.Deserialize(
+                await servicePostResponse.Content.ReadAsStringAsync(),
+                ImageServerJsonContext.Default.ImageServerExportTilesResponse);
+            AssertExportTilesResponse(export);
+            uploadedFileIds.Add(export!.ArchiveFileId!);
+
+            var storage = fixture.GetService<ICloudFileStorage>();
+            foreach (var fileId in uploadedFileIds)
+            {
+                var bytes = await storage.DownloadBytesAsync(fileId);
+                bytes.Should().NotBeNull();
+                bytes!.Length.Should().BeGreaterThan(0);
+
+                using var archive = new ZipArchive(new MemoryStream(bytes), ZipArchiveMode.Read);
+                var tileEntry = archive.GetEntry("0/0/0.png");
+                tileEntry.Should().NotBeNull();
+
+                await using var tileStream = tileEntry!.Open();
+                var pngHeader = new byte[8];
+                var read = await tileStream.ReadAsync(pngHeader.AsMemory(0, pngHeader.Length));
+                read.Should().Be(pngHeader.Length);
+                pngHeader.Should().Equal(0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A);
+            }
+        }
+        finally
+        {
+            var storage = fixture.GetService<ICloudFileStorage>();
+            foreach (var fileId in uploadedFileIds)
+            {
+                await storage.DeleteAsync(fileId);
+            }
+
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /rest/services/{id}/ImageServer/keyProperties")]
     [Operation(Operations.Metadata)]
     public async Task KeyProperties_Get_ReturnsBandProperties()
@@ -1073,5 +1239,34 @@ public class ImageServerEndpointsTests
         point.GetProperty("x").GetDouble().Should().BeApproximately(0d, 0.0001);
         point.GetProperty("y").GetDouble().Should().BeApproximately(0d, 0.0001);
         point.GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(3857);
+    }
+
+    private static void AssertExportTilesEstimate(ImageServerExportTilesEstimateResponse? estimate)
+    {
+        estimate.Should().NotBeNull();
+        estimate!.TileCount.Should().Be(1);
+        estimate.Size.Should().BeGreaterThan(0);
+        estimate.EstimatedSizeBytes.Should().Be(estimate.Size);
+        estimate.MinZoom.Should().Be(0);
+        estimate.MaxZoom.Should().Be(0);
+        estimate.TilePackage.Should().BeFalse();
+        estimate.StorageFormat.Should().Be("zip");
+        estimate.ContentType.Should().Be("application/zip");
+        estimate.ExceededTransferLimit.Should().BeFalse();
+    }
+
+    private static void AssertExportTilesResponse(ImageServerExportTilesResponse? export)
+    {
+        export.Should().NotBeNull();
+        export!.JobStatus.Should().Be("esriJobSucceeded");
+        export.TileCount.Should().Be(1);
+        export.TilePackage.Should().BeFalse();
+        export.StorageFormat.Should().Be("zip");
+        export.ContentType.Should().Be("application/zip");
+        export.ArchiveFileId.Should().NotBeNullOrWhiteSpace();
+        export.DownloadUrl.Should().NotBeNullOrWhiteSpace();
+        export.Files.Should().ContainSingle();
+        export.Results.Should().NotBeNull();
+        export.Results!.OutServiceUrl.Should().NotBeNull();
     }
 }

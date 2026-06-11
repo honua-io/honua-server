@@ -1160,6 +1160,7 @@
         "queryBoundary",
         "computePixelLocation",
         "project",
+        "storage-backed exportTiles",
         "computeCacheInfo (dynamic cache metadata)",
         "legend",
         "computeClass (raster function chain validation)",
@@ -1168,7 +1169,7 @@
       "knownGaps": [
         "find",
         "measure",
-        "exportTiles",
+        "full Esri tile-package/job exportTiles semantics",
         "generated ImageServer tile caches",
         "catalog mutation",
         "datumTransformation/image coordinate systems for ImageServer project",
@@ -1193,6 +1194,7 @@
           "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Handlers/ImageServerStatisticsHistogramsHandler.cs",
           "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerCoordinateMetadataHandler.cs",
           "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerProjectHandler.cs",
+          "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerExportTilesHandler.cs",
           "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Handlers/ImageServerLegendHandler.cs",
           "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Handlers/ImageServerAnalyzeHandler.cs",
           "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Services/ImageServerCatalogReader.cs",
@@ -1370,6 +1372,36 @@
               "POST /rest/services/{serviceId}/ImageServer/project"
             ],
             "notes": "Reprojects Esri JSON geometry arrays between supported spatial references via the shared CRS projection pipeline and returns the Image Service geometries[] response shape. Envelope geometries remain envelope-shaped. datumTransformation/transformation parameters and image coordinate system identifiers are rejected until neutral support is added."
+          },
+          {
+            "name": "Estimate Export Tiles Size",
+            "esriPath": "/rest/services/{id}/ImageServer/estimateExportTilesSize",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer/estimateExportTilesSize",
+              "POST /rest/services/{id}/ImageServer/estimateExportTilesSize",
+              "GET /rest/services/{serviceId}/ImageServer/estimateExportTilesSize",
+              "POST /rest/services/{serviceId}/ImageServer/estimateExportTilesSize"
+            ],
+            "notes": "Estimates bounded WebMercatorQuad ZIP archive size for the current storage-backed ImageServer exportTiles implementation."
+          },
+          {
+            "name": "Export Tiles",
+            "esriPath": "/rest/services/{id}/ImageServer/exportTiles",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer/exportTiles",
+              "POST /rest/services/{id}/ImageServer/exportTiles",
+              "GET /rest/services/{serviceId}/ImageServer/exportTiles",
+              "POST /rest/services/{serviceId}/ImageServer/exportTiles"
+            ],
+            "notes": "Exports bounded WebMercatorQuad image tiles as a ZIP archive written through configured cloud file storage (local, S3, Azure Blob). This supports common storage-backed tile archive workflows; Esri TPK/TPKX/compact cache packages and async job child resources are deferred."
           }
         ],
         "notImplemented": [
@@ -1408,13 +1440,6 @@
             "esriPath": "/rest/services/{id}/ImageServer/downloadRasters",
             "methods": [
               "GET",
-              "POST"
-            ]
-          },
-          {
-            "name": "Export Tiles",
-            "esriPath": "/rest/services/{id}/ImageServer/exportTiles",
-            "methods": [
               "POST"
             ]
           },
@@ -1752,7 +1777,8 @@
         "WCS GetCapabilities advertises native CRS values for visible coverages, not every transformable output CRS.",
         "WCS single-axis SUBSET fills the omitted axis from the stored raster extent only for native-CRS subsets; callers using a non-native SUBSETTINGCRS/BBOXCRS must supply both axes or use BBOX.",
         "hasMultidimensions is always false until cube ingestion ships; multidimensionalInfo remains absent.",
-        "Honua does not currently expose ImageServer WMTS or offline tile export."
+        "ImageServer exportTiles writes ZIP archives to configured cloud file storage; Esri TPK/TPKX/compact cache packages and async job resources are not implemented.",
+        "Honua does not currently expose ImageServer WMTS."
       ]
     },
     {

@@ -279,6 +279,44 @@ internal static class ImageServerEndpoints
             .Produces(404)
             .Produces(501);
 
+        group.MapGet("/estimateExportTilesSize", EstimateExportTilesSizeGet)
+            .WithDisplayName("Estimate Image Service Export Tiles Size (GET)")
+            .WithName("ImageServerEstimateExportTilesSizeGet")
+            .WithSummary("Estimate tile archive size")
+            .WithDescription("Estimates WebMercatorQuad tile count and ZIP archive size for an ImageServer exportTiles request")
+            .Produces<ImageServerExportTilesEstimateResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+
+        group.MapPost("/estimateExportTilesSize", EstimateExportTilesSizePost)
+            .WithDisplayName("Estimate Image Service Export Tiles Size (POST)")
+            .WithName("ImageServerEstimateExportTilesSizePost")
+            .WithSummary("Estimate tile archive size via POST")
+            .WithDescription("POST equivalent of the ArcGIS ImageServer estimateExportTilesSize endpoint")
+            .Produces<ImageServerExportTilesEstimateResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+
+        group.MapGet("/exportTiles", ExportTilesGet)
+            .WithDisplayName("Export Image Service Tiles (GET)")
+            .WithName("ImageServerExportTilesGet")
+            .WithSummary("Export image tiles")
+            .WithDescription("Exports bounded WebMercatorQuad image tiles as a ZIP archive written through configured cloud file storage")
+            .Produces<ImageServerExportTilesResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404)
+            .Produces(503);
+
+        group.MapPost("/exportTiles", ExportTilesPost)
+            .WithDisplayName("Export Image Service Tiles (POST)")
+            .WithName("ImageServerExportTilesPost")
+            .WithSummary("Export image tiles via POST")
+            .WithDescription("POST equivalent of the ArcGIS ImageServer exportTiles endpoint")
+            .Produces<ImageServerExportTilesResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404)
+            .Produces(503);
+
         // Raster key properties metadata
         group.MapGet("/keyProperties", KeyPropertiesGet)
             .WithDisplayName("Get Key Properties")
@@ -631,6 +669,38 @@ internal static class ImageServerEndpoints
             .Produces(400)
             .Produces(404)
             .Produces(501);
+
+        serviceGroup.MapGet("/estimateExportTilesSize", EstimateExportTilesSizeGetByService)
+            .WithDisplayName("Estimate Image Service Export Tiles Size by Service (GET)")
+            .WithName("ImageServerEstimateExportTilesSizeGetByService")
+            .WithSummary("Estimate tile archive size")
+            .Produces<ImageServerExportTilesEstimateResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+        serviceGroup.MapPost("/estimateExportTilesSize", EstimateExportTilesSizePostByService)
+            .WithDisplayName("Estimate Image Service Export Tiles Size by Service (POST)")
+            .WithName("ImageServerEstimateExportTilesSizePostByService")
+            .WithSummary("Estimate tile archive size via POST")
+            .Produces<ImageServerExportTilesEstimateResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+
+        serviceGroup.MapGet("/exportTiles", ExportTilesGetByService)
+            .WithDisplayName("Export Image Service Tiles by Service (GET)")
+            .WithName("ImageServerExportTilesGetByService")
+            .WithSummary("Export image tiles")
+            .Produces<ImageServerExportTilesResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404)
+            .Produces(503);
+        serviceGroup.MapPost("/exportTiles", ExportTilesPostByService)
+            .WithDisplayName("Export Image Service Tiles by Service (POST)")
+            .WithName("ImageServerExportTilesPostByService")
+            .WithSummary("Export image tiles via POST")
+            .Produces<ImageServerExportTilesResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404)
+            .Produces(503);
 
         serviceGroup.MapGet("/keyProperties", KeyPropertiesGetByService)
             .WithDisplayName("Get Key Properties by Service")
@@ -1752,6 +1822,154 @@ internal static class ImageServerEndpoints
     {
         var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
         return resolution.ErrorResult ?? await ProjectPost(resolution.LayerId, context, handler, cancellationToken);
+    }
+
+    /// <summary>
+    /// Estimate ImageServer exportTiles size (GET).
+    /// </summary>
+    private static async Task<IResult> EstimateExportTilesSizeGet(
+        int id,
+        HttpContext context,
+        ImageServerExportTilesHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        if (layerError is not null)
+        {
+            return layerError;
+        }
+
+        var values = GeoServicesRequestValueHelpers.ToCaseInsensitiveDictionary(context.Request.Query);
+        if (!IsSupportedJsonResponseFormat(GetString(values, "f")))
+        {
+            return CreateUnsupportedJsonFormatResult(context);
+        }
+
+        return await handler.EstimateAsync(context, id, values, cancellationToken);
+    }
+
+    private static async Task<IResult> EstimateExportTilesSizeGetByService(
+        string serviceId,
+        HttpContext context,
+        ImageServerExportTilesHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        return resolution.ErrorResult ?? await EstimateExportTilesSizeGet(resolution.LayerId, context, handler, cancellationToken);
+    }
+
+    /// <summary>
+    /// Estimate ImageServer exportTiles size (POST).
+    /// </summary>
+    private static async Task<IResult> EstimateExportTilesSizePost(
+        int id,
+        HttpContext context,
+        ImageServerExportTilesHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        if (layerError is not null)
+        {
+            return layerError;
+        }
+
+        var bodyValues = await ReadPostValuesAsync(context, cancellationToken);
+        if (bodyValues.Error != null)
+        {
+            return bodyValues.Error;
+        }
+
+        var merged = MergeQueryAndBodyValues(context, bodyValues.Values!);
+        if (!IsSupportedJsonResponseFormat(GetString(merged, "f")))
+        {
+            return CreateUnsupportedJsonFormatResult(context);
+        }
+
+        return await handler.EstimateAsync(context, id, merged, cancellationToken);
+    }
+
+    private static async Task<IResult> EstimateExportTilesSizePostByService(
+        string serviceId,
+        HttpContext context,
+        ImageServerExportTilesHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        return resolution.ErrorResult ?? await EstimateExportTilesSizePost(resolution.LayerId, context, handler, cancellationToken);
+    }
+
+    /// <summary>
+    /// Export ImageServer tiles into configured storage (GET).
+    /// </summary>
+    private static async Task<IResult> ExportTilesGet(
+        int id,
+        HttpContext context,
+        ImageServerExportTilesHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        if (layerError is not null)
+        {
+            return layerError;
+        }
+
+        var values = GeoServicesRequestValueHelpers.ToCaseInsensitiveDictionary(context.Request.Query);
+        if (!IsSupportedJsonResponseFormat(GetString(values, "f")))
+        {
+            return CreateUnsupportedJsonFormatResult(context);
+        }
+
+        return await handler.ExportTilesAsync(context, id, values, cancellationToken);
+    }
+
+    private static async Task<IResult> ExportTilesGetByService(
+        string serviceId,
+        HttpContext context,
+        ImageServerExportTilesHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        return resolution.ErrorResult ?? await ExportTilesGet(resolution.LayerId, context, handler, cancellationToken);
+    }
+
+    /// <summary>
+    /// Export ImageServer tiles into configured storage (POST).
+    /// </summary>
+    private static async Task<IResult> ExportTilesPost(
+        int id,
+        HttpContext context,
+        ImageServerExportTilesHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        if (layerError is not null)
+        {
+            return layerError;
+        }
+
+        var bodyValues = await ReadPostValuesAsync(context, cancellationToken);
+        if (bodyValues.Error != null)
+        {
+            return bodyValues.Error;
+        }
+
+        var merged = MergeQueryAndBodyValues(context, bodyValues.Values!);
+        if (!IsSupportedJsonResponseFormat(GetString(merged, "f")))
+        {
+            return CreateUnsupportedJsonFormatResult(context);
+        }
+
+        return await handler.ExportTilesAsync(context, id, merged, cancellationToken);
+    }
+
+    private static async Task<IResult> ExportTilesPostByService(
+        string serviceId,
+        HttpContext context,
+        ImageServerExportTilesHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        return resolution.ErrorResult ?? await ExportTilesPost(resolution.LayerId, context, handler, cancellationToken);
     }
 
     /// <summary>

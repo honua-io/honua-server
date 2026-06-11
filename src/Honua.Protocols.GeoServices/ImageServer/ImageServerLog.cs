@@ -226,4 +226,22 @@ internal static partial class ImageServerLog
         Level = LogLevel.Error,
         Message = "Failed to project geometries for layer {LayerId}")]
     public static partial void ProjectFailed(ILogger logger, Exception ex, int layerId);
+
+    [LoggerMessage(
+        EventId = 5836,
+        Level = LogLevel.Information,
+        Message = "ImageServer exportTiles requested for layer {LayerId}: tileCount={TileCount}")]
+    public static partial void ExportTilesRequested(ILogger logger, int layerId, int tileCount);
+
+    [LoggerMessage(
+        EventId = 5837,
+        Level = LogLevel.Information,
+        Message = "ImageServer exportTiles completed for layer {LayerId}: wrote {TileCount} tiles ({SizeBytes} bytes) in {ElapsedMs}ms")]
+    public static partial void ExportTilesCompleted(ILogger logger, int layerId, int tileCount, long sizeBytes, double elapsedMs);
+
+    [LoggerMessage(
+        EventId = 5838,
+        Level = LogLevel.Error,
+        Message = "ImageServer exportTiles failed for layer {LayerId}: {ErrorMessage}")]
+    public static partial void ExportTilesFailed(ILogger logger, Exception ex, int layerId, string errorMessage);
 }
