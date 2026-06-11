@@ -3,18 +3,21 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.TestKit.Infrastructure;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Protocols.GeoServices.ImageServer.Handlers;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
@@ -166,6 +169,116 @@ public class ImageServerTileHandlerTests
         result.Should().BeOfType<FileContentHttpResult>();
     }
 
+    [UnitTest]
+    [Operation(Operations.GetTile)]
+    public async Task GetImageTileAsync_CloudCacheHit_ReturnsStoredTileWithoutRendering()
+    {
+        var cachedTile = new byte[] { 0x89, 0x50, 0x4E, 0x47, 0xCA, 0xFE };
+        var storage = Substitute.For<ICloudFileStorage>();
+        storage.Provider.Returns(CloudStorageProvider.AwsS3);
+        storage.GetMetadataAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(call => new CloudFile
+            {
+                FileId = call.ArgAt<string>(0),
+                FileName = "0-0-0.png",
+                StoragePath = call.ArgAt<string>(0),
+                ContentType = "image/png",
+                SizeBytes = cachedTile.Length,
+                UploadedAt = DateTimeOffset.UtcNow,
+                Provider = CloudStorageProvider.AwsS3
+            });
+        storage.DownloadBytesAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(cachedTile);
+        _rasterStore.QueryRastersAsync(default, default, default)
+            .ReturnsForAnyArgs([CreateTestRasterInfo()]);
+
+        var context = CreateImageServerContext(services => services.AddSingleton(storage));
+        var result = await _handler.GetImageTileAsync(context, 1, 0, 0, 0, "png");
+
+        var fileResult = result.Should().BeOfType<FileContentHttpResult>().Subject;
+        fileResult.FileContents.ToArray().Should().Equal(cachedTile);
+        fileResult.ContentType.Should().Be("image/png");
+        await storage.Received(1).DownloadBytesAsync(
+            Arg.Is<string>(key => key.Contains("imageserver/tiles", StringComparison.Ordinal)),
+            Arg.Any<CancellationToken>());
+        await _rasterStore.DidNotReceive().GetImageTileAsync(
+            Arg.Any<int>(),
+            Arg.Any<long>(),
+            Arg.Any<int>(),
+            Arg.Any<int>(),
+            Arg.Any<int>(),
+            Arg.Any<RasterFormat>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetTile)]
+    public async Task GetImageTileAsync_CloudCacheMiss_WritesGeneratedTile()
+    {
+        var tileData = new byte[] { 0x89, 0x50, 0x4E, 0x47 };
+        var storage = Substitute.For<ICloudFileStorage>();
+        storage.Provider.Returns(CloudStorageProvider.AwsS3);
+        storage.GetMetadataAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((CloudFile?)null);
+        storage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var request = call.ArgAt<FileUploadRequest>(0);
+                return UploadResult.CreateSuccess(new CloudFile
+                {
+                    FileId = request.ObjectKeyOverride!,
+                    FileName = request.FileName,
+                    StoragePath = request.ObjectKeyOverride!,
+                    ContentType = request.ContentType,
+                    SizeBytes = request.SizeBytes ?? 0,
+                    UploadedAt = DateTimeOffset.UtcNow,
+                    Provider = CloudStorageProvider.AwsS3,
+                    Metadata = request.Metadata
+                });
+            });
+        _rasterStore.QueryRastersAsync(default, default, default)
+            .ReturnsForAnyArgs([CreateTestRasterInfo()]);
+        _rasterStore.GetImageTileAsync(1, 100, 0, 0, 0, RasterFormat.PNG, Arg.Any<CancellationToken>())
+            .Returns(new RasterResult
+            {
+                Data = tileData,
+                ContentType = "image/png",
+                Width = 256,
+                Height = 256,
+                Srid = 3857
+            });
+
+        var options = Options.Create(new CloudStorageOptions
+        {
+            Provider = CloudStorageProvider.AwsS3,
+            AwsS3 = new AwsS3Options
+            {
+                BucketName = "test-bucket",
+                Region = "us-east-1",
+                KeyPrefix = "geo-cache"
+            }
+        });
+        var context = CreateImageServerContext(services =>
+        {
+            services.AddSingleton(storage);
+            services.AddSingleton<IOptions<CloudStorageOptions>>(options);
+        });
+
+        var result = await _handler.GetImageTileAsync(context, 1, 0, 0, 0, "png");
+
+        var fileResult = result.Should().BeOfType<FileContentHttpResult>().Subject;
+        fileResult.FileContents.ToArray().Should().Equal(tileData);
+        await storage.Received(1).UploadAsync(
+            Arg.Is<FileUploadRequest>(request =>
+                request.ObjectKeyOverride != null &&
+                request.ObjectKeyOverride.StartsWith("geo-cache/imageserver/tiles/", StringComparison.Ordinal) &&
+                request.ContentType == "image/png" &&
+                request.FileName == "0-0-0.png" &&
+                request.Metadata["protocol"] == "ImageServer" &&
+                request.Metadata["operation"] == "tile"),
+            Arg.Any<CancellationToken>());
+    }
+
     [Trait("Category", "Unit")]
     [Operation(Operations.GetTile)]
     [Theory]
@@ -194,10 +307,11 @@ public class ImageServerTileHandlerTests
         context.Response.StatusCode.Should().NotBe(StatusCodes.Status400BadRequest);
     }
 
-    private static DefaultHttpContext CreateImageServerContext()
+    private static DefaultHttpContext CreateImageServerContext(Action<IServiceCollection>? configureServices = null)
     {
         var services = new ServiceCollection();
         services.AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance);
+        configureServices?.Invoke(services);
         var context = new DefaultHttpContext();
         context.RequestServices = services.BuildServiceProvider();
         context.Request.Path = "/rest/services/1/ImageServer/tile/0/0/0";

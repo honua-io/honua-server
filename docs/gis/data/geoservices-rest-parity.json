@@ -757,7 +757,7 @@
         "queryAttachments",
         "queryRelatedRecords",
         "feature child resource",
-        "tiles",
+        "tiles with cloud-storage cache",
         "storage-backed exportTiles",
         "generateKml",
         "WMS",
@@ -780,6 +780,8 @@
           "src/Honua.Protocols.GeoServices/MapServer/MapServerRequestHandlers.Find.cs",
           "src/Honua.Protocols.GeoServices/MapServer/MapServerRequestHandlers.Legend.cs",
           "src/Honua.Protocols.GeoServices/MapServer/MapServerRequestHandlers.RelatedAndRenderer.cs",
+          "src/Honua.Protocols.GeoServices/MapServer/MapServerRequestHandlers.Tile.cs",
+          "src/Honua.Protocols.GeoServices/GeoServicesCloudTileCache.cs",
           "src/Honua.Protocols.OgcClassic/Wms/WmsRequestHandlers.cs",
           "src/Honua.Protocols.OgcClassic/Wmts/WmtsRequestHandlers.cs"
         ],
@@ -920,7 +922,8 @@
             ],
             "honuaEndpoints": [
               "GET /rest/services/{serviceId}/MapServer/tile/{z}/{y}/{x}"
-            ]
+            ],
+            "notes": "Returns dynamic WebMercatorQuad PNG tiles and uses configured cloud file storage (local, S3, Azure Blob) as a deterministic loose-object read-through/write-through cache."
           },
           {
             "name": "WMS",
@@ -1140,6 +1143,7 @@
       "knownLimitations": [
         "WMTS support remains WebMercatorQuad-only.",
         "Layer queries inherit the FeatureServer query contract, including its format behavior.",
+        "MapServer tile GET storage is a loose-object cache, not an Esri compact cache or tile package.",
         "Advanced rendering parameters such as maxAllowableOffset and geometryPrecision are accepted but not yet applied."
       ]
     },
@@ -1152,7 +1156,7 @@
         "service metadata (with timeInfo when temporal)",
         "exportImage",
         "identify",
-        "tile",
+        "tile with cloud-storage cache",
         "query (raster catalog features)",
         "find",
         "measure (Basic mensuration)",
@@ -1171,7 +1175,7 @@
       "knownGaps": [
         "sensor/DEM-backed ImageServer height and 3D mensuration",
         "full Esri tile-package/job exportTiles semantics",
-        "generated ImageServer tile caches",
+        "Esri compact/generated tile-cache management",
         "catalog mutation",
         "camera/orientation-ranked ImageServer find",
         "datumTransformation/image coordinate systems for ImageServer project",
@@ -1187,40 +1191,41 @@
       ],
       "evidence": {
         "code": [
-          "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/ImageServerEndpoints.cs",
-          "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Handlers/ImageServerMetadataHandler.cs",
-          "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Handlers/ImageServerExportHandler.cs",
-          "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Handlers/ImageServerIdentifyHandler.cs",
-          "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Handlers/ImageServerTileHandler.cs",
-          "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Handlers/ImageServerCatalogQueryHandler.cs",
-          "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Handlers/ImageServerStatisticsHistogramsHandler.cs",
+          "src/Honua.Protocols.GeoServices/ImageServer/ImageServerEndpoints.cs",
+          "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerMetadataHandler.cs",
+          "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerExportHandler.cs",
+          "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerIdentifyHandler.cs",
+          "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerTileHandler.cs",
+          "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerCatalogQueryHandler.cs",
+          "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerStatisticsHistogramsHandler.cs",
           "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerCoordinateMetadataHandler.cs",
           "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerProjectHandler.cs",
           "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerExportTilesHandler.cs",
           "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerFindHandler.cs",
           "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerMeasureHandler.cs",
-          "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Handlers/ImageServerLegendHandler.cs",
-          "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Handlers/ImageServerAnalyzeHandler.cs",
-          "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Services/ImageServerCatalogReader.cs",
-          "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Services/ImageServerCatalogFilterEvaluator.cs",
-          "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Services/ImageServerMosaicHelpers.cs",
-          "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Services/ImageServerLegendSwatchBuilder.cs",
-          "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Services/ImageServerRasterFunctionPlanner.cs",
-          "src/Honua.Server/Features/Protocols/Ogc/Classic/Wcs20/Wcs20Endpoints.cs",
-          "src/Honua.Server/Features/Protocols/Ogc/Classic/Wcs20/Wcs20Handler.cs"
+          "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerLegendHandler.cs",
+          "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerAnalyzeHandler.cs",
+          "src/Honua.Protocols.GeoServices/ImageServer/Services/ImageServerCatalogReader.cs",
+          "src/Honua.Protocols.GeoServices/ImageServer/Services/ImageServerCatalogFilterEvaluator.cs",
+          "src/Honua.Protocols.GeoServices/ImageServer/Services/ImageServerMosaicHelpers.cs",
+          "src/Honua.Protocols.GeoServices/ImageServer/Services/ImageServerLegendSwatchBuilder.cs",
+          "src/Honua.Protocols.GeoServices/ImageServer/Services/ImageServerRasterFunctionPlanner.cs",
+          "src/Honua.Protocols.GeoServices/GeoServicesCloudTileCache.cs",
+          "src/Honua.Protocols.OgcClassic/Wcs20/Wcs20Endpoints.cs",
+          "src/Honua.Protocols.OgcClassic/Wcs20/Wcs20Handler.cs"
         ],
         "tests": [
-          "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerBasicTests.cs",
-          "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerParameterValidationTests.cs",
-          "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerErrorHandlingTests.cs",
-          "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerEndpointsTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerBasicTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerParameterValidationTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerErrorHandlingTests.cs",
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerEndpointsTests.cs",
-          "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerMosaicIntegrationTests.cs",
-          "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerCatalogQueryHandlerTests.cs",
-          "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerStatisticsHistogramsHandlerTests.cs",
-          "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerLegendHandlerTests.cs",
-          "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerAnalyzeHandlerTests.cs",
-          "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Classic/Wcs20/Wcs20EndpointsTests.cs"
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerTileHandlerTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerMosaicIntegrationTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerCatalogQueryHandlerTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerStatisticsHistogramsHandlerTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerLegendHandlerTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerAnalyzeHandlerTests.cs",
+          "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wcs20/Wcs20EndpointsTests.cs"
         ]
       },
       "operations": {
@@ -1245,7 +1250,7 @@
             "honuaEndpoints": [
               "GET /rest/services/{id}/ImageServer/tile/{level}/{row}/{col}"
             ],
-            "notes": "Supports png, jpeg, and tiff tile output. When multiple rasters overlap the requested tile, Honua renders a mosaic using the resolved merge strategy."
+            "notes": "Supports png, jpeg, and tiff tile output. When multiple rasters overlap the requested tile, Honua renders a mosaic using the resolved merge strategy. Tile GETs use configured cloud file storage (local, S3, Azure Blob) as a deterministic loose-object read-through/write-through cache."
           }
         ],
         "partial": [
@@ -1364,7 +1369,7 @@
               "GET /rest/services/{id}/ImageServer/computeCacheInfo",
               "POST /rest/services/{id}/ImageServer/computeCacheInfo"
             ],
-            "notes": "Dynamic ImageServer layers return a spec-shaped cacheInfo object with the service extent and intentionally omit tileInfo/cacheType until an actual raster tile cache is configured."
+            "notes": "Dynamic ImageServer layers return a spec-shaped cacheInfo object with the service extent and intentionally omit tileInfo/cacheType until a formal Esri-style raster tile cache is configured. The loose-object tile GET cache is operational storage, not advertised cache metadata."
           },
           {
             "name": "Compute Pixel Location",
@@ -1797,6 +1802,7 @@
         "hasMultidimensions is always false until cube ingestion ships; multidimensionalInfo remains absent.",
         "ImageServer find filters by raster catalog footprint and returns catalog metadata; true camera/orientation-ranked image selection is deferred until sensor metadata is modeled.",
         "ImageServer measure supports Basic map-space mensuration only; sensor/DEM-backed height and 3D mensuration are not implemented.",
+        "ImageServer tile GET storage is a loose-object cache, not an Esri compact cache, tile package, or advertised cacheInfo tile cache.",
         "ImageServer exportTiles writes ZIP archives to configured cloud file storage; Esri TPK/TPKX/compact cache packages and async job resources are not implemented.",
         "Honua does not currently expose ImageServer WMTS."
       ]

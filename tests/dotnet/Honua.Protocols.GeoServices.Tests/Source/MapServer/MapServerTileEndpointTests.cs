@@ -3,9 +3,14 @@
 
 using System.Net;
 using FluentAssertions;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.MapServer;
 
@@ -31,6 +36,56 @@ public sealed class MapServerTileEndpointTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK, $"Response body: {System.Text.Encoding.UTF8.GetString(content)}");
         response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
         content.Length.Should().BeGreaterThan(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Tile)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/tile/{z}/{y}/{x}")]
+    public async Task Tile_WhenCloudCacheHit_ReturnsStoredTile()
+    {
+        var cachedTile = new byte[] { 0x89, 0x50, 0x4E, 0x47, 0xCA, 0xFE };
+        var storage = Substitute.For<ICloudFileStorage>();
+        storage.Provider.Returns(CloudStorageProvider.AwsS3);
+        storage.GetMetadataAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(call => new CloudFile
+            {
+                FileId = call.ArgAt<string>(0),
+                FileName = "0-0-0.png",
+                StoragePath = call.ArgAt<string>(0),
+                ContentType = "image/png",
+                SizeBytes = cachedTile.Length,
+                UploadedAt = DateTimeOffset.UtcNow,
+                Provider = CloudStorageProvider.AwsS3
+            });
+        storage.DownloadBytesAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(cachedTile);
+
+        var fixture = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<ICloudFileStorage>();
+                services.AddSingleton(storage);
+            });
+
+        try
+        {
+            await fixture.InitializeAsync();
+
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/tile/0/0/0");
+            var content = await response.Content.ReadAsByteArrayAsync();
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK, $"Response body: {System.Text.Encoding.UTF8.GetString(content)}");
+            response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+            content.Should().Equal(cachedTile);
+            await storage.Received(1).DownloadBytesAsync(
+                Arg.Is<string>(key => key.Contains("mapserver/tiles", StringComparison.Ordinal)),
+                Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
     }
 
     [IntegrationTest]
