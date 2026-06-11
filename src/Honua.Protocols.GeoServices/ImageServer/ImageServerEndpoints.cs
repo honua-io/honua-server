@@ -148,6 +148,24 @@ internal static class ImageServerEndpoints
             .Produces(400)
             .Produces(404);
 
+        group.MapGet("/find", FindGet)
+            .WithDisplayName("Find Image Catalog Items (GET)")
+            .WithName("ImageServerFindGet")
+            .WithSummary("Find catalog images containing a target geometry")
+            .WithDescription("Finds raster catalog images whose footprints contain toGeometry and returns ImageServer find candidates")
+            .Produces<ImageServerFindResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+
+        group.MapPost("/find", FindPost)
+            .WithDisplayName("Find Image Catalog Items (POST)")
+            .WithName("ImageServerFindPost")
+            .WithSummary("Find catalog images containing a target geometry via POST")
+            .WithDescription("POST equivalent of the ArcGIS ImageServer find endpoint")
+            .Produces<ImageServerFindResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+
         // Compute statistics + histograms for the layer's primary raster
         group.MapGet("/computeStatisticsHistograms", ComputeStatisticsHistogramsGet)
             .WithDisplayName("Compute Statistics Histograms (GET)")
@@ -560,6 +578,21 @@ internal static class ImageServerEndpoints
             .WithName("QueryImageCatalogPostByService")
             .WithSummary("Query the raster catalog")
             .Produces<CatalogQueryResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+
+        serviceGroup.MapGet("/find", FindGetByService)
+            .WithDisplayName("Find Image Catalog Items by Service (GET)")
+            .WithName("ImageServerFindGetByService")
+            .WithSummary("Find catalog images containing a target geometry")
+            .Produces<ImageServerFindResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+        serviceGroup.MapPost("/find", FindPostByService)
+            .WithDisplayName("Find Image Catalog Items by Service (POST)")
+            .WithName("ImageServerFindPostByService")
+            .WithSummary("Find catalog images containing a target geometry via POST")
+            .Produces<ImageServerFindResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(400)
             .Produces(404);
 
@@ -1264,6 +1297,80 @@ internal static class ImageServerEndpoints
     {
         var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
         return resolution.ErrorResult ?? await QueryCatalogPost(resolution.LayerId, context, handler, cancellationToken);
+    }
+
+    /// <summary>
+    /// Find raster catalog images containing the target geometry (GET).
+    /// </summary>
+    private static async Task<IResult> FindGet(
+        int id,
+        HttpContext context,
+        ImageServerFindHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        if (layerError is not null)
+        {
+            return layerError;
+        }
+
+        var values = GeoServicesRequestValueHelpers.ToCaseInsensitiveDictionary(context.Request.Query);
+        if (!IsSupportedJsonResponseFormat(GetString(values, "f")))
+        {
+            return CreateUnsupportedJsonFormatResult(context);
+        }
+
+        return await handler.FindAsync(context, id, values, cancellationToken);
+    }
+
+    private static async Task<IResult> FindGetByService(
+        string serviceId,
+        HttpContext context,
+        ImageServerFindHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        return resolution.ErrorResult ?? await FindGet(resolution.LayerId, context, handler, cancellationToken);
+    }
+
+    /// <summary>
+    /// Find raster catalog images containing the target geometry (POST).
+    /// </summary>
+    private static async Task<IResult> FindPost(
+        int id,
+        HttpContext context,
+        ImageServerFindHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        if (layerError is not null)
+        {
+            return layerError;
+        }
+
+        var bodyValues = await ReadPostValuesAsync(context, cancellationToken);
+        if (bodyValues.Error != null)
+        {
+            return bodyValues.Error;
+        }
+
+        var merged = MergeQueryAndBodyValues(context, bodyValues.Values!);
+        if (!IsSupportedJsonResponseFormat(GetString(merged, "f")))
+        {
+            return CreateUnsupportedJsonFormatResult(context);
+        }
+
+        return await handler.FindAsync(context, id, merged, cancellationToken);
+    }
+
+    private static async Task<IResult> FindPostByService(
+        string serviceId,
+        HttpContext context,
+        ImageServerFindHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        return resolution.ErrorResult ?? await FindPost(resolution.LayerId, context, handler, cancellationToken);
     }
 
     /// <summary>

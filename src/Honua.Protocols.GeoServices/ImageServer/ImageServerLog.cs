@@ -244,4 +244,22 @@ internal static partial class ImageServerLog
         Level = LogLevel.Error,
         Message = "ImageServer exportTiles failed for layer {LayerId}: {ErrorMessage}")]
     public static partial void ExportTilesFailed(ILogger logger, Exception ex, int layerId, string errorMessage);
+
+    [LoggerMessage(
+        EventId = 5839,
+        Level = LogLevel.Warning,
+        Message = "Invalid find parameters for layer {LayerId}: {ValidationErrors}")]
+    public static partial void InvalidFindParameters(ILogger logger, int layerId, string validationErrors);
+
+    [LoggerMessage(
+        EventId = 5840,
+        Level = LogLevel.Information,
+        Message = "ImageServer find for layer {LayerId} returned {ResultCount} images in {ElapsedMs}ms")]
+    public static partial void FindCompleted(ILogger logger, int layerId, int resultCount, double elapsedMs);
+
+    [LoggerMessage(
+        EventId = 5841,
+        Level = LogLevel.Error,
+        Message = "ImageServer find failed for layer {LayerId}")]
+    public static partial void FindFailed(ILogger logger, Exception ex, int layerId);
 }

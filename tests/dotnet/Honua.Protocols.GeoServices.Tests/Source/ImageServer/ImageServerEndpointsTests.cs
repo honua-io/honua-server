@@ -306,6 +306,94 @@ public class ImageServerEndpointsTests
     }
 
     [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/find")]
+    [Endpoint("POST /rest/services/{id}/ImageServer/find")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/find")]
+    [Endpoint("POST /rest/services/{serviceId}/ImageServer/find")]
+    [Operation(Operations.Query)]
+    public async Task Find_GetAndPost_ReturnsImagesContainingTargetGeometry()
+    {
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            const string targetGeometry = """{"x":0,"y":0,"spatialReference":{"wkid":4326}}""";
+            var encodedTargetGeometry = Uri.EscapeDataString(targetGeometry);
+
+            var getResponse = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/find?f=json&toGeometry={encodedTargetGeometry}&maxCount=1");
+
+            getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            var find = JsonSerializer.Deserialize(
+                await getResponse.Content.ReadAsStringAsync(),
+                ImageServerJsonContext.Default.ImageServerFindResponse);
+            AssertFindResponse(find);
+
+            var postResponse = await fixture.Client.PostAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/find",
+                new FormUrlEncodedContent(
+                [
+                    new KeyValuePair<string, string>("f", "json"),
+                    new KeyValuePair<string, string>("toGeometry", targetGeometry),
+                    new KeyValuePair<string, string>("maxCount", "1"),
+                ]));
+
+            postResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            find = JsonSerializer.Deserialize(
+                await postResponse.Content.ReadAsStringAsync(),
+                ImageServerJsonContext.Default.ImageServerFindResponse);
+            AssertFindResponse(find);
+
+            var serviceId = WebAppFixture.TestServiceId;
+            var serviceGetResponse = await fixture.Client.GetAsync(
+                $"/rest/services/{serviceId}/ImageServer/find?f=json&toGeometry={encodedTargetGeometry}&objectIds=100");
+
+            serviceGetResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            find = JsonSerializer.Deserialize(
+                await serviceGetResponse.Content.ReadAsStringAsync(),
+                ImageServerJsonContext.Default.ImageServerFindResponse);
+            AssertFindResponse(find);
+
+            var servicePostResponse = await fixture.Client.PostAsync(
+                $"/rest/services/{serviceId}/ImageServer/find",
+                new FormUrlEncodedContent(
+                [
+                    new KeyValuePair<string, string>("f", "json"),
+                    new KeyValuePair<string, string>("toGeometry", targetGeometry),
+                    new KeyValuePair<string, string>("objectIds", "[100]"),
+                ]));
+
+            servicePostResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            find = JsonSerializer.Deserialize(
+                await servicePostResponse.Content.ReadAsStringAsync(),
+                ImageServerJsonContext.Default.ImageServerFindResponse);
+            AssertFindResponse(find);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/find")]
+    [Operation(Operations.Query)]
+    public async Task Find_MissingToGeometry_ReturnsBadRequest()
+    {
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/find?f=json");
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /rest/services/{id}/ImageServer/computeStatisticsHistograms")]
     [Operation(Operations.Query)]
     public async Task ComputeStatisticsHistograms_Get_WithoutGeometry_ReturnsBadRequest()
@@ -1253,6 +1341,22 @@ public class ImageServerEndpointsTests
         estimate.StorageFormat.Should().Be("zip");
         estimate.ContentType.Should().Be("application/zip");
         estimate.ExceededTransferLimit.Should().BeFalse();
+    }
+
+    private static void AssertFindResponse(ImageServerFindResponse? find)
+    {
+        find.Should().NotBeNull();
+        find!.Images.Should().ContainSingle();
+        var image = find.Images[0];
+        image.Id.Should().Be(100);
+        image.Uri.Should().Be("test-raster");
+        image.Rows.Should().Be(256);
+        image.Cols.Should().Be(256);
+        image.PixelSize.Should().BeGreaterThan(0);
+        image.Center.Should().NotBeNull();
+        image.Center!.X.Should().Be(0);
+        image.Center.Y.Should().Be(0);
+        image.Center.SpatialReference!.Wkid.Should().Be(4326);
     }
 
     private static void AssertExportTilesResponse(ImageServerExportTilesResponse? export)

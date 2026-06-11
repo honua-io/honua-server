@@ -37,6 +37,7 @@ internal static class ImageServerServiceCollectionExtensions
         services.AddScoped<ImageServerCoordinateMetadataHandler>();
         services.AddScoped<ImageServerProjectHandler>();
         services.AddScoped<ImageServerExportTilesHandler>();
+        services.AddScoped<ImageServerFindHandler>();
 
         // Register supporting services
         services.TryAddScoped<SpatialReferenceResolver>();

@@ -55,6 +55,10 @@ internal sealed record ImageServerCatalogItem
 
     public double HighPixelSize { get; init; }
 
+    public int Width { get; init; }
+
+    public int Height { get; init; }
+
     public double CenterX { get; init; }
 
     public double CenterY { get; init; }
@@ -660,6 +664,8 @@ internal sealed class ImageServerCatalogReader : IImageServerCatalogReader
             MaxPixelSize = maxPixelSize,
             LowPixelSize = minPixelSize,
             HighPixelSize = maxPixelSize,
+            Width = raster.Width,
+            Height = raster.Height,
             CenterX = centerX,
             CenterY = centerY,
             ZOrder = 0,

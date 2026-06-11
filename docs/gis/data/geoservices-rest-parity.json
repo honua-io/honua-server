@@ -1154,6 +1154,7 @@
         "identify",
         "tile",
         "query (raster catalog features)",
+        "find",
         "computeStatisticsHistograms",
         "computeHistograms",
         "getSamples",
@@ -1167,11 +1168,11 @@
         "WCS 2.0.1 KVP"
       ],
       "knownGaps": [
-        "find",
         "measure",
         "full Esri tile-package/job exportTiles semantics",
         "generated ImageServer tile caches",
         "catalog mutation",
+        "camera/orientation-ranked ImageServer find",
         "datumTransformation/image coordinate systems for ImageServer project",
         "AOI clipping for computeStatisticsHistograms",
         "spatial WHERE pushdown for query",
@@ -1195,6 +1196,7 @@
           "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerCoordinateMetadataHandler.cs",
           "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerProjectHandler.cs",
           "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerExportTilesHandler.cs",
+          "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerFindHandler.cs",
           "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Handlers/ImageServerLegendHandler.cs",
           "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Handlers/ImageServerAnalyzeHandler.cs",
           "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Services/ImageServerCatalogReader.cs",
@@ -1279,6 +1281,21 @@
               "POST /rest/services/{id}/ImageServer/query"
             ],
             "notes": "Returns Esri-compatible raster catalog features (OBJECTID, footprint polygon, MinPS/MaxPS/LowPS/HighPS/CenterX/CenterY/ZOrder/Shape_Length/Shape_Area/BandCount/PixelType/AcquisitionDate/CreatedAt). Supports where (parsed via the GeoServices SQL filter parser, applied in-memory; max 2000 chars), objectIds, outSR (envelope-only stamping; geometry is NOT reprojected), single-instant time filtering to the newest layer-wide effective acquisition batch, resultOffset, resultRecordCount (default 100, capped at 1000), and the returnGeometry/returnIdsOnly/returnCountOnly/returnExtentOnly shaping flags. Spatial WHERE pushdown, outFields projection, orderByFields, pixelSize, and arbitrary geometry/spatialRel filters are not yet honoured."
+          },
+          {
+            "name": "Find",
+            "esriPath": "/rest/services/{id}/ImageServer/find",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer/find",
+              "POST /rest/services/{id}/ImageServer/find",
+              "GET /rest/services/{serviceId}/ImageServer/find",
+              "POST /rest/services/{serviceId}/ImageServer/find"
+            ],
+            "notes": "Finds raster catalog images whose footprints contain toGeometry. Supports objectIds, where, inSR, fromGeometry validation, and maxCount. Results return catalog id/name, acquisition date, center, pixel size, rows, and cols; Esri camera/orientation-ranked image selection is deferred until sensor metadata is modeled."
           },
           {
             "name": "Compute Statistics and Histograms",
@@ -1438,14 +1455,6 @@
           {
             "name": "Download Rasters",
             "esriPath": "/rest/services/{id}/ImageServer/downloadRasters",
-            "methods": [
-              "GET",
-              "POST"
-            ]
-          },
-          {
-            "name": "Find",
-            "esriPath": "/rest/services/{id}/ImageServer/find",
             "methods": [
               "GET",
               "POST"
@@ -1777,6 +1786,7 @@
         "WCS GetCapabilities advertises native CRS values for visible coverages, not every transformable output CRS.",
         "WCS single-axis SUBSET fills the omitted axis from the stored raster extent only for native-CRS subsets; callers using a non-native SUBSETTINGCRS/BBOXCRS must supply both axes or use BBOX.",
         "hasMultidimensions is always false until cube ingestion ships; multidimensionalInfo remains absent.",
+        "ImageServer find filters by raster catalog footprint and returns catalog metadata; true camera/orientation-ranked image selection is deferred until sensor metadata is modeled.",
         "ImageServer exportTiles writes ZIP archives to configured cloud file storage; Esri TPK/TPKX/compact cache packages and async job resources are not implemented.",
         "Honua does not currently expose ImageServer WMTS."
       ]
