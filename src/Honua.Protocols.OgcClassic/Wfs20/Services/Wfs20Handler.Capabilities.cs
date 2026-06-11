@@ -562,7 +562,7 @@ internal sealed partial class Wfs20Handler
     }
 
 
-    private static FilterCapabilities BuildFilterCapabilities()
+    internal static FilterCapabilities BuildFilterCapabilities()
     {
         return new FilterCapabilities
         {

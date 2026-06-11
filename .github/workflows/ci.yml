@@ -662,6 +662,16 @@ jobs:
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults
 
+      - name: Run .NET Tests (Core Security)
+        timeout-minutes: 3
+        run: |
+          dotnet test tests/dotnet/Honua.Core.Security.Tests/Honua.Core.Security.Tests.csproj \
+            --no-restore \
+            --configuration Release \
+            --logger "trx;LogFileName=core-security-tests.trx" \
+            --logger "console;verbosity=minimal" \
+            --results-directory ./tests/TestResults
+
       - name: Run .NET Tests (Server Fast Tier)
         # Per ADR-0037 the Fast tier runs across every test project on every
         # PR, including Honua.Server.Tests. Filtering by Tier=Fast keeps this
