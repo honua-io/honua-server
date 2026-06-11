@@ -412,6 +412,29 @@ public readonly record struct SpatialFilter
 }
 
 /// <summary>
+/// Controls where NULL values sort relative to non-null values for a single sort key.
+/// </summary>
+/// <remarks>
+/// Protocols disagree on null placement: OData v4.01 Protocol §11.2.6.2 mandates nulls
+/// before non-null values when ascending and after them when descending, while PostgreSQL
+/// defaults to the opposite (NULLS LAST for ASC, NULLS FIRST for DESC). Adapters with a
+/// mandated placement set an explicit value; all other protocols leave
+/// <see cref="Default"/> so provider behavior is unchanged. Providers without explicit
+/// null-ordering support treat any value as <see cref="Default"/>.
+/// </remarks>
+public enum NullOrdering
+{
+    /// <summary>Use the storage provider's native null placement.</summary>
+    Default = 0,
+
+    /// <summary>Null values sort before non-null values.</summary>
+    NullsFirst,
+
+    /// <summary>Null values sort after non-null values.</summary>
+    NullsLast
+}
+
+/// <summary>
 /// Represents an order by clause for sorting results
 /// </summary>
 public readonly record struct OrderByClause
@@ -430,6 +453,13 @@ public readonly record struct OrderByClause
     /// Field type metadata for typed ordering (null when unknown)
     /// </summary>
     public MetadataV2FieldType? FieldType { get; init; }
+
+    /// <summary>
+    /// Null placement for this sort key. <see cref="Domain.NullOrdering.Default"/> keeps the
+    /// storage provider's native placement; protocol adapters with a mandated placement
+    /// (e.g. OData v4 $orderby) request an explicit <see cref="Domain.NullOrdering"/> value.
+    /// </summary>
+    public NullOrdering NullOrdering { get; init; }
 
     /// <summary>
     /// Initializes a new instance of the OrderByClause struct

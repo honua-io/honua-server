@@ -253,6 +253,29 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
             return Task.CompletedTask;
         }
 
+        public Task<bool> TrySetSyncStateAsync(
+            ReplicaState replica,
+            long expectedLastSyncGeneration,
+            long expectedUploadBaseGeneration,
+            TimeSpan? ttl = null,
+            CancellationToken cancellationToken = default)
+        {
+            while (true)
+            {
+                if (!_replicas.TryGetValue(replica.ReplicaId, out var current) ||
+                    current.LastSyncGeneration != expectedLastSyncGeneration ||
+                    current.UploadBaseGeneration != expectedUploadBaseGeneration)
+                {
+                    return Task.FromResult(false);
+                }
+
+                if (_replicas.TryUpdate(replica.ReplicaId, replica, current))
+                {
+                    return Task.FromResult(true);
+                }
+            }
+        }
+
         public Task<ReplicaState?> GetAsync(string replicaId, CancellationToken cancellationToken = default)
         {
             _replicas.TryGetValue(replicaId, out var replica);

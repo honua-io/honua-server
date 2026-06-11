@@ -175,4 +175,36 @@ public sealed class StacCatalogTests : IAsyncLifetime
         json.RootElement.GetProperty("paths").TryGetProperty("/stac", out _).Should().BeTrue();
         json.RootElement.GetProperty("paths").TryGetProperty("/stac/search", out _).Should().BeTrue();
     }
+
+    /// <summary>
+    /// STAC API spec §7.2: the landing page links array MUST contain at least one rel=search link
+    /// for each supported HTTP method on /stac/search, with the corresponding "method" field set so
+    /// clients know which verbs are available.
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.StacCatalog)]
+    [Endpoint("GET /stac")]
+    public async Task GetCatalog_EmitsBothGetAndPostSearchLinksWithMethodField()
+    {
+        var response = await _fixture.Client.GetAsync("/stac");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonDocument.Parse(content);
+
+        var searchLinks = json.RootElement.GetProperty("links")
+            .EnumerateArray()
+            .Where(l => l.TryGetProperty("rel", out var rel) &&
+                        rel.GetString() == "search")
+            .ToArray();
+
+        searchLinks.Should().HaveCountGreaterOrEqualTo(2, "both GET and POST search links are required");
+
+        searchLinks.Any(link => link.TryGetProperty("method", out var getMethod) && getMethod.GetString() == "GET")
+            .Should().BeTrue("a rel=search link with method=GET must be present");
+
+        searchLinks.Any(link => link.TryGetProperty("method", out var postMethod) && postMethod.GetString() == "POST")
+            .Should().BeTrue("a rel=search link with method=POST must be present");
+    }
 }

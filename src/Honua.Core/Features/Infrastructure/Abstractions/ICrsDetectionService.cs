@@ -4,49 +4,54 @@
 namespace Honua.Core.Features.Infrastructure.Abstractions;
 
 /// <summary>
-/// Service for detecting coordinate reference systems from various sources
+/// Service for detecting coordinate reference systems from various sources.
 /// </summary>
 public interface ICrsDetectionService
 {
     /// <summary>
-    /// Detect CRS from a .prj file content (shapefile projection file format)
+    /// Detect CRS from a .prj file content (shapefile projection file format).
     /// </summary>
-    /// <param name="prjContent">Content of a .prj file</param>
-    /// <returns>Detected SRID or null if not recognized</returns>
-    Task<int?> DetectFromPrjAsync(string prjContent);
+    /// <param name="prjContent">Content of a .prj file.</param>
+    /// <param name="cancellationToken">Token to cancel the underlying database query.</param>
+    /// <returns>Detected SRID or null if not recognized.</returns>
+    Task<int?> DetectFromPrjAsync(string prjContent, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Detect CRS from Well-Known Text string
+    /// Detect CRS from Well-Known Text string.
     /// </summary>
-    /// <param name="wktContent">WKT string representation</param>
-    /// <returns>Detected SRID or null if not recognized</returns>
-    Task<int?> DetectFromWktAsync(string wktContent);
+    /// <param name="wktContent">WKT string representation.</param>
+    /// <param name="cancellationToken">Token to cancel the underlying database query.</param>
+    /// <returns>Detected SRID or null if not recognized.</returns>
+    Task<int?> DetectFromWktAsync(string wktContent, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Detect CRS from EPSG code
+    /// Detect CRS from EPSG code.
     /// </summary>
-    /// <param name="epsgCode">EPSG code (e.g., "EPSG:4326" or "4326")</param>
-    /// <returns>Parsed SRID or null if invalid</returns>
+    /// <param name="epsgCode">EPSG code (e.g., "EPSG:4326" or "4326").</param>
+    /// <returns>Parsed SRID or null if invalid.</returns>
     int? DetectFromEpsgCode(string epsgCode);
 
     /// <summary>
-    /// Detect CRS from GeoJSON CRS object
+    /// Detect CRS from GeoJSON CRS object.
     /// </summary>
-    /// <param name="crsObject">GeoJSON CRS object as JSON</param>
-    /// <returns>Detected SRID or null if not recognized</returns>
-    Task<int?> DetectFromGeoJsonCrsAsync(string crsObject);
+    /// <param name="crsObject">GeoJSON CRS object as JSON.</param>
+    /// <param name="cancellationToken">Token to cancel the underlying database query.</param>
+    /// <returns>Detected SRID or null if not recognized.</returns>
+    Task<int?> DetectFromGeoJsonCrsAsync(string crsObject, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Detect CRS from shapefile by looking for accompanying .prj file
+    /// Detect CRS from shapefile by looking for accompanying .prj file.
     /// </summary>
-    /// <param name="shapefilePath">Path to the .shp file</param>
-    /// <returns>Detected SRID or null if no .prj file found or not recognized</returns>
-    Task<int?> DetectFromShapefilePrjAsync(string shapefilePath);
+    /// <param name="shapefilePath">Path to the .shp file.</param>
+    /// <param name="cancellationToken">Token to cancel the underlying database query.</param>
+    /// <returns>Detected SRID or null if no .prj file found or not recognized.</returns>
+    Task<int?> DetectFromShapefilePrjAsync(string shapefilePath, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Validate that an SRID exists in the spatial reference system database
+    /// Validate that an SRID exists in the spatial reference system database.
     /// </summary>
-    /// <param name="srid">SRID to validate</param>
-    /// <returns>True if SRID exists in the database</returns>
-    Task<bool> ValidateSridAsync(int srid);
+    /// <param name="srid">SRID to validate.</param>
+    /// <param name="cancellationToken">Token to cancel the underlying database query.</param>
+    /// <returns>True if SRID exists in the database.</returns>
+    Task<bool> ValidateSridAsync(int srid, CancellationToken cancellationToken = default);
 }

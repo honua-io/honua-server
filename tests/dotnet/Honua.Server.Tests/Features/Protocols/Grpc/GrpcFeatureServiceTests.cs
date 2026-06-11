@@ -657,7 +657,7 @@ public sealed class GrpcFeatureServiceTests
     [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
     public async Task QueryFeatures_WithWktOutSr_ResolvesSridViaCrsDetection()
     {
-        _crsDetectionService.DetectFromWktAsync(Arg.Any<string>())
+        _crsDetectionService.DetectFromWktAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<int?>(3857));
 
         var features = ImmutableArray.Create(Feature.Create(1, null));

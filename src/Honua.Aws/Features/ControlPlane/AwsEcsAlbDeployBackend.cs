@@ -719,7 +719,7 @@ internal sealed partial class AwsEcsAlbDeployBackend(
         var target = ResolveTarget(spec);
         EnsureValidTarget(target);
 
-        using var activity = StartActivity(ControlPlaneTelemetry.Activities.BackendObserve, operation, target);
+        using var activity = StartActivity(ControlPlaneTelemetry.Activities.BackendPromote, operation, target);
 
         try
         {

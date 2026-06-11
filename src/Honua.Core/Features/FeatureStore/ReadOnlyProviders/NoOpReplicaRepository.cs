@@ -22,6 +22,20 @@ public sealed class NoOpReplicaRepository : IReplicaRepository
         => Task.CompletedTask;
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Reports success without persisting, mirroring <see cref="UpsertAsync"/>: replica state for
+    /// read-only providers lives only in the distributed replica cache, so the cache write-through
+    /// path must not fail. The compare-and-set guard is therefore not enforced at this layer for
+    /// read-only providers (the caching store's cache-side check still applies).
+    /// </remarks>
+    public Task<bool> TryUpdateSyncStateAsync(
+        ReplicaRecord record,
+        long expectedLastSyncGeneration,
+        long expectedUploadBaseGeneration,
+        CancellationToken cancellationToken = default)
+        => Task.FromResult(true);
+
+    /// <inheritdoc />
     public Task<ReplicaRecord?> GetAsync(string replicaId, CancellationToken cancellationToken = default)
         => Task.FromResult<ReplicaRecord?>(null);
 

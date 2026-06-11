@@ -17,6 +17,7 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Orchestration.Domain;
 using Honua.Core.Features.Publishing.Domain;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Core.Features.Temporal.Domain;
 using Honua.Infrastructure.Progress;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.StackExchangeRedis;
@@ -38,6 +39,12 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
     private const string HealthCheckKey = "universal:progress:health";
     private const string ActiveOperationIdsKey = "universal:progress:active";
     private const string ActiveOperationTypePrefix = "universal:progress:active:type:";
+    private const string ConditionalWriteLockPrefix = "universal:progress:cas-lock:";
+    private static readonly TimeSpan _conditionalWriteLockTtl = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan _conditionalWriteLockRetryDelay = TimeSpan.FromMilliseconds(50);
+    private const int ConditionalWriteLockMaxAttempts = 40;
+    private const string ConditionalWriteLockReleaseScript =
+        "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end";
     private readonly ConcurrentDictionary<string, IOperationProgress> _fallbackStore = new();
     private readonly ConcurrentDictionary<string, DateTime> _fallbackExpiry = new();
     private readonly ConcurrentDictionary<string, OperationType> _typeStore = new();
@@ -68,9 +75,85 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
 
     public async Task SetProgressAsync(string operationId, IOperationProgress progress, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
     {
+        var effectiveTtl = ttl ?? TimeSpan.FromHours(24);
+
+        // Serialize terminal-status writes on the per-operation conditional-write lock so a worker's
+        // Completed/Failed write cannot interleave between a concurrent compare-and-set's read and write
+        // (for example an admin cancel) and be silently overwritten (honua-server#1593). Non-terminal
+        // progress ticks stay on the cheap unguarded path.
+        if (IsTerminalStatus(progress.Status) && !AllowsLocalFallback)
+        {
+            var lockToken = await TryAcquireConditionalWriteLockAsync(operationId, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await SetProgressUnguardedAsync(operationId, progress, effectiveTtl, cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                await ReleaseConditionalWriteLockAsync(operationId, lockToken).ConfigureAwait(false);
+            }
+
+            return;
+        }
+
+        await SetProgressUnguardedAsync(operationId, progress, effectiveTtl, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<ProgressCompareAndSetResult> TrySetProgressAsync(
+        string operationId,
+        IOperationProgress progress,
+        OperationStatus expectedStatus,
+        TimeSpan? ttl = null,
+        CancellationToken cancellationToken = default)
+    {
+        var effectiveTtl = ttl ?? TimeSpan.FromHours(24);
+
+        if (AllowsLocalFallback)
+        {
+            return TrySetProgressInFallback(operationId, progress, expectedStatus, effectiveTtl);
+        }
+
+        if (_isUsingFallback && ShouldRetryRedis(DateTime.UtcNow))
+        {
+            await TryRestoreRedisAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        if (_isUsingFallback)
+        {
+            throw CreateDistributedStateUnavailableException("conditionally set progress");
+        }
+
+        // Serialize competing conditional writers (and terminal-status plain writes) on a per-operation
+        // Redis lock, then read-check-write. Lock acquisition is best-effort: when the lock cannot be
+        // obtained the check-and-write still runs immediately before the write, which is the narrowest
+        // window achievable over IDistributedCache.
+        var lockToken = await TryAcquireConditionalWriteLockAsync(operationId, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var current = await GetProgressAsync(operationId, cancellationToken).ConfigureAwait(false);
+            if (current is null)
+            {
+                return ProgressCompareAndSetResult.NotFound;
+            }
+
+            if (current.Status != expectedStatus)
+            {
+                return ProgressCompareAndSetResult.StatusMismatch(current);
+            }
+
+            await SetProgressUnguardedAsync(operationId, progress, effectiveTtl, cancellationToken).ConfigureAwait(false);
+            return ProgressCompareAndSetResult.Updated;
+        }
+        finally
+        {
+            await ReleaseConditionalWriteLockAsync(operationId, lockToken).ConfigureAwait(false);
+        }
+    }
+
+    private async Task SetProgressUnguardedAsync(string operationId, IOperationProgress progress, TimeSpan effectiveTtl, CancellationToken cancellationToken)
+    {
         var key = $"{KeyPrefix}{operationId}";
         var typeKey = $"{TypePrefix}{operationId}";
-        var effectiveTtl = ttl ?? TimeSpan.FromHours(24);
 
         if (AllowsLocalFallback)
         {
@@ -273,6 +356,7 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
             nameof(PublishingProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.PublishingProgress),
             nameof(WorkflowProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.WorkflowProgress),
             nameof(DeploymentProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.DeploymentProgress),
+            nameof(TemporalCorrectiveJobProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.TemporalCorrectiveJobProgress),
             _ => null
         };
     }
@@ -293,8 +377,119 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
             PublishingProgress value => JsonSerializer.SerializeToElement(value, UniversalProgressJsonContext.Default.PublishingProgress),
             WorkflowProgress value => JsonSerializer.SerializeToElement(value, UniversalProgressJsonContext.Default.WorkflowProgress),
             DeploymentProgress value => JsonSerializer.SerializeToElement(value, UniversalProgressJsonContext.Default.DeploymentProgress),
+            TemporalCorrectiveJobProgress value => JsonSerializer.SerializeToElement(value, UniversalProgressJsonContext.Default.TemporalCorrectiveJobProgress),
             _ => throw new NotSupportedException($"Unsupported progress type '{progress.GetType().FullName}'.")
         };
+
+    private static bool IsTerminalStatus(OperationStatus status)
+        => status is OperationStatus.Completed or OperationStatus.Failed or OperationStatus.Cancelled;
+
+    /// <summary>
+    /// Atomic compare-and-set against the in-memory fallback store: the status check and the swap are
+    /// linearized through <see cref="ConcurrentDictionary{TKey,TValue}.TryUpdate"/>, retrying when a
+    /// concurrent writer replaced the entry between the read and the swap.
+    /// </summary>
+    private ProgressCompareAndSetResult TrySetProgressInFallback(
+        string operationId,
+        IOperationProgress progress,
+        OperationStatus expectedStatus,
+        TimeSpan effectiveTtl)
+    {
+        var key = $"{KeyPrefix}{operationId}";
+
+        while (true)
+        {
+            CleanupFallbackIfNeeded(enforceMax: false);
+
+            if (!_fallbackStore.TryGetValue(key, out var current))
+            {
+                return ProgressCompareAndSetResult.NotFound;
+            }
+
+            if (_fallbackExpiry.TryGetValue(key, out var expiry) && expiry <= DateTime.UtcNow)
+            {
+                RemoveFallbackEntry(operationId, key);
+                return ProgressCompareAndSetResult.NotFound;
+            }
+
+            if (current.Status != expectedStatus)
+            {
+                return ProgressCompareAndSetResult.StatusMismatch(current);
+            }
+
+            if (_fallbackStore.TryUpdate(key, progress, current))
+            {
+                _fallbackExpiry[key] = DateTime.UtcNow.Add(effectiveTtl);
+                _typeStore[operationId] = progress.Type;
+                CleanupFallbackIfNeeded(enforceMax: true);
+                return ProgressCompareAndSetResult.Updated;
+            }
+
+            // Lost the swap race to a concurrent writer; re-read and re-evaluate the condition.
+        }
+    }
+
+    /// <summary>
+    /// Best-effort per-operation distributed lock (SET NX with TTL) used to serialize conditional writes
+    /// and terminal-status writes across nodes. Returns the lock token, or null when no Redis backplane is
+    /// available or the lock could not be acquired in time; callers proceed unguarded in that case.
+    /// </summary>
+    private async Task<string?> TryAcquireConditionalWriteLockAsync(string operationId, CancellationToken cancellationToken)
+    {
+        if (_redis is null || _isUsingFallback)
+        {
+            return null;
+        }
+
+        var lockKey = $"{ConditionalWriteLockPrefix}{operationId}";
+        var token = Guid.NewGuid().ToString("N");
+
+        try
+        {
+            var db = _redis.GetDatabase();
+            for (var attempt = 0; attempt < ConditionalWriteLockMaxAttempts; attempt++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (await db.StringSetAsync(lockKey, token, _conditionalWriteLockTtl, When.NotExists).ConfigureAwait(false))
+                {
+                    return token;
+                }
+
+                await Task.Delay(_conditionalWriteLockRetryDelay, cancellationToken).ConfigureAwait(false);
+            }
+
+            Log.ConditionalWriteLockUnavailable(_logger, operationId, null);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Log.ConditionalWriteLockUnavailable(_logger, operationId, ex);
+        }
+
+        return null;
+    }
+
+    private async Task ReleaseConditionalWriteLockAsync(string operationId, string? token)
+    {
+        if (token is null || _redis is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var db = _redis.GetDatabase();
+
+            // Compare-and-delete so a lock that expired and was re-acquired by another writer is not released.
+            await db.ScriptEvaluateAsync(
+                ConditionalWriteLockReleaseScript,
+                [(RedisKey)$"{ConditionalWriteLockPrefix}{operationId}"],
+                [(RedisValue)token]).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Log.ConditionalWriteLockReleaseFailed(_logger, operationId, ex);
+        }
+    }
 
     private void CleanupFallbackIfNeeded(bool enforceMax)
     {
@@ -562,6 +757,12 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
 
         [LoggerMessage(7651, LogLevel.Information, "Redis connection restored for progress store")]
         public static partial void RedisConnectionRestored(ILogger logger);
+
+        [LoggerMessage(7652, LogLevel.Warning, "Conditional-write lock for operation {OperationId} could not be acquired; proceeding without cross-node serialization")]
+        public static partial void ConditionalWriteLockUnavailable(ILogger logger, string operationId, Exception? exception);
+
+        [LoggerMessage(7653, LogLevel.Debug, "Failed to release conditional-write lock for operation {OperationId}")]
+        public static partial void ConditionalWriteLockReleaseFailed(ILogger logger, string operationId, Exception exception);
     }
 }
 
@@ -673,6 +874,7 @@ internal sealed record ProgressWrapper
 [JsonSerializable(typeof(DeploymentProgress))]
 [JsonSerializable(typeof(DeploymentStatus))]
 [JsonSerializable(typeof(RolloutState))]
+[JsonSerializable(typeof(TemporalCorrectiveJobProgress))]
 [JsonSerializable(typeof(OperationType))]
 [JsonSerializable(typeof(OperationStatus))]
 [JsonSerializable(typeof(ImportStatus))]

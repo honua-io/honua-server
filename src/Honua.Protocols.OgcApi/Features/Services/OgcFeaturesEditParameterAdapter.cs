@@ -48,6 +48,16 @@ internal readonly record struct OgcFeaturesEditRequest
     public bool RollbackOnFailure { get; init; }
 
     public string? IfMatch { get; init; }
+
+    /// <summary>
+    /// Canonical <see cref="FeatureStateToken"/> computed from the snapshot the handler
+    /// validated the If-Match precondition against. When set (single-feature Replace,
+    /// Patch, or Delete), the unified edit pipeline re-validates the stored row against
+    /// this token inside the writer's transaction so a concurrent commit between the
+    /// handler's ETag check and the write surfaces as a typed precondition failure (412)
+    /// instead of being silently overwritten.
+    /// </summary>
+    public string? ExpectedStateToken { get; init; }
 }
 
 /// <summary>
@@ -90,6 +100,22 @@ internal sealed class OgcFeaturesEditParameterAdapter(
                 OgcFeaturesEditOperation.Batch => CreateBatchEditRequest(protocolRequest.BatchOperations),
                 _ => throw new InvalidOperationException($"Unsupported OGC edit operation '{protocolRequest.Operation}'.")
             };
+
+            // Thread the handler's snapshot state token through to the writer so the
+            // If-Match precondition is re-validated atomically inside the write
+            // transaction (single-feature Replace/Patch/Delete carry an ObjectId).
+            if (!string.IsNullOrEmpty(protocolRequest.ExpectedStateToken) &&
+                (protocolRequest.ObjectId ?? protocolRequest.Feature?.Id) is { } preconditionObjectId)
+            {
+                editRequest = editRequest with
+                {
+                    Preconditions = ImmutableArray.Create(new FeatureEditPrecondition
+                    {
+                        ObjectId = preconditionObjectId,
+                        ExpectedStateToken = protocolRequest.ExpectedStateToken!
+                    })
+                };
+            }
 
             editRequest = editRequest with
             {

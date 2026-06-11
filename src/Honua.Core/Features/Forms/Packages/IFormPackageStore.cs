@@ -128,4 +128,17 @@ public interface IFormPackageStore
         FormSubmissionAttachmentOutcome outcome,
         FormPackageVersion packageVersion,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Removes a pending or failed submission record so that its idempotency key can be reused.
+    /// Only submissions whose outcome is transient (i.e. not yet terminal or failed-retryable) should
+    /// be deleted; terminal accepted/rejected outcomes must remain as permanent idempotency records.
+    /// </summary>
+    /// <returns>
+    /// <see langword="true"/> when the record was found and deleted; <see langword="false"/> when
+    /// no matching record existed (already deleted or never persisted).
+    /// </returns>
+    Task<bool> DeleteSubmissionAsync(
+        Guid submissionId,
+        CancellationToken cancellationToken = default);
 }

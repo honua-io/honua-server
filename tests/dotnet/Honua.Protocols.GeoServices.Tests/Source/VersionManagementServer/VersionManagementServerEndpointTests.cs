@@ -75,6 +75,31 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.VersionManagement)]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/create")]
+    [InterfaceOperation(TestProtocols.VersionManagementServer, "create")]
+    public async Task Create_DuplicateVersionName_Returns409Conflict()
+    {
+        // First create should succeed.
+        var first = await PostFormAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/create",
+            ("versionName", "admin.dup_name_test"), ("accessPermission", "private"), ("f", "json"));
+        first.StatusCode.Should().Be(HttpStatusCode.OK,
+            "first create should succeed; body: {0}", await first.Content.ReadAsStringAsync());
+
+        // Second create with the same name must return 409 with an Esri-style error body.
+        var second = await PostFormAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/create",
+            ("versionName", "admin.dup_name_test"), ("accessPermission", "private"), ("f", "json"));
+        second.StatusCode.Should().Be(HttpStatusCode.Conflict,
+            "duplicate version name must return 409; body: {0}", await second.Content.ReadAsStringAsync());
+
+        using var doc = JsonDocument.Parse(await second.Content.ReadAsStringAsync());
+        doc.RootElement.TryGetProperty("error", out _).Should().BeTrue(
+            "GeoServices protocol wraps errors in an 'error' envelope");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.VersionManagement)]
     [Endpoint("GET /rest/services/{serviceId}/VersionManagementServer/versions")]
     [InterfaceOperation(TestProtocols.VersionManagementServer, "versions")]
     public async Task ListVersions_AfterCreate_ContainsVersion()

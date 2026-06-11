@@ -27,6 +27,7 @@ public sealed class FeatureEditBatchTests
         batch.Creates.Should().BeEmpty();
         batch.Updates.Should().BeEmpty();
         batch.Deletes.Should().BeEmpty();
+        batch.Preconditions.Should().BeEmpty();
         batch.RollbackOnFailure.Should().BeFalse();
         batch.UseGlobalIds.Should().BeFalse();
         batch.IsEmpty.Should().BeTrue();

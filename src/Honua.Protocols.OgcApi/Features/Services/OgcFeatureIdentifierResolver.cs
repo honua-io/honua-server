@@ -237,6 +237,219 @@ internal static class OgcFeatureIdentifierResolver
         return null;
     }
 
+    /// <summary>
+    /// Resolves a set of public feature ids to their existing rows with at most two
+    /// provider round trips (one <see cref="FeatureQuery.ObjectIds"/> fast-path query
+    /// for canonical internal object ids plus one IN-filter query over the public id
+    /// field), instead of one <see cref="ResolveAsync"/> lookup per id. Ids that do not
+    /// resolve are simply absent from the result, so callers keep per-id error
+    /// semantics. Public id field types whose values cannot be matched back to input
+    /// tokens by invariant comparison (uuid, boolean, temporal, json, binary, geometry)
+    /// fall back to per-id <see cref="ResolveAsync"/> calls with identical semantics.
+    /// </summary>
+    public static async Task<IReadOnlyDictionary<string, ResolvedFeature>> ResolveManyAsync(
+        IFeatureReader featureReader,
+        IQueryProcessor queryProcessor,
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Publication publication,
+        MetadataV2Resource resource,
+        IReadOnlyCollection<string> featureIds,
+        CancellationToken cancellationToken)
+    {
+        var resolved = new Dictionary<string, ResolvedFeature>(featureIds.Count, StringComparer.Ordinal);
+        if (featureIds.Count == 0)
+        {
+            return resolved;
+        }
+
+        var storageLayerId = publication.LayerIndex
+            ?? snapshot.ResolveStorageLayerId(publication)
+            ?? snapshot.ResolveStorageLayerId(resource);
+        if (storageLayerId is not { } layerId)
+        {
+            return resolved;
+        }
+
+        var distinctIds = new List<string>(featureIds.Count);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var featureId in featureIds)
+        {
+            if (!string.IsNullOrWhiteSpace(featureId) && seen.Add(featureId))
+            {
+                distinctIds.Add(featureId);
+            }
+        }
+
+        if (distinctIds.Count == 0)
+        {
+            return resolved;
+        }
+
+        var idField = ResolvePublicIdField(resource);
+        if (!CanBatchResolvePublicIdType(idField.Type))
+        {
+            foreach (var featureId in distinctIds)
+            {
+                var single = await ResolveAsync(
+                    featureReader,
+                    queryProcessor,
+                    snapshot,
+                    publication,
+                    resource,
+                    featureId,
+                    cancellationToken).ConfigureAwait(false);
+                if (single.HasValue)
+                {
+                    resolved[featureId] = single.Value;
+                }
+            }
+
+            return resolved;
+        }
+
+        // Fast path: internal object id field — resolve every canonical numeric id with
+        // a single ObjectIds query (mirrors the per-id GetAsync fast path in ResolveAsync).
+        if (CanUseObjectIdFastPath(idField))
+        {
+            var tokensByObjectId = new Dictionary<long, string>(distinctIds.Count);
+            foreach (var featureId in distinctIds)
+            {
+                if (TryParseCanonicalPositiveObjectId(featureId, out var objectId))
+                {
+                    tokensByObjectId.TryAdd(objectId, featureId);
+                }
+            }
+
+            if (tokensByObjectId.Count > 0)
+            {
+                var fastPathResult = await featureReader.QueryAsync(
+                    layerId,
+                    new FeatureQuery
+                    {
+                        ObjectIds = tokensByObjectId.Keys.ToImmutableArray(),
+                        Limit = tokensByObjectId.Count
+                    },
+                    cancellationToken).ConfigureAwait(false);
+                if (!fastPathResult.Items.IsDefaultOrEmpty)
+                {
+                    foreach (var feature in fastPathResult.Items)
+                    {
+                        if (tokensByObjectId.TryGetValue(feature.Id, out var token))
+                        {
+                            resolved.TryAdd(token, new ResolvedFeature(feature.Id, feature));
+                        }
+                    }
+                }
+            }
+        }
+
+        var pendingIds = distinctIds.FindAll(featureId => !resolved.ContainsKey(featureId));
+        if (pendingIds.Count == 0)
+        {
+            return resolved;
+        }
+
+        // Single IN-filter query over the public id field for everything else, mirroring
+        // the per-id expression path in ResolveAsync. Tokens whose literal cannot be
+        // represented in the id field's type are unresolvable on the per-id path too,
+        // so they are skipped instead of failing the rest of the batch.
+        var tokensByKey = new Dictionary<string, string>(pendingIds.Count, StringComparer.Ordinal);
+        var literals = new List<FilterExpression>(pendingIds.Count);
+        foreach (var token in pendingIds)
+        {
+            var literal = CreateLiteral(idField, token);
+            if (literal is null)
+            {
+                continue;
+            }
+
+            var key = NormalizeBatchKey(idField, literal.Value);
+            if (key is not null && tokensByKey.TryAdd(key, token))
+            {
+                literals.Add(literal);
+            }
+        }
+
+        if (literals.Count == 0)
+        {
+            return resolved;
+        }
+
+        var expression = new BinaryExpression(
+            new PropertyReference(idField.Name),
+            BinaryOperator.In,
+            new ValueList(literals));
+        var unifiedQuery = new UnifiedQuery
+        {
+            Filter = QueryFilter.FromExpression(expression),
+            Limit = literals.Count
+        };
+        var query = queryProcessor.ToFeatureQuery(unifiedQuery, resource);
+        var result = await featureReader.QueryAsync(layerId, query, cancellationToken).ConfigureAwait(false);
+        if (result.Items.IsDefaultOrEmpty)
+        {
+            return resolved;
+        }
+
+        var useInternalObjectId = CanUseObjectIdFastPath(idField);
+        foreach (var feature in result.Items)
+        {
+            string? key;
+            if (useInternalObjectId)
+            {
+                key = feature.Id.ToString(CultureInfo.InvariantCulture);
+            }
+            else
+            {
+                TryGetAttributeValue(feature.Attributes, idField.Name, out var attributeValue);
+                key = NormalizeBatchKey(idField, attributeValue);
+            }
+
+            if (key is not null && tokensByKey.TryGetValue(key, out var token))
+            {
+                // First match wins, matching the Limit=1 semantics of the per-id path.
+                resolved.TryAdd(token, new ResolvedFeature(feature.Id, feature));
+            }
+        }
+
+        return resolved;
+    }
+
+    private static bool CanBatchResolvePublicIdType(PublicIdFieldType type)
+        => type is PublicIdFieldType.String
+            or PublicIdFieldType.Integer
+            or PublicIdFieldType.BigInteger
+            or PublicIdFieldType.Double
+            or PublicIdFieldType.Float;
+
+    /// <summary>
+    /// Normalizes a public id value (input token literal or attribute value read back
+    /// from a feature row) to an invariant string key so batched IN-filter results can
+    /// be matched back to the originating tokens (e.g. token <c>"007"</c> and attribute
+    /// value <c>7L</c> both normalize to <c>"7"</c> for integer id fields).
+    /// </summary>
+    private static string? NormalizeBatchKey(PublicIdField idField, object? value)
+    {
+        var formatted = FormatPayloadId(value);
+        if (formatted is null)
+        {
+            return null;
+        }
+
+        return idField.Type switch
+        {
+            PublicIdFieldType.Integer or PublicIdFieldType.BigInteger =>
+                long.TryParse(formatted, NumberStyles.Integer, CultureInfo.InvariantCulture, out var longValue)
+                    ? longValue.ToString(CultureInfo.InvariantCulture)
+                    : null,
+            PublicIdFieldType.Double or PublicIdFieldType.Float =>
+                double.TryParse(formatted, NumberStyles.Float, CultureInfo.InvariantCulture, out var doubleValue)
+                    ? doubleValue.ToString("R", CultureInfo.InvariantCulture)
+                    : null,
+            _ => formatted
+        };
+    }
+
     private static string ResolveObjectIdFieldName(MetadataV2Resource resource)
         => resource.FindPrimaryIdField()?.Name ?? "objectid";
 

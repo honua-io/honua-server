@@ -69,7 +69,7 @@ internal sealed partial class StreamingFileImportService
                 }
 
                 shapefileScratch = await PrepareShapefileScratchAsync(fileStream, fileName, cancellationToken);
-                detectedSrid = await _crsDetectionService.DetectFromShapefilePrjAsync(shapefileScratch.ShpPath);
+                detectedSrid = await _crsDetectionService.DetectFromShapefilePrjAsync(shapefileScratch.ShpPath, cancellationToken);
             }
             else if (format.Value == SupportedFileFormat.Kml && IsKmzFileName(fileName))
             {

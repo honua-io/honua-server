@@ -33,6 +33,11 @@ internal sealed partial class ODataBatchHandler
         var createRequests = new Dictionary<int, List<(string requestId, Feature feature, bool geometryChanged)>>();
         var updateRequests = new Dictionary<int, List<(string requestId, long objectId, Feature feature, bool geometryChanged)>>();
         var deleteRequests = new Dictionary<int, List<(string requestId, long objectId, Feature existingFeature)>>();
+        // If-Match preconditions re-validated by the writer inside the deferred
+        // ApplyEditsAsync transaction: the parse-time ValidatePreconditionsAsync check
+        // above runs against a read snapshot, so a concurrent commit between that check
+        // and the batch write would otherwise be silently overwritten (TOCTOU).
+        var preconditionsByLayer = new Dictionary<int, List<FeatureEditPrecondition>>();
         var writeLayerIds = new HashSet<int>();
         var layerCache = new Dictionary<int, ODataBatchLayerContext>();
 
@@ -315,6 +320,7 @@ internal sealed partial class ODataBatchHandler
                             }
 
                             updateList.Add((request.Id, objectId.Value, feature, requestGeometryChanged));
+                            RegisterPrecondition(preconditionsByLayer, layerId.Value, objectId.Value, request.Headers, existing.Value);
                             writeLayerIds.Add(layer.PublicLayerId);
                             break;
                         }
@@ -388,6 +394,7 @@ internal sealed partial class ODataBatchHandler
                             }
 
                             deleteList.Add((request.Id, deleteValidation.Batch.Value.Deletes[0], existing.Value));
+                            RegisterPrecondition(preconditionsByLayer, layerId.Value, deleteValidation.Batch.Value.Deletes[0], request.Headers, existing.Value);
                             writeLayerIds.Add(layer.PublicLayerId);
                             break;
                         }
@@ -522,6 +529,12 @@ internal sealed partial class ODataBatchHandler
                 if (layerDeletes is { Count: > 0 })
                 {
                     batch = batch with { Deletes = layerDeletes.Select(item => item.objectId).ToImmutableArray() };
+                }
+
+                if (preconditionsByLayer.TryGetValue(layerId, out var layerPreconditions) &&
+                    layerPreconditions.Count > 0)
+                {
+                    batch = batch with { Preconditions = layerPreconditions.ToImmutableArray() };
                 }
 
                 if (batch.IsEmpty)
@@ -659,6 +672,14 @@ internal sealed partial class ODataBatchHandler
                                 payload,
                                 headers));
                         }
+                        else if (updateResult.IsPreconditionFailure)
+                        {
+                            responses.Add(CreateErrorResponse(
+                                requestId,
+                                412,
+                                "PreconditionFailed",
+                                "ETag does not match the current resource."));
+                        }
                         else
                         {
                             responses.Add(CreateErrorResponse(requestId, 400, "UpdateFailed", updateResult.ErrorMessage ?? "Update operation failed."));
@@ -680,6 +701,14 @@ internal sealed partial class ODataBatchHandler
                                 204,
                                 null,
                                 mutationFeature: existingFeature));
+                        }
+                        else if (deleteResult.IsPreconditionFailure)
+                        {
+                            responses.Add(CreateErrorResponse(
+                                requestId,
+                                412,
+                                "PreconditionFailed",
+                                "ETag does not match the current resource."));
                         }
                         else
                         {

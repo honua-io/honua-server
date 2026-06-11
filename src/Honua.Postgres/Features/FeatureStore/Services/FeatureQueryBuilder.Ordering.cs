@@ -25,7 +25,7 @@ internal sealed partial class FeatureQueryBuilder
             {
                 var fieldSql = MapOrderByField(orderBy, ref paramIndex, parameters);
                 var direction = orderBy.Ascending ? "ASC" : "DESC";
-                orderClauses.Add($"{fieldSql} {direction}");
+                orderClauses.Add($"{fieldSql} {direction}{GetNullOrderingSuffix(orderBy.NullOrdering)}");
             }
         }
 
@@ -42,6 +42,18 @@ internal sealed partial class FeatureQueryBuilder
             sql.Append(string.Join(", ", orderClauses));
         }
     }
+
+    // Explicit null placement requested by the protocol adapter (e.g. OData v4
+    // $orderby mandates nulls first ascending / nulls last descending, the inverse of
+    // the PostgreSQL defaults). NullOrdering.Default emits no qualifier so every other
+    // protocol keeps the provider's native placement.
+    internal static string GetNullOrderingSuffix(NullOrdering nullOrdering)
+        => nullOrdering switch
+        {
+            NullOrdering.NullsFirst => " NULLS FIRST",
+            NullOrdering.NullsLast => " NULLS LAST",
+            _ => string.Empty
+        };
 
     private static bool RequiresStablePageOrder(FeatureQuery query)
         => query.Offset.HasValue ||

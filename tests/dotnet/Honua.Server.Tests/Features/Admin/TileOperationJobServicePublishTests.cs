@@ -748,6 +748,32 @@ public sealed class TileOperationJobServicePublishTests
             return Task.CompletedTask;
         }
 
+        public Task<ProgressCompareAndSetResult> TrySetProgressAsync(
+            string operationId,
+            IOperationProgress progress,
+            OperationStatus expectedStatus,
+            TimeSpan? ttl = null,
+            CancellationToken cancellationToken = default)
+        {
+            while (true)
+            {
+                if (!_entries.TryGetValue(operationId, out var current))
+                {
+                    return Task.FromResult(ProgressCompareAndSetResult.NotFound);
+                }
+
+                if (current.Status != expectedStatus)
+                {
+                    return Task.FromResult(ProgressCompareAndSetResult.StatusMismatch(current));
+                }
+
+                if (_entries.TryUpdate(operationId, progress, current))
+                {
+                    return Task.FromResult(ProgressCompareAndSetResult.Updated);
+                }
+            }
+        }
+
         public Task<TProgress?> GetProgressAsync<TProgress>(string operationId, CancellationToken cancellationToken = default) where TProgress : class, IOperationProgress
         {
             return Task.FromResult<TProgress?>(_entries.TryGetValue(operationId, out var p) && p is TProgress typed ? typed : null);

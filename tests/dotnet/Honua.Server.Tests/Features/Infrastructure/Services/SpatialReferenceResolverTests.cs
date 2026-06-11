@@ -5,6 +5,7 @@ using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Infrastructure.Services;
+using Honua.Protocols.GeoServices.FeatureServer.Models;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Services;
 
@@ -47,6 +48,42 @@ public sealed class SpatialReferenceResolverTests
         srid.Should().Be(3857);
     }
 
+    [Fact]
+    public async Task ParseSridAsync_WktString_ForwardsCancellationToken()
+    {
+        using var cts = new CancellationTokenSource();
+        _crsDetectionService.WktResult = 4326;
+
+        var srid = await _resolver.ParseSridAsync("GEOGCS[\"WGS 84\"]", cts.Token);
+
+        srid.Should().Be(4326);
+        _crsDetectionService.LastCancellationToken.Should().Be(cts.Token);
+    }
+
+    [Fact]
+    public async Task ResolveSridAsync_WktInGeometrySpatialReference_ForwardsCancellationToken()
+    {
+        using var cts = new CancellationTokenSource();
+        _crsDetectionService.WktResult = 3857;
+        var spatialRef = new GeoServicesSpatialReference { Wkt = "PROJCRS[\"WGS 84 / Pseudo-Mercator\"]" };
+
+        var srid = await _resolver.ResolveSridAsync(null, spatialRef, cts.Token);
+
+        srid.Should().Be(3857);
+        _crsDetectionService.LastCancellationToken.Should().Be(cts.Token);
+    }
+
+    [Fact]
+    public async Task ParseSridAsync_WktString_RespectsAlreadyCancelledToken()
+    {
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        var act = async () => await _resolver.ParseSridAsync("GEOGCS[\"WGS 84\"]", cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
     private sealed class FakeCrsRegistry : ICrsRegistry
     {
         public ValueTask<CrsDefinition?> ResolveAsync(string? crsIdentifier, CancellationToken cancellationToken = default)
@@ -65,22 +102,42 @@ public sealed class SpatialReferenceResolverTests
 
         public int? WktResult { get; set; }
 
-        public Task<int?> DetectFromPrjAsync(string prjContent)
-            => Task.FromResult<int?>(null);
+        /// <summary>The last <see cref="CancellationToken"/> passed to any async method.</summary>
+        public CancellationToken LastCancellationToken { get; private set; }
 
-        public Task<int?> DetectFromWktAsync(string wktContent)
-            => Task.FromResult(WktResult);
+        public Task<int?> DetectFromPrjAsync(string prjContent, CancellationToken cancellationToken = default)
+        {
+            LastCancellationToken = cancellationToken;
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult<int?>(null);
+        }
+
+        public Task<int?> DetectFromWktAsync(string wktContent, CancellationToken cancellationToken = default)
+        {
+            LastCancellationToken = cancellationToken;
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(WktResult);
+        }
 
         public int? DetectFromEpsgCode(string epsgCode)
             => EpsgLookup.TryGetValue(epsgCode, out var srid) ? srid : null;
 
-        public Task<int?> DetectFromGeoJsonCrsAsync(string crsObject)
-            => Task.FromResult<int?>(null);
+        public Task<int?> DetectFromGeoJsonCrsAsync(string crsObject, CancellationToken cancellationToken = default)
+        {
+            LastCancellationToken = cancellationToken;
+            return Task.FromResult<int?>(null);
+        }
 
-        public Task<int?> DetectFromShapefilePrjAsync(string shapefilePath)
-            => Task.FromResult<int?>(null);
+        public Task<int?> DetectFromShapefilePrjAsync(string shapefilePath, CancellationToken cancellationToken = default)
+        {
+            LastCancellationToken = cancellationToken;
+            return Task.FromResult<int?>(null);
+        }
 
-        public Task<bool> ValidateSridAsync(int srid)
-            => Task.FromResult(true);
+        public Task<bool> ValidateSridAsync(int srid, CancellationToken cancellationToken = default)
+        {
+            LastCancellationToken = cancellationToken;
+            return Task.FromResult(true);
+        }
     }
 }

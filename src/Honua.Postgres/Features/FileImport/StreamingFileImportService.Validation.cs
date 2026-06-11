@@ -47,7 +47,7 @@ internal sealed partial class StreamingFileImportService
             ];
         }
 
-        if (!await _crsDetectionService.ValidateSridAsync(sourceSrid))
+        if (!await _crsDetectionService.ValidateSridAsync(sourceSrid, cancellationToken))
         {
             return
             [
@@ -58,7 +58,7 @@ internal sealed partial class StreamingFileImportService
             ];
         }
 
-        if (!await _crsDetectionService.ValidateSridAsync(targetSrid))
+        if (!await _crsDetectionService.ValidateSridAsync(targetSrid, cancellationToken))
         {
             return
             [

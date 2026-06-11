@@ -23,4 +23,12 @@ public sealed class NoOpChangeTracker : IChangeTracker
         int[] layerIds,
         CancellationToken cancellationToken = default)
         => Task.FromResult<IReadOnlyList<FeatureChange>>(Array.Empty<FeatureChange>());
+
+    /// <inheritdoc />
+    public Task<IReadOnlyList<FeatureChange>> GetChangesSinceAsync(
+        long sinceGeneration,
+        int[] layerIds,
+        IReadOnlySet<long>? objectIds,
+        CancellationToken cancellationToken = default)
+        => Task.FromResult<IReadOnlyList<FeatureChange>>(Array.Empty<FeatureChange>());
 }

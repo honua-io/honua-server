@@ -74,6 +74,77 @@ public sealed class CachingReplicaStoreTests
         cache.Backend.RemoveCalls.Should().Be(0);
     }
 
+    [Fact]
+    public async Task TrySetSyncStateAsync_WhenExpectedCursorsMatch_UpdatesRepositoryAndCache()
+    {
+        var repository = new RecordingReplicaRepository();
+        var replica = CreateReplicaState("replica-cas-match");
+        await repository.UpsertAsync(ToRecord(replica));
+
+        var cache = CreateCache();
+        var sut = CreateStore(repository, cache.Store);
+        var updated = replica with { LastSyncGeneration = 5, UploadBaseGeneration = 5 };
+
+        var result = await sut.TrySetSyncStateAsync(
+            updated,
+            expectedLastSyncGeneration: replica.LastSyncGeneration,
+            expectedUploadBaseGeneration: replica.UploadBaseGeneration);
+
+        result.Should().BeTrue();
+        repository.TryUpdateSyncStateCalls.Should().Be(1);
+        cache.Backend.SetCalls.Should().Be(1);
+        var record = await repository.GetAsync(replica.ReplicaId);
+        record!.Value.LastSyncGeneration.Should().Be(5);
+        record.Value.UploadBaseGeneration.Should().Be(5);
+    }
+
+    [Fact]
+    public async Task TrySetSyncStateAsync_WhenConcurrentSyncAdvancedCursor_ReturnsFalseAndEvictsCache()
+    {
+        var repository = new RecordingReplicaRepository();
+        var replica = CreateReplicaState("replica-cas-stale");
+        // The persisted record was advanced by a concurrent sync after this caller's read.
+        await repository.UpsertAsync(ToRecord(replica with { LastSyncGeneration = 9, UploadBaseGeneration = 9 }));
+
+        var cache = CreateCache();
+        var sut = CreateStore(repository, cache.Store);
+        var updated = replica with { LastSyncGeneration = 5, UploadBaseGeneration = 5 };
+
+        var result = await sut.TrySetSyncStateAsync(
+            updated,
+            expectedLastSyncGeneration: replica.LastSyncGeneration,
+            expectedUploadBaseGeneration: replica.UploadBaseGeneration);
+
+        result.Should().BeFalse();
+        // The stale cached entry is evicted so a retry reads the winner's cursor from Postgres.
+        cache.Backend.RemoveCalls.Should().Be(1);
+        cache.Backend.SetCalls.Should().Be(0);
+        // The winner's cursor is untouched.
+        var record = await repository.GetAsync(replica.ReplicaId);
+        record!.Value.LastSyncGeneration.Should().Be(9);
+        record.Value.UploadBaseGeneration.Should().Be(9);
+    }
+
+    [Fact]
+    public async Task TrySetSyncStateAsync_WhenCacheWriteFails_StillReturnsTrue()
+    {
+        var repository = new RecordingReplicaRepository();
+        var replica = CreateReplicaState("replica-cas-cache-fails");
+        await repository.UpsertAsync(ToRecord(replica));
+
+        var cache = CreateCache(throwOnSet: true);
+        var sut = CreateStore(repository, cache.Store);
+        var updated = replica with { LastSyncGeneration = 3 };
+
+        var result = await sut.TrySetSyncStateAsync(
+            updated,
+            expectedLastSyncGeneration: replica.LastSyncGeneration,
+            expectedUploadBaseGeneration: replica.UploadBaseGeneration);
+
+        result.Should().BeTrue("a cache outage must not fail a write the authoritative store accepted");
+        (await repository.GetAsync(replica.ReplicaId))!.Value.LastSyncGeneration.Should().Be(3);
+    }
+
     private static CachingReplicaStore CreateStore(RecordingReplicaRepository repository, DistributedReplicaStore cache)
     {
         return new CachingReplicaStore(
@@ -120,6 +191,8 @@ public sealed class CachingReplicaStoreTests
 
         public int UpsertCalls { get; private set; }
 
+        public int TryUpdateSyncStateCalls { get; private set; }
+
         public int RemoveCalls { get; private set; }
 
         public bool ThrowOnUpsert { get; init; }
@@ -136,6 +209,35 @@ public sealed class CachingReplicaStoreTests
 
             _records[record.ReplicaId] = record;
             return Task.CompletedTask;
+        }
+
+        public Task<bool> TryUpdateSyncStateAsync(
+            ReplicaRecord record,
+            long expectedLastSyncGeneration,
+            long expectedUploadBaseGeneration,
+            CancellationToken cancellationToken = default)
+        {
+            TryUpdateSyncStateCalls++;
+            while (true)
+            {
+                if (!_records.TryGetValue(record.ReplicaId, out var current) ||
+                    current.LastSyncGeneration != expectedLastSyncGeneration ||
+                    current.UploadBaseGeneration != expectedUploadBaseGeneration)
+                {
+                    return Task.FromResult(false);
+                }
+
+                var updated = current with
+                {
+                    LastSyncTime = record.LastSyncTime,
+                    LastSyncGeneration = record.LastSyncGeneration,
+                    UploadBaseGeneration = record.UploadBaseGeneration
+                };
+                if (_records.TryUpdate(record.ReplicaId, updated, current))
+                {
+                    return Task.FromResult(true);
+                }
+            }
         }
 
         public Task<ReplicaRecord?> GetAsync(string replicaId, CancellationToken cancellationToken = default)

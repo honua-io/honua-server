@@ -119,6 +119,83 @@ public sealed class PostGisCoordinateTransformServiceTests : IAsyncLifetime
         result.Should().BeNull();
     }
 
+    // --- Batch point transform tests (#1593) ---
+
+    [IntegrationTest]
+    public async Task TransformPointsAsync_SameSrid_ReturnsIdentity()
+    {
+        var xs = new[] { -122.4, 0.0, 151.2 };
+        var ys = new[] { 37.7, 51.5, -33.9 };
+
+        var success = await _service!.TransformPointsAsync(xs, ys, 4326, 4326);
+
+        success.Should().BeTrue();
+        xs.Should().Equal(-122.4, 0.0, 151.2);
+        ys.Should().Equal(37.7, 51.5, -33.9);
+    }
+
+    [IntegrationTest]
+    public async Task TransformPointsAsync_Wgs84ToWebMercator_MatchesPerPointPath()
+    {
+        var xs = new[] { -122.4194, 0.0, 151.2093 };
+        var ys = new[] { 37.7749, 51.5, -33.8688 };
+        var expected = new List<(double X, double Y)>();
+        for (var index = 0; index < xs.Length; index++)
+        {
+            var point = await _service!.TransformPointAsync(xs[index], ys[index], 4326, 3857);
+            point.Should().NotBeNull();
+            expected.Add(point!.Value);
+        }
+
+        var success = await _service!.TransformPointsAsync(xs, ys, 4326, 3857);
+
+        success.Should().BeTrue();
+        for (var index = 0; index < xs.Length; index++)
+        {
+            xs[index].Should().BeApproximately(expected[index].X, 1e-6);
+            ys[index].Should().BeApproximately(expected[index].Y, 1e-6);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task TransformPointsAsync_Nad27ToWgs84_SingleRoundTripMatchesPerPointPath()
+    {
+        var xs = new[] { -122.4194, -118.2437, -73.9857 };
+        var ys = new[] { 37.7749, 34.0522, 40.7484 };
+        var expected = new List<(double X, double Y)>();
+        for (var index = 0; index < xs.Length; index++)
+        {
+            var point = await _service!.TransformPointAsync(xs[index], ys[index], 4267, 4326);
+            point.Should().NotBeNull();
+            expected.Add(point!.Value);
+        }
+
+        var success = await _service!.TransformPointsAsync(xs, ys, 4267, 4326);
+
+        success.Should().BeTrue();
+        for (var index = 0; index < xs.Length; index++)
+        {
+            xs[index].Should().BeApproximately(expected[index].X, 1e-9);
+            ys[index].Should().BeApproximately(expected[index].Y, 1e-9);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task TransformPointsAsync_UnknownSrid_ReturnsFalse()
+    {
+        var success = await _service!.TransformPointsAsync([0.0], [0.0], 999999, 4326);
+
+        success.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task TransformPointsAsync_MismatchedLengths_Throws()
+    {
+        var act = async () => await _service!.TransformPointsAsync(new double[2], new double[3], 4326, 3857);
+
+        await act.Should().ThrowAsync<ArgumentException>();
+    }
+
     // --- Extent transform tests ---
 
     [IntegrationTest]

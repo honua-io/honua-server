@@ -127,12 +127,20 @@ internal static class CatalogEndpoints
                 type: MediaTypes.Json,
                 title: "Collections"));
 
-            // Search
+            // Search — STAC API spec requires one rel=search link per supported HTTP method so
+            // that clients know both GET and POST are available on /stac/search.
             links.Add(Link.Create(
                 href: $"{stacBase}/search",
                 rel: StacConstants.StacRelations.Search,
                 type: MediaTypes.GeoJson,
-                title: "STAC Search"));
+                title: "STAC Search (GET)",
+                method: "GET"));
+            links.Add(Link.Create(
+                href: $"{stacBase}/search",
+                rel: StacConstants.StacRelations.Search,
+                type: MediaTypes.Json,
+                title: "STAC Search (POST)",
+                method: "POST"));
 
             // Child collection links
             foreach (var resolved in visible)
