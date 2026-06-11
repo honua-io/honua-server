@@ -749,6 +749,7 @@
         "layer metadata",
         "all layers and tables",
         "export",
+        "dynamicLayers mapLayer renderer overrides",
         "identify",
         "find",
         "legend",
@@ -769,7 +770,7 @@
         "full Esri tile-package/job exportTiles semantics",
         "generateRenderer (service-level)",
         "queryAnalytic",
-        "dynamicLayer",
+        "dynamicLayer child resource and workspace dynamic layers",
         "image/KML-image/job child resources",
         "additional Esri child resources"
       ],
@@ -827,7 +828,7 @@
               "GET /rest/services/{serviceId}/MapServer/export",
               "POST /rest/services/{serviceId}/MapServer/export"
             ],
-            "notes": "Supports image streaming via f=image and JSON envelope responses via f=json or f=pjson."
+            "notes": "Supports image streaming via f=image and JSON envelope responses via f=json or f=pjson. dynamicLayers supports source.type=mapLayer, request-scoped definitionExpression, and drawingInfo.renderer overrides for simple, unique-value, and class-breaks renderers."
           },
           {
             "name": "Identify",
@@ -875,7 +876,8 @@
             "honuaEndpoints": [
               "GET /rest/services/{serviceId}/MapServer/legend",
               "POST /rest/services/{serviceId}/MapServer/legend"
-            ]
+            ],
+            "notes": "Builds swatches from stored styles or request-scoped dynamicLayers drawingInfo.renderer overrides for simple, unique-value, and class-breaks renderers."
           },
           {
             "name": "Query Legends",
@@ -888,7 +890,7 @@
               "GET /rest/services/{serviceId}/MapServer/queryLegends",
               "POST /rest/services/{serviceId}/MapServer/queryLegends"
             ],
-            "notes": "Alias over the legend handler; returns Esri-shaped layers[].legend[] swatches."
+            "notes": "Alias over the legend handler; returns Esri-shaped layers[].legend[] swatches, including dynamicLayers drawingInfo.renderer overrides."
           },
           {
             "name": "Layer query",
@@ -1108,7 +1110,7 @@
           {
             "name": "bbox, size, dpi, format, transparent, layers, bboxSR, imageSR, layerDefs, dynamicLayers, time, timeRelation, layerTimeOptions, backgroundColor",
             "status": "implemented",
-            "notes": "CRS inputs for `bboxSR` and `imageSR` accept numeric WKID, `EPSG:####`, OGC CRS URI/URN, bracket-safe forms (`[EPSG:####]`), and `CRS84` aliases."
+            "notes": "CRS inputs for `bboxSR` and `imageSR` accept numeric WKID, `EPSG:####`, OGC CRS URI/URN, bracket-safe forms (`[EPSG:####]`), and `CRS84` aliases. dynamicLayers supports source.type=mapLayer, definitionExpression, and drawingInfo.renderer overrides for simple, unique-value, and class-breaks renderers."
           },
           {
             "name": "f",
@@ -1146,6 +1148,7 @@
         "WMTS support remains WebMercatorQuad-only.",
         "Layer queries inherit the FeatureServer query contract, including its format behavior.",
         "MapServer tile GET storage is a loose-object cache, not an Esri compact cache or tile package.",
+        "dynamicLayers is limited to source.type=mapLayer, definitionExpression, and drawingInfo.renderer overrides; workspace layers, joins, and dynamicLayer child resources remain unimplemented.",
         "Advanced rendering parameters such as maxAllowableOffset and geometryPrecision are accepted but not yet applied."
       ]
     },

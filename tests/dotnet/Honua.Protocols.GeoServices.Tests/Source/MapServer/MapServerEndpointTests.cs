@@ -479,6 +479,41 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Export)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
+    public async Task MapServer_Export_WithDynamicLayerSimpleRenderer_ReturnsImageJson()
+    {
+        var dynamicLayers = Uri.EscapeDataString(BuildSimpleRendererDynamicLayersJson(dynamicLayerId: 7));
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&size=256,256&f=json&dynamicLayers={dynamicLayers}");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        var export = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.ExportImageResponse);
+
+        export.Should().NotBeNull();
+        export!.Href.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
+    public async Task MapServer_Export_WithUnsupportedDynamicLayerRenderer_ReturnsBadRequest()
+    {
+        var dynamicLayers = Uri.EscapeDataString(
+            """[{"id":7,"source":{"type":"mapLayer","mapLayerId":0},"drawingInfo":{"renderer":{"type":"heatmap"}}}]""");
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&f=json&dynamicLayers={dynamicLayers}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("unsupported drawingInfo renderer");
+        content.Should().NotContain("System.Text.Json");
+        content.Should().NotContain("BytePositionInLine");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
     public async Task MapServer_Export_WithGdbVersion_IgnoresParameter()
     {
         var response = await _fixture.Client.GetAsync(
@@ -912,6 +947,53 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
         legend.Should().NotBeNull();
         legend!.Layers.Should().NotBeNullOrEmpty();
         legend.Layers!.First().Legend.Should().NotBeNullOrEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/legend")]
+    public async Task MapServer_Legend_WithDynamicLayerSimpleRenderer_ReturnsRequestSwatch()
+    {
+        var defaultResponse = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/legend?f=json&size=20");
+        var defaultContent = await defaultResponse.Content.ReadAsStringAsync();
+        defaultResponse.StatusCode.Should().Be(HttpStatusCode.OK, defaultContent);
+        var defaultLegend = JsonSerializer.Deserialize(defaultContent, MapServerJsonContext.Default.LegendResponse);
+        var defaultEntry = defaultLegend!.Layers!.Single(layer => layer.LayerId == WebAppFixture.TestLayerId).Legend!.First();
+
+        var dynamicLayerId = 7;
+        var dynamicLayers = Uri.EscapeDataString(BuildSimpleRendererDynamicLayersJson(dynamicLayerId));
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/legend?f=json&size=20&dynamicLayers={dynamicLayers}");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        var legend = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.LegendResponse);
+
+        legend.Should().NotBeNull();
+        var dynamicLayer = legend!.Layers.Should().ContainSingle().Subject;
+        dynamicLayer.LayerId.Should().Be(dynamicLayerId);
+        var dynamicEntry = dynamicLayer.Legend.Should().ContainSingle().Subject;
+        dynamicEntry.ImageData.Should().NotBeNullOrWhiteSpace();
+        dynamicEntry.ImageData.Should().NotBe(defaultEntry.ImageData);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/legend")]
+    public async Task MapServer_Legend_WithUnsupportedDynamicLayerRenderer_ReturnsBadRequest()
+    {
+        var dynamicLayers = Uri.EscapeDataString(
+            """[{"id":7,"source":{"type":"mapLayer","mapLayerId":0},"drawingInfo":{"renderer":{"type":"heatmap"}}}]""");
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/legend?f=json&dynamicLayers={dynamicLayers}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("unsupported drawingInfo renderer");
+        content.Should().NotContain("System.Text.Json");
+        content.Should().NotContain("BytePositionInLine");
     }
 
     [IntegrationTest]
@@ -1792,4 +1874,32 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
             },
         });
     }
+
+    private static string BuildSimpleRendererDynamicLayersJson(int dynamicLayerId)
+        => $$"""
+             [{
+               "id": {{dynamicLayerId}},
+               "source": {
+                 "type": "mapLayer",
+                 "mapLayerId": {{WebAppFixture.TestLayerId}}
+               },
+               "drawingInfo": {
+                 "renderer": {
+                   "type": "simple",
+                   "symbol": {
+                     "type": "esriSMS",
+                     "style": "esriSMSCircle",
+                     "color": [255, 0, 0, 255],
+                     "size": 12,
+                     "outline": {
+                       "type": "esriSLS",
+                       "style": "esriSLSSolid",
+                       "color": [255, 0, 0, 255],
+                       "width": 1
+                     }
+                   }
+                 }
+               }
+             }]
+             """;
 }
