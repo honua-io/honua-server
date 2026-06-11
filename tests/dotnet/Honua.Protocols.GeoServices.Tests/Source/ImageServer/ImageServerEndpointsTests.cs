@@ -612,6 +612,65 @@ public class ImageServerEndpointsTests
     }
 
     [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/project")]
+    [Endpoint("POST /rest/services/{id}/ImageServer/project")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/project")]
+    [Endpoint("POST /rest/services/{serviceId}/ImageServer/project")]
+    [Operation(Operations.Project)]
+    public async Task Project_GetAndPost_ReprojectsGeometries()
+    {
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            const string geometries = """{"geometryType":"esriGeometryPoint","geometries":[{"x":0,"y":0,"spatialReference":{"wkid":4326}}]}""";
+            var encoded = Uri.EscapeDataString(geometries);
+
+            var getResponse = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/project?f=json&inSR=4326&outSR=3857&geometries={encoded}");
+
+            getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            AssertProjectedOrigin(await getResponse.Content.ReadAsStringAsync());
+
+            var postResponse = await fixture.Client.PostAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/project",
+                new FormUrlEncodedContent(
+                [
+                    new KeyValuePair<string, string>("f", "json"),
+                    new KeyValuePair<string, string>("inSR", "4326"),
+                    new KeyValuePair<string, string>("outSR", "3857"),
+                    new KeyValuePair<string, string>("geometries", geometries),
+                ]));
+
+            postResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            AssertProjectedOrigin(await postResponse.Content.ReadAsStringAsync());
+
+            var serviceId = WebAppFixture.TestServiceId;
+            var serviceGetResponse = await fixture.Client.GetAsync(
+                $"/rest/services/{serviceId}/ImageServer/project?f=json&inSR=4326&outSR=3857&geometries={encoded}");
+
+            serviceGetResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            AssertProjectedOrigin(await serviceGetResponse.Content.ReadAsStringAsync());
+
+            var servicePostResponse = await fixture.Client.PostAsync(
+                $"/rest/services/{serviceId}/ImageServer/project",
+                new FormUrlEncodedContent(
+                [
+                    new KeyValuePair<string, string>("f", "json"),
+                    new KeyValuePair<string, string>("inSR", "4326"),
+                    new KeyValuePair<string, string>("outSR", "3857"),
+                    new KeyValuePair<string, string>("geometries", geometries),
+                ]));
+
+            servicePostResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            AssertProjectedOrigin(await servicePostResponse.Content.ReadAsStringAsync());
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /rest/services/{id}/ImageServer/keyProperties")]
     [Operation(Operations.Metadata)]
     public async Task KeyProperties_Get_ReturnsBandProperties()
@@ -1000,5 +1059,19 @@ public class ImageServerEndpointsTests
         {
             await fixture.DisposeAsync();
         }
+    }
+
+    private static void AssertProjectedOrigin(string content)
+    {
+        using var json = JsonDocument.Parse(content);
+        json.RootElement.TryGetProperty("geometryType", out _).Should().BeFalse();
+        json.RootElement.TryGetProperty("spatialReference", out _).Should().BeFalse();
+
+        var geometries = json.RootElement.GetProperty("geometries");
+        geometries.GetArrayLength().Should().Be(1);
+        var point = geometries[0];
+        point.GetProperty("x").GetDouble().Should().BeApproximately(0d, 0.0001);
+        point.GetProperty("y").GetDouble().Should().BeApproximately(0d, 0.0001);
+        point.GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(3857);
     }
 }

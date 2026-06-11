@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json.Serialization;
+using System.Text.Json;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Models;
 
@@ -55,6 +56,7 @@ namespace Honua.Protocols.GeoServices.ImageServer.Models;
 [JsonSerializable(typeof(ComputePixelLocationResponse))]
 [JsonSerializable(typeof(PixelLocationPoint))]
 [JsonSerializable(typeof(QueryBoundaryResponse))]
+[JsonSerializable(typeof(ImageServerProjectResponse))]
 [JsonSerializable(typeof(GetSamplesResponse))]
 [JsonSerializable(typeof(SampleEntry))]
 [JsonSerializable(typeof(SampleLocation))]
@@ -74,6 +76,7 @@ namespace Honua.Protocols.GeoServices.ImageServer.Models;
 [JsonSerializable(typeof(AnalyzeResponse))]
 [JsonSerializable(typeof(RasterFunctionDocument))]
 [JsonSerializable(typeof(Dictionary<string, object?>))]
+[JsonSerializable(typeof(JsonElement))]
 [JsonSerializable(typeof(object))]
 [JsonSerializable(typeof(string))]
 [JsonSerializable(typeof(int))]

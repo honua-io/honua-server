@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "lastReviewed": "2026-06-02",
+  "lastReviewed": "2026-06-11",
   "canonicalDocs": {
     "landingPage": "docs/gis/geoservices-rest-parity.md",
     "machineReadableExport": "docs/gis/data/geoservices-rest-parity.json"
@@ -1159,6 +1159,7 @@
         "getSamples",
         "queryBoundary",
         "computePixelLocation",
+        "project",
         "computeCacheInfo (dynamic cache metadata)",
         "legend",
         "computeClass (raster function chain validation)",
@@ -1167,10 +1168,10 @@
       "knownGaps": [
         "find",
         "measure",
-        "project",
         "exportTiles",
         "generated ImageServer tile caches",
         "catalog mutation",
+        "datumTransformation/image coordinate systems for ImageServer project",
         "AOI clipping for computeStatisticsHistograms",
         "spatial WHERE pushdown for query",
         "renderingRule honoured by exportImage/identify/legend",
@@ -1191,6 +1192,7 @@
           "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Handlers/ImageServerCatalogQueryHandler.cs",
           "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Handlers/ImageServerStatisticsHistogramsHandler.cs",
           "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerCoordinateMetadataHandler.cs",
+          "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerProjectHandler.cs",
           "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Handlers/ImageServerLegendHandler.cs",
           "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Handlers/ImageServerAnalyzeHandler.cs",
           "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Services/ImageServerCatalogReader.cs",
@@ -1206,6 +1208,7 @@
           "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerParameterValidationTests.cs",
           "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerErrorHandlingTests.cs",
           "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerEndpointsTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerEndpointsTests.cs",
           "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerMosaicIntegrationTests.cs",
           "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerCatalogQueryHandlerTests.cs",
           "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerStatisticsHistogramsHandlerTests.cs",
@@ -1352,6 +1355,21 @@
               "POST /rest/services/{id}/ImageServer/queryBoundary"
             ],
             "notes": "Returns the aggregate raster footprint boundary as Esri shape plus approximate area. The boundary is extent/footprint based; NoData-trimmed single-raster boundaries are deferred."
+          },
+          {
+            "name": "Project",
+            "esriPath": "/rest/services/{id}/ImageServer/project",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer/project",
+              "POST /rest/services/{id}/ImageServer/project",
+              "GET /rest/services/{serviceId}/ImageServer/project",
+              "POST /rest/services/{serviceId}/ImageServer/project"
+            ],
+            "notes": "Reprojects Esri JSON geometry arrays between supported spatial references via the shared CRS projection pipeline and returns the Image Service geometries[] response shape. Envelope geometries remain envelope-shaped. datumTransformation/transformation parameters and image coordinate system identifiers are rejected until neutral support is added."
           }
         ],
         "notImplemented": [
@@ -1411,14 +1429,6 @@
           {
             "name": "Measure",
             "esriPath": "/rest/services/{id}/ImageServer/measure",
-            "methods": [
-              "GET",
-              "POST"
-            ]
-          },
-          {
-            "name": "Project",
-            "esriPath": "/rest/services/{id}/ImageServer/project",
             "methods": [
               "GET",
               "POST"

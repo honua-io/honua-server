@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Models;
@@ -100,6 +101,18 @@ public sealed class QueryBoundaryResponse
     /// </summary>
     [JsonPropertyName("area")]
     public required double Area { get; init; }
+}
+
+/// <summary>
+/// Esri-conformant response for the Image Server <c>project</c> endpoint.
+/// </summary>
+public sealed class ImageServerProjectResponse
+{
+    /// <summary>
+    /// Projected Esri JSON geometries.
+    /// </summary>
+    [JsonPropertyName("geometries")]
+    public JsonElement[] Geometries { get; init; } = [];
 }
 
 /// <summary>

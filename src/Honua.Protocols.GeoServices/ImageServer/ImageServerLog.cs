@@ -208,4 +208,22 @@ internal static partial class ImageServerLog
         Level = LogLevel.Error,
         Message = "Failed to get multidimensional slices for layer {LayerId}")]
     public static partial void SlicesFailed(ILogger logger, Exception ex, int layerId);
+
+    [LoggerMessage(
+        EventId = 5833,
+        Level = LogLevel.Warning,
+        Message = "Invalid project parameters for layer {LayerId}: {ValidationErrors}")]
+    public static partial void InvalidProjectParameters(ILogger logger, int layerId, string validationErrors);
+
+    [LoggerMessage(
+        EventId = 5834,
+        Level = LogLevel.Information,
+        Message = "Projected {GeometryCount} geometries for layer {LayerId}: {InSrid} -> {OutSrid}")]
+    public static partial void ProjectCompleted(ILogger logger, int layerId, int geometryCount, int inSrid, int outSrid);
+
+    [LoggerMessage(
+        EventId = 5835,
+        Level = LogLevel.Error,
+        Message = "Failed to project geometries for layer {LayerId}")]
+    public static partial void ProjectFailed(ILogger logger, Exception ex, int layerId);
 }
