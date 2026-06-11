@@ -65,6 +65,7 @@ Task-oriented guides, grouped by what you want to do. New to Honua? Start with t
 | I want to… | Guide |
 |---|---|
 | Run locally with Docker Compose | [Docker Compose](deploy/docker-compose.md) |
+| Validate pilot prerequisites and first-hour failure modes | [Pilot onboarding runbook](deploy/pilot-onboarding-runbook.md) |
 | Run without containers for development | [Local development](deploy/local-development.md) |
 | Deploy on Kubernetes | [Kubernetes](deploy/kubernetes.md) |
 | Deploy on AWS, Azure, or GCP | [Cloud deployments](deploy/cloud-deployments.md) |
