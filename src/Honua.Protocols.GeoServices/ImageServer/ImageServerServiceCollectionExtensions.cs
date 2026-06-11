@@ -32,6 +32,7 @@ internal static class ImageServerServiceCollectionExtensions
         services.AddScoped<ImageServerLegendHandler>();
         services.AddScoped<ImageServerAnalyzeHandler>();
         services.AddScoped<ImageServerRasterMetadataHandler>();
+        services.AddScoped<ImageServerCoordinateMetadataHandler>();
 
         // Register supporting services
         services.AddScoped<IImageServerLayerResolver, MetadataV2ImageServerLayerResolver>();

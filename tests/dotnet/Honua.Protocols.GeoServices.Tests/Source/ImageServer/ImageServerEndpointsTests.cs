@@ -502,6 +502,116 @@ public class ImageServerEndpointsTests
     }
 
     [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/computeCacheInfo")]
+    [Endpoint("POST /rest/services/{id}/ImageServer/computeCacheInfo")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/computeCacheInfo")]
+    [Endpoint("POST /rest/services/{serviceId}/ImageServer/computeCacheInfo")]
+    [Operation(Operations.Metadata)]
+    public async Task ComputeCacheInfo_GetAndPost_ReturnsDynamicCacheInfo()
+    {
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            var getResponse = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/computeCacheInfo?f=json");
+
+            getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            var json = JsonDocument.Parse(await getResponse.Content.ReadAsStringAsync());
+            var cacheInfo = json.RootElement.GetProperty("cacheInfo");
+            cacheInfo.GetProperty("extent").GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(4326);
+            cacheInfo.TryGetProperty("tileInfo", out _).Should().BeFalse();
+
+            var postResponse = await fixture.Client.PostAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/computeCacheInfo",
+                new FormUrlEncodedContent([new KeyValuePair<string, string>("f", "json")]));
+
+            postResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            var postJson = JsonDocument.Parse(await postResponse.Content.ReadAsStringAsync());
+            postJson.RootElement.GetProperty("cacheInfo").GetProperty("extent").GetProperty("xmin").GetDouble().Should().Be(-180);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/computePixelLocation")]
+    [Endpoint("POST /rest/services/{id}/ImageServer/computePixelLocation")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/computePixelLocation")]
+    [Endpoint("POST /rest/services/{serviceId}/ImageServer/computePixelLocation")]
+    [Operation(Operations.Query)]
+    public async Task ComputePixelLocation_GetAndPost_UsesRasterGeoTransform()
+    {
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            const string geometries = """{"geometries":[{"x":0,"y":0,"spatialReference":{"wkid":4326}}],"geometryType":"esriGeometryPoint"}""";
+            var encoded = Uri.EscapeDataString(geometries);
+            var getResponse = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/computePixelLocation?f=json&geometries={encoded}");
+
+            getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            var json = JsonDocument.Parse(await getResponse.Content.ReadAsStringAsync());
+            var point = json.RootElement.GetProperty("geometries")[0];
+            point.GetProperty("x").GetDouble().Should().BeApproximately(128, 0.0001);
+            point.GetProperty("y").GetDouble().Should().BeApproximately(128, 0.0001);
+
+            var postResponse = await fixture.Client.PostAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/computePixelLocation",
+                new FormUrlEncodedContent(
+                [
+                    new KeyValuePair<string, string>("f", "json"),
+                    new KeyValuePair<string, string>("geometries", geometries),
+                ]));
+
+            postResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            var postJson = JsonDocument.Parse(await postResponse.Content.ReadAsStringAsync());
+            postJson.RootElement.GetProperty("geometries")[0].GetProperty("x").GetDouble()
+                .Should().BeApproximately(128, 0.0001);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/queryBoundary")]
+    [Endpoint("POST /rest/services/{id}/ImageServer/queryBoundary")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/queryBoundary")]
+    [Endpoint("POST /rest/services/{serviceId}/ImageServer/queryBoundary")]
+    [Operation(Operations.Metadata)]
+    public async Task QueryBoundary_GetAndPost_ReturnsShapeAndArea()
+    {
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            var getResponse = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/queryBoundary?f=json");
+
+            getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            var json = JsonDocument.Parse(await getResponse.Content.ReadAsStringAsync());
+            json.RootElement.GetProperty("shape").GetProperty("spatialReference").GetProperty("wkid").GetInt32()
+                .Should().Be(4326);
+            json.RootElement.GetProperty("shape").GetProperty("rings")[0].GetArrayLength().Should().Be(5);
+            json.RootElement.GetProperty("area").GetDouble().Should().BeGreaterThan(0);
+
+            var postResponse = await fixture.Client.PostAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/queryBoundary",
+                new FormUrlEncodedContent([new KeyValuePair<string, string>("f", "json")]));
+
+            postResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            var postJson = JsonDocument.Parse(await postResponse.Content.ReadAsStringAsync());
+            postJson.RootElement.GetProperty("shape").GetProperty("rings")[0].GetArrayLength().Should().Be(5);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /rest/services/{id}/ImageServer/keyProperties")]
     [Operation(Operations.Metadata)]
     public async Task KeyProperties_Get_ReturnsBandProperties()

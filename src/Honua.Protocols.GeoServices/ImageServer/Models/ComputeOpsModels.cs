@@ -18,6 +18,91 @@ public sealed class ComputeHistogramsResponse
 }
 
 /// <summary>
+/// Esri-conformant response for the Image Server <c>computeCacheInfo</c> endpoint.
+/// </summary>
+public sealed class ComputeCacheInfoResponse
+{
+    /// <summary>
+    /// Tile-cache scheme information for the image service.
+    /// </summary>
+    [JsonPropertyName("cacheInfo")]
+    public required ImageServerComputedCacheInfo CacheInfo { get; init; }
+}
+
+/// <summary>
+/// Tile-cache scheme information returned by <c>computeCacheInfo</c>.
+/// </summary>
+public sealed class ImageServerComputedCacheInfo
+{
+    /// <summary>
+    /// Tile scheme for cached services. Omitted for dynamic ImageServer layers.
+    /// </summary>
+    [JsonPropertyName("tileInfo")]
+    public TileInfo? TileInfo { get; init; }
+
+    /// <summary>
+    /// Extent covered by the computed cache scheme.
+    /// </summary>
+    [JsonPropertyName("extent")]
+    public required ImageServerExtent Extent { get; init; }
+
+    /// <summary>
+    /// Cache type reported by the service, when a cache exists.
+    /// </summary>
+    [JsonPropertyName("cacheType")]
+    public string? CacheType { get; init; }
+}
+
+/// <summary>
+/// Esri-conformant response for the Image Server <c>computePixelLocation</c>
+/// endpoint.
+/// </summary>
+public sealed class ComputePixelLocationResponse
+{
+    /// <summary>
+    /// Pixel-space coordinates for the submitted map locations.
+    /// </summary>
+    [JsonPropertyName("geometries")]
+    public PixelLocationPoint[] Geometries { get; init; } = [];
+}
+
+/// <summary>
+/// Pixel-space coordinate returned by <c>computePixelLocation</c>.
+/// </summary>
+public sealed class PixelLocationPoint
+{
+    /// <summary>
+    /// Pixel column coordinate.
+    /// </summary>
+    [JsonPropertyName("x")]
+    public required double X { get; init; }
+
+    /// <summary>
+    /// Pixel row coordinate.
+    /// </summary>
+    [JsonPropertyName("y")]
+    public required double Y { get; init; }
+}
+
+/// <summary>
+/// Esri-conformant response for the Image Server <c>queryBoundary</c> endpoint.
+/// </summary>
+public sealed class QueryBoundaryResponse
+{
+    /// <summary>
+    /// Boundary shape for matching raster catalog items.
+    /// </summary>
+    [JsonPropertyName("shape")]
+    public required CatalogQueryGeometry Shape { get; init; }
+
+    /// <summary>
+    /// Approximate boundary area in square meters for geospatial coordinate systems.
+    /// </summary>
+    [JsonPropertyName("area")]
+    public required double Area { get; init; }
+}
+
+/// <summary>
 /// Esri-conformant response for the Image Server <c>getSamples</c> endpoint.
 /// </summary>
 public sealed class GetSamplesResponse

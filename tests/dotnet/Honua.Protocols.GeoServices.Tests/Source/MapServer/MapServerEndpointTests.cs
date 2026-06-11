@@ -235,6 +235,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Export)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/estimateExportTilesSize")]
+    [Endpoint("POST /rest/services/{serviceId}/MapServer/estimateExportTilesSize")]
     public async Task MapServer_EstimateExportTilesSize_ReturnsStorageBackedEstimate()
     {
         var response = await _fixture.Client.GetAsync(
@@ -259,6 +260,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Export)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/exportTiles")]
+    [Endpoint("POST /rest/services/{serviceId}/MapServer/exportTiles")]
     public async Task MapServer_ExportTiles_WritesZipArchiveToCloudStorage()
     {
         var response = await _fixture.Client.GetAsync(
@@ -938,6 +940,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Metadata)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/queryLegends")]
+    [Endpoint("POST /rest/services/{serviceId}/MapServer/queryLegends")]
     public async Task MapServer_QueryLegends_ReturnsLegendLayers()
     {
         var response = await _fixture.Client.GetAsync(

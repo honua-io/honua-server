@@ -205,6 +205,60 @@ internal static class ImageServerEndpoints
             .Produces(400)
             .Produces(404);
 
+        group.MapGet("/computeCacheInfo", ComputeCacheInfoGet)
+            .WithDisplayName("Compute Cache Info (GET)")
+            .WithName("ImageServerComputeCacheInfoGet")
+            .WithSummary("Compute image cache metadata")
+            .WithDescription("Returns ImageServer cache metadata for the dynamic raster layer. Honua omits tileInfo until a raster tile cache is configured.")
+            .Produces<ComputeCacheInfoResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+
+        group.MapPost("/computeCacheInfo", ComputeCacheInfoPost)
+            .WithDisplayName("Compute Cache Info (POST)")
+            .WithName("ImageServerComputeCacheInfoPost")
+            .WithSummary("Compute image cache metadata via POST")
+            .WithDescription("POST equivalent of the ArcGIS ImageServer computeCacheInfo endpoint")
+            .Produces<ComputeCacheInfoResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+
+        group.MapGet("/computePixelLocation", ComputePixelLocationGet)
+            .WithDisplayName("Compute Pixel Location (GET)")
+            .WithName("ImageServerComputePixelLocationGet")
+            .WithSummary("Convert map points to raster pixel locations")
+            .WithDescription("ArcGIS ImageServer computePixelLocation contract. Returns pixel column/row coordinates for point geometries using the raster geotransform.")
+            .Produces<ComputePixelLocationResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+
+        group.MapPost("/computePixelLocation", ComputePixelLocationPost)
+            .WithDisplayName("Compute Pixel Location (POST)")
+            .WithName("ImageServerComputePixelLocationPost")
+            .WithSummary("Convert map points to raster pixel locations via POST")
+            .WithDescription("POST equivalent of the ArcGIS ImageServer computePixelLocation endpoint")
+            .Produces<ComputePixelLocationResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+
+        group.MapGet("/queryBoundary", QueryBoundaryGet)
+            .WithDisplayName("Query Boundary (GET)")
+            .WithName("ImageServerQueryBoundaryGet")
+            .WithSummary("Query the aggregate raster boundary")
+            .WithDescription("Returns the aggregate raster footprint boundary and approximate area for the ImageServer layer.")
+            .Produces<QueryBoundaryResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+
+        group.MapPost("/queryBoundary", QueryBoundaryPost)
+            .WithDisplayName("Query Boundary (POST)")
+            .WithName("ImageServerQueryBoundaryPost")
+            .WithSummary("Query the aggregate raster boundary via POST")
+            .WithDescription("POST equivalent of the ArcGIS ImageServer queryBoundary endpoint")
+            .Produces<QueryBoundaryResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+
         // Raster key properties metadata
         group.MapGet("/keyProperties", KeyPropertiesGet)
             .WithDisplayName("Get Key Properties")
@@ -493,6 +547,51 @@ internal static class ImageServerEndpoints
             .WithName("GetSamplesPostByService")
             .WithSummary("Sample pixel values at points")
             .Produces<GetSamplesResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+
+        serviceGroup.MapGet("/computeCacheInfo", ComputeCacheInfoGetByService)
+            .WithDisplayName("Compute Cache Info by Service (GET)")
+            .WithName("ImageServerComputeCacheInfoGetByService")
+            .WithSummary("Compute image cache metadata")
+            .Produces<ComputeCacheInfoResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+        serviceGroup.MapPost("/computeCacheInfo", ComputeCacheInfoPostByService)
+            .WithDisplayName("Compute Cache Info by Service (POST)")
+            .WithName("ImageServerComputeCacheInfoPostByService")
+            .WithSummary("Compute image cache metadata via POST")
+            .Produces<ComputeCacheInfoResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+
+        serviceGroup.MapGet("/computePixelLocation", ComputePixelLocationGetByService)
+            .WithDisplayName("Compute Pixel Location by Service (GET)")
+            .WithName("ImageServerComputePixelLocationGetByService")
+            .WithSummary("Convert map points to raster pixel locations")
+            .Produces<ComputePixelLocationResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+        serviceGroup.MapPost("/computePixelLocation", ComputePixelLocationPostByService)
+            .WithDisplayName("Compute Pixel Location by Service (POST)")
+            .WithName("ImageServerComputePixelLocationPostByService")
+            .WithSummary("Convert map points to raster pixel locations via POST")
+            .Produces<ComputePixelLocationResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+
+        serviceGroup.MapGet("/queryBoundary", QueryBoundaryGetByService)
+            .WithDisplayName("Query Boundary by Service (GET)")
+            .WithName("ImageServerQueryBoundaryGetByService")
+            .WithSummary("Query the aggregate raster boundary")
+            .Produces<QueryBoundaryResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+        serviceGroup.MapPost("/queryBoundary", QueryBoundaryPostByService)
+            .WithDisplayName("Query Boundary by Service (POST)")
+            .WithName("ImageServerQueryBoundaryPostByService")
+            .WithSummary("Query the aggregate raster boundary via POST")
+            .Produces<QueryBoundaryResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(400)
             .Produces(404);
 
@@ -1320,6 +1419,228 @@ internal static class ImageServerEndpoints
     {
         var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
         return resolution.ErrorResult ?? await GetSamplesPost(resolution.LayerId, context, handler, cancellationToken);
+    }
+
+    /// <summary>
+    /// Compute cache metadata for a dynamic ImageServer layer (GET).
+    /// </summary>
+    private static async Task<IResult> ComputeCacheInfoGet(
+        int id,
+        HttpContext context,
+        ImageServerCoordinateMetadataHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        if (layerError is not null)
+        {
+            return layerError;
+        }
+
+        var values = GeoServicesRequestValueHelpers.ToCaseInsensitiveDictionary(context.Request.Query);
+        if (!IsSupportedJsonResponseFormat(GetString(values, "f")))
+        {
+            return CreateUnsupportedJsonFormatResult(context);
+        }
+
+        return await handler.ComputeCacheInfoAsync(context, id, values, cancellationToken);
+    }
+
+    private static async Task<IResult> ComputeCacheInfoGetByService(
+        string serviceId,
+        HttpContext context,
+        ImageServerCoordinateMetadataHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        return resolution.ErrorResult ?? await ComputeCacheInfoGet(resolution.LayerId, context, handler, cancellationToken);
+    }
+
+    /// <summary>
+    /// Compute cache metadata for a dynamic ImageServer layer (POST).
+    /// </summary>
+    private static async Task<IResult> ComputeCacheInfoPost(
+        int id,
+        HttpContext context,
+        ImageServerCoordinateMetadataHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        if (layerError is not null)
+        {
+            return layerError;
+        }
+
+        var bodyValues = await ReadPostValuesAsync(context, cancellationToken);
+        if (bodyValues.Error != null)
+        {
+            return bodyValues.Error;
+        }
+
+        var merged = MergeQueryAndBodyValues(context, bodyValues.Values!);
+        if (!IsSupportedJsonResponseFormat(GetString(merged, "f")))
+        {
+            return CreateUnsupportedJsonFormatResult(context);
+        }
+
+        return await handler.ComputeCacheInfoAsync(context, id, merged, cancellationToken);
+    }
+
+    private static async Task<IResult> ComputeCacheInfoPostByService(
+        string serviceId,
+        HttpContext context,
+        ImageServerCoordinateMetadataHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        return resolution.ErrorResult ?? await ComputeCacheInfoPost(resolution.LayerId, context, handler, cancellationToken);
+    }
+
+    /// <summary>
+    /// Compute raster pixel column/row coordinates for map points (GET).
+    /// </summary>
+    private static async Task<IResult> ComputePixelLocationGet(
+        int id,
+        HttpContext context,
+        ImageServerCoordinateMetadataHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        if (layerError is not null)
+        {
+            return layerError;
+        }
+
+        var values = GeoServicesRequestValueHelpers.ToCaseInsensitiveDictionary(context.Request.Query);
+        if (!IsSupportedJsonResponseFormat(GetString(values, "f")))
+        {
+            return CreateUnsupportedJsonFormatResult(context);
+        }
+
+        return await handler.ComputePixelLocationAsync(context, id, values, cancellationToken);
+    }
+
+    private static async Task<IResult> ComputePixelLocationGetByService(
+        string serviceId,
+        HttpContext context,
+        ImageServerCoordinateMetadataHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        return resolution.ErrorResult ?? await ComputePixelLocationGet(resolution.LayerId, context, handler, cancellationToken);
+    }
+
+    /// <summary>
+    /// Compute raster pixel column/row coordinates for map points (POST).
+    /// </summary>
+    private static async Task<IResult> ComputePixelLocationPost(
+        int id,
+        HttpContext context,
+        ImageServerCoordinateMetadataHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        if (layerError is not null)
+        {
+            return layerError;
+        }
+
+        var bodyValues = await ReadPostValuesAsync(context, cancellationToken);
+        if (bodyValues.Error != null)
+        {
+            return bodyValues.Error;
+        }
+
+        var merged = MergeQueryAndBodyValues(context, bodyValues.Values!);
+        if (!IsSupportedJsonResponseFormat(GetString(merged, "f")))
+        {
+            return CreateUnsupportedJsonFormatResult(context);
+        }
+
+        return await handler.ComputePixelLocationAsync(context, id, merged, cancellationToken);
+    }
+
+    private static async Task<IResult> ComputePixelLocationPostByService(
+        string serviceId,
+        HttpContext context,
+        ImageServerCoordinateMetadataHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        return resolution.ErrorResult ?? await ComputePixelLocationPost(resolution.LayerId, context, handler, cancellationToken);
+    }
+
+    /// <summary>
+    /// Query the aggregate raster footprint boundary (GET).
+    /// </summary>
+    private static async Task<IResult> QueryBoundaryGet(
+        int id,
+        HttpContext context,
+        ImageServerCoordinateMetadataHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        if (layerError is not null)
+        {
+            return layerError;
+        }
+
+        var values = GeoServicesRequestValueHelpers.ToCaseInsensitiveDictionary(context.Request.Query);
+        if (!IsSupportedJsonResponseFormat(GetString(values, "f")))
+        {
+            return CreateUnsupportedJsonFormatResult(context);
+        }
+
+        return await handler.QueryBoundaryAsync(context, id, values, cancellationToken);
+    }
+
+    private static async Task<IResult> QueryBoundaryGetByService(
+        string serviceId,
+        HttpContext context,
+        ImageServerCoordinateMetadataHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        return resolution.ErrorResult ?? await QueryBoundaryGet(resolution.LayerId, context, handler, cancellationToken);
+    }
+
+    /// <summary>
+    /// Query the aggregate raster footprint boundary (POST).
+    /// </summary>
+    private static async Task<IResult> QueryBoundaryPost(
+        int id,
+        HttpContext context,
+        ImageServerCoordinateMetadataHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        if (layerError is not null)
+        {
+            return layerError;
+        }
+
+        var bodyValues = await ReadPostValuesAsync(context, cancellationToken);
+        if (bodyValues.Error != null)
+        {
+            return bodyValues.Error;
+        }
+
+        var merged = MergeQueryAndBodyValues(context, bodyValues.Values!);
+        if (!IsSupportedJsonResponseFormat(GetString(merged, "f")))
+        {
+            return CreateUnsupportedJsonFormatResult(context);
+        }
+
+        return await handler.QueryBoundaryAsync(context, id, merged, cancellationToken);
+    }
+
+    private static async Task<IResult> QueryBoundaryPostByService(
+        string serviceId,
+        HttpContext context,
+        ImageServerCoordinateMetadataHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        return resolution.ErrorResult ?? await QueryBoundaryPost(resolution.LayerId, context, handler, cancellationToken);
     }
 
     /// <summary>
