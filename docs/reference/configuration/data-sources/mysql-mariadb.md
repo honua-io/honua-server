@@ -344,12 +344,9 @@ HONUA_TEST_MYSQL=1 dotnet test tests/dotnet/Honua.MySql.Tests/Honua.MySql.Tests.
     --filter "Category=MySql"
 ```
 
-If `HONUA_TEST_MYSQL` is unset (or not exactly `1`) the fixture short-circuits
-in `InitializeAsync` and every test in the class returns without exercising
-the container — a passing run with this gate disabled does **not** mean the
-integration suite ran. The same shape applies if Docker is unavailable: the
-fixture catches the container start failure and skips. They are not part of
-the default PR test suite.
+If `HONUA_TEST_MYSQL` is unset (or not exactly `1`) each infrastructure-gated
+test is reported as skipped before `InitializeAsync` starts Docker. They are
+not part of the default PR test suite.
 
 ### MariaDB compatibility
 

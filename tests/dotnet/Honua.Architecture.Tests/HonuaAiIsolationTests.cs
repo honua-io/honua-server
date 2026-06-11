@@ -23,7 +23,7 @@ namespace Honua.Architecture.Tests;
 /// (re-introducing the cycle ADR-0047 forbids).
 /// </para>
 /// <para>
-/// See <c>docs/contributor/adr/0047-module-dependency-policy.md</c> for
+/// See <c>docs/internal/contributor/adr/0047-module-dependency-policy.md</c> for
 /// the module-dependency policy this guard sits inside.
 /// </para>
 /// </remarks>

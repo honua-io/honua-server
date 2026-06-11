@@ -23,6 +23,7 @@ Status vocabulary:
 | [Geometry Service](#geometry-service) | Complete | Root metadata plus all 23 ArcGIS geometry operations | None at operation level; parameter-level caveats only |
 | GeocodeServer | Partial | Service metadata, findAddressCandidates, reverseGeocode, suggest, geocodeAddresses | `outFields`, `magicKey` round-trip, `category` filtering, non-default `outSR` — see [GeocodeServer matrix](../../internal/spikes/geocode-server-matrix.md) |
 | GPServer | Partial | PrintingTools; generic adapter with catalog-backed task metadata, async submitJob, job status/cancel/results over 34 seeded processes | Async-only, no generic `execute` route; `env:*` rejected — see [run geoprocessing](../../guides/query-analyze/run-geoprocessing.md) |
+| [NAServer](#naserver) | Partial | Route solve and service-area solve over the shared routing provider; minimal ClosestFacility probe envelope for mobile clients | POST-only; ClosestFacility is a deterministic stub; no OD cost matrix, location-allocation, barriers, or multiple travel modes |
 | Portal Sharing | Partial (token slice) | `generateToken` issuing opaque tokens consumable on `/rest/services/*` | OAuth2 named-user flow, item/group/community surface — see [authentication](../../guides/secure/authentication.md) |
 
 ## FeatureServer
@@ -137,6 +138,19 @@ Parameter-level caveats (the complete list):
   applies the correct datum transform directly.
 - `toGeoCoordinateString`/`fromGeoCoordinateString` support `MGRS` and `USNG`;
   `UTM`, `GARS`, `GEOREF`, `DD`, `DDM`, and `DMS` return a clear 400.
+
+## NAServer
+
+Esri spec: [Network Analyst Service](https://developers.arcgis.com/rest/services-reference/enterprise/network-analyst-service/).
+Routes are POST-only under `/rest/services/{serviceId}/NAServer` and adapt to
+the shared `IRoutingProvider` routing pipeline.
+
+| Operation(s) | Status | Notes |
+| --- | --- | --- |
+| Route/solve | Implemented | Parses `stops`, `inSR`/`outSR`, `returnRoutes`, and `returnDirections`; delegates to the configured routing provider and returns Esri route/directions feature sets. |
+| ServiceArea/solveServiceArea | Implemented | Parses `facilities`, `defaultBreaks`, `inSR`/`outSR`, and `travelDirection`; honours provider-advertised FromFacility/ToFacility support and returns Esri `saPolygons`. |
+| ClosestFacility/solveClosestFacility | Stub | Registered for mobile client probes and returns a deterministic route/directions envelope; it is not yet backed by a canonical closest-facility solver. |
+| Service metadata, OD cost matrix, location-allocation, network-dataset editing, multiple travel modes, point/line/polygon barriers | Not implemented | Route and service-area solves are the MVP routing scope. Unsupported provider capabilities return GeoServices 400 error envelopes rather than fabricated solves. |
 
 ## Sources and upkeep
 
