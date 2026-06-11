@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "lastReviewed": "2026-06-02",
+  "lastReviewed": "2026-06-10",
   "canonicalDocs": {
     "landingPage": "docs/gis/geoservices-rest-parity.md",
     "machineReadableExport": "docs/gis/data/geoservices-rest-parity.json"
@@ -36,6 +36,8 @@
         "queryDomains",
         "relationships",
         "attachments",
+        "queryAttachments",
+        "generateRenderer (simple + classBreaks + uniqueValue)",
         "replica endpoints",
         "append",
         "calculate",
@@ -52,8 +54,6 @@
       ],
       "knownGaps": [
         "cleanupChangeTracking",
-        "queryContingentValues",
-        "sharedTemplates",
         "asset and 3D operations",
         "full ArcGIS SQL parity",
         "full offline change-tracking parity"
@@ -475,9 +475,7 @@
             "honuaEndpoints": [
               "GET /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments/{attachmentId}"
             ]
-          }
-        ],
-        "partial": [
+          },
           {
             "name": "Generate Renderer",
             "esriPath": "/rest/services/{serviceId}/FeatureServer/{layerId}/generateRenderer",
@@ -487,7 +485,7 @@
             "honuaEndpoints": [
               "GET /rest/services/{serviceId}/FeatureServer/{layerId}/generateRenderer"
             ],
-            "notes": "Returns a simple renderer. classificationDef is rejected."
+            "notes": "Returns a simple renderer by default. classificationDef is supported: classBreaksDef (esriClassifyEqualInterval, esriClassifyQuantile, esriClassifyNaturalBreaks, esriClassifyStandardDeviation; breakCount; normalizationField) returns a classBreaks renderer; uniqueValueDef (1-3 uniqueValueFields; fieldDelimiter) returns a uniqueValue renderer. Breaks and distinct values are computed through the shared FeatureServer query/statistics pipeline."
           },
           {
             "name": "Query Attachments",
@@ -500,9 +498,10 @@
               "GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryAttachments",
               "POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryAttachments"
             ],
-            "notes": "Only objectId-driven lookup is supported."
+            "notes": "Accepts objectIds/objectId, returnUrl, and the documented filter facets: attachmentTypes (MIME types or file extensions), keywords (comma-separated; any-match), size (inclusive lower,upper byte range). definitionExpression narrows the parent feature set through the shared query pipeline. globalIds is rejected with HTTP 400. Returns grouped attachmentGroups plus a flattened attachmentInfos for single-feature queries."
           }
         ],
+        "partial": [],
         "notImplemented": [
           {
             "name": "Cleanup Change Tracking",
@@ -753,6 +752,9 @@
         "query",
         "query domains",
         "feature child resource",
+        "per-layer generateRenderer (forwards to FeatureServer handler)",
+        "queryRelatedRecords (forwards to FeatureServer handler)",
+        "queryAttachments (forwards to FeatureServer handler)",
         "tiles",
         "generateKml",
         "WMS",
@@ -761,10 +763,8 @@
       "knownGaps": [
         "exportTiles",
         "estimateExportTilesSize",
-        "generateRenderer",
-        "queryAttachments",
+        "service-level generateRenderer",
         "queryLegends",
-        "queryRelatedRecords",
         "additional Esri child resources"
       ],
       "evidence": {
@@ -940,6 +940,45 @@
             "honuaEndpoints": [
               "GET /rest/services/{serviceId}/MapServer/{layerId}/{featureId}"
             ]
+          },
+          {
+            "name": "Generate Renderer (per-layer)",
+            "esriPath": "/rest/services/{serviceId}/MapServer/{layerId}/generateRenderer",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/MapServer/{layerId}/generateRenderer",
+              "POST /rest/services/{serviceId}/MapServer/{layerId}/generateRenderer"
+            ],
+            "notes": "Thin adapter that forwards to the FeatureServer generateRenderer handler unchanged. Returns a simple renderer by default, or a class-breaks/unique-value renderer when classificationDef is supplied."
+          },
+          {
+            "name": "Query Related Records",
+            "esriPath": "/rest/services/{serviceId}/MapServer/{layerId}/queryRelatedRecords",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/MapServer/{layerId}/queryRelatedRecords",
+              "POST /rest/services/{serviceId}/MapServer/{layerId}/queryRelatedRecords"
+            ],
+            "notes": "Thin adapter that forwards to the FeatureServer queryRelatedRecords handler unchanged. Requires objectIds and relationshipId; emits Esri top-level field/geometry metadata plus per-group flat relatedRecords."
+          },
+          {
+            "name": "Query Attachments",
+            "esriPath": "/rest/services/{serviceId}/MapServer/{layerId}/queryAttachments",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/MapServer/{layerId}/queryAttachments",
+              "POST /rest/services/{serviceId}/MapServer/{layerId}/queryAttachments"
+            ],
+            "notes": "Thin adapter that forwards to the FeatureServer queryAttachments handler unchanged. Supports objectIds, returnUrl, attachmentTypes, keywords, size, and definitionExpression; globalIds is rejected."
           }
         ],
         "partial": [
@@ -974,32 +1013,17 @@
             ]
           },
           {
-            "name": "Generate Renderer",
+            "name": "Generate Renderer (service-level)",
             "esriPath": "/rest/services/{serviceId}/MapServer/generateRenderer",
             "methods": [
               "GET",
               "POST"
-            ]
-          },
-          {
-            "name": "Query Attachments",
-            "esriPath": "/rest/services/{serviceId}/MapServer/{layerId}/queryAttachments",
-            "methods": [
-              "GET",
-              "POST"
-            ]
+            ],
+            "notes": "Only the per-layer form (.../MapServer/{layerId}/generateRenderer) is implemented; the service-level form is not."
           },
           {
             "name": "Query Legends",
             "esriPath": "/rest/services/{serviceId}/MapServer/queryLegends",
-            "methods": [
-              "GET",
-              "POST"
-            ]
-          },
-          {
-            "name": "Query Related Records",
-            "esriPath": "/rest/services/{serviceId}/MapServer/{layerId}/queryRelatedRecords",
             "methods": [
               "GET",
               "POST"
@@ -1105,9 +1129,12 @@
         "exportImage",
         "identify",
         "tile",
+        "getSamples",
+        "computeHistograms",
         "query (raster catalog features)",
         "computeStatisticsHistograms",
         "legend",
+        "keyProperties",
         "computeClass (raster function chain validation)",
         "WCS 2.0.1 KVP"
       ],
@@ -1183,6 +1210,32 @@
               "GET /rest/services/{id}/ImageServer/tile/{level}/{row}/{col}"
             ],
             "notes": "Supports png, jpeg, and tiff tile output. When multiple rasters overlap the requested tile, Honua renders a mosaic using the resolved merge strategy."
+          },
+          {
+            "name": "Get Samples",
+            "esriPath": "/rest/services/{id}/ImageServer/getSamples",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer/getSamples",
+              "POST /rest/services/{id}/ImageServer/getSamples"
+            ],
+            "notes": "Samples pixel values at the points of (or vertices along) the supplied geometry, reusing the shared raster identify/mosaic pipeline. Supports sampleCount (capped at 1000), mosaicRule, single-instant time, and per-point SRID. Each sample carries location, value, per-band attributes, and resolution. Supports esriGeometryMultipoint and esriGeometryPolyline; esriGeometryPolygon is rejected."
+          },
+          {
+            "name": "Compute Histograms",
+            "esriPath": "/rest/services/{id}/ImageServer/computeHistograms",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer/computeHistograms",
+              "POST /rest/services/{id}/ImageServer/computeHistograms"
+            ],
+            "notes": "Returns per-band histograms for the rasters intersecting the AOI. Requires geometry and geometryType (esriGeometryEnvelope or esriGeometryPolygon); shares the computeStatisticsHistograms core (rasterIds, bandIds, mosaicRule, single-instant time, histogramParameters.size)."
           }
         ],
         "partial": [
@@ -1268,14 +1321,6 @@
             ]
           },
           {
-            "name": "Compute Histograms",
-            "esriPath": "/rest/services/{id}/ImageServer/computeHistograms",
-            "methods": [
-              "GET",
-              "POST"
-            ]
-          },
-          {
             "name": "Delete Rasters",
             "esriPath": "/rest/services/{id}/ImageServer/deleteRasters",
             "methods": [
@@ -1300,14 +1345,6 @@
           {
             "name": "Find",
             "esriPath": "/rest/services/{id}/ImageServer/find",
-            "methods": [
-              "GET",
-              "POST"
-            ]
-          },
-          {
-            "name": "Get Samples",
-            "esriPath": "/rest/services/{id}/ImageServer/getSamples",
             "methods": [
               "GET",
               "POST"
@@ -1360,6 +1397,15 @@
             "notes": "Returns Esri-shaped layers[].legend[] swatches as base64 PNGs (image/png). The MVP renders a fixed 5-class equal-interval ramp keyed off the resolved layer mosaic's band-1 statistics; per-layer renderer persistence and renderingRule overrides are not yet honoured. Only f=json/f=pjson is accepted."
           },
           {
+            "name": "Key Properties",
+            "esriPath": "/rest/services/{id}/ImageServer/keyProperties",
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer/keyProperties",
+              "POST /rest/services/{id}/ImageServer/keyProperties"
+            ],
+            "notes": "Returns the canonical Esri raster key-properties document (per-band BandProperties, DataType, BandCount, NoDataValue, LowCellSize/HighCellSize/MaxCellSize) for the layer's primary raster, sourced from the shared raster store metadata. POST is mirrored because the ArcGIS API for Python ImageryLayer.key_properties() issues HTTP POST. Band metadata is sourced from raster store metadata and may not reflect all Esri keyProperties fields."
+          },
+          {
             "name": "WCS",
             "esriPath": "/rest/services/{id}/ImageServer/WCS",
             "honuaEndpoints": [
@@ -1374,7 +1420,6 @@
           "histograms",
           "info/*",
           "imageSupportData",
-          "keyProperties",
           "kml",
           "multiDimensionalInfo",
           "rasterAttributeTable",
@@ -2220,6 +2265,208 @@
         "Token issuance is the only Portal Sharing operation exposed in this slice. OAuth2 named-user, item editing, and the broader Portal item/group/community graph are tracked separately.",
         "Tokens are opaque and carry no embedded claims; ClaimsPrincipal hydration occurs at validation time from issuer-stored state.",
         "Default scheme remains API-key / OIDC; the PortalToken scheme is engaged by a bridge middleware only when the request carries a token indicator and no other scheme has authenticated."
+      ]
+    },
+    {
+      "id": "na-server",
+      "displayName": "NAServer",
+      "parity": "partial",
+      "drillDownDoc": "docs/gis/na-server-matrix.md",
+      "implementedSurface": [
+        "Route solve (NAServer/Route/solve): multi-stop route via pgRouting pgr_dijkstra, returns Esri route feature set with optional directions",
+        "ServiceArea solve (NAServer/ServiceArea/solveServiceArea): drive-time/drive-distance isochrone polygons via pgr_drivingDistance + alpha-shape polygonization; travelDirection honored",
+        "ClosestFacility solve stub (NAServer/ClosestFacility/solveClosestFacility): deterministic compatibility envelope"
+      ],
+      "knownGaps": [
+        "NAServer root and named-solver metadata resources (service-level info endpoint)",
+        "travelMode object (named travel modes and travel-mode JSON)",
+        "barriers (pointBarriers, polylineBarriers, polygonBarriers)",
+        "hierarchy (useHierarchy)",
+        "time-dependent routing (startTime, traffic)",
+        "ClosestFacility real solver (stub only)",
+        "returnLines for ServiceArea",
+        "ServiceArea polygon shaping options (mergeSimilarPolygonRanges, splitPolygonsAtBreaks, trimOuterPolygon)"
+      ],
+      "evidence": {
+        "code": [
+          "src/Honua.Protocols.GeoServices/NAServer/NAServerEndpoints.cs",
+          "src/Honua.Protocols.GeoServices/NAServer/NAServerParameterTranslation.cs",
+          "src/Honua.Protocols.GeoServices/NAServer/NAServerResultMapping.cs",
+          "src/Honua.Routing/Features/Routing/Abstractions/IRoutingProvider.cs",
+          "src/Honua.Routing/Features/Routing/Domain/RoutingProviderCapabilities.cs"
+        ],
+        "tests": [
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/NAServer/NAServerEndpointTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/NAServer/NAServerTranslationUnitTests.cs",
+          "tests/dotnet/Honua.Server.Tests/Routing/NAServerPgRoutingEndToEndTests.cs"
+        ],
+        "adr": [
+          "docs/contributor/adr/0050-routing-engine-choice-and-naserver-compat.md"
+        ]
+      },
+      "operations": {
+        "implemented": [
+          {
+            "name": "Route Solve",
+            "esriPath": "/rest/services/{serviceId}/NAServer/Route/solve",
+            "methods": [
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "POST /rest/services/{serviceId}/NAServer/Route/solve"
+            ],
+            "notes": "Multi-stop route via pgr_dijkstra over the pgRouting topology. Returns an Esri route feature set (Routes) with optional turn-by-turn directions (Directions). Capability-gated: IRoutingProvider.Capabilities.SupportsRoute must be true. Parameters: stops (JSON feature set or x,y pairs), outSR (default 4326), returnRoutes (default true), returnDirections (default false). f=json and f=pjson are supported."
+          },
+          {
+            "name": "ServiceArea Solve",
+            "esriPath": "/rest/services/{serviceId}/NAServer/ServiceArea/solveServiceArea",
+            "methods": [
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "POST /rest/services/{serviceId}/NAServer/ServiceArea/solveServiceArea"
+            ],
+            "notes": "Drive-time or drive-distance isochrone polygons via pgr_drivingDistance + alpha-shape / concave-hull polygonization. Returns saPolygons feature set with ObjectID, FacilityID, Name, FromBreak, ToBreak attributes. Capability-gated: SupportsServiceArea and requested travelDirection must be in SupportedTravelDirections. Parameters: facilities (JSON feature set or x,y pairs), defaultBreaks (comma-separated cost cutoffs), travelDirection (esriNATravelDirectionFromFacility = outbound graph; esriNATravelDirectionToFacility = reversed graph), outSR (default 4326)."
+          }
+        ],
+        "partial": [
+          {
+            "name": "ClosestFacility Solve",
+            "esriPath": "/rest/services/{serviceId}/NAServer/ClosestFacility/solveClosestFacility",
+            "methods": [
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "POST /rest/services/{serviceId}/NAServer/ClosestFacility/solveClosestFacility"
+            ],
+            "notes": "Deterministic compatibility stub returning a fixed envelope (Routes with one Incident - Facility A route, Directions with summary). No canonical closest-facility solver is wired; the stub exists for mobile routing client probe compatibility. Deferred until a dedicated closest-facility canonical contract is defined."
+          }
+        ],
+        "notImplemented": [
+          {
+            "name": "NAServer root resource",
+            "esriPath": "/rest/services/{serviceId}/NAServer",
+            "methods": [
+              "GET"
+            ]
+          },
+          {
+            "name": "Route service metadata",
+            "esriPath": "/rest/services/{serviceId}/NAServer/Route",
+            "methods": [
+              "GET"
+            ]
+          },
+          {
+            "name": "ServiceArea service metadata",
+            "esriPath": "/rest/services/{serviceId}/NAServer/ServiceArea",
+            "methods": [
+              "GET"
+            ]
+          },
+          {
+            "name": "ClosestFacility service metadata",
+            "esriPath": "/rest/services/{serviceId}/NAServer/ClosestFacility",
+            "methods": [
+              "GET"
+            ]
+          }
+        ]
+      },
+      "parameterCoverage": {
+        "routeSolve": [
+          {
+            "name": "stops",
+            "status": "implemented",
+            "notes": "JSON feature set ({\"features\":[...]}) or comma-delimited x,y pairs. Required."
+          },
+          {
+            "name": "outSR",
+            "status": "implemented",
+            "notes": "Accepts numeric WKID; defaults to 4326."
+          },
+          {
+            "name": "returnRoutes",
+            "status": "implemented",
+            "notes": "true (default) returns route polylines; false omits the Routes feature set."
+          },
+          {
+            "name": "returnDirections",
+            "status": "implemented",
+            "notes": "false (default) omits turn-by-turn steps; true populates Directions."
+          },
+          {
+            "name": "f",
+            "status": "partial",
+            "notes": "json and pjson only."
+          },
+          {
+            "name": "travelMode",
+            "status": "not_implemented",
+            "notes": "Not parsed; solve always uses the default cost column."
+          },
+          {
+            "name": "pointBarriers, polylineBarriers, polygonBarriers",
+            "status": "ignored",
+            "notes": "Accepted in body but not forwarded to the solver."
+          },
+          {
+            "name": "useHierarchy, startTime, startTimeIsUTC",
+            "status": "not_implemented"
+          }
+        ],
+        "serviceAreaSolve": [
+          {
+            "name": "facilities",
+            "status": "implemented",
+            "notes": "JSON feature set ({\"features\":[...]}) or comma-delimited x,y pairs. Required."
+          },
+          {
+            "name": "defaultBreaks",
+            "status": "implemented",
+            "notes": "Comma-separated cost cutoffs (minutes or meters depending on routing cost column)."
+          },
+          {
+            "name": "travelDirection",
+            "status": "implemented",
+            "notes": "esriNATravelDirectionFromFacility (outbound graph) or esriNATravelDirectionToFacility (reversed graph). Validated against IRoutingProvider.Capabilities.SupportedTravelDirections."
+          },
+          {
+            "name": "outSR",
+            "status": "implemented",
+            "notes": "Accepts numeric WKID; defaults to 4326."
+          },
+          {
+            "name": "f",
+            "status": "partial",
+            "notes": "json and pjson only."
+          },
+          {
+            "name": "travelMode",
+            "status": "not_implemented",
+            "notes": "Not parsed."
+          },
+          {
+            "name": "returnLines",
+            "status": "not_implemented",
+            "notes": "Only polygon output (saPolygons) is produced."
+          },
+          {
+            "name": "mergeSimilarPolygonRanges, splitPolygonsAtBreaks, trimOuterPolygon",
+            "status": "not_implemented"
+          }
+        ]
+      },
+      "knownLimitations": [
+        "The NAServer root resource and named-solver metadata endpoints are not exposed.",
+        "ClosestFacility is a deterministic compatibility stub; the returned route distances and travel times are fixed values and do not reflect actual input geometry.",
+        "travelMode objects are not parsed; all solves run against the default cost column configured in the pgRouting topology.",
+        "Barriers (pointBarriers, polylineBarriers, polygonBarriers) are accepted in the request body but not forwarded to pgRouting.",
+        "ServiceArea output is polygon-only (saPolygons); returnLines and polygon shaping options are not supported.",
+        "Time-dependent routing (startTime, traffic) is not supported.",
+        "Output is JSON-only (f=json/f=pjson); Esri HTML output is not supported.",
+        "pgRouting service-area polygons use alpha-shape / concave-hull polygonization, which may differ from Esri native network-distance polygon shaping for non-convex road networks.",
+        "NAServer endpoints are anonymous (no RBAC gating); capability gating is the provider-level guard."
       ]
     },
     {
