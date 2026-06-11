@@ -19,6 +19,32 @@ public interface IReplicaRepository
     Task UpsertAsync(ReplicaRecord record, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Atomically updates a replica's sync-state cursors (<see cref="ReplicaRecord.LastSyncTime"/>,
+    /// <see cref="ReplicaRecord.LastSyncGeneration"/> and
+    /// <see cref="ReplicaRecord.UploadBaseGeneration"/>) only when the persisted cursors still match
+    /// the expected values the caller read before applying the sync. This is the compare-and-set
+    /// guard against concurrent synchronizations of the same replica: the losing sync observes
+    /// <c>false</c> instead of clobbering the winner's cursor with a stale read-modify-write.
+    /// </summary>
+    /// <param name="record">The replica record carrying the new sync-state cursors.</param>
+    /// <param name="expectedLastSyncGeneration">
+    /// The <see cref="ReplicaRecord.LastSyncGeneration"/> the caller read before the sync.
+    /// </param>
+    /// <param name="expectedUploadBaseGeneration">
+    /// The <see cref="ReplicaRecord.UploadBaseGeneration"/> the caller read before the sync.
+    /// </param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>
+    /// True when the update applied; false when the replica does not exist or another sync advanced
+    /// the cursors since the caller's read.
+    /// </returns>
+    Task<bool> TryUpdateSyncStateAsync(
+        ReplicaRecord record,
+        long expectedLastSyncGeneration,
+        long expectedUploadBaseGeneration,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Retrieves a replica record by its unique identifier
     /// </summary>
     /// <param name="replicaId">Unique replica identifier</param>

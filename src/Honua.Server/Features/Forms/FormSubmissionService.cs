@@ -259,20 +259,24 @@ internal sealed class FormSubmissionService
         catch (OperationCanceledException ex)
         {
             FormSubmissionLog.SubmissionFailed(_logger, ex, packageVersion.FormId, packageVersion.Version, submissionId);
-            var response = BuildFailedResponse(submissionId, packageVersion, request, "The server could not complete the submission before the post-claim timeout.");
-            await CompleteSubmissionAsync(submissionId, response, "failed").ConfigureAwait(false);
+            // Transient timeout: delete the idempotency claim so the same key can re-execute.
+            // Do NOT persist a terminal failed record; replaying it would block the client forever.
+            await DeleteSubmissionForRetryAsync(submissionId).ConfigureAwait(false);
             await RecordAuditAsync(context, "forms.submission.create", packageVersion.FormId, AuditOutcome.Failure, $"{{\"version\":{packageVersion.Version},\"timeout\":true}}", CancellationToken.None)
                 .ConfigureAwait(false);
-            return Results.Json(response, FormPackageJsonContext.Default.FormSubmissionResponse, statusCode: StatusCodes.Status500InternalServerError);
+            var timeoutResponse = BuildFailedResponse(submissionId, packageVersion, request, "The server could not complete the submission before the post-claim timeout.");
+            return Results.Json(timeoutResponse, FormPackageJsonContext.Default.FormSubmissionResponse, statusCode: StatusCodes.Status500InternalServerError);
         }
         catch (Exception ex)
         {
             FormSubmissionLog.SubmissionFailed(_logger, ex, packageVersion.FormId, packageVersion.Version, submissionId);
-            var response = BuildFailedResponse(submissionId, packageVersion, request, "The server could not complete the submission.");
-            await CompleteSubmissionAsync(submissionId, response, "failed").ConfigureAwait(false);
+            // Transient server error: delete the idempotency claim so the same key can re-execute.
+            // Do NOT persist a terminal failed record; replaying it would block the client forever.
+            await DeleteSubmissionForRetryAsync(submissionId).ConfigureAwait(false);
             await RecordAuditAsync(context, "forms.submission.create", packageVersion.FormId, AuditOutcome.Failure, $"{{\"version\":{packageVersion.Version}}}", CancellationToken.None)
                 .ConfigureAwait(false);
-            return Results.Json(response, FormPackageJsonContext.Default.FormSubmissionResponse, statusCode: StatusCodes.Status500InternalServerError);
+            var errorResponse = BuildFailedResponse(submissionId, packageVersion, request, "The server could not complete the submission.");
+            return Results.Json(errorResponse, FormPackageJsonContext.Default.FormSubmissionResponse, statusCode: StatusCodes.Status500InternalServerError);
         }
     }
 
@@ -369,6 +373,21 @@ internal sealed class FormSubmissionService
     {
         using var completionCts = new CancellationTokenSource(_terminalPersistenceTimeout);
         await _store.CompleteSubmissionAsync(submissionId, response, status, completionCts.Token).ConfigureAwait(false);
+    }
+
+    private async Task DeleteSubmissionForRetryAsync(Guid submissionId)
+    {
+        using var deleteCts = new CancellationTokenSource(_terminalPersistenceTimeout);
+        try
+        {
+            await _store.DeleteSubmissionAsync(submissionId, deleteCts.Token).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // Best-effort: if the delete fails the claim remains and the client will get a 409
+            // on next retry, which is better than a permanently cached "failed" replay.
+            FormSubmissionLog.SubmissionClaimDeleteFailed(_logger, ex, submissionId);
+        }
     }
 
     private static async Task<SubmissionParseResult> ReadSubmissionAsync(HttpContext context)
@@ -1104,4 +1123,7 @@ internal static partial class FormSubmissionLog
 
     [LoggerMessage(EventId = 118444, Level = LogLevel.Warning, Message = "Form submission {SubmissionId} for {FormId} version {Version} failed during edit application; operation={Operation}.")]
     public static partial void SubmissionEditFailed(ILogger logger, string formId, int version, Guid submissionId, string operation);
+
+    [LoggerMessage(EventId = 118445, Level = LogLevel.Warning, Message = "Could not delete transient-failure idempotency claim for submission {SubmissionId}; claim may persist until manual cleanup.")]
+    public static partial void SubmissionClaimDeleteFailed(ILogger logger, Exception exception, Guid submissionId);
 }

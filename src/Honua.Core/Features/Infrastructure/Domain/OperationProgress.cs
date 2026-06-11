@@ -164,5 +164,11 @@ public enum OperationType
     /// <summary>
     /// PMTiles durable publish operation (no TTL, deterministic object key).
     /// </summary>
-    PMTilesPublish
+    PMTilesPublish,
+
+    /// <summary>
+    /// Temporal corrective (governed rollback) job that replays forward edits through the canonical
+    /// edit pipeline.
+    /// </summary>
+    TemporalCorrective
 }

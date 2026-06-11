@@ -103,22 +103,19 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                 }
             }
 
-            // Only the uploaded ids can ever be probed below, so keep the conflict map bounded by the
-            // upload size rather than by the full server change history since the base generation.
-            // (Pushing the id filter into IChangeTracker/SQL so a long-offline replica does not
-            // materialize the entire change log is a provider-side follow-up.)
+            // Only the uploaded ids can ever be probed below, so push the id filter into the change
+            // tracker: providers that support it (Postgres) restrict the change-log scan in SQL, and
+            // the interface default filters client-side. Either way a long-offline replica's upload
+            // never materializes the entire change history since the base generation.
             var serverByObjectId = new Dictionary<long, FeatureChangeOperation>();
             if (uploadedObjectIds.Count > 0)
             {
                 var serverChanges = await _changeTracker
-                    .GetChangesSinceAsync(request.BaseGeneration, [layer.StorageLayerId], cancellationToken)
+                    .GetChangesSinceAsync(request.BaseGeneration, [layer.StorageLayerId], uploadedObjectIds, cancellationToken)
                     .ConfigureAwait(false);
                 foreach (var change in serverChanges)
                 {
-                    if (uploadedObjectIds.Contains(change.ObjectId))
-                    {
-                        serverByObjectId[change.ObjectId] = change.Operation;
-                    }
+                    serverByObjectId[change.ObjectId] = change.Operation;
                 }
             }
 

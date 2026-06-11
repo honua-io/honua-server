@@ -21,6 +21,26 @@ public interface IUniversalProgressStore
     Task SetProgressAsync(string operationId, IOperationProgress progress, TimeSpan? ttl = null, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Conditionally store progress for an operation only while the currently stored progress still has
+    /// <paramref name="expectedStatus"/> (compare-and-set). Implementations make the status check and the
+    /// write atomic with respect to other conditional writes and to terminal-status writes performed
+    /// through <see cref="SetProgressAsync"/>, eliminating lost-update races such as a cancellation
+    /// overwriting a concurrently persisted terminal state (honua-server#1593).
+    /// </summary>
+    /// <param name="operationId">Operation identifier</param>
+    /// <param name="progress">Progress data to store when the status check passes</param>
+    /// <param name="expectedStatus">Status the currently stored progress must have for the write to apply</param>
+    /// <param name="ttl">Time-to-live for the progress data</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>The conditional-write outcome, including the observed progress when the check fails.</returns>
+    Task<ProgressCompareAndSetResult> TrySetProgressAsync(
+        string operationId,
+        IOperationProgress progress,
+        OperationStatus expectedStatus,
+        TimeSpan? ttl = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Retrieve progress for any operation.
     /// </summary>
     /// <typeparam name="TProgress">Expected progress type</typeparam>

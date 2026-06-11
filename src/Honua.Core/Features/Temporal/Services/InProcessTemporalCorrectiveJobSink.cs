@@ -1,7 +1,11 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Temporal.Abstractions;
+using Honua.Core.Features.Temporal.Domain;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 namespace Honua.Core.Features.Temporal.Services;
@@ -14,22 +18,38 @@ namespace Honua.Core.Features.Temporal.Services;
 /// </summary>
 /// <remarks>
 /// The corrective work runs on a detached task scope so submission returns immediately with a queued
-/// handle, matching the async job semantics clients poll for. The work delegate performs only forward
-/// edits through the canonical edit pipeline and never deletes change-log history.
+/// handle, matching the async job semantics clients poll for. Job status (Queued, Processing, and the
+/// terminal Completed/Failed/Cancelled states) is persisted to <see cref="IUniversalProgressStore"/> when
+/// one is registered, so the returned job id resolves through the admin operations endpoints; terminal
+/// transitions use compare-and-set so they can never clobber a terminal state another writer recorded
+/// (honua-server#1593). The work delegate performs only forward edits through the canonical edit pipeline
+/// and never deletes change-log history; it observes the host shutdown token so an interrupted run is
+/// recorded as Cancelled rather than vanishing silently.
 /// </remarks>
 public sealed partial class InProcessTemporalCorrectiveJobSink : ITemporalCorrectiveJobSink
 {
+    private static readonly TimeSpan ProgressTtl = TimeSpan.FromHours(24);
+
     private readonly ILogger<InProcessTemporalCorrectiveJobSink> _logger;
+    private readonly IUniversalProgressStore? _progressStore;
+    private readonly IHostApplicationLifetime? _lifetime;
 
     /// <summary>Creates the sink.</summary>
     /// <param name="logger">Logger for corrective-job lifecycle events.</param>
-    public InProcessTemporalCorrectiveJobSink(ILogger<InProcessTemporalCorrectiveJobSink> logger)
+    /// <param name="progressStore">Optional progress store backing job-status polling for the returned job id.</param>
+    /// <param name="lifetime">Optional host lifetime; when present, corrective work observes application shutdown.</param>
+    public InProcessTemporalCorrectiveJobSink(
+        ILogger<InProcessTemporalCorrectiveJobSink> logger,
+        IUniversalProgressStore? progressStore = null,
+        IHostApplicationLifetime? lifetime = null)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _progressStore = progressStore;
+        _lifetime = lifetime;
     }
 
     /// <inheritdoc />
-    public Task<(string JobId, string Status)> SubmitAsync(
+    public async Task<(string JobId, string Status)> SubmitAsync(
         string operationName,
         string serviceId,
         int layerId,
@@ -40,25 +60,131 @@ public sealed partial class InProcessTemporalCorrectiveJobSink : ITemporalCorrec
         ArgumentNullException.ThrowIfNull(work);
 
         var jobId = $"temporal-{Guid.NewGuid():N}";
+        var queued = TemporalCorrectiveJobProgress.CreateQueued(jobId, operationName, serviceId, layerId);
 
-        // Detach the corrective run from the request scope so submission returns a queued handle the
-        // client polls. Exceptions are logged, not propagated, so a failed corrective run is observable
-        // via job status rather than crashing the host.
-        _ = Task.Run(async () =>
+        if (_progressStore is not null)
         {
             try
             {
-                LogCorrectiveJobStarted(jobId, operationName, serviceId, layerId);
-                await work(CancellationToken.None).ConfigureAwait(false);
-                LogCorrectiveJobSucceeded(jobId, operationName);
+                await _progressStore.SetProgressAsync(jobId, queued, ProgressTtl, cancellationToken).ConfigureAwait(false);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                LogCorrectiveJobFailed(jobId, operationName, ex);
+                // Progress tracking is observability plumbing; a store outage must not block the rollback.
+                LogCorrectiveJobProgressWriteFailed(jobId, operationName, ex);
             }
-        }, CancellationToken.None);
+        }
 
-        return Task.FromResult((jobId, "Queued"));
+        var shutdownToken = _lifetime?.ApplicationStopping ?? CancellationToken.None;
+
+        // Detach the corrective run from the request scope so submission returns a queued handle the
+        // client polls via the persisted job status. Exceptions are logged and recorded as a Failed
+        // terminal status rather than crashing the host.
+        _ = Task.Run(
+            () => RunCorrectiveJobAsync(jobId, operationName, serviceId, layerId, queued, work, shutdownToken),
+            CancellationToken.None);
+
+        return (jobId, "Queued");
+    }
+
+    private async Task RunCorrectiveJobAsync(
+        string jobId,
+        string operationName,
+        string serviceId,
+        int layerId,
+        TemporalCorrectiveJobProgress queued,
+        Func<CancellationToken, Task> work,
+        CancellationToken shutdownToken)
+    {
+        var processing = queued with { Status = OperationStatus.Processing, CurrentPhase = "Running corrective edits" };
+        await TryTransitionAsync(jobId, operationName, processing, OperationStatus.Queued).ConfigureAwait(false);
+
+        try
+        {
+            LogCorrectiveJobStarted(jobId, operationName, serviceId, layerId);
+            await work(shutdownToken).ConfigureAwait(false);
+            LogCorrectiveJobSucceeded(jobId, operationName);
+            await TryTransitionAsync(
+                jobId,
+                operationName,
+                processing with
+                {
+                    Status = OperationStatus.Completed,
+                    CompletedAt = DateTimeOffset.UtcNow,
+                    CurrentPhase = "Completed"
+                },
+                OperationStatus.Processing).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (shutdownToken.IsCancellationRequested)
+        {
+            LogCorrectiveJobInterrupted(jobId, operationName);
+            await TryTransitionAsync(
+                jobId,
+                operationName,
+                processing with
+                {
+                    Status = OperationStatus.Cancelled,
+                    CompletedAt = DateTimeOffset.UtcNow,
+                    ErrorMessage = "The corrective run was interrupted by host shutdown before completing.",
+                    CurrentPhase = "Interrupted by shutdown"
+                },
+                OperationStatus.Processing).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            LogCorrectiveJobFailed(jobId, operationName, ex);
+            await TryTransitionAsync(
+                jobId,
+                operationName,
+                processing with
+                {
+                    Status = OperationStatus.Failed,
+                    CompletedAt = DateTimeOffset.UtcNow,
+                    ErrorMessage = ex.Message,
+                    CurrentPhase = "Failed"
+                },
+                OperationStatus.Processing).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Compare-and-set status transition: heals a skipped intermediate transition (for example when the
+    /// Queued write failed) but never clobbers a terminal state another writer recorded.
+    /// </summary>
+    private async Task TryTransitionAsync(
+        string jobId,
+        string operationName,
+        TemporalCorrectiveJobProgress progress,
+        OperationStatus expectedStatus)
+    {
+        if (_progressStore is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var result = await _progressStore
+                .TrySetProgressAsync(jobId, progress, expectedStatus, ProgressTtl, CancellationToken.None)
+                .ConfigureAwait(false);
+
+            if (result.Outcome == ProgressCompareAndSetOutcome.StatusMismatch &&
+                result.CurrentProgress is { Status: OperationStatus.Queued or OperationStatus.Processing } observed)
+            {
+                result = await _progressStore
+                    .TrySetProgressAsync(jobId, progress, observed.Status, ProgressTtl, CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+
+            if (result.Outcome != ProgressCompareAndSetOutcome.Updated)
+            {
+                LogCorrectiveJobStatusConflict(jobId, operationName, progress.Status, expectedStatus, result.Outcome);
+            }
+        }
+        catch (Exception ex)
+        {
+            LogCorrectiveJobProgressWriteFailed(jobId, operationName, ex);
+        }
     }
 
     [LoggerMessage(12130, LogLevel.Information, "Temporal corrective job {JobId} ({Operation}) started for {ServiceId}/{LayerId}")]
@@ -69,4 +195,13 @@ public sealed partial class InProcessTemporalCorrectiveJobSink : ITemporalCorrec
 
     [LoggerMessage(12132, LogLevel.Error, "Temporal corrective job {JobId} ({Operation}) failed")]
     private partial void LogCorrectiveJobFailed(string jobId, string operation, Exception exception);
+
+    [LoggerMessage(12133, LogLevel.Warning, "Temporal corrective job {JobId} ({Operation}) was interrupted by host shutdown before completing")]
+    private partial void LogCorrectiveJobInterrupted(string jobId, string operation);
+
+    [LoggerMessage(12134, LogLevel.Warning, "Temporal corrective job {JobId} ({Operation}) status transition to {TargetStatus} rejected (expected {ExpectedStatus}, outcome {Outcome}); keeping the recorded state")]
+    private partial void LogCorrectiveJobStatusConflict(string jobId, string operation, OperationStatus targetStatus, OperationStatus expectedStatus, ProgressCompareAndSetOutcome outcome);
+
+    [LoggerMessage(12135, LogLevel.Warning, "Temporal corrective job {JobId} ({Operation}) progress write failed; job status may be stale")]
+    private partial void LogCorrectiveJobProgressWriteFailed(string jobId, string operation, Exception exception);
 }

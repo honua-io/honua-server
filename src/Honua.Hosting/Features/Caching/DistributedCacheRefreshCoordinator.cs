@@ -40,6 +40,10 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
     private readonly ConcurrentDictionary<string, byte> _localPendingKeys = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, long> _retryAfterUtcTicks = new(StringComparer.Ordinal);
 
+    // Tracks fire-and-forget Redis tasks (NotifyDistributedInvalidation) so they can be
+    // drained before shutdown to avoid losing in-flight invalidations on a clean stop.
+    private readonly ConcurrentQueue<Task> _pendingFireAndForgetTasks = new();
+
     private readonly CacheOptions _options;
     private readonly IPerformanceMonitor _performanceMonitor;
     private readonly ILogger<DistributedCacheRefreshCoordinator> _logger;
@@ -159,6 +163,17 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
     }
 
     /// <inheritdoc />
+    public async ValueTask<bool> WasInvalidatedAsync(string key, CancellationToken cancellationToken = default)
+    {
+        if (IsDistributed)
+        {
+            return await WasDistributedInvalidatedAsync(key, cancellationToken).ConfigureAwait(false);
+        }
+
+        return _localPendingKeys.TryGetValue(key, out byte val) && val == 1;
+    }
+
+    /// <inheritdoc />
     public bool TryClaimWriteBack(string key)
     {
         if (IsDistributed)
@@ -169,6 +184,17 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
         {
             return _localPendingKeys.TryUpdate(key, 2, 0);
         }
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<bool> TryClaimWriteBackAsync(string key, CancellationToken cancellationToken = default)
+    {
+        if (IsDistributed)
+        {
+            return await TryClaimDistributedWriteBackAsync(key, cancellationToken).ConfigureAwait(false);
+        }
+
+        return _localPendingKeys.TryUpdate(key, 2, 0);
     }
 
     /// <inheritdoc />
@@ -199,14 +225,14 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
         // refresh that may have published its retry backoff concurrently.
         if (IsWithinRetryBackoff(key, DateTimeOffset.UtcNow.UtcTicks))
         {
-            ReleaseRefreshClaim(key);
+            EnqueueAndTrackFireAndForget(ReleaseRefreshClaimAsync(key).AsTask());
             return false;
         }
 
         // Try to write to channel; with DropWrite, this returns false when the channel is full
         if (!_channel.Writer.TryWrite(new CacheRefreshItem(key, refreshCallback)))
         {
-            ReleaseRefreshClaim(key);
+            EnqueueAndTrackFireAndForget(ReleaseRefreshClaimAsync(key).AsTask());
             return false;
         }
 
@@ -252,6 +278,48 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
         }
     }
 
+    /// <inheritdoc />
+    public override async Task StopAsync(CancellationToken cancellationToken)
+    {
+        // Drain any pending fire-and-forget Redis invalidation tasks so a clean shutdown
+        // does not silently lose invalidations that are still in-flight.
+        await DrainPendingFireAndForgetTasksAsync(cancellationToken).ConfigureAwait(false);
+        await base.StopAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task DrainPendingFireAndForgetTasksAsync(CancellationToken cancellationToken)
+    {
+        // Collect all currently queued tasks into a local list; new tasks enqueued
+        // after this point are best-effort only (shutdown is already in progress).
+        var tasks = new List<Task>();
+        while (_pendingFireAndForgetTasks.TryDequeue(out var task))
+        {
+            tasks.Add(task);
+        }
+
+        if (tasks.Count == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            // Wait for all in-flight Redis operations to complete (or the shutdown
+            // deadline to be reached). Each task observes its own exception via
+            // ObserveRedisTaskAsync, so WhenAll here never faults.
+            await Task.WhenAll(tasks).WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Shutdown deadline exceeded — some invalidations may not have reached Redis.
+            Log.ShutdownDrainCancelled(_logger, tasks.Count);
+        }
+        catch
+        {
+            // Unexpected aggregate exception — swallow to avoid masking other shutdown errors.
+        }
+    }
+
     private async Task ProcessRefreshAsync(CacheRefreshItem item, SemaphoreSlim semaphore, CancellationToken stoppingToken)
     {
         try
@@ -267,8 +335,9 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
             await item.RefreshCallback(timeoutCts.Token).ConfigureAwait(false);
 
             // Distinguish real refreshes from callbacks that returned early because
-            // the key was invalidated while the refresh was in-flight.
-            if (WasInvalidated(item.Key))
+            // the key was invalidated while the refresh was in-flight.  Use the async
+            // variant to avoid blocking the thread-pool on a Redis round-trip.
+            if (await WasInvalidatedAsync(item.Key, stoppingToken).ConfigureAwait(false))
             {
                 Interlocked.Increment(ref _skippedCount);
                 _performanceMonitor.RecordCacheMetrics(MetricsCacheType, "refresh_skipped");
@@ -302,7 +371,10 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
         }
         finally
         {
-            ReleaseRefreshClaim(item.Key);
+            // Await the claim release so the lock is cleared before the semaphore
+            // slot is freed (avoids a race where the next refresh for the same key
+            // steals the slot while the Redis DEL is still in-flight).
+            await ReleaseRefreshClaimAsync(item.Key).ConfigureAwait(false);
 
             try
             {
@@ -423,6 +495,119 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
         }
     }
 
+    private async ValueTask<bool> WasDistributedInvalidatedAsync(string key, CancellationToken cancellationToken)
+    {
+        if (_redisDb == null || !ShouldUseRedis())
+        {
+            return _localPendingKeys.TryGetValue(key, out byte val) && val == 1;
+        }
+
+        try
+        {
+            var invalidatedKey = RedisKeyPrefix + "invalidated:" + key;
+            return await _redisDb.KeyExistsAsync(invalidatedKey).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Log.RedisOperationFailed(_logger, "WasInvalidatedAsync", key, ex);
+            MarkRedisFailure();
+            return _localPendingKeys.TryGetValue(key, out byte val) && val == 1;
+        }
+    }
+
+    private async ValueTask<bool> TryClaimDistributedWriteBackAsync(string key, CancellationToken cancellationToken)
+    {
+        if (_redisDb == null || !ShouldUseRedis())
+        {
+            return _localPendingKeys.TryUpdate(key, 2, 0);
+        }
+
+        try
+        {
+            var pendingKey = RedisKeyPrefix + "pending:" + key;
+            var invalidatedKey = RedisKeyPrefix + "invalidated:" + key;
+
+            // Try to claim write-back atomically via a single Lua script that both checks
+            // invalidation and updates the pending key, avoiding the KeyExistsAsync +
+            // ScriptEvaluateAsync two-step that had a TOCTOU window between the two calls.
+            var script = @"
+                local pendingKey = KEYS[1]
+                local invalidatedKey = KEYS[2]
+                local instanceId = ARGV[1]
+                local claimedValue = ARGV[2]
+
+                -- Check if invalidated
+                if redis.call('EXISTS', invalidatedKey) == 1 then
+                    return 0
+                end
+
+                -- Check if we own the pending lock
+                local current = redis.call('GET', pendingKey)
+                if current == instanceId then
+                    redis.call('SET', pendingKey, claimedValue, 'EX', 300)
+                    return 1
+                end
+
+                return 0
+            ";
+
+            var result = (int)await _redisDb.ScriptEvaluateAsync(script,
+                new RedisKey[] { pendingKey, invalidatedKey },
+                new RedisValue[] { _instanceId, _instanceId + ":claimed" })
+                .ConfigureAwait(false);
+
+            if (result == 1)
+            {
+                _localPendingKeys.TryUpdate(key, 2, 0);
+                return true;
+            }
+
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Log.RedisOperationFailed(_logger, "TryClaimWriteBackAsync", key, ex);
+            MarkRedisFailure();
+            return _localPendingKeys.TryUpdate(key, 2, 0);
+        }
+    }
+
+    /// <summary>
+    /// Wraps a fire-and-forget Redis task so exceptions are logged rather than unobserved,
+    /// and the resulting <see cref="Task"/> always completes successfully (never faults or
+    /// cancels) so <see cref="DrainPendingFireAndForgetTasksAsync"/> can safely <c>WhenAll</c>
+    /// it without masking the drain cancellation path.
+    /// </summary>
+    private async Task ObserveRedisTaskAsync(Task redisTask, string operation, string key)
+    {
+        try
+        {
+            await redisTask.ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Log.RedisOperationFailed(_logger, operation, key, ex);
+        }
+    }
+
+    /// <summary>
+    /// Adds a fire-and-forget task to the pending queue so <see cref="StopAsync"/> can
+    /// drain it before the process exits, and prunes already-completed tasks to bound
+    /// the queue size under sustained invalidation load.
+    /// </summary>
+    private void EnqueueAndTrackFireAndForget(Task task)
+    {
+        _pendingFireAndForgetTasks.Enqueue(task);
+
+        // Prune completed tasks so the queue does not grow unboundedly under sustained
+        // invalidation load.  Only dequeue from the front while the head is done; stop
+        // as soon as we hit a still-running task to preserve ordering for the drain.
+        while (_pendingFireAndForgetTasks.TryPeek(out var head) && head.IsCompleted)
+        {
+            _pendingFireAndForgetTasks.TryDequeue(out _);
+        }
+    }
+
     private void NotifyDistributedInvalidation(string key)
     {
         if (_redisDb == null || !ShouldUseRedis())
@@ -449,15 +634,11 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
 
             // Fire-and-forget: the invalidation script is best-effort on the
             // calling (mutation request) thread. ScriptEvaluateAsync avoids
-            // blocking a thread-pool thread on the Redis round-trip; unobserved
-            // faults are swallowed deliberately because the local state is already
-            // updated and the coordinator will retry on the next refresh cycle.
-            _ = _redisDb.ScriptEvaluateAsync(script, new RedisKey[] { invalidatedKey, pendingKey })
-                .ContinueWith(
-                    t => Log.RedisOperationFailed(_logger, "NotifyInvalidation", key, t.Exception!.InnerException ?? t.Exception),
-                    System.Threading.CancellationToken.None,
-                    TaskContinuationOptions.OnlyOnFaulted,
-                    TaskScheduler.Default);
+            // blocking a thread-pool thread on the Redis round-trip. The task is
+            // tracked in _pendingFireAndForgetTasks so StopAsync can drain it on
+            // clean shutdown, ensuring in-flight invalidations are not lost.
+            var invalidationTask = ObserveRedisTaskAsync(_redisDb.ScriptEvaluateAsync(script, new RedisKey[] { invalidatedKey, pendingKey }), "NotifyInvalidation", key);
+            EnqueueAndTrackFireAndForget(invalidationTask);
 
             // Also handle local state
             NotifyLocalInvalidation(key);
@@ -481,19 +662,18 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
         _localPendingKeys.TryUpdate(key, 1, 2);
     }
 
-    private void ReleaseRefreshClaim(string key)
+    private ValueTask ReleaseRefreshClaimAsync(string key)
     {
         if (IsDistributed)
         {
-            ReleaseDistributedClaim(key);
+            return ReleaseDistributedClaimAsync(key);
         }
-        else
-        {
-            _localPendingKeys.TryRemove(key, out _);
-        }
+
+        _localPendingKeys.TryRemove(key, out _);
+        return ValueTask.CompletedTask;
     }
 
-    private void ReleaseDistributedClaim(string key)
+    private async ValueTask ReleaseDistributedClaimAsync(string key)
     {
         if (_redisDb == null || !ShouldUseRedis())
         {
@@ -528,17 +708,10 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
                 return 'OK'
             ";
 
-            // Release is a best-effort cleanup step; fire the async variant and let
-            // the lock TTL (RedisLockExpiry) self-expire if the call fails.  Sync
-            // ScriptEvaluate would block a thread-pool thread for the Redis round-trip.
-            _ = _redisDb.ScriptEvaluateAsync(script,
+            await _redisDb.ScriptEvaluateAsync(script,
                     new RedisKey[] { pendingKey, invalidatedKey },
                     new RedisValue[] { _instanceId })
-                .ContinueWith(
-                    t => Log.RedisOperationFailed(_logger, "ReleaseClaim", key, t.Exception!.InnerException ?? t.Exception),
-                    System.Threading.CancellationToken.None,
-                    TaskContinuationOptions.OnlyOnFaulted,
-                    TaskScheduler.Default);
+                .ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -672,5 +845,8 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
 
         [LoggerMessage(1113, LogLevel.Warning, "Failed to process invalidation message {Message}")]
         public static partial void InvalidationProcessingFailed(ILogger logger, RedisValue message, Exception exception);
+
+        [LoggerMessage(1114, LogLevel.Warning, "Shutdown drain cancelled with {PendingCount} in-flight Redis invalidation task(s) still pending; some invalidations may not have reached Redis")]
+        public static partial void ShutdownDrainCancelled(ILogger logger, int pendingCount);
     }
 }

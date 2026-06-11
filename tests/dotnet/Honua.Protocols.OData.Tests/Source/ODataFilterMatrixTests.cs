@@ -160,8 +160,9 @@ public sealed class ODataFilterMatrixTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var features = await ParseFeaturesAsync(response);
-        // Null state values are excluded from "ne" comparisons.
-        features.Should().HaveCount(9); // 15 - 5 California cities - 1 null state
+        // OData v4.01 'ne' is two-valued: null is "not equal to any value but itself",
+        // so the null-state feature (Virtual City) MUST be included, unlike SQL '<>' 3VL.
+        features.Should().HaveCount(10); // 15 - 5 California cities (null state included)
         foreach (var feature in features)
         {
             var attrs = ParseAttributes(feature);

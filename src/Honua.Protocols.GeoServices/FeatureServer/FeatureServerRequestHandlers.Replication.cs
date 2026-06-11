@@ -930,7 +930,22 @@ internal static partial class FeatureServerEndpoints
             LastSyncGeneration = currentGen,
             UploadBaseGeneration = didUpload ? currentGen : replica.UploadBaseGeneration
         };
-        await replicaStore.SetAsync(updated, cancellationToken: cancellationToken);
+
+        // Compare-and-set against the cursors read at the top of the handler: a concurrent
+        // synchronizeReplica of the same replica (retrying mobile clients) that committed first
+        // wins, and this request is rejected instead of regressing the winner's cursor — which
+        // would make the replica re-download its own uploaded edits or skip server changes.
+        var syncStateUpdated = await replicaStore.TrySetSyncStateAsync(
+            updated,
+            replica.LastSyncGeneration,
+            replica.UploadBaseGeneration,
+            cancellationToken: cancellationToken);
+        if (!syncStateUpdated)
+        {
+            return StandardErrorHelpers.CreateConflict(
+                context,
+                $"Replica '{replicaId}' was synchronized by a concurrent request. Re-run extractChanges and retry the synchronization from the new server generation.");
+        }
 
         var response = new SynchronizeReplicaResponse
         {

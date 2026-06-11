@@ -65,6 +65,35 @@ public sealed class PostgresChangeTrackerTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.ExtractChanges)]
+    public async Task GetChangesSince_ObjectIdFilter_RestrictsFeedSqlSide()
+    {
+        var tracker = _fixture.GetService<IChangeTracker>();
+
+        // An id that can never match yields an empty feed (and exercises the SQL-side binding).
+        var nonMatching = await tracker.GetChangesSinceAsync(0, [0], new HashSet<long> { long.MaxValue });
+        nonMatching.Should().BeEmpty();
+
+        // An empty id set short-circuits to an empty feed.
+        var emptyFilter = await tracker.GetChangesSinceAsync(0, [0], new HashSet<long>());
+        emptyFilter.Should().BeEmpty();
+
+        // A null filter matches the unfiltered overload; when changes exist, filtering to one of
+        // their ids returns exactly that feature's collapsed changes.
+        var unfiltered = await tracker.GetChangesSinceAsync(0, [0], objectIds: null);
+        var baseline = await tracker.GetChangesSinceAsync(0, [0]);
+        unfiltered.Should().BeEquivalentTo(baseline);
+
+        if (unfiltered.Count > 0)
+        {
+            var targetId = unfiltered[0].ObjectId;
+            var filtered = await tracker.GetChangesSinceAsync(0, [0], new HashSet<long> { targetId });
+            filtered.Should().NotBeEmpty();
+            filtered.Should().OnlyContain(change => change.ObjectId == targetId);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ExtractChanges)]
     public async Task ChangeCollapsing_OperationValues_AreValidEnumMembers()
     {
         var tracker = _fixture.GetService<IChangeTracker>();

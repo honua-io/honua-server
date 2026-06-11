@@ -20,6 +20,8 @@ internal static class ControlPlaneTelemetry
         public const string WorkflowReconcile = "honua.controlplane.workflow.reconcile";
         public const string BackendStart = "honua.controlplane.backend.start";
         public const string BackendObserve = "honua.controlplane.backend.observe";
+        /// <summary>Activity name for the backend-promote step that shifts traffic to 100% on the canary/new target.</summary>
+        public const string BackendPromote = "honua.controlplane.backend.promote";
         public const string BackendRollback = "honua.controlplane.backend.rollback";
         public const string ExecutionStart = "honua.controlplane.execution.start";
         public const string ExecutionObserve = "honua.controlplane.execution.observe";

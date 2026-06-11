@@ -499,6 +499,23 @@ internal sealed class PostgresFormPackageStore : IFormPackageStore
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<bool> DeleteSubmissionAsync(
+        Guid submissionId,
+        CancellationToken cancellationToken = default)
+    {
+        var sql = $"""
+            DELETE FROM {_submissionsTable}
+            WHERE submission_id = @submission_id
+            """;
+
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("submission_id", NpgsqlDbType.Uuid, submissionId);
+
+        var affected = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        return affected > 0;
+    }
+
     public async Task RecordAttachmentOutcomeAsync(
         Guid submissionId,
         FormSubmissionAttachmentDescriptor descriptor,

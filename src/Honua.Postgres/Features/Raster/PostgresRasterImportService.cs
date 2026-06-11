@@ -604,7 +604,7 @@ internal sealed class PostgresRasterImportService : IRasterImportService
         {
             // Reuse the shared CRS detection service which handles AUTHORITY tags,
             // well-known names (e.g. ArcGIS GCS_WGS_1984), and WKT fallback.
-            srid = await _crsDetectionService.DetectFromPrjAsync(request.PrjFileContent).ConfigureAwait(false);
+            srid = await _crsDetectionService.DetectFromPrjAsync(request.PrjFileContent, cancellationToken).ConfigureAwait(false);
             if (srid == null)
             {
                 warnings.Add("Could not resolve SRID from .prj file content. Set 'srid' explicitly.");

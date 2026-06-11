@@ -45,7 +45,7 @@ Legend:
 | --- | --- | --- |
 | `$filter` | Partial | Supported on Layers/Features collections and count endpoints. Function/operator coverage is limited to the implemented OData subset. |
 | `$select` | Implemented | Field selection for Layers and Features; `*` returns all fields. |
-| `$orderby` | Partial | Simple field names with optional `asc`/`desc`; no expressions or functions. |
+| `$orderby` | Partial | Simple field names with optional `asc`/`desc`; no expressions or functions. Null values sort before non-null values ascending and after them descending per OData v4.01 §11.2.6.2. |
 | `$top` / `$skip` | Implemented | Validated and normalized by server limits. |
 | `$skiptoken` | Implemented | Opaque cursor-based pagination using Base64Url-encoded tokens with query fingerprinting; mutually exclusive with `$skip`. Legacy integer tokens are supported for backward compatibility. |
 | `$count` | Implemented | `@odata.count` in payload; `/.../$count` endpoints return text. |
@@ -61,7 +61,7 @@ Legend:
 | Category | Supported operators | Notes |
 | --- | --- | --- |
 | Logical | `and`, `or`, `not` | |
-| Comparison | `eq`, `ne`, `gt`, `ge`, `lt`, `le` | |
+| Comparison | `eq`, `ne`, `gt`, `ge`, `lt`, `le` | OData two-valued null semantics: `ne` matches rows where the operand is null, and null is only equal to itself. |
 | Arithmetic | `add`, `sub`, `mul`, `div`, `mod` | |
 | Null comparisons | `eq null`, `ne null` | Other null comparisons are rejected. |
 
@@ -72,7 +72,7 @@ Legend:
 | String | `contains`, `startswith`, `endswith`, `substring`, `tolower`, `toupper`, `length`, `trim`, `indexof`, `replace`, `concat` | |
 | Numeric | `round`, `floor`, `ceiling`, `abs` | |
 | Date/time | `now`, `year`, `month`, `day`, `hour`, `minute`, `second` | |
-| Spatial | `geo.distance`, `geo.intersects` | Requires `geography`/`geometry` WKT literals. |
+| Spatial | `geo.distance`, `geo.intersects`, `geo.length` | Requires `geography`/`geometry` WKT literals. `geo.distance` and `geo.length` return geodesic meters; `geo.intersects` evaluates geodesically on geographic layers (planar fallback for literals a geography type cannot represent, e.g. whole-world envelopes). |
 
 ## Typed literal support
 
@@ -88,7 +88,7 @@ Legend:
 | --- | --- | --- |
 | Operators | `has`, `in`, `any`, `all` | Not recognized by the filter parser. |
 | Type functions | `cast`, `isof` | Not recognized by the filter parser. |
-| Spatial functions | `geo.length` and other `geo.*` functions not listed above | Only `geo.distance` and `geo.intersects` are implemented. |
+| Spatial functions | `geo.*` functions not listed above | Only `geo.distance`, `geo.intersects` and `geo.length` are implemented. |
 | Any other functions | Any function not listed in the supported list | Unsupported functions return 400. |
 
 ## $filter examples

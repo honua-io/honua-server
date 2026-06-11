@@ -229,6 +229,40 @@ internal sealed partial class ODataBatchHandler
         return (true, null);
     }
 
+    /// <summary>
+    /// Registers a transactional optimistic-concurrency precondition for a change-set
+    /// update/delete when the sub-request carried an If-Match header. The canonical
+    /// state token is computed from the same read snapshot
+    /// <see cref="ValidatePreconditionsAsync"/> validated the ETag against, and the
+    /// feature writer re-validates it inside the deferred ApplyEditsAsync transaction.
+    /// Sub-requests without If-Match keep last-write-wins semantics.
+    /// </summary>
+    private static void RegisterPrecondition(
+        Dictionary<int, List<FeatureEditPrecondition>> preconditionsByLayer,
+        int layerId,
+        long objectId,
+        Dictionary<string, string>? headers,
+        Feature existing)
+    {
+        var ifMatch = GetHeaderValue(headers, "If-Match");
+        if (string.IsNullOrWhiteSpace(ifMatch))
+        {
+            return;
+        }
+
+        if (!preconditionsByLayer.TryGetValue(layerId, out var list))
+        {
+            list = new List<FeatureEditPrecondition>();
+            preconditionsByLayer[layerId] = list;
+        }
+
+        list.Add(new FeatureEditPrecondition
+        {
+            ObjectId = objectId,
+            ExpectedStateToken = FeatureStateToken.Compute(existing)
+        });
+    }
+
     private static string? GetHeaderValue(Dictionary<string, string>? headers, string name)
     {
         if (headers == null)

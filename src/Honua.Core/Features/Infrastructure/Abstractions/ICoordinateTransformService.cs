@@ -113,4 +113,58 @@ public interface ICoordinateTransformService
         DatumTransformationSelection? selection,
         CancellationToken cancellationToken = default)
         => TransformPointAsync(x, y, fromSrid, toSrid, cancellationToken);
+
+    /// <summary>
+    /// Transforms a batch of points from one SRID to another, writing the transformed
+    /// coordinates back into <paramref name="xs"/> and <paramref name="ys"/> in place.
+    /// </summary>
+    /// <param name="xs">X coordinates (longitudes or eastings); updated in place on success.</param>
+    /// <param name="ys">Y coordinates (latitudes or northings); updated in place on success.
+    /// Must have the same length as <paramref name="xs"/>.</param>
+    /// <param name="fromSrid">Source EPSG SRID.</param>
+    /// <param name="toSrid">Target EPSG SRID.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>
+    /// <see langword="true"/> when every point was transformed and written back;
+    /// <see langword="false"/> when the transform cannot be performed (unknown SRID,
+    /// PostGIS error). On failure the array contents are unspecified.
+    /// </returns>
+    /// <remarks>
+    /// Provided as a default interface method so existing implementations remain
+    /// source-compatible; the default delegates to
+    /// <see cref="TransformPointAsync(double, double, int, int, CancellationToken)"/> per
+    /// point. Database-backed implementations override this to transform the whole batch
+    /// in a single round trip (the PostGIS implementation issues one <c>ST_Transform</c>
+    /// query over the unnested coordinate arrays), which is the intended fast path for
+    /// geometry write-path coordinate sequences.
+    /// </remarks>
+    async ValueTask<bool> TransformPointsAsync(
+        double[] xs,
+        double[] ys,
+        int fromSrid,
+        int toSrid,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(xs);
+        ArgumentNullException.ThrowIfNull(ys);
+        if (xs.Length != ys.Length)
+        {
+            throw new ArgumentException("Coordinate arrays must have the same length.", nameof(ys));
+        }
+
+        for (var index = 0; index < xs.Length; index++)
+        {
+            var transformed = await TransformPointAsync(xs[index], ys[index], fromSrid, toSrid, cancellationToken)
+                .ConfigureAwait(false);
+            if (!transformed.HasValue)
+            {
+                return false;
+            }
+
+            xs[index] = transformed.Value.X;
+            ys[index] = transformed.Value.Y;
+        }
+
+        return true;
+    }
 }

@@ -286,6 +286,14 @@ internal sealed partial class ODataCrudService
                     "Resource has not changed.");
             }
 
+            // The If-Match pre-check above ran against a read snapshot; carry the
+            // snapshot's canonical state token to the writer so the precondition is
+            // re-validated inside the write transaction (closes the read-merge-write
+            // lost-update window).
+            var expectedStateToken = string.IsNullOrWhiteSpace(ifMatch)
+                ? null
+                : FeatureStateToken.Compute(existingFeatureValue);
+
             // PATCH preserves omitted geometry; PUT replaces it with null unless supplied.
             byte[]? geometryBytes = replace ? null : existingFeatureValue.Geometry;
             if (payload.GeometrySpecified && payload.Geometry != null)
@@ -334,6 +342,7 @@ internal sealed partial class ODataCrudService
                     ObjectId = objectId,
                     IfMatch = ifMatch,
                     IfNoneMatch = ifNoneMatch,
+                    ExpectedStateToken = expectedStateToken,
                     GeometryWkb = geometryBytes,
                     Payload = new ParsedFeaturePayload
                     {
@@ -345,6 +354,13 @@ internal sealed partial class ODataCrudService
             if (!editResult.IsSuccess)
             {
                 return ODataCrudResult<Dictionary<string, object?>>.BadRequest(editResult.ErrorMessage ?? "Invalid request data.");
+            }
+
+            if (editResult.Result is { } updateEditResult &&
+                updateEditResult.UpdateResults.Any(static result => result.IsPreconditionFailure))
+            {
+                return ODataCrudResult<Dictionary<string, object?>>.PreconditionFailed(
+                    "ETag does not match the current resource.");
             }
 
             var result = await _featureReader.GetAsync(layerId, objectId, cancellationToken);
@@ -438,6 +454,12 @@ internal sealed partial class ODataCrudService
                 return ODataCrudResult<object>.PreconditionFailed("Resource has not changed.");
             }
 
+            // Re-validate the If-Match snapshot atomically inside the writer's
+            // transaction (closes the check-then-delete TOCTOU window).
+            var expectedStateToken = string.IsNullOrWhiteSpace(ifMatch)
+                ? null
+                : FeatureStateToken.Compute(existingFeature.Value);
+
             var editResult = await ExecuteEditAsync(
                 layerId,
                 resource,
@@ -447,12 +469,18 @@ internal sealed partial class ODataCrudService
                     ObjectId = objectId,
                     IfMatch = ifMatch,
                     IfNoneMatch = ifNoneMatch,
+                    ExpectedStateToken = expectedStateToken,
                     Payload = new ParsedFeaturePayload()
                 },
                 cancellationToken);
             if (!editResult.IsSuccess)
             {
                 return ODataCrudResult<object>.BadRequest(editResult.ErrorMessage ?? "Invalid request data.");
+            }
+
+            if (editResult.Result?.DeleteResults.Any(static result => result.IsPreconditionFailure) == true)
+            {
+                return ODataCrudResult<object>.PreconditionFailed("ETag does not match the current resource.");
             }
 
             var deleted = editResult.Result?.DeleteResults.Any(result => result.IsSuccess) == true;
