@@ -23,7 +23,7 @@ namespace Honua.MySql.Tests;
 /// <c>HONUA_TEST_MYSQL=1 dotnet test --filter Category=MySql</c>.
 /// </summary>
 [Trait("Category", "MySql")]
-public class MySqlFeatureStoreIntegrationTests : IAsyncLifetime
+public sealed class MySqlFeatureStoreIntegrationTests : IAsyncLifetime
 {
     private const int LayerId = 1;
     private MySqlContainer _container = null!;

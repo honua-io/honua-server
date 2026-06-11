@@ -30,7 +30,7 @@ namespace Honua.SqlServer.Tests;
 /// </code>
 /// </remarks>
 [Trait("Category", "SqlServerIntegration")]
-public class SqlServerFeatureStoreIntegrationTests : IAsyncLifetime
+public sealed class SqlServerFeatureStoreIntegrationTests : IAsyncLifetime
 {
     internal const string ConnectionEnvVar = "HONUA_SQLSERVER_TEST_CONNECTION";
     private const int LayerId = 1;

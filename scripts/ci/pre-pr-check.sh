@@ -193,6 +193,8 @@ elif [[ "${AFFECTED}" == "ALL" ]] || affected_contains "Honua.Server.csproj"; th
             --self-contained \
             -p:PublishAot=true \
             -p:HonuaSkipAdminClientForAotVerification=true \
+            -p:HonuaSkipOracleForAotVerification=true \
+            -p:HonuaIncludeStacOpsDemo=false \
             -p:StripSymbols=true \
             -o ./publish
     )

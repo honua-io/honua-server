@@ -8,7 +8,7 @@ namespace Honua.Architecture.Tests;
 
 /// <summary>
 /// Enforces the canonical Module Dependency Policy
-/// (<c>docs/contributor/adr/0047-module-dependency-policy.md</c>): every
+/// (<c>docs/internal/contributor/adr/0047-module-dependency-policy.md</c>): every
 /// <c>&lt;ProjectReference&gt;</c> declared by a runtime csproj must point at a
 /// provider that the consumer's matrix row permits.
 /// </summary>
@@ -408,7 +408,7 @@ public sealed class ModuleDependencyPolicyTests
                     $"({Path.GetFileNameWithoutExtension(csprojPath)}, {relativePath}) " +
                     $"references '{providerRole}' ({providerName}), which is forbidden by " +
                     "the ADR-0047 dependency-direction matrix. See " +
-                    "docs/contributor/adr/0047-module-dependency-policy.md " +
+                    "docs/internal/contributor/adr/0047-module-dependency-policy.md " +
                     $"§ 'Dependency direction matrix' — the ({consumerRole}, {providerRole}) " +
                     "cell is empty. Either route the dependency through a permitted layer, " +
                     "or (only if intentional) update both the ADR matrix and the test's " +
@@ -421,7 +421,7 @@ public sealed class ModuleDependencyPolicyTests
             .Should()
             .BeEmpty(
                 "every runtime ProjectReference must match the ADR-0047 dependency-direction " +
-                "matrix. See docs/contributor/adr/0047-module-dependency-policy.md for the " +
+                "matrix. See docs/internal/contributor/adr/0047-module-dependency-policy.md for the " +
                 "policy and the decision tree.");
 
         // ----- Ratchet enforcement -----
@@ -471,6 +471,7 @@ public sealed class ModuleDependencyPolicyTests
         var adrPath = Path.Combine(
             repositoryRoot,
             "docs",
+            "internal",
             "contributor",
             "adr",
             "0047-module-dependency-policy.md");
