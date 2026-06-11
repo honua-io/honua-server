@@ -18,7 +18,7 @@ HONUA_API_KEY=your-admin-api-key
 curl -H "X-API-Key: $HONUA_API_KEY" "$HONUA_URL/api/v1/admin/import/formats"
 ```
 
-Returns the live extension list for your build (`.geojson`, `.json`, `.zip`, `.gpkg`, `.gpx`, `.kml`, `.kmz`, `.gml`, `.wkt`, `.csv`, `.twkb`, `.fgb`, `.gdb.zip`, `.parquet`, `.geoparquet`).
+Returns the live extension list for your build (`.geojson`, `.json`, `.zip`, `.gpkg`, `.gpx`, `.kml`, `.kmz`, `.wkt`, `.csv`, `.fgb`, `.gdb.zip`, `.parquet`, `.geoparquet`).
 
 ### 2. Preview before importing (optional)
 
@@ -82,10 +82,8 @@ A synchronous import returns the result inline; a completed background job retur
 | GeoPackage | `.gpkg` | CRS read from the GeoPackage metadata. |
 | GPX | `.gpx` | WGS 84 by definition. |
 | KML / KMZ | `.kml`, `.kmz` | WGS 84 by definition. |
-| GML | `.gml` | Provide `sourceSrid` when the document does not declare a CRS. |
 | WKT | `.wkt` | No embedded CRS; provide `sourceSrid` if not WGS 84. |
 | CSV | `.csv` | Needs lon/lat columns or a WKT geometry column. |
-| TinyWKB | `.twkb` | Compact binary; provide `sourceSrid` if not WGS 84. |
 | FlatGeobuf | `.fgb` | Upload directly, no archive. CRS read from the header; if absent, `sourceSrid` is required or the import is rejected. |
 | FileGDB | `.gdb.zip` | Zip exactly one `.gdb` directory with its internal files intact (do not flatten). SRID detected from geodatabase metadata when present. One target table per request — per-layer selection is not exposed. Domains, relationship classes, subtypes, topology rules, and network datasets are detected but not imported; they surface in `warnings`. |
 | GeoParquet | `.parquet`, `.geoparquet` | CRS read from the GeoParquet `geo` metadata. Requires WKB geometry encoding; nested columns are skipped with warnings; rows with null geometry are skipped and reported; row groups over 100,000 rows are rejected — re-export with smaller row groups. |
