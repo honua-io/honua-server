@@ -48,6 +48,107 @@ public sealed class MigrationRunAdminEndpointTests : IAsyncLifetime
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/migration/runs")]
+    public async Task RecordStarted_WithValidRequest_PersistsRunForListAndGet()
+    {
+        var response = await _client.PostAsJsonAsync(
+            "/api/v1/admin/migration/runs",
+            new
+            {
+                runId = "run-start-write",
+                sourceKind = "arcgis-geoservices-rest",
+                sourceUrl = "https://example.com/arcgis/rest/services/Parcels/FeatureServer",
+                sourceDisplayName = "Parcels"
+            });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using (var recordPayload = JsonDocument.Parse(await response.Content.ReadAsStringAsync()))
+        {
+            recordPayload.RootElement.GetProperty("runId").GetString().Should().Be("run-start-write");
+            recordPayload.RootElement.GetProperty("status").GetString().Should().Be("running");
+        }
+
+        var listResponse = await _client.GetAsync("/api/v1/admin/migration/runs?sourceKind=arcgis-geoservices-rest");
+        listResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using (var listPayload = JsonDocument.Parse(await listResponse.Content.ReadAsStringAsync()))
+        {
+            var item = listPayload.RootElement.GetProperty("items")[0];
+            item.GetProperty("runId").GetString().Should().Be("run-start-write");
+        }
+
+        var getResponse = await _client.GetAsync("/api/v1/admin/migration/runs/run-start-write");
+        getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/migration/runs/{runId}/complete")]
+    public async Task Complete_WithEvidencePack_PersistsTerminalStateAndEvidenceBody()
+    {
+        await _client.PostAsJsonAsync(
+            "/api/v1/admin/migration/runs",
+            new
+            {
+                runId = "run-complete-write",
+                sourceKind = "arcgis-geoservices-rest",
+                sourceUrl = "https://example.com/arcgis/rest/services/Roads/FeatureServer"
+            });
+
+        var response = await _client.PostAsJsonAsync(
+            "/api/v1/admin/migration/runs/run-complete-write/complete",
+            new
+            {
+                status = "succeeded",
+                evidencePackRef = "evidence/run-complete-write.json",
+                evidencePackFingerprint = "sha256:evidence-write",
+                evidencePackBody = "{\"artifactKind\":\"honua.migration.evidence-pack\"}",
+                statusNote = "completed by honua-migrate"
+            });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using (var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync()))
+        {
+            payload.RootElement.GetProperty("status").GetString().Should().Be("succeeded");
+            payload.RootElement.GetProperty("hasEvidencePack").GetBoolean().Should().BeTrue();
+            payload.RootElement.GetProperty("statusNote").GetString().Should().Be("completed by honua-migrate");
+        }
+
+        var evidenceResponse = await _client.GetAsync("/api/v1/admin/migration/runs/run-complete-write/evidence-pack");
+        evidenceResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await evidenceResponse.Content.ReadAsStringAsync()).Should().Contain("honua.migration.evidence-pack");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/migration/runs/{runId}/scorecard")]
+    public async Task RecordScorecard_WithSignedScorecard_PersistsFingerprintAndBody()
+    {
+        _catalog.Seed(new MigrationRunRecord
+        {
+            RunId = "run-scorecard-write",
+            SourceKind = "arcgis-geoservices-rest",
+            Status = MigrationRunStatus.Succeeded,
+            StartedAt = DateTimeOffset.UtcNow.AddMinutes(-2),
+            CompletedAt = DateTimeOffset.UtcNow.AddMinutes(-1)
+        });
+
+        var response = await _client.PostAsJsonAsync(
+            "/api/v1/admin/migration/runs/run-scorecard-write/scorecard",
+            BuildScorecard("run-scorecard-write"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using (var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync()))
+        {
+            payload.RootElement.GetProperty("reconciliationScorecardFingerprint").GetString().Should().Be("sha256:scorecard-write");
+            payload.RootElement.GetProperty("hasReconciliationScorecard").GetBoolean().Should().BeTrue();
+        }
+
+        var scorecardResponse = await _client.GetAsync("/api/v1/admin/migration/runs/run-scorecard-write/scorecard");
+        scorecardResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await scorecardResponse.Content.ReadAsStringAsync();
+        body.Should().Contain("honua.migration.reconciliation-scorecard");
+        body.Should().Contain("sha256:scorecard-write");
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/admin/migration/runs")]
     public async Task List_WhenCatalogIsEmpty_ReturnsZeroTotal()
     {
@@ -375,4 +476,35 @@ public sealed class MigrationRunAdminEndpointTests : IAsyncLifetime
             return Task.FromResult(_scorecards.TryGetValue(runId, out var body) ? body : null);
         }
     }
+
+    private static MigrationReconciliationScorecard BuildScorecard(string runId) => new()
+    {
+        RunId = runId,
+        SourceKind = "arcgis-geoservices-rest",
+        GeneratedAt = DateTimeOffset.UtcNow,
+        Verdict = "pass",
+        DataReconciliation = new MigrationScorecardDataReconciliation
+        {
+            Classification = "pass",
+            LayerCount = 1,
+            PassCount = 1,
+            Layers =
+            [
+                new MigrationScorecardLayer
+                {
+                    SourceLayerId = "0",
+                    SourceLayerName = "Parcels",
+                    TargetHonuaLayerId = 1,
+                    Classification = "pass"
+                }
+            ]
+        },
+        CapabilityParity = new MigrationScorecardCapabilityParity
+        {
+            ConstructCount = 1,
+            AutomatedCount = 1,
+            ParityRatio = 1
+        },
+        Fingerprint = "sha256:scorecard-write"
+    };
 }

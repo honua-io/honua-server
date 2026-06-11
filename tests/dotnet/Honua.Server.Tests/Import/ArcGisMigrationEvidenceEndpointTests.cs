@@ -47,6 +47,87 @@ public sealed class ArcGisMigrationEvidenceEndpointTests : IAsyncLifetime
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/arcgis/migrations/{runId}/manifest")]
+    public async Task RecordManifest_WithValidArtifact_PersistsListAndManifest()
+    {
+        var response = await _client.PostAsJsonAsync(
+            "/api/v1/admin/import/arcgis/migrations/run-write/manifest",
+            new
+            {
+                sourceUrl = "https://example.com/arcgis/rest/services/Write/FeatureServer",
+                sourceDisplayName = "Write Source",
+                sourceVersion = "11.2",
+                createdAt = DateTimeOffset.UtcNow.AddMinutes(-1),
+                actor = "honua-migrate",
+                manifest = BuildManifest(targetCount: 2)
+            });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using (var recordPayload = await response.Content.ReadFromJsonAsync<JsonDocument>())
+        {
+            recordPayload!.RootElement.GetProperty("runId").GetString().Should().Be("run-write");
+            recordPayload.RootElement.GetProperty("sourceDisplayName").GetString().Should().Be("Write Source");
+        }
+
+        var listResponse = await _client.GetAsync("/api/v1/admin/import/arcgis/migrations?sourceUrl=Write");
+        listResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using (var listPayload = await listResponse.Content.ReadFromJsonAsync<JsonDocument>())
+        {
+            var item = listPayload!.RootElement.GetProperty("items")[0];
+            item.GetProperty("runId").GetString().Should().Be("run-write");
+            item.GetProperty("targetResourceCount").GetInt32().Should().Be(2);
+        }
+
+        var manifestResponse = await _client.GetAsync("/api/v1/admin/import/arcgis/migrations/run-write/manifest");
+        manifestResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var manifestPayload = await manifestResponse.Content.ReadFromJsonAsync<JsonDocument>();
+        manifestPayload!.RootElement.GetProperty("targetResources").GetArrayLength().Should().Be(2);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/arcgis/migrations/{runId}/parity")]
+    public async Task RecordParity_WithoutManifest_ReturnsConflict()
+    {
+        var response = await _client.PostAsJsonAsync(
+            "/api/v1/admin/import/arcgis/migrations/missing-manifest/parity",
+            new { parity = BuildParity(ArcGisMigrationParityClassifications.Pass) });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("manifest");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/arcgis/migrations/{runId}/parity")]
+    public async Task RecordParity_AfterManifest_PersistsParityAndPromotesListStatus()
+    {
+        await SeedRun("run-parity-write", "https://example.com/arcgis/Parity");
+
+        var response = await _client.PostAsJsonAsync(
+            "/api/v1/admin/import/arcgis/migrations/run-parity-write/parity",
+            new { parity = BuildParity(ArcGisMigrationParityClassifications.Fail) });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using (var parityPayload = await response.Content.ReadFromJsonAsync<JsonDocument>())
+        {
+            parityPayload!.RootElement.GetProperty("classification").GetString().Should().Be("fail");
+        }
+
+        var listResponse = await _client.GetAsync("/api/v1/admin/import/arcgis/migrations?status=fail");
+        listResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using (var listPayload = await listResponse.Content.ReadFromJsonAsync<JsonDocument>())
+        {
+            var item = listPayload!.RootElement.GetProperty("items")[0];
+            item.GetProperty("runId").GetString().Should().Be("run-parity-write");
+            item.GetProperty("hasParity").GetBoolean().Should().BeTrue();
+        }
+
+        var parityResponse = await _client.GetAsync("/api/v1/admin/import/arcgis/migrations/run-parity-write/parity");
+        parityResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var fetchedParity = await parityResponse.Content.ReadFromJsonAsync<JsonDocument>();
+        fetchedParity!.RootElement.GetProperty("classification").GetString().Should().Be("fail");
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/admin/import/arcgis/migrations")]
     public async Task ListMigrations_EmptyStore_ReturnsEmptyPage()
     {

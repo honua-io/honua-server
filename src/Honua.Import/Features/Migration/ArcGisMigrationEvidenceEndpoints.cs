@@ -51,9 +51,17 @@ internal static class ArcGisMigrationEvidenceEndpoints
             .WithName("ListArcGisMigrationRuns")
             .WithSummary("List ArcGIS migration runs with persisted manifest and parity evidence.");
 
+        _ = group.MapPost("/migrations/{runId}/manifest", HandleSaveManifest)
+            .WithName("RecordArcGisMigrationManifest")
+            .WithSummary("Persist the manifest evidence artifact for an ArcGIS migration run.");
+
         _ = group.MapGet("/migrations/{runId}/manifest", HandleGetManifest)
             .WithName("GetArcGisMigrationManifest")
             .WithSummary("Get the persisted MigrationManifestArtifact for an ArcGIS migration run.");
+
+        _ = group.MapPost("/migrations/{runId}/parity", HandleSaveParity)
+            .WithName("RecordArcGisMigrationParity")
+            .WithSummary("Persist the parity evidence artifact for an ArcGIS migration run.");
 
         _ = group.MapGet("/migrations/{runId}/parity", HandleGetParity)
             .WithName("GetArcGisMigrationParity")
@@ -115,6 +123,69 @@ internal static class ArcGisMigrationEvidenceEndpoints
             .ExecuteAsync(context).ConfigureAwait(false);
     }
 
+    private static async Task HandleSaveManifest(HttpContext context)
+    {
+        var runId = context.GetRouteValue("runId")?.ToString();
+        if (string.IsNullOrWhiteSpace(runId))
+        {
+            await AdminResponseWriter.WriteErrorAsync(
+                context, "runId is required.", StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        ArcGisMigrationManifestIngestionRequest? request;
+        try
+        {
+            request = await context.Request.ReadFromJsonAsync(
+                ImportJsonContext.Default.ArcGisMigrationManifestIngestionRequest,
+                context.RequestAborted).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            await AdminResponseWriter.WriteErrorAsync(
+                context, "Invalid request body.", StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        if (request is null)
+        {
+            await AdminResponseWriter.WriteErrorAsync(
+                context, "Request body is required.", StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(request.SourceUrl))
+        {
+            await AdminResponseWriter.WriteErrorAsync(
+                context, "sourceUrl is required.", StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        if (request.Manifest is null)
+        {
+            await AdminResponseWriter.WriteErrorAsync(
+                context, "manifest is required.", StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        var record = new ArcGisMigrationRunRecord
+        {
+            RunId = runId,
+            SourceUrl = request.SourceUrl.Trim(),
+            SourceDisplayName = TrimToNull(request.SourceDisplayName),
+            SourceVersion = TrimToNull(request.SourceVersion),
+            CreatedAt = request.CreatedAt ?? DateTimeOffset.UtcNow,
+            Actor = TrimToNull(request.Actor)
+        };
+
+        var store = context.RequestServices.GetRequiredService<IArcGisMigrationEvidenceStore>();
+        await store.SaveManifestAsync(record, request.Manifest, context.RequestAborted)
+            .ConfigureAwait(false);
+
+        await Results.Json(record, ImportJsonContext.Default.ArcGisMigrationRunRecord)
+            .ExecuteAsync(context).ConfigureAwait(false);
+    }
+
     private static async Task HandleGetManifest(HttpContext context)
     {
         var runId = context.GetRouteValue("runId")?.ToString();
@@ -137,6 +208,82 @@ internal static class ArcGisMigrationEvidenceEndpoints
         }
 
         await Results.Json(manifest, ImportJsonContext.Default.MigrationManifestArtifact)
+            .ExecuteAsync(context).ConfigureAwait(false);
+    }
+
+    private static async Task HandleSaveParity(HttpContext context)
+    {
+        var runId = context.GetRouteValue("runId")?.ToString();
+        if (string.IsNullOrWhiteSpace(runId))
+        {
+            await AdminResponseWriter.WriteErrorAsync(
+                context, "runId is required.", StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        ArcGisMigrationParityIngestionRequest? request;
+        try
+        {
+            request = await context.Request.ReadFromJsonAsync(
+                ImportJsonContext.Default.ArcGisMigrationParityIngestionRequest,
+                context.RequestAborted).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            await AdminResponseWriter.WriteErrorAsync(
+                context, "Invalid request body.", StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        if (request is null)
+        {
+            await AdminResponseWriter.WriteErrorAsync(
+                context, "Request body is required.", StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        if (request.Parity is null)
+        {
+            await AdminResponseWriter.WriteErrorAsync(
+                context, "parity is required.", StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        if (!IsKnownParityClassification(request.Parity.Classification))
+        {
+            await AdminResponseWriter.WriteErrorAsync(
+                context,
+                "parity.classification must be one of: pass, warn, fail.",
+                StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        var store = context.RequestServices.GetRequiredService<IArcGisMigrationEvidenceStore>();
+        var manifest = await store.GetManifestAsync(runId, context.RequestAborted).ConfigureAwait(false);
+        if (manifest is null)
+        {
+            await AdminResponseWriter.WriteErrorAsync(
+                context,
+                "ArcGIS migration manifest must be recorded before parity.",
+                StatusCodes.Status409Conflict);
+            return;
+        }
+
+        try
+        {
+            await store.SaveParityAsync(runId, request.Parity, context.RequestAborted)
+                .ConfigureAwait(false);
+        }
+        catch (InvalidOperationException)
+        {
+            await AdminResponseWriter.WriteErrorAsync(
+                context,
+                "ArcGIS migration manifest must be recorded before parity.",
+                StatusCodes.Status409Conflict);
+            return;
+        }
+
+        await Results.Json(request.Parity, ImportJsonContext.Default.ArcGisMigrationParityArtifact)
             .ExecuteAsync(context).ConfigureAwait(false);
     }
 
@@ -199,6 +346,11 @@ internal static class ArcGisMigrationEvidenceEndpoints
         return false;
     }
 
+    private static bool IsKnownParityClassification(string classification)
+        => string.Equals(classification, ArcGisMigrationParityClassifications.Pass, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(classification, ArcGisMigrationParityClassifications.Warn, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(classification, ArcGisMigrationParityClassifications.Fail, StringComparison.OrdinalIgnoreCase);
+
     private static string? TrimToNull(Microsoft.Extensions.Primitives.StringValues values)
     {
         var first = values.ToString();
@@ -225,4 +377,48 @@ internal static class ArcGisMigrationEvidenceEndpoints
 
         return int.TryParse(first, NumberStyles.Integer, CultureInfo.InvariantCulture, out parsed);
     }
+
+    private static string? TrimToNull(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var trimmed = value.Trim();
+        return trimmed.Length == 0 ? null : trimmed;
+    }
+}
+
+/// <summary>
+/// Request body for recording an ArcGIS migration manifest artifact.
+/// </summary>
+public sealed record ArcGisMigrationManifestIngestionRequest
+{
+    /// <summary>Canonical source URL the manifest was generated from.</summary>
+    public string? SourceUrl { get; init; }
+
+    /// <summary>Optional operator-visible source display name.</summary>
+    public string? SourceDisplayName { get; init; }
+
+    /// <summary>Optional source system version.</summary>
+    public string? SourceVersion { get; init; }
+
+    /// <summary>UTC instant to store on the run record. Defaults to server receive time.</summary>
+    public DateTimeOffset? CreatedAt { get; init; }
+
+    /// <summary>Optional operator or service account identifier that produced the run.</summary>
+    public string? Actor { get; init; }
+
+    /// <summary>Manifest artifact emitted by the ArcGIS migration planning pipeline.</summary>
+    public MigrationManifestArtifact? Manifest { get; init; }
+}
+
+/// <summary>
+/// Request body for recording an ArcGIS migration parity artifact.
+/// </summary>
+public sealed record ArcGisMigrationParityIngestionRequest
+{
+    /// <summary>Parity artifact emitted after the manifest has been applied.</summary>
+    public ArcGisMigrationParityArtifact? Parity { get; init; }
 }
