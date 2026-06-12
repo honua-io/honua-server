@@ -208,10 +208,17 @@ public sealed class ModuleDependencyPolicyTests
         // Hosting + Jobs + ServiceDefaults) plus Geoprocessing: Grounding and
         // AnalysisContent orchestrate analysis jobs through
         // IGeoprocessingJobService, which lives in Honua.Geoprocessing.
+        // Ai also reaches the Geocoding / Routing satellites (#1597): the MCP
+        // geocode/route tools are thin adapters over the canonical
+        // IGeocodeCoordinatorService / IRoutingProvider pipelines - the same
+        // shape as the Protocols -> Routing edge the NAServer adapter uses.
+        // Neither satellite references Ai, so both edges are acyclic.
         // Crucially, Ai must NEVER reference Server — that one-way edge is
         // enforced by HonuaAiIsolationTests.
         (ModuleRole.Ai, ModuleRole.Abstractions),
         (ModuleRole.Ai, ModuleRole.Core),
+        (ModuleRole.Ai, ModuleRole.Geocoding),
+        (ModuleRole.Ai, ModuleRole.Routing),
         (ModuleRole.Ai, ModuleRole.Hosting),
         (ModuleRole.Ai, ModuleRole.Jobs),
         (ModuleRole.Ai, ModuleRole.Geoprocessing),

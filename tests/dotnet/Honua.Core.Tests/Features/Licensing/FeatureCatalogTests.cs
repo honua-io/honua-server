@@ -44,6 +44,7 @@ public sealed class FeatureCatalogTests
         categories.Should().Contain(FeatureCatalog.Categories.Alerts);
         categories.Should().Contain(FeatureCatalog.Categories.Channels);
         categories.Should().Contain(FeatureCatalog.Categories.Geocoding);
+        categories.Should().Contain(FeatureCatalog.Categories.Routing);
         categories.Should().Contain(FeatureCatalog.Categories.Identity);
         categories.Should().Contain(FeatureCatalog.Categories.Caching);
         categories.Should().Contain(FeatureCatalog.Categories.Import);
@@ -90,6 +91,16 @@ public sealed class FeatureCatalogTests
 
         feature.Should().NotBeNull("Redis L2 activation is gated by the Pro license entitlement for ticket #358");
         feature!.Category.Should().Be(FeatureCatalog.Categories.Caching);
+        feature.MinimumEdition.Should().Be(HonuaEdition.Pro);
+    }
+
+    [Fact]
+    public void All_RoutingSolveIsProTier()
+    {
+        var feature = FeatureCatalog.All.SingleOrDefault(f => f.Key == "routing.solve");
+
+        feature.Should().NotBeNull("MCP route solving is gated by the Pro license entitlement for ticket #1597");
+        feature!.Category.Should().Be(FeatureCatalog.Categories.Routing);
         feature.MinimumEdition.Should().Be(HonuaEdition.Pro);
     }
 

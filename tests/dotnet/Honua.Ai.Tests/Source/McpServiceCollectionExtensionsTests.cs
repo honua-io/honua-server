@@ -4,10 +4,13 @@
 using FluentAssertions;
 using Honua.Core.Features.Deployment.Abstractions;
 using Honua.Core.Features.Publishing.Abstractions;
+using Honua.Geocoding.Features.Geocoding.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Hosting;
+using Honua.Routing.Features.Routing.Abstractions;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.Protocols.Mcp.Resources;
+using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -55,6 +58,23 @@ public sealed class McpServiceCollectionExtensionsTests
             .Should().BeFalse("canonical deployment persistence is not yet registered by the default composition");
         services.Any(d => d.ServiceType == typeof(IPublishIntentStore))
             .Should().BeFalse("canonical publish-intent persistence is not yet registered by the default composition");
+    }
+
+    [UnitTest]
+    public void AddMcpOperatorSurface_WithLocationServicesRegistered_RegistersGeocodeAndRouteTools()
+    {
+        var services = BuildBaseServices();
+        services.AddScoped(_ => Substitute.For<IGeocodeCoordinatorService>());
+        services.AddScoped(_ => Substitute.For<IRoutingProvider>());
+
+        services.AddMcpOperatorSurface(new ConfigurationBuilder().Build());
+
+        RegisteredToolHandlers(services)
+            .Should().Contain(new[]
+            {
+                typeof(GeocodeTool),
+                typeof(RouteTool)
+            }, "the default server composition registers geocoding and routing before the MCP operator surface");
     }
 
     [UnitTest]
@@ -132,6 +152,11 @@ public sealed class McpServiceCollectionExtensionsTests
         services.Any(d => d.ServiceType == typeof(IDeploymentStore))
             .Should().BeFalse("no canonical IDeploymentStore persistence is wired into AddServerFeatures yet");
     }
+
+    private static IEnumerable<Type?> RegisteredToolHandlers(IServiceCollection services)
+        => services
+            .Where(d => d.ServiceType == typeof(IMcpTool))
+            .Select(d => d.ImplementationType);
 
     private static IEnumerable<Type?> RegisteredResourceHandlers(IServiceCollection services)
         => services

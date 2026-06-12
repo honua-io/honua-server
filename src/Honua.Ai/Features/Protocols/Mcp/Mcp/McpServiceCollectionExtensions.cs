@@ -57,6 +57,23 @@ internal static class McpServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, GroundCandidatesTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ClarifyIntentTool>());
 
+        // Geocode/route tools (#1597) are only advertised when the host
+        // composition has wired the underlying canonical services (AddGeocoding
+        // / AddRouting run before AddMcpOperatorSurface in the server
+        // composition root). Checking the descriptor list here keeps
+        // tools/list honest: hosts without the capability never advertise a
+        // tool that could only fail at invocation time, and tests that call
+        // AddMcpOperatorSurface in isolation keep working.
+        if (services.Any(d => d.ServiceType == typeof(Honua.Geocoding.Features.Geocoding.Abstractions.IGeocodeCoordinatorService)))
+        {
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, GeocodeTool>());
+        }
+
+        if (services.Any(d => d.ServiceType == typeof(Honua.Routing.Features.Routing.Abstractions.IRoutingProvider)))
+        {
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, RouteTool>());
+        }
+
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpResource, JobStatusResource>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpResource, JobResultsResource>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpResource, WorkspaceResource>());
