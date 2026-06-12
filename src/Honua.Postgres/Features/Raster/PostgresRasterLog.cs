@@ -130,4 +130,28 @@ internal static partial class PostgresRasterLog
         Level = LogLevel.Debug,
         Message = "Raster storage table {TableName} is unavailable; returning an empty raster result.")]
     public static partial void RasterStorageUnavailable(ILogger logger, Exception ex, string tableName);
+
+    [LoggerMessage(
+        EventId = 7820,
+        Level = LogLevel.Information,
+        Message = "Backfilled persisted statistics for layer {LayerId}, raster {RasterId}: {BandCount} bands")]
+    public static partial void RasterStatisticsBackfilled(ILogger logger, int layerId, long rasterId, int bandCount);
+
+    [LoggerMessage(
+        EventId = 7821,
+        Level = LogLevel.Warning,
+        Message = "Failed to persist backfilled statistics for layer {LayerId}, raster {RasterId}; serving computed values without persistence")]
+    public static partial void RasterStatisticsPersistFailed(ILogger logger, Exception ex, int layerId, long rasterId);
+
+    [LoggerMessage(
+        EventId = 7822,
+        Level = LogLevel.Information,
+        Message = "Backfilled persisted mosaic statistics for layer {LayerId} ({RasterCount} rasters, {MergeStrategy}): {BandCount} bands")]
+    public static partial void LayerStatisticsBackfilled(ILogger logger, int layerId, int rasterCount, string mergeStrategy, int bandCount);
+
+    [LoggerMessage(
+        EventId = 7823,
+        Level = LogLevel.Warning,
+        Message = "Failed to persist mosaic statistics for layer {LayerId}; serving computed values without persistence")]
+    public static partial void LayerStatisticsPersistFailed(ILogger logger, Exception ex, int layerId);
 }
