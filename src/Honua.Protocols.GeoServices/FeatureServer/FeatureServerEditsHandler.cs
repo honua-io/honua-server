@@ -65,11 +65,12 @@ internal sealed class FeatureServerEditsHandler(
     {
         var httpContext = _httpContextAccessor.HttpContext!;
 
-        // Multi-user feature editing is a Pro entitlement (#1548). All FeatureServer write
+        // FeatureServer editing is a Pro entitlement (#1591) scoped to the Esri GeoServices
+        // surface only — open-protocol edits are Community. All FeatureServer write
         // entrypoints (applyEdits/add/update/delete and service-level applyEdits) funnel through
         // this shared handler, so the gate is enforced once here for the whole GeoServices surface.
         var editsGate = LicenseGate.RequireEntitlement(
-            httpContext, FeatureCatalog.FeatureEditsKey, "Feature editing", _logger);
+            httpContext, FeatureCatalog.FeatureServerEditsKey, "FeatureServer editing", _logger);
         if (editsGate is not null)
         {
             return editsGate;

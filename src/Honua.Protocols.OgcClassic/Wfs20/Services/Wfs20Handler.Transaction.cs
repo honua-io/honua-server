@@ -15,7 +15,6 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Shared.Models;
@@ -24,7 +23,6 @@ using Honua.Core.Queries.Filters.Fes20;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Events;
 using Honua.Infrastructure.Helpers;
-using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Services;
 using Honua.Infrastructure.Validation;
@@ -57,15 +55,8 @@ internal sealed partial class Wfs20Handler
 
         try
         {
-            // Multi-user feature editing is a Pro entitlement (#1548). WFS-T Insert/Update/Delete
-            // route through this single transaction entrypoint, so the gate is enforced once here.
-            var editsGate = LicenseGate.RequireEntitlement(
-                context, FeatureCatalog.FeatureEditsKey, "Feature editing");
-            if (editsGate is not null)
-            {
-                return editsGate;
-            }
-
+            // WFS-T transactions are Community (#1591): open-protocol feature edits carry no
+            // entitlement gate. The Pro editing gate applies only to the FeatureServer surface.
             var document = await ReadTransactionDocumentAsync(context.Request, cancellationToken).ConfigureAwait(false);
             var root = document.Root;
             if (root == null || !string.Equals(root.Name.LocalName, Wfs20Utilities.Operations.Transaction, StringComparison.OrdinalIgnoreCase))
