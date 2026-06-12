@@ -14,6 +14,8 @@ docker logs --tail 200 honua-server
 
 Expected: `Healthy` and `Ready`. If either fails, start with the startup or database tables below. Admin-only diagnostics: `GET /monitoring/health/production`, `GET /monitoring/health/comprehensive`, `GET /api/v1/admin/observability/errors`.
 
+A single-node deployment with no Redis configured reports `Ready` — feature-change events run in node-local in-memory mode (a startup warning notes this). If `/healthz/ready` returns `503` while `/healthz/live` is healthy and Redis **is** configured, Redis is unreachable: check `ConnectionStrings__Redis` and the Redis server itself.
+
 ## Startup
 
 | Symptom | Diagnosis | Fix |

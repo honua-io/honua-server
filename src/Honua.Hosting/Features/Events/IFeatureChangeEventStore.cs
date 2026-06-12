@@ -28,6 +28,15 @@ internal interface IFeatureChangeEventStore
 internal interface IFeatureChangeEventStoreHealth
 {
     bool CanPersistEvents { get; }
+
+    /// <summary>
+    /// True when events are currently persisted to node-local in-memory storage instead of
+    /// durable Redis storage — either because no Redis is configured (explicit single-node
+    /// mode) or because Redis is temporarily unavailable and fallback is permitted.
+    /// Mirrors <c>ICacheHealthChecker.IsUsingFallback</c> (ADR-0017) so readiness can report
+    /// healthy-with-degraded-note instead of failing.
+    /// </summary>
+    bool IsUsingInMemoryFallback { get; }
 }
 
 /// <summary>

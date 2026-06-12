@@ -143,6 +143,54 @@ public sealed class ReadinessCheckServiceTests
 
     [UnitTest]
     [Operation(Operations.HealthCheck)]
+    public async Task CheckReadinessAsync_WithFeatureChangeStoreInFallbackMode_StillReturnsReady()
+    {
+        // Single-node deployment without Redis (#1618): the event store runs in
+        // explicit in-memory mode and must report healthy-with-degraded-note.
+        var logger = new MockLogger<ReadinessCheckService>();
+        var migrationState = new MigrationState();
+        migrationState.MarkSucceeded();
+        var service = new ReadinessCheckService(
+            new MockHealthyDatabaseChecker(),
+            migrationState,
+            logger,
+            featureChangeEventStoreHealth: new MockFeatureChangeEventStoreHealth(
+                canPersistEvents: true,
+                isUsingInMemoryFallback: true));
+
+        var result = await service.CheckReadinessAsync();
+
+        result.IsReady.Should().BeTrue();
+        result.StatusCode.Should().Be(200);
+        result.Message.Should().Be("Ready");
+        logger.LogCalls.Should().ContainSingle(call =>
+            call.Message.Contains("FeatureChangeEventStore", StringComparison.Ordinal)
+            && call.Message.Contains("Healthy (fallback)", StringComparison.Ordinal));
+    }
+
+    [UnitTest]
+    [Operation(Operations.HealthCheck)]
+    public async Task CheckReadinessAsync_WithDurableFeatureChangeStore_LogsHealthyWithoutFallbackNote()
+    {
+        var logger = new MockLogger<ReadinessCheckService>();
+        var migrationState = new MigrationState();
+        migrationState.MarkSucceeded();
+        var service = new ReadinessCheckService(
+            new MockHealthyDatabaseChecker(),
+            migrationState,
+            logger,
+            featureChangeEventStoreHealth: new MockFeatureChangeEventStoreHealth(canPersistEvents: true));
+
+        var result = await service.CheckReadinessAsync();
+
+        result.IsReady.Should().BeTrue();
+        logger.LogCalls.Should().ContainSingle(call =>
+            call.Message.Contains("FeatureChangeEventStore", StringComparison.Ordinal)
+            && !call.Message.Contains("fallback", StringComparison.Ordinal));
+    }
+
+    [UnitTest]
+    [Operation(Operations.HealthCheck)]
     public async Task CheckReadinessAsync_WithUnhealthyCache_ReturnsNotReady()
     {
         // Arrange
@@ -368,9 +416,11 @@ internal sealed class MockCancellationDatabaseChecker : IDatabaseHealthChecker
     }
 }
 
-internal sealed class MockFeatureChangeEventStoreHealth(bool canPersistEvents) : IFeatureChangeEventStoreHealth
+internal sealed class MockFeatureChangeEventStoreHealth(bool canPersistEvents, bool isUsingInMemoryFallback = false) : IFeatureChangeEventStoreHealth
 {
     public bool CanPersistEvents { get; } = canPersistEvents;
+
+    public bool IsUsingInMemoryFallback { get; } = isUsingInMemoryFallback;
 }
 
 internal sealed class ThrowingCacheHealthChecker : ICacheHealthChecker
@@ -391,6 +441,8 @@ internal sealed class DelayedFeatureChangeEventStoreHealth(bool canPersistEvents
             return canPersistEvents;
         }
     }
+
+    public bool IsUsingInMemoryFallback => false;
 }
 
 /// <summary>

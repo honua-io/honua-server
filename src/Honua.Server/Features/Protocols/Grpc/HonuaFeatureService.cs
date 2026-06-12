@@ -7,14 +7,12 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Events;
-using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Services;
 using Honua.Infrastructure.Validation;
 using Honua.ServiceDefaults;
@@ -250,15 +248,8 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             request.ServiceId, request.LayerId, context.CancellationToken).ConfigureAwait(false);
         await EnsureWriteAccessAsync(context, layer.Service, layer.Resource).ConfigureAwait(false);
 
-        // Multi-user feature editing is a Pro entitlement (#1548). gRPC writes flow through
-        // ApplyEdits, so the gate is enforced once here and surfaces as a FailedPrecondition
-        // status (HTTP 402 equivalent) consistent with the HTTP write protocols.
-        var editsServices = context.GetHttpContext()?.RequestServices
-            ?? throw new InvalidOperationException("HttpContext is required for the gRPC edit entitlement gate.");
-        if (!LicenseGate.IsEntitlementActive(editsServices, FeatureCatalog.FeatureEditsKey))
-        {
-            throw LicenseGate.CreateFailedPreconditionRpcException(editsServices, FeatureCatalog.FeatureEditsKey);
-        }
+        // gRPC ApplyEdits is an open-protocol edit surface and remains Community (#1591).
+        // Validation, authz, eventing, and telemetry still run through the shared edit pipeline.
 
         FeatureEditBatch editBatch;
         try

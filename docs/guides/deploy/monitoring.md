@@ -74,7 +74,7 @@ Expected: `Healthy` followed by a JSON health snapshot with status fields.
 - **`/metrics` returns 404** — `HONUA_OBSERVABILITY` is not `true`, or the path was moved with `Observability__Prometheus__Path`.
 - **`/metrics` returns 401** — the scrape request is missing the `X-API-Key` header (or OIDC bearer token).
 - **No traces in your backend** — set `HONUA_OPENTELEMETRY=true` and an `OTEL_EXPORTER_OTLP_ENDPOINT`; confirm status via `GET /api/v1/admin/observability/telemetry`.
-- **`/healthz/ready` flaps** — usually database connectivity; check `GET /monitoring/health/comprehensive` for the failing dependency.
+- **`/healthz/ready` flaps** — usually database connectivity; check `GET /monitoring/health/comprehensive` for the failing dependency. If Redis is configured, an unreachable Redis also fails readiness (durable feature-change event storage); a deployment with no Redis configured runs events in single-node in-memory mode and stays `Ready`.
 
 ## Next steps
 
