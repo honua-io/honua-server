@@ -21,11 +21,49 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 COPY Honua.sln Directory.Build.props Directory.Packages.props NuGet.config .editorconfig ./
+# eng/ carries Honua.BuildProfiles.props (HonuaIncludeAws/Azure defaults).
+# Directory.Build.props imports it with an Exists() guard, so omitting it
+# makes restore and publish evaluate DIFFERENT project graphs: restore sees
+# the cloud providers off, publish (after COPY . .) sees them on, and the
+# publish fails with NETSDK1004 for every project restore skipped.
+COPY eng/ eng/
 COPY scripts/docker/restore-dotnet-with-github-packages.sh scripts/docker/
+# Copy ALL project files referenced (directly or transitively) by Honua.Server so
+# that `dotnet restore` can generate obj/project.assets.json for every project
+# before `COPY . .` and the --no-restore publish step.
 COPY src/Honua.Core/*.csproj src/Honua.Core/
+COPY src/Honua.Core.Abstractions/*.csproj src/Honua.Core.Abstractions/
 COPY src/Honua.Postgres/*.csproj src/Honua.Postgres/
+COPY src/Honua.Postgres.Shared/*.csproj src/Honua.Postgres.Shared/
 COPY src/Honua.ServiceDefaults/*.csproj src/Honua.ServiceDefaults/
 COPY src/Honua.Server/*.csproj src/Honua.Server/
+COPY src/Honua.DuckDB/*.csproj src/Honua.DuckDB/
+COPY src/Honua.SqlServer/*.csproj src/Honua.SqlServer/
+COPY src/Honua.MySql/*.csproj src/Honua.MySql/
+COPY src/Honua.ArcGisRest/*.csproj src/Honua.ArcGisRest/
+COPY src/Honua.Oracle/*.csproj src/Honua.Oracle/
+COPY src/Honua.Hosting/*.csproj src/Honua.Hosting/
+COPY src/Honua.Jobs/*.csproj src/Honua.Jobs/
+COPY src/Honua.Protocols.OData/*.csproj src/Honua.Protocols.OData/
+COPY src/Honua.Geocoding/*.csproj src/Honua.Geocoding/
+COPY src/Honua.Aws/*.csproj src/Honua.Aws/
+COPY src/Honua.Azure/*.csproj src/Honua.Azure/
+COPY src/Honua.Ai/*.csproj src/Honua.Ai/
+COPY src/Honua.Geometry/*.csproj src/Honua.Geometry/
+COPY src/Honua.Geoprocessing/*.csproj src/Honua.Geoprocessing/
+COPY src/Honua.Io/*.csproj src/Honua.Io/
+COPY src/Honua.Import/*.csproj src/Honua.Import/
+COPY src/Honua.Protocols.Scene/*.csproj src/Honua.Protocols.Scene/
+COPY src/Honua.Protocols.Ogc.Shared/*.csproj src/Honua.Protocols.Ogc.Shared/
+COPY src/Honua.Protocols.OgcApi/*.csproj src/Honua.Protocols.OgcApi/
+COPY src/Honua.Protocols.OgcClassic/*.csproj src/Honua.Protocols.OgcClassic/
+COPY src/Honua.Protocols.Stac/*.csproj src/Honua.Protocols.Stac/
+COPY src/Honua.Protocols.GeoServices/*.csproj src/Honua.Protocols.GeoServices/
+COPY src/Honua.Scene/*.csproj src/Honua.Scene/
+COPY src/Honua.Routing/*.csproj src/Honua.Routing/
+COPY src/Honua.Plugins/*.csproj src/Honua.Plugins/
+COPY src/Honua.Plugins.Abstractions/*.csproj src/Honua.Plugins.Abstractions/
+COPY samples/Honua.StacOpsDemo/*.csproj samples/Honua.StacOpsDemo/
 
 ARG TARGETARCH
 

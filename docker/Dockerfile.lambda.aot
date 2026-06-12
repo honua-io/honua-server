@@ -15,6 +15,12 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 COPY Honua.sln Directory.Build.props Directory.Packages.props NuGet.config .editorconfig ./
+# eng/ carries Honua.BuildProfiles.props (HonuaIncludeAws/Azure defaults).
+# Directory.Build.props imports it with an Exists() guard, so omitting it
+# makes restore and publish evaluate DIFFERENT project graphs: restore sees
+# the cloud providers off, publish (after COPY . .) sees them on, and the
+# publish fails with NETSDK1004 for every project restore skipped.
+COPY eng/ eng/
 COPY scripts/docker/restore-dotnet-with-github-packages.sh scripts/docker/
 # Copy ALL project files referenced (directly or transitively) by Honua.Server so
 # that `dotnet restore` can generate obj/project.assets.json for every project before
@@ -51,6 +57,8 @@ COPY src/Honua.Protocols.GeoServices/*.csproj src/Honua.Protocols.GeoServices/
 COPY src/Honua.Scene/*.csproj src/Honua.Scene/
 COPY src/Honua.Core.Abstractions/*.csproj src/Honua.Core.Abstractions/
 COPY src/Honua.Routing/*.csproj src/Honua.Routing/
+COPY src/Honua.Plugins/*.csproj src/Honua.Plugins/
+COPY src/Honua.Plugins.Abstractions/*.csproj src/Honua.Plugins.Abstractions/
 # StacOpsDemo is in samples/ and is conditional on HonuaIncludeStacOpsDemo != false;
 # when PublishAot=true and RuntimeIdentifier is set it is excluded, but its .csproj
 # must be present for the solution-wide restore to succeed without NETSDK1004.
