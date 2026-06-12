@@ -1,4 +1,4 @@
-#!/bin/bash
+﻿#!/bin/bash
 
 # Transaction semantics testing script for Honua Server
 # Tests actual behavior when instances fail mid-transaction

@@ -1,4 +1,4 @@
-#!/bin/sh
+﻿#!/bin/sh
 
 # OGC CITE Team Engine test execution script for WFS 1.0.0 and 1.1.0.
 

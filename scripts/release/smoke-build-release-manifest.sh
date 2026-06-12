@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+﻿#!/usr/bin/env bash
 
 # Self-test for scripts/release/build-release-manifest.sh.
 #

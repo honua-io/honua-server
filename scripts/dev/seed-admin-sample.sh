@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+﻿#!/usr/bin/env bash
 # Reset the local test schema and seed the admin preview sample FeatureServer.
 #
 # Environment variables:

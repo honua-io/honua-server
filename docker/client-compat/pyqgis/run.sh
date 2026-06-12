@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+﻿#!/usr/bin/env bash
 # Runs the PyQGIS client compatibility suite against a running honua service
 # and copies the generated .cert.json envelopes into /output.
 set -euo pipefail

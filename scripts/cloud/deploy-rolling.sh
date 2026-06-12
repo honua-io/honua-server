@@ -1,4 +1,4 @@
-#!/bin/bash
+﻿#!/bin/bash
 set -euo pipefail
 
 # Rolling Deployment Script for Honua Server

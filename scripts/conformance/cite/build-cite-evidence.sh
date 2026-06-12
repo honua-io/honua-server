@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+﻿#!/usr/bin/env bash
 
 # Builds a static, website-linkable evidence bundle from local CITE result
 # directories. The bundle includes a human-readable index, machine-readable

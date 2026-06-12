@@ -1,4 +1,4 @@
-#!/bin/bash
+﻿#!/bin/bash
 
 # Load/soak testing script for Honua Server
 # Runs NBomber scenarios and captures system + API metrics.

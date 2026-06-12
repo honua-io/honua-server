@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+﻿#!/usr/bin/env bash
 
 # Build (or refresh) a Honua release-train manifest from release-bundle evidence.
 #
