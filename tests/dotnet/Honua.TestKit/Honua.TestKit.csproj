@@ -19,6 +19,8 @@
     <PackageReference Include="Grpc.Net.Client" />
     <PackageReference Include="Grpc.Net.Client.Web" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <!-- Direct pin of NBomber's transitive MessagePack to a patched version (GHSA-hv8m-jj95-wg3x). -->
+    <PackageReference Include="MessagePack" />
     <PackageReference Include="NBomber" />
     <PackageReference Include="Parquet.Net" />
     <PackageReference Include="Snappier" />
