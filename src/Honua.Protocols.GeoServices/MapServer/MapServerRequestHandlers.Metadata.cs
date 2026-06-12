@@ -327,15 +327,22 @@ internal static partial class MapServerEndpoints
         MetadataV2Resource resource,
         MetadataV2GraphSnapshot snapshot,
         int maxRecordCount,
-        JsonElement? drawingInfo = null)
+        JsonElement? drawingInfo = null,
+        int? publicLayerIdOverride = null,
+        string? layerNameOverride = null,
+        string? definitionExpression = null)
     {
-        var publicLayerId = publication.LayerIndex
+        var sourcePublicLayerId = publication.LayerIndex
             ?? snapshot.ResolveStorageLayerId(publication)
             ?? snapshot.ResolveStorageLayerId(resource)
             ?? -1;
-        var layerName = string.IsNullOrWhiteSpace(resource.Metadata.Name)
+        var publicLayerId = publicLayerIdOverride ?? sourcePublicLayerId;
+        var sourceLayerName = string.IsNullOrWhiteSpace(resource.Metadata.Name)
             ? publication.Metadata.Name
             : resource.Metadata.Name;
+        var layerName = string.IsNullOrWhiteSpace(layerNameOverride)
+            ? sourceLayerName
+            : layerNameOverride;
         var objectIdField = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
         var displayField = ResolveDisplayField(resource, objectIdField);
         var serviceLayers = ResolveMapServerMetadataLayers(snapshot, service);
@@ -366,6 +373,7 @@ internal static partial class MapServerEndpoints
             DefaultVisibility = resource.Display?.DefaultVisibility ?? true,
             MaxRecordCount = maxRecordCount,
             DrawingInfo = drawingInfo.HasValue ? (object)drawingInfo.Value : null,
+            DefinitionExpression = string.IsNullOrWhiteSpace(definitionExpression) ? null : definitionExpression,
             SupportedQueryFormats = string.Join(",", NormalizeSupportedQueryFormats(service.Settings?.SupportedFormats)),
             SupportsOrderBy = true,
             SupportsDistinct = true,

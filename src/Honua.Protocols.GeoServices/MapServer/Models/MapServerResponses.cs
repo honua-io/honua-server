@@ -617,6 +617,12 @@ internal sealed class MapServerLayerResponse
     public object? DrawingInfo { get; init; }
 
     /// <summary>
+    /// Request-scoped definition expression applied to a dynamic layer response.
+    /// </summary>
+    [JsonPropertyName("definitionExpression")]
+    public string? DefinitionExpression { get; init; }
+
+    /// <summary>
     /// Supported query output formats (comma-separated string per ESRI spec).
     /// </summary>
     [JsonPropertyName("supportedQueryFormats")]

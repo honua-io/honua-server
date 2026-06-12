@@ -755,6 +755,7 @@
         "legend",
         "queryLegends",
         "query",
+        "dynamicLayer child resource (mapLayer source)",
         "query domains",
         "generateRenderer (service-level)",
         "generateRenderer (per layer)",
@@ -770,7 +771,7 @@
       "knownGaps": [
         "full Esri tile-package/job exportTiles semantics",
         "queryAnalytic",
-        "dynamicLayer child resource and workspace dynamic layers",
+        "workspace dynamic layers, joins, and dynamic tables",
         "image/KML-image/job child resources",
         "additional Esri child resources"
       ],
@@ -779,6 +780,7 @@
           "src/Honua.Protocols.GeoServices/MapServer/MapServerEndpoints.cs",
           "src/Honua.Protocols.GeoServices/MapServer/MapServerRequestHandlers.Export.cs",
           "src/Honua.Protocols.GeoServices/MapServer/MapServerRequestHandlers.ExportTiles.cs",
+          "src/Honua.Protocols.GeoServices/MapServer/MapServerRequestHandlers.DynamicLayer.cs",
           "src/Honua.Protocols.GeoServices/MapServer/MapServerRequestHandlers.Identify.cs",
           "src/Honua.Protocols.GeoServices/MapServer/MapServerRequestHandlers.Find.cs",
           "src/Honua.Protocols.GeoServices/MapServer/MapServerRequestHandlers.Legend.cs",
@@ -1051,6 +1053,17 @@
             "notes": "Exports bounded WebMercatorQuad PNG tiles to a ZIP archive in configured cloud file storage. Full Esri TPK/TPKX/compact cache and async job resources are not implemented."
           },
           {
+            "name": "Dynamic Layer or Table resource",
+            "esriPath": "/rest/services/{serviceId}/MapServer/dynamicLayer",
+            "methods": [
+              "GET"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/MapServer/dynamicLayer"
+            ],
+            "notes": "Returns layer metadata for source.type=mapLayer definitions, including request-scoped id, definitionExpression, and drawingInfo. Workspace layers, joins, and dynamic tables remain deferred."
+          },
+          {
             "name": "WMTS",
             "esriPath": "/rest/services/{serviceId}/MapServer/WMTS",
             "methods": [
@@ -1071,13 +1084,6 @@
             "methods": [
               "GET",
               "POST"
-            ]
-          },
-          {
-            "name": "Dynamic Layer or Table resource",
-            "esriPath": "/rest/services/{serviceId}/MapServer/dynamicLayer",
-            "methods": [
-              "GET"
             ]
           },
           {
@@ -1153,7 +1159,7 @@
         "WMTS support remains WebMercatorQuad-only.",
         "Layer queries inherit the FeatureServer query contract, including its format behavior.",
         "MapServer tile GET storage is a loose-object cache, not an Esri compact cache or tile package.",
-        "dynamicLayers is limited to source.type=mapLayer, definitionExpression, and drawingInfo.renderer overrides; workspace layers, joins, and dynamicLayer child resources remain unimplemented.",
+        "dynamicLayers and the dynamicLayer child resource are limited to source.type=mapLayer, definitionExpression, and drawingInfo.renderer overrides; workspace layers, joins, and dynamic tables remain unimplemented.",
         "Advanced rendering parameters such as maxAllowableOffset and geometryPrecision are accepted but not yet applied."
       ]
     },

@@ -257,6 +257,14 @@ internal static partial class MapServerEndpoints
             .WithTags("MapServer")
             .CacheOutput("LayerMetadata");
 
+        endpoints.MapGet("/rest/services/{serviceId}/MapServer/dynamicLayer",
+                static (HttpContext context, CancellationToken cancellationToken) => HandleDynamicLayerResource(context))
+            .WithDisplayName("Get MapServer Dynamic Layer")
+            .WithName("MapServerDynamicLayer")
+            .WithSummary("Get metadata for a request-scoped dynamic layer")
+            .WithDescription("Returns layer metadata for a dynamic layer whose source is an existing map layer")
+            .WithTags("MapServer");
+
         endpoints.MapGet("/rest/services/{serviceId}/MapServer/generateRenderer", HandleMapServerServiceGenerateRenderer)
             .WithDisplayName("Generate MapServer Service Renderer (GET)")
             .WithName("MapServerServiceGenerateRenderer")

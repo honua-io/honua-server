@@ -115,6 +115,76 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/dynamicLayer")]
+    public async Task MapServer_DynamicLayer_WithMapLayerSource_ReturnsLayerMetadata()
+    {
+        const int dynamicLayerId = 7;
+        var layer = Uri.EscapeDataString(BuildSimpleRendererDynamicLayerObjectJson(dynamicLayerId));
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/dynamicLayer?f=json&layer={layer}");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+        using var document = JsonDocument.Parse(content);
+        var root = document.RootElement;
+        root.GetProperty("id").GetInt32().Should().Be(dynamicLayerId);
+        root.GetProperty("definitionExpression").GetString().Should().Be("1=1");
+        root.GetProperty("drawingInfo").GetProperty("renderer").GetProperty("type").GetString().Should().Be("simple");
+        root.GetProperty("fields").GetArrayLength().Should().BeGreaterThan(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/dynamicLayer")]
+    public async Task MapServer_DynamicLayer_WithoutLayer_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/dynamicLayer?f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("dynamicLayer requires a layer parameter.");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/dynamicLayer")]
+    public async Task MapServer_DynamicLayer_WithUnsupportedSource_ReturnsBadRequest()
+    {
+        var layer = Uri.EscapeDataString(
+            """{"id":7,"source":{"type":"workspaceLayer","workspaceId":"demo","dataSource":{"type":"table","name":"features"}}}""");
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/dynamicLayer?f=json&layer={layer}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("dynamicLayer must use a mapLayer source.");
+        content.Should().NotContain("System.Text.Json");
+        content.Should().NotContain("BytePositionInLine");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/dynamicLayer")]
+    public async Task MapServer_DynamicLayer_WithMalformedLayer_DoesNotLeakJsonParserDetails()
+    {
+        var malformedLayer = Uri.EscapeDataString("{\"id\":");
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/dynamicLayer?f=json&layer={malformedLayer}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("dynamicLayer contains invalid JSON.");
+        content.Should().NotContain("BytePositionInLine");
+        content.Should().NotContain("LineNumber");
+        content.Should().NotContain("System.Text.Json");
+    }
+
+    [IntegrationTest]
     [Operation(Operations.Export)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
     public async Task MapServer_Export_ReturnsImageJson()
@@ -1932,13 +2002,17 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     }
 
     private static string BuildSimpleRendererDynamicLayersJson(int dynamicLayerId)
+        => $"[{BuildSimpleRendererDynamicLayerObjectJson(dynamicLayerId)}]";
+
+    private static string BuildSimpleRendererDynamicLayerObjectJson(int dynamicLayerId)
         => $$"""
-             [{
+             {
                "id": {{dynamicLayerId}},
                "source": {
                  "type": "mapLayer",
                  "mapLayerId": {{WebAppFixture.TestLayerId}}
                },
+               "definitionExpression": "1=1",
                "drawingInfo": {
                  "renderer": {
                    "type": "simple",
@@ -1956,6 +2030,6 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
                    }
                  }
                }
-             }]
+             }
              """;
 }
