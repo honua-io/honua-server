@@ -41,7 +41,7 @@ Each capability record reports:
 
 The document also carries `transports` (REST, GeoServices, OGC, OData, STAC, tiles, gRPC, MCP, QGIS, mTLS), `limits` (query, analysis, upload, and job limits), and `policies` (license and entitlement state). The manifest is informational only — operation endpoints remain the source of truth for authorization and resource checks. Do not persist it as an authorization cache.
 
-Control-plane SDKs should instead call the admin-only `GET /api/v1/admin/capabilities` once per session and branch on its `data.compatibility` object (server version, control-plane major, feature flags).
+Control-plane SDKs should instead call `GET /api/v1/admin/capabilities` once per session and branch on its `data.compatibility` object (server version, control-plane major, feature flags). The capabilities handshake is readable anonymously so `checkCompatibility()` can run before credentials exist; every other admin endpoint requires authentication.
 
 ## OpenAPI specs
 
