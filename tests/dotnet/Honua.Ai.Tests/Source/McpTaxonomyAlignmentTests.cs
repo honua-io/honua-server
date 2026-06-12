@@ -35,7 +35,9 @@ public sealed class McpTaxonomyAlignmentTests
         "honua_cancel_job",
         "honua_plan_analysis",
         "honua_ground_candidates",
-        "honua_clarify_intent"
+        "honua_clarify_intent",
+        "honua_geocode_address",
+        "honua_solve_route"
     };
 
     private static readonly string[] TaxonomyResourceUris =
@@ -100,6 +102,10 @@ public sealed class McpTaxonomyAlignmentTests
             .WorkflowFamily.Should().Be(McpTelemetry.WorkflowFamily.Execution);
         new CancelJobTool(jobService, NullLogger<CancelJobTool>.Instance)
             .WorkflowFamily.Should().Be(McpTelemetry.WorkflowFamily.Lifecycle);
+        new GeocodeTool(jobService, NullLogger<GeocodeTool>.Instance)
+            .WorkflowFamily.Should().Be(McpTelemetry.WorkflowFamily.Execution);
+        new RouteTool(jobService, NullLogger<RouteTool>.Instance)
+            .WorkflowFamily.Should().Be(McpTelemetry.WorkflowFamily.Execution);
     }
 
     [UnitTest]
@@ -332,7 +338,9 @@ public sealed class McpTaxonomyAlignmentTests
                 jobService,
                 NullLogger<PlanAnalysisTool>.Instance),
             new GroundCandidatesTool(groundingService, jobService, NullLogger<GroundCandidatesTool>.Instance),
-            new ClarifyIntentTool(groundingService, jobService, NullLogger<ClarifyIntentTool>.Instance)
+            new ClarifyIntentTool(groundingService, jobService, NullLogger<ClarifyIntentTool>.Instance),
+            new GeocodeTool(jobService, NullLogger<GeocodeTool>.Instance),
+            new RouteTool(jobService, NullLogger<RouteTool>.Instance)
         ];
     }
 

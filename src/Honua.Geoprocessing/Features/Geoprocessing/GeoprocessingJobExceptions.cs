@@ -73,6 +73,13 @@ internal sealed class GeoprocessingStoreUnavailableException : Exception
         : base("Job operations require Redis-backed durable storage. " +
                "Ensure a valid Redis connection is configured.")
     { }
+
+    /// <summary>
+    /// Creates the exception with a custom message for adapters that surface
+    /// other unavailable upstream dependencies (e.g. geocoding providers)
+    /// through the same retryable <c>unavailable</c> error channel.
+    /// </summary>
+    public GeoprocessingStoreUnavailableException(string message) : base(message) { }
 }
 
 /// <summary>

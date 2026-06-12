@@ -40,6 +40,9 @@ public static class FeatureCatalog
         /// <summary>Geocoding and address resolution features.</summary>
         public const string Geocoding = "Geocoding";
 
+        /// <summary>Network routing and service-area analysis features.</summary>
+        public const string Routing = "Routing";
+
         /// <summary>Identity and authentication features.</summary>
         public const string Identity = "Identity";
 
@@ -143,6 +146,10 @@ public static class FeatureCatalog
         // Geocoding — Enterprise
         new("geocoding.batch", "Batch Geocoding", Categories.Geocoding,
             HonuaEdition.Enterprise, "Geocode multiple addresses in a single request."),
+
+        // Routing - Pro
+        new("routing.solve", "Network Routing", Categories.Routing,
+            HonuaEdition.Pro, "Solve multi-stop routes with the configured routing engine (MCP honua_solve_route and future gated surfaces)."),
 
         // Identity — Community (ArcGIS Portal interop)
         new("identity.portal-token", "ArcGIS Portal Token Issuance", Categories.Identity,
