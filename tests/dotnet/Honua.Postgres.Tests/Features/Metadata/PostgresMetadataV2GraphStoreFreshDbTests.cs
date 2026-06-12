@@ -19,12 +19,18 @@ namespace Honua.Postgres.Tests.Features.Metadata;
 /// with relation "honua.metadata_v2_current" does not exist (42P01). The store now
 /// tolerates the missing relation on read and self-heals the schema on write, so the
 /// publish path bootstraps an empty graph and succeeds instead of failing.
+///
+/// CONTRACT UPDATE (#1619/#1634): a fresh DB no longer surfaces "no snapshot" as an
+/// InvalidOperationException — GetCurrentAsync now returns an empty-but-valid
+/// snapshot so every catalog surface answers 200 with zero items on a healthy,
+/// unpopulated server. The #1341 spirit (never leak a raw 42P01) is asserted
+/// against that new contract below.
 /// </summary>
 [Collection("Database")]
 public sealed class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFixture fixture)
 {
     [IntegrationTest]
-    public async Task GetCurrentAsync_WhenMetadataV2TablesMissing_ThrowsInvalidOperationInsteadOfRawPostgresError()
+    public async Task GetCurrentAsync_WhenMetadataV2TablesMissing_ReturnsEmptySnapshotInsteadOfRawPostgresError()
     {
         // Isolated schema that deliberately does NOT create the metadata_v2 tables —
         // exactly the fresh-DB shape that surfaced the 500.
@@ -34,11 +40,14 @@ public sealed class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFixture fix
             var provider = new TestConnectionProvider(fixture.DataSource, schema);
             var store = new PostgresMetadataV2GraphStore(provider, environment: "Test", schemaName: schema);
 
-            var act = () => store.GetCurrentAsync().AsTask();
+            // #1341: a raw PostgresException (42P01) must never bubble out as a 500.
+            // #1619: "no snapshot" is no longer an error at all — a fresh DB yields an
+            // empty-but-valid snapshot so catalog surfaces answer 200 with zero items.
+            var snapshot = await store.GetCurrentAsync();
 
-            // The publish path catches InvalidOperationException to bootstrap an empty
-            // graph. A raw PostgresException (42P01) would bubble out as a 500.
-            await act.Should().ThrowAsync<InvalidOperationException>();
+            snapshot.Should().NotBeNull();
+            snapshot.Graph.Revision.Should().Be(0, "a fresh DB has no activated snapshot");
+            snapshot.Graph.Resources.Should().BeEmpty();
         }
         finally
         {

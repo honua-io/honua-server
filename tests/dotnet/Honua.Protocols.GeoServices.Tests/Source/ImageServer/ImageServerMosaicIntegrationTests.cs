@@ -203,6 +203,48 @@ public sealed class ImageServerMosaicIntegrationTests
     }
 
     [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer")]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task GetServiceInfo_ServesBandStatisticsFromPersistedMosaicSnapshot()
+    {
+        var fixture = await CreateFixtureAsync();
+        try
+        {
+            // The first request backfills the persisted layer-level statistics snapshot (#1639).
+            var first = await fixture.Client.GetAsync($"/rest/services/{WebAppFixture.TestLayerId}/ImageServer?f=json");
+            first.StatusCode.Should().Be(HttpStatusCode.OK);
+            using (var json = JsonDocument.Parse(await first.Content.ReadAsStringAsync()))
+            {
+                json.RootElement.GetProperty("minValues")[0].GetDouble().Should().Be(5);
+                json.RootElement.GetProperty("maxValues")[0].GetDouble().Should().Be(40);
+            }
+
+            // Tamper with the persisted snapshot. The next request must serve the tampered
+            // value verbatim, proving service metadata is read from persisted statistics and
+            // never recomputed from the raster pixels per request.
+            await using (var connection = await fixture.Postgres.GetConnectionAsync(fixture.CurrentSchema))
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = "UPDATE honua.raster_layer_statistics SET max_value = 12345 WHERE layer_id = @layerId;";
+                command.Parameters.AddWithValue("layerId", WebAppFixture.TestLayerId);
+                var tampered = await command.ExecuteNonQueryAsync();
+                tampered.Should().BeGreaterThan(0, "the first request must have persisted the mosaic statistics");
+            }
+
+            var second = await fixture.Client.GetAsync($"/rest/services/{WebAppFixture.TestLayerId}/ImageServer?f=json");
+            second.StatusCode.Should().Be(HttpStatusCode.OK);
+            using (var json = JsonDocument.Parse(await second.Content.ReadAsStringAsync()))
+            {
+                json.RootElement.GetProperty("maxValues")[0].GetDouble().Should().Be(12345);
+            }
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /rest/services/{id}/ImageServer/exportImage")]
     [Operation(Operations.Export)]
     public async Task ExportImage_AsInlineJpegMosaic_AppliesCompressionQuality()
