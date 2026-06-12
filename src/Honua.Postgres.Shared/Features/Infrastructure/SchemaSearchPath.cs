@@ -27,8 +27,10 @@ internal static partial class SchemaSearchPath
             throw new InvalidOperationException($"Invalid schema name '{schemaName}'.");
         }
 
-        // Skip the SET round-trip when the connection string already embeds
-        // this schema via the Options parameter (Tier 3 optimization).
+        // Skip the SET round-trip when the data source already pins this schema as
+        // the default search_path — applied by PostgresDataSourceFactory via the
+        // physical-connection initializer (or the Options startup parameter when
+        // multiplexing is enabled). Tier 3 optimization.
         if (!string.IsNullOrWhiteSpace(connectionStringDefaultSchema) &&
             string.Equals(sanitized, connectionStringDefaultSchema.Trim(), StringComparison.Ordinal))
         {
