@@ -756,6 +756,7 @@
         "queryLegends",
         "query",
         "query domains",
+        "generateRenderer (service-level)",
         "generateRenderer (per layer)",
         "queryAttachments",
         "queryRelatedRecords",
@@ -768,7 +769,6 @@
       ],
       "knownGaps": [
         "full Esri tile-package/job exportTiles semantics",
-        "generateRenderer (service-level)",
         "queryAnalytic",
         "dynamicLayer child resource and workspace dynamic layers",
         "image/KML-image/job child resources",
@@ -971,6 +971,19 @@
             ]
           },
           {
+            "name": "Generate Renderer (service level)",
+            "esriPath": "/rest/services/{serviceId}/MapServer/generateRenderer",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/MapServer/generateRenderer",
+              "POST /rest/services/{serviceId}/MapServer/generateRenderer"
+            ],
+            "notes": "Delegates to the FeatureServer generateRenderer contract after selecting the target layer from layer or layerId."
+          },
+          {
             "name": "Generate Renderer (per layer)",
             "esriPath": "/rest/services/{serviceId}/MapServer/{layerId}/generateRenderer",
             "methods": [
@@ -1052,14 +1065,6 @@
           }
         ],
         "notImplemented": [
-          {
-            "name": "Generate Renderer (service level)",
-            "esriPath": "/rest/services/{serviceId}/MapServer/generateRenderer",
-            "methods": [
-              "GET",
-              "POST"
-            ]
-          },
           {
             "name": "Query Analytic",
             "esriPath": "/rest/services/{serviceId}/MapServer/{layerId}/queryAnalytic",

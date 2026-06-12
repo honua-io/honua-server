@@ -257,6 +257,21 @@ internal static partial class MapServerEndpoints
             .WithTags("MapServer")
             .CacheOutput("LayerMetadata");
 
+        endpoints.MapGet("/rest/services/{serviceId}/MapServer/generateRenderer", HandleMapServerServiceGenerateRenderer)
+            .WithDisplayName("Generate MapServer Service Renderer (GET)")
+            .WithName("MapServerServiceGenerateRenderer")
+            .WithSummary("Generate a renderer for a MapServer layer using service-level parameters")
+            .WithDescription("Generates a renderer definition for the layer selected by layer or layerId")
+            .WithTags("MapServer");
+
+        endpoints.MapPost("/rest/services/{serviceId}/MapServer/generateRenderer", HandleMapServerServiceGenerateRenderer)
+            .WithDisplayName("Generate MapServer Service Renderer (POST)")
+            .WithName("MapServerServiceGenerateRendererPost")
+            .WithSummary("Generate a renderer for a MapServer layer using POST")
+            .WithDescription("POST equivalent of the MapServer service-level generateRenderer endpoint")
+            .WithTags("MapServer")
+            .AllowAnonymous();
+
         // FeatureServer-style layer operations exposed on the MapServer surface.
         // These forward to the existing FeatureServer handlers as-is (the MapServer
         // route supplies the same {serviceId}/{layerId} route values). Literal

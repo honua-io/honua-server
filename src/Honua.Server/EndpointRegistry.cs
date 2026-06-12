@@ -806,6 +806,8 @@ public static class EndpointRegistry
         new("GET", "/rest/services/{serviceId}/MapServer/allLayersAndTables"),
         new("GET", "/rest/services/{serviceId}/MapServer/layers"),
         new("GET", "/rest/services/{serviceId}/MapServer/queryDomains"),
+        new("GET", "/rest/services/{serviceId}/MapServer/generateRenderer"),
+        new("POST", "/rest/services/{serviceId}/MapServer/generateRenderer"),
         new("GET", "/rest/services/{serviceId}/MapServer/{layerId}/generateRenderer"),
         new("POST", "/rest/services/{serviceId}/MapServer/{layerId}/generateRenderer"),
         new("GET", "/rest/services/{serviceId}/MapServer/{layerId}/queryRelatedRecords"),

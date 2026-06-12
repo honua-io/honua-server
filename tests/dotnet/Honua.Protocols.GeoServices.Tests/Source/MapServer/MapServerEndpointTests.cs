@@ -1525,6 +1525,62 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/generateRenderer")]
+    public async Task MapServer_ServiceGenerateRenderer_WithLayer_ReturnsSimpleRenderer()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/generateRenderer?layer={WebAppFixture.TestLayerId}&f=json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+        using var document = JsonDocument.Parse(content);
+        var root = document.RootElement;
+        root.GetProperty("type").GetString().Should().Be("simple");
+        root.GetProperty("symbol").ValueKind.Should().Be(JsonValueKind.Object);
+        root.GetProperty("symbol").GetProperty("type").GetString().Should().NotBeNullOrEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/MapServer/generateRenderer")]
+    public async Task MapServer_ServiceGenerateRenderer_PostWithLayerId_ReturnsClassBreaksRenderer()
+    {
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/generateRenderer",
+            new FormUrlEncodedContent([
+                new KeyValuePair<string, string>("f", "json"),
+                new KeyValuePair<string, string>("layerId", WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture)),
+                new KeyValuePair<string, string>(
+                    "classificationDef",
+                    """{"type":"classBreaksDef","classificationField":"objectid","classificationMethod":"esriClassifyEqualInterval","breakCount":3}""")
+            ]));
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+        using var document = JsonDocument.Parse(content);
+        var root = document.RootElement;
+        root.GetProperty("type").GetString().Should().Be("classBreaks");
+        root.GetProperty("field").GetString().Should().Be("objectid");
+        root.GetProperty("classBreakInfos").ValueKind.Should().Be(JsonValueKind.Array);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/generateRenderer")]
+    public async Task MapServer_ServiceGenerateRenderer_WithoutLayer_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/generateRenderer?f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("layer or layerId is required.");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/{layerId}/generateRenderer")]
     public async Task MapServer_GenerateRenderer_ReturnsSimpleRenderer()
     {

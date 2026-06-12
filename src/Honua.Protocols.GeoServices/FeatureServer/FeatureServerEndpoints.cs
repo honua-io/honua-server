@@ -115,7 +115,8 @@ internal static partial class FeatureServerEndpoints
             .Produces(400)
             .Produces(404);
 
-        var generateRenderer = endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/{layerId:int}/generateRenderer", (Delegate)HandleGenerateRenderer)
+        var generateRenderer = endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/{layerId:int}/generateRenderer",
+                (Func<HttpContext, Task<IResult>>)HandleGenerateRenderer)
             .WithDisplayName("Generate Renderer")
             .WithName("GenerateRenderer")
             .WithSummary("Generate a renderer for a FeatureServer layer")
@@ -125,7 +126,8 @@ internal static partial class FeatureServerEndpoints
         .Produces(400)
         .Produces(404);
 
-        var generateRendererPost = endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/{layerId:int}/generateRenderer", (Delegate)HandleGenerateRenderer)
+        var generateRendererPost = endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/{layerId:int}/generateRenderer",
+                (Func<HttpContext, Task<IResult>>)HandleGenerateRenderer)
             .WithDisplayName("Generate Renderer (POST)")
             .WithName("GenerateRendererPost")
             .WithSummary("Generate a renderer for a FeatureServer layer using POST")
