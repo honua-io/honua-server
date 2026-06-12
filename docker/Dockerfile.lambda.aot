@@ -92,7 +92,8 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
       -p:StripSymbols=true \
       -p:OptimizationPreference=Speed \
       -p:IlcOptimizationPreference=Speed \
-      -p:IlcSingleThreaded="$ILC_SINGLE_THREADED" && \
+      -p:IlcSingleThreaded="$ILC_SINGLE_THREADED" \
+      -p:HonuaSkipOracleForAotVerification=true && \
     rm -rf /app/BlazorDebugProxy /app/wwwroot && \
     find /app -type f \( -name '*.pdb' -o -name '*.dbg' \) -delete
 
