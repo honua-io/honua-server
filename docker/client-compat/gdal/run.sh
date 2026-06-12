@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+﻿#!/usr/bin/env bash
 # Runs the GDAL/OGR interop suite against the Compose honua service and writes
 # the JSON evidence envelope plus per-protocol .cert.json envelopes to /output
 # for the baseline-diff step.

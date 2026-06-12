@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+﻿#!/usr/bin/env bash
 # Extracts SQL statements from a version-1 seed YAML file and applies them
 # via psql. Requires: python3 (or python), pyyaml, psql.
 #

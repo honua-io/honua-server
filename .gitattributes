@@ -1,0 +1,9 @@
+# Force LF line endings for files that execute inside Linux containers.
+# Without this, Windows checkouts (core.autocrlf=true) inject CR bytes that
+# cause /bin/sh to fail with "set: Illegal option -" on the very first line
+# of restore-dotnet-with-github-packages.sh (and any other *.sh entrypoints).
+*.sh text eol=lf
+
+# Container entrypoints that are not *.sh but must stay LF inside the image.
+docker/cloud/lambda/bootstrap.sh text eol=lf
+docker/cloud/azure-functions/handler.sh text eol=lf

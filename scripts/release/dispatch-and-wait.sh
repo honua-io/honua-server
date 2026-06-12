@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+﻿#!/usr/bin/env bash
 
 # Dispatch a GitHub Actions workflow (optionally in another repo), wait for the
 # run it created, and print a one-line evidence JSON describing the result:

@@ -1,4 +1,4 @@
-#!/bin/bash
+﻿#!/bin/bash
 
 # GML 3.2 CITE conformance testing script for Honua Server.
 # Validates GML document output against the OGC GML 3.2 specification.

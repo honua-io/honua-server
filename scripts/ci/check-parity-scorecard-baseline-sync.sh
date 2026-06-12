@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+﻿#!/usr/bin/env bash
 set -euo pipefail
 
 parity_test_file="${1:-tests/dotnet/Honua.Server.Tests/Import/GeoservicesParityIntegrationTests.cs}"

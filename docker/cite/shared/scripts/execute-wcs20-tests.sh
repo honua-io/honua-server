@@ -1,4 +1,4 @@
-#!/bin/sh
+﻿#!/bin/sh
 
 # Runs the official OGC WCS 2.0 ETS from the ogccite/ets-wcs20 image and
 # writes machine-readable results into /results for the outer harness.

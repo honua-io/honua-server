@@ -1,4 +1,4 @@
-#!/bin/sh
+﻿#!/bin/sh
 
 # OGC CITE Team Engine test execution script
 # Runs actual WFS 2.0 conformance tests against Honua Server
