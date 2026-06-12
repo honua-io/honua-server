@@ -292,7 +292,12 @@ if (!isTestEnvironment || registerInfrastructureInTestEnvironment)
 Honua.Postgres.Features.Security.PostgresConnectionDriverServiceCollectionExtensions.AddPostgresConnectionDriver(builder.Services);
 Honua.MySql.Features.Security.MySqlConnectionDriverServiceCollectionExtensions.AddMySqlConnectionDriver(builder.Services);
 Honua.SqlServer.Features.Security.SqlServerConnectionDriverServiceCollectionExtensions.AddSqlServerConnectionDriver(builder.Services);
+#if !HONUA_SKIP_ORACLE
+// The Native AOT publish (HonuaSkipOracleForAotVerification) drops the Honua.Oracle
+// ProjectReference and defines HONUA_SKIP_ORACLE, so this registration is compiled out
+// (Oracle.ManagedDataAccess is not single-file/AOT safe — see Honua.Server.csproj).
 Honua.Oracle.Features.Security.OracleConnectionDriverServiceCollectionExtensions.AddOracleConnectionDriver(builder.Services);
+#endif
 builder.Services.AddSingleton<Honua.Core.Features.Security.Abstractions.IConnectionDriverRegistry, Honua.Core.Features.Security.Abstractions.ConnectionDriverRegistry>();
 
 // IGeometryService is a pure NTS-backed compute service (its only dependency is
