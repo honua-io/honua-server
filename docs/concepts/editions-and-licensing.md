@@ -5,8 +5,8 @@ Honua's source is available under the [Elastic License 2.0](https://github.com/h
 | Edition | How it activates | Scope |
 |---|---|---|
 | Community | Default — no license file configured | Baseline platform: all protocols, publishing, one-shot file import, portal token issuance |
-| Pro | Signed license file with Pro entitlements | Adds features such as feature editing, spatial analytics, real-time streams, Redis caching, geocoding |
-| Enterprise | Signed license file with Enterprise entitlements | Adds features such as OIDC authentication, branch versioning, service imports, the plugin SDK |
+| Pro | Signed license file with Pro entitlements | Adds features such as feature editing, spatial analytics, real-time streams, Redis caching, geocoding, single-provider OIDC SSO |
+| Enterprise | Signed license file with Enterprise entitlements | Adds features such as multi-provider OIDC governance, claim-to-role mapping, branch versioning, service imports, the plugin SDK |
 
 A server with no license — or with a missing, malformed, or expired one — runs in Community mode. Nothing breaks; paid features simply stay inactive.
 
@@ -25,7 +25,7 @@ A license is a small UTF-8 JSON envelope signed with Ed25519:
 
 The decoded payload declares `licenseId`, `licensedTo`, `edition`, `issuedAt`, an optional `expiresAt`, and an `entitlements` array of feature keys. Validation is fully offline — the server verifies the signature against locally configured trusted public keys; no license server or phone-home is involved.
 
-Feature activation is entitlement-based: Community-tier features are always active, and a paid feature is active only when its key (for example `editing.feature-edits` or `identity.oidc`) appears in the signed `entitlements` array. The `edition` label is operator-facing and does not by itself activate every feature in that edition. Inspect the full feature inventory at `GET /api/v1/admin/license/entitlements`.
+Feature activation is entitlement-based: Community-tier features are always active, and a paid feature is active only when its key (for example `editing.feature-edits` or `identity.oidc`) appears in the signed `entitlements` array. Basic single-provider OIDC is a Pro entitlement; multi-provider OIDC configuration and claim-to-role mapping remain Enterprise entitlements. The `edition` label is operator-facing and does not by itself activate every feature in that edition. Inspect the full feature inventory at `GET /api/v1/admin/license/entitlements`.
 
 ## Configuration
 
