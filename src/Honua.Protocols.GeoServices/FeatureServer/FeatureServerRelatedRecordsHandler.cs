@@ -318,11 +318,6 @@ internal sealed class FeatureServerRelatedRecordsHandler(
     {
         var unsupported = new List<string>();
 
-        if (queryParams.ReturnTrueCurves)
-        {
-            unsupported.Add("returnTrueCurves");
-        }
-
         if (!string.IsNullOrWhiteSpace(queryParams.GdbVersion))
         {
             unsupported.Add("gdbVersion");

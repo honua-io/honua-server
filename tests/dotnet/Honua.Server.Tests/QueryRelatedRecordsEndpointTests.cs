@@ -361,6 +361,19 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.QueryRelatedRecords)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
+    public async Task QueryRelatedRecords_WithReturnTrueCurves_AcceptsRequest()
+    {
+        var response = await GetWithRetryAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1&relationshipId={TestRelationshipId}&returnTrueCurves=true");
+
+        response.Be200Ok();
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().NotContain("Unsupported query parameters");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryRelatedRecords)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
     public async Task QueryRelatedRecords_WithResultRecordCount_LimitsResults()
     {
         // Act

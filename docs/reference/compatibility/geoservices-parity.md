@@ -54,7 +54,7 @@ Esri spec: [Feature Service](https://developers.arcgis.com/rest/services-referen
 | Output formats `f=json/pjson/geojson/pbf/fgb/geobuf/parquet/arrow` | Implemented | GeoJSON/GeoParquet/GeoArrow require EPSG:4326 when geometry is present; `parquet`/`arrow` always strip M values; `fgb`/`geobuf` need native store support and ignore precision/simplification parameters; special query modes always return JSON. |
 | `resultType`, `sqlFormat`, `gdbVersion`, `quantizationParameters`, `datumTransformation` | Partial | Accepted for client compatibility; `gdbVersion`/`quantizationParameters` (for `f=json`/`geojson`)/`datumTransformation` are ignored. Layer metadata honestly advertises `supportsCoordinatesQuantization=false`; `f=pbf` does return a quantized `transform`. |
 | `returnExceededLimitFeatures` | Partial | Accepted and ignored for client compatibility; Honua always reports `exceededTransferLimit` when more rows exist for the current page. |
-| `returnTrueCurves` | Not implemented | Rejected with 400. |
+| `returnTrueCurves` | Partial | Accepted and ignored for client compatibility; Honua still advertises `supportsTrueCurve=false` and emits linearized geometries. |
 
 ### applyEdits parameters
 
@@ -62,7 +62,7 @@ Esri spec: [Feature Service](https://developers.arcgis.com/rest/services-referen
 `useGlobalIds`, `gdbVersion`, `returnEditMoment`, and `attachments` are rejected with
 400; session/async/upload-style parameters (`assetMaps`, `sessionID`, `async`,
 `editsUploadId`, ...) are silently ignored. queryRelatedRecords rejects
-`returnTrueCurves`, `gdbVersion`, and `historicMoment` with 400.
+`gdbVersion` and `historicMoment` with 400 and accepts/ignores `returnTrueCurves`.
 
 ## MapServer + WMS / WMTS
 

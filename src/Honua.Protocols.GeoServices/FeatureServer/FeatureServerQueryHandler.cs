@@ -1121,7 +1121,6 @@ internal sealed partial class FeatureServerQueryHandler(
             parameters.ReturnCentroid ||
             parameters.ReturnDistance ||
             parameters.ReturnDistinctValues ||
-            parameters.ReturnTrueCurves ||
             parameters.GeometryPrecision.HasValue ||
             parameters.MaxAllowableOffset.HasValue ||
             parameters.NearestCount.HasValue)
@@ -2263,15 +2262,14 @@ internal sealed partial class FeatureServerQueryHandler(
     {
         var unsupported = new List<string>();
 
-        if (queryParams.ReturnTrueCurves)
-        {
-            unsupported.Add("returnTrueCurves");
-        }
-
         // returnExceededLimitFeatures is accepted and ignored: Honua already reports
         // exceededTransferLimit when more rows exist within the page, so the flag needs no
         // special handling. The ArcGIS Maps SDK for .NET ServiceFeatureTable.QueryFeaturesAsync
         // always sends it, so rejecting it broke every .NET FeatureServer client (#1460).
+        //
+        // returnTrueCurves is also accepted as a no-op. Honua does not advertise true-curve
+        // support and the current geometry writers emit linearized geometries, but ArcGIS
+        // clients may still include the flag on otherwise ordinary feature queries.
 
         if (unsupported.Count == 0)
         {

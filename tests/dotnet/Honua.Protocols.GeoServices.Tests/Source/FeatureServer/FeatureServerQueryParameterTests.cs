@@ -21,22 +21,6 @@ public sealed class FeatureServerQueryParameterTests : IAsyncLifetime
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
-    // Parameters that change result semantics are still rejected — silently ignoring
-    // them would return output that differs from what the client asked for.
-    [Theory]
-    [InlineData("returnTrueCurves=true", "returnTrueCurves")]
-    [Operation(Operations.Query)]
-    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
-    public async Task Query_WithSemanticsChangingUnsupportedParameter_ReturnsBadRequest(string queryParam, string expectedToken)
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=json&{queryParam}");
-
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("Unsupported query parameters").And.Contain(expectedToken);
-    }
-
     // ArcGIS Pro and the JS API send these parameters by default even when the
     // backing service doesn't honor them. Rejecting the request would break
     // out-of-the-box client connections for interop-compat reasons, so these
@@ -50,6 +34,7 @@ public sealed class FeatureServerQueryParameterTests : IAsyncLifetime
     [InlineData("quantizationParameters=1")]
     [InlineData("datumTransformation=4326")]
     [InlineData("returnExceededLimitFeatures=true")]
+    [InlineData("returnTrueCurves=true")]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
     public async Task Query_WithCompatibilityParameter_AcceptsRequest(string queryParam)

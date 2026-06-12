@@ -668,7 +668,8 @@
           },
           {
             "name": "returnTrueCurves",
-            "status": "rejected"
+            "status": "ignored",
+            "notes": "Accepted for client compatibility; Honua advertises supportsTrueCurve=false and emits linearized geometries."
           },
           {
             "name": "returnExceededLimitFeatures",
@@ -722,8 +723,13 @@
             "status": "implemented"
           },
           {
-            "name": "historicMoment, returnTrueCurves, gdbVersion",
+            "name": "historicMoment, gdbVersion",
             "status": "rejected"
+          },
+          {
+            "name": "returnTrueCurves",
+            "status": "ignored",
+            "notes": "Accepted for client compatibility; related record geometries remain linearized."
           },
           {
             "name": "f",
