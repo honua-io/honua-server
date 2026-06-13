@@ -43,12 +43,12 @@ Connectivity check: `psql -h db.example.com -U honua -d honua -c "SELECT 1;"` an
 
 | Symptom | Diagnosis | Fix |
 |---|---|---|
-| 401 on every admin call in a fresh compose stack | The stock `docker-compose.yml` does not pass `HONUA_ADMIN_PASSWORD` into the container | Add it via `docker-compose.override.yml` or your production compose file, then restart |
+| 401 on every admin call in a custom compose stack | `HONUA_ADMIN_PASSWORD` was not passed into the container | Add it via your compose environment or secret source, then restart |
 | 401 with the password set | Request missing the header, or set after start | Send `X-API-Key: <admin password>`; restart the container after env changes |
 | 401 on anonymous reads (tiles, features) that "should be public" | Anonymous access is denied until a service access policy allows it | `PUT /api/v1/admin/services/{serviceId}/access-policy` with `{"allowAnonymous": true}` |
 | OIDC 401 | Provider not configured or issuer mismatch | Set `Oidc:Enabled=true`, configure a provider (`Oidc:Generic`, `Oidc:AzureAd`, `Oidc:Google`), check the authority URL against the discovery document, and sync system time |
 | OIDC 403 | Token lacks an admin role | Map the role claim with `Oidc:ClaimsMapping:RoleClaimType` and set `Oidc:AdminRoles` |
-| Browser calls blocked (CORS error in console) | Dev CORS is force-disabled inside containers/Kubernetes | Set `Cors__AllowedOrigins__0` to the page's exact origin (scheme + host + port) |
+| Browser calls blocked (CORS error in console) | Dev permissive CORS is force-disabled inside containers/Kubernetes unless origins are configured explicitly | Set `Cors__AllowedOrigins__0` to the page's exact origin (scheme + host + port); the repo-root dev compose wires `HONUA_DEV_CORS_ORIGIN` to that setting |
 
 ## Imports
 

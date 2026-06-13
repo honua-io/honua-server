@@ -12,32 +12,19 @@ You'll have Honua running in Docker with a published dataset rendered in a brows
 git clone https://github.com/honua-io/honua-server.git && cd honua-server
 ```
 
-2. Create a compose override that sets the admin password, the connection-encryption key, and a CORS origin for your map page. Docker Compose merges `docker-compose.override.yml` automatically.
-
-```bash
-cat > docker-compose.override.yml <<'EOF'
-services:
-  honua:
-    environment:
-      HONUA_ADMIN_PASSWORD: quickstart-admin-password
-      Security__ConnectionEncryption__MasterKey: quickstart-master-key-0123456789abcdef
-      Cors__AllowedOrigins__0: http://localhost:3000
-EOF
-```
-
-3. Start the stack (PostGIS plus Honua, built from source — the first run takes a few minutes).
+2. Start the stack (PostGIS plus Honua, built from source — the first run takes a few minutes). The repo-root compose file includes development-only defaults for the admin password, connection-encryption key, and browser origin used below.
 
 ```bash
 docker compose up -d
 ```
 
-4. Wait until the server reports ready.
+3. Wait until the server reports ready.
 
 ```bash
 curl http://localhost:8080/healthz/ready
 ```
 
-5. Create a small GeoJSON file to import.
+4. Create a small GeoJSON file to import.
 
 ```bash
 cat > points.geojson <<'EOF'
@@ -48,7 +35,7 @@ cat > points.geojson <<'EOF'
 EOF
 ```
 
-6. Import it. Admin endpoints authenticate with the `X-API-Key` header carrying the admin password.
+5. Import it. Admin endpoints authenticate with the `X-API-Key` header carrying the admin password.
 
 ```bash
 curl -s -H "X-API-Key: quickstart-admin-password" \
@@ -56,7 +43,7 @@ curl -s -H "X-API-Key: quickstart-admin-password" \
   http://localhost:8080/api/v1/admin/import/upload
 ```
 
-7. Register the compose database as a connection (publishing reads tables through named connections).
+6. Register the compose database as a connection (publishing reads tables through named connections).
 
 ```bash
 curl -s -H "X-API-Key: quickstart-admin-password" -H "Content-Type: application/json" \
@@ -64,7 +51,7 @@ curl -s -H "X-API-Key: quickstart-admin-password" -H "Content-Type: application/
   http://localhost:8080/api/v1/admin/connections
 ```
 
-8. Publish the imported table as a layer (imports land in the `honua_data` schema) and note the `layerId` in the response.
+7. Publish the imported table as a layer (imports land in the `honua_data` schema) and note the `layerId` in the response.
 
 ```bash
 curl -s -H "X-API-Key: quickstart-admin-password" -H "Content-Type: application/json" \
@@ -72,7 +59,7 @@ curl -s -H "X-API-Key: quickstart-admin-password" -H "Content-Type: application/
   http://localhost:8080/api/v1/admin/connections/local/layers
 ```
 
-9. Allow anonymous reads on the `default` service so the browser can fetch tiles without a key.
+8. Allow anonymous reads on the `default` service so the browser can fetch tiles without a key.
 
 ```bash
 curl -s -X PUT -H "X-API-Key: quickstart-admin-password" -H "Content-Type: application/json" \
@@ -80,7 +67,7 @@ curl -s -X PUT -H "X-API-Key: quickstart-admin-password" -H "Content-Type: appli
   http://localhost:8080/api/v1/admin/services/default/access-policy
 ```
 
-10. Save this as `map.html` (if your `layerId` from step 8 was not `1`, change the first line of the script), then serve it and open <http://localhost:3000/map.html>.
+9. Save this as `map.html` (if your `layerId` from step 7 was not `1`, change the first line of the script), then serve it and open <http://localhost:3000/map.html>.
 
 ```bash
 cat > map.html <<'EOF'
@@ -117,10 +104,8 @@ In the browser you should see three blue circles over San Francisco.
 
 ## Troubleshoot
 
-- **`Admin authentication not configured` (401)** — `HONUA_ADMIN_PASSWORD` did not reach the container; confirm `docker-compose.override.yml` exists, then run `docker compose up -d` again and check with `docker compose config`.
-- **`Master key not configured` when creating the connection** — `Security__ConnectionEncryption__MasterKey` is missing or shorter than 32 characters in the override file.
-- **Tiles return 401 in the browser** — step 9 (anonymous read) was skipped, or the publish used a different service name than `default`.
-- **Blank map and CORS errors in the browser console** — the page must be served from `http://localhost:3000` (the origin allowed in step 2), not opened as a `file://` URL.
+- **Tiles return 401 in the browser** — step 8 (anonymous read) was skipped, or the publish used a different service name than `default`.
+- **Blank map and CORS errors in the browser console** — the page must be served from `http://localhost:3000`, not opened as a `file://` URL. Use `HONUA_DEV_CORS_ORIGIN` before `docker compose up -d` if you serve the page from another origin.
 - More help: [Troubleshooting](../guides/deploy/troubleshooting.md)
 
 ## Next steps
