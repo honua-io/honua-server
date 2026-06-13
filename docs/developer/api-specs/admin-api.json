@@ -722,8 +722,9 @@
           "Metadata"
         ],
         "summary": "Get Admin Capabilities",
-        "description": "Returns metadata capabilities and the canonical SDK compatibility contract for the control plane.",
+        "description": "Returns metadata capabilities and the canonical SDK compatibility contract for the control plane. Readable anonymously so SDK compatibility checks can run before credentials exist.",
         "operationId": "getAdminCapabilities",
+        "security": [],
         "responses": {
           "200": {
             "description": "Admin metadata capabilities and SDK compatibility metadata",
@@ -1871,8 +1872,9 @@
           "Configuration"
         ],
         "summary": "Get Admin OpenAPI Specification",
-        "description": "Returns the bundled OpenAPI contract snapshot for the admin/control-plane API.",
+        "description": "Returns the bundled OpenAPI contract snapshot for the admin/control-plane API. The document itself is readable anonymously; the operations it describes require admin authentication.",
         "operationId": "getAdminOpenApi",
+        "security": [],
         "parameters": [
           {
             "name": "f",
