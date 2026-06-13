@@ -50,10 +50,15 @@ internal static class AdminEndpoints
         _ = adminGroup.MapMethods("/config", _nonGetMethods, HandleGetOnlyMethodNotAllowed)
             .WithDisplayName("Get Configuration Documentation Method Not Allowed");
 
-        // Runtime OpenAPI endpoint for admin/control-plane contract.
+        // Runtime OpenAPI endpoint for admin/control-plane contract. The document is
+        // public API documentation (the same bundled admin-api.json snapshot committed
+        // to the repo), not a secret: it is served anonymously so the /docs explorer and
+        // evaluators can read it without credentials (#1635). Every actual admin
+        // operation stays behind the group's admin authorization.
         _ = adminGroup.MapMethods("/openapi.json", [HttpMethods.Get], HandleGetOpenApiSpec)
             .WithDisplayName("Get Admin OpenAPI Specification")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
+            .AllowAnonymous();
         _ = adminGroup.MapMethods("/openapi.json", _nonGetMethods, HandleGetOnlyMethodNotAllowed)
             .WithDisplayName("Get Admin OpenAPI Specification Method Not Allowed");
 

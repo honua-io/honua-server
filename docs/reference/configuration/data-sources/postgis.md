@@ -62,6 +62,14 @@ The preflight result is available via `GET /api/v1/admin/deploy/preflight?includ
 3. Connection pooling: Flexible Server supports built-in PgBouncer; Honua works with both direct and pooled connections.
 4. High availability: configure zone-redundant HA. Honua connects to the primary endpoint; failover is transparent at the DNS level.
 
+## Connection poolers and proxies (RDS Proxy, PgBouncer)
+
+Honua applies its PostgreSQL session settings (`lock_timeout`, `statement_timeout`, `idle_in_transaction_session_timeout`, and the default `search_path`) with plain `SET` statements that run after each physical connection opens — not via the libpq `options` startup parameter, which AWS RDS Proxy rejects (`0A000: Feature not supported: RDS Proxy currently doesn't support command-line options`) and transaction-mode poolers such as PgBouncer break on.
+
+- **AWS RDS Proxy** is supported and is the recommended way to protect connection slots when running Honua on Lambda or other rapidly scaling serverless platforms. Note that the per-connection `SET` statements cause [session pinning](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy-pinning.html) on the proxy: each Honua-held connection stays pinned to one database connection. This reduces the proxy's ability to multiplex but preserves the thing the proxy is deployed for — capping total database connections; size `Limits__Connections__MaxConnectionPoolSize` accordingly.
+- **PgBouncer (transaction mode)**: connections open without errors, but transaction-mode pooling does not guarantee that session-level `SET` values follow Honua's connection across transactions. Prefer session mode, or use direct connections with Honua's own pool limits.
+- **Npgsql multiplexing** (`Limits__Connections__Multiplexing=true`, default `false`) is mutually exclusive with RDS Proxy and transaction-mode poolers: in multiplexing mode Honua intentionally keeps the session settings on the `options` startup parameter, because startup parameters are the only delivery that survives interleaved logical sessions on shared physical connections. Leave multiplexing off (the default) when connecting through any pooler or proxy.
+
 ## Pooling and admission variables
 
 | Variable | Default | Purpose |
@@ -75,6 +83,7 @@ The preflight result is available via `GET /api/v1/admin/deploy/preflight?includ
 | `Limits__Connections__StatementTimeout` / `LockTimeout` | `00:00:30` | Server-side statement and lock timeouts. |
 | `Limits__Connections__IdleInTransactionTimeout` | `00:01:00` | Idle-in-transaction timeout. |
 | `Limits__Connections__AdaptiveConcurrencyEnabled` | `false` | Adaptive query admission below the concurrency ceiling. |
+| `Limits__Connections__Multiplexing` | `false` | Npgsql multiplexing (`false`, `true`, or `auto`). Incompatible with RDS Proxy and transaction-mode poolers — see [Connection poolers and proxies](#connection-poolers-and-proxies-rds-proxy-pgbouncer). |
 
 The full admission set (adaptive bounds, target lease duration, update interval) is in the [environment variable reference](../environment-variables.md#admission-and-pooling). Pool and admission behavior can be observed at `GET /monitoring/metrics/connection-pool`.
 

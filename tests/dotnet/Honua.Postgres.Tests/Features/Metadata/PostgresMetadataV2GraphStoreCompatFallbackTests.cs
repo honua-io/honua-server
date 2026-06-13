@@ -162,21 +162,93 @@ public sealed class PostgresMetadataV2GraphStoreCompatFallbackTests(PostgresFixt
     }
 
     [IntegrationTest]
-    public async Task GetCurrentAsync_NoV2SnapshotAndEmptyV1Catalog_StillThrows()
+    public async Task GetCurrentAsync_NoV2SnapshotAndEmptyV1Catalog_ReturnsEmptySnapshot()
     {
+        // Before honua-server#1619 this threw InvalidOperationException and caused every
+        // catalog-style endpoint (STAC, /rest/services, /ogc/features/collections, …) to
+        // return HTTP 500 on a freshly deployed server with zero published datasets.
+        // The correct behaviour is an empty-but-valid snapshot so those endpoints return
+        // 200 with zero items instead.
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataV2GraphStoreCompatFallbackTests));
         try
         {
-            // V1 catalog tables exist but contain no published service layers — there is genuinely
-            // nothing to serve, so the store keeps the original not-found contract.
+            // V1 catalog tables exist but contain no published service layers.
             await CreateV1CatalogTablesAsync(fixture.DataSource, schema);
 
             var provider = new TestConnectionProvider(fixture.DataSource, schema);
             var store = new PostgresMetadataV2GraphStore(provider, environment: "Test", schemaName: schema);
 
-            var act = () => store.GetCurrentAsync().AsTask();
+            var snapshot = await store.GetCurrentAsync();
 
-            await act.Should().ThrowAsync<InvalidOperationException>();
+            snapshot.Should().NotBeNull();
+            snapshot.Graph.Services.Should().BeEmpty("an empty server should have no services");
+            snapshot.Graph.Resources.Should().BeEmpty("an empty server should have no resources");
+            snapshot.Graph.Publications.Should().BeEmpty("an empty server should have no publications");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task GetCurrentAsync_NoV2SnapshotAndNoV1Tables_ReturnsEmptySnapshot()
+    {
+        // When the V1 catalog tables are absent (v2-only fresh database or pre-migration
+        // container), the store should still return an empty snapshot rather than 500ing.
+        // (honua-server#1619.)
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataV2GraphStoreCompatFallbackTests));
+        try
+        {
+            // Do NOT create V1 catalog tables — simulate a v2-only fresh database.
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var store = new PostgresMetadataV2GraphStore(provider, environment: "Test", schemaName: schema);
+
+            var snapshot = await store.GetCurrentAsync();
+
+            snapshot.Should().NotBeNull();
+            snapshot.Graph.Services.Should().BeEmpty("a fresh v2-only database should have no services");
+            snapshot.Graph.Resources.Should().BeEmpty("a fresh v2-only database should have no resources");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task GetCurrentAsync_ActivatedSnapshotFailsToMaterialize_StillThrows()
+    {
+        // The empty-snapshot fallback (honua-server#1619) must apply ONLY when no snapshot
+        // exists. A snapshot that IS activated in the database but cannot be materialized
+        // (corrupt/empty document) is a genuine failure and must keep erroring — silently
+        // serving an empty catalog would mask data loss.
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataV2GraphStoreCompatFallbackTests));
+        try
+        {
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var store = new PostgresMetadataV2GraphStore(provider, environment: "Test", schemaName: schema);
+
+            // Activate a real snapshot (SaveAsync self-heals the v2 schema), then corrupt
+            // the stored document so materialization fails on the next read.
+            var graph = new MetadataV2Graph
+            {
+                Environment = "Test",
+                Revision = 1,
+                GeneratedAt = DateTimeOffset.UtcNow,
+            };
+            await store.SaveAsync(graph, expectedEtag: null);
+            await ExecuteAsync(fixture.DataSource, schema, $"""
+                UPDATE "{schema}".metadata_v2_snapshots SET document = 'null'::jsonb
+                WHERE environment = 'Test' AND revision = 1;
+                """);
+
+            // A fresh store instance avoids the in-process cache so the read hits Postgres.
+            var readStore = new PostgresMetadataV2GraphStore(provider, environment: "Test", schemaName: schema);
+            var act = () => readStore.GetCurrentAsync().AsTask();
+
+            await act.Should().ThrowAsync<InvalidDataException>(
+                "an activated-but-unloadable snapshot must surface an error, not an empty catalog");
         }
         finally
         {

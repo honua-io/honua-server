@@ -18,9 +18,9 @@ namespace Honua.Server.Tests.Comprehensive;
 /// <list type="table">
 /// <listheader><term>Endpoint</term><description>Scenarios</description></listheader>
 /// <item><term>GET  /api/v1/admin/config</term><description>happy, 401</description></item>
-/// <item><term>GET  /api/v1/admin/openapi.json</term><description>happy, 401</description></item>
+/// <item><term>GET  /api/v1/admin/openapi.json</term><description>happy, anonymous 200 (#1635)</description></item>
 /// <item><term>GET  /api/v1/admin/version</term><description>happy, 401</description></item>
-/// <item><term>GET  /api/v1/admin/capabilities</term><description>happy, 401</description></item>
+/// <item><term>GET  /api/v1/admin/capabilities</term><description>happy, anonymous 200 (#1633)</description></item>
 /// <item><term>GET  /api/v1/admin/services</term><description>happy, 401</description></item>
 /// <item><term>GET  /api/v1/admin/services/{name}/settings</term><description>happy, 401</description></item>
 /// <item><term>PUT  /api/v1/admin/services/{name}/protocols</term><description>happy, 401</description></item>

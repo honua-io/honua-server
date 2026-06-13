@@ -39,7 +39,7 @@ internal static class LicensingRegistration
 
         // Test/dev only: an explicit Licensing:DevGrantEdition grants every entitlement up to that
         // edition without a signed license, so an out-of-process test/CI server can exercise
-        // edition-gated features (e.g. feature editing, honua-server#1548/#1577). It is registered
+        // edition-gated features (e.g. FeatureServer editing, honua-server#1591). It is registered
         // last so it wins ILicenseEntitlementService resolution. It is FAIL-CLOSED in Production:
         // setting it there throws at startup rather than silently bypassing every edition gate.
         var devGrantEdition = configuration[$"{LicenseOptions.SectionName}:DevGrantEdition"];

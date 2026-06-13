@@ -9,14 +9,12 @@ using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Query;
 using Honua.Core.Features.Shared.Models;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Events;
-using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Validation;
 using Honua.Protocols.Ogc.Common;
@@ -47,13 +45,8 @@ internal sealed partial class OgcFeaturesCrudHandler(
     private readonly ILogger<OgcFeaturesCrudHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     private const string OgcFeaturesProtocolName = "OgcFeatures";
 
-    /// <summary>
-    /// Gates feature mutations behind the Pro <c>editing.feature-edits</c> entitlement (#1548).
-    /// Returns an HTTP 402 result when the entitlement is inactive, otherwise <c>null</c>.
-    /// </summary>
-    private IResult? RequireFeatureEditsEntitlement(HttpContext context)
-        => LicenseGate.RequireEntitlement(
-            context, FeatureCatalog.FeatureEditsKey, "Feature editing", _logger);
+    // Open-protocol feature mutations are Community (#1591): no entitlement gate here. The
+    // Pro editing gate applies only to the Esri GeoServices FeatureServer write surface.
 
     /// <summary>
     /// Handles feature creation requests.
@@ -65,12 +58,6 @@ internal sealed partial class OgcFeaturesCrudHandler(
     {
         try
         {
-            var editsGate = RequireFeatureEditsEntitlement(context);
-            if (editsGate is not null)
-            {
-                return editsGate;
-            }
-
             var layerValidation = await LayerValidationHelpers.ValidateCollectionWriteAccessV2Async(
                 context, collectionId, cancellationToken: cancellationToken);
             if (!layerValidation.IsValid)
@@ -220,12 +207,6 @@ internal sealed partial class OgcFeaturesCrudHandler(
     {
         try
         {
-            var editsGate = RequireFeatureEditsEntitlement(context);
-            if (editsGate is not null)
-            {
-                return editsGate;
-            }
-
             var layerValidation = await LayerValidationHelpers.ValidateCollectionWriteAccessV2Async(
                 context, collectionId, cancellationToken: cancellationToken);
             if (!layerValidation.IsValid)

@@ -19,7 +19,7 @@ curl http://localhost:8080/healthz/ready
 | You are a… | Start here |
 |---|---|
 | **Developer** building apps and integrations | [Quickstart](get-started/quickstart.md) · [Make your first map](get-started/first-map.md) · [Protocols](concepts/protocols.md) |
-| **Admin / operator** running the server | [Deploy with Docker Compose](guides/deploy/docker-compose.md) · [Publish layers](guides/publish/publish-layers.md) · [Set up authentication](guides/secure/authentication.md) |
+| **Admin / operator** running the server | [Deploy with Docker Compose](guides/deploy/docker-compose.md) · [Pilot onboarding runbook](guides/deploy/pilot-onboarding-runbook.md) · [Set up authentication](guides/secure/authentication.md) |
 | **Analyst** consuming the data | [Connect Excel and Power BI](guides/connect/excel-power-bi.md) · [Query features](guides/query-analyze/query-features.md) · [Export data](guides/query-analyze/export-data.md) |
 
 ## What do you want to do?
