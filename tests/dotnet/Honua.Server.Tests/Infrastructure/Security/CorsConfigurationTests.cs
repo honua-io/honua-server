@@ -58,6 +58,44 @@ public sealed class CorsConfigurationTests
         Assert.Contains("Last-Modified", policy.ExposedHeaders);
     }
 
+    [Fact]
+    public async Task ProductionPolicy_AllowsConditionalHeadersByDefault()
+    {
+        // If-Match (and other conditional headers) must be allowed cross-origin so
+        // browser/Office clients can send ETag preconditions on PATCH/PUT/DELETE,
+        // enabling optimistic concurrency from the browser (#1629).
+        var policy = await ResolvePolicyAsync(
+            CorsConfiguration.ProductionPolicy,
+            isDevelopment: false,
+            new Dictionary<string, string?>
+            {
+                ["Cors:AllowedOrigins:0"] = "https://app.example.com"
+            });
+
+        Assert.Contains("If-Match", policy.Headers);
+        Assert.Contains("If-Unmodified-Since", policy.Headers);
+        Assert.Contains("If-None-Match", policy.Headers);
+    }
+
+    [Fact]
+    public async Task ProductionPolicy_AppendsConfiguredHeadersWithoutDroppingDefaults()
+    {
+        // Operator-supplied Cors:AllowedHeaders entries extend the default set; they
+        // must never silently replace the standard conditional headers.
+        var policy = await ResolvePolicyAsync(
+            CorsConfiguration.ProductionPolicy,
+            isDevelopment: false,
+            new Dictionary<string, string?>
+            {
+                ["Cors:AllowedOrigins:0"] = "https://app.example.com",
+                ["Cors:AllowedHeaders:0"] = "X-Custom-Header"
+            });
+
+        Assert.Contains("X-Custom-Header", policy.Headers);
+        Assert.Contains("If-Match", policy.Headers);
+        Assert.Contains("Content-Type", policy.Headers);
+    }
+
     private static async Task<CorsPolicy> ResolvePolicyAsync(
         string policyName,
         bool isDevelopment,

@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 
 # Validate that advertised OGC API Features conformance classes were actually tested.
 

@@ -598,8 +598,7 @@ internal sealed partial class ODataCrudService
         IReadOnlyDictionary<string, object?> attributes)
     {
         var payload = ODataUtilityService.BuildFeaturePayload(layerId, feature, geometry, attributes);
-        var canonical = ODataUtilityService.NormalizeForEtag(payload);
-        var json = JsonSerializer.SerializeToUtf8Bytes(canonical);
+        var json = ODataUtilityService.SerializeForEtag(payload);
         return _etagService.ComputeETag(json);
     }
 

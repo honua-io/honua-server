@@ -31,6 +31,14 @@ internal sealed class PostgresRasterStore : IRasterStore
     private const int RasterStatisticsLockNamespace = 0x0484_5222;
     private const int LayerStatisticsLockNamespace = 0x0484_5223;
 
+    // A single statistics backfill runs ST_SummaryStats across every pixel of a raster (or
+    // every raster in a mosaic) and can exceed a minute on county-scale imagery. The compute
+    // is serialized behind a transaction-scoped advisory lock (single-flight), so it is given
+    // a dedicated, generous timeout — independent of the ~30s request-path command/statement
+    // timeout default — otherwise the first cold read on a large raster times out and the
+    // statistics never persist, retrying forever instead of self-healing (#1649).
+    private const int StatisticsComputeTimeoutSeconds = 300;
+
     private readonly IDatabaseConnectionProvider _connectionProvider;
     private readonly ILogger<PostgresRasterStore> _logger;
     private readonly string _rasterDataTable;
@@ -1024,11 +1032,16 @@ internal sealed class PostgresRasterStore : IRasterStore
 
         try
         {
+            // Grant this single-flight transaction the dedicated compute budget so a
+            // county-scale ST_SummaryStats can finish and persist instead of timing out (#1649).
+            await ApplyStatisticsComputeBudgetAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
+
             // Compute and persist in a single statement (mirrors the import-time
             // ComputeAndStoreStatisticsAsync semantics, including nodata_pixel_count).
             await using (var command = connection.CreateCommand())
             {
                 command.Transaction = transaction;
+                command.CommandTimeout = StatisticsComputeTimeoutSeconds;
                 command.CommandText = $"""
                     INSERT INTO {_rasterStatisticsTable}
                         (raster_data_id, band_number, min_value, max_value, mean_value, std_dev, valid_pixel_count, nodata_pixel_count)
@@ -1087,6 +1100,10 @@ internal sealed class PostgresRasterStore : IRasterStore
 
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         await AcquireBackfillLockAsync(connection, transaction, LayerStatisticsLockNamespace, layerId, cancellationToken).ConfigureAwait(false);
+
+        // Grant this single-flight transaction the dedicated compute budget so a large-mosaic
+        // ST_SummaryStats can finish and persist instead of timing out (#1649).
+        await ApplyStatisticsComputeBudgetAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
 
         List<RasterStatistics> persisted;
         try
@@ -1229,6 +1246,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
+        command.CommandTimeout = StatisticsComputeTimeoutSeconds;
         command.CommandText = $"""
             SELECT band,
                    (stats).min AS min_value,
@@ -1261,6 +1279,7 @@ internal sealed class PostgresRasterStore : IRasterStore
     {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
+        command.CommandTimeout = StatisticsComputeTimeoutSeconds;
         command.CommandText = $"""
             WITH requested AS (
                 SELECT unnest(@rasterIds) AS raster_id
@@ -1371,6 +1390,24 @@ internal sealed class PostgresRasterStore : IRasterStore
         command.CommandText = "SELECT pg_advisory_xact_lock(@namespace, @lockKey);";
         AddParameter(command, "@namespace", lockNamespace);
         AddParameter(command, "@lockKey", lockKey);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Raises the statement timeout for the statistics-backfill transaction to the dedicated
+    /// compute budget. <c>SET LOCAL</c> is transaction-scoped, so the elevated budget reverts on
+    /// commit/rollback and never leaks back to the pooled connection's request-path statements.
+    /// </summary>
+    private static async Task ApplyStatisticsComputeBudgetAsync(
+        DbConnection connection,
+        DbTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = FormattableString.Invariant(
+            $"SET LOCAL statement_timeout = {StatisticsComputeTimeoutSeconds * 1000}");
+        command.CommandTimeout = StatisticsComputeTimeoutSeconds;
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 

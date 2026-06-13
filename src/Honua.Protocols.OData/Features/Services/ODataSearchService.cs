@@ -238,7 +238,11 @@ internal sealed partial class ODataSearchService
 
         var resolvedLayer = await ResolveODataLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
         var resource = resolvedLayer.Resource;
-        var aggregation = ODataAggregationHandler.ParseApplyExpression(applyExpression);
+        // Validate the terminal transform of the $apply pipeline (e.g. the groupby in
+        // filter(...)/groupby(...)); leading filter segments are field-validated when their
+        // OData filter is translated to SQL during processing (#1636).
+        var segments = ODataAggregationHandler.SplitApplyTransforms(applyExpression);
+        var aggregation = ODataAggregationHandler.ParseApplyExpression(segments[^1]);
         ValidateAggregationFields(aggregation, resource);
 
         // Use existing aggregation handler for processing

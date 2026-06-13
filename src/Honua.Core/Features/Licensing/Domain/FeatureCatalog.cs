@@ -40,6 +40,9 @@ public static class FeatureCatalog
         /// <summary>Geocoding and address resolution features.</summary>
         public const string Geocoding = "Geocoding";
 
+        /// <summary>Network routing and service-area analysis features.</summary>
+        public const string Routing = "Routing";
+
         /// <summary>Identity and authentication features.</summary>
         public const string Identity = "Identity";
 
@@ -100,6 +103,25 @@ public static class FeatureCatalog
     public const string PluginSdkKey = "plugin.sdk";
 
     /// <summary>
+    /// Entitlement key for basic single-provider OpenID Connect authentication. Pro-tier:
+    /// one configured Azure AD, Google, Okta, Auth0, or generic OIDC provider.
+    /// </summary>
+    public const string OidcAuthenticationKey = "identity.oidc";
+
+    /// <summary>
+    /// Entitlement key for configuring multiple OIDC identity providers in one deployment.
+    /// Enterprise-only identity governance; basic single-provider OIDC is separately gated
+    /// by <see cref="OidcAuthenticationKey"/>.
+    /// </summary>
+    public const string OidcMultiProviderKey = "identity.oidc-multi-provider";
+
+    /// <summary>
+    /// Entitlement key for custom OIDC claim-to-role mapping. Enterprise-only identity
+    /// governance; default role assignment for basic single-provider OIDC remains Pro.
+    /// </summary>
+    public const string OidcClaimsMappingKey = "identity.claims-mapping";
+
+    /// <summary>
     /// All edition-gated features in the platform.
     /// </summary>
     public static IReadOnlyList<FeatureDefinition> All { get; } =
@@ -146,17 +168,25 @@ public static class FeatureCatalog
         new("geocoding.batch", "Batch Geocoding", Categories.Geocoding,
             HonuaEdition.Enterprise, "Geocode multiple addresses in a single request."),
 
+        // Routing - Pro
+        new("routing.solve", "Network Routing", Categories.Routing,
+            HonuaEdition.Pro, "Solve multi-stop routes with the configured routing engine (MCP honua_solve_route and future gated surfaces)."),
+
         // Identity — Community (ArcGIS Portal interop)
         new("identity.portal-token", "ArcGIS Portal Token Issuance", Categories.Identity,
             HonuaEdition.Community, "Expose POST/GET /sharing/rest/generateToken so Esri clients can authenticate against Honua-secured /rest/services."),
         new("identity.portal-sharing", "ArcGIS Portal Sharing Read Surface", Categories.Identity,
             HonuaEdition.Community, "Expose the read-only /sharing/rest Portal facade (info, portals/self, search, content/items) so Esri clients can discover Honua content as portal items."),
 
-        // Identity — Enterprise
-        new("identity.oidc", "OIDC Authentication", Categories.Identity,
-            HonuaEdition.Enterprise, "OpenID Connect multi-provider authentication with Azure AD, Google, and generic OIDC."),
-        new("identity.claims-mapping", "Claims Mapping", Categories.Identity,
-            HonuaEdition.Enterprise, "Custom claim-to-role mapping for OIDC providers."),
+        // Identity — Pro (no SSO tax for one provider)
+        new(OidcAuthenticationKey, "OIDC Authentication", Categories.Identity,
+            HonuaEdition.Pro, "Single-provider OpenID Connect authentication with Azure AD, Google, Okta, Auth0, or generic OIDC."),
+
+        // Identity — Enterprise (multi-provider governance)
+        new(OidcMultiProviderKey, "OIDC Multi-Provider SSO", Categories.Identity,
+            HonuaEdition.Enterprise, "Configure multiple OIDC identity providers in one deployment."),
+        new(OidcClaimsMappingKey, "Claims Mapping", Categories.Identity,
+            HonuaEdition.Enterprise, "Custom claim-to-role mapping and identity governance for OIDC providers."),
 
         // Caching — Pro
         new("caching.output-cache", "Output Caching", Categories.Caching,

@@ -556,6 +556,27 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 warnings);
             return result;
         }
+        catch (ImportGeometryTooLargeException ex)
+        {
+            // A single feature exceeded the geometry size guard and the import is configured to
+            // fail rather than skip (#1626). Surface a clear, machine-readable 413-style error with
+            // remediation guidance instead of letting the oversized geometry crash the host.
+            ImportLog.ImportFailedWithException(_logger, ex, jobId, request.TableName);
+            errorMessage = SanitizeImportValidationMessage(ex);
+            var geometryTooLargeIssues = new[]
+            {
+                ImportValidationIssue.Create(ImportValidationErrorCodes.GeometryTooLarge, errorMessage)
+            };
+            result = ImportResult.CreateFailure(
+                request.TableName,
+                format ?? SupportedFileFormat.GeoJson,
+                errorMessage,
+                stopwatch.Elapsed,
+                warnings,
+                ImportValidationErrorCodes.GeometryTooLarge,
+                geometryTooLargeIssues);
+            return result;
+        }
         catch (InvalidDataException ex)
         {
             // Preserve the specific message (e.g. "Row X in row group Y contains

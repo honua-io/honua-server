@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env bash
+#!/usr/bin/env bash
 # Run one Honua.Server.Tests shard with heartbeat, timeout, and timing output.
 
 set -euo pipefail

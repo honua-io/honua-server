@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env bash
+#!/usr/bin/env bash
 
 # Merge per-suite evidence records (emitted by dispatch-and-wait.sh, one JSON
 # object per line) plus the static suite registry (release/bundle-suites.json)

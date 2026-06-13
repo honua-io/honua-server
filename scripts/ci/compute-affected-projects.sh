@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env bash
+#!/usr/bin/env bash
 # Compute the closure of .csproj files affected by a diff so CI build steps
 # can scope `dotnet build` to changed projects + their reverse-dependencies
 # instead of rebuilding the whole solution every push.

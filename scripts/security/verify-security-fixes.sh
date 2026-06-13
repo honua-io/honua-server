@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 
 #
 # Security Fixes Verification Script
