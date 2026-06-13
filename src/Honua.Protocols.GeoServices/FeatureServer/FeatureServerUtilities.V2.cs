@@ -198,7 +198,7 @@ internal static partial class FeatureServerEndpoints
             SupportsAttachmentsByUploadId = supportsQueryAttachments,
             SupportsQueryRelated = supportsRelated,
             SupportedQueryFormats = NormalizeSupportedQueryFormats(supportedFormats, supportsGeobufOutput),
-            SupportsCoordinatesQuantization = false,
+            SupportsCoordinatesQuantization = true,
             Relationships = BuildRelationshipResponseV2(resource, snapshot),
             AllowGeometryUpdates = supportsEditing,
             EditFieldsInfo = null,

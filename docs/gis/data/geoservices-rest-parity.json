@@ -691,7 +691,8 @@
           },
           {
             "name": "quantizationParameters",
-            "status": "rejected"
+            "status": "implemented",
+            "notes": "Honored for f=json: the featureSet emits a transform (originPosition/scale/translate, upperLeft or lowerLeft) and geometry coordinates become integer grid deltas; supportsCoordinatesQuantization is advertised true. Ignored for f=geojson; f=pbf returns its own quantized transform."
           },
           {
             "name": "datumTransformation",

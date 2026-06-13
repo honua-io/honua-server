@@ -783,11 +783,23 @@ internal sealed partial class FeatureServerQueryHandler(
             var isGeobuf = string.Equals(format, "geobuf", StringComparison.OrdinalIgnoreCase);
             var isParquet = string.Equals(format, "parquet", StringComparison.OrdinalIgnoreCase);
             var isArrow = string.Equals(format, "arrow", StringComparison.OrdinalIgnoreCase);
-            // returnExceededLimitFeatures=false must drop the truncated page; route those
-            // requests through the materialized path (which applies the trim) instead of
-            // the streaming writer.
+            // Esri json coordinate quantization (quantizationParameters) applies only to the
+            // GeoServices json featureSet, not geojson or the binary export formats.
+            var isGeoJson = string.Equals(format, "geojson", StringComparison.OrdinalIgnoreCase);
+            var isEsriJson = !isPbf && !isFgb && !isGeobuf && !isParquet && !isArrow && !isGeoJson;
+            QuantizationTransform? quantizationTransform = null;
+            if (isEsriJson &&
+                !FeatureQuantizer.TryParse(validatedParams.QuantizationParameters, out quantizationTransform, out var quantizationError))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, quantizationError ?? "Invalid quantizationParameters.");
+            }
+
+            // returnExceededLimitFeatures=false must drop the truncated page; quantization must
+            // post-process the materialized featureSet. Route both through the materialized path
+            // instead of the streaming writer.
             var useStreaming = effectiveLimit > StreamingThreshold && !isPbf && !isFgb && !isGeobuf && !isParquet && !isArrow
-                && validatedParams.ReturnExceededLimitFeatures;
+                && validatedParams.ReturnExceededLimitFeatures
+                && quantizationTransform is null;
 
             if (!useStreaming)
             {
@@ -916,6 +928,7 @@ internal sealed partial class FeatureServerQueryHandler(
                 }
                 var shouldApplyDistinct = validatedParams.ReturnDistinctValues && outFields is { Length: > 0 };
                 if (validatedParams.ReturnExceededLimitFeatures &&
+                    quantizationTransform is null &&
                     CanUseRawGeoServicesPointFastPath(queryLayer.Resource, validatedParams, query, outputSrid, format) &&
                     await _queryExecutor.SupportsRawGeoServicesPointOutputAsync(
                         queryLayer.Service,
@@ -1001,6 +1014,11 @@ internal sealed partial class FeatureServerQueryHandler(
                     return await CreateCachedBytesResultAsync(
                         (byte[])formattedResponse!,
                         contentType ?? "application/vnd.apache.arrow.stream");
+                }
+
+                if (quantizationTransform is not null && formattedResponse is QueryResponse quantizableResponse)
+                {
+                    formattedResponse = ApplyQuantization(quantizableResponse, quantizationTransform);
                 }
 
                 return format.ToLowerInvariant() switch
@@ -2671,6 +2689,55 @@ internal sealed partial class FeatureServerQueryHandler(
         }
 
         return QueryResult<Feature>.Create(result.TotalCount, ImmutableArray<Feature>.Empty, true);
+    }
+
+    // Rebuilds the Esri json featureSet with quantized (integer grid, delta-encoded)
+    // geometry coordinates and the matching transform, when quantizationParameters was
+    // requested. The transform lets clients recover world coordinates.
+    private static QueryResponse ApplyQuantization(QueryResponse response, QuantizationTransform transform)
+    {
+        GeoServicesFeature[]? features = response.Features;
+        if (features is { Length: > 0 })
+        {
+            var quantized = new GeoServicesFeature[features.Length];
+            for (var i = 0; i < features.Length; i++)
+            {
+                var feature = features[i];
+                quantized[i] = new GeoServicesFeature
+                {
+                    Attributes = feature.Attributes,
+                    Geometry = feature.Geometry is { } geometry ? FeatureQuantizer.Quantize(geometry, transform) : null,
+                    Centroid = feature.Centroid is { } centroid ? FeatureQuantizer.Quantize(centroid, transform) : null,
+                    IncludeGeometry = feature.IncludeGeometry,
+                };
+            }
+
+            features = quantized;
+        }
+
+        return new QueryResponse
+        {
+            GeometryType = response.GeometryType,
+            SpatialReference = response.SpatialReference,
+            DisplayFieldName = response.DisplayFieldName,
+            Fields = response.Fields,
+            HasZ = response.HasZ,
+            HasM = response.HasM,
+            ObjectIdFieldName = response.ObjectIdFieldName,
+            ObjectIds = response.ObjectIds,
+            Count = response.Count,
+            Extent = response.Extent,
+            UniqueIdField = response.UniqueIdField,
+            GlobalIdFieldName = response.GlobalIdFieldName,
+            Features = features,
+            ExceededTransferLimit = response.ExceededTransferLimit,
+            Transform = new GeoServicesTransform
+            {
+                OriginPosition = transform.OriginPosition,
+                Scale = [transform.ScaleX, transform.ScaleY],
+                Translate = [transform.TranslateX, transform.TranslateY],
+            },
+        };
     }
 
     private static string BuildDistinctKey(Feature feature, string[] outFields)
