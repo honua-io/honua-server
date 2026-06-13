@@ -1209,7 +1209,7 @@
         "spatial WHERE pushdown for query",
         "renderingRule honoured by identify (legend honours an explicit Colormap; exportImage executes Stretch + Colormap)",
                 "multidimensional cube ingestion",
-        "WCS range subset/band selection/scaling/temporal extensions",
+        "WCS scaling/temporal extensions (RANGESUBSET band selection implemented)",
         "full WCS CRS extension advertisement beyond native coverage CRS values",
         "WMTS dimensions and non-WebMercator matrix sets",
         "richer image child resources"
@@ -1617,7 +1617,7 @@
               "GET /rest/services/{id}/ImageServer/WCS",
               "GET /ogc/services/{serviceId}/wcs"
             ],
-            "notes": "WCS 2.0.1 KVP adapter for WCS-enabled raster layers. Supports GetCapabilities, DescribeCoverage, and GetCoverage over the primary raster with image/tiff, image/png, image/jpeg, SUBSET/BBOX spatial trim, SUBSETTINGCRS/BBOXCRS, and optional OUTPUTCRS. Capabilities advertise native CRSs for visible coverages; one-axis SUBSET is native-CRS only. Range subset, scaling, temporal/multidimensional slicing, NetCDF, XML POST, and WCS-specific mosaic selection are deferred."
+            "notes": "WCS 2.0.1 KVP adapter for WCS-enabled raster layers. Supports GetCapabilities, DescribeCoverage, and GetCoverage over the primary raster with image/tiff, image/png, image/jpeg, SUBSET/BBOX spatial trim, SUBSETTINGCRS/BBOXCRS, optional OUTPUTCRS, and RANGESUBSET band selection (band1..bandN, comma list and band1:bandN intervals). Capabilities advertise native CRSs for visible coverages; one-axis SUBSET is native-CRS only. The range-subsetting extension conformance class is not advertised pending CITE validation. Scaling, temporal/multidimensional slicing, NetCDF, XML POST, and WCS-specific mosaic selection are deferred."
           }
         ],
         "notImplemented": [

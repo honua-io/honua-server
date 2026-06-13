@@ -50,11 +50,11 @@ internal sealed class Wcs20Handler
         Wcs20Utilities.Parameters.OutputCrs,
         Wcs20Utilities.Parameters.BBox,
         Wcs20Utilities.Parameters.BBoxCrs,
+        Wcs20Utilities.Parameters.RangeSubset,
     };
 
     private static readonly HashSet<string> _explicitlyUnsupportedGetCoverageParameters = new(StringComparer.OrdinalIgnoreCase)
     {
-        "RANGESUBSET",
         "SCALEFACTOR",
         "SCALEAXES",
         "SCALESIZE",
@@ -967,8 +967,90 @@ internal sealed class Wcs20Handler
             rasterQuery = rasterQuery with { ClipRegion = CreateClipRegion(envelope, subsettingCrs.Srid) };
         }
 
+        if (!TryResolveRangeSubset(query, raster, out var bands, out error))
+        {
+            return false;
+        }
+
+        if (bands is { Length: > 0 })
+        {
+            rasterQuery = rasterQuery with { Bands = bands };
+        }
+
         return true;
     }
+
+    // WCS 2.0 Range Subsetting extension: RANGESUBSET selects coverage range-type fields,
+    // which DescribeCoverage advertises as band1..bandN. Accepts a comma list of field
+    // names and band1:bandN intervals.
+    private static bool TryResolveRangeSubset(
+        IQueryCollection query,
+        RasterInfo raster,
+        out int[]? bands,
+        out WcsParameterError error)
+    {
+        bands = null;
+        error = default;
+
+        var rangeSubset = GetQueryValue(query, Wcs20Utilities.Parameters.RangeSubset);
+        if (string.IsNullOrWhiteSpace(rangeSubset))
+        {
+            return true;
+        }
+
+        var bandCount = Math.Max(raster.BandCount, 1);
+        var selected = new List<int>();
+        foreach (var token in rangeSubset.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var intervalSeparator = token.IndexOf(':');
+            if (intervalSeparator >= 0)
+            {
+                if (!TryParseBandField(token[..intervalSeparator], bandCount, out var low) ||
+                    !TryParseBandField(token[(intervalSeparator + 1)..], bandCount, out var high) ||
+                    low > high)
+                {
+                    error = CreateRangeSubsetError(token);
+                    return false;
+                }
+
+                for (var band = low; band <= high; band++)
+                {
+                    selected.Add(band);
+                }
+            }
+            else if (TryParseBandField(token, bandCount, out var band))
+            {
+                selected.Add(band);
+            }
+            else
+            {
+                error = CreateRangeSubsetError(token);
+                return false;
+            }
+        }
+
+        bands = selected.Count == 0 ? null : selected.ToArray();
+        return true;
+    }
+
+    private static bool TryParseBandField(string field, int bandCount, out int band)
+    {
+        band = 0;
+        var trimmed = field.Trim();
+        if (!trimmed.StartsWith("band", StringComparison.OrdinalIgnoreCase) ||
+            !int.TryParse(trimmed.AsSpan(4), NumberStyles.None, CultureInfo.InvariantCulture, out band))
+        {
+            return false;
+        }
+
+        return band >= 1 && band <= bandCount;
+    }
+
+    private static WcsParameterError CreateRangeSubsetError(string token)
+        => new(
+            Wcs20Utilities.ExceptionCodes.InvalidParameterValue,
+            $"RANGESUBSET field '{token}' is not a valid coverage band. Use band1..bandN.",
+            Wcs20Utilities.Parameters.RangeSubset);
 
     private static bool TryResolveRequestCrs(
         IQueryCollection query,

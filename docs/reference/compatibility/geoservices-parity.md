@@ -117,7 +117,7 @@ raster layer identifier.
 | --- | --- | --- |
 | keyProperties, multidimensionalInfo, statistics, histograms, rasterFunctionInfos, rasterAttributeTable | Implemented | Spec-shaped documents from the shared raster store; non-applicable cases return spec-correct empty documents (e.g. `{"variables": []}`), not 404s. |
 | legend | Partial | Default 5-class equal-interval ramp from band-1 statistics. A `renderingRule` with an explicit `Colormap` is honoured: the legend emits one swatch per colour stop so it matches the rendered image. Other renderer overrides are ignored. |
-| WCS | Partial | WCS 2.0.1 KVP GetCapabilities/DescribeCoverage/GetCoverage over the primary raster (`image/tiff`/`png`/`jpeg`, `SUBSET`/`BBOX`, `OUTPUTCRS`). Range subset, scaling, temporal slicing not implemented. WCS 2.0 core is CITE-certified (82/82). |
+| WCS | Partial | WCS 2.0.1 KVP GetCapabilities/DescribeCoverage/GetCoverage over the primary raster (`image/tiff`/`png`/`jpeg`, `SUBSET`/`BBOX`, `OUTPUTCRS`). `RANGESUBSET` selects coverage bands (`band1`..`bandN`, comma list and `band1:bandN` intervals); scaling and temporal slicing are not implemented. WCS 2.0 core is CITE-certified (82/82); the range-subsetting extension conformance class is not advertised pending CITE validation. |
 | colormap, `info/*`, imageSupportData, KML image, raster catalog item resources (`{rasterId}/*`), rasterFile, slices | Not implemented | |
 
 Mosaic semantics: rasters are selected by footprint intersection; merge strategy is
