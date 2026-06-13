@@ -142,6 +142,13 @@ public static class ImportValidationErrorCodes
     /// <summary>A feature had invalid geometry.</summary>
     public const string GeometryInvalid = "import.geometry_invalid";
 
+    /// <summary>
+    /// A single feature's geometry exceeded the configured size guard (vertices, rings, or WKB
+    /// bytes). The geometry is too large to materialize safely; explode/simplify it before import.
+    /// Surfaced 413-style so callers can react programmatically (#1626).
+    /// </summary>
+    public const string GeometryTooLarge = "import.geometry_too_large";
+
     /// <summary>The source GeoJSON document was invalid.</summary>
     public const string InvalidGeoJson = "import.geojson_invalid";
 
