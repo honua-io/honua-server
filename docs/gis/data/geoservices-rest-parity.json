@@ -1207,7 +1207,7 @@
         "camera/orientation-ranked ImageServer find",
         "datumTransformation/image coordinate systems for ImageServer project",
         "spatial WHERE pushdown for query",
-        "renderingRule honoured by identify/legend (exportImage executes Stretch)",
+        "renderingRule honoured by identify (legend honours an explicit Colormap; exportImage executes Stretch + Colormap)",
         "renderingRule Clip raster-function executor (exportImage executes Stretch and Colormap)",
         "multidimensional cube ingestion",
         "WCS range subset/band selection/scaling/temporal extensions",
@@ -1609,7 +1609,7 @@
             "honuaEndpoints": [
               "GET /rest/services/{id}/ImageServer/legend"
             ],
-            "notes": "Returns Esri-shaped layers[].legend[] swatches as base64 PNGs (image/png). The MVP renders a fixed 5-class equal-interval ramp keyed off the resolved layer mosaic's band-1 statistics; per-layer renderer persistence and renderingRule overrides are not yet honoured. Only f=json/f=pjson is accepted."
+            "notes": "Returns Esri-shaped layers[].legend[] swatches as base64 PNGs (image/png). Renders a 5-class equal-interval ramp keyed off the resolved layer mosaic's band-1 statistics by default; a renderingRule with an explicit Colormap is honoured (one swatch per colour stop). Per-layer renderer persistence and non-colormap renderer overrides are not yet honoured. Only f=json/f=pjson is accepted."
           },
           {
             "name": "WCS",
@@ -1832,7 +1832,7 @@
         "Temporal mosaic uses newest-batch semantics: a time filter selects rasters from the single most-recent layer-wide effective acquisition batch (AcquisitionDate, falling back to CreatedAt) at or before the requested instant before applying request geometry, so mixed-date scenes can leave spatial coverage gaps until per-pixel temporal mosaicking is implemented.",
         "The query catalog reader applies WHERE/objectIds filters in-memory and reprojects footprint geometry to outSR when a coordinate transform is available.",
         "computeStatisticsHistograms always analyses the full selected raster or mosaic — geometry clipping and renderingRule are not yet honoured.",
-        "exportImage executes the Stretch raster function from renderingRule (MinMax/StandardDeviation/PercentClip, with optional per-band Statistics); Clip-in-rule, colormap, and other stretch types are not yet executed and identify/legend still ignore renderingRule.",
+        "exportImage executes the Stretch raster function from renderingRule (MinMax/StandardDeviation/PercentClip, with optional per-band Statistics); exportImage also executes an explicit Colormap, and the legend honours a Colormap renderingRule; Clip-in-rule, other stretch types, and identify renderingRule are not yet honoured.",
         "Legend swatches use a fixed 5-class equal-interval ramp; per-layer renderer persistence and renderingRule overrides are not yet wired up.",
         "Service info exposes timeInfo when the layer metadata declares temporal fields or raster catalog items carry acquisition timestamps.",
         "Rendered ImageServer byte output still depends on the PostGIS raster output drivers configured in the database.",

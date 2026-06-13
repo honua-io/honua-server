@@ -1574,6 +1574,32 @@ public class ImageServerEndpointsTests
     [IntegrationTest]
     [Endpoint("GET /rest/services/{id}/ImageServer/legend")]
     [Operation(Operations.Metadata)]
+    public async Task GetLegend_WithColormapRenderingRule_ReflectsColormapStops()
+    {
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            // A 3-stop colormap must yield 3 legend swatches, not the default 5 class breaks.
+            var renderingRule = Uri.EscapeDataString(
+                """{"rasterFunction":"Colormap","rasterFunctionArguments":{"Colormap":[[0,0,0,0],[128,255,0,0],[255,255,255,255]]}}""");
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/legend?f=json&renderingRule={renderingRule}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var legend = json.RootElement.GetProperty("layers")[0].GetProperty("legend");
+            legend.GetArrayLength().Should().Be(3);
+            legend[0].GetProperty("label").GetString().Should().Be("0");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/legend")]
+    [Operation(Operations.Metadata)]
     public async Task GetLegend_InvalidFormat_ReturnsBadRequest()
     {
         var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
