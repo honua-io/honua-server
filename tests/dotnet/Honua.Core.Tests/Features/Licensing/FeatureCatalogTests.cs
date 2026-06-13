@@ -94,26 +94,29 @@ public sealed class FeatureCatalogTests
     }
 
     [Fact]
-    public void All_FeatureEditingIsProTier()
+    public void All_FeatureServerEditingIsProTier()
     {
-        // Ticket #1548: multi-user feature editing across the shared edit pipeline
-        // (FeatureServer applyEdits/add/update/delete, OGC API Features mutations,
-        // WFS-T, OData CRUD, gRPC edits) is a Pro entitlement. Community remains
-        // read + serve + one-shot file import. This is the catalog-side counterpart
-        // to FeatureEditsEditionGateTests on the protocol handlers.
-        var feature = FeatureCatalog.All.SingleOrDefault(f => f.Key == FeatureCatalog.FeatureEditsKey);
+        // Ticket #1591: only the Esri GeoServices FeatureServer write surface is
+        // Pro-gated. Open-protocol edits remain Community while using the shared
+        // edit pipeline.
+        var feature = FeatureCatalog.All.SingleOrDefault(f => f.Key == FeatureCatalog.FeatureServerEditsKey);
 
-        feature.Should().NotBeNull("feature catalog must define multi-user editing for ticket #1548");
-        feature!.Key.Should().Be("editing.feature-edits");
+        feature.Should().NotBeNull("feature catalog must define FeatureServer editing for ticket #1591");
+        feature!.Key.Should().Be("editing.featureserver-edits");
         feature.Category.Should().Be(FeatureCatalog.Categories.Editing);
         feature.MinimumEdition.Should().Be(HonuaEdition.Pro);
+        feature.Description.Should().Contain("FeatureServer");
+        feature.Description.Should().NotContain("OGC API Features");
+        feature.Description.Should().NotContain("WFS-T");
+        feature.Description.Should().NotContain("OData");
+        feature.Description.Should().NotContain("gRPC");
     }
 
     [Fact]
     public void All_BranchVersioningIsEnterpriseTier()
     {
         // Branch versioning stays an Enterprise entitlement, distinct from the Pro
-        // multi-user editing gate added in #1548.
+        // FeatureServer editing gate scoped in #1591.
         var feature = FeatureCatalog.All.SingleOrDefault(f => f.Key == FeatureCatalog.BranchVersioningKey);
 
         feature.Should().NotBeNull("feature catalog must define branch versioning");

@@ -708,6 +708,8 @@ public sealed class FeatureChangeWebhookDispatcherTests
 
         public bool CanPersistEvents => false;
 
+        public bool IsUsingInMemoryFallback => false;
+
         public Task<FeatureChangeEvent> AppendAsync(FeatureChangeEventRequest request, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 

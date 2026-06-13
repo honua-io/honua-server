@@ -17,10 +17,14 @@ namespace Honua.Server.Startup;
 /// <summary>
 /// Registers feature-change event plumbing (event store, retry queue, webhook dispatcher,
 /// transactional outbox, stream session manager, and the streaming publisher). The boolean
-/// flag forwards the host-level decision about whether in-memory event stores are tolerated
-/// (Development / Test) or strictly forbidden (Production / Staging).
+/// flag forwards the host-level decision about whether silent in-memory fallback is tolerated
+/// (Development / Test) or strictly forbidden (Production / Staging). The strict durability
+/// requirement only applies when Redis is actually configured: with no Redis at all the
+/// deployment is a supported single-node/serverless topology (#1618), so the event store runs
+/// in explicit in-memory single-node mode (with a startup warning) instead of reporting
+/// permanently unhealthy — unconfigured is not unhealthy; unreachable is.
 /// </summary>
-internal static class FeatureEventsAndStreamingRegistration
+internal static partial class FeatureEventsAndStreamingRegistration
 {
     public static IServiceCollection AddHonuaFeatureEventsAndStreaming(
         this IServiceCollection services,
@@ -35,10 +39,24 @@ internal static class FeatureEventsAndStreamingRegistration
             .ValidateOnStart();
         services.AddSingleton<IFeatureChangeEventStore>(sp =>
         {
+            var redis = sp.GetService<IConnectionMultiplexer>();
+
+            // Durability can only be enforced against a Redis that is actually configured.
+            // No Redis registered => single-node/serverless deployment: degrade to explicit
+            // node-local in-memory storage (ADR-0017 fallback pattern) instead of reporting
+            // the store permanently unhealthy (#1618). When Redis IS configured, the strict
+            // environments keep requiring it, so a real Redis outage still fails readiness.
+            var allowInMemoryFallback = !requiresDurableDistributedEvents || redis is null;
+            if (requiresDurableDistributedEvents && redis is null)
+            {
+                LogSingleNodeInMemoryEventStore(
+                    sp.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(FeatureEventsAndStreamingRegistration).FullName!));
+            }
+
             return new InMemoryFeatureChangeEventStore(
                 sp.GetRequiredService<IOptions<FeatureChangeEventOptions>>(),
-                sp.GetService<IConnectionMultiplexer>(),
-                allowInMemoryFallback: !requiresDurableDistributedEvents);
+                redis,
+                allowInMemoryFallback);
         });
         services.AddSingleton<IFeatureChangeEventStoreHealth>(sp =>
             (IFeatureChangeEventStoreHealth)sp.GetRequiredService<IFeatureChangeEventStore>());
@@ -109,4 +127,12 @@ internal static class FeatureEventsAndStreamingRegistration
 
         return services;
     }
+
+    [LoggerMessage(
+        EventId = 5110,
+        Level = LogLevel.Warning,
+        Message = "No Redis is configured; feature-change events use node-local in-memory storage (single-node mode). " +
+                  "Events do not survive restarts and are not shared across nodes. " +
+                  "Configure ConnectionStrings:redis for durable multi-node event storage.")]
+    private static partial void LogSingleNodeInMemoryEventStore(ILogger logger);
 }

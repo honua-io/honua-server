@@ -18,7 +18,7 @@ namespace Honua.Server.Tests.Features.Protocols.OData;
 [Protocol(TestProtocols.ODataV4)]
 public sealed class ODataCrudEndpointTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Community);
     private const int TestLayerId = 0;
 
     public async Task InitializeAsync()

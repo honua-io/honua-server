@@ -186,6 +186,9 @@ Database connection pool and query admission:
 | `Limits__Connections__AdaptiveConcurrencyMaxQueries` | `0` (= `MaxConcurrentQueries`) | Adaptive upper bound. |
 | `Limits__Connections__AdaptiveConcurrencyTargetDurationMs` | `100` | Target database lease duration. |
 | `Limits__Connections__AdaptiveConcurrencyUpdateIntervalMs` | `1000` | Min interval between adaptive adjustments. |
+| `Limits__Connections__Multiplexing` | `false` | Npgsql multiplexing (`false`, `true`, or `auto`). Incompatible with AWS RDS Proxy and transaction-mode poolers — see [PostGIS connection poolers and proxies](data-sources/postgis.md#connection-poolers-and-proxies-rds-proxy-pgbouncer). |
+
+Session settings (`StatementTimeout`, `LockTimeout`, `IdleInTransactionTimeout`, default `search_path`) are applied with `SET` statements after each physical connection opens, so Honua works behind AWS RDS Proxy and PgBouncer (session mode); see the [PostGIS pooler notes](data-sources/postgis.md#connection-poolers-and-proxies-rds-proxy-pgbouncer).
 
 Geoprocessing job admission and executor guardrails:
 

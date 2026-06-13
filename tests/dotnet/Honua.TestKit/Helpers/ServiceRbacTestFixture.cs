@@ -91,9 +91,9 @@ public static class ServiceRbacTestFixture
                     services.AddSingleton<IGeometryTopologyValidator, NoOpGeometryTopologyValidator>();
                     configureServices?.Invoke(services);
 
-                    // #1548: feature editing is a Pro entitlement. These RBAC suites assert
-                    // role-based authorization (403/200) on write endpoints like applyEdits, so
-                    // the host must be Pro-licensed or the edit gate would 402 before RBAC runs.
+                    // #1591: FeatureServer applyEdits is Pro-gated. These RBAC suites assert
+                    // role-based authorization (403/200) on FeatureServer write endpoints, so
+                    // the host must be Pro-licensed or that surface would 402 before RBAC runs.
                     var proLicense = new TestLicenseEntitlementService(HonuaEdition.Pro);
                     services.RemoveAll<ILicenseEntitlementService>();
                     services.RemoveAll<ILicenseStatusProvider>();

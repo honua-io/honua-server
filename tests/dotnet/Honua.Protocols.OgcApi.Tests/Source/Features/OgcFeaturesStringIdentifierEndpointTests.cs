@@ -28,8 +28,6 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
-using Honua.Core.Features.Licensing.Abstractions;
-using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
@@ -569,13 +567,8 @@ public sealed class OgcFeaturesStringIdentifierEndpointTests
                 services.RemoveAll<IMetadataV2GraphProvider>();
                 services.AddSingleton<IMetadataV2GraphProvider>(_ => BuildStringIdGraphProvider());
 
-                // #1548: feature editing is a Pro entitlement; the create/update/batch item
-                // cases here must run Pro-licensed or they 402 before the string-id behavior runs.
-                var proLicense = new TestLicenseEntitlementService(HonuaEdition.Pro);
-                services.RemoveAll<ILicenseEntitlementService>();
-                services.RemoveAll<ILicenseStatusProvider>();
-                services.AddSingleton<ILicenseEntitlementService>(proLicense);
-                services.AddSingleton<ILicenseStatusProvider>(proLicense);
+                // OGC API Features writes are Community (#1591); these string-id tests should
+                // reach validation and edit behavior without a paid edit entitlement.
             });
         });
     }
