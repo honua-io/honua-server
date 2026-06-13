@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env bash
+#!/usr/bin/env bash
 # Runs the OpenLayers (and js-browser MapLibre + Esri Leaflet) interop suites
 # against a running honua service and copies emitted .cert.json envelopes
 # into /output.

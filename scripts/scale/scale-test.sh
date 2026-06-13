@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 
 # Scale-out testing script for Honua Server
 # Tests distributed caching, load balancing, and multi-instance scenarios

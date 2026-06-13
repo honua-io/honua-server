@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env bash
+#!/usr/bin/env bash
 # Applies the canonical client-compat seed bundle to a freshly-started
 # postgres so honua + lane services see the expected services and layers:
 #   - tests/seed/client-compat-v1.sql → schema + `test_service` (layer 0)

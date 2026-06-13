@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env bash
+#!/usr/bin/env bash
 
 # End-to-end smoke for the release-bundle data pipeline:
 #   bundle-suites.json + per-suite results

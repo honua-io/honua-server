@@ -1,4 +1,4 @@
-﻿#!/bin/sh
+#!/bin/sh
 set -eu
 
 template_path="/etc/nginx/scale-test.conf.template"

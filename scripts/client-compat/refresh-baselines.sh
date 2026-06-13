@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env bash
+#!/usr/bin/env bash
 # Re-runs the docker/client-compat matrix and overwrites tests/baselines/client-compat
 # with the resulting envelopes. Intended for scheduled baseline-refresh PRs;
 # do NOT run in regular CI.

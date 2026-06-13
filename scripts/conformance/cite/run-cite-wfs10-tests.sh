@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 
 # OGC WFS 1.0 CITE conformance testing script for Honua Server.
 
