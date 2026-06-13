@@ -532,7 +532,7 @@ internal sealed partial class ODataQueryHandler(
 
             // Calculate @odata.nextLink if there are more results
             string? nextLink = null;
-            if (ODataUtilityService.ShouldPaginate(result.Length, pagination.Offset, queryResult.TotalCount, pagination.Limit, clientTop: top))
+            if (ODataUtilityService.ShouldPaginate(result.Length, pagination.Offset, queryResult.TotalCount, pagination.Limit))
             {
                 var nextSkip = ODataUtilityService.CalculateNextSkip(pagination.Offset, pagination.Limit);
                 nextLink = !string.IsNullOrWhiteSpace(deltatoken)

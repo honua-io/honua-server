@@ -444,24 +444,8 @@ internal static class ODataUtilityService
     /// <summary>
     /// Checks if pagination should be applied based on result size and current parameters.
     /// </summary>
-    /// <param name="resultCount">Number of items returned in this page.</param>
-    /// <param name="currentSkip">Current offset into the full result set.</param>
-    /// <param name="totalCount">Total number of items matching the query.</param>
-    /// <param name="top">Effective server page size (may be server-capped).</param>
-    /// <param name="clientTop">
-    /// The client-requested $top, if present.  When set, pagination stops as soon as the
-    /// client has received all items it asked for — OData v4.01 §11.2.6.7 states that the
-    /// final partial set MUST NOT contain a next link.
-    /// </param>
-    public static bool ShouldPaginate(int resultCount, int currentSkip, long totalCount, int? top, int? clientTop = null)
+    public static bool ShouldPaginate(int resultCount, int currentSkip, long totalCount, int? top)
     {
-        // If the client specified $top, the request "identifies" at most clientTop items.
-        // Only paginate when fewer than that many items have been delivered so far.
-        if (clientTop.HasValue && (long)currentSkip + resultCount >= clientTop.Value)
-        {
-            return false;
-        }
-
         return (long)currentSkip + resultCount < totalCount;
     }
 
