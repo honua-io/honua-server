@@ -136,6 +136,30 @@ public sealed class FeatureCatalogTests
     }
 
     [Fact]
+    public void All_OidcSingleProviderIsProAndGovernanceIsEnterprise()
+    {
+        // Ticket #1612: basic single-provider OIDC has no SSO tax and validates
+        // under Pro. Multi-provider configuration and claim-to-role mapping stay
+        // Enterprise identity-governance entitlements.
+        var oidc = FeatureCatalog.All.SingleOrDefault(f => f.Key == FeatureCatalog.OidcAuthenticationKey);
+        var multiProvider = FeatureCatalog.All.SingleOrDefault(f => f.Key == FeatureCatalog.OidcMultiProviderKey);
+        var claimsMapping = FeatureCatalog.All.SingleOrDefault(f => f.Key == FeatureCatalog.OidcClaimsMappingKey);
+
+        oidc.Should().NotBeNull("feature catalog must define basic OIDC authentication for ticket #1612");
+        oidc!.Category.Should().Be(FeatureCatalog.Categories.Identity);
+        oidc.MinimumEdition.Should().Be(HonuaEdition.Pro);
+        oidc.Description.Should().Contain("Single-provider");
+
+        multiProvider.Should().NotBeNull("feature catalog must keep multi-provider SSO Enterprise-gated");
+        multiProvider!.Category.Should().Be(FeatureCatalog.Categories.Identity);
+        multiProvider.MinimumEdition.Should().Be(HonuaEdition.Enterprise);
+
+        claimsMapping.Should().NotBeNull("feature catalog must keep OIDC claims mapping Enterprise-gated");
+        claimsMapping!.Category.Should().Be(FeatureCatalog.Categories.Identity);
+        claimsMapping.MinimumEdition.Should().Be(HonuaEdition.Enterprise);
+    }
+
+    [Fact]
     public void All_CommunityFeaturesAreExpected()
     {
         // Community features are explicitly tracked — adding one requires updating this test

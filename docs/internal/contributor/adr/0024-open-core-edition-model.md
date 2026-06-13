@@ -85,6 +85,7 @@ Everything in Community, plus:
 | **Real-Time Streaming** | WebSocket/SSE feature subscriptions with spatial and attribute filters | Integrations |
 | **Spatial Analytics API** | Server-side clustering (DBSCAN), density heatmaps, spatial joins, buffer analytics — PostGIS power as clean endpoints | Product Assurance |
 | **AI Spatial Agent** | Natural language spatial query translation; anomaly detection (statistical outliers on geometry/attributes); auto-documentation (ISO 19115/FGDC metadata generation from layer schemas); schema suggestion (field type, index, and spatial reference recommendations for imported data) — all via enhanced MCP | Product Assurance |
+| **Basic SSO** | Single-provider OIDC authentication with Azure AD, Google, Okta, Auth0, or generic OIDC — no SSO tax for teams that only need one identity provider | Single Sign-On |
 | **Offline Sync** | GeoPackage-based delta sync for field collection workflows | Product Assurance |
 | **Style Engine** | Programmatic style generation, theme engine (dark, accessible, print), style versioning and diffing | Product Assurance |
 | **Priority Support** | Email support, 48hr response SLA | Support |
@@ -104,7 +105,7 @@ Everything in Pro, plus:
 
 | Area | Included | EnterpriseReady Pillar |
 |------|----------|----------------------|
-| **SSO / OIDC** | Okta, Entra ID, Ping, Auth0; SAML bridge; SCIM user/group provisioning | Single Sign-On |
+| **Identity Governance** | Multi-provider OIDC configuration, claim-to-role mapping, SAML bridge, SCIM user/group provisioning | Single Sign-On |
 | **RBAC** | Per-service, per-layer, per-operation role-based access; row-level security | Role-Based Access Control |
 | **Audit Logging** | Immutable audit trail (who queried/edited what, when, from where); SIEM export (Splunk, Datadog, Elastic) | Audit Logging |
 | **Change Management** | GitOps manifest API (apply, dryRun, prune); drift detection; approval workflows; rollback | Change Management |
@@ -181,7 +182,7 @@ License checks must be:
 
 | Pillar | Community | Pro | Enterprise |
 |--------|-----------|-----|-----------|
-| Single Sign-On | API keys | API keys | OIDC, SAML, SCIM |
+| Single Sign-On | API keys | Single-provider OIDC | Multi-provider OIDC, SAML, SCIM |
 | Audit Logging | Structured logs | Structured logs | Immutable trail + SIEM |
 | RBAC | Admin key (all-or-nothing) | Admin key | Per-resource roles + RLS |
 | Change Management | Manual config | Manual config | GitOps + drift detection + private operator copilot |
