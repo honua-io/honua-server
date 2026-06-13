@@ -505,6 +505,38 @@ public class ImageServerEndpointsTests
 
     [IntegrationTest]
     [Endpoint("GET /rest/services/{id}/ImageServer/WMTS")]
+    [Operation(Operations.GetTile)]
+    public async Task Wmts_GetTile_TiffFormat_RoutesTiffToTileHandler()
+    {
+        var store = CreateTileExportRasterStoreSubstitute();
+        store.GetImageTileAsync(
+                Arg.Any<int>(), Arg.Any<long>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>(), RasterFormat.TIFF, Arg.Any<CancellationToken>())
+            .Returns(new RasterResult
+            {
+                Data = [0x49, 0x49, 0x2A, 0x00],
+                ContentType = "image/tiff",
+                Width = 256,
+                Height = 256,
+                Srid = 3857,
+            });
+
+        var fixture = await CreateFixtureAsync(store);
+        try
+        {
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/WMTS?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER={TestLayerId}&STYLE=default&FORMAT=image/tiff&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=3&TILEROW=2&TILECOL=2");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            response.Content.Headers.ContentType?.MediaType.Should().Be("image/tiff");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WMTS")]
     [Operation(Operations.Identify)]
     public async Task Wmts_GetFeatureInfo_ReturnsPixelValueAtTilePixel()
     {
@@ -568,7 +600,7 @@ public class ImageServerEndpointsTests
             response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
             var content = await response.Content.ReadAsStringAsync();
             content.Should().Contain("InvalidParameterValue");
-            content.Should().Contain("FORMAT must be image/png or image/jpeg.");
+            content.Should().Contain("FORMAT must be image/png, image/jpeg, or image/tiff.");
         }
         finally
         {

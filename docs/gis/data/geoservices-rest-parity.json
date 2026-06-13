@@ -1292,7 +1292,7 @@
               "GET /rest/services/{serviceId}/ImageServer/WMTS",
               "GET /rest/services/{serviceId}/ImageServer/WMTS/{**restPath}"
             ],
-            "notes": "OGC WMTS 1.0 GetCapabilities/GetTile facade over the ImageServer tile/cloud-cache pipeline. Supports KVP and RESTful resources, WebMercatorQuad matrices, STYLE=default, image/png + image/jpeg tiles, GetFeatureInfo (application/json/text/xml) returning the pixel band values at the requested tile pixel, and a TIME dimension for temporal layers (GetTile/GetFeatureInfo honour a TIME parameter). Non-WebMercator tile matrix sets and other formats (TIFF) are deferred."
+            "notes": "OGC WMTS 1.0 GetCapabilities/GetTile facade over the ImageServer tile/cloud-cache pipeline. Supports KVP and RESTful resources, WebMercatorQuad matrices, STYLE=default, image/png + image/jpeg + image/tiff tiles, GetFeatureInfo (application/json/text/xml) returning the pixel band values at the requested tile pixel, and a TIME dimension for temporal layers (GetTile/GetFeatureInfo honour a TIME parameter). Non-WebMercator tile matrix sets are deferred."
           },
           {
             "name": "Export Image",
@@ -1843,7 +1843,7 @@
         "ImageServer measure supports Basic map-space mensuration only; sensor/DEM-backed height and 3D mensuration are not implemented.",
         "ImageServer tile GET storage is a loose-object cache, not an Esri compact cache, tile package, or advertised cacheInfo tile cache.",
         "ImageServer exportTiles writes ZIP archives to configured cloud file storage; Esri TPK/TPKX/compact cache packages and async job resources are not implemented.",
-        "ImageServer WMTS supports GetCapabilities/GetTile/GetFeatureInfo for WebMercatorQuad image/png and image/jpeg tiles with a TIME dimension for temporal layers; non-WebMercator matrix sets and other formats (TIFF) are deferred."
+        "ImageServer WMTS supports GetCapabilities/GetTile/GetFeatureInfo for WebMercatorQuad image/png, image/jpeg, and image/tiff tiles with a TIME dimension for temporal layers; non-WebMercator matrix sets are deferred."
       ]
     },
     {

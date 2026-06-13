@@ -29,6 +29,7 @@ internal sealed class ImageServerWmtsHandler(
     private const string Version = "1.0.0";
     private const string PngFormat = "image/png";
     private const string JpegFormat = "image/jpeg";
+    private const string TiffFormat = "image/tiff";
     private const string JsonInfoFormat = "application/json";
     private const string XmlInfoFormat = "text/xml";
     private const double ScaleDenominator0 = 559082264.0287178;
@@ -48,6 +49,12 @@ internal sealed class ImageServerWmtsHandler(
         if (string.Equals(mediaType, JpegFormat, StringComparison.OrdinalIgnoreCase))
         {
             tileToken = "jpg";
+            return true;
+        }
+
+        if (string.Equals(mediaType, TiffFormat, StringComparison.OrdinalIgnoreCase))
+        {
+            tileToken = "tiff";
             return true;
         }
 
@@ -250,7 +257,7 @@ internal sealed class ImageServerWmtsHandler(
             return CreateExceptionReport(
                 "InvalidParameterValue",
                 "format",
-                "FORMAT must be image/png or image/jpeg.",
+                "FORMAT must be image/png, image/jpeg, or image/tiff.",
                 StatusCodes.Status400BadRequest);
         }
 
@@ -589,6 +596,8 @@ internal sealed class ImageServerWmtsHandler(
             $"{escapedBaseUrl}/{{Layer}}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}.png";
         var escapedJpegTemplate =
             $"{escapedBaseUrl}/{{Layer}}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}.jpg";
+        var escapedTiffTemplate =
+            $"{escapedBaseUrl}/{{Layer}}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}.tif";
 
         var sb = new StringBuilder(8192);
         sb.AppendLine("""<?xml version="1.0" encoding="UTF-8"?>""");
@@ -612,6 +621,7 @@ internal sealed class ImageServerWmtsHandler(
         sb.AppendLine("      </Style>");
         sb.AppendLine("      <Format>image/png</Format>");
         sb.AppendLine("      <Format>image/jpeg</Format>");
+        sb.AppendLine("      <Format>image/tiff</Format>");
         sb.AppendLine("      <InfoFormat>application/json</InfoFormat>");
         sb.AppendLine("      <InfoFormat>text/xml</InfoFormat>");
         AppendTimeDimension(sb, timeExtent);
@@ -623,6 +633,9 @@ internal sealed class ImageServerWmtsHandler(
             .AppendLine("\" />");
         sb.Append("      <ResourceURL format=\"image/jpeg\" resourceType=\"tile\" template=\"")
             .Append(escapedJpegTemplate)
+            .AppendLine("\" />");
+        sb.Append("      <ResourceURL format=\"image/tiff\" resourceType=\"tile\" template=\"")
+            .Append(escapedTiffTemplate)
             .AppendLine("\" />");
         sb.AppendLine("    </Layer>");
         sb.AppendLine("    <TileMatrixSet>");
@@ -763,6 +776,13 @@ internal sealed class ImageServerWmtsHandler(
             string.Equals(extension, "jpeg", StringComparison.OrdinalIgnoreCase))
         {
             format = JpegFormat;
+            return true;
+        }
+
+        if (string.Equals(extension, "tif", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(extension, "tiff", StringComparison.OrdinalIgnoreCase))
+        {
+            format = TiffFormat;
             return true;
         }
 
