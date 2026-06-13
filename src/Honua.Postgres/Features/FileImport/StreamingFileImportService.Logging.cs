@@ -103,6 +103,14 @@ internal sealed partial class StreamingFileImportService
         public static partial void SpilledToTempFile(
             ILogger logger,
             long spilledBytes);
+
+        [LoggerMessage(
+            EventId = 7416,
+            Level = LogLevel.Warning,
+            Message = "Skipped oversized geometry during import: {Reason}")]
+        public static partial void GeometryTooLargeSkipped(
+            ILogger logger,
+            string reason);
     }
 
     private static partial class ShapefileLog
