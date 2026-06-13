@@ -61,6 +61,14 @@ public readonly record struct RasterQuery
     public int? OutputHeight { get; init; }
 
     /// <summary>
+    /// Optional display stretch applied to pixel values before encoding. When
+    /// set, each selected band is linearly rescaled to the 8-bit display range
+    /// using bounds derived from the chosen <see cref="RasterStretchType"/>.
+    /// When <c>null</c> the raw pixel values are encoded unchanged.
+    /// </summary>
+    public RasterStretch? Stretch { get; init; }
+
+    /// <summary>
     /// Initializes a new instance of the RasterQuery struct.
     /// </summary>
     public RasterQuery()

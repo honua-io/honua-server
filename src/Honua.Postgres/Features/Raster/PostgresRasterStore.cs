@@ -13,6 +13,12 @@ using Microsoft.Extensions.Logging;
 namespace Honua.Postgres.Features.Raster;
 
 /// <summary>
+/// Resolved low/high pixel-value bounds for a single band's display stretch.
+/// Values within <see cref="Lo"/>..<see cref="Hi"/> map linearly onto 0..255.
+/// </summary>
+internal readonly record struct StretchBounds(double Lo, double Hi);
+
+/// <summary>
 /// PostgreSQL-based raster store implementation using PostGIS raster functions.
 /// Provides GDAL-free raster operations leveraging SQL-based PostGIS capabilities.
 /// </summary>
@@ -213,6 +219,17 @@ internal sealed class PostgresRasterStore : IRasterStore
             extraParams.Add(("@bands", bands));
         }
 
+        // 1b. Apply display stretch (renderingRule Stretch) on the selected bands.
+        if (query.Stretch is { } stretch)
+        {
+            var stretchBounds = await ResolveStretchBoundsAsync(
+                stretch, layerId, rasterId, query.Bands, cancellationToken).ConfigureAwait(false);
+            if (stretchBounds is { Count: > 0 })
+            {
+                rasterExpr = BuildStretchedRasterExpression(rasterExpr, stretchBounds);
+            }
+        }
+
         // 2. Resize to output dimensions if specified
         if (query.OutputWidth is > 0 && query.OutputHeight is > 0)
         {
@@ -394,6 +411,272 @@ internal sealed class PostgresRasterStore : IRasterStore
         return $", ARRAY[{string.Join(", ", quotedOptions)}]";
     }
 
+    // ----- Display stretch execution (renderingRule Stretch) -------------------
+    // A stretch linearly rescales each band's pixel values onto the 8-bit display
+    // range, clamping out-of-range values. Bounds are derived on the C# side from
+    // the cached band statistics/histograms; the rescale itself is pushed into the
+    // PostGIS pipeline through ST_MapAlgebra so it composes with clip/band/resize.
+
+    /// <summary>
+    /// Builds the ST_MapAlgebra expression that linearly maps <paramref name="lo"/>..<paramref name="hi"/>
+    /// onto 0..255 with clamping. <c>[rast.val]</c> is the PostGIS per-pixel value token.
+    /// </summary>
+    internal static string BuildStretchMapAlgebraExpression(double lo, double hi)
+    {
+        var loText = FormatStretchNumber(lo);
+        var hiText = FormatStretchNumber(hi);
+        return $"LEAST(255.0, GREATEST(0.0, ([rast.val] - {loText}) * 255.0 / ({hiText} - {loText})))";
+    }
+
+    /// <summary>
+    /// Wraps <paramref name="baseExpr"/> so each band is rescaled to an 8-bit band
+    /// using its resolved <see cref="StretchBounds"/>. Multi-band rasters are
+    /// re-assembled with ST_AddBand in band order.
+    /// </summary>
+    internal static string BuildStretchedRasterExpression(string baseExpr, IReadOnlyList<StretchBounds> bounds)
+    {
+        if (bounds.Count == 0)
+        {
+            return baseExpr;
+        }
+
+        if (bounds.Count == 1)
+        {
+            return BuildStretchedBandExpression(baseExpr, 1, bounds[0]);
+        }
+
+        var first = BuildStretchedBandExpression(baseExpr, 1, bounds[0]);
+        var rest = string.Join(
+            ", ",
+            Enumerable.Range(2, bounds.Count - 1)
+                .Select(band => BuildStretchedBandExpression(baseExpr, band, bounds[band - 1])));
+        return $"ST_AddBand({first}, ARRAY[{rest}]::raster[])";
+    }
+
+    private static string BuildStretchedBandExpression(string baseExpr, int band, StretchBounds bounds)
+    {
+        var expression = BuildStretchMapAlgebraExpression(bounds.Lo, bounds.Hi);
+        var bandText = band.ToString(CultureInfo.InvariantCulture);
+        return $"ST_MapAlgebra({baseExpr}, {bandText}, '8BUI', '{expression}', NULL::double precision)";
+    }
+
+    private static string FormatStretchNumber(double value)
+        => value.ToString("G17", CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// Resolves per-band low/high stretch bounds for every band in
+    /// <paramref name="stats"/>, pairing each band with its histogram when supplied.
+    /// </summary>
+    internal static IReadOnlyList<StretchBounds> BuildStretchBounds(
+        RasterStretch stretch,
+        RasterStatistics[] stats,
+        RasterHistogram[]? histograms)
+    {
+        var bounds = new StretchBounds[stats.Length];
+        for (var i = 0; i < stats.Length; i++)
+        {
+            var histogram = histograms is { Length: > 0 } && i < histograms.Length
+                ? histograms[i]
+                : (RasterHistogram?)null;
+            bounds[i] = ResolveStretchBounds(stretch, i, stats[i], histogram);
+        }
+
+        return bounds;
+    }
+
+    /// <summary>
+    /// Resolves the low/high stretch bounds for a single band from the rendering
+    /// rule and the band statistics/histogram. The result always satisfies
+    /// <c>Hi &gt; Lo</c> and is finite.
+    /// </summary>
+    internal static StretchBounds ResolveStretchBounds(
+        RasterStretch stretch,
+        int bandIndex,
+        RasterStatistics stat,
+        RasterHistogram? histogram)
+    {
+        // Explicit statistics on the rule win when present for this band.
+        if (stretch.StatisticsMin is { } explicitMin && stretch.StatisticsMax is { } explicitMax &&
+            bandIndex < explicitMin.Length && bandIndex < explicitMax.Length)
+        {
+            return NormalizeBounds(explicitMin[bandIndex], explicitMax[bandIndex]);
+        }
+
+        var min = stat.MinValue;
+        var max = stat.MaxValue;
+
+        switch (stretch.StretchType)
+        {
+            case RasterStretchType.StandardDeviation:
+                {
+                    var mean = stat.MeanValue ?? ((min ?? 0) + (max ?? 255)) / 2.0;
+                    var sd = stat.StandardDeviation ?? 0;
+                    var lo = mean - (stretch.NumberOfStandardDeviations * sd);
+                    var hi = mean + (stretch.NumberOfStandardDeviations * sd);
+                    if (min is { } mn)
+                    {
+                        lo = Math.Max(lo, mn);
+                    }
+
+                    if (max is { } mx)
+                    {
+                        hi = Math.Min(hi, mx);
+                    }
+
+                    return NormalizeBounds(lo, hi);
+                }
+
+            case RasterStretchType.PercentClip when histogram is { } h && h.BinCount > 0 && h.Counts.Length > 0:
+                {
+                    var lo = PercentileFromLow(h, stretch.MinPercent);
+                    var hi = PercentileFromHigh(h, stretch.MaxPercent);
+                    return NormalizeBounds(lo, hi);
+                }
+
+            // MinMax, or PercentClip without a usable histogram, fall back to min/max.
+            default:
+                return NormalizeBounds(min ?? 0, max ?? 255);
+        }
+    }
+
+    private static double PercentileFromLow(RasterHistogram histogram, double percent)
+    {
+        var total = SumCounts(histogram.Counts);
+        if (total <= 0)
+        {
+            return histogram.Min;
+        }
+
+        var target = total * (percent / 100.0);
+        var binWidth = (histogram.Max - histogram.Min) / histogram.BinCount;
+        double cumulative = 0;
+        for (var i = 0; i < histogram.Counts.Length; i++)
+        {
+            cumulative += histogram.Counts[i];
+            if (cumulative >= target)
+            {
+                return histogram.Min + (i * binWidth);
+            }
+        }
+
+        return histogram.Max;
+    }
+
+    private static double PercentileFromHigh(RasterHistogram histogram, double percent)
+    {
+        var total = SumCounts(histogram.Counts);
+        if (total <= 0)
+        {
+            return histogram.Max;
+        }
+
+        var target = total * (percent / 100.0);
+        var binWidth = (histogram.Max - histogram.Min) / histogram.BinCount;
+        double cumulative = 0;
+        for (var i = histogram.Counts.Length - 1; i >= 0; i--)
+        {
+            cumulative += histogram.Counts[i];
+            if (cumulative >= target)
+            {
+                return histogram.Min + ((i + 1) * binWidth);
+            }
+        }
+
+        return histogram.Min;
+    }
+
+    private static double SumCounts(long[] counts)
+    {
+        double total = 0;
+        foreach (var count in counts)
+        {
+            total += count;
+        }
+
+        return total;
+    }
+
+    private static StretchBounds NormalizeBounds(double lo, double hi)
+    {
+        if (!double.IsFinite(lo) || !double.IsFinite(hi))
+        {
+            return new StretchBounds(0, 255);
+        }
+
+        if (hi <= lo)
+        {
+            hi = lo + 1;
+        }
+
+        return new StretchBounds(lo, hi);
+    }
+
+    private async Task<IReadOnlyList<StretchBounds>?> ResolveStretchBoundsAsync(
+        RasterStretch stretch,
+        int layerId,
+        long rasterId,
+        int[]? bands,
+        CancellationToken cancellationToken)
+    {
+        var stats = await GetStatisticsAsync(layerId, rasterId, bands, cancellationToken).ConfigureAwait(false);
+        if (stats.Length == 0)
+        {
+            return null;
+        }
+
+        var histograms = await ResolveStretchHistogramsAsync(
+            stretch,
+            () => GetHistogramsAsync(layerId, rasterId, bands, StretchHistogramBins, cancellationToken)).ConfigureAwait(false);
+        return BuildStretchBounds(stretch, stats, histograms);
+    }
+
+    private async Task<IReadOnlyList<StretchBounds>?> ResolveMosaicStretchBoundsAsync(
+        RasterStretch stretch,
+        int layerId,
+        long[] rasterIds,
+        RasterMergeStrategy mergeStrategy,
+        CancellationToken cancellationToken)
+    {
+        var stats = await GetMosaicStatisticsAsync(layerId, rasterIds, mergeStrategy, null, cancellationToken).ConfigureAwait(false);
+        if (stats.Length == 0)
+        {
+            return null;
+        }
+
+        var histograms = await ResolveStretchHistogramsAsync(
+            stretch,
+            () => GetMosaicHistogramsAsync(layerId, rasterIds, mergeStrategy, null, StretchHistogramBins, cancellationToken)).ConfigureAwait(false);
+        return BuildStretchBounds(stretch, stats, histograms);
+    }
+
+    private static async Task<RasterHistogram[]?> ResolveStretchHistogramsAsync(
+        RasterStretch stretch,
+        Func<Task<RasterHistogram[]>> histogramFactory)
+    {
+        var needsHistogram = stretch.StretchType == RasterStretchType.PercentClip &&
+            (stretch.StatisticsMin is null || stretch.StatisticsMax is null);
+        return needsHistogram ? await histogramFactory().ConfigureAwait(false) : null;
+    }
+
+    // Dynamic tiles carry no per-request renderingRule, so non-8-bit source rasters
+    // (elevation, analytic, float reflectance) would otherwise render near-black.
+    // Apply an automatic MinMax stretch only when the band statistics fall outside
+    // the 8-bit display range, leaving display-ready 8-bit rasters untouched.
+    private static IReadOnlyList<StretchBounds>? BuildAutoTileStretchBounds(RasterStatistics[] stats)
+    {
+        if (stats.Length == 0 || !RequiresAutoTileStretch(stats))
+        {
+            return null;
+        }
+
+        return BuildStretchBounds(new RasterStretch { StretchType = RasterStretchType.MinMax }, stats, null);
+    }
+
+    private static bool RequiresAutoTileStretch(RasterStatistics[] stats)
+        => stats.Any(static s => (s.MinValue is { } min && min < 0) || (s.MaxValue is { } max && max > 255));
+
+    private const int StretchHistogramBins = 256;
+
     /// <inheritdoc />
     public async Task<RasterResult> ExportMosaicAsync(
         int layerId,
@@ -442,6 +725,17 @@ internal sealed class PostgresRasterStore : IRasterStore
             }
 
             extraParams.Add(("@clipGeom", clip.Geometry));
+        }
+
+        // Apply display stretch (renderingRule Stretch) on the merged mosaic bands.
+        if (query.Stretch is { } stretch)
+        {
+            var stretchBounds = await ResolveMosaicStretchBoundsAsync(
+                stretch, layerId, rasterIds, mergeStrategy, cancellationToken).ConfigureAwait(false);
+            if (stretchBounds is { Count: > 0 })
+            {
+                postMergeRasterExpr = BuildStretchedRasterExpression(postMergeRasterExpr, stretchBounds);
+            }
         }
 
         if (query.OutputWidth is > 0 && query.OutputHeight is > 0)
@@ -774,6 +1068,14 @@ internal sealed class PostgresRasterStore : IRasterStore
                 includeOverviewResampling: false, cancellationToken).ConfigureAwait(false);
         }
 
+        var tileClipExpr = "ST_Clip(raster, ST_Transform(tb.geom, ST_SRID(raster)))";
+        var tileStats = await GetStatisticsAsync(layerId, rasterId, bands: null, cancellationToken).ConfigureAwait(false);
+        var tileStretchBounds = BuildAutoTileStretchBounds(tileStats);
+        if (tileStretchBounds is { Count: > 0 })
+        {
+            tileClipExpr = BuildStretchedRasterExpression(tileClipExpr, tileStretchBounds);
+        }
+
         await using var dynCommand = connection.CreateCommand();
         dynCommand.CommandText = $"""
             WITH tile_bounds AS (
@@ -781,7 +1083,7 @@ internal sealed class PostgresRasterStore : IRasterStore
             )
             SELECT ST_AsGDALRaster(
                 ST_Resize(
-                    ST_Clip(raster, ST_Transform(tb.geom, ST_SRID(raster))),
+                    {tileClipExpr},
                     256, 256
                 ),
                 '{effectiveTileFormat}'{tileCreationOptions}
@@ -846,6 +1148,14 @@ internal sealed class PostgresRasterStore : IRasterStore
                 includeOverviewResampling: false, cancellationToken).ConfigureAwait(false);
         }
 
+        var mosaicTileExpr = "rast";
+        var mosaicTileStats = await GetMosaicStatisticsAsync(layerId, rasterIds, mergeStrategy, bands: null, cancellationToken).ConfigureAwait(false);
+        var mosaicTileBounds = BuildAutoTileStretchBounds(mosaicTileStats);
+        if (mosaicTileBounds is { Count: > 0 })
+        {
+            mosaicTileExpr = BuildStretchedRasterExpression(mosaicTileExpr, mosaicTileBounds);
+        }
+
         await using var command = connection.CreateCommand();
         command.CommandText = $"""
             WITH requested AS (
@@ -870,7 +1180,7 @@ internal sealed class PostgresRasterStore : IRasterStore
                 WHERE rast IS NOT NULL
             ),
             resized AS (
-                SELECT ST_Resize(rast, 256, 256) AS rast
+                SELECT ST_Resize({mosaicTileExpr}, 256, 256) AS rast
                 FROM merged
                 WHERE rast IS NOT NULL
             )
@@ -916,19 +1226,24 @@ internal sealed class PostgresRasterStore : IRasterStore
         AddParameter(cachedCommand, "@rasterId", rasterId);
 
         var stats = new List<RasterStatistics>();
-        await using var cachedReader = await cachedCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        while (await cachedReader.ReadAsync(cancellationToken).ConfigureAwait(false))
+
+        // Dispose the cached reader before issuing the compute fallback below; both
+        // run on this single connection and Npgsql forbids overlapping commands.
+        await using (var cachedReader = await cachedCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
         {
-            stats.Add(new RasterStatistics
+            while (await cachedReader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
-                Band = cachedReader.GetInt32(0),
-                MinValue = cachedReader.IsDBNull(1) ? null : cachedReader.GetDouble(1),
-                MaxValue = cachedReader.IsDBNull(2) ? null : cachedReader.GetDouble(2),
-                MeanValue = cachedReader.IsDBNull(3) ? null : cachedReader.GetDouble(3),
-                StandardDeviation = cachedReader.IsDBNull(4) ? null : cachedReader.GetDouble(4),
-                ValidPixelCount = cachedReader.IsDBNull(5) ? 0 : cachedReader.GetInt64(5),
-                NoDataPixelCount = cachedReader.IsDBNull(6) ? 0 : cachedReader.GetInt64(6)
-            });
+                stats.Add(new RasterStatistics
+                {
+                    Band = cachedReader.GetInt32(0),
+                    MinValue = cachedReader.IsDBNull(1) ? null : cachedReader.GetDouble(1),
+                    MaxValue = cachedReader.IsDBNull(2) ? null : cachedReader.GetDouble(2),
+                    MeanValue = cachedReader.IsDBNull(3) ? null : cachedReader.GetDouble(3),
+                    StandardDeviation = cachedReader.IsDBNull(4) ? null : cachedReader.GetDouble(4),
+                    ValidPixelCount = cachedReader.IsDBNull(5) ? 0 : cachedReader.GetInt64(5),
+                    NoDataPixelCount = cachedReader.IsDBNull(6) ? 0 : cachedReader.GetInt64(6)
+                });
+            }
         }
 
         if (stats.Count > 0)

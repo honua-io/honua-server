@@ -163,6 +163,88 @@ public class ImageServerEndpointsTests
     }
 
     [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{id}/ImageServer/exportImage")]
+    public async Task ExportImage_WithStretchRenderingRule_AppliesStretchAndReturnsPng()
+    {
+        var store = CreateRasterStoreSubstitute();
+        RasterQuery? capturedQuery = null;
+        store.ExportImageAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                capturedQuery = call.ArgAt<RasterQuery>(2);
+                return new RasterResult
+                {
+                    Data = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],
+                    ContentType = "image/png",
+                    Width = 256,
+                    Height = 256,
+                    Srid = 4326,
+                };
+            });
+
+        var fixture = await CreateFixtureAsync(store);
+        try
+        {
+            var renderingRule = Uri.EscapeDataString(
+                """{"rasterFunction":"Stretch","rasterFunctionArguments":{"StretchType":5}}""");
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/exportImage?f=image&bbox=-180,-90,180,90&renderingRule={renderingRule}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+            capturedQuery.Should().NotBeNull();
+            capturedQuery!.Value.Stretch.Should().NotBeNull();
+            capturedQuery.Value.Stretch!.Value.StretchType.Should().Be(RasterStretchType.MinMax);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{id}/ImageServer/exportImage")]
+    public async Task ExportImage_WithClipRenderingRule_ReturnsNotImplemented()
+    {
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            var renderingRule = Uri.EscapeDataString(
+                """{"rasterFunction":"Clip","rasterFunctionArguments":{"ClippingGeometry":{"rings":[]}}}""");
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/exportImage?f=image&bbox=-180,-90,180,90&renderingRule={renderingRule}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{id}/ImageServer/exportImage")]
+    public async Task ExportImage_WithUnknownRenderingRule_ReturnsBadRequest()
+    {
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            var renderingRule = Uri.EscapeDataString("""{"rasterFunction":"Hillshade"}""");
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/exportImage?f=image&bbox=-180,-90,180,90&renderingRule={renderingRule}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /rest/services/{id}/ImageServer/WMTS")]
     [Endpoint("GET /rest/services/{serviceId}/ImageServer/WMTS/{**restPath}")]
     [Operation(Operations.Metadata)]

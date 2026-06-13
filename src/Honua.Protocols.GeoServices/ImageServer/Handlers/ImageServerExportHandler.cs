@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using System.Linq;
+using System.Text.Json;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
@@ -196,6 +197,42 @@ internal sealed class ImageServerExportHandler
         }
     }
 
+    // Translates an Esri renderingRule (Identity/Stretch chain) into the canonical
+    // RasterStretch threaded onto the query. Unsupported chains surface a 400 (unknown
+    // function) or 501 (recognized but unimplemented function/option).
+    private static bool TryMapRenderingRule(
+        string renderingRuleJson,
+        out RasterStretch? stretch,
+        out ExportParameterParseError error)
+    {
+        stretch = null;
+        error = default;
+
+        RasterFunctionDocument document;
+        try
+        {
+            document = JsonSerializer.Deserialize(renderingRuleJson, ImageServerJsonContext.Default.RasterFunctionDocument)
+                ?? throw new JsonException("Empty renderingRule document.");
+        }
+        catch (JsonException)
+        {
+            error = new ExportParameterParseError("renderingRule must be a valid raster function document.");
+            return false;
+        }
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+        if (!mapping.Supported)
+        {
+            error = new ExportParameterParseError(
+                mapping.Reason ?? "renderingRule is not supported on this service.",
+                IsNotImplemented: mapping.IsNotImplemented);
+            return false;
+        }
+
+        stretch = mapping.Stretch;
+        return true;
+    }
+
     private static bool TryParseExportParameters(
         ExportImageRequest request,
         out RasterQuery query,
@@ -206,11 +243,10 @@ internal sealed class ImageServerExportHandler
 
         try
         {
-            if (!string.IsNullOrWhiteSpace(request.RenderingRule))
+            RasterStretch? renderingStretch = null;
+            if (!string.IsNullOrWhiteSpace(request.RenderingRule) &&
+                !TryMapRenderingRule(request.RenderingRule, out renderingStretch, out error))
             {
-                error = new ExportParameterParseError(
-                    "renderingRule is not implemented on this service.",
-                    IsNotImplemented: true);
                 return false;
             }
 
@@ -285,6 +321,7 @@ internal sealed class ImageServerExportHandler
                 OutputHeight = requestedHeight,
                 TiffCompression = tiffCompression,
                 Bands = bands,
+                Stretch = renderingStretch,
             };
 
             if (!string.IsNullOrEmpty(request.Bbox))
