@@ -97,7 +97,7 @@ internal sealed class ImageServerWmtsHandler(
                     StatusCodes.Status400BadRequest);
             }
 
-            return CreateCapabilities(context, advertisedLayerIdentifier);
+            return await CreateCapabilitiesAsync(context, layerId, advertisedLayerIdentifier, cancellationToken).ConfigureAwait(false);
         }
 
         if (string.Equals(request, "GetTile", StringComparison.OrdinalIgnoreCase))
@@ -140,7 +140,7 @@ internal sealed class ImageServerWmtsHandler(
             string.Equals(capabilitiesVersion, Version, StringComparison.OrdinalIgnoreCase) &&
             string.Equals(segments[1], "WMTSCapabilities.xml", StringComparison.OrdinalIgnoreCase))
         {
-            return CreateCapabilities(context, advertisedLayerIdentifier);
+            return await CreateCapabilitiesAsync(context, layerId, advertisedLayerIdentifier, cancellationToken).ConfigureAwait(false);
         }
 
         if (segments.Length != 6 ||
@@ -561,13 +561,26 @@ internal sealed class ImageServerWmtsHandler(
     private static string? GetQueryString(IQueryCollection query, string name)
         => TryGetQueryValue(query, name, out var value) ? value : null;
 
-    private static IResult CreateCapabilities(HttpContext context, string layerIdentifier)
+    private async Task<IResult> CreateCapabilitiesAsync(
+        HttpContext context,
+        int layerId,
+        string layerIdentifier,
+        CancellationToken cancellationToken)
     {
-        var xml = BuildCapabilitiesXml(context, layerIdentifier);
+        // Advertise a TIME dimension when the layer's rasters carry acquisition dates;
+        // GetTile/GetFeatureInfo already honour a TIME parameter via the shared tile pipeline.
+        long?[]? timeExtent = null;
+        var rasters = await rasterStore.ListRastersAsync(layerId, cancellationToken).ConfigureAwait(false);
+        if (rasters.Any(static r => r.AcquisitionDate.HasValue))
+        {
+            timeExtent = ImageServerMosaicHelpers.CreateTimeExtent(rasters);
+        }
+
+        var xml = BuildCapabilitiesXml(context, layerIdentifier, timeExtent);
         return Results.Content(xml, ContentType, Encoding.UTF8, StatusCodes.Status200OK);
     }
 
-    private static string BuildCapabilitiesXml(HttpContext context, string layerIdentifier)
+    private static string BuildCapabilitiesXml(HttpContext context, string layerIdentifier, long?[]? timeExtent)
     {
         var wmtsBaseUrl = BuildWmtsBaseUrl(context);
         var escapedLayer = EscapeXml(layerIdentifier);
@@ -601,6 +614,7 @@ internal sealed class ImageServerWmtsHandler(
         sb.AppendLine("      <Format>image/jpeg</Format>");
         sb.AppendLine("      <InfoFormat>application/json</InfoFormat>");
         sb.AppendLine("      <InfoFormat>text/xml</InfoFormat>");
+        AppendTimeDimension(sb, timeExtent);
         sb.AppendLine("      <TileMatrixSetLink>");
         sb.AppendLine("        <TileMatrixSet>WebMercatorQuad</TileMatrixSet>");
         sb.AppendLine("      </TileMatrixSetLink>");
@@ -636,6 +650,27 @@ internal sealed class ImageServerWmtsHandler(
         sb.AppendLine("</Capabilities>");
         return sb.ToString();
     }
+
+    private static void AppendTimeDimension(StringBuilder sb, long?[]? timeExtent)
+    {
+        if (timeExtent is not [{ } minMs, { } maxMs])
+        {
+            return;
+        }
+
+        var min = FormatIso8601(minMs);
+        var max = FormatIso8601(maxMs);
+        sb.AppendLine("      <Dimension>");
+        sb.AppendLine("        <ows:Identifier>TIME</ows:Identifier>");
+        sb.AppendLine("        <ows:UOM>ISO8601</ows:UOM>");
+        sb.Append("        <Default>").Append(max).AppendLine("</Default>");
+        sb.Append("        <Value>").Append(min).Append('/').Append(max).AppendLine("</Value>");
+        sb.AppendLine("      </Dimension>");
+    }
+
+    private static string FormatIso8601(long unixMilliseconds)
+        => DateTimeOffset.FromUnixTimeMilliseconds(unixMilliseconds)
+            .UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);
 
     private static void AppendOperationMetadata(StringBuilder sb, string operationName, string href)
     {

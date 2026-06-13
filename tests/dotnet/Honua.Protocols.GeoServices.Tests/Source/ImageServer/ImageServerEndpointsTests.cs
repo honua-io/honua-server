@@ -394,6 +394,46 @@ public class ImageServerEndpointsTests
     }
 
     [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WMTS")]
+    [Operation(Operations.Metadata)]
+    public async Task Wmts_GetCapabilities_TemporalLayer_AdvertisesTimeDimension()
+    {
+        var store = CreateRasterStoreSubstitute();
+        var temporalRaster = new RasterInfo
+        {
+            Id = 100,
+            LayerId = TestLayerId,
+            Name = "temporal-raster",
+            Width = 256,
+            Height = 256,
+            BandCount = 1,
+            PixelType = "8BUI",
+            Srid = 4326,
+            GeoTransform = [-180, 1.40625, 0, 90, 0, -0.703125],
+            Extent = new RasterExtent { XMin = -180, YMin = -90, XMax = 180, YMax = 90, Srid = 4326 },
+            CreatedAt = DateTimeOffset.UtcNow,
+            AcquisitionDate = DateTimeOffset.Parse("2020-06-01T00:00:00Z", System.Globalization.CultureInfo.InvariantCulture),
+        };
+        store.ListRastersAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns([temporalRaster]);
+
+        var fixture = await CreateFixtureAsync(store);
+        try
+        {
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/WMTS?SERVICE=WMTS&REQUEST=GetCapabilities&VERSION=1.0.0");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var content = await response.Content.ReadAsStringAsync();
+            content.Should().Contain("<ows:Identifier>TIME</ows:Identifier>");
+            content.Should().Contain("2020-06-01T00:00:00Z");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /rest/services/{serviceId}/ImageServer/WMTS")]
     [Endpoint("GET /rest/services/{id}/ImageServer/WMTS/{**restPath}")]
     [Operation(Operations.GetTile)]
