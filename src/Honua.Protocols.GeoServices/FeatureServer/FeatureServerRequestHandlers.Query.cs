@@ -316,7 +316,10 @@ internal static partial class FeatureServerEndpoints
             return false;
         }
 
-        if (!TryParseBoolValue(values, "returnExceededLimitFeatures", false, out var returnExceededLimitFeatures, out error))
+        // Esri default is true (return the truncated page); only an explicit false omits
+        // the features when the limit is exceeded. The default must stay true now that the
+        // flag is honored, or ordinary paginated queries would lose their features.
+        if (!TryParseBoolValue(values, "returnExceededLimitFeatures", true, out var returnExceededLimitFeatures, out error))
         {
             return false;
         }

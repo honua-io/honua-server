@@ -60,6 +60,34 @@ public sealed class FeatureServerQueryGapsTests : IAsyncLifetime
         extent.Ymax.Should().BeApproximately(37.8, 0.01);
     }
 
+    // returnExceededLimitFeatures=false must omit the truncated page while still flagging
+    // exceededTransferLimit; the default (true) returns the page as before.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_ReturnExceededLimitFeaturesFalse_OmitsFeaturesButFlagsExceeded()
+    {
+        var baseUrl =
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=json&where=1%3D1&resultRecordCount=2";
+
+        // Default (returnExceededLimitFeatures omitted == true): truncated page + flag.
+        var defaultResponse = await _fixture.Client.GetAsync(baseUrl);
+        var defaultContent = await defaultResponse.Content.ReadAsStringAsync();
+        defaultResponse.StatusCode.Should().Be(HttpStatusCode.OK, defaultContent);
+        var defaultQuery = JsonSerializer.Deserialize(defaultContent, FeatureServerJsonContext.Default.QueryResponse)!;
+        defaultQuery.Features.Should().NotBeNull();
+        defaultQuery.Features!.Length.Should().Be(2);
+        defaultQuery.ExceededTransferLimit.Should().BeTrue();
+
+        // Explicit false: no features, but exceededTransferLimit stays true.
+        var falseResponse = await _fixture.Client.GetAsync($"{baseUrl}&returnExceededLimitFeatures=false");
+        var falseContent = await falseResponse.Content.ReadAsStringAsync();
+        falseResponse.StatusCode.Should().Be(HttpStatusCode.OK, falseContent);
+        var falseQuery = JsonSerializer.Deserialize(falseContent, FeatureServerJsonContext.Default.QueryResponse)!;
+        falseQuery.ExceededTransferLimit.Should().BeTrue();
+        (falseQuery.Features is null || falseQuery.Features.Length == 0).Should().BeTrue("returnExceededLimitFeatures=false omits the page");
+    }
+
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]

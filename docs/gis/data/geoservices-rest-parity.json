@@ -673,8 +673,8 @@
           },
           {
             "name": "returnExceededLimitFeatures",
-            "status": "ignored",
-            "notes": "Accepted for client compatibility; Honua already reports exceededTransferLimit when more rows exist for the current page."
+            "status": "implemented",
+            "notes": "Defaults to true (returns the truncated page plus exceededTransferLimit). When false and the limit is exceeded, the f=json/geojson response omits the features while still flagging exceededTransferLimit=true; binary export formats always stream their rows."
           },
           {
             "name": "resultType",

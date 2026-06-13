@@ -783,7 +783,11 @@ internal sealed partial class FeatureServerQueryHandler(
             var isGeobuf = string.Equals(format, "geobuf", StringComparison.OrdinalIgnoreCase);
             var isParquet = string.Equals(format, "parquet", StringComparison.OrdinalIgnoreCase);
             var isArrow = string.Equals(format, "arrow", StringComparison.OrdinalIgnoreCase);
-            var useStreaming = effectiveLimit > StreamingThreshold && !isPbf && !isFgb && !isGeobuf && !isParquet && !isArrow;
+            // returnExceededLimitFeatures=false must drop the truncated page; route those
+            // requests through the materialized path (which applies the trim) instead of
+            // the streaming writer.
+            var useStreaming = effectiveLimit > StreamingThreshold && !isPbf && !isFgb && !isGeobuf && !isParquet && !isArrow
+                && validatedParams.ReturnExceededLimitFeatures;
 
             if (!useStreaming)
             {
@@ -911,7 +915,8 @@ internal sealed partial class FeatureServerQueryHandler(
                     outFields = parsed.Length == 0 ? null : parsed;
                 }
                 var shouldApplyDistinct = validatedParams.ReturnDistinctValues && outFields is { Length: > 0 };
-                if (CanUseRawGeoServicesPointFastPath(queryLayer.Resource, validatedParams, query, outputSrid, format) &&
+                if (validatedParams.ReturnExceededLimitFeatures &&
+                    CanUseRawGeoServicesPointFastPath(queryLayer.Resource, validatedParams, query, outputSrid, format) &&
                     await _queryExecutor.SupportsRawGeoServicesPointOutputAsync(
                         queryLayer.Service,
                         queryLayer.Resource,
@@ -957,6 +962,8 @@ internal sealed partial class FeatureServerQueryHandler(
                     result = ApplyDistinctValues(result, outFields!);
                     result = ApplyPaginationWindow(result, query.Offset, query.Limit);
                 }
+
+                result = ApplyReturnExceededLimitFeatures(result, validatedParams.ReturnExceededLimitFeatures);
 
                 (object? formattedResponse, string? contentType) = await _queryServices.FormatQueryResultAsync(
                     result,
@@ -1734,6 +1741,8 @@ internal sealed partial class FeatureServerQueryHandler(
             queryResult = ApplyDistinctValues(queryResult, outFields!);
             queryResult = ApplyPaginationWindow(queryResult, query.Offset, query.Limit);
         }
+
+        queryResult = ApplyReturnExceededLimitFeatures(queryResult, validatedParams.ReturnExceededLimitFeatures);
 
         (object? formattedResponse, _) = await _queryServices.FormatQueryResultAsync(
             queryResult,
@@ -2646,6 +2655,22 @@ internal sealed partial class FeatureServerQueryHandler(
         var hasMore = effectiveOffset + take < totalCount;
 
         return QueryResult<Feature>.Create(totalCount, pageItems, hasMore);
+    }
+
+    // Esri returnExceededLimitFeatures=false: when the result exceeds the page limit,
+    // return no features while still flagging exceededTransferLimit=true so the client
+    // knows to refine the query. Applies to the materialized json/geojson responses;
+    // binary export formats (pbf/fgb/geobuf/parquet/arrow) always stream their rows.
+    private static QueryResult<Feature> ApplyReturnExceededLimitFeatures(
+        QueryResult<Feature> result,
+        bool returnExceededLimitFeatures)
+    {
+        if (returnExceededLimitFeatures || !result.HasMoreResults)
+        {
+            return result;
+        }
+
+        return QueryResult<Feature>.Create(result.TotalCount, ImmutableArray<Feature>.Empty, true);
     }
 
     private static string BuildDistinctKey(Feature feature, string[] outFields)
