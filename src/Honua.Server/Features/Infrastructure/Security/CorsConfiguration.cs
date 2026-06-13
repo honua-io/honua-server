@@ -18,6 +18,21 @@ public static class CorsConfiguration
         "http://localhost:8080"
     ];
 
+    /// <summary>
+    /// Request headers allowed on cross-origin requests by default. Includes the full
+    /// set of conditional headers (<c>If-Match</c>, <c>If-Unmodified-Since</c>, …) so
+    /// browser/Office clients can send ETag preconditions on PATCH/PUT/DELETE — without
+    /// these, optimistic concurrency is silently unavailable cross-origin (#1629).
+    /// Additional headers can be appended via <c>Cors:AllowedHeaders</c> configuration.
+    /// </summary>
+    private static readonly string[] DefaultAllowedHeaders =
+    [
+        "Content-Type", "Authorization", "X-API-Key", "X-Correlation-ID",
+        "X-Grpc-Web", "X-User-Agent", "Range", "If-Range",
+        "If-Match", "If-None-Match", "If-Modified-Since", "If-Unmodified-Since",
+        "Prefer"
+    ];
+
     public const string DevelopmentPolicy = "DevelopmentCors";
     public const string ProductionPolicy = "ProductionCors";
     public const string RestrictedPolicy = "RestrictedCors";
@@ -113,8 +128,7 @@ public static class CorsConfiguration
             }
 
             policy.WithMethods("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
-                  .WithHeaders("Content-Type", "Authorization", "X-API-Key", "X-Correlation-ID",
-                      "X-Grpc-Web", "X-User-Agent", "Range", "If-Range", "If-None-Match", "If-Modified-Since")
+                  .WithHeaders(ResolveAllowedHeaders(configuration))
                   .WithExposedHeaders("Grpc-Status", "Grpc-Message", "Grpc-Encoding", "Grpc-Accept-Encoding",
                       "Accept-Ranges", "Content-Range", "Content-Length", "ETag", "Last-Modified")
                   .SetIsOriginAllowed(origin => IsOriginAllowed(origin, allowedOrigins))
@@ -135,6 +149,26 @@ public static class CorsConfiguration
                 CorsLog.NoCorsOriginsConfigured(logger);
             }
         }
+    }
+
+    /// <summary>
+    /// Resolves the cross-origin allowed-request-header list: the standard default set
+    /// (which includes conditional/ETag headers) unioned with any operator-supplied
+    /// <c>Cors:AllowedHeaders</c> entries. Configured headers extend the defaults rather
+    /// than replacing them, so adding a custom header never silently drops <c>If-Match</c>.
+    /// </summary>
+    private static string[] ResolveAllowedHeaders(IConfiguration configuration)
+    {
+        var configured = configuration.GetSection("Cors:AllowedHeaders").Get<string[]>();
+        if (configured is null || configured.Length == 0)
+        {
+            return DefaultAllowedHeaders;
+        }
+
+        return DefaultAllowedHeaders
+            .Concat(configured.Where(h => !string.IsNullOrWhiteSpace(h)).Select(h => h.Trim()))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
     }
 
     private static string[] ResolveAllowedOrigins(IConfiguration configuration)
@@ -372,6 +406,13 @@ public sealed class CorsOptions
     /// Used for sensitive operations requiring tighter security.
     /// </summary>
     public string[] RestrictedOrigins { get; set; } = Array.Empty<string>();
+
+    /// <summary>
+    /// Additional cross-origin allowed request headers, appended to the standard default
+    /// set (which already includes conditional/ETag headers such as <c>If-Match</c>).
+    /// Configured values extend the defaults; they do not replace them.
+    /// </summary>
+    public string[] AllowedHeaders { get; set; } = Array.Empty<string>();
 
     /// <summary>
     /// Whether to allow credentials in CORS requests.

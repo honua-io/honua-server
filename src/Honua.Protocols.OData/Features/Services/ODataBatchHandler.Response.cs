@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Shared.Models;
@@ -72,8 +71,7 @@ internal sealed partial class ODataBatchHandler
 
     private string ComputeFeatureEtag(Dictionary<string, object?> payload)
     {
-        var canonical = ODataUtilityService.NormalizeForEtag(payload);
-        var json = JsonSerializer.SerializeToUtf8Bytes(canonical);
+        var json = ODataUtilityService.SerializeForEtag(payload);
         return _etagService.ComputeETag(json);
     }
 }
