@@ -22,7 +22,7 @@ service; a transform the service cannot perform returns a clear 400.
 
 | Esri resource | Esri path | Methods | Honua status | Honua endpoint(s) | Notes |
 | --- | --- | --- | --- | --- | --- |
-| GeocodeServer metadata | `/GeocodeServer` | GET, POST | Partial | `GET/POST /rest/services/{locatorName}/GeocodeServer`, `GET/POST /rest/services/GeocodeServer` | Returns `currentVersion`, `serviceDescription`, `capabilities`, `spatialReference`, `singleLineAddressField`, `addressFields`, and `locatorProperties`. `candidateFields` and `categories` are not advertised. |
+| GeocodeServer metadata | `/GeocodeServer` | GET, POST | Partial | `GET/POST /rest/services/{locatorName}/GeocodeServer`, `GET/POST /rest/services/GeocodeServer` | Returns `currentVersion`, `serviceDescription`, `capabilities`, `spatialReference`, `singleLineAddressField`, `addressFields`, `candidateFields` (the attributes every candidate emits), an empty `categories` array (category filtering is unsupported), and `locatorProperties`. |
 
 ## Esri GeocodeServer operation coverage
 

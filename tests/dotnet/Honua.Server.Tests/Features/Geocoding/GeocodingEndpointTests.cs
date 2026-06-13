@@ -242,6 +242,16 @@ public sealed class GeocodingEndpointTests
         using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var capabilities = payload.RootElement.GetProperty("capabilities").GetString();
         Assert.Equal("Geocode,ReverseGeocode,Suggest", capabilities);
+
+        // candidateFields advertises the attributes every candidate emits; categories
+        // is advertised (empty) for client compatibility since filtering is unsupported.
+        var candidateFields = payload.RootElement.GetProperty("candidateFields");
+        Assert.Equal(JsonValueKind.Array, candidateFields.ValueKind);
+        Assert.Contains(
+            candidateFields.EnumerateArray(),
+            field => field.GetProperty("name").GetString() == "Match_addr");
+        Assert.Equal(JsonValueKind.Array, payload.RootElement.GetProperty("categories").ValueKind);
+        Assert.Equal(0, payload.RootElement.GetProperty("categories").GetArrayLength());
     }
 
     [IntegrationTest]

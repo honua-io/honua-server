@@ -2481,15 +2481,14 @@
         "suggest",
         "geocodeAddresses (batch)",
         "outFields projection",
-        "outSR reprojection"
+        "outSR reprojection",
+        "candidateFields metadata"
       ],
       "knownGaps": [
         "magicKey round-trip",
         "category filtering",
         "forStorage",
-        "matchOutOfRange",
-        "candidateFields metadata",
-        "categories metadata"
+        "matchOutOfRange"
       ],
       "evidence": {
         "code": [
