@@ -1179,7 +1179,7 @@
         "exportImage",
         "identify",
         "tile with cloud-storage cache",
-        "WMTS 1.0 GetCapabilities/GetTile",
+        "WMTS 1.0 GetCapabilities/GetTile/GetFeatureInfo",
         "query (raster catalog features)",
         "find",
         "measure (Basic mensuration)",
@@ -1211,7 +1211,7 @@
         "multidimensional cube ingestion",
         "WCS range subset/band selection/scaling/temporal extensions",
         "full WCS CRS extension advertisement beyond native coverage CRS values",
-        "WMTS GetFeatureInfo, dimensions, and non-WebMercator matrix sets",
+        "WMTS dimensions and non-WebMercator matrix sets",
         "richer image child resources"
       ],
       "evidence": {
@@ -1292,7 +1292,7 @@
               "GET /rest/services/{serviceId}/ImageServer/WMTS",
               "GET /rest/services/{serviceId}/ImageServer/WMTS/{**restPath}"
             ],
-            "notes": "OGC WMTS 1.0 GetCapabilities/GetTile facade over the ImageServer tile/cloud-cache pipeline. Supports KVP and RESTful resources, WebMercatorQuad matrices, STYLE=default, and image/png + image/jpeg tiles. GetFeatureInfo, dimensions, non-WebMercator tile matrix sets, and other formats (TIFF) are deferred."
+            "notes": "OGC WMTS 1.0 GetCapabilities/GetTile facade over the ImageServer tile/cloud-cache pipeline. Supports KVP and RESTful resources, WebMercatorQuad matrices, STYLE=default, image/png + image/jpeg tiles, and GetFeatureInfo (application/json/text/xml) returning the pixel band values at the requested tile pixel. Dimensions, non-WebMercator tile matrix sets, and other formats (TIFF) are deferred."
           },
           {
             "name": "Export Image",
@@ -1843,7 +1843,7 @@
         "ImageServer measure supports Basic map-space mensuration only; sensor/DEM-backed height and 3D mensuration are not implemented.",
         "ImageServer tile GET storage is a loose-object cache, not an Esri compact cache, tile package, or advertised cacheInfo tile cache.",
         "ImageServer exportTiles writes ZIP archives to configured cloud file storage; Esri TPK/TPKX/compact cache packages and async job resources are not implemented.",
-        "ImageServer WMTS supports GetCapabilities/GetTile for WebMercatorQuad image/png and image/jpeg tiles; GetFeatureInfo, dimensions, non-WebMercator matrix sets, and other formats (TIFF) are deferred."
+        "ImageServer WMTS supports GetCapabilities/GetTile/GetFeatureInfo for WebMercatorQuad image/png and image/jpeg tiles; dimensions, non-WebMercator matrix sets, and other formats (TIFF) are deferred."
       ]
     },
     {

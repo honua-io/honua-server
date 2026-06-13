@@ -1,24 +1,40 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Buffers;
 using System.Globalization;
+using System.Linq;
 using System.Net;
 using System.Text;
+using System.Text.Json;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Raster.Abstractions;
+using Honua.Core.Features.Raster.Domain;
+using Honua.Protocols.GeoServices.ImageServer.Services;
 using Honua.Infrastructure.Helpers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Primitives;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 
-internal sealed class ImageServerWmtsHandler(ImageServerTileHandler tileHandler)
+internal sealed class ImageServerWmtsHandler(
+    ImageServerTileHandler tileHandler,
+    IMetadataV2GraphProvider graphProvider,
+    IRasterStore rasterStore)
 {
     private const int MaxZoom = 22;
+    private const int TilePixels = 256;
     private const string ContentType = "application/xml";
     private const string TileMatrixSet = "WebMercatorQuad";
     private const string Version = "1.0.0";
     private const string PngFormat = "image/png";
     private const string JpegFormat = "image/jpeg";
+    private const string JsonInfoFormat = "application/json";
+    private const string XmlInfoFormat = "text/xml";
     private const double ScaleDenominator0 = 559082264.0287178;
+
+    // Web Mercator (EPSG:3857) half-extent: the WebMercatorQuad origin shift.
+    private const double OriginShift = 20037508.342789244;
 
     // Maps an advertised WMTS tile media type to the ImageServer tile-handler format token.
     private static bool TryResolveTileFormat(string mediaType, out string tileToken)
@@ -93,10 +109,19 @@ internal sealed class ImageServerWmtsHandler(ImageServerTileHandler tileHandler)
                 cancellationToken).ConfigureAwait(false);
         }
 
+        if (string.Equals(request, "GetFeatureInfo", StringComparison.OrdinalIgnoreCase))
+        {
+            return await HandleGetFeatureInfoAsync(
+                context,
+                layerId,
+                advertisedLayerIdentifier,
+                cancellationToken).ConfigureAwait(false);
+        }
+
         return CreateExceptionReport(
             "OperationNotSupported",
             "request",
-            "Only GetCapabilities and GetTile are supported for ImageServer WMTS.",
+            "Only GetCapabilities, GetTile, and GetFeatureInfo are supported for ImageServer WMTS.",
             StatusCodes.Status501NotImplemented);
     }
 
@@ -282,6 +307,260 @@ internal sealed class ImageServerWmtsHandler(ImageServerTileHandler tileHandler)
             cancellationToken).ConfigureAwait(false);
     }
 
+    private async Task<IResult> HandleGetFeatureInfoAsync(
+        HttpContext context,
+        int layerId,
+        string advertisedLayerIdentifier,
+        CancellationToken cancellationToken)
+    {
+        var query = context.Request.Query;
+        if (!RequireQueryValue(query, "VERSION", out var version, out var error) ||
+            !RequireQueryValue(query, "LAYER", out var layerValue, out error) ||
+            !RequireQueryValue(query, "TILEMATRIXSET", out var tileMatrixSet, out error) ||
+            !RequireQueryValue(query, "TILEMATRIX", out var tileMatrix, out error) ||
+            !RequireQueryValue(query, "TILEROW", out var tileRow, out error) ||
+            !RequireQueryValue(query, "TILECOL", out var tileCol, out error) ||
+            !RequireQueryValue(query, "I", out var iValue, out error) ||
+            !RequireQueryValue(query, "J", out var jValue, out error))
+        {
+            return error!;
+        }
+
+        if (!string.Equals(version, Version, StringComparison.OrdinalIgnoreCase))
+        {
+            return CreateExceptionReport(
+                "InvalidParameterValue", "version", $"VERSION must be {Version}.", StatusCodes.Status400BadRequest);
+        }
+
+        if (!IsLayerIdentifierMatch(layerValue, layerId, advertisedLayerIdentifier))
+        {
+            return CreateExceptionReport(
+                "InvalidParameterValue", "layer", "Invalid LAYER parameter.", StatusCodes.Status400BadRequest);
+        }
+
+        if (!string.Equals(tileMatrixSet, TileMatrixSet, StringComparison.OrdinalIgnoreCase))
+        {
+            return CreateExceptionReport(
+                "InvalidParameterValue", "TileMatrixSet", $"Only TILEMATRIXSET={TileMatrixSet} is supported.", StatusCodes.Status400BadRequest);
+        }
+
+        TryGetQueryValue(query, "INFOFORMAT", out var infoFormatValue);
+        if (!TryResolveInfoFormat(infoFormatValue, out var infoFormat))
+        {
+            return CreateExceptionReport(
+                "InvalidParameterValue", "infoFormat", "INFOFORMAT must be application/json or text/xml.", StatusCodes.Status400BadRequest);
+        }
+
+        if (!int.TryParse(tileMatrix, NumberStyles.None, CultureInfo.InvariantCulture, out var level) ||
+            level < 0 || level > MaxZoom)
+        {
+            return CreateExceptionReport(
+                "InvalidParameterValue", "TileMatrix", $"TILEMATRIX must be an integer from 0 to {MaxZoom}.", StatusCodes.Status400BadRequest);
+        }
+
+        var matrixWidth = 1 << level;
+        if (!int.TryParse(tileRow, NumberStyles.None, CultureInfo.InvariantCulture, out var row) || row < 0 || row >= matrixWidth)
+        {
+            return CreateExceptionReport(
+                "InvalidParameterValue", "TileRow", "TILEROW is outside the TileMatrix bounds.", StatusCodes.Status400BadRequest);
+        }
+
+        if (!int.TryParse(tileCol, NumberStyles.None, CultureInfo.InvariantCulture, out var col) || col < 0 || col >= matrixWidth)
+        {
+            return CreateExceptionReport(
+                "InvalidParameterValue", "TileCol", "TILECOL is outside the TileMatrix bounds.", StatusCodes.Status400BadRequest);
+        }
+
+        if (!int.TryParse(iValue, NumberStyles.None, CultureInfo.InvariantCulture, out var i) || i < 0 || i >= TilePixels)
+        {
+            return CreateExceptionReport(
+                "InvalidParameterValue", "i", $"I must be an integer from 0 to {TilePixels - 1}.", StatusCodes.Status400BadRequest);
+        }
+
+        if (!int.TryParse(jValue, NumberStyles.None, CultureInfo.InvariantCulture, out var j) || j < 0 || j >= TilePixels)
+        {
+            return CreateExceptionReport(
+                "InvalidParameterValue", "j", $"J must be an integer from 0 to {TilePixels - 1}.", StatusCodes.Status400BadRequest);
+        }
+
+        var (worldX, worldY) = PixelToWebMercator(level, row, col, i, j);
+
+        // Resolve participating rasters and read the pixel value at the computed point,
+        // adapting to the same shared raster-store primitives as the identify operation.
+        var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        PixelValueResult? pixel = null;
+        if (ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId) is { } resolved)
+        {
+            var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, GetQueryString(query, "mosaicRule"));
+            var selectionQuery = new RasterSelectionQuery
+            {
+                Geometry = ImageServerMosaicHelpers.CreatePointGeometry(worldX, worldY),
+                GeometrySrid = 3857,
+            };
+            var selected = await rasterStore.QueryRastersAsync(layerId, selectionQuery, cancellationToken).ConfigureAwait(false);
+            if (selected.Length == 1)
+            {
+                pixel = await rasterStore.IdentifyAsync(layerId, selected[0].Id, worldX, worldY, 3857, cancellationToken).ConfigureAwait(false);
+            }
+            else if (selected.Length > 1)
+            {
+                pixel = await rasterStore.IdentifyMosaicAsync(
+                    layerId,
+                    selected.Select(r => r.Id).ToArray(),
+                    mergeStrategy,
+                    worldX,
+                    worldY,
+                    3857,
+                    cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        return BuildFeatureInfoResult(infoFormat, advertisedLayerIdentifier, worldX, worldY, pixel);
+    }
+
+    // Maps a pixel (I, J) within a 256px WebMercatorQuad tile to its EPSG:3857 centre.
+    private static (double X, double Y) PixelToWebMercator(int level, int row, int col, int i, int j)
+    {
+        var tileSpan = (2.0 * OriginShift) / (1 << level);
+        var metersPerPixel = tileSpan / TilePixels;
+        var tileMinX = -OriginShift + (col * tileSpan);
+        var tileMaxY = OriginShift - (row * tileSpan);
+        var x = tileMinX + ((i + 0.5) * metersPerPixel);
+        var y = tileMaxY - ((j + 0.5) * metersPerPixel);
+        return (x, y);
+    }
+
+    private static bool TryResolveInfoFormat(string? raw, out string infoFormat)
+    {
+        if (string.IsNullOrWhiteSpace(raw) ||
+            string.Equals(raw, JsonInfoFormat, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(raw, "text/json", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(raw, "application/geo+json", StringComparison.OrdinalIgnoreCase))
+        {
+            infoFormat = JsonInfoFormat;
+            return true;
+        }
+
+        if (string.Equals(raw, XmlInfoFormat, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(raw, "application/xml", StringComparison.OrdinalIgnoreCase))
+        {
+            infoFormat = XmlInfoFormat;
+            return true;
+        }
+
+        infoFormat = string.Empty;
+        return false;
+    }
+
+    private static IResult BuildFeatureInfoResult(
+        string infoFormat,
+        string layerIdentifier,
+        double x,
+        double y,
+        PixelValueResult? pixel)
+    {
+        var hasData = pixel is { HasData: true } p && p.BandValues.Count > 0;
+        if (string.Equals(infoFormat, XmlInfoFormat, StringComparison.Ordinal))
+        {
+            return Results.Content(BuildFeatureInfoXml(layerIdentifier, x, y, pixel, hasData), "text/xml", Encoding.UTF8, StatusCodes.Status200OK);
+        }
+
+        return Results.Content(BuildFeatureInfoJson(layerIdentifier, x, y, pixel, hasData), JsonInfoFormat, Encoding.UTF8, StatusCodes.Status200OK);
+    }
+
+    private static string BuildFeatureInfoJson(string layerIdentifier, double x, double y, PixelValueResult? pixel, bool hasData)
+    {
+        var buffer = new ArrayBufferWriter<byte>(256);
+        using (var writer = new Utf8JsonWriter(buffer))
+        {
+            writer.WriteStartObject();
+            writer.WriteString("layer", layerIdentifier);
+            writer.WriteStartObject("location");
+            writer.WriteNumber("x", x);
+            writer.WriteNumber("y", y);
+            writer.WriteStartObject("spatialReference");
+            writer.WriteNumber("wkid", 3857);
+            writer.WriteEndObject();
+            writer.WriteEndObject();
+            writer.WriteBoolean("hasData", hasData);
+            writer.WriteStartArray("bands");
+            if (hasData && pixel is { } p)
+            {
+                foreach (var band in p.BandValues.OrderBy(static b => b.Key))
+                {
+                    writer.WriteStartObject();
+                    writer.WriteNumber("band", band.Key);
+                    WriteBandJsonValue(writer, band.Value);
+                    writer.WriteEndObject();
+                }
+            }
+
+            writer.WriteEndArray();
+            writer.WriteEndObject();
+        }
+
+        return Encoding.UTF8.GetString(buffer.WrittenSpan);
+    }
+
+    private static void WriteBandJsonValue(Utf8JsonWriter writer, object? value)
+    {
+        switch (value)
+        {
+            case null:
+                writer.WriteNull("value");
+                break;
+            case double d:
+                writer.WriteNumber("value", d);
+                break;
+            case float f:
+                writer.WriteNumber("value", f);
+                break;
+            case int n:
+                writer.WriteNumber("value", n);
+                break;
+            case long l:
+                writer.WriteNumber("value", l);
+                break;
+            case short s:
+                writer.WriteNumber("value", s);
+                break;
+            case byte b:
+                writer.WriteNumber("value", b);
+                break;
+            default:
+                writer.WriteString("value", Convert.ToString(value, CultureInfo.InvariantCulture));
+                break;
+        }
+    }
+
+    private static string BuildFeatureInfoXml(string layerIdentifier, double x, double y, PixelValueResult? pixel, bool hasData)
+    {
+        var sb = new StringBuilder(512);
+        sb.AppendLine("""<?xml version="1.0" encoding="UTF-8"?>""");
+        sb.Append("<FeatureInfoResponse layer=\"").Append(EscapeXml(layerIdentifier))
+            .Append("\" hasData=\"").Append(hasData ? "true" : "false").AppendLine("\">");
+        sb.Append("  <Location x=\"").Append(FormatCoordinate(x))
+            .Append("\" y=\"").Append(FormatCoordinate(y)).AppendLine("\" srs=\"EPSG:3857\" />");
+        if (hasData && pixel is { } p)
+        {
+            foreach (var band in p.BandValues.OrderBy(static b => b.Key))
+            {
+                sb.Append("  <Band id=\"").Append(band.Key.ToString(CultureInfo.InvariantCulture))
+                    .Append("\" value=\"").Append(EscapeXml(Convert.ToString(band.Value, CultureInfo.InvariantCulture) ?? string.Empty))
+                    .AppendLine("\" />");
+            }
+        }
+
+        sb.AppendLine("</FeatureInfoResponse>");
+        return sb.ToString();
+    }
+
+    private static string FormatCoordinate(double value)
+        => value.ToString("0.############", CultureInfo.InvariantCulture);
+
+    private static string? GetQueryString(IQueryCollection query, string name)
+        => TryGetQueryValue(query, name, out var value) ? value : null;
+
     private static IResult CreateCapabilities(HttpContext context, string layerIdentifier)
     {
         var xml = BuildCapabilitiesXml(context, layerIdentifier);
@@ -309,6 +588,7 @@ internal sealed class ImageServerWmtsHandler(ImageServerTileHandler tileHandler)
         sb.AppendLine("  <ows:OperationsMetadata>");
         AppendOperationMetadata(sb, "GetCapabilities", escapedBaseUrl);
         AppendOperationMetadata(sb, "GetTile", escapedBaseUrl);
+        AppendOperationMetadata(sb, "GetFeatureInfo", escapedBaseUrl);
         sb.AppendLine("  </ows:OperationsMetadata>");
         sb.AppendLine("  <Contents>");
         sb.AppendLine("    <Layer>");
@@ -319,6 +599,8 @@ internal sealed class ImageServerWmtsHandler(ImageServerTileHandler tileHandler)
         sb.AppendLine("      </Style>");
         sb.AppendLine("      <Format>image/png</Format>");
         sb.AppendLine("      <Format>image/jpeg</Format>");
+        sb.AppendLine("      <InfoFormat>application/json</InfoFormat>");
+        sb.AppendLine("      <InfoFormat>text/xml</InfoFormat>");
         sb.AppendLine("      <TileMatrixSetLink>");
         sb.AppendLine("        <TileMatrixSet>WebMercatorQuad</TileMatrixSet>");
         sb.AppendLine("      </TileMatrixSetLink>");

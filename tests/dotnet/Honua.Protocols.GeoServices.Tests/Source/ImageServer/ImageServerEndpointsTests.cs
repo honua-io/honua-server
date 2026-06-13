@@ -294,7 +294,8 @@ public class ImageServerEndpointsTests
             content.Should().Contain("ResourceURL");
             content.Should().Contain("<Format>image/png</Format>");
             content.Should().Contain("<Format>image/jpeg</Format>");
-            content.Should().NotContain("GetFeatureInfo");
+            content.Should().Contain("<InfoFormat>application/json</InfoFormat>");
+            content.Should().Contain("name=\"GetFeatureInfo\"");
 
             var serviceId = WebAppFixture.TestServiceId;
             var restfulResponse = await fixture.Client.GetAsync(
@@ -374,6 +375,56 @@ public class ImageServerEndpointsTests
                 $"/rest/services/{TestLayerId}/ImageServer/WMTS/{TestLayerId}/default/WebMercatorQuad/2/1/1.jpg");
             restful.StatusCode.Should().Be(HttpStatusCode.OK);
             restful.Content.Headers.ContentType?.MediaType.Should().Be("image/jpeg");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WMTS")]
+    [Operation(Operations.Identify)]
+    public async Task Wmts_GetFeatureInfo_ReturnsPixelValueAtTilePixel()
+    {
+        var fixture = await CreateFixtureAsync(CreateSamplingRasterStoreSubstitute());
+        try
+        {
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/WMTS?SERVICE=WMTS&REQUEST=GetFeatureInfo&VERSION=1.0.0&LAYER={TestLayerId}&STYLE=default&FORMAT=image/png&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=0&TILEROW=0&TILECOL=0&I=128&J=128&INFOFORMAT=application/json");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+            using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var root = json.RootElement;
+            root.GetProperty("hasData").GetBoolean().Should().BeTrue();
+            root.GetProperty("location").GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(3857);
+            var bands = root.GetProperty("bands");
+            bands.GetArrayLength().Should().Be(1);
+            bands[0].GetProperty("band").GetInt32().Should().Be(1);
+            bands[0].GetProperty("value").GetInt32().Should().Be(42);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WMTS")]
+    [Operation(Operations.Identify)]
+    public async Task Wmts_GetFeatureInfo_WithOutOfRangePixel_ReturnsException()
+    {
+        var fixture = await CreateFixtureAsync(CreateSamplingRasterStoreSubstitute());
+        try
+        {
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/WMTS?SERVICE=WMTS&REQUEST=GetFeatureInfo&VERSION=1.0.0&LAYER={TestLayerId}&STYLE=default&FORMAT=image/png&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=0&TILEROW=0&TILECOL=0&I=999&J=10&INFOFORMAT=application/json");
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            var content = await response.Content.ReadAsStringAsync();
+            content.Should().Contain("InvalidParameterValue");
         }
         finally
         {
