@@ -69,6 +69,13 @@ public readonly record struct RasterQuery
     public RasterStretch? Stretch { get; init; }
 
     /// <summary>
+    /// Optional pseudocolour colormap applied after <see cref="Stretch"/> to map
+    /// single-band pixel values to an RGBA image. When <c>null</c> no colormap is
+    /// applied.
+    /// </summary>
+    public RasterColormap? Colormap { get; init; }
+
+    /// <summary>
     /// Initializes a new instance of the RasterQuery struct.
     /// </summary>
     public RasterQuery()

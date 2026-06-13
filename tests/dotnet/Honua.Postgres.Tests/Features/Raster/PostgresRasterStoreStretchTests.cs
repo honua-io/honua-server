@@ -186,6 +186,39 @@ public sealed class PostgresRasterStoreStretchTests
     }
 
     [UnitTest]
+    public void BuildColormapText_OrdersStopsDescendingByValue()
+    {
+        var colormap = new RasterColormap
+        {
+            Entries =
+            [
+                new RasterColormapEntry(0, 0, 0, 0, 255),
+                new RasterColormapEntry(100, 255, 255, 255, 255),
+            ],
+        };
+
+        var text = PostgresRasterStore.BuildColormapText(colormap);
+
+        var lines = text.Trim().Split('\n');
+        lines[0].Should().Be("100 255 255 255 255");
+        lines[1].Should().Be("0 0 0 0 255");
+    }
+
+    [UnitTest]
+    public void BuildColormapExpression_WrapsBandOneInStColorMap()
+    {
+        var colormap = new RasterColormap
+        {
+            Entries = [new RasterColormapEntry(0, 1, 2, 3, 255)],
+        };
+
+        var sql = PostgresRasterStore.BuildColormapExpression("raster", colormap);
+
+        sql.Should().StartWith("ST_ColorMap(raster, 1, '");
+        sql.Should().EndWith("'INTERPOLATE')");
+    }
+
+    [UnitTest]
     public void BuildStretchBounds_ResolvesOneBoundsPerBand()
     {
         var stretch = new RasterStretch { StretchType = RasterStretchType.MinMax };

@@ -230,6 +230,12 @@ internal sealed class PostgresRasterStore : IRasterStore
             }
         }
 
+        // 1c. Apply pseudocolour colormap (renderingRule Colormap) to band 1.
+        if (query.Colormap is { Entries.Count: > 0 } colormap)
+        {
+            rasterExpr = BuildColormapExpression(rasterExpr, colormap);
+        }
+
         // 2. Resize to output dimensions if specified
         if (query.OutputWidth is > 0 && query.OutputHeight is > 0)
         {
@@ -462,6 +468,37 @@ internal sealed class PostgresRasterStore : IRasterStore
 
     private static string FormatStretchNumber(double value)
         => value.ToString("G17", CultureInfo.InvariantCulture);
+
+    // ----- Pseudocolour colormap execution (renderingRule Colormap) -----------
+    // Maps single-band pixel values to an RGBA image via PostGIS ST_ColorMap,
+    // interpolating between the supplied colour stops.
+
+    /// <summary>
+    /// Builds the ST_ColorMap colormap definition text from the colour stops, ordered
+    /// by descending value as PostGIS expects. Each line is <c>value r g b a</c>.
+    /// </summary>
+    internal static string BuildColormapText(RasterColormap colormap)
+    {
+        var builder = new System.Text.StringBuilder(colormap.Entries.Count * 24);
+        foreach (var entry in colormap.Entries.OrderByDescending(static e => e.Value))
+        {
+            builder
+                .Append(FormatStretchNumber(entry.Value)).Append(' ')
+                .Append(entry.Red.ToString(CultureInfo.InvariantCulture)).Append(' ')
+                .Append(entry.Green.ToString(CultureInfo.InvariantCulture)).Append(' ')
+                .Append(entry.Blue.ToString(CultureInfo.InvariantCulture)).Append(' ')
+                .Append(entry.Alpha.ToString(CultureInfo.InvariantCulture)).Append('\n');
+        }
+
+        return builder.ToString();
+    }
+
+    /// <summary>
+    /// Wraps <paramref name="baseExpr"/> in ST_ColorMap over band 1. The colormap text
+    /// is composed only of numeric tokens, so it is safe to embed as a SQL literal.
+    /// </summary>
+    internal static string BuildColormapExpression(string baseExpr, RasterColormap colormap)
+        => $"ST_ColorMap({baseExpr}, 1, '{BuildColormapText(colormap)}', 'INTERPOLATE')";
 
     /// <summary>
     /// Resolves per-band low/high stretch bounds for every band in
@@ -736,6 +773,12 @@ internal sealed class PostgresRasterStore : IRasterStore
             {
                 postMergeRasterExpr = BuildStretchedRasterExpression(postMergeRasterExpr, stretchBounds);
             }
+        }
+
+        // Apply pseudocolour colormap (renderingRule Colormap) to band 1.
+        if (query.Colormap is { Entries.Count: > 0 } colormap)
+        {
+            postMergeRasterExpr = BuildColormapExpression(postMergeRasterExpr, colormap);
         }
 
         if (query.OutputWidth is > 0 && query.OutputHeight is > 0)

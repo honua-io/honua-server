@@ -235,6 +235,46 @@ public class ImageServerEndpointsTests
     [IntegrationTest]
     [Operation(Operations.Export)]
     [Endpoint("GET /rest/services/{id}/ImageServer/exportImage")]
+    public async Task ExportImage_WithColormapRenderingRule_AppliesColormapAndReturnsPng()
+    {
+        var store = CreateRasterStoreSubstitute();
+        RasterQuery? capturedQuery = null;
+        store.ExportImageAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                capturedQuery = call.ArgAt<RasterQuery>(2);
+                return new RasterResult
+                {
+                    Data = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],
+                    ContentType = "image/png",
+                    Width = 256,
+                    Height = 256,
+                    Srid = 4326,
+                };
+            });
+
+        var fixture = await CreateFixtureAsync(store);
+        try
+        {
+            var renderingRule = Uri.EscapeDataString(
+                """{"rasterFunction":"Colormap","rasterFunctionArguments":{"Colormap":[[0,0,0,0],[255,255,255,255]]}}""");
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/exportImage?f=image&bbox=-180,-90,180,90&renderingRule={renderingRule}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            capturedQuery.Should().NotBeNull();
+            capturedQuery!.Value.Colormap.Should().NotBeNull();
+            capturedQuery.Value.Colormap!.Entries.Should().HaveCount(2);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{id}/ImageServer/exportImage")]
     public async Task ExportImage_WithClipRenderingRule_ReturnsNotImplemented()
     {
         var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());

@@ -179,6 +179,58 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
         }
     }
 
+    [IntegrationTest]
+    public async Task ExportImageAsync_WithColormap_ProducesRgbaImage()
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreQueryTests));
+        try
+        {
+            await CreateRasterTableAsync(schemaName);
+            await CreateRasterStatisticsTableAsync(schemaName);
+            var rasterId = await InsertFloatRasterAsync(schemaName);
+            var store = new PostgresRasterStore(
+                new FixtureConnectionProvider(fixture.DataSource),
+                NullLogger<PostgresRasterStore>.Instance,
+                schemaName);
+
+            var result = await store.ExportImageAsync(
+                    LayerId,
+                    rasterId,
+                    new RasterQuery
+                    {
+                        OutputFormat = RasterFormat.TIFF,
+                        Colormap = new RasterColormap
+                        {
+                            Entries =
+                            [
+                                new RasterColormapEntry(0, 0, 0, 0, 255),
+                                new RasterColormapEntry(30, 255, 255, 255, 255),
+                            ],
+                        },
+                    })
+                .ConfigureAwait(false);
+
+            result.Data.Should().NotBeEmpty();
+
+            // ST_ColorMap maps the single band to a 4-band RGBA image.
+            var bandCount = await GetExportedBandCountAsync(schemaName, result.Data);
+            bandCount.Should().Be(4);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    private async Task<int> GetExportedBandCountAsync(string schemaName, byte[] exportedRaster)
+    {
+        await using var connection = await fixture.GetConnectionAsync(schemaName);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT ST_NumBands(ST_FromGDALRaster(@data));";
+        command.Parameters.AddWithValue("data", exportedRaster);
+        return Convert.ToInt32(await command.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture);
+    }
+
     private async Task CreateRasterStatisticsTableAsync(string schemaName)
     {
         await using var connection = await fixture.GetConnectionAsync(schemaName);

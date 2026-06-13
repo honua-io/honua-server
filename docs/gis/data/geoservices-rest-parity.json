@@ -1208,7 +1208,7 @@
         "datumTransformation/image coordinate systems for ImageServer project",
         "spatial WHERE pushdown for query",
         "renderingRule honoured by identify/legend (exportImage executes Stretch)",
-        "renderingRule colormap and Clip raster-function executors (exportImage executes Stretch only)",
+        "renderingRule Clip raster-function executor (exportImage executes Stretch and Colormap)",
         "multidimensional cube ingestion",
         "WCS range subset/band selection/scaling/temporal extensions",
         "full WCS CRS extension advertisement beyond native coverage CRS values",
@@ -1540,7 +1540,7 @@
             "GET /rest/services/{id}/ImageServer/computeClass",
             "POST /rest/services/{id}/ImageServer/computeClass"
           ],
-          "notes": "Closest in spirit to Esri's validate operation. Accepts a raster function chain document via renderingRule (or the legacy rasterFunction alias) and returns the planned execution metadata (rasterFunction, chainDepth, executedFunctions[], outputPixelType, status). The MVP planner walks Identity / Stretch / Clip nodes (max chain depth 8) and rejects unknown functions with a 400; exportImage now executes the Stretch portion (MinMax/StandardDeviation/PercentClip), while Clip / colormap execution and computeStatisticsHistograms wiring remain a follow-on."
+          "notes": "Closest in spirit to Esri's validate operation. Accepts a raster function chain document via renderingRule (or the legacy rasterFunction alias) and returns the planned execution metadata (rasterFunction, chainDepth, executedFunctions[], outputPixelType, status). The MVP planner walks Identity / Stretch / Clip nodes (max chain depth 8) and rejects unknown functions with a 400; exportImage now executes the Stretch portion (MinMax/StandardDeviation/PercentClip) and an explicit Colormap, while Clip execution and computeStatisticsHistograms wiring remain a follow-on."
         }
       ],
       "childResources": {

@@ -149,4 +149,44 @@ public sealed class ImageServerRenderingRuleMappingTests
         mapping.Supported.Should().BeFalse();
         mapping.IsNotImplemented.Should().BeFalse();
     }
+
+    [UnitTest]
+    public void MapRenderingRule_Colormap_MapsExplicitStops()
+    {
+        var document = Parse(
+            """{"rasterFunction":"Colormap","rasterFunctionArguments":{"Colormap":[[0,0,0,0],[255,255,255,255]]}}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeTrue();
+        mapping.Colormap.Should().NotBeNull();
+        mapping.Colormap!.Entries.Should().HaveCount(2);
+        mapping.Colormap.Entries[0].Should().Be(new RasterColormapEntry(0, 0, 0, 0, 255));
+        mapping.Colormap.Entries[1].Should().Be(new RasterColormapEntry(255, 255, 255, 255, 255));
+    }
+
+    [UnitTest]
+    public void MapRenderingRule_ColormapWrappingStretch_ResolvesBoth()
+    {
+        var document = Parse(
+            """{"rasterFunction":"Colormap","rasterFunctionArguments":{"Colormap":[[0,0,0,0],[1,255,0,0]],"Raster":{"rasterFunction":"Stretch","rasterFunctionArguments":{"StretchType":5}}}}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeTrue();
+        mapping.Stretch!.Value.StretchType.Should().Be(RasterStretchType.MinMax);
+        mapping.Colormap!.Entries.Should().HaveCount(2);
+    }
+
+    [UnitTest]
+    public void MapRenderingRule_ColormapByName_IsNotImplemented()
+    {
+        var document = Parse(
+            """{"rasterFunction":"Colormap","rasterFunctionArguments":{"ColorrampName":"Elevation"}}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeFalse();
+        mapping.IsNotImplemented.Should().BeTrue();
+    }
 }

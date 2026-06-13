@@ -44,6 +44,7 @@ internal readonly record struct RasterFunctionPlan(
 /// stretch, or <c>null</c> when the chain is a no-op (e.g. <c>Identity</c> only).
 /// </param>
 /// <param name="Stretch">The resolved display stretch, when one applies.</param>
+/// <param name="Colormap">The resolved pseudocolour colormap, when one applies.</param>
 /// <param name="Reason">Explanation surfaced to the client when not supported.</param>
 /// <param name="IsNotImplemented">
 /// When unsupported, distinguishes a recognized-but-unimplemented function/option
@@ -52,17 +53,18 @@ internal readonly record struct RasterFunctionPlan(
 internal readonly record struct RenderingRuleMapping(
     bool Supported,
     RasterStretch? Stretch,
+    RasterColormap? Colormap,
     string? Reason,
     bool IsNotImplemented)
 {
-    public static RenderingRuleMapping Executable(RasterStretch? stretch)
-        => new(true, stretch, null, false);
+    public static RenderingRuleMapping Executable(RasterStretch? stretch, RasterColormap? colormap = null)
+        => new(true, stretch, colormap, null, false);
 
     public static RenderingRuleMapping Invalid(string reason)
-        => new(false, null, reason, false);
+        => new(false, null, null, reason, false);
 
     public static RenderingRuleMapping NotImplemented(string reason)
-        => new(false, null, reason, true);
+        => new(false, null, null, reason, true);
 }
 
 /// <summary>
@@ -268,6 +270,7 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
         ArgumentNullException.ThrowIfNull(document);
 
         RasterStretch? stretch = null;
+        RasterColormap? colormap = null;
         var current = document;
         for (var depth = 1; ; depth++)
         {
@@ -295,6 +298,16 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
                 // A later (outer) Stretch in the chain supersedes an inner one.
                 stretch = mapping.Stretch ?? stretch;
             }
+            else if (string.Equals(current.RasterFunction, "Colormap", StringComparison.OrdinalIgnoreCase))
+            {
+                var mapping = MapColormapArguments(arguments);
+                if (!mapping.Supported)
+                {
+                    return mapping;
+                }
+
+                colormap = mapping.Colormap ?? colormap;
+            }
             else if (string.Equals(current.RasterFunction, "Clip", StringComparison.OrdinalIgnoreCase))
             {
                 return RenderingRuleMapping.NotImplemented(
@@ -304,7 +317,7 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
             else if (!string.Equals(current.RasterFunction, "Identity", StringComparison.OrdinalIgnoreCase))
             {
                 return RenderingRuleMapping.Invalid(
-                    $"Unsupported raster function '{current.RasterFunction}'. Supported functions: Identity, Stretch.");
+                    $"Unsupported raster function '{current.RasterFunction}'. Supported functions: Identity, Stretch, Colormap.");
             }
 
             if (!TryGetNestedFunction(arguments, "Raster", out var nested))
@@ -315,7 +328,60 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
             current = nested;
         }
 
-        return RenderingRuleMapping.Executable(stretch);
+        return RenderingRuleMapping.Executable(stretch, colormap);
+    }
+
+    private static RenderingRuleMapping MapColormapArguments(Dictionary<string, object?> arguments)
+    {
+        // Esri supports a named ColorrampName or an explicit Colormap array of
+        // [value, r, g, b] (optionally with a) stops. Only the explicit array is executed.
+        if (!arguments.TryGetValue("Colormap", out var raw) || raw is not JsonElement element)
+        {
+            if (arguments.ContainsKey("ColorrampName") || arguments.ContainsKey("Colorramp"))
+            {
+                return RenderingRuleMapping.NotImplemented(
+                    "Colormap by ColorrampName is not implemented; supply an explicit Colormap array of [value, r, g, b].");
+            }
+
+            return RenderingRuleMapping.Invalid("Colormap raster function requires a Colormap array of [value, r, g, b] stops.");
+        }
+
+        if (element.ValueKind != JsonValueKind.Array || element.GetArrayLength() == 0)
+        {
+            return RenderingRuleMapping.Invalid("Colormap must be a non-empty array of [value, r, g, b] stops.");
+        }
+
+        var entries = new List<RasterColormapEntry>(element.GetArrayLength());
+        foreach (var stop in element.EnumerateArray())
+        {
+            if (stop.ValueKind != JsonValueKind.Array || stop.GetArrayLength() < 4)
+            {
+                return RenderingRuleMapping.Invalid("Each Colormap stop must be [value, r, g, b] (alpha optional).");
+            }
+
+            if (!stop[0].TryGetDouble(out var value))
+            {
+                return RenderingRuleMapping.Invalid("Colormap stop value must be numeric.");
+            }
+
+            var red = ClampChannel(stop[1]);
+            var green = ClampChannel(stop[2]);
+            var blue = ClampChannel(stop[3]);
+            var alpha = stop.GetArrayLength() >= 5 ? ClampChannel(stop[4]) : (byte)255;
+            entries.Add(new RasterColormapEntry(value, red, green, blue, alpha));
+        }
+
+        return RenderingRuleMapping.Executable(null, new RasterColormap { Entries = entries });
+    }
+
+    private static byte ClampChannel(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.Number && element.TryGetDouble(out var value))
+        {
+            return (byte)Math.Clamp((int)Math.Round(value, MidpointRounding.AwayFromZero), 0, 255);
+        }
+
+        return 0;
     }
 
     private static RenderingRuleMapping MapStretchArguments(Dictionary<string, object?> arguments)
