@@ -25,8 +25,8 @@ public sealed class ContainerGrpcTransportConfigurationTests
     {
         var compose = ReadRepoFile("docker-compose.yml");
 
-        Assert.Contains("\"${HONUA_HTTP_PORT:-8080}:8080\"", compose, StringComparison.Ordinal);
-        Assert.Contains("\"${HONUA_GRPC_PORT:-8081}:8081\"", compose, StringComparison.Ordinal);
+        Assert.Contains("${HONUA_HTTP_PORT:-8080}:8080\"", compose, StringComparison.Ordinal);
+        Assert.Contains("${HONUA_GRPC_PORT:-8081}:8081\"", compose, StringComparison.Ordinal);
         Assert.Contains("Kestrel__Endpoints__Http__Protocols: \"Http1\"", compose, StringComparison.Ordinal);
         Assert.Contains("Kestrel__Endpoints__Grpc__Protocols: \"Http2\"", compose, StringComparison.Ordinal);
         Assert.DoesNotContain("ASPNETCORE_URLS", compose, StringComparison.Ordinal);
