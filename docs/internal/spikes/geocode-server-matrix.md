@@ -14,9 +14,9 @@ Sources:
 
 Honua exposes a single configured locator. The service is anonymous and read-only.
 The default backing provider is Nominatim (OpenStreetMap); Azure Maps and Amazon
-Location are also wired. Coordinates are returned in WGS84 (`wkid` 4326); a
-non-default `outSR` is rejected with a clear 400 because reprojection of geocode
-output is not yet implemented.
+Location are also wired. Provider coordinates are produced in WGS84 (`wkid` 4326)
+and reprojected to the requested `outSR` through the shared coordinate-transform
+service; a transform the service cannot perform returns a clear 400.
 
 ## Service resource
 
@@ -28,10 +28,10 @@ output is not yet implemented.
 
 | Esri operation | Esri path | Methods | Honua status | Honua endpoint(s) | Notes |
 | --- | --- | --- | --- | --- | --- |
-| Find Address Candidates | `/GeocodeServer/findAddressCandidates` | GET, POST | Partial | `GET/POST /rest/services/{locatorName}/GeocodeServer/findAddressCandidates`, `GET /rest/services/GeocodeServer/findAddressCandidates` | Forward geocode from `singleLine` or structured fields. Honors `maxLocations`, `outSR` (default WKID only), `countryCode`/`countryCodes`, and `searchExtent` (passed to the provider as a search/view bounds when the provider supports it). |
-| Reverse Geocode | `/GeocodeServer/reverseGeocode` | GET, POST | Partial | `GET/POST /rest/services/{locatorName}/GeocodeServer/reverseGeocode`, `GET /rest/services/GeocodeServer/reverseGeocode` | Resolves `location` (`x,y` or JSON `{x,y}`/`{lon,lat}`) to the nearest address. Honors `outSR` (default WKID only) and `langCode` (passed to providers that support localized results). |
+| Find Address Candidates | `/GeocodeServer/findAddressCandidates` | GET, POST | Partial | `GET/POST /rest/services/{locatorName}/GeocodeServer/findAddressCandidates`, `GET /rest/services/GeocodeServer/findAddressCandidates` | Forward geocode from `singleLine` or structured fields. Honors `maxLocations`, `outSR` (reprojected via the shared transform service), `countryCode`/`countryCodes`, and `searchExtent` (passed to the provider as a search/view bounds when the provider supports it). |
+| Reverse Geocode | `/GeocodeServer/reverseGeocode` | GET, POST | Partial | `GET/POST /rest/services/{locatorName}/GeocodeServer/reverseGeocode`, `GET /rest/services/GeocodeServer/reverseGeocode` | Resolves `location` (`x,y` or JSON `{x,y}`/`{lon,lat}`) to the nearest address. Honors `outSR` (reprojected via the shared transform service) and `langCode` (passed to providers that support localized results). |
 | Suggest | `/GeocodeServer/suggest` | GET, POST | Partial | `GET/POST /rest/services/{locatorName}/GeocodeServer/suggest`, `GET /rest/services/GeocodeServer/suggest` | Ranked suggestions from `text`. Honors `maxSuggestions`, `countryCode`/`countryCodes`, `searchExtent`, and `location` (bias) when the provider supports them. Returns `magicKey` per suggestion. |
-| Geocode Addresses (batch) | `/GeocodeServer/geocodeAddresses` | GET, POST | Partial | `GET/POST /rest/services/{locatorName}/GeocodeServer/geocodeAddresses`, `GET /rest/services/GeocodeServer/geocodeAddresses` | Batch forward geocode. Accepts the Esri `addresses={"records":[...]}` payload (and a bare `records` array). Honors `outSR` (default WKID only) and `countryCode`/`countryCodes`. Enforces the provider batch-size cap. |
+| Geocode Addresses (batch) | `/GeocodeServer/geocodeAddresses` | GET, POST | Partial | `GET/POST /rest/services/{locatorName}/GeocodeServer/geocodeAddresses`, `GET /rest/services/GeocodeServer/geocodeAddresses` | Batch forward geocode. Accepts the Esri `addresses={"records":[...]}` payload (and a bare `records` array). Honors `outSR` (reprojected via the shared transform service) and `countryCode`/`countryCodes`. Enforces the provider batch-size cap. |
 
 ## Request parameter coverage
 
@@ -49,10 +49,10 @@ output is not yet implemented.
 | `singleLine` / `SingleLine` | Implemented | Primary input. |
 | `address`, `city`, `region`, `postal`, `countryCode` | Implemented | Structured fields are concatenated into a single-line query when `singleLine` is absent. |
 | `maxLocations` | Implemented | Positive integer; defaults to the provider's configured result count. |
-| `outSR` | Partial | Only the configured default WKID (4326) is accepted; other values return 400. |
+| `outSR` | Implemented | Output coordinates are reprojected to the requested WKID via the shared coordinate-transform service; a transform the service cannot perform returns 400. |
 | `searchExtent` | Implemented | Accepts `xmin,ymin,xmax,ymax` or an Esri envelope JSON. Forwarded to the provider as a search/view bounds (e.g. Nominatim `viewbox`+`bounded`, Azure/Amazon `bbox`). Must be in the default spatial reference. |
 | `countryCode` / `countryCodes` | Implemented | Restricts results to the given country code(s). |
-| `outFields` | Not implemented | All available provider attributes are returned; field selection/projection is not applied. |
+| `outFields` | Implemented | Restricts the returned `attributes` to the requested fields (case-insensitive). `*` or an omitted value returns all attributes; an empty field token returns 400. |
 | `category` | Not implemented | No backing provider currently filters forward candidates by category. |
 | `magicKey` | Not implemented | The `magicKey` returned by `suggest` is opaque and not consumed by `findAddressCandidates`. |
 | `location` | Not implemented | Point biasing is not applied to forward candidates (no backing provider honors it for this operation). |
@@ -63,7 +63,7 @@ output is not yet implemented.
 | Parameter | Honua status | Notes |
 | --- | --- | --- |
 | `location` | Implemented | Required. Accepts `x,y` or JSON `{x,y}` / `{lon,lat}`. |
-| `outSR` | Partial | Only the configured default WKID (4326) is accepted; other values return 400. |
+| `outSR` | Implemented | Output coordinates are reprojected to the requested WKID via the shared coordinate-transform service; a transform the service cannot perform returns 400. |
 | `langCode` | Implemented | Forwarded to providers that support localized results (Nominatim `accept-language`, Amazon Location `Language`). |
 | `featureTypes` | Not implemented | Accepted but ignored; the nearest match is returned regardless of type. |
 | `distance` | Not implemented | Search radius is not currently configurable from the request. |
@@ -84,15 +84,15 @@ output is not yet implemented.
 | Parameter | Honua status | Notes |
 | --- | --- | --- |
 | `addresses` / `records` | Implemented | Accepts the Esri `{"records":[{"attributes":{...}}]}` payload (primary) and a bare JSON array. Each record resolves `SingleLine` first, then structured fields. |
-| `outSR` | Partial | Only the configured default WKID (4326) is accepted; other values return 400. |
+| `outSR` | Implemented | Output coordinates are reprojected to the requested WKID via the shared coordinate-transform service; a transform the service cannot perform returns 400. |
 | `countryCode` / `countryCodes` | Implemented | Applied to every record in the batch. |
 | `sourceCountry`, `matchOutOfRange`, `category` | Not implemented | Accepted but ignored. |
 
 ## Known limitations
 
-- Output is WGS84 (`wkid` 4326) only. A non-default `outSR` is rejected rather than reprojected.
+- Provider output is WGS84 (`wkid` 4326); a non-default `outSR` is reprojected through the shared coordinate-transform service, and only a transform the service cannot perform is rejected with a 400.
 - Only `f=json` and `f=pjson` responses are supported; `f=html` is rejected.
-- `outFields` projection, `magicKey` round-tripping, `category` filtering, and `forStorage`/`matchOutOfRange` semantics are not implemented; unsupported parameters are accepted and ignored rather than erroring, except where validation (`outSR`, `searchExtent`, `f`) returns a 400.
+- `magicKey` round-tripping, `category` filtering, and `forStorage`/`matchOutOfRange` semantics are not implemented; unsupported parameters are accepted and ignored rather than erroring, except where validation (`outSR`, `outFields`, `searchExtent`, `f`) returns a 400.
 - Parameter wiring is honest about provider capability: a parameter is only forwarded when at least one backing provider acts on it. The default Nominatim provider honors `searchExtent` (forward) and `langCode` (reverse); Azure Maps and Amazon Location additionally honor suggestion bounds/bias.
 
 ## Implementation evidence

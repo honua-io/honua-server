@@ -2479,15 +2479,15 @@
         "findAddressCandidates",
         "reverseGeocode",
         "suggest",
-        "geocodeAddresses (batch)"
+        "geocodeAddresses (batch)",
+        "outFields projection",
+        "outSR reprojection"
       ],
       "knownGaps": [
-        "outFields projection",
         "magicKey round-trip",
         "category filtering",
         "forStorage",
         "matchOutOfRange",
-        "non-default outSR reprojection",
         "candidateFields metadata",
         "categories metadata"
       ],
@@ -2532,7 +2532,7 @@
               "POST /rest/services/{locatorName}/GeocodeServer/findAddressCandidates",
               "GET /rest/services/GeocodeServer/findAddressCandidates"
             ],
-            "notes": "Honors singleLine/structured fields, maxLocations, outSR (default WKID only), countryCode(s), and searchExtent."
+            "notes": "Honors singleLine/structured fields, maxLocations, outSR (reprojected via the shared transform service), countryCode(s), and searchExtent."
           },
           {
             "name": "Reverse Geocode",
@@ -2546,7 +2546,7 @@
               "POST /rest/services/{locatorName}/GeocodeServer/reverseGeocode",
               "GET /rest/services/GeocodeServer/reverseGeocode"
             ],
-            "notes": "Honors location, outSR (default WKID only), and langCode."
+            "notes": "Honors location, outSR (reprojected via the shared transform service), and langCode."
           },
           {
             "name": "Suggest",
@@ -2574,7 +2574,7 @@
               "POST /rest/services/{locatorName}/GeocodeServer/geocodeAddresses",
               "GET /rest/services/GeocodeServer/geocodeAddresses"
             ],
-            "notes": "Accepts the Esri addresses={\"records\":[...]} payload and a bare records array. Honors outSR (default WKID only) and countryCode(s); enforces the provider batch-size cap."
+            "notes": "Accepts the Esri addresses={\"records\":[...]} payload and a bare records array. Honors outSR (reprojected via the shared transform service) and countryCode(s); enforces the provider batch-size cap."
           }
         ],
         "notImplemented": []
@@ -2599,8 +2599,8 @@
           },
           {
             "name": "outSR",
-            "status": "partial",
-            "notes": "Only the default WKID (4326) is accepted."
+            "status": "implemented",
+            "notes": "Output coordinates are reprojected to the requested WKID via the shared coordinate-transform service; a transform the service cannot perform returns 400."
           },
           {
             "name": "searchExtent",
@@ -2608,7 +2608,12 @@
             "notes": "Accepts xmin,ymin,xmax,ymax or an Esri envelope JSON in the default SR; forwarded to the provider as a search/view bounds."
           },
           {
-            "name": "outFields, category, magicKey, location, matchOutOfRange, forStorage",
+            "name": "outFields",
+            "status": "implemented",
+            "notes": "Projects the returned attributes to the requested fields (case-insensitive); * or omitted returns all; an empty token returns 400."
+          },
+          {
+            "name": "category, magicKey, location, matchOutOfRange, forStorage",
             "status": "notImplemented",
             "notes": "Accepted but not applied."
           }
@@ -2621,8 +2626,8 @@
           },
           {
             "name": "outSR",
-            "status": "partial",
-            "notes": "Only the default WKID (4326) is accepted."
+            "status": "implemented",
+            "notes": "Output coordinates are reprojected to the requested WKID via the shared coordinate-transform service; a transform the service cannot perform returns 400."
           },
           {
             "name": "langCode",
@@ -2656,8 +2661,8 @@
           },
           {
             "name": "outSR",
-            "status": "partial",
-            "notes": "Only the default WKID (4326) is accepted."
+            "status": "implemented",
+            "notes": "Output coordinates are reprojected to the requested WKID via the shared coordinate-transform service; a transform the service cannot perform returns 400."
           },
           {
             "name": "sourceCountry, matchOutOfRange, category",
@@ -2668,7 +2673,7 @@
       "knownLimitations": [
         "Output is WGS84 (wkid 4326) only; a non-default outSR is rejected rather than reprojected.",
         "Only f=json and f=pjson responses are supported.",
-        "outFields projection, magicKey round-tripping, category filtering, and forStorage/matchOutOfRange are not implemented.",
+        "outFields projection and outSR reprojection are implemented; magicKey round-tripping, category filtering, and forStorage/matchOutOfRange are not implemented.",
         "A parameter is only forwarded when at least one backing provider acts on it (Nominatim honors searchExtent for forward and langCode for reverse; Azure Maps and Amazon Location additionally honor suggestion bounds/bias)."
       ]
     }
