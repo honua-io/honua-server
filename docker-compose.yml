@@ -33,8 +33,13 @@ services:
       args:
         HONUA_INCLUDE_STAC_OPS_DEMO: "true"
     ports:
-      - "${HONUA_HTTP_PORT:-8080}:8080"
-      - "${HONUA_GRPC_PORT:-8081}:8081"
+      # Bind to localhost by default so the zero-override quickstart stays
+      # local-only: the dev admin password is a public placeholder, so the
+      # admin API must not be reachable from other hosts on a cloud VM /
+      # Codespace. Set HONUA_BIND_ADDRESS=0.0.0.0 (with a real admin
+      # password) to expose the server beyond the local workstation.
+      - "${HONUA_BIND_ADDRESS:-127.0.0.1}:${HONUA_HTTP_PORT:-8080}:8080"
+      - "${HONUA_BIND_ADDRESS:-127.0.0.1}:${HONUA_GRPC_PORT:-8081}:8081"
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ConnectionStrings__DefaultConnection: "Host=postgres;Database=honua_dev;Username=honua_user;Password=honua_password"
