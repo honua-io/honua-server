@@ -6,6 +6,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.MySql.Features.FeatureStore;
 using Honua.MySql.Features.FeatureStore.Services;
 using Honua.MySql.Features.Infrastructure;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using MySqlConnector;
 using Testcontainers.MySql;
@@ -22,13 +23,15 @@ namespace Honua.MySql.Tests;
 /// <c>HONUA_TEST_MYSQL=1 dotnet test --filter Category=MySql</c>.
 /// </summary>
 [Trait("Category", "MySql")]
-public class MySqlFeatureStoreIntegrationTests : IAsyncLifetime
+public sealed class MySqlFeatureStoreIntegrationTests : IAsyncLifetime
 {
     private const int LayerId = 1;
     private MySqlContainer _container = null!;
     private MySqlDataSource _dataSource = null!;
     private MySqlFeatureStore _store = null!;
     private MySqlLayerMappingRegistry _registry = null!;
+
+    private const string TestMySqlEnvVar = "HONUA_TEST_MYSQL";
 
     public async Task InitializeAsync()
     {
@@ -110,7 +113,7 @@ public class MySqlFeatureStoreIntegrationTests : IAsyncLifetime
         }
     }
 
-    [MySqlIntegrationFact]
+    [RequiredEnvironmentFact(TestMySqlEnvVar, "1", skipReason: "Set HONUA_TEST_MYSQL=1 to run MySQL Testcontainers integration tests.")]
     public async Task Query_Count_Extent_RoundTripAgainstMysql8()
     {
         var query = new FeatureQuery();
@@ -130,7 +133,7 @@ public class MySqlFeatureStoreIntegrationTests : IAsyncLifetime
         Assert.True(extent.Value.MinY < extent.Value.MaxY);
     }
 
-    [MySqlIntegrationFact]
+    [RequiredEnvironmentFact(TestMySqlEnvVar, "1", skipReason: "Set HONUA_TEST_MYSQL=1 to run MySQL Testcontainers integration tests.")]
     public async Task Query_WithBboxIntersectsFilter_ReturnsSubset()
     {
         // Bounding-box polygon WKB covering the first ~5 parcels (lon -121.99..-121.95, lat 37.01..37.05).
@@ -160,7 +163,7 @@ public class MySqlFeatureStoreIntegrationTests : IAsyncLifetime
         Assert.True(count is > 0 and < 10);
     }
 
-    [MySqlIntegrationFact]
+    [RequiredEnvironmentFact(TestMySqlEnvVar, "1", skipReason: "Set HONUA_TEST_MYSQL=1 to run MySQL Testcontainers integration tests.")]
     public async Task GetAsync_KnownId_ReturnsFeature()
     {
         var feature = await _store.GetAsync(LayerId, featureId: 1);
@@ -169,7 +172,7 @@ public class MySqlFeatureStoreIntegrationTests : IAsyncLifetime
         Assert.Equal(1, feature!.Value.Id);
     }
 
-    [MySqlIntegrationFact]
+    [RequiredEnvironmentFact(TestMySqlEnvVar, "1", skipReason: "Set HONUA_TEST_MYSQL=1 to run MySQL Testcontainers integration tests.")]
     public async Task StreamFeaturesAsync_PagesThroughAllRows()
     {
         var seen = new List<long>();
@@ -185,7 +188,7 @@ public class MySqlFeatureStoreIntegrationTests : IAsyncLifetime
         Assert.Equal(Enumerable.Range(1, 10).Select(i => (long)i), seen);
     }
 
-    [MySqlIntegrationFact]
+    [RequiredEnvironmentFact(TestMySqlEnvVar, "1", skipReason: "Set HONUA_TEST_MYSQL=1 to run MySQL Testcontainers integration tests.")]
     public async Task StreamFeatureBatchesAsync_HonoursBatchSize()
     {
         var batches = new List<IReadOnlyList<Feature>>();
@@ -202,22 +205,11 @@ public class MySqlFeatureStoreIntegrationTests : IAsyncLifetime
         Assert.Single(batches[3]);
     }
 
-    [MySqlIntegrationFact]
+    [RequiredEnvironmentFact(TestMySqlEnvVar, "1", skipReason: "Set HONUA_TEST_MYSQL=1 to run MySQL Testcontainers integration tests.")]
     public async Task StreamGmlFeaturesAsync_ThrowsNotSupported()
     {
         Assert.Throws<NotSupportedException>(() =>
             _store.StreamGmlFeaturesAsync(LayerId, new FeatureQuery()));
         await Task.CompletedTask;
-    }
-}
-
-internal sealed class MySqlIntegrationFactAttribute : FactAttribute
-{
-    public MySqlIntegrationFactAttribute()
-    {
-        if (!string.Equals(Environment.GetEnvironmentVariable("HONUA_TEST_MYSQL"), "1", StringComparison.Ordinal))
-        {
-            Skip = "Set HONUA_TEST_MYSQL=1 to run MySQL Testcontainers integration tests.";
-        }
     }
 }

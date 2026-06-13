@@ -23,7 +23,7 @@ namespace Honua.Server.Tests.Features.Protocols.Grpc;
 [Protocol(TestProtocols.Grpc)]
 public sealed class GrpcIntegrationTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Community);
     private GrpcChannel? _channel;
     private Proto.FeatureService.FeatureServiceClient? _client;
     private Metadata? _headers;

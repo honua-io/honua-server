@@ -88,6 +88,126 @@ jobs:
           provenance: true
           sbom: true
 
+  build-lambda-aot:
+    name: Build & Push Lambda AOT (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY_GHCR }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: |
+            ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}
+            docker.io/${{ env.IMAGE_NAME_DOCKERHUB }}
+          tags: |
+            type=raw,value=nightly-lambda-aot
+            type=raw,value=nightly-lambda-aot-{{date 'YYYYMMDD'}}
+            type=sha,prefix=nightly-lambda-aot-
+          flavor: |
+            suffix=-${{ matrix.arch }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/Dockerfile.lambda.aot
+          platforms: ${{ matrix.platform }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          secrets: |
+            github_actor=${{ github.actor }}
+            github_token=${{ github.token }}
+          cache-from: type=gha,scope=nightly-lambda-aot-${{ matrix.arch }}
+          # ignore-error: a failed/interrupted GHA cache export (common on the
+          # hosted arm64 runner fleet, which can be preempted mid-export) must
+          # not fail an otherwise-successful build+push. The cache is a build
+          # accelerator, not a release artifact.
+          cache-to: type=gha,mode=max,scope=nightly-lambda-aot-${{ matrix.arch }},ignore-error=true
+          provenance: false
+          sbom: false
+
+  manifest-lambda-aot:
+    name: Publish Lambda AOT Manifests
+    runs-on: ubuntu-24.04
+    needs: build-lambda-aot
+    if: ${{ needs.build-lambda-aot.result == 'success' }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY_GHCR }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: |
+            ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}
+            docker.io/${{ env.IMAGE_NAME_DOCKERHUB }}
+          tags: |
+            type=raw,value=nightly-lambda-aot
+            type=raw,value=nightly-lambda-aot-{{date 'YYYYMMDD'}}
+            type=sha,prefix=nightly-lambda-aot-
+
+      - name: Create and push multi-arch manifests
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          set -euo pipefail
+          for tag in $TAGS; do
+            docker buildx imagetools create -t "$tag" \
+              "${tag}-amd64" \
+              "${tag}-arm64"
+          done
+
   build-jit:
     name: Build & Push JIT (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}

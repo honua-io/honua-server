@@ -80,10 +80,11 @@ internal static class PostgresDataSourceFactory
         var useMultiplexing = ResolveMultiplexing(limits.Multiplexing, schemaHeadersEnabled);
         connectionStringBuilder.Multiplexing = useMultiplexing;
         // Keep NoResetOnClose=true when schema headers are off so that RESET ALL
-        // is NOT sent on pool return — otherwise Npgsql clears the search_path set
-        // via the Options parameter, breaking schema-qualified queries on reused
-        // connections.  When schema headers are enabled (test isolation), we need
-        // the reset so per-test SET search_path overrides are cleared.
+        // is NOT sent on pool return — otherwise Npgsql clears the session settings
+        // (timeouts + search_path) applied by the physical-connection initializer
+        // below, breaking schema-qualified queries on reused connections.  When
+        // schema headers are enabled (test isolation), we need the reset so
+        // per-test SET search_path overrides are cleared.
         connectionStringBuilder.NoResetOnClose = !schemaHeadersEnabled;
 
         if (useMultiplexing)
@@ -100,26 +101,136 @@ internal static class PostgresDataSourceFactory
             connectionStringBuilder.TcpKeepAliveInterval = 2;
         }
 
-        // SECURITY: Configure lock timeouts to prevent indefinite blocking
-        var lockTimeout = (int)limits.LockTimeout.TotalSeconds;
-        var statementTimeout = (int)limits.StatementTimeout.TotalSeconds;
-        var idleTimeout = (int)limits.IdleInTransactionTimeout.TotalSeconds;
-        var options =
-            $"-c lock_timeout={lockTimeout}s -c statement_timeout={statementTimeout}s -c idle_in_transaction_session_timeout={idleTimeout}s";
+        // SECURITY: server-side timeouts (lock/statement/idle-in-transaction) prevent
+        // indefinite blocking, and an optional default search_path avoids a
+        // per-request SET round-trip. How these session settings reach the server
+        // matters (issue #1638):
+        //
+        // - Default path (no multiplexing, no schema headers): apply them via a
+        //   physical-connection initializer that runs plain SET statements right
+        //   after each physical connection opens. Combined with NoResetOnClose=true
+        //   (no RESET ALL on pool return, see above) the settings last for the
+        //   lifetime of the physical connection — identical semantics to the
+        //   previous startup-options approach. Crucially this avoids the libpq
+        //   `options` STARTUP parameter, which AWS RDS Proxy rejects outright
+        //   ("0A000: Feature not supported: RDS Proxy currently doesn't support
+        //   command-line options") and which transaction-mode poolers (pgbouncer)
+        //   break on. Behind RDS Proxy the per-connection SET causes session
+        //   pinning — acceptable: connection-slot protection is the reason a proxy
+        //   is deployed in the first place.
+        //
+        // - Multiplexing: keep the `options` startup parameter. Startup parameters
+        //   become per-session defaults that survive RESET ALL, which is the only
+        //   reliable way to guarantee these settings when commands from many logical
+        //   sessions interleave over shared physical connections. Consequence:
+        //   Limits:Connections:Multiplexing=true is mutually exclusive with
+        //   RDS Proxy / transaction-mode poolers (documented in
+        //   docs/reference/configuration/data-sources/postgis.md). Multiplexing
+        //   already defaults off (see ResolveMultiplexing).
+        //
+        // - Schema headers (test isolation): keep the `options` startup parameter.
+        //   NoResetOnClose=false in this mode, so Npgsql resets session state on
+        //   every pool return; initializer-applied SETs would be wiped by the first
+        //   reset, while startup options survive RESET ALL as session defaults. This
+        //   mode is test-only and never runs behind a connection proxy.
+        var searchPathSchema = ResolveSearchPathSchema(schemaHeadersEnabled, defaultSchema);
 
-        // When a default schema is known and schema headers are NOT active, embed
-        // search_path in the connection string. This avoids a per-connection SET
-        // round-trip and is safe with multiplexing (Options apply per-session, not
-        // per-physical-connection).
+        if (useMultiplexing || schemaHeadersEnabled)
+        {
+            connectionStringBuilder.Options = BuildSessionSettingsStartupOptions(limits, searchPathSchema);
+        }
+        else
+        {
+            var initializerSql = BuildSessionSettingsSql(limits, searchPathSchema);
+            builder.UsePhysicalConnectionInitializer(
+                connection =>
+                {
+                    using var command = connection.CreateCommand();
+                    command.CommandText = initializerSql;
+                    command.ExecuteNonQuery();
+                },
+                async connection =>
+                {
+                    await using var command = connection.CreateCommand();
+                    command.CommandText = initializerSql;
+                    await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+                });
+        }
+    }
+
+    /// <summary>
+    /// Resolves the schema embedded in the default search_path, or <see langword="null"/>
+    /// when none applies. Schema-header mode owns search_path per request, and only
+    /// values that pass the <see cref="SchemaSearchPath.IsValidIdentifier"/> allow-list
+    /// are accepted (SQL-injection guard — the value is later interpolated as a quoted
+    /// identifier).
+    /// </summary>
+    internal static string? ResolveSearchPathSchema(bool schemaHeadersEnabled, string? defaultSchema)
+    {
         if (!schemaHeadersEnabled &&
             !string.IsNullOrWhiteSpace(defaultSchema) &&
             SchemaSearchPath.IsValidIdentifier(defaultSchema))
         {
-            options += $" -c search_path=\"{defaultSchema.Trim()}\",public";
+            return defaultSchema.Trim();
         }
 
-        connectionStringBuilder.Options = options;
+        return null;
     }
+
+    /// <summary>
+    /// Builds the libpq <c>options</c> startup parameter carrying the session settings.
+    /// Used only for multiplexing and schema-header modes — RDS Proxy and
+    /// transaction-mode poolers reject this startup parameter, so the default path uses
+    /// <see cref="BuildSessionSettingsSql"/> instead.
+    /// </summary>
+    internal static string BuildSessionSettingsStartupOptions(ConnectionLimits limits, string? searchPathSchema)
+    {
+        ArgumentNullException.ThrowIfNull(limits);
+
+        var (lockTimeout, statementTimeout, idleTimeout) = GetTimeoutSeconds(limits);
+        var options =
+            $"-c lock_timeout={lockTimeout}s -c statement_timeout={statementTimeout}s -c idle_in_transaction_session_timeout={idleTimeout}s";
+
+        if (searchPathSchema is not null)
+        {
+            options += $" -c search_path=\"{searchPathSchema}\",public";
+        }
+
+        return options;
+    }
+
+    /// <summary>
+    /// Builds the <c>SET</c> batch executed by the physical-connection initializer on
+    /// the default (non-multiplexing) path. Plain SET statements after connect are
+    /// compatible with AWS RDS Proxy and pgbouncer, unlike the <c>options</c> startup
+    /// parameter (issue #1638).
+    /// </summary>
+    internal static string BuildSessionSettingsSql(ConnectionLimits limits, string? searchPathSchema)
+    {
+        ArgumentNullException.ThrowIfNull(limits);
+
+        var (lockTimeout, statementTimeout, idleTimeout) = GetTimeoutSeconds(limits);
+        // codeql[cs/sql-injection]: timeout values are integers derived from configuration
+        // TimeSpans, and searchPathSchema is validated against the ^[A-Za-z_][A-Za-z0-9_]*$
+        // allow-list in ResolveSearchPathSchema; PostgreSQL SET does not accept parameter
+        // binding for these settings.
+        var sql =
+            $"SET lock_timeout = '{lockTimeout}s'; " +
+            $"SET statement_timeout = '{statementTimeout}s'; " +
+            $"SET idle_in_transaction_session_timeout = '{idleTimeout}s';";
+
+        if (searchPathSchema is not null)
+        {
+            sql += $" SET search_path = \"{searchPathSchema}\", public;";
+        }
+
+        return sql;
+    }
+
+    private static (int LockTimeout, int StatementTimeout, int IdleTimeout) GetTimeoutSeconds(ConnectionLimits limits)
+        => ((int)limits.LockTimeout.TotalSeconds,
+            (int)limits.StatementTimeout.TotalSeconds,
+            (int)limits.IdleInTransactionTimeout.TotalSeconds);
 
     /// <summary>
     /// Resolves the effective multiplexing setting.

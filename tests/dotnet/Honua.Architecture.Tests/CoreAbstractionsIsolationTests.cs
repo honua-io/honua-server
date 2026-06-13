@@ -15,7 +15,7 @@ namespace Honua.Architecture.Tests;
 /// or geospatial libraries, so protocol assemblies stay light-weight.
 /// </summary>
 /// <remarks>
-/// See <c>docs/contributor/adr/0041-core-abstractions-extraction.md</c> for the rationale
+/// See <c>docs/internal/contributor/adr/0041-core-abstractions-extraction.md</c> for the rationale
 /// and the multi-PR sequencing plan that moves the rest of the abstractions surface
 /// into this assembly.
 /// </remarks>

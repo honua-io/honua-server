@@ -40,6 +40,9 @@ public static class FeatureCatalog
         /// <summary>Geocoding and address resolution features.</summary>
         public const string Geocoding = "Geocoding";
 
+        /// <summary>Network routing and service-area analysis features.</summary>
+        public const string Routing = "Routing";
+
         /// <summary>Identity and authentication features.</summary>
         public const string Identity = "Identity";
 
@@ -82,13 +85,15 @@ public static class FeatureCatalog
     public const string BranchVersioningKey = "editing.branch-versioning";
 
     /// <summary>
-    /// Entitlement key for multi-user feature editing — create/update/delete features via the
-    /// shared edit/transaction pipeline (FeatureServer applyEdits/add/update/delete, OGC API
-    /// Features mutations, WFS-T, OData CRUD, and gRPC edits). Pro-tier; Community deployments
-    /// remain read + serve + one-shot file import (#1548). One-shot file import (<c>import.file</c>)
-    /// and Enterprise branch versioning (<c>editing.branch-versioning</c>) are separate entitlements.
+    /// Entitlement key for editing through the Esri GeoServices FeatureServer write surface —
+    /// applyEdits/addFeatures/updateFeatures/deleteFeatures and the calculate bulk field update.
+    /// Pro-tier (#1591): the Esri-compatibility premium is paid on the write side only. Feature
+    /// editing via the open protocols (OGC API Features mutations, WFS-T, OData CRUD/$batch, and
+    /// gRPC edits) is Community and carries no entitlement gate, while still flowing through the
+    /// shared edit/transaction pipeline. Enterprise branch versioning
+    /// (<c>editing.branch-versioning</c>) is a separate entitlement.
     /// </summary>
-    public const string FeatureEditsKey = "editing.feature-edits";
+    public const string FeatureServerEditsKey = "editing.featureserver-edits";
 
     /// <summary>
     /// Entitlement key for the server plugin/extension SDK (custom feature validators and edit
@@ -96,6 +101,25 @@ public static class FeatureCatalog
     /// AOT-safe plugins registered at startup (#347, ADR-0024). Enterprise-only.
     /// </summary>
     public const string PluginSdkKey = "plugin.sdk";
+
+    /// <summary>
+    /// Entitlement key for basic single-provider OpenID Connect authentication. Pro-tier:
+    /// one configured Azure AD, Google, Okta, Auth0, or generic OIDC provider.
+    /// </summary>
+    public const string OidcAuthenticationKey = "identity.oidc";
+
+    /// <summary>
+    /// Entitlement key for configuring multiple OIDC identity providers in one deployment.
+    /// Enterprise-only identity governance; basic single-provider OIDC is separately gated
+    /// by <see cref="OidcAuthenticationKey"/>.
+    /// </summary>
+    public const string OidcMultiProviderKey = "identity.oidc-multi-provider";
+
+    /// <summary>
+    /// Entitlement key for custom OIDC claim-to-role mapping. Enterprise-only identity
+    /// governance; default role assignment for basic single-provider OIDC remains Pro.
+    /// </summary>
+    public const string OidcClaimsMappingKey = "identity.claims-mapping";
 
     /// <summary>
     /// All edition-gated features in the platform.
@@ -144,17 +168,25 @@ public static class FeatureCatalog
         new("geocoding.batch", "Batch Geocoding", Categories.Geocoding,
             HonuaEdition.Enterprise, "Geocode multiple addresses in a single request."),
 
+        // Routing - Pro
+        new("routing.solve", "Network Routing", Categories.Routing,
+            HonuaEdition.Pro, "Solve multi-stop routes with the configured routing engine (MCP honua_solve_route and future gated surfaces)."),
+
         // Identity — Community (ArcGIS Portal interop)
         new("identity.portal-token", "ArcGIS Portal Token Issuance", Categories.Identity,
             HonuaEdition.Community, "Expose POST/GET /sharing/rest/generateToken so Esri clients can authenticate against Honua-secured /rest/services."),
         new("identity.portal-sharing", "ArcGIS Portal Sharing Read Surface", Categories.Identity,
             HonuaEdition.Community, "Expose the read-only /sharing/rest Portal facade (info, portals/self, search, content/items) so Esri clients can discover Honua content as portal items."),
 
-        // Identity — Enterprise
-        new("identity.oidc", "OIDC Authentication", Categories.Identity,
-            HonuaEdition.Enterprise, "OpenID Connect multi-provider authentication with Azure AD, Google, and generic OIDC."),
-        new("identity.claims-mapping", "Claims Mapping", Categories.Identity,
-            HonuaEdition.Enterprise, "Custom claim-to-role mapping for OIDC providers."),
+        // Identity — Pro (no SSO tax for one provider)
+        new(OidcAuthenticationKey, "OIDC Authentication", Categories.Identity,
+            HonuaEdition.Pro, "Single-provider OpenID Connect authentication with Azure AD, Google, Okta, Auth0, or generic OIDC."),
+
+        // Identity — Enterprise (multi-provider governance)
+        new(OidcMultiProviderKey, "OIDC Multi-Provider SSO", Categories.Identity,
+            HonuaEdition.Enterprise, "Configure multiple OIDC identity providers in one deployment."),
+        new(OidcClaimsMappingKey, "Claims Mapping", Categories.Identity,
+            HonuaEdition.Enterprise, "Custom claim-to-role mapping and identity governance for OIDC providers."),
 
         // Caching — Pro
         new("caching.output-cache", "Output Caching", Categories.Caching,
@@ -238,9 +270,10 @@ public static class FeatureCatalog
         new("printing.layout-templates", "Print Layout Templates", Categories.Printing,
             HonuaEdition.Pro, "Use full print layout templates beyond MAP_ONLY."),
 
-        // Editing — Pro (multi-user feature editing across all write protocols)
-        new(FeatureEditsKey, "Feature Editing", Categories.Editing,
-            HonuaEdition.Pro, "Create, update, and delete features through the shared edit pipeline — FeatureServer applyEdits/add/update/delete, OGC API Features mutations, WFS-T, OData CRUD, and gRPC edits."),
+        // Editing — Pro (Esri GeoServices FeatureServer write surface only; open-protocol
+        // editing via OGC API Features, WFS-T, OData, and gRPC is Community and ungated)
+        new(FeatureServerEditsKey, "FeatureServer Editing", Categories.Editing,
+            HonuaEdition.Pro, "Create, update, and delete features through the Esri GeoServices FeatureServer write surface — applyEdits, addFeatures, updateFeatures, deleteFeatures, and calculate."),
 
         // Editing — Enterprise (Esri-style branch versioning; Postgres-only)
         new(BranchVersioningKey, "Branch Versioning", Categories.Editing,

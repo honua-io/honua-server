@@ -49,7 +49,7 @@ tracked under [honua-server#1018](https://github.com/honua-io/honua-server/issue
 
 | Capability | Status | Evidence | Public caveat |
 |---|---|---|---|
-| File import | Production path | `POST /api/v1/admin/import/upload`; `SupportedFileFormat` includes GeoJSON, Shapefile, GeoPackage, GPX, KML, GML, WKT, CSV, TinyWKB, FileGDB, FlatGeobuf, and GeoParquet | This is file/object import, not service migration. |
+| File import | Production path | `POST /api/v1/admin/import/upload`; `SupportedFileFormat` includes GeoJSON, Shapefile, GeoPackage, GPX, KML, WKT, CSV, FileGDB, FlatGeobuf, and GeoParquet | This is file/object import, not service migration. |
 | Raster import | Production path | `POST /api/v1/admin/import/raster`; GeoTIFF/COG and PNG/JPEG world-file paths | Raster import is separate from coverage-service import. |
 | ArcGIS GeoServices REST discovery | Production path | `POST /api/v1/admin/import/geoservices/discover` | Requires an HTTPS service-root URL ending in `FeatureServer` or `MapServer`; layer URLs, embedded credentials, and credential query parameters are rejected. Token/OAuth/Basic credentials are accepted through the `credentials` object for synchronous discovery only. |
 | ArcGIS GeoServices REST layer import | Production path | `POST /api/v1/admin/import/geoservices/start`; background job uses paged `/query` reads, creates a PostGIS table, inserts attributes/geometries, builds a spatial index, and can auto-publish | Queryable public and credentialed feature/map-service layers are supported. Queued credentialed imports must use secret references; plaintext tokens/passwords are not persisted. Attachments and renderers are inventoried or flagged for manual follow-up, not imported as first-class data. |

@@ -8,6 +8,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
@@ -16,6 +17,7 @@ using Honua.Core.Queries.Filters;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
+using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Validation;
 using Honua.ServiceDefaults;
@@ -250,6 +252,16 @@ internal static partial class FeatureServerEndpoints
         if (rbacError != null)
         {
             return rbacError;
+        }
+
+        // Calculate is a bulk field update; enforce the same Pro FeatureServer-editing
+        // entitlement as every other FeatureServer write entrypoint before doing
+        // any read work (the shared edits handler re-checks it per batch below).
+        var licenseError = LicenseGate.RequireEntitlement(
+            context, FeatureCatalog.FeatureServerEditsKey, "FeatureServer editing");
+        if (licenseError != null)
+        {
+            return licenseError;
         }
 
         var snapshotProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();

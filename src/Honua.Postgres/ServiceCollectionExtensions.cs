@@ -427,6 +427,13 @@ internal static class ServiceCollectionExtensions
                 ResolveConnectionString(serviceProvider, configuration),
                 serviceProvider.GetRequiredService<ILogger<PostgresMigrationBatchRunCatalog>>()));
 
+        // Migration run catalog (#1015/#1598). Persists lifecycle rows backing the
+        // admin run-history write/read API.
+        services.AddScoped<IMigrationRunCatalog>(serviceProvider =>
+            new PostgresMigrationRunCatalog(
+                ResolveConnectionString(serviceProvider, configuration),
+                serviceProvider.GetRequiredService<ILogger<PostgresMigrationRunCatalog>>()));
+
         // Register the post-publish reconciliation service (issues #1247/#1380). It probes the
         // published layer through IFeatureReader, so it is scoped to align with the scoped feature
         // store. TimeProvider is guarded here in case no host-level registration ran first.

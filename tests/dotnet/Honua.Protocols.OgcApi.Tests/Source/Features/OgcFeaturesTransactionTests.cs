@@ -21,7 +21,7 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 [Protocol(TestProtocols.OgcApiFeatures)]
 public sealed class OgcFeaturesTransactionTests : IAsyncLifetime, IDisposable
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Community);
     private const int TestLayerId = 0;
 
     public async Task InitializeAsync()

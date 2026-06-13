@@ -4,11 +4,14 @@
 using System.Collections.Frozen;
 using System.Data.Common;
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 
 namespace Honua.Postgres.Features.Raster;
 
@@ -28,10 +31,25 @@ internal sealed class PostgresRasterStore : IRasterStore
     private static readonly FrozenSet<string> _allowedResamplingAlgorithms = new[] { "NearestNeighbor", "Bilinear", "Cubic", "Lanczos" }.ToFrozenSet(StringComparer.Ordinal);
     private static readonly FrozenSet<string> _allowedZonalStatistics = new[] { "count", "sum", "mean", "min", "max", "stddev", "variance" }.ToFrozenSet(StringComparer.Ordinal);
 
+    // Advisory-lock namespaces for the compute-once-then-persist statistics backfill.
+    // Distinct from PostgresRasterImportService.RasterImportLayerLockNamespace (0x0484_5221)
+    // so a long-running import never serializes against a metadata read.
+    private const int RasterStatisticsLockNamespace = 0x0484_5222;
+    private const int LayerStatisticsLockNamespace = 0x0484_5223;
+
+    // A single statistics backfill runs ST_SummaryStats across every pixel of a raster (or
+    // every raster in a mosaic) and can exceed a minute on county-scale imagery. The compute
+    // is serialized behind a transaction-scoped advisory lock (single-flight), so it is given
+    // a dedicated, generous timeout — independent of the ~30s request-path command/statement
+    // timeout default — otherwise the first cold read on a large raster times out and the
+    // statistics never persist, retrying forever instead of self-healing (#1649).
+    private const int StatisticsComputeTimeoutSeconds = 300;
+
     private readonly IDatabaseConnectionProvider _connectionProvider;
     private readonly ILogger<PostgresRasterStore> _logger;
     private readonly string _rasterDataTable;
     private readonly string _rasterStatisticsTable;
+    private readonly string _rasterLayerStatisticsTable;
     private readonly string _rasterTilesTable;
     private readonly string _featuresTable;
 
@@ -45,6 +63,7 @@ internal sealed class PostgresRasterStore : IRasterStore
 
         _rasterDataTable = SchemaSearchPath.QualifyTable("raster_data", schemaName);
         _rasterStatisticsTable = SchemaSearchPath.QualifyTable("raster_statistics", schemaName);
+        _rasterLayerStatisticsTable = SchemaSearchPath.QualifyTable("raster_layer_statistics", schemaName);
         _rasterTilesTable = SchemaSearchPath.QualifyTable("raster_tiles", schemaName);
         _featuresTable = SchemaSearchPath.QualifyTable(DatabaseSchema.FeaturesTable, schemaName);
     }
@@ -1289,82 +1308,16 @@ internal sealed class PostgresRasterStore : IRasterStore
     {
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
-        // Try cached statistics first
-        await using var cachedCommand = connection.CreateCommand();
-        cachedCommand.CommandText = $"""
-            SELECT band_number, min_value, max_value, mean_value, std_dev,
-                   valid_pixel_count, nodata_pixel_count
-            FROM {_rasterStatisticsTable}
-            WHERE raster_data_id = @rasterId
-            ORDER BY band_number
-            """;
-        AddParameter(cachedCommand, "@rasterId", rasterId);
+        // Serve persisted statistics (written at import time, or backfilled below). Computing
+        // ST_SummaryStats per request scans every raster pixel and takes tens of seconds on
+        // real-world datasets (#1639), so the request path must never recompute.
+        var stats = await ReadPersistedRasterStatisticsAsync(connection, transaction: null, rasterId, cancellationToken).ConfigureAwait(false);
 
-        var stats = new List<RasterStatistics>();
-
-        // Dispose the cached reader before issuing the compute fallback below; both
-        // run on this single connection and Npgsql forbids overlapping commands.
-        await using (var cachedReader = await cachedCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
+        if (stats.Count == 0)
         {
-            while (await cachedReader.ReadAsync(cancellationToken).ConfigureAwait(false))
-            {
-                stats.Add(new RasterStatistics
-                {
-                    Band = cachedReader.GetInt32(0),
-                    MinValue = cachedReader.IsDBNull(1) ? null : cachedReader.GetDouble(1),
-                    MaxValue = cachedReader.IsDBNull(2) ? null : cachedReader.GetDouble(2),
-                    MeanValue = cachedReader.IsDBNull(3) ? null : cachedReader.GetDouble(3),
-                    StandardDeviation = cachedReader.IsDBNull(4) ? null : cachedReader.GetDouble(4),
-                    ValidPixelCount = cachedReader.IsDBNull(5) ? 0 : cachedReader.GetInt64(5),
-                    NoDataPixelCount = cachedReader.IsDBNull(6) ? 0 : cachedReader.GetInt64(6)
-                });
-            }
-        }
-
-        if (stats.Count > 0)
-        {
-            if (bands != null)
-            {
-                stats = stats.Where(s => bands.Contains(s.Band)).ToList();
-            }
-
-            PostgresRasterLog.StatisticsCalculated(_logger, layerId, rasterId, stats.Count);
-            return stats.ToArray();
-        }
-
-        // Compute statistics dynamically via PostGIS ST_SummaryStats
-        await using var computeCommand = connection.CreateCommand();
-        computeCommand.CommandText = $"""
-            SELECT band,
-                   (stats).min AS min_value,
-                   (stats).max AS max_value,
-                   (stats).mean AS mean_value,
-                   (stats).stddev AS std_dev,
-                   (stats).count AS valid_count
-            FROM (
-                SELECT generate_series(1, ST_NumBands(raster)) AS band,
-                       ST_SummaryStats(raster, generate_series(1, ST_NumBands(raster))) AS stats
-                FROM {_rasterDataTable}
-                WHERE layer_id = @layerId AND id = @rasterId
-            ) sub
-            ORDER BY band
-            """;
-        AddParameter(computeCommand, "@layerId", layerId);
-        AddParameter(computeCommand, "@rasterId", rasterId);
-
-        await using var computeReader = await computeCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        while (await computeReader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            stats.Add(new RasterStatistics
-            {
-                Band = computeReader.GetInt32(0),
-                MinValue = computeReader.IsDBNull(1) ? null : computeReader.GetDouble(1),
-                MaxValue = computeReader.IsDBNull(2) ? null : computeReader.GetDouble(2),
-                MeanValue = computeReader.IsDBNull(3) ? null : computeReader.GetDouble(3),
-                StandardDeviation = computeReader.IsDBNull(4) ? null : computeReader.GetDouble(4),
-                ValidPixelCount = computeReader.IsDBNull(5) ? 0 : computeReader.GetInt64(5),
-                NoDataPixelCount = 0
-            });
+            // Lazy backfill for rasters registered before statistics persistence existed:
+            // compute once, persist, then serve the persisted rows forever.
+            stats = await BackfillRasterStatisticsAsync(connection, layerId, rasterId, cancellationToken).ConfigureAwait(false);
         }
 
         if (bands != null)
@@ -1391,7 +1344,303 @@ internal sealed class PostgresRasterStore : IRasterStore
 
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
+        // Mosaic statistics are keyed by (layer, merge strategy, raster-id set) so any change
+        // to the layer's raster membership invalidates the persisted rows automatically.
+        var signature = CreateMosaicSignature(rasterIds);
+        var strategyKey = mergeStrategy.ToString();
+
+        var stats = await ReadPersistedLayerStatisticsAsync(connection, transaction: null, layerId, strategyKey, signature, cancellationToken).ConfigureAwait(false);
+
+        if (stats.Count == 0)
+        {
+            stats = await BackfillLayerStatisticsAsync(connection, layerId, rasterIds, mergeStrategy, strategyKey, signature, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (bands != null)
+        {
+            stats = stats.Where(s => bands.Contains(s.Band)).ToList();
+        }
+
+        return stats.ToArray();
+    }
+
+    // =============================================================================
+    // Statistics persistence (compute-once-then-persist backfill, #1639)
+    // =============================================================================
+
+    /// <summary>
+    /// Backfills per-raster band statistics: serializes concurrent cold readers behind a
+    /// transaction-scoped advisory lock (thundering-herd guard), computes ST_SummaryStats once,
+    /// persists the rows into <c>raster_statistics</c>, and returns them. If persistence is not
+    /// possible (e.g. a read-only connection) the computed values are still served.
+    /// </summary>
+    private async Task<List<RasterStatistics>> BackfillRasterStatisticsAsync(
+        DbConnection connection,
+        int layerId,
+        long rasterId,
+        CancellationToken cancellationToken)
+    {
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        await AcquireBackfillLockAsync(connection, transaction, RasterStatisticsLockNamespace, HashLockKey(rasterId), cancellationToken).ConfigureAwait(false);
+
+        // Another request may have computed and committed while we waited on the lock.
+        var persisted = await ReadPersistedRasterStatisticsAsync(connection, transaction, rasterId, cancellationToken).ConfigureAwait(false);
+        if (persisted.Count > 0)
+        {
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return persisted;
+        }
+
+        try
+        {
+            // Grant this single-flight transaction the dedicated compute budget so a
+            // county-scale ST_SummaryStats can finish and persist instead of timing out (#1649).
+            await ApplyStatisticsComputeBudgetAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
+
+            // Compute and persist in a single statement (mirrors the import-time
+            // ComputeAndStoreStatisticsAsync semantics, including nodata_pixel_count).
+            await using (var command = connection.CreateCommand())
+            {
+                command.Transaction = transaction;
+                command.CommandTimeout = StatisticsComputeTimeoutSeconds;
+                command.CommandText = $"""
+                    INSERT INTO {_rasterStatisticsTable}
+                        (raster_data_id, band_number, min_value, max_value, mean_value, std_dev, valid_pixel_count, nodata_pixel_count)
+                    SELECT @rasterId, sub.band,
+                           (sub.stats).min, (sub.stats).max, (sub.stats).mean, (sub.stats).stddev,
+                           (sub.stats).count,
+                           GREATEST(sub.total_pixels - (sub.stats).count, 0)
+                    FROM (
+                        SELECT generate_series(1, ST_NumBands(raster)) AS band,
+                               ST_SummaryStats(raster, generate_series(1, ST_NumBands(raster))) AS stats,
+                               (ST_Width(raster)::bigint * ST_Height(raster)::bigint) AS total_pixels
+                        FROM {_rasterDataTable}
+                        WHERE layer_id = @layerId AND id = @rasterId
+                    ) sub
+                    ON CONFLICT (raster_data_id, band_number) DO NOTHING
+                    """;
+                AddParameter(command, "@layerId", layerId);
+                AddParameter(command, "@rasterId", rasterId);
+                await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            var stats = await ReadPersistedRasterStatisticsAsync(connection, transaction, rasterId, cancellationToken).ConfigureAwait(false);
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            PostgresRasterLog.RasterStatisticsBackfilled(_logger, layerId, rasterId, stats.Count);
+            return stats;
+        }
+        catch (PostgresException ex)
+        {
+            // Persistence is best-effort: fall back to computing without persisting so
+            // read-only deployments keep working (at the old per-request cost).
+            await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+            PostgresRasterLog.RasterStatisticsPersistFailed(_logger, ex, layerId, rasterId);
+            return await ComputeRasterStatisticsAsync(connection, layerId, rasterId, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Backfills layer-level mosaic statistics into <c>raster_layer_statistics</c>, pruning rows
+    /// persisted for a previous raster-id set of the same merge strategy. Follows the same
+    /// advisory-lock + compute-once-then-persist pattern as <see cref="BackfillRasterStatisticsAsync"/>.
+    /// </summary>
+    private async Task<List<RasterStatistics>> BackfillLayerStatisticsAsync(
+        DbConnection connection,
+        int layerId,
+        long[] rasterIds,
+        RasterMergeStrategy mergeStrategy,
+        string strategyKey,
+        string signature,
+        CancellationToken cancellationToken)
+    {
+        // Self-provision the snapshot table so already-registered datasets backfill without a
+        // manual migration (same pattern as PostgresMetadataV2GraphStore.EnsureSchemaAsync —
+        // a no-op once 003_CreateRasterLayerStatistics.sql has been applied). Best-effort: a
+        // read-only connection simply keeps the legacy compute path below.
+        await TryEnsureLayerStatisticsTableAsync(connection, cancellationToken).ConfigureAwait(false);
+
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        await AcquireBackfillLockAsync(connection, transaction, LayerStatisticsLockNamespace, layerId, cancellationToken).ConfigureAwait(false);
+
+        // Grant this single-flight transaction the dedicated compute budget so a large-mosaic
+        // ST_SummaryStats can finish and persist instead of timing out (#1649).
+        await ApplyStatisticsComputeBudgetAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
+
+        List<RasterStatistics> persisted;
+        try
+        {
+            persisted = await ReadPersistedLayerStatisticsAsync(connection, transaction, layerId, strategyKey, signature, cancellationToken).ConfigureAwait(false);
+        }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UndefinedTable)
+        {
+            // Table could not be provisioned (read-only deployment); compute without persisting.
+            await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+            PostgresRasterLog.LayerStatisticsPersistFailed(_logger, ex, layerId);
+            return await ComputeMosaicStatisticsAsync(connection, transaction: null, layerId, rasterIds, mergeStrategy, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (persisted.Count > 0)
+        {
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return persisted;
+        }
+
+        var computed = await ComputeMosaicStatisticsAsync(connection, transaction, layerId, rasterIds, mergeStrategy, cancellationToken).ConfigureAwait(false);
+        if (computed.Count == 0)
+        {
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return computed;
+        }
+
+        try
+        {
+            // Prune rows computed for a previous raster-id set of this strategy, then persist.
+            await using (var prune = connection.CreateCommand())
+            {
+                prune.Transaction = transaction;
+                prune.CommandText = $"""
+                    DELETE FROM {_rasterLayerStatisticsTable}
+                    WHERE layer_id = @layerId AND merge_strategy = @strategy AND raster_signature <> @signature
+                    """;
+                AddParameter(prune, "@layerId", layerId);
+                AddParameter(prune, "@strategy", strategyKey);
+                AddParameter(prune, "@signature", signature);
+                await prune.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            foreach (var band in computed)
+            {
+                await using var insert = connection.CreateCommand();
+                insert.Transaction = transaction;
+                insert.CommandText = $"""
+                    INSERT INTO {_rasterLayerStatisticsTable}
+                        (layer_id, merge_strategy, raster_signature, band_number, min_value, max_value, mean_value, std_dev, valid_pixel_count, nodata_pixel_count)
+                    VALUES (@layerId, @strategy, @signature, @band, @min, @max, @mean, @stddev, @validCount, @noDataCount)
+                    ON CONFLICT (layer_id, merge_strategy, raster_signature, band_number) DO NOTHING
+                    """;
+                AddParameter(insert, "@layerId", layerId);
+                AddParameter(insert, "@strategy", strategyKey);
+                AddParameter(insert, "@signature", signature);
+                AddParameter(insert, "@band", band.Band);
+                AddParameter(insert, "@min", (object?)band.MinValue ?? DBNull.Value);
+                AddParameter(insert, "@max", (object?)band.MaxValue ?? DBNull.Value);
+                AddParameter(insert, "@mean", (object?)band.MeanValue ?? DBNull.Value);
+                AddParameter(insert, "@stddev", (object?)band.StandardDeviation ?? DBNull.Value);
+                AddParameter(insert, "@validCount", band.ValidPixelCount);
+                AddParameter(insert, "@noDataCount", band.NoDataPixelCount);
+                await insert.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            PostgresRasterLog.LayerStatisticsBackfilled(_logger, layerId, rasterIds.Length, strategyKey, computed.Count);
+        }
+        catch (PostgresException ex)
+        {
+            // Persistence is best-effort; still serve the computed values.
+            await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+            PostgresRasterLog.LayerStatisticsPersistFailed(_logger, ex, layerId);
+        }
+
+        return computed;
+    }
+
+    private async Task<List<RasterStatistics>> ReadPersistedRasterStatisticsAsync(
+        DbConnection connection,
+        DbTransaction? transaction,
+        long rasterId,
+        CancellationToken cancellationToken)
+    {
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = $"""
+            SELECT band_number, min_value, max_value, mean_value, std_dev,
+                   valid_pixel_count, nodata_pixel_count
+            FROM {_rasterStatisticsTable}
+            WHERE raster_data_id = @rasterId
+            ORDER BY band_number
+            """;
+        AddParameter(command, "@rasterId", rasterId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        return await ReadStatisticsRowsAsync(reader, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<List<RasterStatistics>> ReadPersistedLayerStatisticsAsync(
+        DbConnection connection,
+        DbTransaction? transaction,
+        int layerId,
+        string strategyKey,
+        string signature,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = $"""
+                SELECT band_number, min_value, max_value, mean_value, std_dev,
+                       valid_pixel_count, nodata_pixel_count
+                FROM {_rasterLayerStatisticsTable}
+                WHERE layer_id = @layerId AND merge_strategy = @strategy AND raster_signature = @signature
+                ORDER BY band_number
+                """;
+            AddParameter(command, "@layerId", layerId);
+            AddParameter(command, "@strategy", strategyKey);
+            AddParameter(command, "@signature", signature);
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            return await ReadStatisticsRowsAsync(reader, cancellationToken).ConfigureAwait(false);
+        }
+        catch (PostgresException ex) when (transaction is null && ex.SqlState == PostgresErrorCodes.UndefinedTable)
+        {
+            // Snapshot table not provisioned yet; treat as a cache miss so the backfill
+            // path can create it. Inside a transaction the error must propagate because
+            // the transaction is already aborted.
+            return [];
+        }
+    }
+
+    private async Task<List<RasterStatistics>> ComputeRasterStatisticsAsync(
+        DbConnection connection,
+        int layerId,
+        long rasterId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandTimeout = StatisticsComputeTimeoutSeconds;
+        command.CommandText = $"""
+            SELECT band,
+                   (stats).min AS min_value,
+                   (stats).max AS max_value,
+                   (stats).mean AS mean_value,
+                   (stats).stddev AS std_dev,
+                   (stats).count AS valid_count
+            FROM (
+                SELECT generate_series(1, ST_NumBands(raster)) AS band,
+                       ST_SummaryStats(raster, generate_series(1, ST_NumBands(raster))) AS stats
+                FROM {_rasterDataTable}
+                WHERE layer_id = @layerId AND id = @rasterId
+            ) sub
+            ORDER BY band
+            """;
+        AddParameter(command, "@layerId", layerId);
+        AddParameter(command, "@rasterId", rasterId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        return await ReadStatisticsRowsAsync(reader, cancellationToken, hasNoDataColumn: false).ConfigureAwait(false);
+    }
+
+    private async Task<List<RasterStatistics>> ComputeMosaicStatisticsAsync(
+        DbConnection connection,
+        DbTransaction? transaction,
+        int layerId,
+        long[] rasterIds,
+        RasterMergeStrategy mergeStrategy,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandTimeout = StatisticsComputeTimeoutSeconds;
         command.CommandText = $"""
             WITH requested AS (
                 SELECT unnest(@rasterIds) AS raster_id
@@ -1427,8 +1676,16 @@ internal sealed class PostgresRasterStore : IRasterStore
         AddParameter(command, "@layerId", layerId);
         AddParameter(command, "@rasterIds", rasterIds);
 
-        var stats = new List<RasterStatistics>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        return await ReadStatisticsRowsAsync(reader, cancellationToken, hasNoDataColumn: false).ConfigureAwait(false);
+    }
+
+    private static async Task<List<RasterStatistics>> ReadStatisticsRowsAsync(
+        DbDataReader reader,
+        CancellationToken cancellationToken,
+        bool hasNoDataColumn = true)
+    {
+        var stats = new List<RasterStatistics>();
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             stats.Add(new RasterStatistics
@@ -1439,16 +1696,94 @@ internal sealed class PostgresRasterStore : IRasterStore
                 MeanValue = reader.IsDBNull(3) ? null : reader.GetDouble(3),
                 StandardDeviation = reader.IsDBNull(4) ? null : reader.GetDouble(4),
                 ValidPixelCount = reader.IsDBNull(5) ? 0 : reader.GetInt64(5),
-                NoDataPixelCount = 0
+                NoDataPixelCount = hasNoDataColumn && !reader.IsDBNull(6) ? reader.GetInt64(6) : 0
             });
         }
 
-        if (bands != null)
-        {
-            stats = stats.Where(s => bands.Contains(s.Band)).ToList();
-        }
+        return stats;
+    }
 
-        return stats.ToArray();
+    private async Task TryEnsureLayerStatisticsTableAsync(DbConnection connection, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            CREATE TABLE IF NOT EXISTS {_rasterLayerStatisticsTable} (
+                layer_id INTEGER NOT NULL,
+                merge_strategy VARCHAR(32) NOT NULL,
+                raster_signature TEXT NOT NULL,
+                band_number INTEGER NOT NULL,
+                min_value DOUBLE PRECISION,
+                max_value DOUBLE PRECISION,
+                mean_value DOUBLE PRECISION,
+                std_dev DOUBLE PRECISION,
+                valid_pixel_count BIGINT,
+                nodata_pixel_count BIGINT,
+                computed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (layer_id, merge_strategy, raster_signature, band_number)
+            )
+            """;
+
+        try
+        {
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (PostgresException ex) when (
+            ex.SqlState is PostgresErrorCodes.UniqueViolation
+                or PostgresErrorCodes.DuplicateTable
+                or PostgresErrorCodes.DuplicateObject
+                or PostgresErrorCodes.InsufficientPrivilege
+                or PostgresErrorCodes.ReadOnlySqlTransaction)
+        {
+            // Concurrent CREATE TABLE IF NOT EXISTS race, or a read-only deployment.
+            // Both are tolerated: the read path treats a missing table as a cache miss.
+        }
+    }
+
+    private static async Task AcquireBackfillLockAsync(
+        DbConnection connection,
+        DbTransaction transaction,
+        int lockNamespace,
+        int lockKey,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT pg_advisory_xact_lock(@namespace, @lockKey);";
+        AddParameter(command, "@namespace", lockNamespace);
+        AddParameter(command, "@lockKey", lockKey);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Raises the statement timeout for the statistics-backfill transaction to the dedicated
+    /// compute budget. <c>SET LOCAL</c> is transaction-scoped, so the elevated budget reverts on
+    /// commit/rollback and never leaks back to the pooled connection's request-path statements.
+    /// </summary>
+    private static async Task ApplyStatisticsComputeBudgetAsync(
+        DbConnection connection,
+        DbTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = FormattableString.Invariant(
+            $"SET LOCAL statement_timeout = {StatisticsComputeTimeoutSeconds * 1000}");
+        command.CommandTimeout = StatisticsComputeTimeoutSeconds;
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static int HashLockKey(long value) => unchecked((int)value ^ (int)(value >>> 32));
+
+    /// <summary>
+    /// Builds a deterministic identity for a layer's mosaic source set. Any raster added to or
+    /// removed from the layer changes the signature, which invalidates persisted mosaic rows.
+    /// </summary>
+    private static string CreateMosaicSignature(long[] rasterIds)
+    {
+        var ordered = rasterIds.Distinct().Order().ToArray();
+        var joined = string.Join(",", ordered);
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(joined));
+        return string.Create(CultureInfo.InvariantCulture, $"{ordered.Length}:{Convert.ToHexStringLower(hash)}");
     }
 
     /// <inheritdoc />

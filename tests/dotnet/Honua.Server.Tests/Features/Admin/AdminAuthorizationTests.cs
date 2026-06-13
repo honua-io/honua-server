@@ -3,6 +3,7 @@
 
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -56,12 +57,19 @@ public sealed class AdminAuthorizationTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
+    // The admin OpenAPI document is public API documentation (the bundled
+    // admin-api.json snapshot), intentionally readable without credentials so the
+    // /docs explorer can load it (#1635). The operations it documents stay gated.
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/openapi.json")]
-    public async Task GetOpenApi_WithoutAuth_Returns401()
+    public async Task GetOpenApi_WithoutAuth_Returns200WithValidOpenApiDocument()
     {
         var response = await _unauthenticatedClient.GetAsync("/api/v1/admin/openapi.json");
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("openapi").GetString().Should().StartWith("3.0");
+        document.RootElement.TryGetProperty("paths", out _).Should().BeTrue();
     }
 
     [IntegrationTest]
@@ -72,12 +80,32 @@ public sealed class AdminAuthorizationTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
+    // The capabilities handshake is intentionally anonymous (#1633): browser SDK
+    // consumers run checkCompatibility() before they have credentials. The payload
+    // must stay limited to constant build metadata — assert the expected fields are
+    // present and that nothing deployment-specific leaks alongside them.
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/capabilities")]
-    public async Task GetCapabilities_WithoutAuth_Returns401()
+    public async Task GetCapabilities_WithoutAuth_Returns200WithCompatibilityContract()
     {
         var response = await _unauthenticatedClient.GetAsync("/api/v1/admin/capabilities");
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("success").GetBoolean().Should().BeTrue();
+
+        var data = document.RootElement.GetProperty("data");
+        var compatibility = data.GetProperty("compatibility");
+        compatibility.GetProperty("serverVersion").GetString().Should().NotBeNullOrWhiteSpace();
+        compatibility.GetProperty("releaseChannel").GetString().Should().NotBeNullOrWhiteSpace();
+        compatibility.GetProperty("controlPlaneApi").GetProperty("major").GetInt32().Should().Be(1);
+        compatibility.GetProperty("metadataSchemas").GetArrayLength().Should().BeGreaterThan(0);
+        compatibility.TryGetProperty("features", out _).Should().BeTrue();
+
+        // Guard against the anonymous surface growing sensitive content: the response
+        // must stay limited to the documented compatibility envelope.
+        data.EnumerateObject().Select(property => property.Name).Should().BeEquivalentTo(
+            ["metadataApiVersion", "metadataSchemaVersion", "serverVersion", "compatibility"]);
     }
 
     // --- ServiceSettingsEndpoints ---

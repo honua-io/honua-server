@@ -128,7 +128,9 @@ public interface IRasterStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Calculates statistics for raster bands.
+    /// Gets statistics for raster bands. Implementations must serve persisted values
+    /// (written at import time, or computed once and persisted on first read) rather than
+    /// recomputing per request: full-pixel scans take tens of seconds on real datasets (#1639).
     /// </summary>
     /// <param name="layerId">Layer identifier containing the raster</param>
     /// <param name="rasterId">Raster identifier to analyze</param>
@@ -142,7 +144,9 @@ public interface IRasterStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Calculates statistics for a composited layer mosaic.
+    /// Gets statistics for a composited layer mosaic. Implementations must persist computed
+    /// values keyed by the layer's raster-id set and serve subsequent reads from the persisted
+    /// rows; the snapshot is invalidated when the layer's raster membership changes.
     /// </summary>
     Task<RasterStatistics[]> GetMosaicStatisticsAsync(
         int layerId,

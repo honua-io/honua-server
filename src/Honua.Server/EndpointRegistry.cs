@@ -407,7 +407,9 @@ public static class EndpointRegistry
 
         // v1 admin ArcGIS migration evidence endpoints (#1025 slice 6)
         new("GET", "/api/v1/admin/import/arcgis/migrations"),
+        new("POST", "/api/v1/admin/import/arcgis/migrations/{runId}/manifest"),
         new("GET", "/api/v1/admin/import/arcgis/migrations/{runId}/manifest"),
+        new("POST", "/api/v1/admin/import/arcgis/migrations/{runId}/parity"),
         new("GET", "/api/v1/admin/import/arcgis/migrations/{runId}/parity"),
 
         // v1 admin import endpoints (Geoservices)
@@ -449,9 +451,12 @@ public static class EndpointRegistry
 
         // v1 admin GeoServer migration run orchestration endpoints (#1015 slice 5)
         new("GET", "/api/v1/admin/migration/runs"),
+        new("POST", "/api/v1/admin/migration/runs"),
         new("GET", "/api/v1/admin/migration/runs/{runId}"),
         new("GET", "/api/v1/admin/migration/runs/{runId}/evidence-pack"),
         new("GET", "/api/v1/admin/migration/runs/{runId}/scorecard"),
+        new("POST", "/api/v1/admin/migration/runs/{runId}/complete"),
+        new("POST", "/api/v1/admin/migration/runs/{runId}/scorecard"),
         new("POST", "/api/v1/admin/migration/runs/{runId}/cancel"),
 
         // v1 admin import endpoints (OGC WMTS tile cache export #1016 slice 4)

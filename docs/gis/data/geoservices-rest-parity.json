@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "lastReviewed": "2026-06-11",
+  "lastReviewed": "2026-06-13",
   "canonicalDocs": {
-    "landingPage": "docs/gis/geoservices-rest-parity.md",
+    "landingPage": "docs/reference/compatibility/geoservices-parity.md",
     "machineReadableExport": "docs/gis/data/geoservices-rest-parity.json"
   },
   "statusVocabulary": {
@@ -24,7 +24,7 @@
       "id": "feature-server",
       "displayName": "FeatureServer",
       "parity": "partial",
-      "drillDownDoc": "docs/gis/feature-server-matrix.md",
+      "drillDownDoc": "docs/reference/compatibility/geoservices-parity.md",
       "implementedSurface": [
         "query",
         "service and layer metadata",
@@ -48,7 +48,8 @@
         "queryClusters (Honua extension, Pro)",
         "spatialJoin (Honua extension, Pro)",
         "queryBufferAggregate (Honua extension, Pro)",
-        "queryDensity (Honua extension, Pro)"
+        "queryDensity (Honua extension, Pro)",
+        "generateRenderer"
       ],
       "knownGaps": [
         "cleanupChangeTracking",
@@ -475,19 +476,19 @@
             "honuaEndpoints": [
               "GET /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments/{attachmentId}"
             ]
-          }
-        ],
-        "partial": [
+          },
           {
             "name": "Generate Renderer",
             "esriPath": "/rest/services/{serviceId}/FeatureServer/{layerId}/generateRenderer",
             "methods": [
-              "GET"
+              "GET",
+              "POST"
             ],
             "honuaEndpoints": [
-              "GET /rest/services/{serviceId}/FeatureServer/{layerId}/generateRenderer"
+              "GET /rest/services/{serviceId}/FeatureServer/{layerId}/generateRenderer",
+              "POST /rest/services/{serviceId}/FeatureServer/{layerId}/generateRenderer"
             ],
-            "notes": "Returns a simple renderer. classificationDef is rejected."
+            "notes": "Supports simple renderer output plus classificationDef-driven class-break and unique-value renderers."
           },
           {
             "name": "Query Attachments",
@@ -500,9 +501,10 @@
               "GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryAttachments",
               "POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryAttachments"
             ],
-            "notes": "Only objectId-driven lookup is supported."
+            "notes": "Supports objectIds plus attachmentTypes, keywords, size, definitionExpression, returnMetadata, and returnUrl facets; globalIds are rejected with a GeoServices 400 because Honua uses integer object IDs."
           }
         ],
+        "partial": [],
         "notImplemented": [
           {
             "name": "Cleanup Change Tracking",
@@ -750,7 +752,7 @@
       "id": "map-server",
       "displayName": "MapServer",
       "parity": "partial",
-      "drillDownDoc": "docs/gis/map-server-matrix.md",
+      "drillDownDoc": "docs/reference/compatibility/geoservices-parity.md",
       "implementedSurface": [
         "service metadata",
         "layer metadata",
@@ -773,7 +775,10 @@
         "storage-backed exportTiles",
         "generateKml",
         "WMS",
-        "WMTS"
+        "WMTS",
+        "generateRenderer",
+        "queryAttachments",
+        "queryRelatedRecords"
       ],
       "knownGaps": [
         "full Esri tile-package/job exportTiles semantics",
@@ -1003,7 +1008,7 @@
               "GET /rest/services/{serviceId}/MapServer/{layerId}/generateRenderer",
               "POST /rest/services/{serviceId}/MapServer/{layerId}/generateRenderer"
             ],
-            "notes": "Delegates to the FeatureServer generateRenderer contract."
+            "notes": "Layer-scoped adapter that delegates to the FeatureServer generateRenderer handler."
           },
           {
             "name": "Query Attachments",
@@ -1016,7 +1021,7 @@
               "GET /rest/services/{serviceId}/MapServer/{layerId}/queryAttachments",
               "POST /rest/services/{serviceId}/MapServer/{layerId}/queryAttachments"
             ],
-            "notes": "Delegates to the FeatureServer queryAttachments contract."
+            "notes": "Layer-scoped adapter that delegates to the FeatureServer queryAttachments handler."
           },
           {
             "name": "Query Related Records",
@@ -1029,7 +1034,7 @@
               "GET /rest/services/{serviceId}/MapServer/{layerId}/queryRelatedRecords",
               "POST /rest/services/{serviceId}/MapServer/{layerId}/queryRelatedRecords"
             ],
-            "notes": "Delegates to the FeatureServer queryRelatedRecords contract."
+            "notes": "Layer-scoped adapter that delegates to the FeatureServer queryRelatedRecords handler."
           }
         ],
         "partial": [
@@ -1174,7 +1179,7 @@
       "id": "image-server",
       "displayName": "ImageServer",
       "parity": "partial",
-      "drillDownDoc": "docs/gis/image-server-matrix.md",
+      "drillDownDoc": "docs/reference/compatibility/geoservices-parity.md",
       "implementedSurface": [
         "service metadata (with timeInfo when temporal)",
         "exportImage",
@@ -1197,6 +1202,12 @@
         "computeClass (raster function chain validation)",
         "exportImage Stretch renderingRule (MinMax/StandardDeviation/PercentClip)",
         "auto display stretch for non-8-bit dynamic tiles",
+        "keyProperties",
+        "multidimensionalInfo",
+        "statistics",
+        "histograms",
+        "rasterFunctionInfos",
+        "rasterAttributeTable",
         "WCS 2.0.1 KVP"
       ],
       "knownGaps": [
@@ -1277,6 +1288,98 @@
               "GET /rest/services/{id}/ImageServer/tile/{level}/{row}/{col}"
             ],
             "notes": "Supports png, jpeg, and tiff tile output. When multiple rasters overlap the requested tile, Honua renders a mosaic using the resolved merge strategy. Tile GETs use configured cloud file storage (local, S3, Azure Blob) as a deterministic loose-object read-through/write-through cache."
+          },
+          {
+            "name": "Compute Histograms",
+            "esriPath": "/rest/services/{id}/ImageServer/computeHistograms",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer/computeHistograms",
+              "POST /rest/services/{id}/ImageServer/computeHistograms"
+            ],
+            "notes": "Alias-compatible histogram endpoint over the same raster histogram pipeline used by computeStatisticsHistograms."
+          },
+          {
+            "name": "Get Samples",
+            "esriPath": "/rest/services/{id}/ImageServer/getSamples",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer/getSamples",
+              "POST /rest/services/{id}/ImageServer/getSamples"
+            ],
+            "notes": "Samples pixel values at request points and caps sample count at 1000."
+          },
+          {
+            "name": "Key Properties",
+            "esriPath": "/rest/services/{id}/ImageServer/keyProperties",
+            "methods": [
+              "GET"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer/keyProperties"
+            ],
+            "notes": "Returns spec-shaped raster key-property documents from the shared raster store; non-applicable cases return empty documents."
+          },
+          {
+            "name": "Multidimensional Info",
+            "esriPath": "/rest/services/{id}/ImageServer/multidimensionalInfo",
+            "methods": [
+              "GET"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer/multidimensionalInfo"
+            ],
+            "notes": "Returns spec-shaped multidimensional metadata; non-applicable layers return {\"variables\": []}."
+          },
+          {
+            "name": "Statistics",
+            "esriPath": "/rest/services/{id}/ImageServer/statistics",
+            "methods": [
+              "GET"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer/statistics"
+            ],
+            "notes": "Returns per-band raster statistics documents when available."
+          },
+          {
+            "name": "Histograms",
+            "esriPath": "/rest/services/{id}/ImageServer/histograms",
+            "methods": [
+              "GET"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer/histograms"
+            ],
+            "notes": "Returns per-band raster histogram documents when available."
+          },
+          {
+            "name": "Raster Function Infos",
+            "esriPath": "/rest/services/{id}/ImageServer/rasterFunctionInfos",
+            "methods": [
+              "GET"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer/rasterFunctionInfos"
+            ],
+            "notes": "Returns the raster function info document for the resolved layer."
+          },
+          {
+            "name": "Raster Attribute Table",
+            "esriPath": "/rest/services/{id}/ImageServer/rasterAttributeTable",
+            "methods": [
+              "GET"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer/rasterAttributeTable"
+            ],
+            "notes": "Returns a spec-shaped raster attribute table document; non-applicable layers return an empty table."
           }
         ],
         "partial": [
@@ -1626,7 +1729,8 @@
           "imageSupportData",
           "kml",
           "{rasterId}/*",
-          "rasterFile"
+          "rasterFile",
+          "slices"
         ]
       },
       "parameterCoverage": {
@@ -1850,7 +1954,7 @@
       "id": "geometry-service",
       "displayName": "Geometry Service",
       "parity": "complete",
-      "drillDownDoc": "docs/gis/geometry-service-matrix.md",
+      "drillDownDoc": "docs/reference/compatibility/geoservices-parity.md",
       "implementedSurface": [
         "Geometry Service metadata",
         "Buffer",
@@ -2260,7 +2364,7 @@
       "id": "gp-server",
       "displayName": "GPServer",
       "parity": "partial",
-      "drillDownDoc": "docs/gis/geoprocess-framework-analysis.md",
+      "drillDownDoc": "docs/guides/query-analyze/run-geoprocessing.md",
       "implementedSurface": [
         "PrintingTools Export Web Map Task (service info, sync execute, async submitJob, job status, job result)",
         "PrintingTools Get Layout Templates Info Task (sync execute)",
@@ -2274,8 +2378,8 @@
       ],
       "evidence": {
         "canonicalModel": [
-          "docs/gis/geoprocess-framework-analysis.md",
-          "docs/contributor/adr/0029-geoprocess-canonical-model-mappings.md"
+          "docs/guides/query-analyze/run-geoprocessing.md",
+          "docs/internal/contributor/adr/0029-geoprocess-canonical-model-mappings.md"
         ],
         "code": [
           "src/Honua.Server/Features/PrintingTools/PrintingToolsEndpoints.cs",
@@ -2415,7 +2519,7 @@
       "id": "portal-sharing",
       "displayName": "Portal Sharing",
       "parity": "partial",
-      "drillDownDoc": "docs/operator/security.md",
+      "drillDownDoc": "docs/guides/secure/authentication.md",
       "implementedSurface": [
         "POST /sharing/rest/generateToken (form-encoded)",
         "GET /sharing/rest/generateToken (query-string)",
@@ -2473,7 +2577,7 @@
       "id": "geocode-server",
       "displayName": "GeocodeServer",
       "parity": "partial",
-      "drillDownDoc": "docs/gis/geocode-server-matrix.md",
+      "drillDownDoc": "docs/internal/spikes/geocode-server-matrix.md",
       "implementedSurface": [
         "service metadata",
         "findAddressCandidates",
@@ -2674,6 +2778,92 @@
         "Only f=json and f=pjson responses are supported.",
         "outFields projection and outSR reprojection are implemented; magicKey round-tripping, category filtering, and forStorage/matchOutOfRange are not implemented.",
         "A parameter is only forwarded when at least one backing provider acts on it (Nominatim honors searchExtent for forward and langCode for reverse; Azure Maps and Amazon Location additionally honor suggestion bounds/bias)."
+      ]
+    },
+    {
+      "id": "na-server",
+      "displayName": "NAServer",
+      "parity": "partial",
+      "drillDownDoc": "docs/reference/compatibility/geoservices-parity.md",
+      "implementedSurface": [
+        "Route solve",
+        "ServiceArea solveServiceArea",
+        "ClosestFacility solveClosestFacility compatibility envelope"
+      ],
+      "knownGaps": [
+        "GET solve routes",
+        "ClosestFacility canonical solver",
+        "OD cost matrix",
+        "location-allocation",
+        "barriers",
+        "multiple travel modes",
+        "network-dataset editing"
+      ],
+      "evidence": {
+        "code": [
+          "src/Honua.Protocols.GeoServices/NAServer/NAServerEndpoints.cs",
+          "src/Honua.Protocols.GeoServices/NAServer/NAServerParameterTranslation.cs",
+          "src/Honua.Protocols.GeoServices/NAServer/NAServerResultMapping.cs",
+          "src/Honua.Routing/Features/Routing/Abstractions/IRoutingProvider.cs"
+        ],
+        "tests": [
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/NAServer/NAServerEndpointTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/NAServer/NAServerTranslationUnitTests.cs"
+        ]
+      },
+      "operations": {
+        "implemented": [
+          {
+            "name": "Route solve",
+            "esriPath": "/rest/services/{serviceId}/NAServer/Route/solve",
+            "methods": [
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "POST /rest/services/{serviceId}/NAServer/Route/solve"
+            ],
+            "notes": "Parses stops, inSR/outSR, returnRoutes, and returnDirections, delegates to the configured IRoutingProvider, and returns Esri route and directions feature sets."
+          },
+          {
+            "name": "ServiceArea solveServiceArea",
+            "esriPath": "/rest/services/{serviceId}/NAServer/ServiceArea/solveServiceArea",
+            "methods": [
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "POST /rest/services/{serviceId}/NAServer/ServiceArea/solveServiceArea"
+            ],
+            "notes": "Parses facilities, defaultBreaks, inSR/outSR, and travelDirection, validates provider-advertised travel-direction support, and returns Esri saPolygons."
+          }
+        ],
+        "partial": [
+          {
+            "name": "ClosestFacility solveClosestFacility",
+            "esriPath": "/rest/services/{serviceId}/NAServer/ClosestFacility/solveClosestFacility",
+            "methods": [
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "POST /rest/services/{serviceId}/NAServer/ClosestFacility/solveClosestFacility"
+            ],
+            "notes": "Compatibility probe route that returns a deterministic closest-facility route/directions envelope; not yet backed by a canonical closest-facility solver."
+          }
+        ],
+        "notImplemented": [
+          {
+            "name": "OD cost matrix, location-allocation, barriers, multiple travel modes, network-dataset editing",
+            "esriPath": "/rest/services/{serviceId}/NAServer/*",
+            "methods": [
+              "GET",
+              "POST"
+            ]
+          }
+        ]
+      },
+      "knownLimitations": [
+        "NAServer route and service-area solves are POST-only.",
+        "ClosestFacility is a deterministic compatibility envelope until a canonical closest-facility contract lands.",
+        "Unsupported provider capabilities return GeoServices 400 error envelopes."
       ]
     }
   ]
