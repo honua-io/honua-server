@@ -16,8 +16,28 @@ internal sealed class ImageServerWmtsHandler(ImageServerTileHandler tileHandler)
     private const string ContentType = "application/xml";
     private const string TileMatrixSet = "WebMercatorQuad";
     private const string Version = "1.0.0";
-    private const string TileFormat = "image/png";
+    private const string PngFormat = "image/png";
+    private const string JpegFormat = "image/jpeg";
     private const double ScaleDenominator0 = 559082264.0287178;
+
+    // Maps an advertised WMTS tile media type to the ImageServer tile-handler format token.
+    private static bool TryResolveTileFormat(string mediaType, out string tileToken)
+    {
+        if (string.Equals(mediaType, PngFormat, StringComparison.OrdinalIgnoreCase))
+        {
+            tileToken = "png";
+            return true;
+        }
+
+        if (string.Equals(mediaType, JpegFormat, StringComparison.OrdinalIgnoreCase))
+        {
+            tileToken = "jpg";
+            return true;
+        }
+
+        tileToken = string.Empty;
+        return false;
+    }
 
     public async Task<IResult> HandleAsync(
         HttpContext context,
@@ -200,12 +220,12 @@ internal sealed class ImageServerWmtsHandler(ImageServerTileHandler tileHandler)
                 StatusCodes.Status400BadRequest);
         }
 
-        if (!string.Equals(formatValue, TileFormat, StringComparison.OrdinalIgnoreCase))
+        if (!TryResolveTileFormat(formatValue, out var tileFormatToken))
         {
             return CreateExceptionReport(
                 "InvalidParameterValue",
                 "format",
-                "Only FORMAT=image/png is supported.",
+                "FORMAT must be image/png or image/jpeg.",
                 StatusCodes.Status400BadRequest);
         }
 
@@ -258,7 +278,7 @@ internal sealed class ImageServerWmtsHandler(ImageServerTileHandler tileHandler)
             level,
             row,
             col,
-            "png",
+            tileFormatToken,
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -275,6 +295,8 @@ internal sealed class ImageServerWmtsHandler(ImageServerTileHandler tileHandler)
         var escapedBaseUrl = EscapeXml(wmtsBaseUrl);
         var escapedTemplate =
             $"{escapedBaseUrl}/{{Layer}}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}.png";
+        var escapedJpegTemplate =
+            $"{escapedBaseUrl}/{{Layer}}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}.jpg";
 
         var sb = new StringBuilder(8192);
         sb.AppendLine("""<?xml version="1.0" encoding="UTF-8"?>""");
@@ -296,11 +318,15 @@ internal sealed class ImageServerWmtsHandler(ImageServerTileHandler tileHandler)
         sb.AppendLine("        <ows:Identifier>default</ows:Identifier>");
         sb.AppendLine("      </Style>");
         sb.AppendLine("      <Format>image/png</Format>");
+        sb.AppendLine("      <Format>image/jpeg</Format>");
         sb.AppendLine("      <TileMatrixSetLink>");
         sb.AppendLine("        <TileMatrixSet>WebMercatorQuad</TileMatrixSet>");
         sb.AppendLine("      </TileMatrixSetLink>");
         sb.Append("      <ResourceURL format=\"image/png\" resourceType=\"tile\" template=\"")
             .Append(escapedTemplate)
+            .AppendLine("\" />");
+        sb.Append("      <ResourceURL format=\"image/jpeg\" resourceType=\"tile\" template=\"")
+            .Append(escapedJpegTemplate)
             .AppendLine("\" />");
         sb.AppendLine("    </Layer>");
         sb.AppendLine("    <TileMatrixSet>");
@@ -412,7 +438,14 @@ internal sealed class ImageServerWmtsHandler(ImageServerTileHandler tileHandler)
         var extension = segment[(extensionIndex + 1)..];
         if (string.Equals(extension, "png", StringComparison.OrdinalIgnoreCase))
         {
-            format = TileFormat;
+            format = PngFormat;
+            return true;
+        }
+
+        if (string.Equals(extension, "jpg", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(extension, "jpeg", StringComparison.OrdinalIgnoreCase))
+        {
+            format = JpegFormat;
             return true;
         }
 

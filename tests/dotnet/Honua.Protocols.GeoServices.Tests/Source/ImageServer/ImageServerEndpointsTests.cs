@@ -292,6 +292,8 @@ public class ImageServerEndpointsTests
             content.Should().Contain("<ows:Identifier>0</ows:Identifier>");
             content.Should().Contain("<ows:Identifier>WebMercatorQuad</ows:Identifier>");
             content.Should().Contain("ResourceURL");
+            content.Should().Contain("<Format>image/png</Format>");
+            content.Should().Contain("<Format>image/jpeg</Format>");
             content.Should().NotContain("GetFeatureInfo");
 
             var serviceId = WebAppFixture.TestServiceId;
@@ -342,19 +344,59 @@ public class ImageServerEndpointsTests
     [IntegrationTest]
     [Endpoint("GET /rest/services/{id}/ImageServer/WMTS")]
     [Operation(Operations.GetTile)]
+    public async Task Wmts_GetTile_JpegFormat_RoutesJpegToTileHandler()
+    {
+        var store = CreateTileExportRasterStoreSubstitute();
+        // JPEG requests must reach the store with RasterFormat.JPEG; return a JPEG-typed
+        // tile only for that format so the response content type proves the routing.
+        store.GetImageTileAsync(
+                Arg.Any<int>(), Arg.Any<long>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>(), RasterFormat.JPEG, Arg.Any<CancellationToken>())
+            .Returns(new RasterResult
+            {
+                Data = [0xFF, 0xD8, 0xFF, 0xE0],
+                ContentType = "image/jpeg",
+                Width = 256,
+                Height = 256,
+                Srid = 3857,
+            });
+
+        var fixture = await CreateFixtureAsync(store);
+        try
+        {
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/WMTS?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER={TestLayerId}&STYLE=default&FORMAT=image/jpeg&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=2&TILEROW=1&TILECOL=1");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            response.Content.Headers.ContentType?.MediaType.Should().Be("image/jpeg");
+
+            // RESTful .jpg resource also routes to JPEG.
+            var restful = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/WMTS/{TestLayerId}/default/WebMercatorQuad/2/1/1.jpg");
+            restful.StatusCode.Should().Be(HttpStatusCode.OK);
+            restful.Content.Headers.ContentType?.MediaType.Should().Be("image/jpeg");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WMTS")]
+    [Operation(Operations.GetTile)]
     public async Task Wmts_GetTile_WithUnsupportedFormat_ReturnsXmlException()
     {
         var fixture = await CreateFixtureAsync(CreateTileExportRasterStoreSubstitute());
         try
         {
             var response = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/WMTS?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER={TestLayerId}&STYLE=default&FORMAT=image/jpeg&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=0&TILEROW=0&TILECOL=0");
+                $"/rest/services/{TestLayerId}/ImageServer/WMTS?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER={TestLayerId}&STYLE=default&FORMAT=image/gif&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=0&TILEROW=0&TILECOL=0");
 
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
             var content = await response.Content.ReadAsStringAsync();
             content.Should().Contain("InvalidParameterValue");
-            content.Should().Contain("Only FORMAT=image/png is supported.");
+            content.Should().Contain("FORMAT must be image/png or image/jpeg.");
         }
         finally
         {
