@@ -53,6 +53,7 @@
   - [Compliance](guides/secure/compliance.md)
 - Deploy & operate
   - [Docker Compose](guides/deploy/docker-compose.md)
+  - [Pilot onboarding runbook](guides/deploy/pilot-onboarding-runbook.md)
   - [Kubernetes](guides/deploy/kubernetes.md)
   - [Cloud deployments](guides/deploy/cloud-deployments.md)
   - [Local development](guides/deploy/local-development.md)
