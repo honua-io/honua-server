@@ -231,6 +231,62 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
         return Convert.ToInt32(await command.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture);
     }
 
+    [IntegrationTest]
+    public async Task ExportImageAsync_WithRenderingClip_MasksOutputToClipGeometry()
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreQueryTests));
+        try
+        {
+            await CreateRasterTableAsync(schemaName);
+            var rasterId = await InsertFloatRasterAsync(schemaName);
+            var store = new PostgresRasterStore(
+                new FixtureConnectionProvider(fixture.DataSource),
+                NullLogger<PostgresRasterStore>.Instance,
+                schemaName);
+
+            // Raster x[0,1] holds 0 (top) / 20 (bottom); x[1,2] holds 10 / 30.
+            // A renderingRule Clip to the left column must keep only {0, 20}.
+            var result = await store.ExportImageAsync(
+                    LayerId,
+                    rasterId,
+                    new RasterQuery
+                    {
+                        OutputFormat = RasterFormat.TIFF,
+                        RenderingClip = new RasterClipRegion
+                        {
+                            Geometry = CreateEnvelopeWkb(0, 0, 1, 2),
+                            Srid = 4326,
+                        },
+                    })
+                .ConfigureAwait(false);
+
+            result.Data.Should().NotBeEmpty();
+
+            var (count, min, max) = await SummarizeValidPixelsAsync(schemaName, result.Data);
+            count.Should().Be(2);
+            min.Should().Be(0);
+            max.Should().Be(20);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    private async Task<(long Count, double Min, double Max)> SummarizeValidPixelsAsync(string schemaName, byte[] exportedRaster)
+    {
+        await using var connection = await fixture.GetConnectionAsync(schemaName);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT (stats).count AS pixel_count, (stats).min AS min_value, (stats).max AS max_value
+            FROM (SELECT ST_SummaryStats(ST_FromGDALRaster(@data), 1, true) AS stats) summarized;
+            """;
+        command.Parameters.AddWithValue("data", exportedRaster);
+        await using var reader = await command.ExecuteReaderAsync();
+        await reader.ReadAsync();
+        return (reader.GetInt64(0), reader.GetDouble(1), reader.GetDouble(2));
+    }
+
     private async Task CreateRasterStatisticsTableAsync(string schemaName)
     {
         await using var connection = await fixture.GetConnectionAsync(schemaName);

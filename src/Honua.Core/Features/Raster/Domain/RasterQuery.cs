@@ -14,6 +14,13 @@ public readonly record struct RasterQuery
     public RasterClipRegion? ClipRegion { get; init; }
 
     /// <summary>
+    /// Optional additional clip region from a renderingRule <c>Clip</c> raster function.
+    /// Applied as a second mask after <see cref="ClipRegion"/> so a non-rectangular
+    /// area-of-interest can refine the output window. When <c>null</c> no extra clip applies.
+    /// </summary>
+    public RasterClipRegion? RenderingClip { get; init; }
+
+    /// <summary>
     /// Target spatial reference system for output.
     /// </summary>
     public int? OutputSrid { get; init; }

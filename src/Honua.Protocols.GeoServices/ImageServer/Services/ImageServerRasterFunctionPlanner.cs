@@ -45,6 +45,7 @@ internal readonly record struct RasterFunctionPlan(
 /// </param>
 /// <param name="Stretch">The resolved display stretch, when one applies.</param>
 /// <param name="Colormap">The resolved pseudocolour colormap, when one applies.</param>
+/// <param name="ClipRegion">The resolved clip area-of-interest, when a <c>Clip</c> applies.</param>
 /// <param name="Reason">Explanation surfaced to the client when not supported.</param>
 /// <param name="IsNotImplemented">
 /// When unsupported, distinguishes a recognized-but-unimplemented function/option
@@ -54,17 +55,21 @@ internal readonly record struct RenderingRuleMapping(
     bool Supported,
     RasterStretch? Stretch,
     RasterColormap? Colormap,
+    RasterClipRegion? ClipRegion,
     string? Reason,
     bool IsNotImplemented)
 {
-    public static RenderingRuleMapping Executable(RasterStretch? stretch, RasterColormap? colormap = null)
-        => new(true, stretch, colormap, null, false);
+    public static RenderingRuleMapping Executable(
+        RasterStretch? stretch,
+        RasterColormap? colormap = null,
+        RasterClipRegion? clipRegion = null)
+        => new(true, stretch, colormap, clipRegion, null, false);
 
     public static RenderingRuleMapping Invalid(string reason)
-        => new(false, null, null, reason, false);
+        => new(false, null, null, null, reason, false);
 
     public static RenderingRuleMapping NotImplemented(string reason)
-        => new(false, null, null, reason, true);
+        => new(false, null, null, null, reason, true);
 }
 
 /// <summary>
@@ -271,6 +276,7 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
 
         RasterStretch? stretch = null;
         RasterColormap? colormap = null;
+        RasterClipRegion? clipRegion = null;
         var current = document;
         for (var depth = 1; ; depth++)
         {
@@ -310,14 +316,18 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
             }
             else if (string.Equals(current.RasterFunction, "Clip", StringComparison.OrdinalIgnoreCase))
             {
-                return RenderingRuleMapping.NotImplemented(
-                    "Clip raster function is not supported inside renderingRule on this service. " +
-                    "Clip with the export bbox or geometry parameters instead.");
+                var mapping = MapClipArguments(arguments);
+                if (!mapping.Supported)
+                {
+                    return mapping;
+                }
+
+                clipRegion = mapping.ClipRegion ?? clipRegion;
             }
             else if (!string.Equals(current.RasterFunction, "Identity", StringComparison.OrdinalIgnoreCase))
             {
                 return RenderingRuleMapping.Invalid(
-                    $"Unsupported raster function '{current.RasterFunction}'. Supported functions: Identity, Stretch, Colormap.");
+                    $"Unsupported raster function '{current.RasterFunction}'. Supported functions: Identity, Stretch, Colormap, Clip.");
             }
 
             if (!TryGetNestedFunction(arguments, "Raster", out var nested))
@@ -328,7 +338,145 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
             current = nested;
         }
 
-        return RenderingRuleMapping.Executable(stretch, colormap);
+        return RenderingRuleMapping.Executable(stretch, colormap, clipRegion);
+    }
+
+    private static RenderingRuleMapping MapClipArguments(Dictionary<string, object?> arguments)
+    {
+        // Clip masks the raster to an area of interest. esriClippingType "outside" (keep
+        // outside the geometry) is the inverse of ST_Clip semantics and is not executed.
+        if (TryGetInt(arguments, "ClippingType", out var clippingType) && clippingType == 1)
+        {
+            return RenderingRuleMapping.NotImplemented(
+                "Clip ClippingType=1 (clip inside / keep outside) is not implemented on this service.");
+        }
+
+        JsonElement geometry;
+        if (arguments.TryGetValue("ClippingGeometry", out var rawGeometry) && rawGeometry is JsonElement geometryElement)
+        {
+            geometry = geometryElement;
+        }
+        else if (arguments.TryGetValue("Extent", out var rawExtent) && rawExtent is JsonElement extentElement)
+        {
+            geometry = extentElement;
+        }
+        else
+        {
+            return RenderingRuleMapping.Invalid("Clip raster function requires a ClippingGeometry or Extent argument.");
+        }
+
+        if (!TryBuildClipRegion(geometry, out var region))
+        {
+            return RenderingRuleMapping.Invalid("Clip geometry must be an Esri envelope or polygon.");
+        }
+
+        return RenderingRuleMapping.Executable(null, null, region);
+    }
+
+    private static bool TryBuildClipRegion(JsonElement geometry, out RasterClipRegion region)
+    {
+        region = default;
+        if (geometry.ValueKind != JsonValueKind.Object)
+        {
+            return false;
+        }
+
+        int? srid = null;
+        if (geometry.TryGetProperty("spatialReference", out var sr) && sr.ValueKind == JsonValueKind.Object)
+        {
+            if ((sr.TryGetProperty("latestWkid", out var latest) && latest.ValueKind == JsonValueKind.Number && latest.TryGetInt32(out var latestWkid))
+                || (sr.TryGetProperty("wkid", out var wkid) && wkid.ValueKind == JsonValueKind.Number && wkid.TryGetInt32(out latestWkid)))
+            {
+                srid = latestWkid;
+            }
+        }
+
+        NetTopologySuite.Geometries.Geometry? nts = null;
+        if (geometry.TryGetProperty("rings", out var rings) && rings.ValueKind == JsonValueKind.Array)
+        {
+            nts = TryBuildPolygon(rings);
+        }
+        else if (geometry.TryGetProperty("xmin", out _))
+        {
+            nts = TryBuildEnvelope(geometry);
+        }
+
+        if (nts is null)
+        {
+            return false;
+        }
+
+        region = new RasterClipRegion
+        {
+            Geometry = new NetTopologySuite.IO.WKBWriter().Write(nts),
+            Srid = srid,
+        };
+        return true;
+    }
+
+    private static NetTopologySuite.Geometries.Geometry? TryBuildEnvelope(JsonElement element)
+    {
+        if (!TryGetDoubleProperty(element, "xmin", out var xmin) ||
+            !TryGetDoubleProperty(element, "ymin", out var ymin) ||
+            !TryGetDoubleProperty(element, "xmax", out var xmax) ||
+            !TryGetDoubleProperty(element, "ymax", out var ymax))
+        {
+            return null;
+        }
+
+        return new NetTopologySuite.Geometries.GeometryFactory().ToGeometry(
+            new NetTopologySuite.Geometries.Envelope(xmin, xmax, ymin, ymax));
+    }
+
+    private static NetTopologySuite.Geometries.Polygon? TryBuildPolygon(JsonElement rings)
+    {
+        if (rings.GetArrayLength() == 0)
+        {
+            return null;
+        }
+
+        var factory = new NetTopologySuite.Geometries.GeometryFactory();
+        var linearRings = new List<NetTopologySuite.Geometries.LinearRing>();
+        foreach (var ring in rings.EnumerateArray())
+        {
+            if (ring.ValueKind != JsonValueKind.Array || ring.GetArrayLength() < 4)
+            {
+                return null;
+            }
+
+            var coordinates = new List<NetTopologySuite.Geometries.Coordinate>(ring.GetArrayLength());
+            foreach (var point in ring.EnumerateArray())
+            {
+                if (point.ValueKind != JsonValueKind.Array || point.GetArrayLength() < 2 ||
+                    !point[0].TryGetDouble(out var x) || !point[1].TryGetDouble(out var y))
+                {
+                    return null;
+                }
+
+                coordinates.Add(new NetTopologySuite.Geometries.Coordinate(x, y));
+            }
+
+            try
+            {
+                linearRings.Add(factory.CreateLinearRing(coordinates.ToArray()));
+            }
+            catch (ArgumentException)
+            {
+                return null; // not a closed/valid ring
+            }
+        }
+
+        // First ring is the exterior; the remainder are holes.
+        var holes = linearRings.Count > 1 ? linearRings.GetRange(1, linearRings.Count - 1).ToArray() : null;
+        return factory.CreatePolygon(linearRings[0], holes);
+    }
+
+    private static bool TryGetDoubleProperty(JsonElement element, string property, out double value)
+    {
+        value = 0;
+        return element.TryGetProperty(property, out var child) &&
+               child.ValueKind == JsonValueKind.Number &&
+               child.TryGetDouble(out value);
     }
 
     private static RenderingRuleMapping MapColormapArguments(Dictionary<string, object?> arguments)

@@ -204,10 +204,12 @@ internal sealed class ImageServerExportHandler
         string renderingRuleJson,
         out RasterStretch? stretch,
         out RasterColormap? colormap,
+        out RasterClipRegion? clipRegion,
         out ExportParameterParseError error)
     {
         stretch = null;
         colormap = null;
+        clipRegion = null;
         error = default;
 
         RasterFunctionDocument document;
@@ -233,6 +235,7 @@ internal sealed class ImageServerExportHandler
 
         stretch = mapping.Stretch;
         colormap = mapping.Colormap;
+        clipRegion = mapping.ClipRegion;
         return true;
     }
 
@@ -248,8 +251,9 @@ internal sealed class ImageServerExportHandler
         {
             RasterStretch? renderingStretch = null;
             RasterColormap? renderingColormap = null;
+            RasterClipRegion? renderingClip = null;
             if (!string.IsNullOrWhiteSpace(request.RenderingRule) &&
-                !TryMapRenderingRule(request.RenderingRule, out renderingStretch, out renderingColormap, out error))
+                !TryMapRenderingRule(request.RenderingRule, out renderingStretch, out renderingColormap, out renderingClip, out error))
             {
                 return false;
             }
@@ -327,6 +331,7 @@ internal sealed class ImageServerExportHandler
                 Bands = bands,
                 Stretch = renderingStretch,
                 Colormap = renderingColormap,
+                RenderingClip = renderingClip,
             };
 
             if (!string.IsNullOrEmpty(request.Bbox))

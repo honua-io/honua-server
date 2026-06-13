@@ -116,7 +116,7 @@ public sealed class ImageServerRenderingRuleMappingTests
     }
 
     [UnitTest]
-    public void MapRenderingRule_ClipFunction_IsNotImplemented()
+    public void MapRenderingRule_ClipWithEmptyRings_IsInvalid()
     {
         var document = Parse(
             """{"rasterFunction":"Clip","rasterFunctionArguments":{"ClippingGeometry":{"rings":[]}}}""");
@@ -124,8 +124,8 @@ public sealed class ImageServerRenderingRuleMappingTests
         var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
 
         mapping.Supported.Should().BeFalse();
-        mapping.IsNotImplemented.Should().BeTrue();
-        mapping.Reason.Should().Contain("Clip");
+        mapping.IsNotImplemented.Should().BeFalse();
+        mapping.Reason.Should().Contain("Clip geometry");
     }
 
     [UnitTest]
@@ -188,5 +188,54 @@ public sealed class ImageServerRenderingRuleMappingTests
 
         mapping.Supported.Should().BeFalse();
         mapping.IsNotImplemented.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void MapRenderingRule_ClipPolygon_ResolvesClipRegionWithSrid()
+    {
+        var document = Parse(
+            """{"rasterFunction":"Clip","rasterFunctionArguments":{"ClippingGeometry":{"rings":[[[0,0],[0,10],[10,10],[10,0],[0,0]]],"spatialReference":{"wkid":3857}}}}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeTrue();
+        mapping.ClipRegion.Should().NotBeNull();
+        mapping.ClipRegion!.Value.Srid.Should().Be(3857);
+        mapping.ClipRegion.Value.Geometry.Should().NotBeEmpty();
+    }
+
+    [UnitTest]
+    public void MapRenderingRule_ClipExtent_ResolvesClipRegion()
+    {
+        var document = Parse(
+            """{"rasterFunction":"Clip","rasterFunctionArguments":{"Extent":{"xmin":0,"ymin":0,"xmax":5,"ymax":5,"spatialReference":{"wkid":4326}}}}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeTrue();
+        mapping.ClipRegion.Should().NotBeNull();
+    }
+
+    [UnitTest]
+    public void MapRenderingRule_ClipInsideType_IsNotImplemented()
+    {
+        var document = Parse(
+            """{"rasterFunction":"Clip","rasterFunctionArguments":{"ClippingType":1,"Extent":{"xmin":0,"ymin":0,"xmax":5,"ymax":5}}}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeFalse();
+        mapping.IsNotImplemented.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void MapRenderingRule_ClipWithoutGeometry_IsInvalid()
+    {
+        var document = Parse("""{"rasterFunction":"Clip","rasterFunctionArguments":{}}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeFalse();
+        mapping.IsNotImplemented.Should().BeFalse();
     }
 }

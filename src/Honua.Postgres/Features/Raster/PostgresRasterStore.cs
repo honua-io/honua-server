@@ -208,6 +208,22 @@ internal sealed class PostgresRasterStore : IRasterStore
             extraParams.Add(("@clipGeom", clip.Geometry));
         }
 
+        // 1a. Second clip from a renderingRule Clip raster function (area-of-interest mask).
+        if (query.RenderingClip is { } renderClip)
+        {
+            if (renderClip.Srid is > 0)
+            {
+                rasterExpr = $"ST_Clip({rasterExpr}, ST_Transform(ST_GeomFromWKB(@renderClipGeom, @renderClipSrid), ST_SRID(raster)))";
+                extraParams.Add(("@renderClipSrid", renderClip.Srid.Value));
+            }
+            else
+            {
+                rasterExpr = $"ST_Clip({rasterExpr}, ST_GeomFromWKB(@renderClipGeom, ST_SRID(raster)))";
+            }
+
+            extraParams.Add(("@renderClipGeom", renderClip.Geometry));
+        }
+
         if (query.Bands is { Length: > 0 } bands)
         {
             if (bands.Any(static band => band <= 0))
@@ -762,6 +778,22 @@ internal sealed class PostgresRasterStore : IRasterStore
             }
 
             extraParams.Add(("@clipGeom", clip.Geometry));
+        }
+
+        // Second clip from a renderingRule Clip raster function (area-of-interest mask).
+        if (query.RenderingClip is { } renderClip)
+        {
+            if (renderClip.Srid is > 0)
+            {
+                sourceRasterExpr = $"ST_Clip({sourceRasterExpr}, ST_Transform(ST_GeomFromWKB(@renderClipGeom, @renderClipSrid), ST_SRID(raster)))";
+                extraParams.Add(("@renderClipSrid", renderClip.Srid.Value));
+            }
+            else
+            {
+                sourceRasterExpr = $"ST_Clip({sourceRasterExpr}, ST_GeomFromWKB(@renderClipGeom, ST_SRID(raster)))";
+            }
+
+            extraParams.Add(("@renderClipGeom", renderClip.Geometry));
         }
 
         // Apply display stretch (renderingRule Stretch) on the merged mosaic bands.

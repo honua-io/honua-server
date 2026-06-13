@@ -275,7 +275,48 @@ public class ImageServerEndpointsTests
     [IntegrationTest]
     [Operation(Operations.Export)]
     [Endpoint("GET /rest/services/{id}/ImageServer/exportImage")]
-    public async Task ExportImage_WithClipRenderingRule_ReturnsNotImplemented()
+    public async Task ExportImage_WithClipRenderingRule_AppliesClipRegion()
+    {
+        var store = CreateRasterStoreSubstitute();
+        RasterQuery? capturedQuery = null;
+        store.ExportImageAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                capturedQuery = call.ArgAt<RasterQuery>(2);
+                return new RasterResult
+                {
+                    Data = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],
+                    ContentType = "image/png",
+                    Width = 256,
+                    Height = 256,
+                    Srid = 4326,
+                };
+            });
+
+        var fixture = await CreateFixtureAsync(store);
+        try
+        {
+            var renderingRule = Uri.EscapeDataString(
+                """{"rasterFunction":"Clip","rasterFunctionArguments":{"ClippingGeometry":{"rings":[[[-10,-10],[-10,10],[10,10],[10,-10],[-10,-10]]],"spatialReference":{"wkid":4326}}}}""");
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/exportImage?f=image&bbox=-180,-90,180,90&renderingRule={renderingRule}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            capturedQuery.Should().NotBeNull();
+            capturedQuery!.Value.RenderingClip.Should().NotBeNull();
+            capturedQuery.Value.RenderingClip!.Value.Srid.Should().Be(4326);
+            capturedQuery.Value.RenderingClip.Value.Geometry.Should().NotBeEmpty();
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{id}/ImageServer/exportImage")]
+    public async Task ExportImage_WithInvalidClipGeometry_ReturnsBadRequest()
     {
         var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
         try
@@ -285,7 +326,7 @@ public class ImageServerEndpointsTests
             var response = await fixture.Client.GetAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/exportImage?f=image&bbox=-180,-90,180,90&renderingRule={renderingRule}");
 
-            response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
         finally
         {
