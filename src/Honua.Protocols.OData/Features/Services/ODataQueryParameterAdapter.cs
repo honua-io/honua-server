@@ -8,6 +8,7 @@ using Honua.Core.Features.Query;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
 using Honua.Infrastructure.Validation;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Protocols.OData.Services;
 
@@ -40,10 +41,12 @@ internal readonly record struct ODataQueryParameters
 /// </summary>
 internal sealed class ODataQueryParameterAdapter(
     IFilterExpressionService filterExpressionService,
+    IOptions<ODataOptions> odataOptions,
     ILogger<ODataQueryParameterAdapter> logger) : IQueryParameterAdapter<ODataQueryParameters>
 {
     private readonly IFilterExpressionService _filterExpressionService = filterExpressionService
         ?? throw new ArgumentNullException(nameof(filterExpressionService));
+    private readonly int _maxPageSize = (odataOptions ?? throw new ArgumentNullException(nameof(odataOptions))).Value.MaxPageSize;
     private readonly ILogger<ODataQueryParameterAdapter> _logger = logger
         ?? throw new ArgumentNullException(nameof(logger));
 
@@ -120,12 +123,23 @@ internal sealed class ODataQueryParameterAdapter(
                 metadata["compute"] = parameters.Compute;
             }
 
+            // Clamp the effective page size to the configured server-driven paging cap
+            // (OData:MaxPageSize). A very large $top on an ad hoc spatial query
+            // (geo.intersects + $select) otherwise forces Postgres into a pathological
+            // plan for the huge LIMIT and the request hangs past the budget (#1644).
+            // The streaming handler emits an @odata.nextLink carrying this clamped page
+            // size so clients page through the remaining rows. A null $top keeps null
+            // (the downstream paging layer applies its own default and clamp).
+            var effectiveLimit = parameters.Top.HasValue
+                ? Math.Min(parameters.Top.Value, _maxPageSize)
+                : (int?)null;
+
             var unifiedQuery = new UnifiedQuery
             {
                 Filter = filter,
                 OutFields = outFields,
                 Offset = parameters.Skip,
-                Limit = parameters.Top,
+                Limit = effectiveLimit,
                 OrderBy = orderBy,
                 Hints = QueryHints.Create(
                     preferStreaming: (parameters.Top ?? DefaultLimits.DefaultResultCount) > DefaultLimits.DefaultResultCount,

@@ -104,7 +104,7 @@ internal static class FeatureRegistrationExtensions
         services.AddOgcProcesses(configuration);
         services.AddWfs20(configuration);
         services.AddWcs20();
-        services.AddOData();
+        services.AddOData(configuration);
         services.AddGeometryService();
         services.AddHonuaGrpc(configuration);
         services.AddObservability(configuration);

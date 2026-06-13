@@ -26,6 +26,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 using Honua.TestKit.Helpers;
 
@@ -321,7 +322,7 @@ public sealed class ODataBatchOperationHandlerTests
             new FeatureMutationValidator(Substitute.For<IGeometryValidator>()),
             Substitute.For<ICrsRegistry>(),
             new EditLimits(),
-            new ODataValidationService(Substitute.For<ICommonQueryValidator>()),
+            new ODataValidationService(Substitute.For<ICommonQueryValidator>(), Options.Create(new ODataOptions())),
             new ETagService(),
             new ODataEditParameterAdapter(NullLogger<ODataEditParameterAdapter>.Instance),
             new EditProcessor(NullLogger<EditProcessor>.Instance),
