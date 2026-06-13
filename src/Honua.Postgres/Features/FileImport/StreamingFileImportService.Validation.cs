@@ -110,23 +110,14 @@ internal sealed partial class StreamingFileImportService
     /// Validates a geometry against configured limits.
     /// Returns null if valid, or an error message if invalid.
     /// </summary>
-    private string? ValidateGeometry(NtsGeometry geometry)
+    /// <remarks>
+    /// Vertex- and ring-count ceilings are enforced earlier by
+    /// <see cref="ImportGeometrySizeGuard"/> (which runs regardless of <c>ValidateGeometry</c> as a
+    /// hard memory guard, #1626), so this method only performs the coordinate-value validation.
+    /// </remarks>
+    private static string? ValidateGeometry(NtsGeometry geometry)
     {
-        // Count vertices
-        var vertexCount = CountVertices(geometry);
-        if (vertexCount > _limits.MaxVertices)
-        {
-            return $"Vertex count ({vertexCount:N0}) exceeds maximum allowed ({_limits.MaxVertices:N0})";
-        }
-
-        // Count rings for polygon geometries
-        var ringCount = CountRings(geometry);
-        if (ringCount > _limits.MaxRings)
-        {
-            return $"Ring count ({ringCount:N0}) exceeds maximum allowed ({_limits.MaxRings:N0})";
-        }
-
-        // Validate coordinate values
+        // Validate coordinate values (NaN/Infinity) without copying the coordinate array.
         if (!ValidateCoordinates(geometry))
         {
             return "Geometry contains invalid coordinates (NaN or Infinity)";
@@ -136,51 +127,47 @@ internal sealed partial class StreamingFileImportService
     }
 
     /// <summary>
-    /// Counts the total number of vertices in a geometry.
-    /// </summary>
-    private static int CountVertices(NtsGeometry geometry)
-    {
-        return geometry.NumPoints;
-    }
-
-    /// <summary>
-    /// Counts the total number of rings in polygon geometries.
-    /// </summary>
-    private static int CountRings(NtsGeometry geometry)
-    {
-        return geometry switch
-        {
-            Polygon polygon => 1 + polygon.NumInteriorRings,
-            MultiPolygon multiPolygon => multiPolygon.Geometries
-                .OfType<Polygon>()
-                .Sum(p => 1 + p.NumInteriorRings),
-            GeometryCollection collection => collection.Geometries
-                .Sum(CountRings),
-            _ => 0
-        };
-    }
-
-    /// <summary>
-    /// Validates that all coordinates in the geometry are finite numbers.
+    /// Validates that all coordinates in the geometry are finite numbers, without materializing the
+    /// full coordinate array (which for an island-scale multipolygon would be a large allocation).
     /// </summary>
     private static bool ValidateCoordinates(NtsGeometry geometry)
     {
-        foreach (var coord in geometry.Coordinates)
+        var filter = new FiniteCoordinateFilter();
+        geometry.Apply(filter);
+        return filter.AllFinite;
+    }
+
+    /// <summary>
+    /// Coordinate-sequence filter that checks every ordinate is finite without copying coordinates.
+    /// </summary>
+    private sealed class FiniteCoordinateFilter : ICoordinateSequenceFilter
+    {
+        public bool AllFinite { get; private set; } = true;
+
+        public bool Done => !AllFinite;
+
+        public bool GeometryChanged => false;
+
+        public void Filter(CoordinateSequence seq, int i)
         {
-            if (double.IsNaN(coord.X) || double.IsInfinity(coord.X) ||
-                double.IsNaN(coord.Y) || double.IsInfinity(coord.Y))
+            var x = seq.GetX(i);
+            var y = seq.GetY(i);
+            if (double.IsNaN(x) || double.IsInfinity(x)
+                || double.IsNaN(y) || double.IsInfinity(y))
             {
-                return false;
+                AllFinite = false;
+                return;
             }
 
-            // Check Z if present
-            if (!double.IsNaN(coord.Z) && double.IsInfinity(coord.Z))
+            if (seq.HasZ)
             {
-                return false;
+                var z = seq.GetZ(i);
+                if (!double.IsNaN(z) && double.IsInfinity(z))
+                {
+                    AllFinite = false;
+                }
             }
         }
-
-        return true;
     }
 
     private static void ValidateTableName(string tableName)
