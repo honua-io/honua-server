@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env bash
+#!/usr/bin/env bash
 # Validate CI shard routing without starting runtime test runners.
 
 set -euo pipefail

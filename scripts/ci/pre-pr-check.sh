@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env bash
+#!/usr/bin/env bash
 set -euo pipefail
 
 # Pre-PR validation with the SAME smart filters CI uses, so a local run only

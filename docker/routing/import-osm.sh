@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env bash
+#!/usr/bin/env bash
 #
 # import-osm.sh — import a real OpenStreetMap extract into the Honua pgRouting
 # development database using osm2pgrouting (issue #1266).

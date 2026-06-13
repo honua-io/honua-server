@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env bash
+#!/usr/bin/env bash
 # Compute the server-tests shard subset to execute on a pull request based on
 # the changed files in the diff. Owned by ADR-0037. The shard map and watched
 # prefix lists are sourced from .github/ci-shards.json.

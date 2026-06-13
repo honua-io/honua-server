@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env bash
+#!/usr/bin/env bash
 # Setup script to install git hooks for pre-PR validation enforcement
 
 set -e

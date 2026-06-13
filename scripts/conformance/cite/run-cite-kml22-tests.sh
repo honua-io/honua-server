@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 
 # KML 2.2 CITE conformance testing script for Honua Server.
 # Validates KML document output against the OGC KML 2.2 specification.

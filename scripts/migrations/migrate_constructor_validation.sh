@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 
 # Constructor Validation Migration Script (Bash)
 # Automatically refactors constructor null validation patterns to use the new validation framework

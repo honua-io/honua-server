@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env bash
+#!/usr/bin/env bash
 # Runs the Cesium browser interop suite against a running honua service and
 # copies emitted .cert.json envelopes into /output.
 set -euo pipefail

@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 
 # WMS 1.3 CITE conformance testing script for Honua Server.
 

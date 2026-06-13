@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env bash
+#!/usr/bin/env bash
 # Runs the ArcGIS Pro REST stub against a running honua service.
 set -euo pipefail
 
