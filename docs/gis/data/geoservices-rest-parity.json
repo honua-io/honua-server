@@ -1327,7 +1327,7 @@
               "GET /rest/services/{id}/ImageServer/query",
               "POST /rest/services/{id}/ImageServer/query"
             ],
-            "notes": "Returns Esri-compatible raster catalog features (OBJECTID, footprint polygon, MinPS/MaxPS/LowPS/HighPS/CenterX/CenterY/ZOrder/Shape_Length/Shape_Area/BandCount/PixelType/AcquisitionDate/CreatedAt). Supports where (parsed via the GeoServices SQL filter parser, applied in-memory; max 2000 chars), objectIds, outSR (envelope-only stamping; geometry is NOT reprojected), single-instant time filtering to the newest layer-wide effective acquisition batch, resultOffset, resultRecordCount (default 100, capped at 1000), and the returnGeometry/returnIdsOnly/returnCountOnly/returnExtentOnly shaping flags. Spatial WHERE pushdown, outFields projection, orderByFields, pixelSize, and arbitrary geometry/spatialRel filters are not yet honoured."
+            "notes": "Returns Esri-compatible raster catalog features (OBJECTID, footprint polygon, MinPS/MaxPS/LowPS/HighPS/CenterX/CenterY/ZOrder/Shape_Length/Shape_Area/BandCount/PixelType/AcquisitionDate/CreatedAt). Supports where (parsed via the GeoServices SQL filter parser, applied in-memory; max 2000 chars), objectIds, outFields projection, orderByFields, an envelope-intersects spatial filter, outSR (footprint rings and the aggregate extent are reprojected when a transform is available), single-instant time filtering to the newest layer-wide effective acquisition batch, resultOffset, resultRecordCount (default 100, capped at 1000), and the returnGeometry/returnIdsOnly/returnCountOnly/returnExtentOnly shaping flags. Spatial WHERE pushdown to the database, pixelSize, and non-envelope geometry/spatialRel predicates are not yet honoured."
           },
           {
             "name": "Find",
@@ -1829,7 +1829,7 @@
         "Metadata, export, identify, tile, and statistics operate on the selected raster mosaic rather than a single primary raster.",
         "Default exportImage responses return JSON with a temporary file URL; f=image returns rendered bytes inline.",
         "Temporal mosaic uses newest-batch semantics: a time filter selects rasters from the single most-recent layer-wide effective acquisition batch (AcquisitionDate, falling back to CreatedAt) at or before the requested instant before applying request geometry, so mixed-date scenes can leave spatial coverage gaps until per-pixel temporal mosaicking is implemented.",
-        "The query catalog reader applies WHERE/objectIds filters in-memory and does not reproject footprint geometry to outSR.",
+        "The query catalog reader applies WHERE/objectIds filters in-memory and reprojects footprint geometry to outSR when a coordinate transform is available.",
         "computeStatisticsHistograms always analyses the full selected raster or mosaic — geometry clipping and renderingRule are not yet honoured.",
         "exportImage executes the Stretch raster function from renderingRule (MinMax/StandardDeviation/PercentClip, with optional per-band Statistics); Clip-in-rule, colormap, and other stretch types are not yet executed and identify/legend still ignore renderingRule.",
         "Legend swatches use a fixed 5-class equal-interval ramp; per-layer renderer persistence and renderingRule overrides are not yet wired up.",
