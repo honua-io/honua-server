@@ -47,6 +47,7 @@ This section is for people **building or extending** Honua (core contributors, a
 - [CI Config Conventions](../ci/config-conventions.md) — env vars, cache keys, artifact naming, and composite actions
 - [CI Quality Gates](CI_QUALITY_GATES.md) — automated quality enforcement
 - [Release Checklist](RELEASE_CHECKLIST.md) — required compatibility/client/caveat updates per release
+- [Alpha/Beta Pilot Readiness Checklist](pilot-readiness-checklist.md) — validation gates, evidence packet, and go/no-go rules for quality-sweep pilot readiness
 - [LLM Architecture Review](development/llm-review-setup.md) — automated PR review
 
 ## Roadmaps

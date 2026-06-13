@@ -77,6 +77,7 @@ Cross-repo coordination between Honua server and the first-party SDKs (`honua-sd
 
 - **Public-interface quality model** — [`contributor/public-interface-quality-model.md`](../contributor/public-interface-quality-model.md). The canonical proof ledger (`public-interface-proof.json`) and the five proof classes (route coverage, operation coverage, standards conformance, tool interoperability, real-client certification).
 - **MCP certification** — [`contributor/mcp-certification.md`](../contributor/mcp-certification.md). Cross-repo MCP certification testing, seed data, and CI jobs.
+- **Alpha/beta pilot readiness** — [`contributor/pilot-readiness-checklist.md`](../contributor/pilot-readiness-checklist.md). Quality-sweep pilot validation gates, evidence packet, owner commands, and go/no-go criteria.
 
 ## Operator-side compatibility
 
