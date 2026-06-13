@@ -1179,6 +1179,7 @@
         "exportImage",
         "identify",
         "tile with cloud-storage cache",
+        "WMTS 1.0 GetCapabilities/GetTile",
         "query (raster catalog features)",
         "find",
         "measure (Basic mensuration)",
@@ -1208,7 +1209,7 @@
         "multidimensional cube ingestion",
         "WCS range subset/band selection/scaling/temporal extensions",
         "full WCS CRS extension advertisement beyond native coverage CRS values",
-        "WMTS",
+        "WMTS GetFeatureInfo, dimensions, non-WebMercator matrix sets, and alternate tile formats",
         "richer image child resources"
       ],
       "evidence": {
@@ -1218,6 +1219,7 @@
           "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerExportHandler.cs",
           "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerIdentifyHandler.cs",
           "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerTileHandler.cs",
+          "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerWmtsHandler.cs",
           "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerCatalogQueryHandler.cs",
           "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerStatisticsHistogramsHandler.cs",
           "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerCoordinateMetadataHandler.cs",
@@ -1276,6 +1278,20 @@
           }
         ],
         "partial": [
+          {
+            "name": "WMTS",
+            "esriPath": "/rest/services/{id}/ImageServer/WMTS",
+            "methods": [
+              "GET"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer/WMTS",
+              "GET /rest/services/{id}/ImageServer/WMTS/{**restPath}",
+              "GET /rest/services/{serviceId}/ImageServer/WMTS",
+              "GET /rest/services/{serviceId}/ImageServer/WMTS/{**restPath}"
+            ],
+            "notes": "OGC WMTS 1.0 GetCapabilities/GetTile facade over the ImageServer tile/cloud-cache pipeline. Supports KVP and RESTful resources, WebMercatorQuad matrices, STYLE=default, and image/png tiles. GetFeatureInfo, dimensions, non-WebMercator tile matrix sets, and alternate tile formats are deferred."
+          },
           {
             "name": "Export Image",
             "esriPath": "/rest/services/{id}/ImageServer/exportImage",
@@ -1608,8 +1624,7 @@
           "imageSupportData",
           "kml",
           "{rasterId}/*",
-          "rasterFile",
-          "WMTS"
+          "rasterFile"
         ]
       },
       "parameterCoverage": {
@@ -1826,7 +1841,7 @@
         "ImageServer measure supports Basic map-space mensuration only; sensor/DEM-backed height and 3D mensuration are not implemented.",
         "ImageServer tile GET storage is a loose-object cache, not an Esri compact cache, tile package, or advertised cacheInfo tile cache.",
         "ImageServer exportTiles writes ZIP archives to configured cloud file storage; Esri TPK/TPKX/compact cache packages and async job resources are not implemented.",
-        "Honua does not currently expose ImageServer WMTS."
+        "ImageServer WMTS supports GetCapabilities/GetTile for WebMercatorQuad image/png tiles only; GetFeatureInfo, dimensions, non-WebMercator matrix sets, and alternate tile formats are deferred."
       ]
     },
     {

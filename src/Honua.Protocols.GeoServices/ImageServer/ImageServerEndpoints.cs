@@ -129,6 +129,27 @@ internal static class ImageServerEndpoints
             .Produces(204)
             .Produces(404);
 
+        group.MapGet("/WMTS", GetWmts)
+            .WithDisplayName("ImageServer WMTS")
+            .WithName("ImageServerWmts")
+            .WithSummary("OGC WMTS endpoint for ImageServer tiles")
+            .WithDescription("Provides bounded OGC WMTS GetCapabilities and GetTile operations over ImageServer tiles")
+            .Produces(200, contentType: "application/xml")
+            .Produces(200, contentType: "image/png")
+            .Produces(400, contentType: "application/xml")
+            .Produces(404)
+            .CacheOutput(policy => policy.NoCache());
+        group.MapGet("/WMTS/{**restPath}", GetWmtsRestful)
+            .WithDisplayName("ImageServer WMTS RESTful Resource")
+            .WithName("ImageServerWmtsRestful")
+            .WithSummary("OGC WMTS RESTful endpoint for ImageServer tiles")
+            .WithDescription("Provides RESTful OGC WMTS capabilities and tile resources over ImageServer tiles")
+            .Produces(200, contentType: "application/xml")
+            .Produces(200, contentType: "image/png")
+            .Produces(400, contentType: "application/xml")
+            .Produces(404)
+            .CacheOutput(policy => policy.NoCache());
+
         // Catalog query endpoint - exposes raster catalog as Esri features
         group.MapGet("/query", QueryCatalogGet)
             .WithDisplayName("Query Image Catalog (GET)")
@@ -585,6 +606,25 @@ internal static class ImageServerEndpoints
             .Produces(200, contentType: "image/tiff")
             .Produces(204)
             .Produces(404);
+
+        serviceGroup.MapGet("/WMTS", GetWmtsByService)
+            .WithDisplayName("ImageServer WMTS by Service")
+            .WithName("ImageServerWmtsByService")
+            .WithSummary("OGC WMTS endpoint for ImageServer tiles")
+            .Produces(200, contentType: "application/xml")
+            .Produces(200, contentType: "image/png")
+            .Produces(400, contentType: "application/xml")
+            .Produces(404)
+            .CacheOutput(policy => policy.NoCache());
+        serviceGroup.MapGet("/WMTS/{**restPath}", GetWmtsRestfulByService)
+            .WithDisplayName("ImageServer WMTS RESTful Resource by Service")
+            .WithName("ImageServerWmtsRestfulByService")
+            .WithSummary("OGC WMTS RESTful endpoint for ImageServer tiles")
+            .Produces(200, contentType: "application/xml")
+            .Produces(200, contentType: "image/png")
+            .Produces(400, contentType: "application/xml")
+            .Produces(404)
+            .CacheOutput(policy => policy.NoCache());
 
         serviceGroup.MapGet("/query", QueryCatalogGetByService)
             .WithDisplayName("Query Image Catalog by Service (GET)")
@@ -2425,6 +2465,69 @@ internal static class ImageServerEndpoints
     {
         var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
         return resolution.ErrorResult ?? await GetImageTile(resolution.LayerId, level, row, col, context, handler, format, cancellationToken);
+    }
+
+    private static async Task<IResult> GetWmts(
+        int id,
+        HttpContext context,
+        ImageServerWmtsHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        if (layerError is not null)
+        {
+            return layerError;
+        }
+
+        return await handler.HandleAsync(
+            context,
+            id,
+            id.ToString(CultureInfo.InvariantCulture),
+            cancellationToken: cancellationToken);
+    }
+
+    private static async Task<IResult> GetWmtsRestful(
+        int id,
+        string restPath,
+        HttpContext context,
+        ImageServerWmtsHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        if (layerError is not null)
+        {
+            return layerError;
+        }
+
+        return await handler.HandleAsync(
+            context,
+            id,
+            id.ToString(CultureInfo.InvariantCulture),
+            restPath,
+            cancellationToken);
+    }
+
+    private static async Task<IResult> GetWmtsByService(
+        string serviceId,
+        HttpContext context,
+        ImageServerWmtsHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        return resolution.ErrorResult ??
+            await handler.HandleAsync(context, resolution.LayerId, serviceId, cancellationToken: cancellationToken);
+    }
+
+    private static async Task<IResult> GetWmtsRestfulByService(
+        string serviceId,
+        string restPath,
+        HttpContext context,
+        ImageServerWmtsHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        return resolution.ErrorResult ??
+            await handler.HandleAsync(context, resolution.LayerId, serviceId, restPath, cancellationToken);
     }
 
     // Read-only raster metadata child resources. Each GET validates the f format and the

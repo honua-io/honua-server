@@ -163,6 +163,95 @@ public class ImageServerEndpointsTests
     }
 
     [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WMTS")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/WMTS/{**restPath}")]
+    [Operation(Operations.Metadata)]
+    public async Task Wmts_GetCapabilities_ReturnsImageServerCapabilities()
+    {
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/WMTS?SERVICE=WMTS&REQUEST=GetCapabilities&VERSION=1.0.0");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
+            var content = await response.Content.ReadAsStringAsync();
+            content.Should().Contain("<ows:ServiceType>OGC WMTS</ows:ServiceType>");
+            content.Should().Contain("<ows:Identifier>0</ows:Identifier>");
+            content.Should().Contain("<ows:Identifier>WebMercatorQuad</ows:Identifier>");
+            content.Should().Contain("ResourceURL");
+            content.Should().NotContain("GetFeatureInfo");
+
+            var serviceId = WebAppFixture.TestServiceId;
+            var restfulResponse = await fixture.Client.GetAsync(
+                $"/rest/services/{serviceId}/ImageServer/WMTS/1.0.0/WMTSCapabilities.xml");
+
+            restfulResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            var restfulContent = await restfulResponse.Content.ReadAsStringAsync();
+            restfulContent.Should().Contain($"<ows:Identifier>{serviceId}</ows:Identifier>");
+            restfulContent.Should().Contain("/ImageServer/WMTS/{Layer}/{Style}/{TileMatrixSet}");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/WMTS")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WMTS/{**restPath}")]
+    [Operation(Operations.GetTile)]
+    public async Task Wmts_GetTile_KvpAndRestful_ReturnPngTiles()
+    {
+        var fixture = await CreateFixtureAsync(CreateTileExportRasterStoreSubstitute());
+        try
+        {
+            var serviceId = WebAppFixture.TestServiceId;
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{serviceId}/ImageServer/WMTS?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER={serviceId}&STYLE=default&FORMAT=image/png&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=0&TILEROW=0&TILECOL=0");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+            var bytes = await response.Content.ReadAsByteArrayAsync();
+            bytes.Should().StartWith([0x89, 0x50, 0x4E, 0x47]);
+
+            var restfulResponse = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/WMTS/{TestLayerId}/default/WebMercatorQuad/0/0/0.png");
+
+            restfulResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            restfulResponse.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WMTS")]
+    [Operation(Operations.GetTile)]
+    public async Task Wmts_GetTile_WithUnsupportedFormat_ReturnsXmlException()
+    {
+        var fixture = await CreateFixtureAsync(CreateTileExportRasterStoreSubstitute());
+        try
+        {
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/WMTS?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER={TestLayerId}&STYLE=default&FORMAT=image/jpeg&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=0&TILEROW=0&TILECOL=0");
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
+            var content = await response.Content.ReadAsStringAsync();
+            content.Should().Contain("InvalidParameterValue");
+            content.Should().Contain("Only FORMAT=image/png is supported.");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /rest/services/{id}/ImageServer/query")]
     [Operation(Operations.Query)]
     public async Task QueryCatalog_Get_ReturnsFeatureCollection()
