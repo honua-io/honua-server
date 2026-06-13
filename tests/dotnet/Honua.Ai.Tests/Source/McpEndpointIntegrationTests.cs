@@ -602,6 +602,41 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("POST /mcp")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/list")]
+    public async Task ToolsList_DefaultComposition_AdvertisesGeocodeAndRouteTools()
+    {
+        var response = await PostRpcAsync("""
+            {"jsonrpc":"2.0","id":"tools-1","method":"tools/list"}
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadJsonAsync(response);
+        var root = document.RootElement;
+
+        var tools = root.GetProperty("result").GetProperty("tools");
+        var names = tools.EnumerateArray()
+            .Select(t => t.GetProperty("name").GetString())
+            .ToArray();
+
+        names.Should().Contain("honua_geocode_address");
+        names.Should().Contain("honua_solve_route");
+
+        var geocode = tools.EnumerateArray().Single(t =>
+            t.GetProperty("name").GetString() == "honua_geocode_address");
+        geocode.GetProperty("inputSchema").GetProperty("required").EnumerateArray()
+            .Select(item => item.GetString())
+            .Should().Contain("address");
+
+        var route = tools.EnumerateArray().Single(t =>
+            t.GetProperty("name").GetString() == "honua_solve_route");
+        route.GetProperty("inputSchema").GetProperty("required").EnumerateArray()
+            .Select(item => item.GetString())
+            .Should().Contain("stops");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
     [InterfaceOperation(TestProtocols.Mcp, "resources/list")]
     public async Task ResourcesList_ExcludesParameterizedUris()
     {
