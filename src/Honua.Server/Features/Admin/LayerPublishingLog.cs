@@ -93,4 +93,22 @@ internal static partial class LayerPublishingLog
 
     [LoggerMessage(EventId = 9649, Level = LogLevel.Error, Message = "Layer extent refresh failed due to invalid operation")]
     public static partial void LayerExtentRefreshInvalidOperation(ILogger logger, Exception exception);
+
+    [LoggerMessage(EventId = 9650, Level = LogLevel.Error, Message = "Layer feature refresh migration failed: {Message}")]
+    public static partial void LayerFeatureRefreshMigrationFailed(ILogger logger, string? message, Exception? exception);
+
+    [LoggerMessage(EventId = 9651, Level = LogLevel.Warning, Message = "Layer feature refresh not found")]
+    public static partial void LayerFeatureRefreshNotFound(ILogger logger, Exception exception);
+
+    [LoggerMessage(EventId = 9652, Level = LogLevel.Warning, Message = "Layer feature refresh failed")]
+    public static partial void LayerFeatureRefreshFailed(ILogger logger, Exception exception);
+
+    [LoggerMessage(EventId = 9653, Level = LogLevel.Warning, Message = "Layer feature refresh invalid request")]
+    public static partial void LayerFeatureRefreshInvalidRequest(ILogger logger, Exception exception);
+
+    [LoggerMessage(EventId = 9654, Level = LogLevel.Warning, Message = "Layer feature refresh connection not found")]
+    public static partial void LayerFeatureRefreshConnectionNotFound(ILogger logger, Exception exception);
+
+    [LoggerMessage(EventId = 9655, Level = LogLevel.Error, Message = "Layer feature refresh failed due to invalid operation")]
+    public static partial void LayerFeatureRefreshInvalidOperation(ILogger logger, Exception exception);
 }
