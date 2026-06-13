@@ -1184,6 +1184,7 @@
         "find",
         "measure (Basic mensuration)",
         "computeStatisticsHistograms",
+        "AOI-clipped computeStatisticsHistograms (envelope-scoped)",
         "computeHistograms",
         "getSamples",
         "queryBoundary",
@@ -1204,7 +1205,6 @@
         "catalog mutation",
         "camera/orientation-ranked ImageServer find",
         "datumTransformation/image coordinate systems for ImageServer project",
-        "AOI clipping for computeStatisticsHistograms",
         "spatial WHERE pushdown for query",
         "renderingRule honoured by identify/legend (exportImage executes Stretch)",
         "renderingRule colormap and Clip raster-function executors (exportImage executes Stretch only)",
@@ -1370,7 +1370,7 @@
               "GET /rest/services/{id}/ImageServer/computeStatisticsHistograms",
               "POST /rest/services/{id}/ImageServer/computeStatisticsHistograms"
             ],
-            "notes": "Returns per-band statistics ({min,max,mean,standardDeviation,count}) and per-band histograms ({size,min,max,counts[]}). Supports rasterIds (CSV/JSON array of catalog object IDs; defaults to the selected layer mosaic), the Honua-extension bandIds selector (1-based), mosaicRule, single-instant time filtering to the newest layer-wide effective acquisition batch, and histogramParameters.size (default 256, capped at 1024). The parallel statistics[] and histograms[] arrays are aligned positionally: index i on both sides describes the same band. Multiple rasterIds are appended in request order. A band is only dropped from both arrays when neither the statistics nor the histograms result contained an entry for it; when a band is present on only one side, the missing side is zero-filled (an all-zero BandStatistic, or a BandHistogram with empty counts[]) so the parallel arrays stay index-aligned. AOI clipping (geometry/geometryType/renderingRule) and pixelSize are accepted as request fields but not yet applied — analysis always covers the full selected raster or mosaic."
+            "notes": "Returns per-band statistics ({min,max,mean,standardDeviation,count}) and per-band histograms ({size,min,max,counts[]}). Supports rasterIds (CSV/JSON array of catalog object IDs; defaults to the selected layer mosaic), the Honua-extension bandIds selector (1-based), mosaicRule, single-instant time filtering to the newest layer-wide effective acquisition batch, and histogramParameters.size (default 256, capped at 1024). The parallel statistics[] and histograms[] arrays are aligned positionally: index i on both sides describes the same band. Multiple rasterIds are appended in request order. A band is only dropped from both arrays when neither the statistics nor the histograms result contained an entry for it; when a band is present on only one side, the missing side is zero-filled (an all-zero BandStatistic, or a BandHistogram with empty counts[]) so the parallel arrays stay index-aligned. An AOI geometry/geometryType clips the analysis to that area (envelope-scoped) for both single rasters and mosaics; without a geometry the full selected raster or mosaic is analysed. renderingRule and pixelSize are accepted but not yet applied."
           },
           {
             "name": "Compute Histograms",
@@ -1383,7 +1383,7 @@
               "GET /rest/services/{id}/ImageServer/computeHistograms",
               "POST /rest/services/{id}/ImageServer/computeHistograms"
             ],
-            "notes": "Returns per-band histograms without the parallel statistics array. Supports the same rasterIds, bandIds, mosaicRule, time, and histogramParameters.size selection path as computeStatisticsHistograms; AOI clipping and renderingRule execution remain deferred."
+            "notes": "Returns per-band histograms without the parallel statistics array. Supports the same rasterIds, bandIds, mosaicRule, time, and histogramParameters.size selection path as computeStatisticsHistograms; An AOI geometry clips the analysis to that area (envelope-scoped); renderingRule execution remains deferred."
           },
           {
             "name": "Get Samples",

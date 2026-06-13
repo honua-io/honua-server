@@ -16,8 +16,9 @@ using Microsoft.Extensions.Primitives;
 namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 
 /// <summary>
-/// Internal whole-raster statistics/histogram helper retained for non-public use until
-/// geometry-scoped <c>computeStatisticsHistograms</c> support is implemented.
+/// Computes ImageServer <c>computeStatisticsHistograms</c>/<c>computeHistograms</c>.
+/// Analyses the whole selected raster(s) by default, or only the pixels inside a
+/// supplied AOI <c>geometry</c> envelope when one is provided.
 /// </summary>
 internal sealed class ImageServerStatisticsHistogramsHandler
 {
@@ -188,19 +189,32 @@ internal sealed class ImageServerStatisticsHistogramsHandler
             var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, GetString(values, "mosaicRule"));
             var statisticsList = new List<BandStatistic>();
             var histogramsList = new List<BandHistogram>();
+
+            // When an AOI geometry is supplied, analyse only the pixels inside it by
+            // clipping the raster/mosaic to the geometry envelope; otherwise analyse the
+            // whole selected raster(s).
+            var hasAoi = selectionGeometry is not null;
             if ((rasterIds is null or { Length: 0 }) && targetRasters.Count > 1)
             {
                 var mosaicIds = targetRasters.Select(r => r.Id).ToArray();
-                var statistics = await _rasterStore.GetMosaicStatisticsAsync(layerId, mosaicIds, mergeStrategy, bands, cancellationToken);
-                var histograms = await _rasterStore.GetMosaicHistogramsAsync(layerId, mosaicIds, mergeStrategy, bands, binCount, cancellationToken);
+                var statistics = hasAoi
+                    ? await _rasterStore.GetClippedMosaicStatisticsAsync(layerId, mosaicIds, mergeStrategy, selectionGeometry!, selectionSrid, bands, cancellationToken)
+                    : await _rasterStore.GetMosaicStatisticsAsync(layerId, mosaicIds, mergeStrategy, bands, cancellationToken);
+                var histograms = hasAoi
+                    ? await _rasterStore.GetClippedMosaicHistogramsAsync(layerId, mosaicIds, mergeStrategy, selectionGeometry!, selectionSrid, bands, binCount, cancellationToken)
+                    : await _rasterStore.GetMosaicHistogramsAsync(layerId, mosaicIds, mergeStrategy, bands, binCount, cancellationToken);
                 AppendAlignedBandResults(statisticsList, histogramsList, bands, statistics, histograms);
             }
             else
             {
                 foreach (var raster in targetRasters)
                 {
-                    var statistics = await _rasterStore.GetStatisticsAsync(layerId, raster.Id, bands, cancellationToken);
-                    var histograms = await _rasterStore.GetHistogramsAsync(layerId, raster.Id, bands, binCount, cancellationToken);
+                    var statistics = hasAoi
+                        ? await _rasterStore.GetClippedStatisticsAsync(layerId, raster.Id, selectionGeometry!, selectionSrid, bands, cancellationToken)
+                        : await _rasterStore.GetStatisticsAsync(layerId, raster.Id, bands, cancellationToken);
+                    var histograms = hasAoi
+                        ? await _rasterStore.GetClippedHistogramsAsync(layerId, raster.Id, selectionGeometry!, selectionSrid, bands, binCount, cancellationToken)
+                        : await _rasterStore.GetHistogramsAsync(layerId, raster.Id, bands, binCount, cancellationToken);
 
                     // The store implementations do not guarantee a shared band order:
                     // GetStatisticsAsync streams cached rows in DB ascending order while

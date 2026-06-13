@@ -1781,6 +1781,342 @@ internal sealed class PostgresRasterStore : IRasterStore
         return results.ToArray();
     }
 
+    // ----- AOI-clipped statistics / histograms --------------------------------
+    // ImageServer computeStatisticsHistograms with a geometry parameter analyses
+    // only the pixels inside the AOI. These always compute fresh (the cached
+    // whole-raster statistics never apply to a clip) and reuse the same ST_Clip
+    // primitive proven by ComputeZonalStatisticsAsync.
+
+    /// <inheritdoc />
+    public async Task<RasterStatistics[]> GetClippedStatisticsAsync(
+        int layerId,
+        long rasterId,
+        byte[] clipGeometry,
+        int? clipSrid,
+        int[]? bands = null,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+        var rastCte = $"""
+            SELECT {BuildClipExpression("raster", clipSrid)} AS rast
+            FROM {_rasterDataTable}
+            WHERE layer_id = @layerId AND id = @rasterId
+            """;
+        return await ComputeClippedStatisticsAsync(
+            connection,
+            rastCte,
+            bands,
+            command =>
+            {
+                AddParameter(command, "@layerId", layerId);
+                AddParameter(command, "@rasterId", rasterId);
+                AddClipParameters(command, clipGeometry, clipSrid, bands);
+            },
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<RasterStatistics[]> GetClippedMosaicStatisticsAsync(
+        int layerId,
+        long[] rasterIds,
+        RasterMergeStrategy mergeStrategy,
+        byte[] clipGeometry,
+        int? clipSrid,
+        int[]? bands = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (rasterIds.Length == 0)
+        {
+            return Array.Empty<RasterStatistics>();
+        }
+
+        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+        var rastCte = $"""
+            WITH requested AS (
+                SELECT unnest(@rasterIds) AS raster_id
+            ),
+            source AS (
+                SELECT {BuildClipExpression("raster", clipSrid)} AS rast
+                FROM {_rasterDataTable}
+                WHERE layer_id = @layerId AND id IN (SELECT raster_id FROM requested)
+            )
+            SELECT {CreateMosaicAggregateExpression(mergeStrategy)} AS rast
+            FROM source
+            WHERE rast IS NOT NULL
+            """;
+        return await ComputeClippedStatisticsAsync(
+            connection,
+            rastCte,
+            bands,
+            command =>
+            {
+                AddParameter(command, "@layerId", layerId);
+                AddParameter(command, "@rasterIds", rasterIds);
+                AddClipParameters(command, clipGeometry, clipSrid, bands);
+            },
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<RasterHistogram[]> GetClippedHistogramsAsync(
+        int layerId,
+        long rasterId,
+        byte[] clipGeometry,
+        int? clipSrid,
+        int[]? bands = null,
+        int binCount = 256,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+        var rastCte = $"""
+            SELECT {BuildClipExpression("raster", clipSrid)} AS rast
+            FROM {_rasterDataTable}
+            WHERE layer_id = @layerId AND id = @rasterId
+            """;
+        return await ComputeClippedHistogramsAsync(
+            connection,
+            rastCte,
+            bands,
+            binCount,
+            command =>
+            {
+                AddParameter(command, "@layerId", layerId);
+                AddParameter(command, "@rasterId", rasterId);
+                AddClipParameters(command, clipGeometry, clipSrid, bands: null);
+            },
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<RasterHistogram[]> GetClippedMosaicHistogramsAsync(
+        int layerId,
+        long[] rasterIds,
+        RasterMergeStrategy mergeStrategy,
+        byte[] clipGeometry,
+        int? clipSrid,
+        int[]? bands = null,
+        int binCount = 256,
+        CancellationToken cancellationToken = default)
+    {
+        if (rasterIds.Length == 0)
+        {
+            return Array.Empty<RasterHistogram>();
+        }
+
+        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+        var rastCte = $"""
+            WITH requested AS (
+                SELECT unnest(@rasterIds) AS raster_id
+            ),
+            source AS (
+                SELECT {BuildClipExpression("raster", clipSrid)} AS rast
+                FROM {_rasterDataTable}
+                WHERE layer_id = @layerId AND id IN (SELECT raster_id FROM requested)
+            )
+            SELECT {CreateMosaicAggregateExpression(mergeStrategy)} AS rast
+            FROM source
+            WHERE rast IS NOT NULL
+            """;
+        return await ComputeClippedHistogramsAsync(
+            connection,
+            rastCte,
+            bands,
+            binCount,
+            command =>
+            {
+                AddParameter(command, "@layerId", layerId);
+                AddParameter(command, "@rasterIds", rasterIds);
+                AddClipParameters(command, clipGeometry, clipSrid, bands: null);
+            },
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private static string BuildClipExpression(string rasterExpr, int? clipSrid)
+        => clipSrid is > 0
+            ? $"ST_Clip({rasterExpr}, ST_Transform(ST_GeomFromWKB(@clipGeom, @clipSrid), ST_SRID({rasterExpr})), TRUE)"
+            : $"ST_Clip({rasterExpr}, ST_GeomFromWKB(@clipGeom, ST_SRID({rasterExpr})), TRUE)";
+
+    private static void AddClipParameters(DbCommand command, byte[] clipGeometry, int? clipSrid, int[]? bands)
+    {
+        AddParameter(command, "@clipGeom", clipGeometry);
+        if (clipSrid is > 0)
+        {
+            AddParameter(command, "@clipSrid", clipSrid.Value);
+        }
+
+        if (bands is { Length: > 0 })
+        {
+            AddParameter(command, "@bands", bands);
+        }
+    }
+
+    private static async Task<RasterStatistics[]> ComputeClippedStatisticsAsync(
+        DbConnection connection,
+        string rastCteSql,
+        int[]? bands,
+        Action<DbCommand> bindParameters,
+        CancellationToken cancellationToken)
+    {
+        var bandListSql = bands is { Length: > 0 }
+            ? "SELECT b AS band FROM unnest(@bands::int[]) AS b"
+            : "SELECT generate_series(1, ST_NumBands(t.rast)) AS band FROM target t";
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            WITH target AS (
+                {rastCteSql}
+            ),
+            band_list AS (
+                {bandListSql}
+            )
+            SELECT bl.band,
+                   (s).min AS min_value,
+                   (s).max AS max_value,
+                   (s).mean AS mean_value,
+                   (s).stddev AS std_dev,
+                   (s).count AS valid_count
+            FROM target t, band_list bl,
+                 LATERAL ST_SummaryStats(t.rast, bl.band) AS s
+            WHERE t.rast IS NOT NULL
+            ORDER BY bl.band
+            """;
+        bindParameters(command);
+
+        var results = new List<RasterStatistics>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            results.Add(new RasterStatistics
+            {
+                Band = reader.GetInt32(0),
+                MinValue = reader.IsDBNull(1) ? null : reader.GetDouble(1),
+                MaxValue = reader.IsDBNull(2) ? null : reader.GetDouble(2),
+                MeanValue = reader.IsDBNull(3) ? null : reader.GetDouble(3),
+                StandardDeviation = reader.IsDBNull(4) ? null : reader.GetDouble(4),
+                ValidPixelCount = reader.IsDBNull(5) ? 0 : reader.GetInt64(5),
+                NoDataPixelCount = 0
+            });
+        }
+
+        return results.ToArray();
+    }
+
+    private static async Task<RasterHistogram[]> ComputeClippedHistogramsAsync(
+        DbConnection connection,
+        string rastCteSql,
+        int[]? bands,
+        int binCount,
+        Action<DbCommand> bindParameters,
+        CancellationToken cancellationToken)
+    {
+        binCount = binCount switch
+        {
+            <= 0 => 256,
+            > 1024 => 1024,
+            _ => binCount
+        };
+
+        // Resolve the band list up front so each band can run in its own statement;
+        // ST_Histogram aborts on a uniform-value (single-value) clip, so per-band
+        // isolation lets one flat band degrade to an empty histogram without failing
+        // the others.
+        var effectiveBands = bands is { Length: > 0 }
+            ? bands
+            : await ResolveClippedBandCountAsync(connection, rastCteSql, bindParameters, cancellationToken).ConfigureAwait(false);
+
+        var results = new List<RasterHistogram>(effectiveBands.Length);
+        foreach (var band in effectiveBands)
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"""
+                WITH target AS (
+                    {rastCteSql}
+                )
+                SELECT (h).min AS bin_min, (h).max AS bin_max, (h).count AS bin_count
+                FROM target t, LATERAL ST_Histogram(t.rast, @band, @binCount, false) AS h
+                WHERE t.rast IS NOT NULL
+                """;
+            bindParameters(command);
+            AddParameter(command, "@band", band);
+            AddParameter(command, "@binCount", binCount);
+
+            var counts = new List<long>(binCount);
+            double min = double.NaN;
+            double max = double.NaN;
+            try
+            {
+                await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+                while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    if (counts.Count == 0 && !reader.IsDBNull(0))
+                    {
+                        min = reader.GetDouble(0);
+                    }
+
+                    if (!reader.IsDBNull(1))
+                    {
+                        max = reader.GetDouble(1);
+                    }
+
+                    counts.Add(reader.IsDBNull(2) ? 0L : Convert.ToInt64(reader.GetValue(2), CultureInfo.InvariantCulture));
+                }
+            }
+            catch (DbException)
+            {
+                // Uniform-value clip or empty intersection: emit an empty histogram for the band.
+                counts.Clear();
+            }
+
+            results.Add(new RasterHistogram
+            {
+                Band = band,
+                BinCount = counts.Count,
+                Min = double.IsNaN(min) ? 0 : min,
+                Max = double.IsNaN(max) ? 0 : max,
+                Counts = counts.ToArray()
+            });
+        }
+
+        return results.ToArray();
+    }
+
+    private static async Task<int[]> ResolveClippedBandCountAsync(
+        DbConnection connection,
+        string rastCteSql,
+        Action<DbCommand> bindParameters,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            WITH target AS (
+                {rastCteSql}
+            )
+            SELECT ST_NumBands(t.rast) AS band_count
+            FROM target t
+            WHERE t.rast IS NOT NULL
+            """;
+        bindParameters(command);
+
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        if (result is null or DBNull)
+        {
+            return Array.Empty<int>();
+        }
+
+        var total = Convert.ToInt32(result, CultureInfo.InvariantCulture);
+        var bands = new int[total];
+        for (var i = 0; i < total; i++)
+        {
+            bands[i] = i + 1;
+        }
+
+        return bands;
+    }
+
     /// <summary>
     /// Computes per-band histograms in a single SQL statement using a LATERAL join over
     /// <c>unnest(@bands)</c>. Returns <c>null</c> when the batched query fails (e.g. PostGIS

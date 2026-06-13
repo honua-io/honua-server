@@ -83,6 +83,35 @@ public class ImageServerEndpointsTests
                 },
             });
 
+        // AOI-clipped statistics/histograms (computeStatisticsHistograms with a geometry)
+        // mirror the whole-raster substitute payloads for these single-raster fixtures.
+        store.GetClippedStatisticsAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<byte[]>(), Arg.Any<int?>(), Arg.Any<int[]?>(), Arg.Any<CancellationToken>())
+            .Returns(new[]
+            {
+                new RasterStatistics
+                {
+                    Band = 1,
+                    MinValue = 0,
+                    MaxValue = 255,
+                    MeanValue = 128,
+                    StandardDeviation = 45,
+                    ValidPixelCount = 65536,
+                    NoDataPixelCount = 0,
+                },
+            });
+        store.GetClippedHistogramsAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<byte[]>(), Arg.Any<int?>(), Arg.Any<int[]?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new[]
+            {
+                new RasterHistogram
+                {
+                    Band = 1,
+                    BinCount = 4,
+                    Min = 0,
+                    Max = 255,
+                    Counts = [10, 20, 30, 40],
+                },
+            });
+
         return store;
     }
 
@@ -750,6 +779,34 @@ public class ImageServerEndpointsTests
             json.RootElement.GetProperty("statistics")[0].GetProperty("max").GetDouble().Should().Be(255);
             json.RootElement.GetProperty("histograms").GetArrayLength().Should().Be(1);
             json.RootElement.GetProperty("histograms")[0].GetProperty("counts").GetArrayLength().Should().Be(4);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/computeStatisticsHistograms")]
+    [Operation(Operations.Query)]
+    public async Task ComputeStatisticsHistograms_WithGeometry_ClipsAnalysisToAoi()
+    {
+        var store = CreateRasterStoreSubstitute();
+        var fixture = await CreateFixtureAsync(store);
+        try
+        {
+            var geometry = Uri.EscapeDataString(
+                """{"xmin":-10,"ymin":-10,"xmax":10,"ymax":10,"spatialReference":{"wkid":4326}}""");
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/computeStatisticsHistograms?f=json&geometryType=esriGeometryEnvelope&geometry={geometry}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            // The AOI geometry must route to the clipped store path, not the whole-raster one.
+            await store.Received().GetClippedStatisticsAsync(
+                Arg.Any<int>(), Arg.Any<long>(), Arg.Is<byte[]>(g => g.Length > 0), Arg.Any<int?>(), Arg.Any<int[]?>(), Arg.Any<CancellationToken>());
+            await store.DidNotReceive().GetStatisticsAsync(
+                Arg.Any<int>(), Arg.Any<long>(), Arg.Any<int[]?>(), Arg.Any<CancellationToken>());
         }
         finally
         {

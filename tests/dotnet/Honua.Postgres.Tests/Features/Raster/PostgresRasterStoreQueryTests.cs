@@ -142,6 +142,43 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
         }
     }
 
+    [IntegrationTest]
+    public async Task GetClippedStatisticsAsync_RestrictsAnalysisToAoiEnvelope()
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreQueryTests));
+        try
+        {
+            await CreateRasterTableAsync(schemaName);
+            var rasterId = await InsertFloatRasterAsync(schemaName);
+            var store = new PostgresRasterStore(
+                new FixtureConnectionProvider(fixture.DataSource),
+                NullLogger<PostgresRasterStore>.Instance,
+                schemaName);
+
+            // Raster pixels: x[0,1] holds 0 (top) and 20 (bottom); x[1,2] holds 10/30.
+            // Clip to the left column only -> the analysis must see just {0, 20}.
+            var leftColumn = CreateEnvelopeWkb(0, 0, 1, 2);
+
+            var stats = await store.GetClippedStatisticsAsync(LayerId, rasterId, leftColumn, 4326)
+                .ConfigureAwait(false);
+
+            stats.Should().ContainSingle();
+            stats[0].MinValue.Should().Be(0);
+            stats[0].MaxValue.Should().Be(20);
+            stats[0].ValidPixelCount.Should().Be(2);
+
+            var histograms = await store.GetClippedHistogramsAsync(LayerId, rasterId, leftColumn, 4326, binCount: 4)
+                .ConfigureAwait(false);
+
+            histograms.Should().ContainSingle();
+            histograms[0].Counts.Sum().Should().Be(2);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
     private async Task CreateRasterStatisticsTableAsync(string schemaName)
     {
         await using var connection = await fixture.GetConnectionAsync(schemaName);
