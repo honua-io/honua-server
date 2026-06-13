@@ -88,4 +88,30 @@ internal static partial class MonitoringLog
         Level = LogLevel.Error,
         Message = "Database resilience metrics endpoint failed.")]
     public static partial void DatabaseResilienceMetricsEndpointFailed(ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 4320,
+        Level = LogLevel.Warning,
+        Message = "Database recovery loop starting: the host began in degraded mode (database unavailable at startup). Retrying connectivity in the background; /healthz/ready will report 503 until recovery succeeds.")]
+    public static partial void DatabaseRecoveryStarting(ILogger logger);
+
+    [LoggerMessage(
+        EventId = 4321,
+        Level = LogLevel.Warning,
+        Message = "Database recovery attempt {Attempt} failed; next retry in {DelaySeconds:F1}s. {ErrorMessage}")]
+    public static partial void DatabaseRecoveryAttemptFailed(
+        ILogger logger, int attempt, double delaySeconds, string errorMessage, Exception exception);
+
+    [LoggerMessage(
+        EventId = 4322,
+        Level = LogLevel.Information,
+        Message = "Database recovery succeeded after {Attempt} attempt(s); database is reachable and migrations are up to date. /healthz/ready will now report ready.")]
+    public static partial void DatabaseRecoverySucceeded(ILogger logger, int attempt);
+
+    [LoggerMessage(
+        EventId = 4323,
+        Level = LogLevel.Error,
+        Message = "Database recovery gave up after {Attempt} attempt(s); the host remains degraded. Non-database routes continue to serve, but database-backed routes will fail. {ErrorMessage}")]
+    public static partial void DatabaseRecoveryGaveUp(
+        ILogger logger, int attempt, string errorMessage, Exception? exception);
 }
