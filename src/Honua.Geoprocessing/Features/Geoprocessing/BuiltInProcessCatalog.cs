@@ -712,6 +712,41 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         },
 
         // -----------------------------------------------------------------------
+        // Data-import operations (1)
+        // First-class durable import pipeline (#1630). import.dataset owns the
+        // full fetch -> validate+chunk -> import -> flatten -> tile ->
+        // extent+MVT refresh -> provenance flow as ONE managed durable job,
+        // composing the existing import / publishing / raster services. This is
+        // the canonical execution layer the geospatial-mcp publish_data family
+        // submits into. Managed profile: the steps are orchestration + provider
+        // service calls, not native GDAL work, so the lean dispatcher runs it.
+        // -----------------------------------------------------------------------
+        new ProcessDefinition
+        {
+            ProcessId = "import.dataset",
+            Title = "Import Dataset",
+            Description = "Imports a staged geospatial dataset end-to-end as one durable job: stages the source, imports it (the streaming importer enforces the per-feature geometry size guard / chunking), flattens the generic imported table into a typed layer (rebuilding the MVT materialization), optionally tiles a raster layer with overviews, refreshes the layer and service extents, and records a provenance artifact. Resumes by re-running from the staged source under overwrite idempotency.",
+            Category = "import",
+            Parameters =
+            [
+                Param("connection", "Connection", "Registered secure connection id (GUID) or name identifying the target Honua catalog database.", ProcessParameterValueType.Text, required: true),
+                Param("sourcePath", "Source Path", "Absolute path to the staged source file on the worker-accessible filesystem.", ProcessParameterValueType.Text, required: true),
+                Param("fileName", "File Name", "Original file name, used for format detection (e.g. parcels.geojson).", ProcessParameterValueType.Text, required: true),
+                Param("tableName", "Table Name", "Target table name for the generic imported table (imported_<table>).", ProcessParameterValueType.Text, required: true),
+                Param("layerName", "Layer Name", "Display name for the published typed layer.", ProcessParameterValueType.Text, required: true),
+                Param("serviceName", "Service Name", "Service to publish the layer into. Defaults to 'default'.", ProcessParameterValueType.Text),
+                Param("description", "Description", "Optional layer description.", ProcessParameterValueType.Text),
+                Param("geometryColumn", "Geometry Column", "Optional geometry column name override for the typed layer.", ProcessParameterValueType.Text),
+                Param("targetSchema", "Target Schema", "Optional schema for the imported/typed data. Defaults to the configured operational-data schema (honua_data).", ProcessParameterValueType.Text),
+                Param("sourceUrl", "Source URL", "Optional originating URL when the source was fetched from a remote object, recorded in provenance.", ProcessParameterValueType.Text),
+                Param("sourceSrid", "Source SRID", "Optional source spatial reference identifier when the source lacks embedded CRS metadata.", ProcessParameterValueType.Srid),
+                Param("targetSrid", "Target SRID", "Target spatial reference identifier for the imported geometries. Defaults to 4326.", ProcessParameterValueType.Srid),
+                Param("rasterLayerId", "Raster Layer", "When the source is a raster, the layer identifier to tile into; triggers raster import, statistics, and tile/overview pre-generation.", ProcessParameterValueType.LayerId),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+
+        // -----------------------------------------------------------------------
         // GeoETL transform operations (8)
         // Reconciled from feat/geoetl-baseline onto the #1185 add-a-capability
         // contract: each transform reads a FeatureCollection data URI on the

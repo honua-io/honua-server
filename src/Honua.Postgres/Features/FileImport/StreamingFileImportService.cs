@@ -541,7 +541,9 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 importedCount,
                 detectedSrid,
                 stopwatch.Elapsed,
-                warnings);
+                warnings,
+                physicalTableName: GetAllowedTableName(request.TableName),
+                schema: ResolveTargetSchema(request.TargetSchema));
             return result;
         }
         catch (OperationCanceledException)

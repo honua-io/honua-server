@@ -159,6 +159,16 @@ internal static class GeoprocessingServiceCollectionExtensions
         services.TryAddSingleton<GeoJsonFileSinkExecutor>();
         services.TryAddSingleton<QuarantineSinkExecutor>();
         services.TryAddSingleton<ExternalPostgisSinkExecutor>();
+
+        // Import-dataset orchestration executor (#1630). Owns the full durable
+        // import pipeline (fetch -> validate+chunk -> import -> flatten -> tile ->
+        // extent+MVT refresh -> provenance) by composing the existing provider
+        // services, which it resolves at execution time through an
+        // IServiceScopeFactory scope (the provider implementations live in the
+        // active data-provider assembly, out of reach for this module — the same
+        // pattern ExternalPostgisSinkExecutor uses).
+        services.TryAddSingleton<ImportDatasetJobExecutor>();
+
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IJobExecutor, GeoprocessingDispatchJobExecutor>());
 
