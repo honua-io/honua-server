@@ -6,21 +6,33 @@ namespace Honua.Plugins;
 /// <summary>
 /// Manifest entry for a single registered plugin, captured at startup from its
 /// <c>[Plugin]</c> attribute and the extension points it implements. Used for health
-/// reporting and diagnostics.
+/// reporting, dependency resolution, and diagnostics.
 /// </summary>
-/// <param name="Id">Stable plugin identifier.</param>
-/// <param name="Version">Plugin semantic version.</param>
-/// <param name="Description">Optional human-readable description.</param>
+/// <param name="Manifest">The parsed plugin manifest (identity, capabilities, dependencies).</param>
 /// <param name="ImplementationType">The concrete plugin type.</param>
 /// <param name="ProvidesValidator">Whether the plugin implements <c>IFeatureValidator</c>.</param>
+/// <param name="ProvidesFieldValidator">Whether the plugin implements <c>IFieldValidator</c>.</param>
 /// <param name="ProvidesEditHook">Whether the plugin implements <c>IEditHook</c>.</param>
+/// <param name="ProvidesComputedField">Whether the plugin implements <c>IComputedFieldProvider</c>.</param>
+/// <param name="ProvidesBackgroundService">Whether the plugin implements <c>IPluginBackgroundService</c>.</param>
 public sealed record PluginRegistration(
-    string Id,
-    string Version,
-    string? Description,
+    PluginManifest Manifest,
     Type ImplementationType,
     bool ProvidesValidator,
-    bool ProvidesEditHook);
+    bool ProvidesFieldValidator,
+    bool ProvidesEditHook,
+    bool ProvidesComputedField,
+    bool ProvidesBackgroundService)
+{
+    /// <summary>Gets the stable plugin identifier.</summary>
+    public string Id => Manifest.Id;
+
+    /// <summary>Gets the plugin semantic version string.</summary>
+    public string Version => Manifest.VersionString();
+
+    /// <summary>Gets the optional human-readable description.</summary>
+    public string? Description => Manifest.Description;
+}
 
 /// <summary>
 /// Immutable inventory of the plugins registered at startup. Registered as a singleton so
