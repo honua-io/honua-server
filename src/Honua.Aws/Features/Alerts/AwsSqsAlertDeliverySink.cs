@@ -129,7 +129,7 @@ internal sealed partial class AwsSqsAlertDeliverySink : IAlertDeliverySink
         {
             throw;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
             Log.DeliveryFailed(_logger, ex);
             return new AlertDeliveryResult

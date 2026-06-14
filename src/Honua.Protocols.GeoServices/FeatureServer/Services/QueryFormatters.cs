@@ -982,6 +982,7 @@ internal sealed class StreamingQueryFormatter
             outFields,
             () => hasMoreResults,
             outputStream,
+            returnCentroid,
             cancellationToken);
 
     /// <summary>
@@ -1002,6 +1003,7 @@ internal sealed class StreamingQueryFormatter
         string[]? outFields,
         Func<bool> hasMoreResults,
         PipeWriter outputStream,
+        bool returnCentroid = false,
         CancellationToken cancellationToken = default)
     {
         using var writer = new Utf8JsonWriter(outputStream, new JsonWriterOptions

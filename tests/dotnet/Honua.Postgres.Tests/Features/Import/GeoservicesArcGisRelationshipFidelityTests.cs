@@ -191,7 +191,7 @@ public sealed class GeoservicesArcGisRelationshipFidelityTests
             httpClient,
             NullLogger<ArcGisRestClient>.Instance,
             (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
-        var connectionProvider = new Mock<IDatabaseConnectionProvider>(MockBehavior.Loose);
+        var connectionProvider = new Mock<IAdoNetDatabaseConnectionProvider>(MockBehavior.Loose);
         var crsRegistry = new Mock<ICrsRegistry>(MockBehavior.Loose);
         crsRegistry.Setup(registry => registry.ResolveBySridAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .Returns((int srid, CancellationToken _) => new ValueTask<CrsDefinition?>(

@@ -46,7 +46,7 @@ internal static class AuditLogServiceCollectionExtensions
 
         services.TryAddScoped<IAuditLog>(static sp =>
         {
-            var connectionProvider = sp.GetService<IDatabaseConnectionProvider>();
+            var connectionProvider = sp.GetService<IAdoNetDatabaseConnectionProvider>();
             if (connectionProvider is null)
             {
                 // No database wired in this host — fall back to the no-op sink so

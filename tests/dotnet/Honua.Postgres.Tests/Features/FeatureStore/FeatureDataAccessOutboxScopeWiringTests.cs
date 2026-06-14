@@ -87,7 +87,7 @@ public sealed class FeatureDataAccessOutboxScopeWiringTests
         // helper is only constructed to invoke the private TryUseTransactionalOutbox
         // path, which never touches geometry or cache state.
         var dependencies = new FeatureDataAccessDependencies(
-            ConnectionProvider: Substitute.For<IDatabaseConnectionProvider>(),
+            ConnectionProvider: Substitute.For<IAdoNetDatabaseConnectionProvider>(),
             GeometryProcessor: new GeometryProcessor(),
             CacheManager: Substitute.For<IFeatureCacheManager>(),
             DictionaryPool: new DefaultObjectPoolProvider().Create(new DictionaryPooledObjectPolicy()),

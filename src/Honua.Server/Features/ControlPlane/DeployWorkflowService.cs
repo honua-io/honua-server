@@ -244,7 +244,7 @@ internal sealed partial class DeployWorkflowService
                 {
                     throw;
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
                     Log.DeploySubmissionFailed(_logger, operation.OperationId, targetId, ex);
                     operation = operation with
@@ -332,7 +332,7 @@ internal sealed partial class DeployWorkflowService
         {
             throw;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
             Log.DeploySubmissionFailed(_logger, operation.OperationId, operation.Deploy.TargetId, ex);
             var failed = operation with

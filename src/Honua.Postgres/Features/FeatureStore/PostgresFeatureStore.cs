@@ -43,7 +43,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
     private readonly IFeatureDataAccess _dataAccess;
     private readonly IFeatureCacheManager _cacheManager;
     private readonly IMetadataV2GraphProvider? _v2Provider;
-    private readonly IDatabaseConnectionProvider? _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider? _connectionProvider;
     private readonly ObjectPool<Dictionary<string, object?>>? _dictionaryPool;
     private readonly IConnectionEncryptionService? _connectionEncryptionService;
     private readonly IFilterExpressionService? _filterExpressionService;
@@ -67,7 +67,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         IFeatureQueryBuilder queryBuilder,
         IFeatureDataAccess dataAccess,
         IFeatureCacheManager cacheManager,
-        IDatabaseConnectionProvider? connectionProvider,
+        IAdoNetDatabaseConnectionProvider? connectionProvider,
         ObjectPool<Dictionary<string, object?>>? dictionaryPool,
         IConnectionEncryptionService? connectionEncryptionService,
         IFilterExpressionService? filterExpressionService = null,
