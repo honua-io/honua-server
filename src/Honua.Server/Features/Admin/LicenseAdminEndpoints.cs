@@ -32,6 +32,17 @@ internal static class LicenseAdminEndpoints
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
             .Produces<ApiResponse<LicenseStatusResponse>>();
 
+        group.MapGet("/capacity", HandleGetCapacityState)
+            .WithDisplayName("Get License Capacity State")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
+            .Produces<ApiResponse<LicenseCapacityState>>();
+
+        group.MapPost("/capacity/surge", HandleSetSurgeMode)
+            .WithDisplayName("Set License Surge Mode")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .Produces<ApiResponse<LicenseCapacityState>>()
+            .Produces<ApiResponse<object>>(StatusCodes.Status400BadRequest);
+
         group.MapGet("/features", HandleGetEntitlements)
             .WithDisplayName("Get License Feature Entitlements")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
@@ -44,10 +55,12 @@ internal static class LicenseAdminEndpoints
             .Produces<ApiResponse<LicenseUploadResponse>>(StatusCodes.Status400BadRequest);
     }
 
-    private static IResult HandleGetLicenseStatus(
+    private static async Task<IResult> HandleGetLicenseStatus(
         [FromServices] ILicenseEntitlementService entitlementService,
+        [FromServices] ILicenseCapacityMeter capacityMeter,
         [FromServices] IOptions<LicenseOptions> licenseOptions,
-        [FromServices] ILogger<LicenseAdminEndpointsLog> logger)
+        [FromServices] ILogger<LicenseAdminEndpointsLog> logger,
+        CancellationToken cancellationToken)
     {
         AdminLog.LicenseStatusQueried(logger);
 
@@ -60,13 +73,52 @@ internal static class LicenseAdminEndpoints
             snapshot.ValidationState,
             snapshot.LicenseId,
             snapshot.IssuedAt,
-            snapshot.Entitlements);
+            snapshot.Entitlements,
+            snapshot.CapacityTerms);
 
-        var response = LicenseStatusResponseMapper.FromStatus(status, licenseOptions.Value.ExpiryWarningDays);
+        var capacity = await capacityMeter.GetCapacityStateAsync(cancellationToken).ConfigureAwait(false);
+        var response = LicenseStatusResponseMapper.FromStatus(
+            status,
+            licenseOptions.Value.ExpiryWarningDays,
+            capacity);
 
         return Results.Json(
             ApiResponse<LicenseStatusResponse>.CreateSuccess(response),
             LicenseAdminJsonContext.Default.ApiResponseLicenseStatusResponse);
+    }
+
+    private static async Task<IResult> HandleGetCapacityState(
+        [FromServices] ILicenseCapacityMeter capacityMeter,
+        CancellationToken cancellationToken)
+    {
+        var capacity = await capacityMeter.GetCapacityStateAsync(cancellationToken).ConfigureAwait(false);
+        return Results.Json(
+            ApiResponse<LicenseCapacityState>.CreateSuccess(capacity),
+            LicenseAdminJsonContext.Default.ApiResponseLicenseCapacityState);
+    }
+
+    private static async Task<IResult> HandleSetSurgeMode(
+        [FromServices] ILicenseCapacityMeter capacityMeter,
+        HttpContext context,
+        CancellationToken cancellationToken)
+    {
+        var request = await context.Request.ReadFromJsonAsync(
+            LicenseAdminJsonContext.Default.LicenseSurgeModeRequest,
+            cancellationToken).ConfigureAwait(false);
+        if (request is null)
+        {
+            return Results.Json(
+                ApiResponse<object>.Failure("Surge mode request body is required."),
+                LicenseAdminJsonContext.Default.ApiResponseObject,
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        var capacity = await capacityMeter
+            .SetSurgeModeAsync(request.Enabled, request.Reason, cancellationToken)
+            .ConfigureAwait(false);
+        return Results.Json(
+            ApiResponse<LicenseCapacityState>.CreateSuccess(capacity),
+            LicenseAdminJsonContext.Default.ApiResponseLicenseCapacityState);
     }
 
     private static IResult HandleGetEntitlements(

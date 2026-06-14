@@ -47,6 +47,11 @@ public sealed class LicenseInfo
     /// Entitlements granted by this license.
     /// </summary>
     public IReadOnlyList<Entitlement> Entitlements { get; init; } = [];
+
+    /// <summary>
+    /// Capacity-band terms granted by this license.
+    /// </summary>
+    public LicenseCapacityTerms? CapacityTerms { get; init; }
 }
 
 /// <summary>
