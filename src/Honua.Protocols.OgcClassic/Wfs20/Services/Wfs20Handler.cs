@@ -31,9 +31,6 @@ using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Services;
 using Honua.Infrastructure.Validation;
 using Honua.Protocols.Ogc.Common;
-using Honua.Protocols.Ogc.Api.Features;
-using Honua.Protocols.Ogc.Api.Features.Models;
-using Honua.Protocols.Ogc.Api.Features.Services;
 using Honua.Protocols.Ogc.Classic.Wfs20.Models;
 using Honua.ServiceDefaults;
 using NetTopologySuite;
@@ -975,7 +972,7 @@ internal sealed partial class Wfs20Handler
             ? MediaTypes.Json
             : MediaTypes.GeoJson;
 
-        return (Results.Json(payload, OgcJsonContext.Default.FeatureCollection, contentType: contentType), features.Count);
+        return (Results.Json(payload, OgcClassicJsonContext.Default.FeatureCollection, contentType: contentType), features.Count);
     }
 
     private async Task<PagedGetFeatureResult> BuildPagedGetFeatureResultAsync(
@@ -1087,7 +1084,7 @@ internal sealed partial class Wfs20Handler
             : MediaTypes.GeoJson;
 
         return new PagedGetFeatureResult(
-            Results.Json(payload, OgcJsonContext.Default.FeatureCollection, contentType: contentType),
+            Results.Json(payload, OgcClassicJsonContext.Default.FeatureCollection, contentType: contentType),
             features.Count,
             FormatNumberMatched(totalCount));
     }
@@ -1393,7 +1390,7 @@ internal sealed partial class Wfs20Handler
         var simpleGeometry = _geometryServices.ConvertWkbToSimpleGeometry(geometry, axisOrder);
         return simpleGeometry is null
             ? null
-            : JsonSerializer.Serialize(simpleGeometry, OgcJsonContext.Default.SimpleGeoJsonGeometry);
+            : JsonSerializer.Serialize(simpleGeometry, OgcClassicJsonContext.Default.SimpleGeoJsonGeometry);
     }
 
     private static bool IsSupportedFeatureOutputFormat(string format)
@@ -1420,7 +1417,7 @@ internal sealed partial class Wfs20Handler
                 ? MediaTypes.Json
                 : MediaTypes.GeoJson;
 
-            return Results.Json(payload, OgcJsonContext.Default.FeatureCollection, contentType: contentType);
+            return Results.Json(payload, OgcClassicJsonContext.Default.FeatureCollection, contentType: contentType);
         }
 
         if (string.Equals(normalizedFormat, Wfs20Utilities.OutputFormats.Csv, StringComparison.OrdinalIgnoreCase))

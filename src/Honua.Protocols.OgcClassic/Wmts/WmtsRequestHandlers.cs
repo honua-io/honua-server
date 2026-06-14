@@ -17,7 +17,6 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Monitoring;
 using Honua.Infrastructure.Models;
-using Honua.Protocols.Ogc.Api.Features;
 using Honua.Infrastructure.Rendering;
 using Honua.Protocols.Ogc.Classic;
 using Honua.Protocols.Ogc.Common;

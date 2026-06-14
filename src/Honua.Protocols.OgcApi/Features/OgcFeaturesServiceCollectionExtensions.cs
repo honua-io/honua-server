@@ -4,6 +4,7 @@
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.Query;
 using Honua.Protocols.Ogc.Api.Features.Services;
+using Honua.Protocols.Ogc.Common;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Protocols.Ogc.Api.Features;
@@ -18,7 +19,7 @@ internal static class OgcFeaturesServiceCollectionExtensions
         services.Configure<OgcFeaturesOptions>(
             configuration.GetSection(OgcFeaturesOptions.SectionName));
 
-        services.AddScoped<OgcFeaturesGeometryServices>();
+        services.TryAddScoped<OgcFeaturesGeometryServices>();
         services.AddScoped<OgcFilterProcessor>();
         services.TryAddScoped<IQueryProcessor, QueryProcessor>();
         services.TryAddScoped<IEditProcessor, EditProcessor>();

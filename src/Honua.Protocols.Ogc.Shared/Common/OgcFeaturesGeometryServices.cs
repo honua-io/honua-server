@@ -9,13 +9,12 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Infrastructure.Geometries;
 using Honua.Infrastructure.Services;
-using Honua.Protocols.Ogc.Api.Features.Models;
 using Microsoft.Extensions.Options;
 using NetTopologySuite;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
-namespace Honua.Protocols.Ogc.Api.Features.Services;
+namespace Honua.Protocols.Ogc.Common;
 
 /// <summary>
 /// Provides geometry processing, conversion, and validation services for OGC Features.
