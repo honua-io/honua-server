@@ -42,10 +42,16 @@ internal sealed partial class StreamingFileImportService
         var allowedTableName = GetAllowedTableName(request.TableName);
         var targetSchema = ResolveTargetSchema(request.TargetSchema);
 
-        if (request.OverwriteExisting)
-        {
-            await CreateTableAsync(connection, targetSchema, allowedTableName, request.TargetSrid, cancellationToken);
-        }
+        // Always create the staging table before the load. The load batches open a
+        // RepeatableRead transaction whose snapshot is taken on the first statement;
+        // creating the table here (autocommit, on the SAME connection) guarantees it
+        // is committed and visible before that snapshot. Previously this only ran when
+        // OverwriteExisting was set, so a default upload streamed into a table that was
+        // never created and the very first batch failed with Npgsql 42P01
+        // ("relation \"...imported_<table>\" does not exist"). honua.create_import_table
+        // already performs DROP TABLE IF EXISTS + CREATE TABLE, so it is safe to run
+        // unconditionally for the freshly-named staging table.
+        await CreateTableAsync(connection, targetSchema, allowedTableName, request.TargetSrid, cancellationToken);
 
         var wkbWriter = new WKBWriter();
         var batch = new List<IFeature>(_limits.BatchSize);

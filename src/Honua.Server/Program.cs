@@ -383,10 +383,12 @@ builder.Services.AddResilientHttpClient(
     configureHandler: () => KubernetesJobClient.CreatePrimaryHandler(
         kubernetesInClusterAutoDetect,
         kubernetesCaBundlePath));
+#if !HONUA_EXCLUDE_AZURE
 builder.Services.AddResilientHttpClient(
     AzureBatchDataPlaneClient.HttpClientName,
     "control-plane-azure-batch",
     HttpResiliencePolicies.FastApiDefaults);
+#endif
 // ---- Extracted: control-plane deploy + batch-compute backends (Startup/BatchAndDeployBackendsRegistration.cs)
 builder.Services.AddHonuaBatchAndDeployBackends();
 // ---- End extracted block
@@ -422,6 +424,22 @@ StartupConfigurationHelpers.RegisterConfigurationValidators(builder.Services);
 // Register health check services
 builder.Services.AddSingleton<Honua.Infrastructure.Monitoring.MigrationState>();
 builder.Services.AddSingleton<Honua.Infrastructure.Monitoring.DatabaseCompatibilityState>();
+
+// Degraded-start resilience (#1632): when enabled, transient DB-unavailability at startup does
+// not crash the process; the host serves non-DB routes and recovers connectivity in the background.
+var startupResilienceOptions = builder.Configuration
+    .GetSection(Honua.Core.Configuration.StartupResilienceOptions.SectionName)
+    .Get<Honua.Core.Configuration.StartupResilienceOptions>()
+    ?? new Honua.Core.Configuration.StartupResilienceOptions();
+// Env-friendly override (HONUA_DB_DEGRADED_START=true) for serverless presets.
+if (builder.Configuration.GetValue<bool?>("HONUA_DB_DEGRADED_START") is { } envDegradedStart)
+{
+    startupResilienceOptions = startupResilienceOptions with { DegradedStartEnabled = envDegradedStart };
+}
+
+builder.Services.AddSingleton(startupResilienceOptions);
+builder.Services.AddSingleton<Honua.Infrastructure.Monitoring.DegradedStartupContext>();
+builder.Services.AddHostedService<Honua.Infrastructure.Monitoring.DatabaseRecoveryBackgroundService>();
 builder.Services.AddScoped<Honua.Infrastructure.Monitoring.IDeployPreflightProbe,
     Honua.Infrastructure.Monitoring.DeployPreflightProbe>();
 builder.Services.AddScoped<Honua.Server.Features.HealthCheck.IReadinessCheckService,
@@ -429,7 +447,7 @@ builder.Services.AddScoped<Honua.Server.Features.HealthCheck.IReadinessCheckServ
 builder.Services.AddProductionHealthChecks(builder.Configuration);
 
 // ---- Extracted: licensing + identity-provider HTTP clients (Startup/LicensingRegistration.cs)
-builder.Services.AddHonuaLicensing(builder.Configuration);
+builder.Services.AddHonuaLicensing(builder.Configuration, builder.Environment);
 // ---- End extracted block
 
 // Register configuration documentation service for self-documenting admin endpoint
@@ -440,13 +458,10 @@ builder.Services.TryAddSingleton<IShareExportDestinationResolver, UnsupportedSha
 builder.Services.TryAddSingleton<IShareExportStore, InMemoryShareExportStore>();
 builder.Services.TryAddSingleton<IShareTrafficStore, InMemoryShareTrafficStore>();
 
-// Register control plane IAM services (in-memory implementations until #496, #498, #355 land)
-builder.Services.AddSingleton<Honua.Core.Features.Identity.Abstractions.IOidcProviderStore,
-    Honua.Server.Features.Admin.Services.InMemoryOidcProviderStore>();
-builder.Services.AddSingleton<Honua.Core.Features.Identity.Abstractions.IUserStore,
-    Honua.Server.Features.Admin.Services.InMemoryUserStore>();
-builder.Services.AddSingleton<Honua.Core.Features.Authorization.Abstractions.IRoleStore,
-    Honua.Server.Features.Admin.Services.InMemoryRoleStore>();
+// Register control plane IAM in-memory defaults. Uses TryAdd so a durable provider
+// implementation registered earlier (e.g. PostgresRoleStore from AddPostgreSqlServices)
+// wins — otherwise the later default would shadow it and grants would not persist (#1575).
+builder.Services.AddInMemoryControlPlaneIamDefaults();
 // Canonical per-operation permission resolver (#1375): the shared authorization
 // seam over EffectivePermissions. Scoped so it can consume the (scoped) Postgres
 // role store when durable RBAC is active.
@@ -544,12 +559,38 @@ if (replicaProvider != DataProviderNames.DuckDb &&
     builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IChangeTracker>(sp =>
         new Honua.Postgres.Features.FeatureStore.Services.PostgresChangeTracker(
             sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IDatabaseConnectionProvider>()));
+    // Temporal history store (#1166 slices 2-5): reads the uncollapsed change log with attribution.
+    // Overrides the Core no-op fallback registered by AddTemporalHistory. Read-only/non-Postgres
+    // providers keep the no-op store (history unsupported), matching the no-op change tracker.
+    builder.Services.AddScoped<Honua.Core.Features.Temporal.Abstractions.ITemporalHistoryStore>(sp =>
+        new Honua.Postgres.Features.FeatureStore.Services.PostgresTemporalHistoryStore(
+            sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IDatabaseConnectionProvider>()));
     // Branch-versioning manager (#1272 Track B, ADR-0051) — Postgres-only; read-only/non-Postgres
     // providers register the NoOp stub (SupportsVersioning=false) in their ServiceCollectionExtensions.
     builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IVersionManager>(sp =>
         new Honua.Postgres.Features.FeatureStore.Services.PostgresVersionManager(
-            sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IDatabaseConnectionProvider>()));
+            sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IDatabaseConnectionProvider>(),
+            schemaName: null,
+            versionLock: sp.GetRequiredService<Honua.Core.Features.FeatureStore.Abstractions.IVersionLock>()));
 }
+
+// Branch-versioning durable lock + async job runtime (#1553). The Redis-backed version lock serializes
+// reconcile/post/resolve per (service, version) across replicas; the Redis-backed job store makes the
+// async reconcile/post job pollable and restart-durable. Both degrade to single-node in-process/in-memory
+// fallbacks when Redis is not configured. The job runner wraps the synchronous reconcile/post engine in a
+// durable, pollable job and is provider-agnostic (it adapts to the registered IVersionManager). These are
+// registered for every provider so the version-management endpoints can resolve them uniformly; for
+// non-Postgres providers the NoOp version manager rejects reconcile/post, so the lock/store/runner stay
+// inert.
+builder.Services.AddSingleton<Honua.Core.Features.FeatureStore.Abstractions.IVersionLock>(sp =>
+    new Honua.Infrastructure.Coordination.RedisVersionLock(
+        sp.GetService<StackExchange.Redis.IConnectionMultiplexer>(),
+        sp.GetRequiredService<ILogger<Honua.Infrastructure.Coordination.RedisVersionLock>>()));
+builder.Services.AddSingleton<Honua.Core.Features.FeatureStore.Abstractions.IVersionJobStore>(sp =>
+    new Honua.Infrastructure.Coordination.RedisVersionJobStore(
+        sp.GetService<StackExchange.Redis.IConnectionMultiplexer>()));
+builder.Services.AddSingleton<Honua.Core.Features.FeatureStore.Abstractions.IVersionJobRunner,
+    Honua.Core.Features.FeatureStore.Services.VersionJobRunner>();
 builder.Services.AddScoped<Honua.Protocols.GeoServices.FeatureServer.IReplicaStore>(sp =>
     new Honua.Protocols.GeoServices.FeatureServer.Services.CachingReplicaStore(
         sp.GetRequiredService<Honua.Protocols.GeoServices.FeatureServer.DistributedReplicaStore>(),
@@ -706,7 +747,10 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Admin.ObservabilityJsonContext.Default,
         Honua.Server.Features.Admin.InvestigationJsonContext.Default,
         Honua.Server.Features.Admin.Share.ShareAdminJsonContext.Default,
-        Honua.Protocols.Ogc.Api.Processes.OgcProcessesJsonContext.Default);
+        Honua.Protocols.Ogc.Api.Processes.OgcProcessesJsonContext.Default,
+        // Temporal history slice 2-5 request/response bodies (#1166): registered for [FromBody]
+        // deserialization through the HTTP JSON options chain.
+        Honua.Server.Features.Temporal.TemporalHistorySlicesJsonContext.Default);
 });
 
 // Add comprehensive IOptions configuration validation
@@ -958,16 +1002,6 @@ app.UseSerilogRequestLogging(options =>
             : Serilog.Events.LogEventLevel.Information;
 });
 
-// Add global exception handling middleware after request logging.
-app.UseGlobalExceptionHandling();
-
-// Emit the Esri/GeoServices error envelope for routing-level 404/405 (and
-// 406/415/501) terminations under /rest that would otherwise return a bodyless
-// status. Scoped to GeoServices paths so OGC/STAC/OData/admin contracts are
-// untouched. Runs after global exception handling so thrown exceptions keep their
-// existing protocol shaping and only status-only responses are re-shaped here.
-app.UseRestErrorEnvelope();
-
 // Capture the original gRPC-Web indicator before UseGrpcWeb rewrites Content-Type
 // from application/grpc-web* to application/grpc, so the client-certificate
 // enforcement middleware downstream can still distinguish gRPC-Web from native gRPC
@@ -988,8 +1022,22 @@ app.Use(async (context, next) =>
 // Enable gRPC-Web for all gRPC services (before CORS and endpoint mapping)
 app.UseGrpcWeb(new GrpcWebOptions { DefaultEnabled = true });
 
-// Add CORS middleware before auth to handle preflight requests
+// Add CORS middleware before the exception handler so error responses (4xx/5xx) carry
+// Access-Control-Allow-Origin headers; otherwise browsers report every server error as
+// a CORS failure, masking the real status/body from web clients (#1627). It also stays
+// after UseGrpcWeb (preserving the gRPC-Web preflight ordering) and before auth so it can
+// answer preflight requests.
 app.UseHonuaCors(app.Environment);
+
+// Add global exception handling middleware after request logging.
+app.UseGlobalExceptionHandling();
+
+// Emit the Esri/GeoServices error envelope for routing-level 404/405 (and
+// 406/415/501) terminations under /rest that would otherwise return a bodyless
+// status. Scoped to GeoServices paths so OGC/STAC/OData/admin contracts are
+// untouched. Runs after global exception handling so thrown exceptions keep their
+// existing protocol shaping and only status-only responses are re-shaped here.
+app.UseRestErrorEnvelope();
 
 // Validate query, form, and selected header inputs before authentication and endpoint execution.
 app.UseInputValidation();
@@ -1287,8 +1335,10 @@ async Task RunDatabaseMigrationsAsync()
             migrationState.MarkFailed("Database migrations failed.");
 
             // In non-Development environments, re-throw so the app fails to start
-            // (gives a clear CrashLoopBackOff signal in Kubernetes).
-            if (!app.Environment.IsDevelopment())
+            // (gives a clear CrashLoopBackOff signal in Kubernetes) — unless degraded
+            // start is enabled and the failure is transient connectivity (#1632).
+            if (!app.Environment.IsDevelopment()
+                && !TryEnterDegradedStart("migrations", error, migrationsPending: true))
             {
                 throw error;
             }
@@ -1320,12 +1370,43 @@ async Task RunDatabaseMigrationsAsync()
         migrationState.MarkFailed("Database migrations failed.");
 
         // In non-Development environments, re-throw so the app fails to start
-        // (gives a clear CrashLoopBackOff signal in Kubernetes).
-        if (!app.Environment.IsDevelopment())
+        // (gives a clear CrashLoopBackOff signal in Kubernetes) — unless degraded
+        // start is enabled and the failure is transient connectivity (#1632).
+        if (!app.Environment.IsDevelopment()
+            && !TryEnterDegradedStart("migrations", ex, migrationsPending: true))
         {
             throw;
         }
     }
+}
+
+// Degraded-start gate (#1632): returns true when the host should keep running despite a
+// startup database failure, rather than crashing the process (which on AWS Lambda becomes a
+// Runtime.ExitError crash loop that 500s every route, including non-database routes). Only
+// transient connectivity failures are suppressed, and only when degraded start is enabled;
+// genuine misconfiguration still fails loudly. When suppressed, the degraded context is armed
+// so the background recovery loop retries connectivity and flips readiness once recovered.
+bool TryEnterDegradedStart(string phase, Exception error, bool migrationsPending)
+{
+    var resilienceOptions = app.Services.GetRequiredService<Honua.Core.Configuration.StartupResilienceOptions>();
+    if (!resilienceOptions.DegradedStartEnabled)
+    {
+        return false;
+    }
+
+    if (!Honua.Core.Features.Infrastructure.Resilience.StartupDatabaseResilience.IsTransientConnectivityError(error))
+    {
+        // Real misconfiguration (bad migration SQL, incompatible PostGIS): never mask it.
+        return false;
+    }
+
+    var warning = Honua.Core.Features.Infrastructure.Resilience.StartupDatabaseResilience
+        .BuildDegradedStartWarning(phase, error.Message);
+    Honua.Infrastructure.Logging.Log.DatabaseStartupDegraded(app.Logger, warning);
+
+    var degradedContext = app.Services.GetRequiredService<Honua.Infrastructure.Monitoring.DegradedStartupContext>();
+    degradedContext.MarkDegraded(migrationsPending, Assembly.GetExecutingAssembly());
+    return true;
 }
 
 // PostGIS preflight compatibility check
@@ -1352,7 +1433,24 @@ async Task RunPostGisPreflightCheckAsync()
 
     Honua.Infrastructure.Logging.Log.PostGisPreflightCheckStarting(app.Logger);
 
-    var result = await checker.CheckCompatibilityAsync(connectionString, app.Lifetime.ApplicationStopping);
+    Honua.Core.Features.Infrastructure.Domain.DatabaseCompatibilityResult result;
+    try
+    {
+        result = await checker.CheckCompatibilityAsync(connectionString, app.Lifetime.ApplicationStopping);
+    }
+    catch (Exception ex) when (!app.Environment.IsDevelopment())
+    {
+        // The preflight could not reach the database to check compatibility. If degraded start is
+        // enabled and the failure is transient connectivity, arm degraded mode (migrations are run
+        // after this method, so they are still pending) rather than crashing the process (#1632).
+        if (TryEnterDegradedStart("PostGIS preflight", ex, migrationsPending: true))
+        {
+            return;
+        }
+
+        throw;
+    }
+
     compatibilityState.SetResult(result);
 
     if (result.IsCompatible)

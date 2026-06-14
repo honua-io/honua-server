@@ -24,6 +24,8 @@ internal static class AlertAdminEndpoints
     private static readonly WKBReader _wkbReader = new();
     private static readonly WKTWriter _wktWriter = new();
     private const int RecentTriggerLimit = 10;
+    private const int DefaultRuleEventPageSize = 50;
+    private const int MaxRuleEventPageSize = 200;
     private const string ChannelStatusConfigured = "configured";
     private const string ChannelStatusUnconfigured = "unconfigured";
     private const string ChannelStatusDisabled = "disabled";
@@ -85,6 +87,10 @@ internal static class AlertAdminEndpoints
 
         group.MapGet("/rules/{ruleId:long}/health", HandleGetRuleHealth)
             .WithDisplayName("Get Alert Rule Health")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+
+        group.MapGet("/rules/{ruleId:long}/events", HandleListRuleEvents)
+            .WithDisplayName("List Alert Rule Events")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
         group.MapDelete("/rules/{ruleId:long}", HandleDeleteRule)
@@ -395,6 +401,47 @@ internal static class AlertAdminEndpoints
         return Results.Json(
             ApiResponse<AlertRuleHealthResponse>.CreateSuccess(MapRuleHealthResponse(rule, health, triggers.Items, editionPolicy)),
             AlertAdminJsonContext.Default.ApiResponseAlertRuleHealthResponse);
+    }
+
+    private static async Task<IResult> HandleListRuleEvents(
+        long ruleId,
+        string? status,
+        int? limit,
+        string? before,
+        [FromServices] IAlertAdminStore store,
+        [FromServices] IAlertEventQuery eventQuery,
+        CancellationToken cancellationToken)
+    {
+        var rule = await store.GetRuleAsync(ruleId, cancellationToken).ConfigureAwait(false);
+        if (rule is null)
+        {
+            return NotFound($"Rule '{ruleId}' not found.");
+        }
+
+        if (!TryParseLifecycleStatuses(status, out var lifecycleStatuses, out var statusError))
+        {
+            return BadRequest(statusError);
+        }
+
+        var pageSize = NormalizeEventPageSize(limit);
+        var page = await eventQuery.ListAsync(new AlertEventFilter
+        {
+            RuleId = ruleId,
+            LifecycleStatuses = lifecycleStatuses,
+            PageSize = pageSize,
+            Cursor = string.IsNullOrWhiteSpace(before) ? null : before
+        }, cancellationToken).ConfigureAwait(false);
+
+        var response = new AlertRuleEventPageResponse
+        {
+            RuleId = ruleId,
+            Items = page.Items.Select(MapRecentTrigger).ToArray(),
+            NextCursor = page.NextCursor
+        };
+
+        return Results.Json(
+            ApiResponse<AlertRuleEventPageResponse>.CreateSuccess(response),
+            AlertAdminJsonContext.Default.ApiResponseAlertRuleEventPageResponse);
     }
 
     private static async Task<IResult> HandleDeleteRule(
@@ -993,6 +1040,45 @@ internal static class AlertAdminEndpoints
         {
             return null;
         }
+    }
+
+    private static bool TryParseLifecycleStatuses(
+        string? status,
+        out IReadOnlyList<AlertLifecycleStatus>? statuses,
+        out string error)
+    {
+        statuses = null;
+        error = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(status))
+        {
+            return true;
+        }
+
+        var collected = new List<AlertLifecycleStatus>();
+        foreach (var part in status.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (!QueryFilterParsers.TryParseDefinedEnum<AlertLifecycleStatus>(part, out var parsed))
+            {
+                error = $"'status' contains unsupported value '{part}'.";
+                return false;
+            }
+
+            collected.Add(parsed);
+        }
+
+        statuses = collected.Count > 0 ? collected : null;
+        return true;
+    }
+
+    private static int NormalizeEventPageSize(int? limit)
+    {
+        if (limit is null || limit <= 0)
+        {
+            return DefaultRuleEventPageSize;
+        }
+
+        return Math.Min(limit.Value, MaxRuleEventPageSize);
     }
 
     private static bool TryParseTriggerType(string value, out AlertTriggerType triggerType)

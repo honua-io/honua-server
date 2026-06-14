@@ -27,14 +27,14 @@ public sealed class FeatureServerQueryDateBinsEditionGateTests
 {
     [UnitTest]
     [Operation(Operations.QueryDateBins)]
-    public void RequireProEditionForDateBins_CommunityEdition_ReturnsPaymentRequired()
+    public async Task RequireProEditionForDateBins_CommunityEdition_ReturnsPaymentRequired()
     {
         var context = BuildHttpContext(HonuaEdition.Community);
 
         var result = FeatureServerEndpoints.RequireProEditionForDateBins(context);
 
         result.Should().NotBeNull();
-        AssertPaymentRequired(result!);
+        await AssertPaymentRequiredAsync(result!);
     }
 
     [UnitTest]
@@ -70,7 +70,7 @@ public sealed class FeatureServerQueryDateBinsEditionGateTests
         };
     }
 
-    private static void AssertPaymentRequired(IResult result)
+    private static async Task AssertPaymentRequiredAsync(IResult result)
     {
         if (result is IStatusCodeHttpResult statusCodeResult)
         {
@@ -79,7 +79,7 @@ public sealed class FeatureServerQueryDateBinsEditionGateTests
         }
 
         var ctx = new DefaultHttpContext { Response = { Body = new MemoryStream() } };
-        result.ExecuteAsync(ctx).GetAwaiter().GetResult();
+        await result.ExecuteAsync(ctx);
         ctx.Response.StatusCode.Should().Be(StatusCodes.Status402PaymentRequired);
     }
 

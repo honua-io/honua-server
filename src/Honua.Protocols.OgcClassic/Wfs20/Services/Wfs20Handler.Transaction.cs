@@ -55,6 +55,8 @@ internal sealed partial class Wfs20Handler
 
         try
         {
+            // WFS-T transactions are Community (#1591): open-protocol feature edits carry no
+            // entitlement gate. The Pro editing gate applies only to the FeatureServer surface.
             var document = await ReadTransactionDocumentAsync(context.Request, cancellationToken).ConfigureAwait(false);
             var root = document.Root;
             if (root == null || !string.Equals(root.Name.LocalName, Wfs20Utilities.Operations.Transaction, StringComparison.OrdinalIgnoreCase))
@@ -175,6 +177,10 @@ internal sealed partial class Wfs20Handler
                 "OperationNotSupported",
                 ex.Message,
                 "request");
+        }
+        catch (RequestBodyTooLargeException)
+        {
+            return StandardErrorHelpers.CreatePayloadTooLarge(context, "Request payload is too large.");
         }
         catch (Exception ex)
         {
@@ -1516,15 +1522,21 @@ internal sealed partial class Wfs20Handler
 
         request.EnableBuffering();
         request.Body.Position = 0;
+        var bodyRead = await RequestBodySizeGuard.ReadUtf8TextAsync(
+            request.HttpContext,
+            RequestBodySizeGuard.ResolveMaxBodyBytes(request.HttpContext),
+            cancellationToken).ConfigureAwait(false);
+        if (request.Body.CanSeek)
+        {
+            request.Body.Position = 0;
+        }
 
-        using var reader = new StreamReader(
-            request.Body,
-            Encoding.UTF8,
-            detectEncodingFromByteOrderMarks: true,
-            bufferSize: 1024,
-            leaveOpen: true);
-        var body = await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
-        request.Body.Position = 0;
+        if (bodyRead.TooLarge)
+        {
+            throw new RequestBodyTooLargeException();
+        }
+
+        var body = bodyRead.Body;
 
         if (string.IsNullOrWhiteSpace(body))
         {

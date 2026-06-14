@@ -100,6 +100,7 @@ public static class EndpointRegistry
         new("GET", "/api/v1/admin/metadata/environments/{environment}/inventory"),
         new("POST", "/api/v1/admin/metadata/environment-bindings/query"),
         new("POST", "/api/v1/admin/metadata/release-packages"),
+        new("GET", "/api/v1/admin/metadata/release-packages"),
         new("GET", "/api/v1/admin/metadata/release-packages/{packageId}"),
         new("GET", "/api/v1/admin/metadata/release-packages/{packageId}/gitops-manifest"),
         new("GET", "/api/v1/admin/metadata/releases/{packageId}/operation"),
@@ -274,6 +275,9 @@ public static class EndpointRegistry
         new("POST", "/api/v1/studio/content-items/{itemId}/versions/{versionId}/publish-requests"),
         new("POST", "/api/v1/studio/content-items/{itemId}/versions/{versionId}/reopen"),
         new("POST", "/api/v1/studio/content-items/{itemId}/rollback-requests"),
+        // NL-assisted map package generation (#1180).
+        new("POST", "/api/v1/studio/app-packages/generate"),
+        new("POST", "/api/v1/studio/map-packages/generate"),
 
         // v1 Studio map collaboration: comment threads + activity feed (#1278, slice 1)
         new("GET", "/api/v1/console/maps/{mapId}/collab/comments"),
@@ -289,10 +293,18 @@ public static class EndpointRegistry
         new("POST", "/api/v1/console/publications/{publicationId}/republish"),
         new("POST", "/api/v1/console/publications/{publicationId}/rollback"),
         new("PATCH", "/api/v1/console/publications/{publicationId}/policy"),
+        // NL-assisted report/dashboard content generation (#1183).
+        new("POST", "/api/v1/console/publications/generate"),
 
         // Temporal data history (slice 1 of #1166): capability discovery + as-of read.
         new("GET", "/api/v1/temporal/services/{serviceId}/layers/{layerId}/capabilities"),
         new("GET", "/api/v1/temporal/services/{serviceId}/layers/{layerId}/as-of"),
+
+        // Temporal data history (slices 2-5 of #1166): diff, feature timeline, governed rollback.
+        new("GET", "/api/v1/temporal/services/{serviceId}/layers/{layerId}/diff"),
+        new("GET", "/api/v1/temporal/services/{serviceId}/layers/{layerId}/features/{featureId}/timeline"),
+        new("POST", "/api/v1/temporal/services/{serviceId}/layers/{layerId}/rollback/plan"),
+        new("POST", "/api/v1/temporal/services/{serviceId}/layers/{layerId}/rollback"),
 
         new("GET", "/api/v1/published/{*routeSlug}"),
 
@@ -327,6 +339,7 @@ public static class EndpointRegistry
         new("PUT", "/api/v1/admin/alerts/rules/{ruleId}"),
         new("PUT", "/api/v1/admin/alerts/rules/{ruleId}/enabled"),
         new("GET", "/api/v1/admin/alerts/rules/{ruleId}/health"),
+        new("GET", "/api/v1/admin/alerts/rules/{ruleId}/events"),
         new("DELETE", "/api/v1/admin/alerts/rules/{ruleId}"),
 
         // v1 admin import endpoints (primary)
@@ -394,7 +407,9 @@ public static class EndpointRegistry
 
         // v1 admin ArcGIS migration evidence endpoints (#1025 slice 6)
         new("GET", "/api/v1/admin/import/arcgis/migrations"),
+        new("POST", "/api/v1/admin/import/arcgis/migrations/{runId}/manifest"),
         new("GET", "/api/v1/admin/import/arcgis/migrations/{runId}/manifest"),
+        new("POST", "/api/v1/admin/import/arcgis/migrations/{runId}/parity"),
         new("GET", "/api/v1/admin/import/arcgis/migrations/{runId}/parity"),
 
         // v1 admin import endpoints (Geoservices)
@@ -436,9 +451,12 @@ public static class EndpointRegistry
 
         // v1 admin GeoServer migration run orchestration endpoints (#1015 slice 5)
         new("GET", "/api/v1/admin/migration/runs"),
+        new("POST", "/api/v1/admin/migration/runs"),
         new("GET", "/api/v1/admin/migration/runs/{runId}"),
         new("GET", "/api/v1/admin/migration/runs/{runId}/evidence-pack"),
         new("GET", "/api/v1/admin/migration/runs/{runId}/scorecard"),
+        new("POST", "/api/v1/admin/migration/runs/{runId}/complete"),
+        new("POST", "/api/v1/admin/migration/runs/{runId}/scorecard"),
         new("POST", "/api/v1/admin/migration/runs/{runId}/cancel"),
 
         // v1 admin import endpoints (OGC WMTS tile cache export #1016 slice 4)
@@ -507,6 +525,7 @@ public static class EndpointRegistry
         // Forms package lifecycle, offline policy, and submissions (#1184)
         new("GET", "/api/v1/admin/forms/packages"),
         new("POST", "/api/v1/admin/forms/packages"),
+        new("POST", "/api/v1/admin/forms/packages/generate"),
         new("GET", "/api/v1/admin/forms/packages/{formId}"),
         new("GET", "/api/v1/admin/forms/packages/{formId}/versions"),
         new("GET", "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}"),
@@ -514,10 +533,20 @@ public static class EndpointRegistry
         new("POST", "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/validate"),
         new("POST", "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/publish"),
         new("POST", "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/reopen"),
+        // NL-assisted form package generation (#1184).
+        new("POST", "/api/v1/admin/forms/packages/generate"),
         new("GET", "/api/v1/forms/packages/{formId}"),
         new("GET", "/api/v1/forms/packages/{formId}/versions/{packageVersion}"),
         new("GET", "/api/v1/forms/packages/{formId}/offline-policy"),
+        new("GET", "/api/v1/forms/packages/{formId}/compatibility"),
         new("POST", "/api/v1/forms/packages/{formId}/submissions"),
+
+        // Back-office field data review & QA (#1159)
+        new("GET", "/api/v1/admin/field-workflows/submissions"),
+        new("GET", "/api/v1/admin/field-workflows/submissions/{submissionId}"),
+        new("POST", "/api/v1/admin/field-workflows/submissions/{submissionId}/assignment"),
+        new("POST", "/api/v1/admin/field-workflows/submissions/{submissionId}/decision"),
+        new("POST", "/api/v1/admin/field-workflows/submissions/{submissionId}/comments"),
 
         new("POST", "/api/v1/admin/tile-operations/jobs"),
         new("GET", "/api/v1/admin/tile-operations/jobs/{jobId}"),
@@ -639,7 +668,10 @@ public static class EndpointRegistry
         new("POST", "/rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/startEditing"),
         new("POST", "/rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/stopEditing"),
         new("POST", "/rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/reconcile"),
+        new("GET", "/rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/inspectConflicts"),
+        new("POST", "/rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/resolveConflicts"),
         new("POST", "/rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/post"),
+        new("GET", "/rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/jobs/{jobId}"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/append"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/append"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/calculate"),
@@ -1105,6 +1137,9 @@ public static class EndpointRegistry
         new("GET", "/v1/spec/artifact/{hash}"),
 
         // Analysis content HTTP surface (#1182, #1237).
+        // NL-assisted analysis-package and saved-query generation.
+        new("POST", "/api/v1/analysis/content/generate"),
+        new("POST", "/api/v1/analysis/content/queries/generate"),
         new("POST", "/api/v1/analysis/content/items"),
         new("GET", "/api/v1/analysis/content/items"),
         new("GET", "/api/v1/analysis/content/items/{itemId}"),

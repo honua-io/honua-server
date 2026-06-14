@@ -61,7 +61,7 @@ internal static partial class TemporalHistoryEndpoints
             var capability = await service.GetCapabilityAsync(serviceId, layerId, context.RequestAborted).ConfigureAwait(false);
             return Results.Json(ToResponse(capability), TemporalHistoryApiJsonContext.Default.TemporalCapabilityResponse);
         }
-        catch (Exception ex) when (TryMapException(ex, context, out var problem))
+        catch (Exception ex) when (TemporalProblemMapping.TryMap(ex, context, out var problem))
         {
             return problem;
         }
@@ -106,7 +106,7 @@ internal static partial class TemporalHistoryEndpoints
             var result = await service.ReadAsOfAsync(serviceId, layerId, request, context.RequestAborted).ConfigureAwait(false);
             return Results.Json(ToResponse(result), TemporalHistoryApiJsonContext.Default.TemporalAsOfResponse);
         }
-        catch (Exception ex) when (TryMapException(ex, context, out var problem))
+        catch (Exception ex) when (TemporalProblemMapping.TryMap(ex, context, out var problem))
         {
             return problem;
         }
@@ -155,37 +155,6 @@ internal static partial class TemporalHistoryEndpoints
                 })
                 .ToArray()
         };
-
-    private static bool TryMapException(Exception ex, HttpContext context, out IResult problem)
-    {
-        switch (ex)
-        {
-            case TemporalValidationException validationEx:
-                problem = ProblemDetailsHelpers.CreateAdminProblem(
-                    context,
-                    StatusCodes.Status400BadRequest,
-                    ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
-                    validationEx.Message);
-                return true;
-            case TemporalLayerNotFoundException notFoundEx:
-                problem = ProblemDetailsHelpers.CreateAdminProblem(
-                    context,
-                    StatusCodes.Status404NotFound,
-                    ProblemDetailsHelpers.GetTitle(StatusCodes.Status404NotFound),
-                    notFoundEx.Message);
-                return true;
-            case TemporalNotSupportedException notSupportedEx:
-                problem = ProblemDetailsHelpers.CreateAdminProblem(
-                    context,
-                    StatusCodes.Status409Conflict,
-                    ProblemDetailsHelpers.GetTitle(StatusCodes.Status409Conflict),
-                    notSupportedEx.Message);
-                return true;
-            default:
-                problem = Results.Empty;
-                return false;
-        }
-    }
 
     private static IResult CreateGenericProblem(HttpContext context)
         => ProblemDetailsHelpers.CreateAdminProblem(

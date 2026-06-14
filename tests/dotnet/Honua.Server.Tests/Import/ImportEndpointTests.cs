@@ -107,6 +107,34 @@ public class ImportEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/import/formats")]
+    public async Task GetSupportedFormats_DoesNotAdvertiseUnsupportedFormats()
+    {
+        // Act
+        var response = await _client.GetAsync("/api/v1/admin/import/formats");
+
+        // Assert
+        response.BeSuccessful();
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+        var extensions = document.RootElement
+            .GetProperty("supportedExtensions")
+            .EnumerateArray()
+            .Select(element => element.GetString())
+            .ToArray();
+        var formatDescriptions = document.RootElement.GetProperty("formatDescriptions");
+
+        extensions.Should().NotContain(".gml");
+        extensions.Should().NotContain(".twkb");
+        formatDescriptions.TryGetProperty(".gml", out _).Should().BeFalse();
+        formatDescriptions.TryGetProperty(".twkb", out _).Should().BeFalse();
+        content.Should().NotContain("GML - Geography Markup Language");
+        content.Should().NotContain("TinyWKB - Compact binary format");
+    }
+
+    [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/formats")]
     [Endpoint("PUT /api/v1/admin/import/formats")]
     [Endpoint("DELETE /api/v1/admin/import/formats")]

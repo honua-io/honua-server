@@ -5,6 +5,7 @@ using System.Text;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Honua.Worker.Gdal.Execution;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -18,7 +19,9 @@ namespace Honua.Worker.Gdal.Tests;
 /// </summary>
 public sealed class GdalSurfaceExecutorTests
 {
-    private static string Base64(string text) => Convert.ToBase64String(Encoding.UTF8.GetBytes(text));
+    private const string ScratchSuite = "honua-gdal-surface-test";
+
+    private static string Base64(string text) => GdalCli.Base64(text);
 
     [UnitTest]
     public void GdalSurfaceExecutor_DeclaresNativeRuntimeProfile()
@@ -295,16 +298,11 @@ public sealed class GdalSurfaceExecutorTests
         }
     }
 
-    [IntegrationTest]
-    [Protocol("OgcApiProcesses")]
-    [Operation("ProcessExecution")]
+    [GdalCliFact("gdaldem")]
+    [Protocol(ProtocolNames.TestQuality)]
+    [Operation(Operations.TestInfrastructure)]
     public async Task Slope_WithRealGdaldem_ProducesGeoTiff_AndReconcilesAgainstSource()
     {
-        if (!GdalCli.Available("gdaldem"))
-        {
-            return;
-        }
-
         var scratch = NewScratch();
         var executor = new GdalSurfaceJobExecutor(
             new ProcessGdalCommandRunner(NullLogger<ProcessGdalCommandRunner>.Instance),
@@ -313,7 +311,7 @@ public sealed class GdalSurfaceExecutorTests
 
         try
         {
-            var demBytes = GdalCli.GenerateSampleDem(scratch);
+            var demBytes = await GdalCli.GenerateSampleDemAsync(scratch).ConfigureAwait(false);
             var job = GdalJobFactory.Job(
                 GdalSurfaceJobExecutor.SlopeProcessId,
                 ("source", Convert.ToBase64String(demBytes)));
@@ -343,21 +341,7 @@ public sealed class GdalSurfaceExecutorTests
             runner, GdalJobFactory.Options(scratch), NullLogger<GdalSurfaceJobExecutor>.Instance);
     }
 
-    private static string NewScratch()
-        => Path.Combine(Path.GetTempPath(), "honua-gdal-surface-test", Guid.NewGuid().ToString("N"));
+    private static string NewScratch() => GdalCli.NewScratch(ScratchSuite);
 
-    private static void CleanupScratch(string scratch)
-    {
-        try
-        {
-            if (Directory.Exists(scratch))
-            {
-                Directory.Delete(scratch, recursive: true);
-            }
-        }
-        catch (IOException)
-        {
-            // best effort
-        }
-    }
+    private static void CleanupScratch(string scratch) => GdalCli.CleanupScratch(scratch);
 }

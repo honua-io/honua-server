@@ -148,6 +148,7 @@ public static class MetadataV2GraphValidator
             ValidateResourceSchemaFields(errors, resource);
             ValidateResourceDisplayEditing(errors, resource);
             ValidateResourceSubtypes(errors, resource);
+            ValidateResourceAttributeRules(errors, resource);
             ValidateResourceExtrusion(errors, resource);
             ValidateResourceSymbology3D(errors, resource);
         }
@@ -177,6 +178,48 @@ public static class MetadataV2GraphValidator
             foreach (var fieldName in subtype.FieldOverrides.Keys)
             {
                 EnsureFieldDeclared(errors, resource, fieldName, "subtypes.subtypes.fieldOverrides");
+            }
+        }
+    }
+
+    private static void ValidateResourceAttributeRules(List<string> errors, MetadataV2Resource resource)
+    {
+        var rules = resource.AttributeRules;
+        if (rules.Count == 0)
+        {
+            return;
+        }
+
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var rule in rules)
+        {
+            if (string.IsNullOrWhiteSpace(rule.Name))
+            {
+                errors.Add($"resource '{resource.Metadata.Id}' attributeRules.name is required.");
+            }
+            else if (!seen.Add(rule.Name))
+            {
+                errors.Add($"resource '{resource.Metadata.Id}' attributeRules.name '{rule.Name}' is duplicated.");
+            }
+
+            if (string.IsNullOrWhiteSpace(rule.ScriptExpression))
+            {
+                errors.Add($"resource '{resource.Metadata.Id}' attributeRule '{rule.Name}' scriptExpression is required.");
+            }
+
+            // A calculation rule writes its computed value into a declared field; a rule
+            // pointing at an undeclared field could never be applied, so reject it at the
+            // graph level rather than silently dropping the write at edit time.
+            if (rule.Type == MetadataV2AttributeRuleType.Calculation)
+            {
+                if (string.IsNullOrWhiteSpace(rule.FieldName))
+                {
+                    errors.Add($"resource '{resource.Metadata.Id}' calculation attributeRule '{rule.Name}' requires fieldName.");
+                }
+                else
+                {
+                    EnsureFieldDeclared(errors, resource, rule.FieldName, "attributeRules.fieldName");
+                }
             }
         }
     }

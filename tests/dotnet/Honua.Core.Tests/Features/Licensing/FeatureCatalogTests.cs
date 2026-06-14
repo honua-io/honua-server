@@ -44,6 +44,7 @@ public sealed class FeatureCatalogTests
         categories.Should().Contain(FeatureCatalog.Categories.Alerts);
         categories.Should().Contain(FeatureCatalog.Categories.Channels);
         categories.Should().Contain(FeatureCatalog.Categories.Geocoding);
+        categories.Should().Contain(FeatureCatalog.Categories.Routing);
         categories.Should().Contain(FeatureCatalog.Categories.Identity);
         categories.Should().Contain(FeatureCatalog.Categories.Caching);
         categories.Should().Contain(FeatureCatalog.Categories.Import);
@@ -94,6 +95,71 @@ public sealed class FeatureCatalogTests
     }
 
     [Fact]
+    public void All_RoutingSolveIsProTier()
+    {
+        var feature = FeatureCatalog.All.SingleOrDefault(f => f.Key == "routing.solve");
+
+        feature.Should().NotBeNull("MCP route solving is gated by the Pro license entitlement for ticket #1597");
+        feature!.Category.Should().Be(FeatureCatalog.Categories.Routing);
+        feature.MinimumEdition.Should().Be(HonuaEdition.Pro);
+    }
+
+    [Fact]
+    public void All_FeatureServerEditingIsProTier()
+    {
+        // Ticket #1591: only the Esri GeoServices FeatureServer write surface is
+        // Pro-gated. Open-protocol edits remain Community while using the shared
+        // edit pipeline.
+        var feature = FeatureCatalog.All.SingleOrDefault(f => f.Key == FeatureCatalog.FeatureServerEditsKey);
+
+        feature.Should().NotBeNull("feature catalog must define FeatureServer editing for ticket #1591");
+        feature!.Key.Should().Be("editing.featureserver-edits");
+        feature.Category.Should().Be(FeatureCatalog.Categories.Editing);
+        feature.MinimumEdition.Should().Be(HonuaEdition.Pro);
+        feature.Description.Should().Contain("FeatureServer");
+        feature.Description.Should().NotContain("OGC API Features");
+        feature.Description.Should().NotContain("WFS-T");
+        feature.Description.Should().NotContain("OData");
+        feature.Description.Should().NotContain("gRPC");
+    }
+
+    [Fact]
+    public void All_BranchVersioningIsEnterpriseTier()
+    {
+        // Branch versioning stays an Enterprise entitlement, distinct from the Pro
+        // FeatureServer editing gate scoped in #1591.
+        var feature = FeatureCatalog.All.SingleOrDefault(f => f.Key == FeatureCatalog.BranchVersioningKey);
+
+        feature.Should().NotBeNull("feature catalog must define branch versioning");
+        feature!.Category.Should().Be(FeatureCatalog.Categories.Editing);
+        feature.MinimumEdition.Should().Be(HonuaEdition.Enterprise);
+    }
+
+    [Fact]
+    public void All_OidcSingleProviderIsProAndGovernanceIsEnterprise()
+    {
+        // Ticket #1612: basic single-provider OIDC has no SSO tax and validates
+        // under Pro. Multi-provider configuration and claim-to-role mapping stay
+        // Enterprise identity-governance entitlements.
+        var oidc = FeatureCatalog.All.SingleOrDefault(f => f.Key == FeatureCatalog.OidcAuthenticationKey);
+        var multiProvider = FeatureCatalog.All.SingleOrDefault(f => f.Key == FeatureCatalog.OidcMultiProviderKey);
+        var claimsMapping = FeatureCatalog.All.SingleOrDefault(f => f.Key == FeatureCatalog.OidcClaimsMappingKey);
+
+        oidc.Should().NotBeNull("feature catalog must define basic OIDC authentication for ticket #1612");
+        oidc!.Category.Should().Be(FeatureCatalog.Categories.Identity);
+        oidc.MinimumEdition.Should().Be(HonuaEdition.Pro);
+        oidc.Description.Should().Contain("Single-provider");
+
+        multiProvider.Should().NotBeNull("feature catalog must keep multi-provider SSO Enterprise-gated");
+        multiProvider!.Category.Should().Be(FeatureCatalog.Categories.Identity);
+        multiProvider.MinimumEdition.Should().Be(HonuaEdition.Enterprise);
+
+        claimsMapping.Should().NotBeNull("feature catalog must keep OIDC claims mapping Enterprise-gated");
+        claimsMapping!.Category.Should().Be(FeatureCatalog.Categories.Identity);
+        claimsMapping.MinimumEdition.Should().Be(HonuaEdition.Enterprise);
+    }
+
+    [Fact]
     public void All_CommunityFeaturesAreExpected()
     {
         // Community features are explicitly tracked — adding one requires updating this test
@@ -108,7 +174,8 @@ public sealed class FeatureCatalogTests
             "temporal.filtering",
             "temporal.extent-discovery",
             "identity.portal-token",
-            "identity.portal-sharing"
+            "identity.portal-sharing",
+            "import.file"
         ]);
     }
 

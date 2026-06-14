@@ -3,12 +3,14 @@
 
 using System.Buffers;
 using System.Collections.Immutable;
+using System.Diagnostics;
 using System.Globalization;
 using System.Text.RegularExpressions;
 using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Infrastructure.Filtering;
 using Honua.Infrastructure.Helpers;
@@ -19,6 +21,7 @@ using Honua.Protocols.Stac.Models;
 using Honua.Protocols.Stac.Services;
 using Honua.Core.Features.Geometry.Abstractions;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Protocols.Stac;
 
@@ -155,12 +158,15 @@ internal static class SearchEndpoints
         bool defaultFilterLangIsText,
         ILogger logger)
     {
-        // TODO(#1144): wire tenant filter — resolve ITenantContext from context.RequestServices
-        // and constrain V2 graph lookups + featureReader queries to the caller's tenant id.
         using var activity = StacTelemetry.StartActivity(
             StacTelemetry.Operations.SearchExecute,
             "/stac/search",
             context.Request.Method);
+
+        if (!TryRequireTenantContext(context, activity, out var tenantError))
+        {
+            return tenantError!;
+        }
 
         if (request.Limit is < 1)
         {
@@ -602,15 +608,21 @@ internal static class SearchEndpoints
                 return false;
             }
 
+            // Carry the schema field type so numeric properties sort numerically rather
+            // than lexicographically (FeatureQueryBuilder only casts when FieldType is set).
+            var fieldType = availableFields.TryGetValue(normalizedField, out var schemaField)
+                ? schemaField.Type
+                : (MetadataV2FieldType?)null;
+
             if (string.Equals(sort.Direction, "desc", StringComparison.OrdinalIgnoreCase))
             {
-                orderByBuilder.Add(OrderByClause.Desc(normalizedField));
+                orderByBuilder.Add(new OrderByClause(normalizedField, ascending: false, fieldType));
                 continue;
             }
 
             if (string.Equals(sort.Direction, "asc", StringComparison.OrdinalIgnoreCase))
             {
-                orderByBuilder.Add(OrderByClause.Asc(normalizedField));
+                orderByBuilder.Add(new OrderByClause(normalizedField, ascending: true, fieldType));
                 continue;
             }
 
@@ -1475,5 +1487,21 @@ internal static class SearchEndpoints
         }
 
         return string.Join("&", query);
+    }
+
+    private static bool TryRequireTenantContext(HttpContext context, Activity? activity, out IResult? error)
+    {
+        var tenantContext = context.RequestServices.GetService<ITenantContext>();
+        if (tenantContext is not null && tenantContext.RequireTenantId(out var tenantId, out _))
+        {
+            activity?.SetTag("honua.tenant_id", tenantId);
+            error = null;
+            return true;
+        }
+
+        error = StandardErrorHelpers.CreateForbidden(
+            context,
+            "Tenant context is required to search STAC items.");
+        return false;
     }
 }

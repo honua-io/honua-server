@@ -445,6 +445,17 @@ public sealed class ContentPublicationEndpointsTests : IAsyncLifetime
         codes.Should().Contain("publication.panels.invalid");
     }
 
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/console/publications/generate")]
+    public async Task GenerateContent_MissingPrompt_ReachesHandlerAndReturnsBadRequest()
+    {
+        // The generate route validates the prompt before invoking any AI provider, so an empty body
+        // exercises the wired endpoint (non-404) without calling a real LLM.
+        var response = await _client.PostAsync("/api/v1/console/publications/generate", JsonContent("{}"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
     private async Task<ContentPublicationDetail> PublishAsync(string slug, ContentPublicationKind kind, string? payload = null)
     {
         var body = SerializePublish(new PublishContentRequest { Kind = kind, RouteSlug = slug, Title = slug, ContentPayload = payload });

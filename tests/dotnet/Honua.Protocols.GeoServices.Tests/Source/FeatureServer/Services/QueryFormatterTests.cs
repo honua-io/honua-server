@@ -128,7 +128,9 @@ public sealed class QueryFormatterTests
         geoJson.Features.Should().HaveCount(1);
         geoJson.Features[0].Id.Should().Be(42L);
         geoJson.Features[0].Properties.Should().Contain("objectid", 42L);
-        geoJson.Features[0].Properties.Should().Contain("OBJECTID", 42L);
+        // GeoJSON properties mirror the f=json attributes (lowercase objectid only);
+        // the synthetic uppercase OBJECTID alias is intentionally suppressed (#1518).
+        geoJson.Features[0].Properties.Should().NotContainKey("OBJECTID");
         geoJson.Features[0].Properties.Should().Contain("name", "alpha");
     }
 

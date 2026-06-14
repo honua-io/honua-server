@@ -88,6 +88,15 @@ public sealed class LayerPublishRequest
     /// Null when the source layer declared no subtypes.
     /// </summary>
     public Honua.Core.Features.Metadata.Domain.V2.MetadataV2Subtypes? Subtypes { get; init; }
+
+    /// <summary>
+    /// Optional Esri-style attribute rules (calculation / constraint / validation)
+    /// captured from the migration source. Calculation rules whose target field is
+    /// published, and constraint/validation rules, are carried into the Metadata v2
+    /// resource so they fire on the shared edit path (FeatureServer <c>applyEdits</c>).
+    /// Null when the source layer declared none.
+    /// </summary>
+    public IReadOnlyList<Honua.Core.Features.Metadata.Domain.V2.MetadataV2AttributeRule>? AttributeRules { get; init; }
 }
 
 /// <summary>

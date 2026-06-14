@@ -479,7 +479,14 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
             var tileEnvelope = isGeographicTile
                 ? BuildGeographicTileEnvelope(tileBounds)
                 : "ST_TileEnvelope($2, $3, $4)";
-            var tileEnvelopeWithBuffer = $"ST_Expand({tileEnvelope}, $5)";
+            // Clip the buffered Web Mercator tile envelope to the valid extent. At low zoom
+            // (z=1, z=2) the buffer pushes the envelope past +/-20037508 m; transforming that
+            // out-of-range box to a geographic layer CRS yields non-finite latitudes and
+            // silently drops features (empty MVT at z=1/z=2). ST_TileEnvelope(0,0,0) is the
+            // full valid EPSG:3857 extent. The geographic-tile path is already in-range.
+            var tileEnvelopeWithBuffer = isGeographicTile
+                ? $"ST_Expand({tileEnvelope}, $5)"
+                : $"ST_Intersection(ST_Expand({tileEnvelope}, $5), ST_TileEnvelope(0, 0, 0))";
 
             parameters.Add(layerId);
             parameters.Add(z);

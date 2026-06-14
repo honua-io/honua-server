@@ -61,7 +61,9 @@ internal sealed class ClarifyIntentTool : IMcpTool
         // to the same IGroundingService.GroundAsync flow, so the gate must match
         // honua_ground_candidates — otherwise callers can start grounding but be
         // blocked from answering their own clarification envelope.
-        _jobService.EnsureCallerAuthorized(principal, OperatorResourceType.Catalog, OperatorOperation.Discover);
+        await _jobService
+            .EnsureCallerAuthorizedAsync(principal, OperatorResourceType.Catalog, OperatorOperation.Discover, cancellationToken)
+            .ConfigureAwait(false);
 
         var argument = McpToolHelpers.ParseArguments(arguments, GroundingJsonContext.Default.McpClarifyIntentArgument);
         var request = GroundingToolMapper.ToDomain(argument);

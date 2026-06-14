@@ -46,6 +46,12 @@ internal sealed class OpenUsdManifestValidationException : Exception
         Reason = reason;
     }
 
+    public OpenUsdManifestValidationException(string reason, string message, Exception innerException)
+        : base(message, innerException)
+    {
+        Reason = reason;
+    }
+
     public string Reason { get; }
 }
 
@@ -86,7 +92,8 @@ internal static class OpenUsdSceneManifestReader
             {
                 throw new OpenUsdManifestValidationException(
                     "tileset_json_invalid",
-                    $"Scene tileset.json could not be parsed: {ex.Message}");
+                    "Scene tileset.json could not be parsed.",
+                    ex);
             }
         }
 
@@ -208,7 +215,8 @@ internal static class OpenUsdSceneManifestReader
             {
                 throw new OpenUsdManifestValidationException(
                     "observations_sidecar_invalid",
-                    $"Observation sidecar could not be parsed: {ex.Message}");
+                    "Observation sidecar could not be parsed.",
+                    ex);
             }
         }
 

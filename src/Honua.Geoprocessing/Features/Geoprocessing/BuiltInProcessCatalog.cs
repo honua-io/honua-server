@@ -881,8 +881,9 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         // row counts). Managed writers / Npgsql only — no GDAL.
         // The catalog honua-layer sink (insert through honua.create_import_table /
         // honua.insert_import_feature) is DEFERRED: unlike external-postgis (which
-        // takes a connection string as a plan parameter and so stays DI-free), it
-        // must reach the catalog NpgsqlDataSource. Injecting that into an executor
+        // targets a registered secure connection and therefore depends on resolver
+        // wiring outside this catalog. The catalog never accepts raw connection strings.
+        // It must reach the catalog NpgsqlDataSource. Injecting that into an executor
         // would break the dispatcher's unconditional construction in lean
         // deployments where Postgres is not registered, and a plan-parameter
         // connection string would leak catalog credentials into the workflow DAG.
@@ -893,12 +894,12 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         {
             ProcessId = "sink.geojson-file",
             Title = "GeoJSON File Sink",
-            Description = "Writes the input FeatureCollection to a GeoJSON FeatureCollection file at the supplied path, emitting a result descriptor with written/rejected counts. Managed NetTopologySuite writer — no native dependency.",
+            Description = "Writes the input FeatureCollection to a GeoJSON FeatureCollection file below the configured geoprocessing output root, emitting a result descriptor with written/rejected counts. Managed NetTopologySuite writer — no native dependency.",
             Category = "sink",
             Parameters =
             [
                 Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
-                Param("path", "Output Path", "Absolute output file path (overwritten if it exists).", ProcessParameterValueType.Text, required: true),
+                Param("path", "Output Path", "Relative output file path under the configured geoprocessing output root (overwritten if it exists).", ProcessParameterValueType.Text, required: true),
             ],
             OutputArtifactKinds = [ArtifactKind.File]
         },
@@ -911,7 +912,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Parameters =
             [
                 Param("input", "Rejected Features", "Input FeatureCollection of rejected rows as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
-                Param("path", "Output Path", "Absolute dead-letter output file path (overwritten if it exists).", ProcessParameterValueType.Text, required: true),
+                Param("path", "Output Path", "Relative dead-letter output file path under the configured geoprocessing output root (overwritten if it exists).", ProcessParameterValueType.Text, required: true),
                 Param("reasonField", "Reason Field", "Attribute name carrying a per-row reason string. Defaults to _quarantine_reason.", ProcessParameterValueType.Text, defaultValue: "_quarantine_reason"),
                 Param("batchId", "Batch Id", "Run batch identifier tagged on every quarantined row. Defaults to the operation id.", ProcessParameterValueType.Text),
             ],
@@ -921,12 +922,13 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         {
             ProcessId = "sink.external-postgis",
             Title = "External PostGIS Sink",
-            Description = "Loads the input FeatureCollection into a customer-owned PostGIS database identified by a caller-supplied connection string (NOT the Honua catalog). Managed Npgsql + WKB — no GDAL. Every row's attributes JSONB carries a reserved __pipeline_batch_id key for soft-delete rollback.",
+            Description = "Loads the input FeatureCollection into a customer-owned PostGIS database identified by a registered secure connection. Managed Npgsql + WKB — no GDAL. Every row's attributes JSONB carries a reserved __pipeline_batch_id key for soft-delete rollback.",
             Category = "sink",
             Parameters =
             [
                 Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
-                Param("connectionString", "Connection String", "External PostGIS connection string.", ProcessParameterValueType.Text, required: true),
+                Param("connectionName", "Secure Connection Name", "Registered secure connection name for the external PostGIS database. Either connectionName or connectionId is required.", ProcessParameterValueType.Text),
+                Param("connectionId", "Secure Connection Id", "Registered secure connection id for the external PostGIS database. Either connectionName or connectionId is required.", ProcessParameterValueType.Text),
                 Param("table", "Table", "Destination table name (created if missing). Must match ^[A-Za-z_][A-Za-z0-9_]*$.", ProcessParameterValueType.Text, required: true),
                 Param("targetSrid", "Target SRID", "Geometry SRID for the destination column.", ProcessParameterValueType.Srid, required: true),
                 Param("schema", "Schema", "Destination schema. Defaults to public. Must match ^[A-Za-z_][A-Za-z0-9_]*$.", ProcessParameterValueType.Text, defaultValue: "public"),

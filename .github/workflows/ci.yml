@@ -152,7 +152,7 @@ jobs:
               comment += 'Edit your PR description to address these issues — this check re-runs automatically.\n';
             }
 
-            comment += '\n---\n*PR validation — see [template guide](../blob/trunk/.github/pull_request_template.md) and [gate model](../blob/trunk/docs/ci/gate-model.md)*';
+            comment += '\n---\n*PR validation — see [template guide](../blob/trunk/.github/pull_request_template.md) and [gate model](../blob/trunk/docs/internal/ci/gate-model.md)*';
 
             // Upsert validation comment
             const { data: comments } = await github.rest.issues.listComments({
@@ -662,6 +662,16 @@ jobs:
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults
 
+      - name: Run .NET Tests (Core Security)
+        timeout-minutes: 3
+        run: |
+          dotnet test tests/dotnet/Honua.Core.Security.Tests/Honua.Core.Security.Tests.csproj \
+            --no-restore \
+            --configuration Release \
+            --logger "trx;LogFileName=core-security-tests.trx" \
+            --logger "console;verbosity=minimal" \
+            --results-directory ./tests/TestResults
+
       - name: Run .NET Tests (Server Fast Tier)
         # Per ADR-0037 the Fast tier runs across every test project on every
         # PR, including Honua.Server.Tests. Filtering by Tier=Fast keeps this
@@ -724,7 +734,7 @@ jobs:
       # inspected manually from the workflow run.
       - name: Upload coverage to Codecov
         if: ${{ always() && env.CODECOV_TOKEN != '' }}
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         with:
@@ -1034,6 +1044,8 @@ jobs:
           HONUA_BASE_URL: http://localhost:5000
           HONUA_SERVICE_ID: test_service
           HONUA_LAYER_ID: '0'
+          # Dedicated 'Mixed' layer for the heterogeneous geometry round-trip suite (layer 0 is Point).
+          HONUA_MIXED_LAYER_ID: '1'
           HONUA_API_KEY: "ci-admin-password"
 
       - name: Run OpenLayers Rendering Test
@@ -1238,7 +1250,7 @@ jobs:
       # Test code lives in honua-sdk-js; this repo provides only CI jobs,
       # seed data, and docs (AC 8). The action inspects package.json
       # BEFORE npm ci so the skip path cannot fail on missing deps.
-      # See docs/contributor/mcp-certification.md.
+      # See docs/internal/contributor/mcp-certification.md.
       - name: Setup Honua MCP environment
         id: setup
         uses: ./.github/actions/setup-honua-mcp
@@ -1458,7 +1470,7 @@ jobs:
 
       - name: Upload Postgres coverage to Codecov
         if: ${{ always() && matrix.collect_coverage && env.CODECOV_TOKEN != '' }}
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         with:

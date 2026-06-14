@@ -1110,6 +1110,12 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         {
             null => DBNull.Value,
             DateTimeOffset dateTimeOffset => dateTimeOffset.ToUniversalTime(),
+            // DateTimeOffset.UtcDateTime yields a Kind=Unspecified DateTime, which Npgsql
+            // refuses to bind to a timestamptz column (ArgumentException -> HTTP 500). Force
+            // a UTC kind so temporal STAC/OGC filters bind correctly.
+            DateTime dateTime => DateTime.SpecifyKind(
+                dateTime.Kind == DateTimeKind.Local ? dateTime.ToUniversalTime() : dateTime,
+                DateTimeKind.Utc),
             _ => value
         };
     }

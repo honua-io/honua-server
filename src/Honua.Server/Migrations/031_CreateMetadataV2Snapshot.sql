@@ -58,7 +58,12 @@ CREATE TABLE IF NOT EXISTS honua.metadata_v2_services_idx (
         ON DELETE CASCADE
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_metadata_v2_services_name
+-- Non-unique lookup index. Service identity is the PRIMARY KEY
+-- (environment, revision, service_id); a single logical service is projected across
+-- multiple protocol facets that intentionally share one display name, so the name
+-- column must NOT be unique. See migration 046 (honua-server#1395), which relaxes this
+-- on databases created before the constraint was corrected.
+CREATE INDEX IF NOT EXISTS idx_metadata_v2_services_name
     ON honua.metadata_v2_services_idx (environment, revision, lower(name));
 
 CREATE TABLE IF NOT EXISTS honua.metadata_v2_publications_idx (

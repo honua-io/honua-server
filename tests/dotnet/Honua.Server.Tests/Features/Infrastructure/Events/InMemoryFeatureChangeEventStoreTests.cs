@@ -48,6 +48,63 @@ public sealed class InMemoryFeatureChangeEventStoreTests
 
         await act.Should().ThrowAsync<InvalidOperationException>();
         ((IFeatureChangeEventStoreHealth)store).CanPersistEvents.Should().BeFalse();
+        ((IFeatureChangeEventStoreHealth)store).IsUsingInMemoryFallback.Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task AppendAsync_WithoutRedisInSingleNodeMode_PersistsInMemoryAndReportsHealthyFallback()
+    {
+        // Single-node/serverless topology (#1618): no Redis configured, in-memory mode allowed.
+        var store = new InMemoryFeatureChangeEventStore(
+            Options.Create(new FeatureChangeEventOptions { MaxRetainedEvents = 100 }),
+            redis: null,
+            allowInMemoryFallback: true);
+
+        store.CanPersistEvents.Should().BeTrue();
+        store.IsUsingInMemoryFallback.Should().BeTrue();
+
+        var created = await store.AppendAsync(new FeatureChangeEventRequest
+        {
+            ServiceId = "svc-1",
+            LayerId = 0,
+            ObjectId = 1,
+            Operation = "update",
+            Protocol = "rest",
+            RequestId = "req-1"
+        });
+
+        created.Cursor.Should().Be(1);
+        var events = await store.QueryAsync(cursor: null, from: null, to: null, limit: 10);
+        events.Should().ContainSingle(e => e.EventId == created.EventId);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task AppendAsync_WithoutRedisAndDurabilityRequired_ReportsUnavailableAndThrows()
+    {
+        // Strict store contract retained: durability required + no Redis = cannot persist.
+        // (The host registration never produces this combination anymore — when Redis is
+        // unconfigured it explicitly allows the in-memory single-node mode, see
+        // FeatureEventsAndStreamingRegistration.)
+        var store = new InMemoryFeatureChangeEventStore(
+            Options.Create(new FeatureChangeEventOptions { MaxRetainedEvents = 100 }),
+            redis: null,
+            allowInMemoryFallback: false);
+
+        ((IFeatureChangeEventStoreHealth)store).CanPersistEvents.Should().BeFalse();
+
+        var act = () => store.AppendAsync(new FeatureChangeEventRequest
+        {
+            ServiceId = "svc-1",
+            LayerId = 0,
+            ObjectId = 1,
+            Operation = "update",
+            Protocol = "rest",
+            RequestId = "req-1"
+        });
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
     }
 
     [UnitTest]

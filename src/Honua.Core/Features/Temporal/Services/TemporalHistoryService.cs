@@ -29,7 +29,7 @@ namespace Honua.Core.Features.Temporal.Services;
 /// without depending on it: a layer can expose temporal history with or without version branches.
 /// </para>
 /// </remarks>
-public sealed class TemporalHistoryService : ITemporalHistoryService
+public sealed partial class TemporalHistoryService : ITemporalHistoryService
 {
     private const int DefaultLimit = 1000;
     private const int MaxLimit = 10000;
@@ -37,16 +37,28 @@ public sealed class TemporalHistoryService : ITemporalHistoryService
     private readonly IMetadataV2GraphProvider _graphProvider;
     private readonly IChangeTracker _changeTracker;
     private readonly IFeatureReader _featureReader;
+    private readonly ITemporalHistoryStore _historyStore;
+    private readonly ITemporalCheckpointResolver _checkpointResolver;
+    private readonly ITemporalMaskingPolicy _maskingPolicy;
+    private readonly ITemporalRollbackRunner _rollbackRunner;
 
     /// <summary>Creates the temporal history service.</summary>
     public TemporalHistoryService(
         IMetadataV2GraphProvider graphProvider,
         IChangeTracker changeTracker,
-        IFeatureReader featureReader)
+        IFeatureReader featureReader,
+        ITemporalHistoryStore historyStore,
+        ITemporalCheckpointResolver checkpointResolver,
+        ITemporalMaskingPolicy maskingPolicy,
+        ITemporalRollbackRunner rollbackRunner)
     {
         _graphProvider = graphProvider ?? throw new ArgumentNullException(nameof(graphProvider));
         _changeTracker = changeTracker ?? throw new ArgumentNullException(nameof(changeTracker));
         _featureReader = featureReader ?? throw new ArgumentNullException(nameof(featureReader));
+        _historyStore = historyStore ?? throw new ArgumentNullException(nameof(historyStore));
+        _checkpointResolver = checkpointResolver ?? throw new ArgumentNullException(nameof(checkpointResolver));
+        _maskingPolicy = maskingPolicy ?? throw new ArgumentNullException(nameof(maskingPolicy));
+        _rollbackRunner = rollbackRunner ?? throw new ArgumentNullException(nameof(rollbackRunner));
     }
 
     /// <inheritdoc />
@@ -79,7 +91,13 @@ public sealed class TemporalHistoryService : ITemporalHistoryService
             TemporalColumn: temporalColumn,
             CursorKind: TemporalCursorKind.Generation,
             CurrentGeneration: currentGeneration,
-            DeferredCapabilities: new TemporalDeferredCapabilities());
+            DeferredCapabilities: new TemporalDeferredCapabilities(
+                // Slices 2-5 are now implemented; report them as supported when the layer is
+                // history-capable so clients negotiate the diff/timeline/attribution/rollback surfaces.
+                SupportsDiff: historyCapable,
+                SupportsTimeline: historyCapable,
+                SupportsAttribution: historyCapable,
+                SupportsRollback: historyCapable));
     }
 
     /// <inheritdoc />

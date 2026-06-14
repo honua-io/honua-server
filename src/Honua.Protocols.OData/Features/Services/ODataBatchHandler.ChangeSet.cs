@@ -441,6 +441,9 @@ internal sealed partial class ODataBatchHandler
         var deleteCount = deleteRequests.Values.Sum(list => list.Count);
         var totalCount = addCount + updateCount + deleteCount;
 
+        // OData $batch change-set writes are Community (#1591). They still flow through the
+        // shared edit processor, validation, authz, event, and telemetry paths below.
+
         if (addCount > _editLimits.MaxFeaturesPerEdit ||
             updateCount > _editLimits.MaxFeaturesPerEdit ||
             deleteCount > _editLimits.MaxFeaturesPerEdit)

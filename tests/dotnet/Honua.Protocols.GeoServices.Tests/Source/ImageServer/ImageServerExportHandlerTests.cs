@@ -302,6 +302,32 @@ public class ImageServerExportHandlerTests
 
     [UnitTest]
     [Operation(Operations.Export)]
+    public async Task ExportImageAsync_WithUnsupportedMosaicMethodAndMultipleRasters_ReturnsNotImplemented()
+    {
+        _rasterStore.QueryRastersAsync(default, default, default)
+            .ReturnsForAnyArgs(
+            [
+                CreateTestRasterInfo(),
+                CreateTestRasterInfo() with { Id = 101, Name = "second-raster" }
+            ]);
+
+        var context = CreateImageServerContext();
+        var request = CreateRequest(mosaicRule: "{\"mosaicMethod\":\"esriMosaicLockRaster\",\"lockRasterIds\":[8]}");
+        var result = await _handler.ExportImageAsync(context, 1, request);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status501NotImplemented);
+        await _rasterStore.DidNotReceive()
+            .ExportMosaicAsync(
+                1,
+                Arg.Any<long[]>(),
+                Arg.Any<RasterMergeStrategy>(),
+                Arg.Any<RasterQuery>(),
+                Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
     public async Task ExportImageAsync_WithExplicitPixelType_ReturnsNotImplemented()
     {
         SetupLayerAndRasters();

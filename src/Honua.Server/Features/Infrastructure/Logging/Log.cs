@@ -432,5 +432,18 @@ internal static partial class Log
         Message = "PostGIS preflight check failed: {ErrorMessage}. Startup aborted.")]
     public static partial void PostGisPreflightCheckFailedCritical(ILogger logger, string errorMessage);
 
+    /// <summary>
+    /// Logs (loudly, at Warning) when startup enters degraded mode because the database was
+    /// unavailable but degraded-start is enabled (#1632). The process keeps running and recovers
+    /// connectivity in the background instead of crashing.
+    /// </summary>
+    /// <param name="logger">The logger instance.</param>
+    /// <param name="message">The degraded-start warning describing the transient failure.</param>
+    [LoggerMessage(
+        EventId = 5012,
+        Level = LogLevel.Warning,
+        Message = "{Message}")]
+    public static partial void DatabaseStartupDegraded(ILogger logger, string message);
+
     #endregion
 }

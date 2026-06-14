@@ -3,7 +3,6 @@
 
 using System.Globalization;
 using System.Text.Json;
-using Honua.Core.Configuration;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Validation;
 using Microsoft.Extensions.Options;
@@ -30,13 +29,21 @@ internal sealed record DeployTelemetryDecision
 }
 
 /// <summary>
-/// Prometheus-compatible telemetry evaluator used to gate deploy success and trigger rollback.
+/// Multi-provider deploy telemetry gate. Parses the provider-neutral
+/// <see cref="DeployTelemetryPolicy"/>, applies warmup, resolves the named telemetry connection,
+/// then dispatches the metric reads to the <see cref="IDeployTelemetryProviderEvaluator"/> whose
+/// <see cref="IDeployTelemetryProviderEvaluator.Provider"/> matches the connection's
+/// <c>Provider</c>. An unknown/unconfigured provider surfaces an explicit, logged
+/// "unsupported provider" wait rather than stalling silently forever.
 /// </summary>
-internal sealed class PrometheusDeployTelemetrySignalEvaluator(
+internal sealed class DeployTelemetrySignalEvaluator(
     IOptionsMonitor<ControlPlaneOptions> optionsMonitor,
-    IHttpClientFactory httpClientFactory,
-    ILogger<PrometheusDeployTelemetrySignalEvaluator> logger) : IDeployTelemetrySignalEvaluator
+    IEnumerable<IDeployTelemetryProviderEvaluator> providerEvaluators,
+    ILogger<DeployTelemetrySignalEvaluator> logger) : IDeployTelemetrySignalEvaluator
 {
+    private readonly Dictionary<string, IDeployTelemetryProviderEvaluator> _providers =
+        BuildProviderMap(providerEvaluators);
+
     public async Task<DeployTelemetryDecision?> EvaluateAsync(
         WorkflowOperationRecord operation,
         CancellationToken cancellationToken = default)
@@ -83,79 +90,32 @@ internal sealed class PrometheusDeployTelemetrySignalEvaluator(
             };
         }
 
-        if (!string.Equals(connection.Provider, "prometheus", StringComparison.OrdinalIgnoreCase))
+        var providerKey = connection.Provider?.Trim() ?? string.Empty;
+        if (!_providers.TryGetValue(providerKey, out var providerEvaluator))
         {
+            // Surface an explicit, logged signal rather than stalling silently forever. The
+            // reconciler keeps the operation in Reconciling on WaitForMoreTelemetry, so the
+            // log is the operator's breadcrumb that the connection's provider is unsupported.
+            DeployTelemetrySignalEvaluatorLog.UnsupportedProvider(
+                logger,
+                operation.OperationId,
+                connection.ConnectionId,
+                string.IsNullOrWhiteSpace(providerKey) ? "(empty)" : providerKey,
+                string.Join(", ", _providers.Keys.OrderBy(static key => key, StringComparer.Ordinal)));
+
             return new DeployTelemetryDecision
             {
                 WaitForMoreTelemetry = true,
-                Message = $"Waiting for telemetry confirmation because provider '{connection.Provider}' is not supported for deploy rollback signals."
+                Message = $"Waiting for telemetry confirmation because provider '{connection.Provider}' on connection '{connection.ConnectionId}' is not supported for deploy rollback signals."
             };
         }
 
         try
         {
-            var validatedConnection = await ValidateConnectionAsync(connection, cancellationToken).ConfigureAwait(false);
-            var sampleCount = string.IsNullOrWhiteSpace(policy.MinimumSampleQuery)
-                ? null
-                : await ExecutePrometheusQueryAsync(validatedConnection, policy.MinimumSampleQuery, cancellationToken).ConfigureAwait(false);
-
-            if (policy.MinimumSampleCount.HasValue && (!sampleCount.HasValue || sampleCount.Value < policy.MinimumSampleCount.Value))
-            {
-                return new DeployTelemetryDecision
-                {
-                    WaitForMoreTelemetry = true,
-                    Message = sampleCount.HasValue
-                        ? $"Waiting for telemetry confirmation because sample count {sampleCount.Value.ToString("0.###", CultureInfo.InvariantCulture)} is below the required minimum {policy.MinimumSampleCount.Value.ToString("0.###", CultureInfo.InvariantCulture)}."
-                        : "Waiting for telemetry confirmation because no sample-count signal is available yet."
-                };
-            }
-
-            var breachMessages = new List<string>();
-            var healthySignals = new List<string>();
-
-            if (!string.IsNullOrWhiteSpace(policy.ErrorRateQuery) && policy.ErrorRateThreshold.HasValue)
-            {
-                var errorRate = await ExecutePrometheusQueryAsync(validatedConnection, policy.ErrorRateQuery, cancellationToken).ConfigureAwait(false);
-                if (errorRate.HasValue && errorRate.Value > policy.ErrorRateThreshold.Value)
-                {
-                    breachMessages.Add(
-                        $"error rate {errorRate.Value.ToString("0.###", CultureInfo.InvariantCulture)} exceeded threshold {policy.ErrorRateThreshold.Value.ToString("0.###", CultureInfo.InvariantCulture)}");
-                }
-                else
-                {
-                    healthySignals.Add("error-rate signal is within threshold");
-                }
-            }
-
-            if (!string.IsNullOrWhiteSpace(policy.LatencyP95Query) && policy.LatencyP95ThresholdMs.HasValue)
-            {
-                var latencyP95 = await ExecutePrometheusQueryAsync(validatedConnection, policy.LatencyP95Query, cancellationToken).ConfigureAwait(false);
-                if (latencyP95.HasValue && latencyP95.Value > policy.LatencyP95ThresholdMs.Value)
-                {
-                    breachMessages.Add(
-                        $"p95 latency {latencyP95.Value.ToString("0.###", CultureInfo.InvariantCulture)}ms exceeded threshold {policy.LatencyP95ThresholdMs.Value.ToString("0.###", CultureInfo.InvariantCulture)}ms");
-                }
-                else
-                {
-                    healthySignals.Add("latency signal is within threshold");
-                }
-            }
-
-            if (breachMessages.Count > 0)
-            {
-                return new DeployTelemetryDecision
-                {
-                    RollbackRecommended = true,
-                    Message = $"Automatic rollback requested because telemetry detected canary degradation: {string.Join("; ", breachMessages)}."
-                };
-            }
-
-            return new DeployTelemetryDecision
-            {
-                Message = healthySignals.Count > 0
-                    ? $"Telemetry gate passed: {string.Join("; ", healthySignals)}."
-                    : "Telemetry gate passed."
-            };
+            var readings = await providerEvaluator
+                .ReadAsync(policy.ToDescriptor(), ToDescriptor(connection), cancellationToken)
+                .ConfigureAwait(false);
+            return Evaluate(policy, readings);
         }
         catch (Exception ex)
         {
@@ -168,8 +128,149 @@ internal sealed class PrometheusDeployTelemetrySignalEvaluator(
         }
     }
 
+    /// <summary>
+    /// Provider-neutral evaluation of telemetry readings against the policy thresholds. Keeps
+    /// promote/rollback/wait semantics identical regardless of which metrics backend produced them.
+    /// </summary>
+    internal static DeployTelemetryDecision Evaluate(DeployTelemetryPolicy policy, DeployTelemetryReadings readings)
+    {
+        if (policy.MinimumSampleCount.HasValue &&
+            (!readings.SampleCount.HasValue || readings.SampleCount.Value < policy.MinimumSampleCount.Value))
+        {
+            return new DeployTelemetryDecision
+            {
+                WaitForMoreTelemetry = true,
+                Message = readings.SampleCount.HasValue
+                    ? $"Waiting for telemetry confirmation because sample count {Format(readings.SampleCount.Value)} is below the required minimum {Format(policy.MinimumSampleCount.Value)}."
+                    : "Waiting for telemetry confirmation because no sample-count signal is available yet."
+            };
+        }
+
+        var breachMessages = new List<string>();
+        var healthySignals = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(policy.ErrorRateQuery) && policy.ErrorRateThreshold.HasValue)
+        {
+            if (readings.ErrorRate.HasValue && readings.ErrorRate.Value > policy.ErrorRateThreshold.Value)
+            {
+                breachMessages.Add(
+                    $"error rate {Format(readings.ErrorRate.Value)} exceeded threshold {Format(policy.ErrorRateThreshold.Value)}");
+            }
+            else
+            {
+                healthySignals.Add("error-rate signal is within threshold");
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(policy.LatencyP95Query) && policy.LatencyP95ThresholdMs.HasValue)
+        {
+            if (readings.LatencyP95.HasValue && readings.LatencyP95.Value > policy.LatencyP95ThresholdMs.Value)
+            {
+                breachMessages.Add(
+                    $"p95 latency {Format(readings.LatencyP95.Value)}ms exceeded threshold {Format(policy.LatencyP95ThresholdMs.Value)}ms");
+            }
+            else
+            {
+                healthySignals.Add("latency signal is within threshold");
+            }
+        }
+
+        if (breachMessages.Count > 0)
+        {
+            return new DeployTelemetryDecision
+            {
+                RollbackRecommended = true,
+                Message = $"Automatic rollback requested because telemetry detected canary degradation: {string.Join("; ", breachMessages)}."
+            };
+        }
+
+        return new DeployTelemetryDecision
+        {
+            Message = healthySignals.Count > 0
+                ? $"Telemetry gate passed: {string.Join("; ", healthySignals)}."
+                : "Telemetry gate passed."
+        };
+    }
+
+    private static DeployTelemetryConnectionDescriptor ToDescriptor(DeployTelemetryConnectionOptions connection)
+        => new()
+        {
+            ConnectionId = connection.ConnectionId,
+            Provider = connection.Provider,
+            BaseUrl = connection.BaseUrl,
+            QueryPath = connection.QueryPath,
+            AuthHeaderName = connection.AuthHeaderName,
+            AuthHeaderValue = connection.AuthHeaderValue,
+            Region = connection.Region,
+            TimeoutSeconds = connection.TimeoutSeconds
+        };
+
+    private static string Format(double value)
+        => value.ToString("0.###", CultureInfo.InvariantCulture);
+
+    private static Dictionary<string, IDeployTelemetryProviderEvaluator> BuildProviderMap(
+        IEnumerable<IDeployTelemetryProviderEvaluator> providerEvaluators)
+    {
+        var map = new Dictionary<string, IDeployTelemetryProviderEvaluator>(StringComparer.OrdinalIgnoreCase);
+        foreach (var evaluator in providerEvaluators)
+        {
+            // First registration wins so a host can override a built-in provider deliberately.
+            map.TryAdd(evaluator.Provider, evaluator);
+        }
+
+        return map;
+    }
+}
+
+/// <summary>
+/// Prometheus-compatible telemetry provider used to gate deploy success and trigger rollback.
+/// Reference implementation for the multi-provider gate.
+/// </summary>
+internal sealed class PrometheusDeployTelemetryProviderEvaluator(
+    IHttpClientFactory httpClientFactory) : IDeployTelemetryProviderEvaluator
+{
+    public string Provider => "prometheus";
+
+    public async Task<DeployTelemetryReadings> ReadAsync(
+        DeployTelemetryPolicyDescriptor policy,
+        DeployTelemetryConnectionDescriptor connection,
+        CancellationToken cancellationToken)
+    {
+        var validatedConnection = await ValidateConnectionAsync(connection, cancellationToken).ConfigureAwait(false);
+
+        var sampleCount = string.IsNullOrWhiteSpace(policy.MinimumSampleQuery)
+            ? (double?)null
+            : await ExecutePrometheusQueryAsync(validatedConnection, policy.MinimumSampleQuery, cancellationToken).ConfigureAwait(false);
+
+        // Short-circuit when the sample-count gate already fails; mirrors the original
+        // evaluator that did not query error-rate/latency until the minimum sample was met.
+        if (policy.MinimumSampleCount.HasValue && (!sampleCount.HasValue || sampleCount.Value < policy.MinimumSampleCount.Value))
+        {
+            return new DeployTelemetryReadings { SampleCount = sampleCount };
+        }
+
+        double? errorRate = null;
+        if (!string.IsNullOrWhiteSpace(policy.ErrorRateQuery) && policy.ErrorRateThreshold.HasValue)
+        {
+            errorRate = await ExecutePrometheusQueryAsync(validatedConnection, policy.ErrorRateQuery, cancellationToken).ConfigureAwait(false);
+        }
+
+        double? latencyP95 = null;
+        if (!string.IsNullOrWhiteSpace(policy.LatencyP95Query) && policy.LatencyP95ThresholdMs.HasValue)
+        {
+            latencyP95 = await ExecutePrometheusQueryAsync(validatedConnection, policy.LatencyP95Query, cancellationToken).ConfigureAwait(false);
+        }
+
+        return new DeployTelemetryReadings
+        {
+            SampleCount = sampleCount,
+            ErrorRate = errorRate,
+            LatencyP95 = latencyP95
+        };
+    }
+
     private static async Task<ValidatedTelemetryConnection> ValidateConnectionAsync(
-        DeployTelemetryConnectionOptions connection,
+        DeployTelemetryConnectionDescriptor connection,
         CancellationToken cancellationToken)
     {
         var baseUrlValidation = await OutboundHttpUrlValidator
@@ -279,278 +380,6 @@ internal sealed class PrometheusDeployTelemetrySignalEvaluator(
         return double.TryParse(raw, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var parsed)
             ? parsed
             : null;
-    }
-
-    private sealed record DeployTelemetryPolicy
-    {
-        private const string DefaultPrometheusJob = "honua";
-        private const string DefaultCanaryPrometheusJob = "honua-canary";
-
-        public required string ConnectionId { get; init; }
-
-        public string? ErrorRateQuery { get; init; }
-
-        public double? ErrorRateThreshold { get; init; }
-
-        public string? LatencyP95Query { get; init; }
-
-        public double? LatencyP95ThresholdMs { get; init; }
-
-        public string? MinimumSampleQuery { get; init; }
-
-        public double? MinimumSampleCount { get; init; }
-
-        public TimeSpan WarmupDuration { get; init; } = TimeSpan.FromMinutes(2);
-
-        public string? ValidationError { get; init; }
-
-        public bool IsValid => string.IsNullOrWhiteSpace(ValidationError);
-
-        public static DeployTelemetryPolicy? Parse(DeployOperationSpec spec)
-        {
-            var parameters = spec.Parameters;
-            if (!parameters.TryGetValue("telemetry.connection", out var connectionId) ||
-                string.IsNullOrWhiteSpace(connectionId))
-            {
-                return null;
-            }
-
-            var preset = ResolvePreset(spec);
-            var explicitErrorQuery = Get(parameters, "telemetry.error_rate.query");
-            var explicitLatencyQuery = Get(parameters, "telemetry.latency_p95.query");
-            var explicitSampleQuery = Get(parameters, "telemetry.sample_count.query");
-            var errorRateQuery = explicitErrorQuery ?? preset?.ErrorRateQuery;
-            var latencyQuery = explicitLatencyQuery ?? preset?.LatencyP95Query;
-            var sampleQuery = explicitSampleQuery ?? preset?.MinimumSampleQuery;
-
-            if (string.IsNullOrWhiteSpace(errorRateQuery) &&
-                string.IsNullOrWhiteSpace(latencyQuery) &&
-                string.IsNullOrWhiteSpace(sampleQuery))
-            {
-                return null;
-            }
-
-            var errorThreshold = ParseOptionalDouble(parameters, "telemetry.error_rate.threshold") ?? preset?.ErrorRateThreshold;
-            var latencyThreshold = ParseOptionalDouble(parameters, "telemetry.latency_p95.threshold_ms") ?? preset?.LatencyP95ThresholdMs;
-            var sampleMinimum = ParseOptionalDouble(parameters, "telemetry.sample_count.minimum") ?? preset?.MinimumSampleCount;
-            var warmupSeconds = ParseOptionalDouble(parameters, "telemetry.warmup_seconds");
-
-            // When the operator supplied explicit query overrides, the preset's input
-            // requirement (e.g. canary selector / job) no longer applies — the per-query
-            // threshold checks below validate the override-only policy.
-            var hasExplicitQueryOverride =
-                !string.IsNullOrWhiteSpace(explicitErrorQuery) ||
-                !string.IsNullOrWhiteSpace(explicitLatencyQuery) ||
-                !string.IsNullOrWhiteSpace(explicitSampleQuery);
-            var validationError = hasExplicitQueryOverride ? null : preset?.ValidationError;
-            if (!string.IsNullOrWhiteSpace(errorRateQuery) && !errorThreshold.HasValue)
-            {
-                validationError = "Deploy telemetry policy is invalid because telemetry.error_rate.threshold is missing.";
-            }
-            else if (!string.IsNullOrWhiteSpace(latencyQuery) && !latencyThreshold.HasValue)
-            {
-                validationError = "Deploy telemetry policy is invalid because telemetry.latency_p95.threshold_ms is missing.";
-            }
-            else if (!string.IsNullOrWhiteSpace(sampleQuery) && !sampleMinimum.HasValue)
-            {
-                validationError = "Deploy telemetry policy is invalid because telemetry.sample_count.minimum is missing.";
-            }
-
-            return new DeployTelemetryPolicy
-            {
-                ConnectionId = connectionId.Trim(),
-                ErrorRateQuery = errorRateQuery,
-                ErrorRateThreshold = errorThreshold,
-                LatencyP95Query = latencyQuery,
-                LatencyP95ThresholdMs = latencyThreshold,
-                MinimumSampleQuery = sampleQuery,
-                MinimumSampleCount = sampleMinimum,
-                WarmupDuration = warmupSeconds.HasValue && warmupSeconds.Value > 0
-                    ? TimeSpan.FromSeconds(warmupSeconds.Value)
-                    : preset?.WarmupDuration ?? TimeSpan.FromMinutes(2),
-                ValidationError = validationError
-            };
-        }
-
-        private static DeployTelemetryPolicy? ResolvePreset(DeployOperationSpec spec)
-        {
-            var parameters = spec.Parameters;
-            var policyName = Get(parameters, "telemetry.policy") ?? GetDefaultPolicyName(spec);
-            if (string.IsNullOrWhiteSpace(policyName))
-            {
-                return null;
-            }
-
-            return policyName.ToLowerInvariant() switch
-            {
-                "honua-http" or "kubernetes-honua-http" => CreateHonuaHttpPreset(parameters),
-                "aws-alb-canary" => CreateAwsAlbCanaryPreset(parameters),
-                "aws-lambda-canary" => CreateAwsLambdaCanaryPreset(parameters),
-                "azure-aca-canary" => CreateAzureAcaCanaryPreset(parameters),
-                _ => new DeployTelemetryPolicy
-                {
-                    ConnectionId = string.Empty,
-                    ValidationError = $"Deploy telemetry policy '{policyName}' is not supported."
-                }
-            };
-        }
-
-        private static string? GetDefaultPolicyName(DeployOperationSpec spec)
-            => spec.TargetKind switch
-            {
-                DeployTargetKind.Kubernetes => "kubernetes-honua-http",
-                // ECS canary deploys are configured by setting a canary weight via
-                // aws.ecs.canary_weight_percentage or the generic
-                // deployment.canary_weight_percentage; either key implies the rollout
-                // is gated on canary-only telemetry. Without that signal the runbook
-                // and PlanAsync would advertise a canary policy while the evaluator
-                // silently fell back to aggregate Honua HTTP metrics.
-                DeployTargetKind.AwsEcs => HasCanarySignalConfiguration(spec.Parameters) || HasCanaryWeight(spec.Parameters)
-                    ? "aws-alb-canary"
-                    : "honua-http",
-                DeployTargetKind.AwsLambda => HasCanarySignalConfiguration(spec.Parameters) ? "aws-lambda-canary" : "honua-http",
-                DeployTargetKind.AzureContainerApps => HasCanarySignalConfiguration(spec.Parameters) ? "azure-aca-canary" : "honua-http",
-                DeployTargetKind.AzureFunctions => "honua-http",
-                _ => null
-            };
-
-        private static bool HasCanarySignalConfiguration(IReadOnlyDictionary<string, string> parameters)
-            => parameters.ContainsKey("telemetry.prometheus.canary_selector")
-               || parameters.ContainsKey("telemetry.prometheus.canary_job");
-
-        private static bool HasCanaryWeight(IReadOnlyDictionary<string, string> parameters)
-            => HasNonEmpty(parameters, "aws.ecs.canary_weight_percentage")
-               || HasNonEmpty(parameters, "deployment.canary_weight_percentage");
-
-        private static bool HasNonEmpty(IReadOnlyDictionary<string, string> parameters, string key)
-            => parameters.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value);
-
-        private static DeployTelemetryPolicy CreateHonuaHttpPreset(IReadOnlyDictionary<string, string> parameters)
-        {
-            var selector = BuildPrometheusSelector(
-                parameters,
-                selectorKey: "telemetry.prometheus.selector",
-                jobKey: "telemetry.prometheus.job",
-                defaultJob: DefaultPrometheusJob);
-
-            return string.IsNullOrWhiteSpace(selector)
-                ? InvalidPreset("Deploy telemetry policy 'kubernetes-honua-http' requires a Prometheus selector or job.")
-                : CreateHonuaHttpPolicy(selector, warmupDuration: TimeSpan.FromMinutes(2));
-        }
-
-        private static DeployTelemetryPolicy CreateAwsAlbCanaryPreset(IReadOnlyDictionary<string, string> parameters)
-            => CreateCanaryPreset(parameters, "aws-alb-canary");
-
-        private static DeployTelemetryPolicy CreateAwsLambdaCanaryPreset(IReadOnlyDictionary<string, string> parameters)
-            => CreateCanaryPreset(parameters, "aws-lambda-canary");
-
-        private static DeployTelemetryPolicy CreateAzureAcaCanaryPreset(IReadOnlyDictionary<string, string> parameters)
-            => CreateCanaryPreset(parameters, "azure-aca-canary");
-
-        private static DeployTelemetryPolicy CreateCanaryPreset(IReadOnlyDictionary<string, string> parameters, string presetName)
-        {
-            var selector = BuildPrometheusSelector(
-                parameters,
-                selectorKey: "telemetry.prometheus.canary_selector",
-                jobKey: "telemetry.prometheus.canary_job",
-                defaultJob: DefaultCanaryPrometheusJob,
-                fallbackSelectorKey: "telemetry.prometheus.selector",
-                fallbackJobKey: "telemetry.prometheus.job");
-
-            return string.IsNullOrWhiteSpace(selector)
-                ? InvalidPreset($"Deploy telemetry policy '{presetName}' requires a canary Prometheus selector or canary job.")
-                : CreateHonuaHttpPolicy(selector, warmupDuration: TimeSpan.FromMinutes(3), minimumSampleCount: 10);
-        }
-
-        private static DeployTelemetryPolicy CreateHonuaHttpPolicy(
-            string selector,
-            TimeSpan warmupDuration,
-            double minimumSampleCount = 20)
-        {
-            var metricSelector = WrapSelector(selector);
-            var errorSelector = AppendLabelMatcher(selector, "status_code=~\"5..\"");
-
-            return new DeployTelemetryPolicy
-            {
-                ConnectionId = string.Empty,
-                ErrorRateQuery =
-                    $"sum(rate(honua_http_request_total{WrapSelector(errorSelector)}[5m])) / clamp_min(sum(rate(honua_http_request_total{metricSelector}[5m])), 0.001)",
-                ErrorRateThreshold = 0.05,
-                LatencyP95Query =
-                    $"histogram_quantile(0.95, sum(rate(honua_http_request_duration_ms_bucket{metricSelector}[5m])) by (le))",
-                LatencyP95ThresholdMs = 2000,
-                MinimumSampleQuery =
-                    $"sum(rate(honua_http_request_total{metricSelector}[5m])) * 300",
-                MinimumSampleCount = minimumSampleCount,
-                WarmupDuration = warmupDuration
-            };
-        }
-
-        private static DeployTelemetryPolicy InvalidPreset(string message)
-            => new()
-            {
-                ConnectionId = string.Empty,
-                ValidationError = message
-            };
-
-        private static string BuildPrometheusSelector(
-            IReadOnlyDictionary<string, string> parameters,
-            string selectorKey,
-            string jobKey,
-            string? defaultJob,
-            string? fallbackSelectorKey = null,
-            string? fallbackJobKey = null)
-        {
-            var rawSelector = Get(parameters, selectorKey)
-                ?? (fallbackSelectorKey != null ? Get(parameters, fallbackSelectorKey) : null);
-            var extraSelector = Get(parameters, "telemetry.prometheus.extra_selector");
-            var job = Get(parameters, jobKey)
-                ?? (fallbackJobKey != null ? Get(parameters, fallbackJobKey) : null)
-                ?? defaultJob;
-
-            var matchers = new List<string>();
-            if (!string.IsNullOrWhiteSpace(rawSelector))
-            {
-                matchers.Add(rawSelector);
-            }
-            else if (!string.IsNullOrWhiteSpace(job))
-            {
-                matchers.Add($"job={QuotePrometheusValue(job)}");
-            }
-
-            if (!string.IsNullOrWhiteSpace(extraSelector))
-            {
-                matchers.Add(extraSelector);
-            }
-
-            return string.Join(",", matchers.Where(static matcher => !string.IsNullOrWhiteSpace(matcher)));
-        }
-
-        private static string QuotePrometheusValue(string value)
-            => $"\"{value.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal)}\"";
-
-        private static string WrapSelector(string selector)
-            => string.IsNullOrWhiteSpace(selector) ? string.Empty : $"{{{selector}}}";
-
-        private static string AppendLabelMatcher(string selector, string labelMatcher)
-            => string.IsNullOrWhiteSpace(selector) ? labelMatcher : $"{selector},{labelMatcher}";
-
-        private static string? Get(IReadOnlyDictionary<string, string> parameters, string key)
-            => parameters.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value)
-                ? value.Trim()
-                : null;
-
-        private static double? ParseOptionalDouble(IReadOnlyDictionary<string, string> parameters, string key)
-        {
-            if (!parameters.TryGetValue(key, out var raw) || string.IsNullOrWhiteSpace(raw))
-            {
-                return null;
-            }
-
-            return double.TryParse(raw, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var parsed)
-                ? parsed
-                : null;
-        }
     }
 
     private sealed record ValidatedTelemetryConnection(

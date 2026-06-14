@@ -11,7 +11,7 @@ using Honua.TestKit.Seeding;
 
 namespace Honua.Server.Tests.Seed;
 
-[Collection("Database")]
+[Collection("Database.CoreEndpoints")]
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class AdminSampleSeedFeatureServerTests : IAsyncLifetime
 {

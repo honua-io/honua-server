@@ -19,7 +19,7 @@ on:
     - cron: '0 3 * * 1'  # Monday 3 AM UTC
 
   # Tier: nightly — conformance suites are external and heavyweight.
-  # PR/push triggers removed in #485. See docs/ci/gate-model.md.
+  # PR/push triggers removed in #485. See docs/internal/ci/gate-model.md.
 
 permissions:
   contents: read

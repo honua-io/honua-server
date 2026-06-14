@@ -27,7 +27,7 @@ public sealed class SpatialAnalyticsEditionGateTests
 {
     [UnitTest]
     [Protocol(TestProtocols.SpatialAnalytics)]
-    public void RequireProEdition_CommunityEdition_ReturnsPaymentRequired()
+    public async Task RequireProEdition_CommunityEdition_ReturnsPaymentRequired()
     {
         var context = BuildHttpContext(HonuaEdition.Community);
 
@@ -35,7 +35,7 @@ public sealed class SpatialAnalyticsEditionGateTests
             context, "queryClusters", NullLogger.Instance);
 
         result.Should().NotBeNull();
-        AssertPaymentRequired(result!);
+        await AssertPaymentRequiredAsync(result!);
     }
 
     [UnitTest]
@@ -64,7 +64,7 @@ public sealed class SpatialAnalyticsEditionGateTests
 
     [UnitTest]
     [Protocol(TestProtocols.SpatialAnalytics)]
-    public void RequireProEdition_LoggerNull_StillBlocksCommunity()
+    public async Task RequireProEdition_LoggerNull_StillBlocksCommunity()
     {
         // The handler tolerates a null logger (it's resolved best-effort from DI)
         // so missing observability must not break the gate decision.
@@ -74,7 +74,7 @@ public sealed class SpatialAnalyticsEditionGateTests
             context, "queryBufferAggregate", logger: null);
 
         result.Should().NotBeNull();
-        AssertPaymentRequired(result!);
+        await AssertPaymentRequiredAsync(result!);
     }
 
     private static DefaultHttpContext BuildHttpContext(HonuaEdition edition)
@@ -88,7 +88,7 @@ public sealed class SpatialAnalyticsEditionGateTests
         };
     }
 
-    private static void AssertPaymentRequired(IResult result)
+    private static async Task AssertPaymentRequiredAsync(IResult result)
     {
         // StandardErrorHelpers.CreateForbidden routes through the standard error
         // formatter which produces an IStatusCodeHttpResult variant — the typed
@@ -102,7 +102,7 @@ public sealed class SpatialAnalyticsEditionGateTests
         // Fallback: execute the result against a recording HttpContext so we can
         // observe the status code regardless of the underlying wrapper type.
         var ctx = new DefaultHttpContext { Response = { Body = new MemoryStream() } };
-        result.ExecuteAsync(ctx).GetAwaiter().GetResult();
+        await result.ExecuteAsync(ctx);
         ctx.Response.StatusCode.Should().Be(StatusCodes.Status402PaymentRequired);
     }
 

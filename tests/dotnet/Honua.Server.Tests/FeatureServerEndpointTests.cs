@@ -13,6 +13,8 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
 using Xunit.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests;
 
@@ -23,11 +25,11 @@ namespace Honua.Server.Tests;
 /// <summary>
 /// Integration tests for streaming query functionality (Issue #229)
 /// </summary>
-[Collection("Database")]
+[Collection("Database.CoreEndpoints")]
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class StreamingFeatureServerEndpointTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _webAppFixture = new();
+    private readonly WebAppFixture _webAppFixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
     private readonly ITestOutputHelper _output;
 
     public StreamingFeatureServerEndpointTests(ITestOutputHelper output)
@@ -245,10 +247,10 @@ public sealed class StreamingFeatureServerEndpointTests : IAsyncLifetime
 }
 
 [Protocol(TestProtocols.FeatureServer)]
-[Collection("Database")]
+[Collection("Database.CoreEndpoints")]
 public sealed class FeatureServerEndpointTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
     private const string TestServiceId = "test";
     private const int TestLayerId = 0;
 
@@ -2229,14 +2231,11 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
 
         geoJsonResponse.Should().NotBeNull();
         geoJsonResponse!.ExceededTransferLimit.Should().BeTrue();
-        geoJsonResponse.Properties.Should().NotBeNull();
-        var exceededValue = geoJsonResponse.Properties!["exceededTransferLimit"];
-        exceededValue.Should().BeOfType<JsonElement>();
-        ((JsonElement)exceededValue).GetBoolean().Should().BeTrue();
+        geoJsonResponse.Properties.Should().BeNull();
 
         using var jsonDoc = JsonDocument.Parse(content);
         jsonDoc.RootElement.GetProperty("exceededTransferLimit").GetBoolean().Should().BeTrue();
-        jsonDoc.RootElement.GetProperty("properties").GetProperty("exceededTransferLimit").GetBoolean().Should().BeTrue();
+        jsonDoc.RootElement.TryGetProperty("properties", out _).Should().BeFalse();
     }
 
     /// <summary>
@@ -2783,6 +2782,170 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         applyEditsResponse.AddResults.Should().HaveCount(1);
         applyEditsResponse.AddResults![0].Success.Should().BeTrue();
         applyEditsResponse.AddResults[0].ObjectId.Should().BeGreaterThan(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task ApplyEdits_WithCalculationRule_PopulatesTargetFieldOnAdd()
+    {
+        // honua-server#1271: a calculation attribute rule attached to the resource must
+        // fire on applyEdits and populate its target field before write. The 'description'
+        // string field is part of the seeded test layer schema, so we drive a constant
+        // assignment into it and read it back via a query.
+        var rule = new MetadataV2AttributeRule
+        {
+            Name = "SetDescription",
+            Type = MetadataV2AttributeRuleType.Calculation,
+            FieldName = "description",
+            ScriptExpression = "return 'calculated-by-rule';",
+        };
+
+        try
+        {
+            await _fixture.UpdateV2ResourceAttributeRulesAsync(TestLayerId, [rule]);
+
+            var editsRequest = new ApplyEditsRequest
+            {
+                Adds =
+                [
+                    new GeoServicesFeature
+                    {
+                        Attributes = new Dictionary<string, object?>
+                        {
+                            ["name"] = "Calc Rule Feature",
+                            // No description supplied: the calculation rule must populate it.
+                        },
+                        Geometry = new GeoServicesGeometry { X = -122.41, Y = 37.77 },
+                    },
+                ],
+            };
+
+            var json = JsonSerializer.Serialize(editsRequest, FeatureServerJsonContext.Default.ApplyEditsRequest);
+            var response = await _fixture.Client.PostAsync(
+                $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits",
+                new StringContent(json, Encoding.UTF8, "application/json"));
+
+            response.Be200Ok();
+            var applyEditsResponse = JsonSerializer.Deserialize<ApplyEditsResponse>(
+                await response.Content.ReadAsStringAsync(), FeatureServerJsonContext.Default.ApplyEditsResponse);
+            applyEditsResponse.Should().NotBeNull();
+            applyEditsResponse!.Success.Should().BeTrue();
+            applyEditsResponse.AddResults.Should().ContainSingle();
+            applyEditsResponse.AddResults![0].Success.Should().BeTrue();
+
+            // The stored description must reflect the rule's computed value.
+            var query = await _fixture.Client.GetAsync(
+                $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?where=name='Calc Rule Feature'&outFields=*&f=json");
+            query.Be200Ok();
+            var body = await query.Content.ReadAsStringAsync();
+            body.Should().Contain("calculated-by-rule");
+        }
+        finally
+        {
+            await _fixture.UpdateV2ResourceAttributeRulesAsync(TestLayerId, null);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task ApplyEdits_WithConstraintRule_RejectsViolatingEditWithCleanError()
+    {
+        // honua-server#1271: a constraint attribute rule that evaluates to false must
+        // reject the edit through the standard per-feature edit-error shape (not a 500).
+        var rule = new MetadataV2AttributeRule
+        {
+            Name = "NameNotReject",
+            Type = MetadataV2AttributeRuleType.Constraint,
+            ScriptExpression = "$feature.name != 'reject'",
+            ErrorMessage = "Name 'reject' is not allowed",
+        };
+
+        try
+        {
+            await _fixture.UpdateV2ResourceAttributeRulesAsync(TestLayerId, [rule]);
+
+            var editsRequest = new ApplyEditsRequest
+            {
+                Adds =
+                [
+                    new GeoServicesFeature
+                    {
+                        Attributes = new Dictionary<string, object?> { ["name"] = "reject" },
+                        Geometry = new GeoServicesGeometry { X = -122.41, Y = 37.77 },
+                    },
+                ],
+            };
+
+            var json = JsonSerializer.Serialize(editsRequest, FeatureServerJsonContext.Default.ApplyEditsRequest);
+            var response = await _fixture.Client.PostAsync(
+                $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits",
+                new StringContent(json, Encoding.UTF8, "application/json"));
+
+            // The request is well-formed (HTTP 200) but the feature edit fails per-feature
+            // with the rule's message, matching the domain-validation failure pattern.
+            response.Be200Ok();
+            var applyEditsResponse = JsonSerializer.Deserialize<ApplyEditsResponse>(
+                await response.Content.ReadAsStringAsync(), FeatureServerJsonContext.Default.ApplyEditsResponse);
+            applyEditsResponse.Should().NotBeNull();
+            applyEditsResponse!.AddResults.Should().ContainSingle();
+            applyEditsResponse.AddResults![0].Success.Should().BeFalse();
+            applyEditsResponse.AddResults[0].Error.Should().NotBeNull();
+            applyEditsResponse.AddResults[0].Error!.Description.Should().Contain("Name 'reject' is not allowed");
+        }
+        finally
+        {
+            await _fixture.UpdateV2ResourceAttributeRulesAsync(TestLayerId, null);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task ApplyEdits_WithUnsupportedRuleExpression_DoesNotFailEdit()
+    {
+        // honua-server#1271: a constraint whose Arcade expression is outside the supported
+        // safe subset must be routed out of scope (skipped) rather than failing the edit.
+        var rule = new MetadataV2AttributeRule
+        {
+            Name = "ComplexArcade",
+            Type = MetadataV2AttributeRuleType.Constraint,
+            ScriptExpression = "Count($feature.parts) > 0",
+        };
+
+        try
+        {
+            await _fixture.UpdateV2ResourceAttributeRulesAsync(TestLayerId, [rule]);
+
+            var editsRequest = new ApplyEditsRequest
+            {
+                Adds =
+                [
+                    new GeoServicesFeature
+                    {
+                        Attributes = new Dictionary<string, object?> { ["name"] = "Unsupported Rule Feature" },
+                        Geometry = new GeoServicesGeometry { X = -122.41, Y = 37.77 },
+                    },
+                ],
+            };
+
+            var json = JsonSerializer.Serialize(editsRequest, FeatureServerJsonContext.Default.ApplyEditsRequest);
+            var response = await _fixture.Client.PostAsync(
+                $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits",
+                new StringContent(json, Encoding.UTF8, "application/json"));
+
+            response.Be200Ok();
+            var applyEditsResponse = JsonSerializer.Deserialize<ApplyEditsResponse>(
+                await response.Content.ReadAsStringAsync(), FeatureServerJsonContext.Default.ApplyEditsResponse);
+            applyEditsResponse.Should().NotBeNull();
+            applyEditsResponse!.AddResults.Should().ContainSingle();
+            applyEditsResponse.AddResults![0].Success.Should().BeTrue();
+        }
+        finally
+        {
+            await _fixture.UpdateV2ResourceAttributeRulesAsync(TestLayerId, null);
+        }
     }
 
     [IntegrationTest]

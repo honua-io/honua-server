@@ -461,6 +461,38 @@ public sealed class MetadataV2ModelTests
 
     [UnitTest]
     [Operation(Operations.Query)]
+    public void Validate_WithServicesSharingDisplayName_ReturnsValid()
+    {
+        // honua-server#1395: a single logical service is projected across multiple
+        // protocol facets (feature/map/image/ogc/stac) that intentionally share one
+        // display name but carry distinct service ids. Service identity is the id, not the
+        // name, so a graph with same-named services must validate. The metadata_v2
+        // services-name sidecar index is non-unique to match (see migration 046); a
+        // name-uniqueness validation rule would wrongly reject the canonical compat graph.
+        var baseGraph = CreateValidGraph();
+        var graph = baseGraph with
+        {
+            Services =
+            [
+                .. baseGraph.Services,
+                new MetadataV2Service
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "service.parcels-map", Name = "Parcels" }
+                },
+                new MetadataV2Service
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "service.parcels-ogc", Name = "parcels" }
+                }
+            ]
+        };
+
+        var result = MetadataV2GraphValidator.Validate(graph);
+
+        result.IsValid.Should().BeTrue(string.Join("; ", result.Errors));
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
     public void Validate_WithDanglingPublicationReferences_ReturnsResourceAndServiceErrors()
     {
         var graph = CreateValidGraph() with

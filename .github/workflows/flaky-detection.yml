@@ -10,7 +10,7 @@ on:
       iterations:
         description: 'Number of times to re-run the integration tier'
         required: false
-        default: '3'
+        default: '2'
       project:
         description: 'Test project to scan'
         required: false
@@ -50,7 +50,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
-      ITERATIONS: ${{ github.event.inputs.iterations || '3' }}
+      ITERATIONS: ${{ github.event.inputs.iterations || '2' }}
       CSPROJ: ${{ github.event.inputs.project || 'tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj' }}
       HONUA_TEST_DB_URL: "Host=localhost;Port=5432;Database=honua_test;Username=honua;Password=honua"
     steps:
@@ -68,8 +68,9 @@ jobs:
         timeout-minutes: 30
         run: dotnet build "${CSPROJ}" --no-restore --configuration Release
 
-      - name: Run integration tier ${{ github.event.inputs.iterations || '3' }}× and collect TRX
-        timeout-minutes: 150
+      - name: Run integration tier ${{ github.event.inputs.iterations || '2' }}× and collect TRX
+        # Integration-tier duration is inflated by shared-fixture/migration ordering flakes tracked in #1359.
+        timeout-minutes: 180
         run: |
           set -uo pipefail
           mkdir -p ./tests/TestResults

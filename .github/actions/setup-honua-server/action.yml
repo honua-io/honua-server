@@ -96,5 +96,9 @@ runs:
         ASPNETCORE_ENVIRONMENT: "Development"
         HONUA_ADMIN_PASSWORD: "ci-admin-password"
         Security__ConnectionEncryption__MasterKey: "test-master-key-that-is-at-least-32-characters-long-for-security"
+        # Test/dev-only license override (honua-server#1577): grant Pro entitlements so the
+        # out-of-process integration server can exercise edition-gated features (e.g. feature
+        # editing, #1548). The in-process .NET fixtures grant this via TestLicenseEntitlementService.
+        Licensing__DevGrantEdition: "Pro"
         Security__ConnectionEncryption__Salt: "dGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3RpbmctcHVycG9zZXM="
         LOG_PATH: ${{ inputs.log-path }}

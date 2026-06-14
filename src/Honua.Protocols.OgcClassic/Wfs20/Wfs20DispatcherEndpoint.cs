@@ -195,6 +195,10 @@ internal static class Wfs20DispatcherEndpoint
                 "Invalid WFS XML request body.",
                 "request");
         }
+        catch (RequestBodyTooLargeException)
+        {
+            return StandardErrorHelpers.CreatePayloadTooLarge(context, "Request payload is too large.");
+        }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
@@ -1132,14 +1136,21 @@ internal static class Wfs20DispatcherEndpoint
         }
 
         context.Request.EnableBuffering();
-        using var reader = new StreamReader(
-            context.Request.Body,
-            Encoding.UTF8,
-            detectEncodingFromByteOrderMarks: true,
-            bufferSize: 1024,
-            leaveOpen: true);
-        var body = await reader.ReadToEndAsync(cancellationToken);
-        context.Request.Body.Position = 0;
+        var bodyRead = await RequestBodySizeGuard.ReadUtf8TextAsync(
+            context,
+            RequestBodySizeGuard.ResolveMaxBodyBytes(context),
+            cancellationToken).ConfigureAwait(false);
+        if (context.Request.Body.CanSeek)
+        {
+            context.Request.Body.Position = 0;
+        }
+
+        if (bodyRead.TooLarge)
+        {
+            throw new RequestBodyTooLargeException();
+        }
+
+        var body = bodyRead.Body;
 
         if (string.IsNullOrWhiteSpace(body))
         {

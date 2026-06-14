@@ -8,11 +8,22 @@ namespace Honua.Core.Features.Caching;
 /// </summary>
 public enum MetadataCacheStatus
 {
+    /// <summary>A fresh cached entry was served.</summary>
     Hit,
+
+    /// <summary>No cached entry was available.</summary>
     Miss,
+
+    /// <summary>A stale cached entry was served within the stale-if-error window.</summary>
     Stale,
+
+    /// <summary>The entry was refreshed from the source.</summary>
     Refreshed,
+
+    /// <summary>The cache was bypassed for this lookup.</summary>
     Bypass,
+
+    /// <summary>The cache lookup or refresh failed.</summary>
     Failed
 }
 

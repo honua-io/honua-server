@@ -29,10 +29,15 @@ RUN apk add --no-cache \
 # hand-maintained csproj copy-list that rots whenever projects are added/split
 # (e.g. the #1236 modularization). The dedicated restore layer keeps caching.
 COPY Honua.sln Directory.Build.props Directory.Packages.props NuGet.config .editorconfig ./
+COPY eng/Honua.BuildProfiles.props eng/
 COPY scripts/docker/restore-dotnet-with-github-packages.sh scripts/docker/
 COPY src/ src/
 
 ARG TARGETARCH
+ARG HONUA_BUILD_PROFILE=full
+ARG HONUA_INCLUDE_AWS=
+ARG HONUA_INCLUDE_AZURE=
+ARG HONUA_INCLUDE_ORACLE=
 
 # Restore dependencies for the target runtime so the AOT self-contained publish
 # (which runs --no-restore) finds obj/project.assets.json for every project in
@@ -45,9 +50,14 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
         arm64) RUNTIME_ID="linux-musl-arm64" ;; \
         *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
     esac && \
+    MODULE_MSBUILD_ARGS="-p:HonuaBuildProfile=${HONUA_BUILD_PROFILE:-full}" && \
+    if [ -n "${HONUA_INCLUDE_AWS:-}" ]; then MODULE_MSBUILD_ARGS="$MODULE_MSBUILD_ARGS -p:HonuaIncludeAws=$HONUA_INCLUDE_AWS"; fi && \
+    if [ -n "${HONUA_INCLUDE_AZURE:-}" ]; then MODULE_MSBUILD_ARGS="$MODULE_MSBUILD_ARGS -p:HonuaIncludeAzure=$HONUA_INCLUDE_AZURE"; fi && \
+    if [ -n "${HONUA_INCLUDE_ORACLE:-}" ]; then MODULE_MSBUILD_ARGS="$MODULE_MSBUILD_ARGS -p:HonuaIncludeOracle=$HONUA_INCLUDE_ORACLE"; fi && \
     sh scripts/docker/restore-dotnet-with-github-packages.sh src/Honua.Server/Honua.Server.csproj \
       --runtime "$RUNTIME_ID" \
-      -p:RuntimeIdentifier="$RUNTIME_ID"
+      -p:RuntimeIdentifier="$RUNTIME_ID" \
+      $MODULE_MSBUILD_ARGS
 
 # Copy source code
 COPY . .
@@ -78,12 +88,17 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
         arm64) RUNTIME_ID="linux-musl-arm64" ;; \
         *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
     esac && \
+    MODULE_MSBUILD_ARGS="-p:HonuaBuildProfile=${HONUA_BUILD_PROFILE:-full}" && \
+    if [ -n "${HONUA_INCLUDE_AWS:-}" ]; then MODULE_MSBUILD_ARGS="$MODULE_MSBUILD_ARGS -p:HonuaIncludeAws=$HONUA_INCLUDE_AWS"; fi && \
+    if [ -n "${HONUA_INCLUDE_AZURE:-}" ]; then MODULE_MSBUILD_ARGS="$MODULE_MSBUILD_ARGS -p:HonuaIncludeAzure=$HONUA_INCLUDE_AZURE"; fi && \
+    if [ -n "${HONUA_INCLUDE_ORACLE:-}" ]; then MODULE_MSBUILD_ARGS="$MODULE_MSBUILD_ARGS -p:HonuaIncludeOracle=$HONUA_INCLUDE_ORACLE"; fi && \
     attempt=1 && \
     max_attempts="${AOT_PUBLISH_MAX_ATTEMPTS:-3}" && \
     until \
         sh scripts/docker/restore-dotnet-with-github-packages.sh src/Honua.Server/Honua.Server.csproj \
           --runtime "$RUNTIME_ID" \
-          -p:RuntimeIdentifier="$RUNTIME_ID" && \
+          -p:RuntimeIdentifier="$RUNTIME_ID" \
+          $MODULE_MSBUILD_ARGS && \
         dotnet publish src/Honua.Server/Honua.Server.csproj \
           --configuration "$CONFIGURATION" \
           --runtime "$RUNTIME_ID" \
@@ -97,7 +112,8 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
           -p:StripSymbols=true \
           -p:OptimizationPreference=Speed \
           -p:IlcOptimizationPreference=Speed \
-          -p:IlcSingleThreaded=true ; \
+          -p:IlcSingleThreaded=true \
+          $MODULE_MSBUILD_ARGS ; \
     do \
         status=$? ; \
         if [ "$attempt" -ge "$max_attempts" ]; then \

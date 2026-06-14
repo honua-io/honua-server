@@ -14,8 +14,8 @@ internal static partial class SqlServerFeatureLog
     [LoggerMessage(
         EventId = 7000,
         Level = LogLevel.Debug,
-        Message = "SQL Server feature query prepared: {Sql} with {ParameterCount} parameter(s).")]
-    public static partial void QueryPrepared(ILogger logger, string sql, int parameterCount);
+        Message = "SQL Server feature query prepared with {ParameterCount} parameter(s).")]
+    public static partial void QueryPrepared(ILogger logger, int parameterCount);
 
     [LoggerMessage(
         EventId = 7001,

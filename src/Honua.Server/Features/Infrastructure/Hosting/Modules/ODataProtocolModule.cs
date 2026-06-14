@@ -26,7 +26,7 @@ public sealed class ODataProtocolModule : IHonuaProtocolModule
     public void ConfigureServices(IServiceCollection services, IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(services);
-        services.AddOData();
+        services.AddOData(configuration);
     }
 
     /// <inheritdoc />

@@ -19,7 +19,7 @@ namespace Honua.Worker.Gdal.Execution;
 /// CLI. Kept separate so the two surface contracts (direct gdal.* vs the
 /// catalog's raster.* idioms) cannot drift from each other's argument parsing.
 /// </summary>
-public sealed partial class GdalRasterReprojectCatalogJobExecutor(
+internal sealed partial class GdalRasterReprojectCatalogJobExecutor(
     IGdalCommandRunner runner,
     IOptionsMonitor<GdalWorkerOptions> options,
     ILogger<GdalRasterReprojectCatalogJobExecutor> logger) : IJobExecutor
@@ -106,8 +106,7 @@ public sealed partial class GdalRasterReprojectCatalogJobExecutor(
             return JobExecutionResult.Failed($"Invalid reproject inputs: {sourceError}");
         }
 
-        var workspace = Path.Combine(opts.ScratchRoot, job.OperationId);
-        Directory.CreateDirectory(workspace);
+        var workspace = GdalScratch.CreateWorkspace(opts.ScratchRoot, job.OperationId);
         try
         {
             var inputPath = Path.Combine(workspace, "input.tif");
@@ -143,7 +142,7 @@ public sealed partial class GdalRasterReprojectCatalogJobExecutor(
 
             if (!result.Succeeded)
             {
-                Log.ToolFailed(logger, job.OperationId, result.ExitCode, Truncate(result.StandardError));
+                Log.ToolFailed(logger, job.OperationId, result.ExitCode, GdalErrorSanitizer.TruncateForLog(result.StandardError));
                 return JobExecutionResult.Failed(
                     $"gdalwarp exited with code {result.ExitCode}: {GdalErrorSanitizer.Sanitize(result.StandardError, workspace)}");
             }
@@ -181,13 +180,6 @@ public sealed partial class GdalRasterReprojectCatalogJobExecutor(
         {
             GdalScratch.TryCleanup(workspace, logger);
         }
-    }
-
-    private static string Truncate(string value)
-    {
-        const int max = 500;
-        var trimmed = value.Trim();
-        return trimmed.Length <= max ? trimmed : trimmed[..max] + "…";
     }
 
     private static partial class Log

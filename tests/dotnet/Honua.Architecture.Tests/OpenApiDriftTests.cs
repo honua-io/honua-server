@@ -492,20 +492,7 @@ public sealed class OpenApiDriftTests
     }
 
     private static string ResolveOpenApiPath(string fileName)
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null && !File.Exists(Path.Combine(directory.FullName, "Honua.sln")))
-        {
-            directory = directory.Parent;
-        }
-
-        if (directory == null)
-        {
-            throw new FileNotFoundException("Unable to locate repository root for OpenAPI specifications.");
-        }
-
-        return Path.Combine(directory.FullName, "src", "Honua.Server", fileName);
-    }
+        => Path.Combine(ArchitectureTestHelpers.ResolveRepositoryRoot(), "src", "Honua.Server", fileName);
 
     private static string[] GetAnalyticsContractSpecPaths()
         =>
@@ -515,20 +502,7 @@ public sealed class OpenApiDriftTests
         ];
 
     private static string ResolveDeveloperOpenApiPath(string fileName)
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null && !File.Exists(Path.Combine(directory.FullName, "Honua.sln")))
-        {
-            directory = directory.Parent;
-        }
-
-        if (directory == null)
-        {
-            throw new FileNotFoundException("Unable to locate repository root for developer OpenAPI specifications.");
-        }
-
-        return Path.Combine(directory.FullName, "docs", "developer", "api-specs", fileName);
-    }
+        => Path.Combine(ArchitectureTestHelpers.ResolveRepositoryRoot(), "docs", "developer", "api-specs", fileName);
 
     private static void AssertTileEndpoint(JsonElement tileEndpoint)
     {

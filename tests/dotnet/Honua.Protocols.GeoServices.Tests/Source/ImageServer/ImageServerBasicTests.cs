@@ -19,7 +19,7 @@ using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.Servic
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
-[Collection("Database")]
+[Collection("Database.GeoServicesRaster")]
 [Protocol(TestProtocols.ImageServer)]
 public class ImageServerBasicTests : IAsyncLifetime
 {

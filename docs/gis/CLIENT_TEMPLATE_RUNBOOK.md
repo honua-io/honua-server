@@ -10,7 +10,7 @@ Use this runbook when validating a demo or customer environment.
 
 ## Template Pack
 
-Template sources are split between [`docs/gis/client-templates`](client-templates/README.md) and [`docs/user/client-templates/qgis`](../user/client-templates/qgis/).
+Template sources are split between [`docs/gis/client-templates`](client-templates/README.md) and [`docs/user/client-templates/qgis`](../user/client-templates/qgis).
 
 | Client | Template Source | Saved Output Artifact |
 |---|---|---|
@@ -98,7 +98,7 @@ Use these placeholders across templates:
 | `HONUA_API_KEY` | `demo-key-123` | Leave blank if not using API-key auth |
 
 1. Prefer the workflow artifact pack when it is available. Copy `artifacts/client-compat/<service>-<timestamp>/pack/templates/.env.example` to `.env` in that same `templates/` directory.
-2. If you are working directly from the repo instead of the artifact pack, copy [`docs/gis/client-templates/.env.example`](client-templates/.env.example) to a scratch `templates/` directory and also copy the QGIS template from [`docs/user/client-templates/qgis`](../user/client-templates/qgis/).
+2. If you are working directly from the repo instead of the artifact pack, copy [`docs/gis/client-templates/.env.example`](client-templates/.env.example) to a scratch `templates/` directory and also copy the QGIS template from [`docs/user/client-templates/qgis`](../user/client-templates/qgis).
 3. Fill values for your target environment.
 4. Substitute placeholders with `envsubst` from the canonical pack layout:
 
@@ -128,7 +128,7 @@ Connection target:
 
 Licensed automation scaffold:
 - When a licensed self-hosted Windows runner is available, prefer
-  [Licensed ArcGIS Pro Desktop Evidence](ARCGIS_PRO_LICENSED_EVIDENCE.md) to
+  [Licensed ArcGIS Pro Desktop Evidence](../internal/evidence/ARCGIS_PRO_LICENSED_EVIDENCE.md) to
   produce `desktop-arcgis` `.cert.json` envelopes, screenshots, logs, and a
   project artifact. This lane is distinct from the REST-only `arcgis-stub`
   evidence and does not run in ordinary PR gates.
@@ -150,7 +150,7 @@ ArcGIS Pro exercises two protocols. Produce one `.cert.json` evidence file for e
 
 | Evidence file protocol | Connection used | Applicable smoke steps | CERT-\* scope |
 |---|---|---|---|
-| `featureserver` | `…/FeatureServer` | All (1–5 + cross-cutting) | All 24 common-core CERT-\* IDs (18 base + the six `CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01` visual / style slice IDs from ticket `#478`). The slice IDs are substantiated by the automated OpenLayers, Esri Leaflet, and PyQGIS lanes; record them as `skip` with a `pending-slice-substantiation-in-another-lane` note in the manual ArcGIS Pro envelope unless the operator exercises per-category drawingInfo styling directly. See [`visual-style-certification-slice.md`](visual-style-certification-slice.md). |
+| `featureserver` | `…/FeatureServer` | All (1–5 + cross-cutting) | All 24 common-core CERT-\* IDs (18 base + the six `CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01` visual / style slice IDs from ticket `#478`). The slice IDs are substantiated by the automated OpenLayers, Esri Leaflet, and PyQGIS lanes; record them as `skip` with a `pending-slice-substantiation-in-another-lane` note in the manual ArcGIS Pro envelope unless the operator exercises per-category drawingInfo styling directly. See [`visual-style-certification-slice.md`](../internal/evidence/visual-style-certification-slice.md). |
 | `mapserver` | `…/MapServer` | 1 (connect), 2 (discovery), 4 (render), 5 (refresh), cross-cutting | CERT-CONN, CERT-AUTH, CERT-DISC, CERT-SCHM, CERT-ERRH, CERT-RNDR. The six `CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01` slice IDs are `not-applicable` on `mapserver` evidence because drawingInfo per-category style assertions live on FeatureServer, not the MapServer export endpoint. |
 
 Step 3 (Filter/query) targets the FeatureServer connection. CERT-QFLT, CERT-PAGE, CERT-GEOM, and CERT-ERRH-02 test cases should be recorded as `not-applicable` in the `mapserver` evidence file unless the client also exercises MapServer's layer query endpoint.

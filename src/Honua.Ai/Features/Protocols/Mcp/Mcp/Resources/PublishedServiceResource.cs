@@ -17,7 +17,7 @@ namespace Honua.Ai.Protocols.Mcp.Resources;
 /// and surfaces provenance edges back to the originating intent, hosted
 /// deployments, and source result package. Authorization defers to the
 /// <see cref="OperatorResourceType.PublishedService"/> grant evaluated by
-/// <see cref="IGeoprocessingJobService.EnsureCallerAuthorized"/>.
+/// <see cref="IGeoprocessingJobService.EnsureCallerAuthorizedAsync"/>.
 /// </summary>
 internal sealed class PublishedServiceResource : IMcpResource
 {
@@ -73,8 +73,9 @@ internal sealed class PublishedServiceResource : IMcpResource
     {
         McpTelemetry.EnrichActivity("GetPublishedService");
         var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
-        _jobService.EnsureCallerAuthorized(
-            principal, OperatorResourceType.PublishedService, OperatorOperation.Read);
+        await _jobService.EnsureCallerAuthorizedAsync(
+                principal, OperatorResourceType.PublishedService, OperatorOperation.Read, cancellationToken)
+            .ConfigureAwait(false);
 
         var serviceId = uri[McpResourceUris.PublishedServicesPrefix.Length..];
         McpLog.ResourceRead(_logger, Family, uri);

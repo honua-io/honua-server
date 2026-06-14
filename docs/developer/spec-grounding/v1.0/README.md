@@ -1,10 +1,10 @@
 # Spec Grounding v1.0
 
-`/v1/grounding/spec/*` turns natural-language edit requests into validated canonical-spec mutations and deterministic per-section summaries for the [Honua spec grammar v1.0](../../spec-grammar/v1.0/README.md). The surface is the spec-workspace counterpart to the workflow-focused [`GROUNDING.md`](../../GROUNDING.md) pipeline — it operates on the structured `SpecDocument` model rather than on ranked catalog candidates, and it never returns a spec that would fail `ISpecValidator`.
+`/v1/grounding/spec/*` turns natural-language edit requests into validated canonical-spec mutations and deterministic per-section summaries for the [Honua spec grammar v1.0](../../spec-grammar/v1.0/README.md). The surface is the spec-workspace counterpart to the workflow-focused [`GROUNDING.md`](../../../internal/developer/GROUNDING.md) pipeline — it operates on the structured `SpecDocument` model rather than on ranked catalog candidates, and it never returns a spec that would fail `ISpecValidator`.
 
 - **Implementation**: `src/Honua.Server/Features/Grounding/Spec/*`
 - **Endpoint registration**: `EndpointRegistry` (`/v1/grounding/spec/mutate`, `/v1/grounding/spec/summarize`)
-- **Related ADRs**: [ADR-0027 deterministic intent / clarification workflow](../../../contributor/adr/0027-deterministic-intent-clarification-workflow.md), [ADR-0028 no AI data editing](../../../contributor/adr/0028-ai-data-editing-not-allowed.md)
+- **Related ADRs**: [ADR-0027 deterministic intent / clarification workflow](../../../internal/contributor/adr/0027-deterministic-intent-clarification-workflow.md), [ADR-0028 no AI data editing](../../../internal/contributor/adr/0028-ai-data-editing-not-allowed.md)
 
 ## Endpoints
 

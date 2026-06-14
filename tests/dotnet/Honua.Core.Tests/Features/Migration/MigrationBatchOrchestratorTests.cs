@@ -72,7 +72,7 @@ public sealed class MigrationBatchOrchestratorTests
 
         // Complete the first child's import job successfully.
         var children = await catalog.GetChildrenAsync(batch.BatchId);
-        jobManager.CompleteJob(children[0].JobId!, GeoservicesImportStatus.Completed, publishedLayerId: 100);
+        await jobManager.CompleteJobAsync(children[0].JobId!, GeoservicesImportStatus.Completed, publishedLayerId: 100);
 
         var advanced = await orchestrator.AdvanceAsync(batch.BatchId);
         advanced!.SucceededChildren.Should().Be(1);
@@ -105,7 +105,7 @@ public sealed class MigrationBatchOrchestratorTests
         var batch = await orchestrator.StartAsync(NewRequest());
 
         var children = await catalog.GetChildrenAsync(batch.BatchId);
-        jobManager.CompleteJob(children[0].JobId!, GeoservicesImportStatus.Failed);
+        await jobManager.CompleteJobAsync(children[0].JobId!, GeoservicesImportStatus.Failed);
 
         var advanced = await orchestrator.AdvanceAsync(batch.BatchId);
         advanced!.Status.Should().Be(MigrationBatchRunStatus.Failed);
@@ -158,7 +158,7 @@ public sealed class MigrationBatchOrchestratorTests
                 break;
             }
 
-            jobManager.CompleteJob(running.JobId!, GeoservicesImportStatus.Completed, publishedLayerId);
+            await jobManager.CompleteJobAsync(running.JobId!, GeoservicesImportStatus.Completed, publishedLayerId);
             await orchestrator.AdvanceAsync(batchId);
         }
     }
@@ -251,16 +251,16 @@ public sealed class MigrationBatchOrchestratorTests
 
         public IReadOnlyList<string> Queue => _queue.Enqueued;
 
-        public void CompleteJob(string jobId, GeoservicesImportStatus status, int? publishedLayerId = null)
+        public async Task CompleteJobAsync(string jobId, GeoservicesImportStatus status, int? publishedLayerId = null)
         {
-            var current = _progress.GetProgressAsync(jobId).GetAwaiter().GetResult();
+            var current = await _progress.GetProgressAsync(jobId);
             var updated = (current ?? GeoservicesImportProgress.CreateInitial(jobId, "https://example.com", 0, "t")) with
             {
                 Status = status,
                 PublishedLayerId = publishedLayerId,
                 CompletedAt = DateTimeOffset.UtcNow
             };
-            _progress.SetProgressAsync(jobId, updated).GetAwaiter().GetResult();
+            await _progress.SetProgressAsync(jobId, updated);
         }
     }
 

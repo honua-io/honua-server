@@ -108,12 +108,8 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
     public async Task CancelOperation_WhenBackedByExecutionJob_CancelsJobStoreAndRemovesFromQueue()
     {
-        var jobStore = _fixture.GetOptionalService<IExecutionJobStore>();
-        var jobQueue = _fixture.GetOptionalService<IJobQueue>();
-        if (jobStore == null || jobQueue == null)
-        {
-            return; // Job orchestration not registered; skip.
-        }
+        var jobStore = RequireRegisteredService(_fixture.GetOptionalService<IExecutionJobStore>());
+        var jobQueue = RequireRegisteredService(_fixture.GetOptionalService<IJobQueue>());
 
         var operationId = $"gp-{Guid.NewGuid():N}";
         var now = DateTimeOffset.UtcNow;
@@ -159,11 +155,7 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
     public async Task CancelOperation_WhenDurableJobAlreadySucceeded_Returns409()
     {
-        var jobStore = _fixture.GetOptionalService<IExecutionJobStore>();
-        if (jobStore == null)
-        {
-            return; // Job orchestration not registered; skip.
-        }
+        var jobStore = RequireRegisteredService(_fixture.GetOptionalService<IExecutionJobStore>());
 
         var operationId = $"gp-{Guid.NewGuid():N}";
         var now = DateTimeOffset.UtcNow;
@@ -205,11 +197,7 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
     public async Task CancelOperation_WhenRemoteDurableJobAlreadySucceeded_Returns409AndBridgesProgress()
     {
-        var jobStore = _fixture.GetOptionalService<IExecutionJobStore>();
-        if (jobStore == null)
-        {
-            return; // Job orchestration not registered; skip.
-        }
+        var jobStore = RequireRegisteredService(_fixture.GetOptionalService<IExecutionJobStore>());
 
         var operationId = $"gp-{Guid.NewGuid():N}";
         var now = DateTimeOffset.UtcNow;
@@ -250,12 +238,8 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
     public async Task CancelOperation_WhenDurableJobAlreadyCancelled_CleansUpQueueAndReturns200()
     {
-        var jobStore = _fixture.GetOptionalService<IExecutionJobStore>();
-        var jobQueue = _fixture.GetOptionalService<IJobQueue>();
-        if (jobStore == null || jobQueue == null)
-        {
-            return; // Job orchestration not registered; skip.
-        }
+        var jobStore = RequireRegisteredService(_fixture.GetOptionalService<IExecutionJobStore>());
+        var jobQueue = RequireRegisteredService(_fixture.GetOptionalService<IJobQueue>());
 
         var operationId = $"gp-{Guid.NewGuid():N}";
         var now = DateTimeOffset.UtcNow;
@@ -305,12 +289,7 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
 
         var client = fixture.Client;
         var progressStore = fixture.GetService<IUniversalProgressStore>();
-        var jobStore = fixture.GetOptionalService<IExecutionJobStore>();
-        if (jobStore == null)
-        {
-            await fixture.DisposeAsync();
-            return;
-        }
+        var jobStore = RequireRegisteredService(fixture.GetOptionalService<IExecutionJobStore>());
 
         var operationId = $"gp-{Guid.NewGuid():N}";
         var now = DateTimeOffset.UtcNow;
@@ -368,11 +347,7 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
     public async Task CancelOperation_WhenProgressAlreadyCancelledAndDurableJobNonterminal_BridgesProgressToNonterminal()
     {
-        var jobStore = _fixture.GetOptionalService<IExecutionJobStore>();
-        if (jobStore == null)
-        {
-            return;
-        }
+        var jobStore = RequireRegisteredService(_fixture.GetOptionalService<IExecutionJobStore>());
 
         var operationId = $"gp-{Guid.NewGuid():N}";
         var now = DateTimeOffset.UtcNow;
@@ -424,11 +399,7 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
     public async Task CancelOperation_WhenProgressCancelledButDurableJobSucceeded_Returns409AndBridgesProgress()
     {
-        var jobStore = _fixture.GetOptionalService<IExecutionJobStore>();
-        if (jobStore == null)
-        {
-            return;
-        }
+        var jobStore = RequireRegisteredService(_fixture.GetOptionalService<IExecutionJobStore>());
 
         var operationId = $"gp-{Guid.NewGuid():N}";
         var now = DateTimeOffset.UtcNow;
@@ -474,11 +445,7 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
     public async Task CancelOperation_WhenProgressCancelledAndRemoteBackendMissing_Returns409()
     {
-        var jobStore = _fixture.GetOptionalService<IExecutionJobStore>();
-        if (jobStore == null)
-        {
-            return;
-        }
+        var jobStore = RequireRegisteredService(_fixture.GetOptionalService<IExecutionJobStore>());
 
         var operationId = $"gp-{Guid.NewGuid():N}";
         var now = DateTimeOffset.UtcNow;
@@ -525,13 +492,8 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
 
         var client = fixture.Client;
         var progressStore = fixture.GetService<IUniversalProgressStore>();
-        var jobStore = fixture.GetOptionalService<IExecutionJobStore>();
-        var jobQueue = fixture.GetOptionalService<IJobQueue>();
-        if (jobStore == null || jobQueue == null)
-        {
-            await fixture.DisposeAsync();
-            return; // Job orchestration not registered; skip.
-        }
+        var jobStore = RequireRegisteredService(fixture.GetOptionalService<IExecutionJobStore>());
+        var jobQueue = RequireRegisteredService(fixture.GetOptionalService<IJobQueue>());
 
         var operationId = $"gp-{Guid.NewGuid():N}";
         var now = DateTimeOffset.UtcNow;
@@ -1493,6 +1455,13 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
         }
 
         return count;
+    }
+
+    private static T RequireRegisteredService<T>(T? service)
+        where T : class
+    {
+        service.Should().NotBeNull($"{typeof(T).Name} must be registered for durable operation endpoint coverage");
+        return service!;
     }
 
     private sealed class ThrowingRemoveJobQueue : IJobQueue

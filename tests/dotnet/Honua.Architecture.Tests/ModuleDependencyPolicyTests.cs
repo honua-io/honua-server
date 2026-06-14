@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Xml.Linq;
 using FluentAssertions;
 using Xunit;
 
@@ -9,7 +8,7 @@ namespace Honua.Architecture.Tests;
 
 /// <summary>
 /// Enforces the canonical Module Dependency Policy
-/// (<c>docs/contributor/adr/0047-module-dependency-policy.md</c>): every
+/// (<c>docs/internal/contributor/adr/0047-module-dependency-policy.md</c>): every
 /// <c>&lt;ProjectReference&gt;</c> declared by a runtime csproj must point at a
 /// provider that the consumer's matrix row permits.
 /// </summary>
@@ -79,6 +78,8 @@ public sealed class ModuleDependencyPolicyTests
         ArcGisRest,
         Oracle,
         Protocols,
+        PluginsAbstractions,
+        Plugins,
         Server,
         ServiceDefaults,
         AppHost,
@@ -179,6 +180,11 @@ public sealed class ModuleDependencyPolicyTests
         (ModuleRole.Protocols, ModuleRole.Scene),
         (ModuleRole.Protocols, ModuleRole.ServiceDefaults),
         (ModuleRole.Protocols, ModuleRole.Protocols),
+        // Plugin/extension SDK (#347, ADR-0024): protocol edit handlers consume ONLY the lean
+        // Honua.Plugins.Abstractions contract surface (IPluginEditPipeline) to fire plugin
+        // validators/hooks. They must NOT couple to the host-side plugin runtime (Honua.Plugins) —
+        // hence PluginsAbstractions, not Plugins, is the allowed provider here.
+        (ModuleRole.Protocols, ModuleRole.PluginsAbstractions),
 
         // Jobs: the durable job-execution substrate. Depends on
         // Abstractions + Core + Hosting + ServiceDefaults (no AWS/Azure
@@ -202,10 +208,17 @@ public sealed class ModuleDependencyPolicyTests
         // Hosting + Jobs + ServiceDefaults) plus Geoprocessing: Grounding and
         // AnalysisContent orchestrate analysis jobs through
         // IGeoprocessingJobService, which lives in Honua.Geoprocessing.
+        // Ai also reaches the Geocoding / Routing satellites (#1597): the MCP
+        // geocode/route tools are thin adapters over the canonical
+        // IGeocodeCoordinatorService / IRoutingProvider pipelines - the same
+        // shape as the Protocols -> Routing edge the NAServer adapter uses.
+        // Neither satellite references Ai, so both edges are acyclic.
         // Crucially, Ai must NEVER reference Server — that one-way edge is
         // enforced by HonuaAiIsolationTests.
         (ModuleRole.Ai, ModuleRole.Abstractions),
         (ModuleRole.Ai, ModuleRole.Core),
+        (ModuleRole.Ai, ModuleRole.Geocoding),
+        (ModuleRole.Ai, ModuleRole.Routing),
         (ModuleRole.Ai, ModuleRole.Hosting),
         (ModuleRole.Ai, ModuleRole.Jobs),
         (ModuleRole.Ai, ModuleRole.Geoprocessing),
@@ -262,6 +275,15 @@ public sealed class ModuleDependencyPolicyTests
         (ModuleRole.Import, ModuleRole.Hosting),
         (ModuleRole.Import, ModuleRole.ServiceDefaults),
 
+        // Plugin/extension SDK (#347, ADR-0024), split into two roles so protocol assemblies can
+        // depend on the lean public contract surface (PluginsAbstractions = Honua.Plugins.Abstractions,
+        // which depends on Abstractions only) WITHOUT coupling to the host-side plugin runtime
+        // (Plugins = Honua.Plugins, which depends on Core for the license gate + audit sink and on
+        // the contract surface). Neither may back-reference Server or a storage provider.
+        (ModuleRole.PluginsAbstractions, ModuleRole.Abstractions),
+        (ModuleRole.Plugins, ModuleRole.Core),
+        (ModuleRole.Plugins, ModuleRole.PluginsAbstractions),
+
         // Server (composition root): every tier below it.
         (ModuleRole.Server, ModuleRole.Abstractions),
         (ModuleRole.Server, ModuleRole.Core),
@@ -284,6 +306,7 @@ public sealed class ModuleDependencyPolicyTests
         (ModuleRole.Server, ModuleRole.ArcGisRest),
         (ModuleRole.Server, ModuleRole.Oracle),
         (ModuleRole.Server, ModuleRole.Protocols),
+        (ModuleRole.Server, ModuleRole.Plugins),
         (ModuleRole.Server, ModuleRole.ServiceDefaults),
 
         // ServiceDefaults sits sideways from the main stack but currently
@@ -392,7 +415,7 @@ public sealed class ModuleDependencyPolicyTests
                     $"({Path.GetFileNameWithoutExtension(csprojPath)}, {relativePath}) " +
                     $"references '{providerRole}' ({providerName}), which is forbidden by " +
                     "the ADR-0047 dependency-direction matrix. See " +
-                    "docs/contributor/adr/0047-module-dependency-policy.md " +
+                    "docs/internal/contributor/adr/0047-module-dependency-policy.md " +
                     $"§ 'Dependency direction matrix' — the ({consumerRole}, {providerRole}) " +
                     "cell is empty. Either route the dependency through a permitted layer, " +
                     "or (only if intentional) update both the ADR matrix and the test's " +
@@ -405,7 +428,7 @@ public sealed class ModuleDependencyPolicyTests
             .Should()
             .BeEmpty(
                 "every runtime ProjectReference must match the ADR-0047 dependency-direction " +
-                "matrix. See docs/contributor/adr/0047-module-dependency-policy.md for the " +
+                "matrix. See docs/internal/contributor/adr/0047-module-dependency-policy.md for the " +
                 "policy and the decision tree.");
 
         // ----- Ratchet enforcement -----
@@ -455,6 +478,7 @@ public sealed class ModuleDependencyPolicyTests
         var adrPath = Path.Combine(
             repositoryRoot,
             "docs",
+            "internal",
             "contributor",
             "adr",
             "0047-module-dependency-policy.md");
@@ -498,28 +522,8 @@ public sealed class ModuleDependencyPolicyTests
         }
     }
 
-    private static List<string> LoadProjectReferenceNames(string csprojPath)
-    {
-        var document = XDocument.Load(csprojPath);
-        var names = new List<string>();
-
-        foreach (var element in document.Descendants("ProjectReference"))
-        {
-            var include = element.Attribute("Include")?.Value;
-            if (string.IsNullOrWhiteSpace(include))
-            {
-                continue;
-            }
-
-            var fileName = Path.GetFileNameWithoutExtension(include.Replace('\\', '/'));
-            if (!string.IsNullOrWhiteSpace(fileName))
-            {
-                names.Add(fileName);
-            }
-        }
-
-        return names;
-    }
+    private static IReadOnlyList<string> LoadProjectReferenceNames(string csprojPath)
+        => ArchitectureTestHelpers.DirectProjectReferenceNames(csprojPath);
 
     /// <summary>
     /// Maps a csproj name to its <see cref="ModuleRole"/>. Order matters — the
@@ -677,6 +681,21 @@ public sealed class ModuleDependencyPolicyTests
         if (projectName.StartsWith("Honua.Protocols.", StringComparison.Ordinal))
         {
             return ModuleRole.Protocols;
+        }
+
+        // Plugin/extension SDK (#347), split into two roles: the lean public contract surface
+        // (Honua.Plugins.Abstractions) that protocol assemblies may consume, and the host-side
+        // runtime (Honua.Plugins) that only Server composes. The Abstractions exact-match must
+        // precede the "Honua.Plugins." prefix check. Honua.Plugins.Tests is already routed to
+        // Unclassified by the .Tests guard above.
+        if (projectName.Equals("Honua.Plugins.Abstractions", StringComparison.Ordinal))
+        {
+            return ModuleRole.PluginsAbstractions;
+        }
+        if (projectName.Equals("Honua.Plugins", StringComparison.Ordinal) ||
+            projectName.StartsWith("Honua.Plugins.", StringComparison.Ordinal))
+        {
+            return ModuleRole.Plugins;
         }
 
         // Tier 7: Server (composition root).

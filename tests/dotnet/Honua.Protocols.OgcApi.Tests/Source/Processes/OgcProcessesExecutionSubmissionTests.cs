@@ -15,7 +15,7 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes;
 
-[Collection("Database")]
+[Collection("Database.OgcApiData")]
 [Protocol(TestProtocols.OgcApiProcesses)]
 public sealed class OgcProcessesExecutionSubmissionTests : IAsyncLifetime
 {

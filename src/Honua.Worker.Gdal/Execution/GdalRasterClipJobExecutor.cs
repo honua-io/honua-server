@@ -22,7 +22,7 @@ namespace Honua.Worker.Gdal.Execution;
 /// GeoTIFF as a canonical data-URI artifact. Runs only inside the GDAL worker
 /// image — <see cref="AcceptedRuntimeProfiles"/> is <c>{ "native" }</c>.
 /// </summary>
-public sealed partial class GdalRasterClipJobExecutor(
+internal sealed partial class GdalRasterClipJobExecutor(
     IGdalCommandRunner runner,
     IOptionsMonitor<GdalWorkerOptions> options,
     ILogger<GdalRasterClipJobExecutor> logger) : IJobExecutor
@@ -87,7 +87,8 @@ public sealed partial class GdalRasterClipJobExecutor(
         }
         catch (ParseException ex)
         {
-            return JobExecutionResult.Failed($"Invalid clip inputs: boundary WKB could not be parsed: {ex.Message}");
+            Log.BoundaryParseFailed(logger, job.OperationId, ex);
+            return JobExecutionResult.Failed("Invalid clip inputs: boundary WKB could not be parsed.");
         }
 
         if (boundary == null || boundary.IsEmpty)
@@ -112,8 +113,7 @@ public sealed partial class GdalRasterClipJobExecutor(
             boundary.SRID = srid;
         }
 
-        var workspace = Path.Combine(opts.ScratchRoot, job.OperationId);
-        Directory.CreateDirectory(workspace);
+        var workspace = GdalScratch.CreateWorkspace(opts.ScratchRoot, job.OperationId);
         try
         {
             var inputPath = Path.Combine(workspace, "input.tif");
@@ -155,7 +155,7 @@ public sealed partial class GdalRasterClipJobExecutor(
 
             if (!result.Succeeded)
             {
-                Log.ToolFailed(logger, job.OperationId, result.ExitCode, Truncate(result.StandardError));
+                Log.ToolFailed(logger, job.OperationId, result.ExitCode, GdalErrorSanitizer.TruncateForLog(result.StandardError));
                 return JobExecutionResult.Failed(
                     $"gdalwarp exited with code {result.ExitCode}: {GdalErrorSanitizer.Sanitize(result.StandardError, workspace)}");
             }
@@ -221,13 +221,6 @@ public sealed partial class GdalRasterClipJobExecutor(
         return sb.ToString();
     }
 
-    private static string Truncate(string value)
-    {
-        const int max = 500;
-        var trimmed = value.Trim();
-        return trimmed.Length <= max ? trimmed : trimmed[..max] + "…";
-    }
-
     private static partial class Log
     {
         [LoggerMessage(9250, LogLevel.Warning,
@@ -253,5 +246,9 @@ public sealed partial class GdalRasterClipJobExecutor(
         [LoggerMessage(9255, LogLevel.Information,
             "GDAL raster clip executor completed job {OperationId}: bytes={Bytes}")]
         public static partial void ClipCompleted(ILogger logger, string operationId, long bytes);
+
+        [LoggerMessage(9256, LogLevel.Warning,
+            "GDAL raster clip executor could not parse boundary WKB for job {OperationId}")]
+        public static partial void BoundaryParseFailed(ILogger logger, string operationId, Exception exception);
     }
 }

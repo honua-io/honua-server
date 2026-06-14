@@ -156,10 +156,10 @@ internal static class NAServerEndpoints
                 response,
                 NAServerJsonContext.Default.NAServerRouteSolveResponse);
         }
-        catch (NAServerParameterTranslation.NAServerParameterException ex)
+        catch (NAServerParameterTranslation.NAServerParameterException)
         {
             return SetSpanErrorAndReturn(
-                StandardErrorHelpers.CreateBadRequest(context, ex.Message),
+                StandardErrorHelpers.CreateBadRequest(context, "Invalid NAServer route parameters."),
                 "Invalid NAServer route parameters");
         }
     }
@@ -216,10 +216,10 @@ internal static class NAServerEndpoints
                 response,
                 NAServerJsonContext.Default.NAServerServiceAreaResponse);
         }
-        catch (NAServerParameterTranslation.NAServerParameterException ex)
+        catch (NAServerParameterTranslation.NAServerParameterException)
         {
             return SetSpanErrorAndReturn(
-                StandardErrorHelpers.CreateBadRequest(context, ex.Message),
+                StandardErrorHelpers.CreateBadRequest(context, "Invalid NAServer service-area parameters."),
                 "Invalid NAServer service-area parameters");
         }
     }

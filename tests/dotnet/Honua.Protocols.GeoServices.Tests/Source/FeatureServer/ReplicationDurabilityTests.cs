@@ -11,6 +11,8 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Configuration;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
@@ -18,7 +20,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class ReplicationDurabilityTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
 
     public async Task InitializeAsync() => await _fixture.InitializeAsync();
 
@@ -247,7 +249,7 @@ public sealed class ReplicationDurabilityTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/extractChanges")]
     public async Task ExtractChanges_WithBaselineReplicaExceedingConfiguredLimit_ReturnsBadRequest()
     {
-        var limitedFixture = new WebAppFixture().ConfigureWebHost(builder =>
+        var limitedFixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro).ConfigureWebHost(builder =>
         {
             builder.ConfigureAppConfiguration((_, configBuilder) =>
             {

@@ -283,6 +283,21 @@ internal static partial class FeatureServerLog
     [LoggerMessage(Level = LogLevel.Error, Message = "Failed to delete feature {Index}: {ErrorMessage}")]
     public static partial void FeatureDeleteFailed(ILogger logger, int index, string errorMessage, Exception exception);
 
+    /// <summary>
+    /// Logs when an attribute rule's Arcade expression is outside the supported safe
+    /// subset and is routed out of scope (skipped) on the edit path rather than enforced.
+    /// </summary>
+    /// <param name="logger">The logger instance.</param>
+    /// <param name="serviceId">The service identifier.</param>
+    /// <param name="layerId">The layer identifier.</param>
+    /// <param name="ruleName">The attribute rule whose expression was unsupported.</param>
+    /// <param name="ruleType">The attribute-rule type (calculation/constraint/validation).</param>
+    [LoggerMessage(
+        EventId = 2310,
+        Level = LogLevel.Warning,
+        Message = "Attribute rule '{RuleName}' ({RuleType}) on {ServiceId}/FeatureServer/{LayerId} uses an unsupported Arcade expression; routed out of scope (skipped)")]
+    public static partial void AttributeRuleExpressionUnsupported(ILogger logger, string serviceId, int layerId, string ruleName, string ruleType);
+
     // Related records query events (2400-2499)
 
     /// <summary>

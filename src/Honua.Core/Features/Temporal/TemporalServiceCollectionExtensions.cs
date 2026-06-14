@@ -21,6 +21,17 @@ public static class TemporalServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
         services.TryAddScoped<ITemporalHistoryService, TemporalHistoryService>();
+
+        // Slices 2-5: checkpoint resolution, masking policy, and governed-rollback runner. The
+        // provider-backed ITemporalHistoryStore is registered by the active data provider (Postgres
+        // registers the change-log reader; read-only providers register a no-op).
+        // Universal fallback history store (no-op). The Postgres provider registers the change-log reader
+        // after this call, which wins for resolution; read-only providers keep this no-op.
+        services.TryAddScoped<ITemporalHistoryStore, NoOpTemporalHistoryStore>();
+        services.TryAddScoped<ITemporalCheckpointResolver, TemporalCheckpointResolver>();
+        services.TryAddSingleton<ITemporalMaskingPolicy, PassthroughTemporalMaskingPolicy>();
+        services.TryAddSingleton<ITemporalCorrectiveJobSink, InProcessTemporalCorrectiveJobSink>();
+        services.TryAddScoped<ITemporalRollbackRunner, TemporalRollbackRunner>();
         return services;
     }
 }

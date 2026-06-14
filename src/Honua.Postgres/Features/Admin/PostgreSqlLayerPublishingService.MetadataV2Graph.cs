@@ -347,8 +347,38 @@ internal sealed partial class PostgreSqlLayerPublishingService
             // the compat-compile snapshot and are served on the FeatureServer layer
             // metadata (subtypeField / subtypes / defaultSubtypeCode) (honua-server#1378).
             Subtypes = ResolveSubtypesForPublish(request.Subtypes, fields),
+            // Carry the captured Esri attribute rules into the canonical graph so they
+            // fire on the shared edit path (FeatureServer applyEdits). Calculation rules
+            // whose target column was not published are dropped (honua-server#1271).
+            AttributeRules = ResolveAttributeRulesForPublish(request.AttributeRules, fields),
             Status = ActiveReadyStatus(now)
         };
+    }
+
+    // Attaches captured attribute rules, dropping calculation rules whose target field
+    // was not published. A calculation rule pointing at a column the layer did not publish
+    // could never be applied and would fail graph validation, so it is omitted rather than
+    // persisted against a missing field. Constraint/validation rules are carried as-is;
+    // their expressions are evaluated against the published attribute set at edit time and
+    // unsupported expressions are routed out of scope, so a stale field reference simply
+    // skips rather than breaking the edit.
+    private static MetadataV2AttributeRule[] ResolveAttributeRulesForPublish(
+        IReadOnlyList<MetadataV2AttributeRule>? attributeRules,
+        IReadOnlyList<LayerFieldInsert> fields)
+    {
+        if (attributeRules is null || attributeRules.Count == 0)
+        {
+            return [];
+        }
+
+        var publishedNames = new HashSet<string>(
+            fields.Select(field => field.Name),
+            StringComparer.OrdinalIgnoreCase);
+
+        return attributeRules
+            .Where(rule => rule.Type != MetadataV2AttributeRuleType.Calculation
+                || (!string.IsNullOrWhiteSpace(rule.FieldName) && publishedNames.Contains(rule.FieldName!)))
+            .ToArray();
     }
 
     // Attaches the captured subtype set only when its subtype field was actually

@@ -16,7 +16,7 @@ namespace Honua.Server.Tests;
 /// Integration tests for OGC API Features Core endpoints (landing page and conformance)
 /// </summary>
 [Protocol(TestProtocols.OgcApiFeatures)]
-[Collection("Database")]
+[Collection("Database.CoreEndpoints")]
 public sealed class OgcFeaturesEndpointTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();

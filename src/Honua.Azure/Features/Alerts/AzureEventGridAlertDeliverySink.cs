@@ -72,7 +72,7 @@ internal sealed class AzureEventGridAlertDeliverySink : IAlertDeliverySink
             {
                 Succeeded = false,
                 Retryable = retryable,
-                Error = $"Event Grid responded with {response.Status}: {response.ReasonPhrase}."
+                Error = $"Event Grid responded with {response.Status}."
             };
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -85,7 +85,7 @@ internal sealed class AzureEventGridAlertDeliverySink : IAlertDeliverySink
             {
                 Succeeded = false,
                 Retryable = false,
-                Error = $"Event Grid authorization failed: {ex.Message}"
+                Error = "Event Grid authorization failed."
             };
         }
         catch (RequestFailedException ex) when (ex.Status == 404)
@@ -94,16 +94,16 @@ internal sealed class AzureEventGridAlertDeliverySink : IAlertDeliverySink
             {
                 Succeeded = false,
                 Retryable = false,
-                Error = $"Event Grid topic not found: {ex.Message}"
+                Error = "Event Grid topic not found."
             };
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             return new AlertDeliveryResult
             {
                 Succeeded = false,
                 Retryable = true,
-                Error = ex.Message
+                Error = "Event Grid alert delivery failed."
             };
         }
     }

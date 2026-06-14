@@ -16,6 +16,8 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using NSubstitute;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 
@@ -147,7 +149,7 @@ public sealed class OgcFeaturesTransactionExceptionMappingTests
         writer.ApplyEditsAsync(default, default, default)
             .ReturnsForAnyArgs(_ => Task.FromException<FeatureEditResult>(exceptionFactory()));
 
-        return new WebAppFixture()
+        return new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
             .ReplaceService<IFeatureWriter>(writer);
     }
 

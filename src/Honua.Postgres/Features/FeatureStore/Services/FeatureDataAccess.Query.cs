@@ -496,7 +496,7 @@ internal sealed partial class FeatureDataAccess
         command.Parameters.AddWithValue(layerId);
         foreach (var param in query.WhereParameters)
         {
-            command.Parameters.AddWithValue(param);
+            command.Parameters.AddWithValue(NormalizeParameterValue(param));
         }
         ApplyCommandTimeout(command, _queryTimeoutSeconds);
 
@@ -535,7 +535,7 @@ internal sealed partial class FeatureDataAccess
         command.Parameters.AddWithValue(layerId);
         foreach (var param in query.WhereParameters)
         {
-            command.Parameters.AddWithValue(param);
+            command.Parameters.AddWithValue(NormalizeParameterValue(param));
         }
         ApplyCommandTimeout(command, _queryTimeoutSeconds);
 
@@ -564,7 +564,7 @@ internal sealed partial class FeatureDataAccess
 
         foreach (var param in query.WhereParameters)
         {
-            command.Parameters.AddWithValue(param);
+            command.Parameters.AddWithValue(NormalizeParameterValue(param));
         }
         ApplyCommandTimeout(command, _tileTimeoutSeconds);
 

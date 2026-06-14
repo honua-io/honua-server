@@ -16,6 +16,8 @@ using Honua.Core.Features.Shared.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Import;
 
@@ -129,7 +131,7 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
             NumericField: "pop2000")
     ];
 
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
     private readonly HttpClient _sourceClient = new() { Timeout = TimeSpan.FromMinutes(2) };
     private readonly List<string> _importedTables = [];
     private readonly List<ParityScorecardEntry> _scorecardEntries = [];
@@ -2066,7 +2068,13 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
         var requestUri =
             $"{queryEndpoint}?where={Uri.EscapeDataString(whereClause)}&returnCountOnly=true&f=json";
         var json = await GetJsonElementAsync(client, requestUri);
-        return json.GetProperty("count").GetInt32();
+        if (!TryGetPropertyCaseInsensitive(json, "count", out var countProperty) || countProperty.ValueKind != JsonValueKind.Number)
+        {
+            throw new InvalidOperationException(
+                $"Count query '{requestUri}' returned an unexpected response shape (no numeric 'count'): {json}");
+        }
+
+        return countProperty.GetInt32();
     }
 
     private static async Task<IReadOnlyList<Dictionary<string, JsonElement>>> QuerySourceRowsAsync(
@@ -2362,7 +2370,13 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
                          "&inSR=4326" +
                          "&returnCountOnly=true&f=json";
         var json = await GetJsonElementAsync(client, requestUri);
-        return json.GetProperty("count").GetInt32();
+        if (!TryGetPropertyCaseInsensitive(json, "count", out var countProperty) || countProperty.ValueKind != JsonValueKind.Number)
+        {
+            throw new InvalidOperationException(
+                $"Count query '{requestUri}' returned an unexpected response shape (no numeric 'count'): {json}");
+        }
+
+        return countProperty.GetInt32();
     }
 
     private static async Task<Dictionary<string, JsonElement>> QueryStatisticsAttributesAsync(
@@ -2434,7 +2448,13 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
         var requestUri =
             $"{queryEndpoint}?where=1%3D1&time={Uri.EscapeDataString(timeExtent)}&returnCountOnly=true&f=json";
         var json = await GetJsonElementAsync(client, requestUri);
-        return json.GetProperty("count").GetInt32();
+        if (!TryGetPropertyCaseInsensitive(json, "count", out var countProperty) || countProperty.ValueKind != JsonValueKind.Number)
+        {
+            throw new InvalidOperationException(
+                $"Count query '{requestUri}' returned an unexpected response shape (no numeric 'count'): {json}");
+        }
+
+        return countProperty.GetInt32();
     }
 
     private static async Task<GeoJsonQueryPageResult> QueryGeoJsonRowsPageAsync(

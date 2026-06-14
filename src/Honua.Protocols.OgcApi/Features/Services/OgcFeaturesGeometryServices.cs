@@ -44,7 +44,7 @@ internal sealed partial class OgcFeaturesGeometryServices
     /// <summary>
     /// Result of geometry WKB creation operation.
     /// </summary>
-    public sealed class WkbCreationResult
+    internal sealed class WkbCreationResult
     {
         public bool IsSuccess { get; init; }
         public byte[]? Wkb { get; init; }

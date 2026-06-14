@@ -45,6 +45,9 @@ internal sealed partial class OgcFeaturesCrudHandler(
     private readonly ILogger<OgcFeaturesCrudHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     private const string OgcFeaturesProtocolName = "OgcFeatures";
 
+    // Open-protocol feature mutations are Community (#1591): no entitlement gate here. The
+    // Pro editing gate applies only to the Esri GeoServices FeatureServer write surface.
+
     /// <summary>
     /// Handles feature creation requests.
     /// </summary>
@@ -86,7 +89,13 @@ internal sealed partial class OgcFeaturesCrudHandler(
                 return contentTypeError;
             }
 
-            var (requestFeature, requestError) = await OgcFeaturePayloadReader.ReadGeoJsonFeatureAsync(context, cancellationToken);
+            var (requestFeature, requestErrorResult, requestError) =
+                await OgcFeaturePayloadReader.ReadGeoJsonFeatureAsync(context, cancellationToken);
+            if (requestErrorResult is not null)
+            {
+                return requestErrorResult;
+            }
+
             if (requestFeature == null)
             {
                 return StandardErrorHelpers.CreateBadRequest(context, requestError ?? "Invalid GeoJSON payload.");

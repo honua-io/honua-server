@@ -53,7 +53,8 @@ public sealed class VerticalSliceIsolationTests
         "Studio",
         "Styling", // Relocated out of the Infrastructure grab-bag into its own top-level slice.
         "WorkflowPackages",
-        "Temporal" // Temporal data history slice (honua-server#1166): capability discovery + as-of read.
+        "Temporal", // Temporal data history slice (honua-server#1166): capability discovery + as-of read.
+        "FieldWorkflows" // Back-office field workflow slice (honua-server#1158/#1159/#1160): review/QA + exports over form submissions.
     };
 
     /// <summary>

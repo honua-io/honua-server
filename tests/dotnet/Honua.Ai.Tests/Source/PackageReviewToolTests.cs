@@ -46,10 +46,11 @@ public sealed class PackageReviewToolTests
         structured.GetProperty("contractVersion").GetString().Should().Be(PackageReviewContract.Version);
         structured.GetProperty("status").GetString().Should().Be(PackageReviewStatus.Blocked);
         structured.GetProperty("findings")[0].GetProperty("code").GetString().Should().Be("missing_data_binding");
-        _jobService.Received(1).EnsureCallerAuthorized(
+        await _jobService.Received(1).EnsureCallerAuthorizedAsync(
             Arg.Any<ClaimsPrincipal>(),
             OperatorResourceType.Process,
-            OperatorOperation.Read);
+            OperatorOperation.Read,
+            Arg.Any<CancellationToken>());
     }
 
     [UnitTest]

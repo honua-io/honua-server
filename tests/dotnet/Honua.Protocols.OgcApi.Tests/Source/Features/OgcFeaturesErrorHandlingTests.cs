@@ -8,6 +8,8 @@ using Honua.Infrastructure.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 
@@ -15,7 +17,7 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 [Protocol(TestProtocols.OgcApiFeatures)]
 public class OgcFeaturesErrorHandlingTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
 
     public async Task InitializeAsync()
     {
@@ -25,6 +27,7 @@ public class OgcFeaturesErrorHandlingTests : IAsyncLifetime
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [Fact]
+    [Operation(Operations.Query)]
     [Endpoint("GET /ogc/features/collections/{collectionId}")]
     public async Task GetCollection_NonExistentCollection_ReturnsStandardizedErrorFormat()
     {
@@ -45,6 +48,7 @@ public class OgcFeaturesErrorHandlingTests : IAsyncLifetime
     }
 
     [Fact]
+    [Operation(Operations.Query)]
     [Endpoint("GET /ogc/features/collections/{collectionId}/queryables")]
     public async Task GetQueryables_NonExistentCollection_ReturnsStandardizedErrorFormat()
     {
@@ -63,6 +67,7 @@ public class OgcFeaturesErrorHandlingTests : IAsyncLifetime
     }
 
     [Fact]
+    [Operation(Operations.Query)]
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
     public async Task GetItems_NonExistentCollection_ReturnsStandardizedErrorFormat()
     {
@@ -81,6 +86,7 @@ public class OgcFeaturesErrorHandlingTests : IAsyncLifetime
     }
 
     [Fact]
+    [Operation(Operations.GetById)]
     [Endpoint("GET /ogc/features/collections/{collectionId}/items/{featureId}")]
     public async Task GetItem_NonExistentFeature_ReturnsStandardizedErrorFormat()
     {
@@ -98,6 +104,7 @@ public class OgcFeaturesErrorHandlingTests : IAsyncLifetime
     }
 
     [Fact]
+    [Operation(Operations.GetById)]
     [Endpoint("GET /ogc/features/collections/{collectionId}/items/{featureId}")]
     public async Task GetItem_FeatureIdWithInvalidEscapedSequence_ReturnsNotFound()
     {
@@ -112,6 +119,7 @@ public class OgcFeaturesErrorHandlingTests : IAsyncLifetime
     }
 
     [Fact]
+    [Operation(Operations.GetById)]
     [Endpoint("GET /ogc/features/collections/{collectionId}/items/{featureId}")]
     public async Task GetItem_FeatureIdWithEncodedPercent_ReturnsNotFound()
     {
@@ -126,6 +134,7 @@ public class OgcFeaturesErrorHandlingTests : IAsyncLifetime
     }
 
     [Fact]
+    [Operation(Operations.Create)]
     [Endpoint("POST /ogc/features/collections/{collectionId}/items")]
     public async Task CreateFeature_InvalidRequest_ReturnsStandardizedErrorFormat()
     {
@@ -148,6 +157,7 @@ public class OgcFeaturesErrorHandlingTests : IAsyncLifetime
     }
 
     [Fact]
+    [Operation(Operations.Update)]
     [Endpoint("PUT /ogc/features/collections/{collectionId}/items/{featureId}")]
     public async Task UpdateFeature_InvalidRequest_ReturnsStandardizedErrorFormat()
     {
@@ -171,6 +181,7 @@ public class OgcFeaturesErrorHandlingTests : IAsyncLifetime
     }
 
     [Fact]
+    [Operation(Operations.Delete)]
     [Endpoint("DELETE /ogc/features/collections/{collectionId}/items/{featureId}")]
     public async Task DeleteFeature_NonExistentFeature_ReturnsStandardizedErrorFormat()
     {

@@ -41,4 +41,21 @@ internal static class GdalErrorSanitizer
 
         return redacted.Length <= MaxLength ? redacted : redacted[..MaxLength] + "…";
     }
+
+    /// <summary>
+    /// Trims and length-caps unredacted stderr for the executor's operator-facing
+    /// structured log. Unlike <see cref="Sanitize"/> this preserves scratch paths
+    /// (operators need them for diagnosis); only the length ceiling is applied.
+    /// Centralized so every executor's <c>Log.ToolFailed</c> call shares one cap.
+    /// </summary>
+    public static string TruncateForLog(string stderr)
+    {
+        if (string.IsNullOrEmpty(stderr))
+        {
+            return string.Empty;
+        }
+
+        var trimmed = stderr.Trim();
+        return trimmed.Length <= MaxLength ? trimmed : trimmed[..MaxLength] + "…";
+    }
 }

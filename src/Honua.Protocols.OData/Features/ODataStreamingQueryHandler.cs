@@ -402,8 +402,12 @@ internal sealed partial class ODataStreamingQueryHandler(
                 return ODataUtilityService.CreateODataError(context, "InvalidQuery", queryError);
             }
 
-            // Determine if we should use streaming
-            bool useStreaming = pagination.Limit > StreamingThreshold && string.IsNullOrWhiteSpace(expand);
+            // Determine if we should use streaming. Base the decision on the originally
+            // requested $top, not the server page-size-clamped pagination.Limit (#1644):
+            // a request for a large page still streams the clamped page and emits an
+            // @odata.nextLink, rather than falling back to the buffered handler.
+            var requestedTop = topValue ?? pagination.Limit;
+            bool useStreaming = requestedTop > StreamingThreshold && string.IsNullOrWhiteSpace(expand);
 
             if (!useStreaming)
             {

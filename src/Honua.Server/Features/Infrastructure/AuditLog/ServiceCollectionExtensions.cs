@@ -4,6 +4,7 @@
 using Honua.Core.Features.AuditLog;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Infrastructure.Middleware;
 using Honua.Postgres.Features.AuditLog;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -38,6 +39,10 @@ internal static class AuditLogServiceCollectionExtensions
     public static IServiceCollection AddHonuaAuditLog(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
+
+        // Route-to-action resolver used by the audit middleware to decide which
+        // operations are audited declaratively, from route metadata (#507).
+        services.AddHonuaAuditActionResolver();
 
         services.TryAddScoped<IAuditLog>(static sp =>
         {

@@ -21,7 +21,7 @@ namespace Honua.Worker.Gdal.Execution;
 /// the lean managed worker from claiming native-profile jobs and keeps this worker
 /// from claiming managed-profile jobs.
 /// </summary>
-public sealed partial class GdalDispatchJobExecutor : IJobExecutor
+internal sealed partial class GdalDispatchJobExecutor : IJobExecutor
 {
     private static readonly IReadOnlySet<string> NativeProfileSet =
         new HashSet<string>(StringComparer.Ordinal) { RuntimeProfiles.Native };

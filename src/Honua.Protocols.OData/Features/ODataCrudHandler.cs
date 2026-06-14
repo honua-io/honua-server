@@ -10,6 +10,7 @@ using Honua.Core.Features.Shared.Models;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Events;
+using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Validation;
 using Honua.Protocols.OData.Models;
 using Honua.Protocols.OData.Services;
@@ -38,6 +39,9 @@ internal sealed class ODataCrudHandler(
     private readonly ODataValidationService _validationService = validationService ?? throw new ArgumentNullException(nameof(validationService));
     private readonly Honua.Infrastructure.Caching.IETagService _etagService = etagService ?? throw new ArgumentNullException(nameof(etagService));
     private readonly FeatureMutationEventService _mutationEventService = mutationEventService ?? throw new ArgumentNullException(nameof(mutationEventService));
+
+    // OData CRUD is an open-protocol edit surface and remains Community (#1591). Keep this
+    // path on shared validation/authz/telemetry, but do not apply the FeatureServer Pro gate.
 
     /// <summary>
     /// Handles getting a single feature by ID
@@ -717,10 +721,18 @@ internal sealed class ODataCrudHandler(
                 return (null, contentTypeError);
             }
 
-            var request = await JsonSerializer.DeserializeAsync(
-                context.Request.Body,
-                ODataJsonContext.Default.ODataFeatureRequest,
-                cancellationToken);
+            var bodyRead = await RequestBodySizeGuard.ReadUtf8TextAsync(
+                context,
+                RequestBodySizeGuard.ResolveMaxBodyBytes(context),
+                cancellationToken).ConfigureAwait(false);
+            if (bodyRead.TooLarge)
+            {
+                return (null, bodyRead.ErrorResult);
+            }
+
+            var request = JsonSerializer.Deserialize(
+                bodyRead.Body ?? string.Empty,
+                ODataJsonContext.Default.ODataFeatureRequest);
             if (request == null)
             {
                 return (null, ODataUtilityService.CreateODataError(

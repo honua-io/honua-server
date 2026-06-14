@@ -6,6 +6,7 @@ using System.Text.Json;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Spec.Canonical;
 using Honua.Core.Features.Spec.Domain;
+using Honua.Infrastructure.Authentication;
 
 namespace Honua.Ai.Grounding.Spec;
 
@@ -23,14 +24,14 @@ internal static class SpecGroundingEndpointExtensions
             .WithName("SpecGroundingMutate")
             .WithSummary("Grounds a natural-language turn into a validated spec mutation plan.")
             .WithTags("Grounding", "Spec")
-            .AllowAnonymous();
+            .RequireAdminAuthorization();
 
         endpoints.MapPost($"{RoutePrefix}/summarize", HandleSummarizeAsync)
             .WithDisplayName("Spec Grounding Summarize")
             .WithName("SpecGroundingSummarize")
             .WithSummary("Produces deterministic section summaries for a canonical spec.")
             .WithTags("Grounding", "Spec")
-            .AllowAnonymous();
+            .RequireAdminAuthorization();
 
         return endpoints;
     }

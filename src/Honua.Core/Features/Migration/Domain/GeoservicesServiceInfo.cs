@@ -151,6 +151,14 @@ public sealed record GeoservicesLayerInfo
     /// <c>defaultSubtypeCode</c>).
     /// </summary>
     public Honua.Core.Features.Metadata.Domain.V2.MetadataV2Subtypes? Subtypes { get; init; }
+
+    /// <summary>
+    /// Canonical Esri attribute rules (calculation / constraint / validation) captured
+    /// from the source layer, or <c>null</c> when the layer declares none. Carried through
+    /// the auto-publish pipeline so the rules persist into the Metadata v2 graph and fire
+    /// on the shared edit path (FeatureServer <c>applyEdits</c>).
+    /// </summary>
+    public IReadOnlyList<Honua.Core.Features.Metadata.Domain.V2.MetadataV2AttributeRule>? AttributeRules { get; init; }
 }
 
 /// <summary>

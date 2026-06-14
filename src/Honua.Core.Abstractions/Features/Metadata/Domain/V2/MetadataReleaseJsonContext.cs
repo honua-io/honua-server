@@ -27,6 +27,8 @@ namespace Honua.Core.Features.Metadata.Domain.V2;
 [JsonSerializable(typeof(MetadataBoundConnectionSummary))]
 [JsonSerializable(typeof(CreateMetadataReleasePackageRequest))]
 [JsonSerializable(typeof(MetadataReleasePackage))]
+[JsonSerializable(typeof(MetadataReleasePackageSummary))]
+[JsonSerializable(typeof(MetadataReleasePackageListResponse))]
 [JsonSerializable(typeof(MetadataReleaseEntry))]
 [JsonSerializable(typeof(MetadataReleaseTargetState))]
 [JsonSerializable(typeof(GitOpsMetadataReleaseManifest))]

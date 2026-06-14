@@ -457,10 +457,11 @@ internal sealed partial class TileOperationJobService(
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
+                    TileOperationLog.TileGenerationFailed(_logger, layerId, coordinate.Z, coordinate.X, coordinate.Y, ex);
                     failed++;
                     if (warningList.Count < 20)
                     {
-                        warningList.Add($"Layer {layerId} tile {coordinate.Z}/{coordinate.X}/{coordinate.Y}: {ex.Message}");
+                        warningList.Add($"Layer {layerId} tile {coordinate.Z}/{coordinate.X}/{coordinate.Y}: tile generation failed.");
                     }
                 }
 
@@ -867,10 +868,11 @@ internal sealed partial class TileOperationJobService(
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
+                TileOperationLog.TileGenerationFailed(_logger, layerId, coordinate.Z, coordinate.X, coordinate.Y, ex);
                 failed++;
                 if (warningList.Count < 20)
                 {
-                    warningList.Add($"Layer {layerId} tile {coordinate.Z}/{coordinate.X}/{coordinate.Y}: {ex.Message}");
+                    warningList.Add($"Layer {layerId} tile {coordinate.Z}/{coordinate.X}/{coordinate.Y}: tile archive generation failed.");
                 }
             }
 

@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using System.Text.Json;
+using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Protocols.GeoServices.FeatureServer;
 
@@ -131,5 +132,43 @@ internal static class GeoServicesFieldConventions
 
         epochMilliseconds = 0;
         return false;
+    }
+
+    /// <summary>
+    /// The set of attribute field names an Esri-REST surface must serialize as
+    /// <c>esriFieldTypeDate</c> (epoch-millisecond integers), derived from the layer schema.
+    /// </summary>
+    internal static HashSet<string> ResolveDateFieldNames(MetadataV2Resource resource)
+        => resource.SchemaFields
+            .Where(static field => field.Type is MetadataV2FieldType.DateTime or MetadataV2FieldType.Date)
+            .Select(static field => field.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// In-place coerces every <c>esriFieldTypeDate</c> attribute to an epoch-millisecond (UTC)
+    /// integer, regardless of stored CLR shape (ISO-8601 string from seeds, epoch-ms long from
+    /// applyEdits, DateTime/DateTimeOffset/DateOnly, numeric string, or JsonElement). This is the
+    /// single shared coercion the MapServer identify, FeatureServer query, and extractChanges
+    /// paths use so a date field serializes uniformly across rows. Unconvertible values are left
+    /// unchanged.
+    /// </summary>
+    internal static void CoerceDateAttributes(
+        IDictionary<string, object?> attributes,
+        IReadOnlyCollection<string> dateFieldNames)
+    {
+        if (dateFieldNames.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var fieldName in dateFieldNames)
+        {
+            if (attributes.TryGetValue(fieldName, out var dateValue)
+                && dateValue is not null
+                && TryConvertToEpochMilliseconds(dateValue, out var epochMs))
+            {
+                attributes[fieldName] = epochMs;
+            }
+        }
     }
 }

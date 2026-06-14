@@ -15,7 +15,7 @@ using Microsoft.Extensions.Options;
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles;
 
 [Protocol(TestProtocols.OgcApiTiles)]
-[Collection("Database")]
+[Collection("Database.OgcApiTiles")]
 public sealed class OgcTilesZoomLimitTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();

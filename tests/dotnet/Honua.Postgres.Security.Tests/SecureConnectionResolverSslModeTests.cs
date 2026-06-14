@@ -1,17 +1,27 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Postgres.Features.Security;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace Honua.Postgres.Security.Tests;
 
+/// <summary>
+/// Tests for <see cref="SecureConnectionResolver"/> verifying that SSL/TLS
+/// enforcement rejects plaintext-fallback SSL modes and that secret-reference
+/// resolution rejects host/port mismatches against the registered connection.
+/// </summary>
 public sealed class SecureConnectionResolverSslModeTests
 {
+    [SecurityTest]
     [Theory]
     [InlineData("Allow")]
     [InlineData("Prefer")]
-    public async Task ResolveConnectionStringAsyncSslRequiredRejectsFallbackSslModes(string sslMode)
+    public async Task ResolveConnectionStringAsync_SslRequiredWithFallbackMode_ThrowsInvalidOperation(string sslMode)
     {
         var connection = DataConnection.CreateWithEncryptedCredentials(
             name: "production-analytics",
@@ -39,10 +49,11 @@ public sealed class SecureConnectionResolverSslModeTests
         Assert.Contains("allows plaintext fallback", exception.InnerException!.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    [SecurityTest]
     [Theory]
     [InlineData("Host=replica.example.com;Port=5432;Database=analytics;Username=app;Password=secret;SslMode=Require", "resolved host does not match configured host")]
     [InlineData("Host=db.example.com;Port=6432;Database=analytics;Username=app;Password=secret;SslMode=Require", "resolved port does not match configured port")]
-    public async Task ResolveConnectionStringAsyncSecretReferenceRejectsHostOrPortMismatch(
+    public async Task ResolveConnectionStringAsync_SecretReferenceHostOrPortMismatch_ThrowsInvalidOperation(
         string resolvedConnectionString,
         string expectedMessage)
     {

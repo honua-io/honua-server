@@ -32,6 +32,7 @@
          is intentionally excluded — it lives in Honua.Geocoding. -->
     <PackageReference Include="AWSSDK.S3" />
     <PackageReference Include="AWSSDK.Batch" />
+    <PackageReference Include="AWSSDK.CloudWatch" />
     <PackageReference Include="AWSSDK.ECS" />
     <PackageReference Include="AWSSDK.ElasticLoadBalancingV2" />
     <PackageReference Include="AWSSDK.Lambda" />

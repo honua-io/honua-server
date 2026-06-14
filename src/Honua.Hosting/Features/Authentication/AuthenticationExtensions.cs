@@ -35,6 +35,20 @@ public static class AuthenticationExtensions
     public const string TemporalHistoryReadPolicy = "TemporalHistoryRead";
 
     /// <summary>
+    /// Authorization policy name for temporal-diff read access (honua-server#1166 slice 2). Distinct from
+    /// history reads so diff comparison between checkpoints can be authorized separately. In this slice it
+    /// requires the admin role, matching the admin baseline.
+    /// </summary>
+    public const string TemporalDiffReadPolicy = "TemporalDiffRead";
+
+    /// <summary>
+    /// Authorization policy name for governed rollback execution (honua-server#1166 slice 5). Distinct
+    /// from read policies so the mutating corrective-operation surface is authorized separately. In this
+    /// slice it requires the admin role, matching the admin baseline.
+    /// </summary>
+    public const string TemporalRollbackExecutePolicy = "TemporalRollbackExecute";
+
+    /// <summary>
     /// Adds API key authentication and authorization services
     /// </summary>
     public static IServiceCollection AddApiKeyAuthentication(this IServiceCollection services)
@@ -74,6 +88,22 @@ public static class AuthenticationExtensions
                 policy.AuthenticationSchemes.Add(ClientCertificateAuthenticationDefaults.AuthenticationScheme);
             });
 
+            options.AddPolicy(TemporalDiffReadPolicy, policy =>
+            {
+                _ = policy.RequireAuthenticatedUser();
+                _ = policy.RequireRole("admin");
+                policy.AuthenticationSchemes.Add(ApiKeyScheme);
+                policy.AuthenticationSchemes.Add(ClientCertificateAuthenticationDefaults.AuthenticationScheme);
+            });
+
+            options.AddPolicy(TemporalRollbackExecutePolicy, policy =>
+            {
+                _ = policy.RequireAuthenticatedUser();
+                _ = policy.RequireRole("admin");
+                policy.AuthenticationSchemes.Add(ApiKeyScheme);
+                policy.AuthenticationSchemes.Add(ClientCertificateAuthenticationDefaults.AuthenticationScheme);
+            });
+
         });
 
         return services;
@@ -100,4 +130,18 @@ public static class AuthenticationExtensions
     /// </summary>
     public static TBuilder RequireTemporalHistoryRead<TBuilder>(this TBuilder builder)
         where TBuilder : IEndpointConventionBuilder => builder.RequireAuthorization(TemporalHistoryReadPolicy);
+
+    /// <summary>
+    /// Requires the distinct temporal-diff read authorization for an endpoint or group
+    /// (honua-server#1166 slice 2).
+    /// </summary>
+    public static TBuilder RequireTemporalDiffRead<TBuilder>(this TBuilder builder)
+        where TBuilder : IEndpointConventionBuilder => builder.RequireAuthorization(TemporalDiffReadPolicy);
+
+    /// <summary>
+    /// Requires the distinct governed-rollback execution authorization for an endpoint or group
+    /// (honua-server#1166 slice 5).
+    /// </summary>
+    public static TBuilder RequireTemporalRollbackExecute<TBuilder>(this TBuilder builder)
+        where TBuilder : IEndpointConventionBuilder => builder.RequireAuthorization(TemporalRollbackExecutePolicy);
 }

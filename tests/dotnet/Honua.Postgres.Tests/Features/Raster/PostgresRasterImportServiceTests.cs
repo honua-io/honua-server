@@ -42,9 +42,7 @@ public sealed class PostgresRasterImportServiceTests(PostgresFixture fixture)
             var result = await service.ImportAsync(CreateRequest(filePath, srid: 4326));
 
             result.Success.Should().BeFalse();
-            result.ErrorMessage.Should().Contain("requires raster homogeneity");
-            result.ErrorMessage.Should().Contain("Expected SRID=3857");
-            result.ErrorMessage.Should().Contain("upload has SRID=4326");
+            result.ErrorMessage.Should().Be("Import failed.");
             (await CountLayerRastersAsync(schemaName)).Should().Be(1);
         }
         finally
@@ -69,9 +67,7 @@ public sealed class PostgresRasterImportServiceTests(PostgresFixture fixture)
             var result = await service.ImportAsync(CreateRequest(filePath, srid: 4326));
 
             result.Success.Should().BeFalse();
-            result.ErrorMessage.Should().Contain("requires raster homogeneity");
-            result.ErrorMessage.Should().Contain("Expected SRID=4326, BandCount=2");
-            result.ErrorMessage.Should().Contain("upload has SRID=4326, BandCount=1");
+            result.ErrorMessage.Should().Be("Import failed.");
             (await CountLayerRastersAsync(schemaName)).Should().Be(1);
         }
         finally
@@ -97,8 +93,7 @@ public sealed class PostgresRasterImportServiceTests(PostgresFixture fixture)
             var result = await service.ImportAsync(CreateRequest(filePath, srid: 4326));
 
             result.Success.Should().BeFalse();
-            result.ErrorMessage.Should().Contain("already contains heterogeneous rasters");
-            result.ErrorMessage.Should().Contain("SRID range 3857..4326");
+            result.ErrorMessage.Should().Be("Import failed.");
             (await CountLayerRastersAsync(schemaName)).Should().Be(2);
         }
         finally
@@ -124,9 +119,68 @@ public sealed class PostgresRasterImportServiceTests(PostgresFixture fixture)
             var result = await service.ImportAsync(CreateRequest(filePath, srid: 4326));
 
             result.Success.Should().BeFalse();
-            result.ErrorMessage.Should().Contain("already contains heterogeneous rasters");
-            result.ErrorMessage.Should().Contain("BandCount range 1..2");
+            result.ErrorMessage.Should().Be("Import failed.");
             (await CountLayerRastersAsync(schemaName)).Should().Be(2);
+        }
+        finally
+        {
+            TryDeleteFile(filePath);
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task ImportAsync_StoresRasterPayloadWithExternalToastStorage()
+    {
+        // Regression guard for #1625: the monolithic raster payload must be stored EXTERNAL
+        // (out-of-line, uncompressed) so dynamic tile/terrain/statistics reads fetch only the
+        // chunks they touch instead of detoasting and decompressing the whole row. The import
+        // path flips the column storage before inserting, even on a schema created with the
+        // PostGIS default ("main") storage strategy.
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterImportServiceTests));
+        var filePath = await CreatePngRasterFileAsync();
+        try
+        {
+            await CreateRasterImportSchemaAsync(schemaName);
+            await InsertLayerAsync(schemaName);
+
+            // A schema created with the PostGIS default raster storage strategy is not EXTERNAL
+            // ('e'); prove the import flips the column to EXTERNAL so reads avoid decompression.
+            (await GetRasterColumnStorageAsync(schemaName)).Should().NotBe('e');
+
+            var service = CreateService(schemaName);
+            var result = await service.ImportAsync(CreateRequest(filePath, srid: 4326));
+
+            result.Success.Should().BeTrue();
+            (await GetRasterColumnStorageAsync(schemaName)).Should().Be('e');
+        }
+        finally
+        {
+            TryDeleteFile(filePath);
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task ImportAsync_WithZoomLevels_PreGeneratesTilesForIndexedLookups()
+    {
+        // Regression guard for #1625: importing with tile zoom levels must populate raster_tiles
+        // so the hot tile-serving path is an indexed lookup rather than an ST_Clip over the
+        // detoasted monolith. (The API import endpoint defaults to zooms 0..8.)
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterImportServiceTests));
+        var filePath = await CreatePngRasterFileAsync();
+        try
+        {
+            await CreateRasterImportSchemaAsync(schemaName);
+            await InsertLayerAsync(schemaName);
+
+            var service = CreateService(schemaName);
+            var result = await service.ImportAsync(CreateRequest(filePath, srid: 4326, tileZoomLevels: [0]));
+
+            result.Success.Should().BeTrue();
+            result.RasterId.Should().NotBeNull();
+            result.TilesGenerated.Should().BeGreaterThan(0);
+            (await CountTilesAsync(schemaName, result.RasterId!.Value)).Should().BeGreaterThan(0);
         }
         finally
         {
@@ -145,7 +199,7 @@ public sealed class PostgresRasterImportServiceTests(PostgresFixture fixture)
             schemaName);
     }
 
-    private static RasterImportRequest CreateRequest(string filePath, int srid)
+    private static RasterImportRequest CreateRequest(string filePath, int srid, int[]? tileZoomLevels = null)
     {
         return new RasterImportRequest
         {
@@ -156,7 +210,7 @@ public sealed class PostgresRasterImportServiceTests(PostgresFixture fixture)
             Format = SupportedRasterFormat.PngWorldFile,
             Srid = srid,
             WorldFileContent = WorldFileContent,
-            TileZoomLevels = []
+            TileZoomLevels = tileZoomLevels ?? []
         };
     }
 
@@ -281,6 +335,32 @@ public sealed class PostgresRasterImportServiceTests(PostgresFixture fixture)
         await using var command = connection.CreateCommand();
         command.CommandText = "SELECT COUNT(*) FROM raster_data WHERE layer_id = @layerId;";
         command.Parameters.AddWithValue("layerId", LayerId);
+
+        return (long)(await command.ExecuteScalarAsync())!;
+    }
+
+    private async Task<char> GetRasterColumnStorageAsync(string schemaName)
+    {
+        await using var connection = await fixture.GetConnectionAsync(schemaName);
+        await using var command = connection.CreateCommand();
+        // pg_attribute.attstorage exposes the TOAST strategy: 'p' plain, 'm' main,
+        // 'e' external, 'x' extended. Resolve raster_data within the test's search_path.
+        command.CommandText = """
+            SELECT a.attstorage
+            FROM pg_attribute a
+            WHERE a.attrelid = 'raster_data'::regclass
+              AND a.attname = 'raster';
+            """;
+
+        return (char)(await command.ExecuteScalarAsync())!;
+    }
+
+    private async Task<long> CountTilesAsync(string schemaName, long rasterId)
+    {
+        await using var connection = await fixture.GetConnectionAsync(schemaName);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM raster_tiles WHERE raster_data_id = @rasterId;";
+        command.Parameters.AddWithValue("rasterId", rasterId);
 
         return (long)(await command.ExecuteScalarAsync())!;
     }

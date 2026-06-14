@@ -16,9 +16,7 @@ public class BasicArchitectureTests
     [ArchitectureTest]
     public void ProjectStructure_ShouldBeCorrect()
     {
-        // Find project root by looking for solution file
-        var currentDir = Directory.GetCurrentDirectory();
-        var projectRoot = FindProjectRoot(currentDir);
+        var projectRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
 
         Directory.Exists(Path.Combine(projectRoot, "src")).Should().BeTrue($"src directory should exist in {projectRoot}");
         Directory.Exists(Path.Combine(projectRoot, "tests")).Should().BeTrue($"tests directory should exist in {projectRoot}");
@@ -28,25 +26,10 @@ public class BasicArchitectureTests
         File.Exists(Path.Combine(projectRoot, "AGENTS.md")).Should().BeTrue($"Project instructions should exist in {projectRoot}");
     }
 
-    private static string FindProjectRoot(string startPath)
-    {
-        var current = new DirectoryInfo(startPath);
-        while (current != null)
-        {
-            if (File.Exists(Path.Combine(current.FullName, "Honua.sln")))
-            {
-                return current.FullName;
-            }
-            current = current.Parent;
-        }
-        throw new InvalidOperationException($"Could not find project root starting from {startPath}");
-    }
-
     [ArchitectureTest]
     public void ProjectFiles_ShouldHaveRequiredStructure()
     {
-        var currentDir = Directory.GetCurrentDirectory();
-        var projectRoot = FindProjectRoot(currentDir);
+        var projectRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
 
         // Verify src project directories
         Directory.Exists(Path.Combine(projectRoot, "src", "Honua.Server")).Should().BeTrue($"Honua.Server project should exist in {projectRoot}");

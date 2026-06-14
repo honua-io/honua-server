@@ -74,7 +74,7 @@ internal abstract class FeatureCollectionTransformExecutor : IJobExecutor
         }
         catch (TransformInputException ex)
         {
-            return JobExecutionResult.Failed($"Invalid {ProcessId} inputs: {ex.Message}");
+            return JobExecutionResult.Failed($"Invalid {ProcessId} inputs: {ex.PublicMessage}");
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -122,7 +122,10 @@ internal abstract class FeatureCollectionTransformExecutor : IJobExecutor
 /// Signals a caller-supplied parameter error inside a transform body. Mapped by
 /// <see cref="FeatureCollectionTransformExecutor"/> to a classified job failure.
 /// </summary>
-internal sealed class TransformInputException(string message) : Exception(message);
+internal sealed class TransformInputException(string message) : Exception(message)
+{
+    public string PublicMessage { get; } = message;
+}
 
 /// <summary>
 /// Thin reader over the durable spec parameter bag for the canonical first-step

@@ -7,10 +7,10 @@ namespace Honua.TestKit;
 
 /// <summary>
 /// Collection definition for tests that share a PostgreSQL container.
-/// Tests in this collection will share the same database container but use
-/// schema-based isolation for parallel execution.
+/// Tests in this collection share global catalog state and must remain isolated
+/// from the schema-parallel shard collections.
 /// </summary>
-[CollectionDefinition("Database")]
+[CollectionDefinition("Database", DisableParallelization = true)]
 [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1711:Identifiers should not have incorrect suffix", Justification = "This is an xUnit collection definition which requires the Collection suffix")]
 public class DatabaseCollection : ICollectionFixture<PostgresFixture>
 {

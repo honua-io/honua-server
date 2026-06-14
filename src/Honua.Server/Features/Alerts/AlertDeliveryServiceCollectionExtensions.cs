@@ -48,12 +48,32 @@ internal static class AlertDeliveryServiceCollectionExtensions
         services.AddSingleton<IAlertDeliverySink>(_ => new UnsupportedAlertDeliverySink(Core.Features.Alerts.Domain.AlertChannelType.Digest));
         services.AddHostedService<DigestFlushBackgroundService>();
 
+#if HONUA_EXCLUDE_AWS
+        RegisterUnsupportedAwsChannels(services);
+#else
         services.AddAwsAlertDeliveryChannels(configuration);
+#endif
+#if HONUA_EXCLUDE_AZURE
+        RegisterUnsupportedAzureChannels(services);
+#else
         services.AddAzureAlertDeliveryChannels(configuration);
+#endif
         RegisterSlack(services, configuration);
         RegisterTeams(services, configuration);
 
         return services;
+    }
+
+    private static void RegisterUnsupportedAwsChannels(IServiceCollection services)
+    {
+        services.AddSingleton<IAlertDeliverySink>(_ => new UnsupportedAlertDeliverySink(Core.Features.Alerts.Domain.AlertChannelType.AwsSns));
+        services.AddSingleton<IAlertDeliverySink>(_ => new UnsupportedAlertDeliverySink(Core.Features.Alerts.Domain.AlertChannelType.AwsSqs));
+    }
+
+    private static void RegisterUnsupportedAzureChannels(IServiceCollection services)
+    {
+        services.AddSingleton<IAlertDeliverySink>(_ => new UnsupportedAlertDeliverySink(Core.Features.Alerts.Domain.AlertChannelType.AzureEventGrid));
+        services.AddSingleton<IAlertDeliverySink>(_ => new UnsupportedAlertDeliverySink(Core.Features.Alerts.Domain.AlertChannelType.AzureEventHub));
     }
 
     private static void RegisterSlack(IServiceCollection services, IConfiguration configuration)

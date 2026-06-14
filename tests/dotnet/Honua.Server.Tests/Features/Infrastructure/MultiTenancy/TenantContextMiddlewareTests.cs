@@ -30,7 +30,7 @@ public class TenantContextMiddlewareTests
     {
         var principal = AuthenticatedPrincipal(claims: ("tid", "tenant-a"));
 
-        var client = CreateApp(principal: principal);
+        var client = await CreateAppAsync(principal: principal);
         var response = await client.GetAsync("/tenant");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -45,7 +45,7 @@ public class TenantContextMiddlewareTests
     {
         var principal = AuthenticatedPrincipal(claims: ("tenant_id", "tenant-b"));
 
-        var client = CreateApp(principal: principal);
+        var client = await CreateAppAsync(principal: principal);
         var response = await client.GetAsync("/tenant");
 
         var body = await response.Content.ReadAsStringAsync();
@@ -61,7 +61,7 @@ public class TenantContextMiddlewareTests
             claims: ("tid", "tenant-home"),
             roles: ["multi_tenant_admin"]);
 
-        var client = CreateApp(principal: principal);
+        var client = await CreateAppAsync(principal: principal);
         using var request = new HttpRequestMessage(HttpMethod.Get, "/tenant");
         request.Headers.Add(TenantContextOptions.TenantHeaderName, "tenant-target");
 
@@ -80,7 +80,7 @@ public class TenantContextMiddlewareTests
             claims: ("tid", "tenant-home"),
             roles: ["user"]);
 
-        var client = CreateApp(principal: principal);
+        var client = await CreateAppAsync(principal: principal);
         using var request = new HttpRequestMessage(HttpMethod.Get, "/tenant");
         request.Headers.Add(TenantContextOptions.TenantHeaderName, "tenant-target");
 
@@ -96,7 +96,7 @@ public class TenantContextMiddlewareTests
     [Endpoint("GET /tenant")]
     public async Task Anonymous_FallsBackToConfiguredDefaultTenant()
     {
-        var client = CreateApp(principal: null);
+        var client = await CreateAppAsync(principal: null);
         var response = await client.GetAsync("/tenant");
 
         var body = await response.Content.ReadAsStringAsync();
@@ -108,7 +108,7 @@ public class TenantContextMiddlewareTests
     [Endpoint("GET /tenant")]
     public async Task Anonymous_NoDefaultConfigured_LeavesTenantContextAnonymous()
     {
-        var client = CreateApp(principal: null, configureOptions: opt => opt.DefaultTenantId = null);
+        var client = await CreateAppAsync(principal: null, configureOptions: opt => opt.DefaultTenantId = null);
         var response = await client.GetAsync("/tenant");
 
         var body = await response.Content.ReadAsStringAsync();
@@ -120,7 +120,7 @@ public class TenantContextMiddlewareTests
     [Endpoint("GET /tenant")]
     public async Task RequireTenantId_ReturnsFalseWithReason_WhenAnonymousAndNoDefault()
     {
-        var client = CreateApp(principal: null, configureOptions: opt => opt.DefaultTenantId = null);
+        var client = await CreateAppAsync(principal: null, configureOptions: opt => opt.DefaultTenantId = null);
         var response = await client.GetAsync("/tenant-require");
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -141,7 +141,7 @@ public class TenantContextMiddlewareTests
 
         // The injection middleware uses the X-Test-Principal header to select which
         // principal to attach so a single TestServer can serve both requests.
-        var client = CreateMultiPrincipalApp(
+        var client = await CreateMultiPrincipalAppAsync(
             principals: new Dictionary<string, ClaimsPrincipal?>
             {
                 ["alpha"] = principalA,
@@ -193,15 +193,15 @@ public class TenantContextMiddlewareTests
         return new ClaimsPrincipal(identity);
     }
 
-    private static HttpClient CreateApp(
+    private static Task<HttpClient> CreateAppAsync(
         ClaimsPrincipal? principal,
         Action<TenantContextOptions>? configureOptions = null)
-        => CreateMultiPrincipalApp(
+        => CreateMultiPrincipalAppAsync(
             principals: new Dictionary<string, ClaimsPrincipal?> { ["default"] = principal },
             defaultPrincipalKey: "default",
             configureOptions: configureOptions);
 
-    private static HttpClient CreateMultiPrincipalApp(
+    private static async Task<HttpClient> CreateMultiPrincipalAppAsync(
         Dictionary<string, ClaimsPrincipal?> principals,
         string? defaultPrincipalKey = null,
         Action<TenantContextOptions>? configureOptions = null)
@@ -253,7 +253,7 @@ public class TenantContextMiddlewareTests
             return Results.Text(tenantId);
         });
 
-        app.StartAsync().GetAwaiter().GetResult();
+        await app.StartAsync();
         return app.GetTestClient();
     }
 }

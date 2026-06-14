@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
 using Microsoft.Extensions.Logging;
@@ -19,8 +20,6 @@ namespace Honua.Postgres.Features.Migration;
 /// </summary>
 internal sealed partial class PostgresMigrationBatchRunCatalog : IMigrationBatchRunCatalog
 {
-    private static readonly JsonSerializerOptions DependsOnOptions = new(JsonSerializerDefaults.Web);
-
     private readonly string _connectionString;
     private readonly ILogger<PostgresMigrationBatchRunCatalog> _logger;
 
@@ -115,7 +114,7 @@ internal sealed partial class PostgresMigrationBatchRunCatalog : IMigrationBatch
                 insertChild.Parameters.AddWithValue("@targetSchema", (object?)child.TargetSchema ?? DBNull.Value);
                 insertChild.Parameters.AddWithValue("@serviceName", (object?)child.ServiceName ?? DBNull.Value);
                 var dependsParam = insertChild.Parameters.Add("@dependsOn", NpgsqlDbType.Text);
-                dependsParam.Value = JsonSerializer.Serialize(child.DependsOn, DependsOnOptions);
+                dependsParam.Value = JsonSerializer.Serialize(child.DependsOn, MigrationBatchRunJsonContext.Default.IReadOnlyListString);
                 insertChild.Parameters.AddWithValue("@status", ChildStatusToText(child.Status));
                 insertChild.Parameters.AddWithValue("@jobId", (object?)child.JobId ?? DBNull.Value);
                 insertChild.Parameters.AddWithValue("@publishedLayerId", (object?)child.PublishedLayerId ?? DBNull.Value);
@@ -409,7 +408,7 @@ internal sealed partial class PostgresMigrationBatchRunCatalog : IMigrationBatch
             var json = reader.GetString(dependsOrdinal);
             if (!string.IsNullOrWhiteSpace(json))
             {
-                dependsOn = JsonSerializer.Deserialize<string[]>(json, DependsOnOptions) ?? [];
+                dependsOn = JsonSerializer.Deserialize(json, MigrationBatchRunJsonContext.Default.IReadOnlyListString) ?? [];
             }
         }
 

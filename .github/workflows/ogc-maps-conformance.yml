@@ -2,7 +2,7 @@ name: OGC API Maps Conformance Tests
 
 on:
   # Tier: nightly — conformance suites are external and heavyweight.
-  # PR/push triggers removed in #485. See docs/ci/gate-model.md.
+  # PR/push triggers removed in #485. See docs/internal/ci/gate-model.md.
   schedule:
     # Weekly drift check for OGC API - Maps declarations and behavior
     - cron: '0 6 * * 5'

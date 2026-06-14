@@ -238,7 +238,11 @@ internal sealed partial class ODataSearchService
 
         var resolvedLayer = await ResolveODataLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
         var resource = resolvedLayer.Resource;
-        var aggregation = ODataAggregationHandler.ParseApplyExpression(applyExpression);
+        // Validate the terminal transform of the $apply pipeline (e.g. the groupby in
+        // filter(...)/groupby(...)); leading filter segments are field-validated when their
+        // OData filter is translated to SQL during processing (#1636).
+        var segments = ODataAggregationHandler.SplitApplyTransforms(applyExpression);
+        var aggregation = ODataAggregationHandler.ParseApplyExpression(segments[^1]);
         ValidateAggregationFields(aggregation, resource);
 
         // Use existing aggregation handler for processing
@@ -696,13 +700,10 @@ internal sealed partial class ODataSearchService
             }
 
             var outputName = expandOptions.Name;
-            var related = ResolveRelatedResource(snapshot, relationship, context);
-            if (related is null)
-            {
-                continue;
-            }
 
-            // Ensure expanded navigation properties are emitted even when no related rows exist.
+            // A declared/expanded navigation property must always appear in the payload
+            // (as an empty collection) even when the related resource is unavailable,
+            // otherwise the expansion is silently dropped from the response.
             foreach (var objectId in objectIds)
             {
                 if (!result.TryGetValue(objectId, out var relationsDict))
@@ -712,6 +713,12 @@ internal sealed partial class ODataSearchService
                 }
 
                 relationsDict.TryAdd(outputName, Array.Empty<object?>());
+            }
+
+            var related = ResolveRelatedResource(snapshot, relationship, context);
+            if (related is null)
+            {
+                continue;
             }
 
             var relatedAxisOrder = await ODataCrsUtilities.ResolveAxisOrderAsync(

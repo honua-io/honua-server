@@ -4,12 +4,20 @@
 using FluentAssertions;
 using Honua.Core.Features.Scene.Domain;
 using Honua.Protocols.Scene;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.Scene;
 
+/// <summary>
+/// Unit tests for the OpenUSD scene manifest reader. The reader maps a hosted
+/// scene's tileset + observation sidecar into the manifest input model; these
+/// tests isolate URL escaping of sidecar paths and CRS validation without a
+/// web host.
+/// </summary>
+[Protocol(TestProtocols.Scene)]
 public sealed class SceneOpenUsdManifestReaderTests
 {
-    [Fact]
+    [UnitTest]
     public async Task ReadAsync_ObservationSidecarWithSpaces_EmitsEscapedManifestUrls()
     {
         var root = CreateTempSceneRoot(
@@ -53,9 +61,72 @@ public sealed class SceneOpenUsdManifestReaderTests
         }
     }
 
+    [UnitTest]
+    public async Task ReadAsync_WithMalformedTilesetJson_ReturnsStableValidationMessage()
+    {
+        var root = CreateTempSceneRoot("{");
+
+        try
+        {
+            var exception = await Assert.ThrowsAsync<OpenUsdManifestValidationException>(() =>
+                OpenUsdSceneManifestReader.ReadAsync(
+                    CreateDataset(root),
+                    record: null,
+                    manifestUrl: "https://example.test/scenes/scene-1/exports/openusd/stage.usda",
+                    tilesetUrl: "https://example.test/scenes/scene-1/tileset.json",
+                    accessEnvelopeUrl: null,
+                    CancellationToken.None));
+
+            exception.Reason.Should().Be("tileset_json_invalid");
+            exception.Message.Should().Be("Scene tileset.json could not be parsed.");
+            exception.InnerException.Should().BeOfType<System.Text.Json.JsonException>();
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [UnitTest]
+    public async Task ReadAsync_WithMalformedObservationSidecar_ReturnsStableValidationMessage()
+    {
+        var root = CreateTempSceneRoot(
+            """
+            {
+              "asset": { "version": "1.1" },
+              "extras": {
+                "bounds": { "west": -1, "south": 1, "east": 2, "north": 3 },
+                "observationsLayer": { "sidecarUri": "observations.json" }
+              }
+            }
+            """,
+            ("observations.json", "{"));
+
+        try
+        {
+            var exception = await Assert.ThrowsAsync<OpenUsdManifestValidationException>(() =>
+                OpenUsdSceneManifestReader.ReadAsync(
+                    CreateDataset(root),
+                    record: null,
+                    manifestUrl: "https://example.test/scenes/scene-1/exports/openusd/stage.usda",
+                    tilesetUrl: "https://example.test/scenes/scene-1/tileset.json",
+                    accessEnvelopeUrl: null,
+                    CancellationToken.None));
+
+            exception.Reason.Should().Be("observations_sidecar_invalid");
+            exception.Message.Should().Be("Observation sidecar could not be parsed.");
+            exception.InnerException.Should().BeOfType<System.Text.Json.JsonException>();
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     [Theory]
     [InlineData("EPSG:3857")]
     [InlineData("http://www.opengis.net/def/crs/EPSG/0/3857")]
+    [Trait("Category", "Unit")]
     public async Task ReadAsync_WithProjectedSceneCrs_RejectsManifest(string crs)
     {
         var root = CreateTempSceneRoot(

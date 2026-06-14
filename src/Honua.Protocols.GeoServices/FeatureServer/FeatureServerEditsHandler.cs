@@ -3,21 +3,25 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
+using Honua.Core.Features.AttributeRules;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
+using Honua.Plugins.Abstractions;
 using Honua.Protocols.GeoServices;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Events;
+using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Validation;
 using Honua.ServiceDefaults;
@@ -46,6 +50,7 @@ internal sealed class FeatureServerEditsHandler(
     private readonly IFilterExpressionService _filterExpressionService = dependencies.FilterExpressionService;
     private readonly IHttpContextAccessor _httpContextAccessor = dependencies.HttpContextAccessor;
     private readonly FeatureMutationEventService _mutationEventService = dependencies.MutationEventService;
+    private readonly IPluginEditPipeline _pluginPipeline = dependencies.PluginPipeline;
     private readonly ILogger<FeatureServerEditsHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
     /// <summary>
@@ -59,6 +64,18 @@ internal sealed class FeatureServerEditsHandler(
         CancellationToken cancellationToken = default)
     {
         var httpContext = _httpContextAccessor.HttpContext!;
+
+        // FeatureServer editing is a Pro entitlement (#1591) scoped to the Esri GeoServices
+        // surface only — open-protocol edits are Community. All FeatureServer write
+        // entrypoints (applyEdits/add/update/delete and service-level applyEdits) funnel through
+        // this shared handler, so the gate is enforced once here for the whole GeoServices surface.
+        var editsGate = LicenseGate.RequireEntitlement(
+            httpContext, FeatureCatalog.FeatureServerEditsKey, "FeatureServer editing", _logger);
+        if (editsGate is not null)
+        {
+            return editsGate;
+        }
+
         using var scope = HonuaTelemetryScope.StartFeature(
             "applyEdits",
             HonuaTelemetry.Protocols.FeatureServer,
@@ -143,6 +160,13 @@ internal sealed class FeatureServerEditsHandler(
             // Process edit operations
             var editContext = await ProcessEditOperationsAsync(request, resource, storageLayerId.Value, cancellationToken);
 
+            // Run Enterprise plugin validators + before-edit hooks over the resolved features (#347).
+            // Rejected features are removed from the write set and marked failed in their response
+            // slots; with rollbackOnFailure this fails the whole request below. No-op (and skipped
+            // entirely) when no plugins are licensed/registered.
+            await ApplyPluginEditPipelineAsync(serviceId, layerId, resource, editContext, cancellationToken)
+                .ConfigureAwait(false);
+
             // Handle validation errors with rollback if needed
             if (editContext.HasValidationErrors && request.RollbackOnFailure)
             {
@@ -157,6 +181,8 @@ internal sealed class FeatureServerEditsHandler(
             {
                 await _mutationEventService.InvalidateLayerAsync(serviceId, layerId, CancellationToken.None);
                 await PublishFeatureChangeEventsAsync(serviceId, layerId, editContext, CancellationToken.None);
+                await RunPluginAfterHooksAsync(serviceId, layerId, resource, editContext, CancellationToken.None)
+                    .ConfigureAwait(false);
             }
 
             // Build and return final response
@@ -257,7 +283,7 @@ internal sealed class FeatureServerEditsHandler(
                 // request's, but using request.Adds[i].Geometry directly keeps the rule
                 // identical to the update path.
                 var requestHasGeometry = request.Adds[i].Geometry != null;
-                var newFeature = await BuildFeatureFromGeoServicesAsync(request.Adds[i], 0, resource, cancellationToken);
+                var newFeature = await BuildFeatureFromGeoServicesAsync(request.Adds[i], 0, resource, AttributeRuleEditEvent.Insert, cancellationToken);
                 context.CreateFeatures.Add(newFeature);
                 context.CreateIndexes.Add(i);
                 context.CreateGeometryChanged.Add(requestHasGeometry);
@@ -332,6 +358,7 @@ internal sealed class FeatureServerEditsHandler(
                     update,
                     internalObjectId,
                     resource,
+                    AttributeRuleEditEvent.Update,
                     cancellationToken,
                     existingFeature).ConfigureAwait(false);
                 context.UpdateFeatures.Add(updateFeature);
@@ -666,6 +693,232 @@ internal sealed class FeatureServerEditsHandler(
     }
 
     /// <summary>
+    /// Runs the Enterprise plugin edit pipeline (per-feature validators + batch before-hooks)
+    /// over the resolved features and applies any rejections back onto the edit context: each
+    /// rejected feature is removed from the write set and a failure result is written into its
+    /// response slot. A no-op when no plugins are licensed/registered.
+    /// </summary>
+    private async Task ApplyPluginEditPipelineAsync(
+        string serviceId,
+        int layerId,
+        MetadataV2Resource resource,
+        EditOperationContext context,
+        CancellationToken cancellationToken)
+    {
+        if (!_pluginPipeline.HasPlugins)
+        {
+            return;
+        }
+
+        var hookContext = BuildEditHookContext(serviceId, layerId, resource, context);
+        if (hookContext.Features.IsDefaultOrEmpty)
+        {
+            return;
+        }
+
+        var outcome = await _pluginPipeline.ValidateAndRunBeforeHooksAsync(hookContext, cancellationToken)
+            .ConfigureAwait(false);
+        if (!outcome.HasRejections)
+        {
+            return;
+        }
+
+        foreach (var rejection in outcome.Rejections)
+        {
+            context.HasValidationErrors = true;
+            var message = SanitizeEditErrorMessage(rejection.Message, InvalidFeatureDataMessage);
+            switch (rejection.Kind)
+            {
+                case EditKind.Create:
+                    RemoveCreateForRejection(context, rejection, message);
+                    break;
+                case EditKind.Update:
+                    RemoveUpdateForRejection(context, rejection, message);
+                    break;
+                case EditKind.Delete:
+                    RemoveDeleteForRejection(context, rejection, message);
+                    break;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Runs the Enterprise plugin after-edit hooks over the committed features. Best-effort:
+    /// the pipeline swallows hook exceptions so a post-write plugin failure cannot affect the
+    /// already-committed edit. A no-op when no plugins are licensed/registered.
+    /// </summary>
+    private async Task RunPluginAfterHooksAsync(
+        string serviceId,
+        int layerId,
+        MetadataV2Resource resource,
+        EditOperationContext context,
+        CancellationToken cancellationToken)
+    {
+        if (!_pluginPipeline.HasPlugins)
+        {
+            return;
+        }
+
+        // Only surface rows that were actually committed. With rollbackOnFailure=false a batch can
+        // partially fail (ApplyEditsAsync records per-row failures but leaves the create/update/
+        // delete lists intact), and after-hooks must not emit downstream side effects for features
+        // that failed to write.
+        var hookContext = BuildEditHookContext(serviceId, layerId, resource, context, committedOnly: true);
+        if (hookContext.Features.IsDefaultOrEmpty)
+        {
+            return;
+        }
+
+        await _pluginPipeline.RunAfterHooksAsync(hookContext, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Projects the create/update/delete operations in <paramref name="context"/> into a
+    /// protocol-neutral <see cref="EditHookContext"/> for the plugin pipeline. Each item carries the
+    /// originating request slot so per-feature rejections map back precisely. When
+    /// <paramref name="committedOnly"/> is <see langword="true"/> (the after-hook path), only rows
+    /// whose response slot reports success are included, so post-write hooks never observe features
+    /// that failed to write under a partial-failure (rollbackOnFailure=false) edit.
+    /// </summary>
+    private EditHookContext BuildEditHookContext(
+        string serviceId,
+        int layerId,
+        MetadataV2Resource resource,
+        EditOperationContext context,
+        bool committedOnly = false)
+    {
+        var features = ImmutableArray.CreateBuilder<EditHookFeature>();
+
+        for (var k = 0; k < context.CreateFeatures.Count; k++)
+        {
+            var requestIndex = context.CreateIndexes[k];
+            if (committedOnly && !IsSlotCommitted(context.AddResults, requestIndex))
+            {
+                continue;
+            }
+
+            features.Add(new EditHookFeature(EditKind.Create, requestIndex, ObjectId: null, context.CreateFeatures[k]));
+        }
+
+        for (var k = 0; k < context.UpdateFeatures.Count; k++)
+        {
+            var requestIndex = context.UpdateIndexes[k];
+            if (committedOnly && !IsSlotCommitted(context.UpdateResults, requestIndex))
+            {
+                continue;
+            }
+
+            features.Add(new EditHookFeature(EditKind.Update, requestIndex, context.UpdateObjectIds[k], context.UpdateFeatures[k]));
+        }
+
+        for (var k = 0; k < context.DeleteIndexes.Count; k++)
+        {
+            var requestIndex = context.DeleteIndexes[k];
+            if (committedOnly && !IsSlotCommitted(context.DeleteResults, requestIndex))
+            {
+                continue;
+            }
+
+            var objectId = context.DeleteResponseObjectIds[k];
+            var snapshot = k < context.DeleteFeatures.Count ? context.DeleteFeatures[k] : null;
+            features.Add(new EditHookFeature(EditKind.Delete, requestIndex, objectId, snapshot ?? Feature.Create(objectId, geometry: null)));
+        }
+
+        var httpContext = _httpContextAccessor.HttpContext;
+        return new EditHookContext(
+            serviceId,
+            layerId,
+            resource.Metadata.Name,
+            httpContext?.User?.Identity?.Name,
+            httpContext?.TraceIdentifier,
+            features.ToImmutable());
+    }
+
+    private static bool IsSlotCommitted(EditResult?[]? results, int requestIndex)
+        => results is not null
+           && requestIndex >= 0
+           && requestIndex < results.Length
+           && results[requestIndex] is { Success: true };
+
+    private static void RemoveCreateForRejection(EditOperationContext context, PluginEditRejection rejection, string message)
+    {
+        if (context.AddResults != null && rejection.RequestIndex >= 0 && rejection.RequestIndex < context.AddResults.Length)
+        {
+            context.AddResults[rejection.RequestIndex] = CreateFailureResult(rejection.ErrorCode, message, rejection.ObjectId);
+        }
+
+        var k = context.CreateIndexes.IndexOf(rejection.RequestIndex);
+        if (k < 0)
+        {
+            return;
+        }
+
+        context.CreateFeatures.RemoveAt(k);
+        context.CreateIndexes.RemoveAt(k);
+        if (k < context.CreateResponseObjectIds.Count)
+        {
+            context.CreateResponseObjectIds.RemoveAt(k);
+        }
+
+        if (k < context.CreateGeometryChanged.Count)
+        {
+            context.CreateGeometryChanged.RemoveAt(k);
+        }
+    }
+
+    private static void RemoveUpdateForRejection(EditOperationContext context, PluginEditRejection rejection, string message)
+    {
+        if (context.UpdateResults != null && rejection.RequestIndex >= 0 && rejection.RequestIndex < context.UpdateResults.Length)
+        {
+            context.UpdateResults[rejection.RequestIndex] = CreateFailureResult(rejection.ErrorCode, message, rejection.ObjectId);
+        }
+
+        var k = context.UpdateIndexes.IndexOf(rejection.RequestIndex);
+        if (k < 0)
+        {
+            return;
+        }
+
+        context.UpdateFeatures.RemoveAt(k);
+        context.UpdateIndexes.RemoveAt(k);
+        if (k < context.UpdateObjectIds.Count)
+        {
+            context.UpdateObjectIds.RemoveAt(k);
+        }
+
+        if (k < context.UpdateGeometryChanged.Count)
+        {
+            context.UpdateGeometryChanged.RemoveAt(k);
+        }
+    }
+
+    private static void RemoveDeleteForRejection(EditOperationContext context, PluginEditRejection rejection, string message)
+    {
+        if (context.DeleteResults != null && rejection.RequestIndex >= 0 && rejection.RequestIndex < context.DeleteResults.Length)
+        {
+            context.DeleteResults[rejection.RequestIndex] = CreateFailureResult(rejection.ErrorCode, message, rejection.ObjectId);
+        }
+
+        var k = context.DeleteIndexes.IndexOf(rejection.RequestIndex);
+        if (k < 0)
+        {
+            return;
+        }
+
+        context.DeleteIds.RemoveAt(k);
+        context.DeleteIndexes.RemoveAt(k);
+        if (k < context.DeleteResponseObjectIds.Count)
+        {
+            context.DeleteResponseObjectIds.RemoveAt(k);
+        }
+
+        if (k < context.DeleteFeatures.Count)
+        {
+            context.DeleteFeatures.RemoveAt(k);
+        }
+    }
+
+    /// <summary>
     /// Context object to track edit operations state
     /// </summary>
     private sealed class EditOperationContext
@@ -749,6 +1002,7 @@ internal sealed class FeatureServerEditsHandler(
         GeoServicesFeature feature,
         long objectId,
         MetadataV2Resource resource,
+        AttributeRuleEditEvent editEvent,
         CancellationToken cancellationToken,
         Feature? existingFeature = null)
     {
@@ -835,7 +1089,55 @@ internal sealed class FeatureServerEditsHandler(
             attributes.Remove(objectIdFieldName);
         }
 
+        // Esri attribute rules fire on the shared edit path after attribute validation
+        // and merge: calculation rules populate their target field, constraint/validation
+        // rules reject violating edits. Expressions outside the supported safe subset are
+        // routed out of scope (skipped with a logged warning) by the engine, keeping full
+        // Arcade parity a non-goal of this path. Throwing ArgumentException lets the
+        // surrounding per-feature try/catch convert a violation into a clean edit failure
+        // result rather than a 500.
+        var ruleResult = AttributeRuleEngine.Apply(
+            resource,
+            attributes,
+            editEvent,
+            new UnsupportedExpressionLogger(_logger));
+        if (!ruleResult.IsValid)
+        {
+            var message = ruleResult.Violations[0].Message;
+            throw new ArgumentException(SanitizeEditErrorMessage(message, "Attribute rule violation."));
+        }
+
+        if (!ReferenceEquals(ruleResult.Attributes, (IReadOnlyDictionary<string, object?>)attributes))
+        {
+            attributes = ImmutableDictionary.CreateBuilder<string, object?>(StringComparer.OrdinalIgnoreCase);
+            foreach (var (key, value) in ruleResult.Attributes)
+            {
+                attributes[key] = value;
+            }
+        }
+
         return Feature.Create(objectId, geometry, attributes.ToImmutable());
+    }
+
+    /// <summary>
+    /// Routes attribute-rule expressions outside the supported safe subset out of scope by
+    /// emitting a structured warning identifying the layer and rule. The edit is allowed to
+    /// proceed (full Arcade parity is a non-goal of the edit path).
+    /// </summary>
+    private sealed class UnsupportedExpressionLogger(ILogger logger) : IUnsupportedExpressionSink
+    {
+        public void OnUnsupported(MetadataV2Resource resource, MetadataV2AttributeRule rule)
+        {
+            var resourceId = string.IsNullOrEmpty(resource.Metadata.Id)
+                ? (string.IsNullOrEmpty(resource.Metadata.Name) ? "unknown" : resource.Metadata.Name)
+                : resource.Metadata.Id;
+            FeatureServerLog.AttributeRuleExpressionUnsupported(
+                logger,
+                resourceId,
+                0,
+                rule.Name,
+                rule.Type.ToString());
+        }
     }
 
     /// <summary>

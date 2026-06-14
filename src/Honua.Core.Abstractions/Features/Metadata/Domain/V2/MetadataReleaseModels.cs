@@ -502,6 +502,115 @@ public sealed record MetadataReleasePackage
 }
 
 /// <summary>
+/// Lightweight release-package summary used by the release-package list endpoint so
+/// the Console GitOps Releases page can discover release proposals without reading
+/// the full per-package entry graph. Secret-safe: carries only package identity,
+/// lifecycle, source/target environments, and coarse counts.
+/// </summary>
+public sealed record MetadataReleasePackageSummary
+{
+    /// <summary>Package identifier.</summary>
+    [JsonPropertyName("packageId")]
+    public required Guid PackageId { get; init; }
+
+    /// <summary>Package key (machine name).</summary>
+    [JsonPropertyName("packageKey")]
+    public required string PackageKey { get; init; }
+
+    /// <summary>Optional package namespace.</summary>
+    [JsonPropertyName("namespace")]
+    public string? Namespace { get; init; }
+
+    /// <summary>Human-readable title.</summary>
+    [JsonPropertyName("title")]
+    public string? Title { get; init; }
+
+    /// <summary>Package summary/description.</summary>
+    [JsonPropertyName("summary")]
+    public string? Summary { get; init; }
+
+    /// <summary>Source environment.</summary>
+    [JsonPropertyName("sourceEnvironment")]
+    public required string SourceEnvironment { get; init; }
+
+    /// <summary>Source Metadata v2 revision.</summary>
+    [JsonPropertyName("sourceRevision")]
+    public required long SourceRevision { get; init; }
+
+    /// <summary>Target environments.</summary>
+    [JsonPropertyName("targetEnvironments")]
+    public IReadOnlyList<string> TargetEnvironments { get; init; } = Array.Empty<string>();
+
+    /// <summary>Number of semantic entries in the package.</summary>
+    [JsonPropertyName("entryCount")]
+    public required int EntryCount { get; init; }
+
+    /// <summary>Package lifecycle status.</summary>
+    [JsonPropertyName("status")]
+    public MetadataReleasePackageStatus Status { get; init; } = MetadataReleasePackageStatus.Draft;
+
+    /// <summary>Actor that created the package.</summary>
+    [JsonPropertyName("createdBy")]
+    public required string CreatedBy { get; init; }
+
+    /// <summary>Creation timestamp.</summary>
+    [JsonPropertyName("createdAt")]
+    public required DateTimeOffset CreatedAt { get; init; }
+
+    /// <summary>Last update timestamp.</summary>
+    [JsonPropertyName("updatedAt")]
+    public required DateTimeOffset UpdatedAt { get; init; }
+}
+
+/// <summary>
+/// Filter and paging options for listing metadata release packages.
+/// </summary>
+public sealed record MetadataReleasePackageListFilter
+{
+    /// <summary>Maximum number of summaries to return. Clamped server-side.</summary>
+    public int Limit { get; init; } = 50;
+
+    /// <summary>Number of summaries to skip for paging.</summary>
+    public int Offset { get; init; }
+
+    /// <summary>Optional source-environment filter (case-insensitive).</summary>
+    public string? SourceEnvironment { get; init; }
+
+    /// <summary>Optional target-environment filter (case-insensitive membership).</summary>
+    public string? TargetEnvironment { get; init; }
+
+    /// <summary>Optional lifecycle status filter.</summary>
+    public MetadataReleasePackageStatus? Status { get; init; }
+}
+
+/// <summary>
+/// Paged list of metadata release-package summaries.
+/// </summary>
+public sealed record MetadataReleasePackageListResponse
+{
+    /// <summary>Timestamp when the list was generated.</summary>
+    [JsonPropertyName("generatedAt")]
+    public required DateTimeOffset GeneratedAt { get; init; }
+
+    /// <summary>Release-package summaries, newest first.</summary>
+    [JsonPropertyName("items")]
+    public IReadOnlyList<MetadataReleasePackageSummary> Items { get; init; } =
+        Array.Empty<MetadataReleasePackageSummary>();
+
+    /// <summary>Number of summaries returned in this page.</summary>
+    [JsonPropertyName("count")]
+    public required int Count { get; init; }
+
+    /// <summary>Limit applied to the query.</summary>
+    [JsonPropertyName("limit")]
+    public required int Limit { get; init; }
+
+    /// <summary>Offset applied to the query.</summary>
+    [JsonPropertyName("offset")]
+    public required int Offset { get; init; }
+}
+
+/// <summary>
 /// One semantic artifact entry in a release package.
 /// </summary>
 public sealed record MetadataReleaseEntry

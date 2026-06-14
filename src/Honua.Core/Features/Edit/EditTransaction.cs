@@ -37,6 +37,9 @@ public readonly record struct EditTransaction
     /// </summary>
     public TransactionState State { get; init; }
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="EditTransaction"/> struct with default values.
+    /// </summary>
     public EditTransaction()
     {
         TransactionId = string.Empty;
@@ -146,6 +149,9 @@ public readonly record struct TransactionConfiguration
     /// </summary>
     public bool RollbackOnFailure { get; init; }
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="TransactionConfiguration"/> struct with default values.
+    /// </summary>
     public TransactionConfiguration()
     {
         RollbackOnFailure = false;
@@ -354,6 +360,9 @@ public readonly record struct RetryPolicy
     /// </summary>
     public int DelayMs { get; init; }
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="RetryPolicy"/> struct with default values.
+    /// </summary>
     public RetryPolicy()
     {
         MaxRetries = 3;

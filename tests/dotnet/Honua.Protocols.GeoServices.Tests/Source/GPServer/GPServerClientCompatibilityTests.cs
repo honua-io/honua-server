@@ -20,7 +20,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 /// Client-shaped integration tests for the GPServer adapter. These tests keep
 /// route binding real while exercising the endpoint sequence a typed SDK would use.
 /// </summary>
-[Collection("Database")]
+[Collection("Database.GeoServicesRaster")]
 [Protocol(TestProtocols.GPServer)]
 public sealed class GPServerClientCompatibilityTests : IAsyncLifetime
 {
@@ -301,9 +301,12 @@ public sealed class GPServerClientCompatibilityTests : IAsyncLifetime
         public IReadOnlyDictionary<string, string> LastSubmittedProtocolMetadata { get; private set; } =
             new Dictionary<string, string>();
 
-        public void EnsureCallerAuthorized(ClaimsPrincipal principal, OperatorResourceType resourceType, OperatorOperation operation)
-        {
-        }
+        public Task EnsureCallerAuthorizedAsync(
+            ClaimsPrincipal principal,
+            OperatorResourceType resourceType,
+            OperatorOperation operation,
+            CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
 
         public PlanValidationResult ValidatePlan(AnalysisPlan plan, ClaimsPrincipal principal)
             => throw new NotSupportedException();

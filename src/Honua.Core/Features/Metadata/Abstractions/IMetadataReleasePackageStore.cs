@@ -23,4 +23,11 @@ public interface IMetadataReleasePackageStore
     Task<MetadataReleasePackage?> GetAsync(
         Guid packageId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns release-package summaries (newest first) matching the supplied filter.
+    /// </summary>
+    Task<IReadOnlyList<MetadataReleasePackageSummary>> ListAsync(
+        MetadataReleasePackageListFilter filter,
+        CancellationToken cancellationToken = default);
 }

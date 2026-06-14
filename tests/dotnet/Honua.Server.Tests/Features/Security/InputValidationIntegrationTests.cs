@@ -9,6 +9,8 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Hosting;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Security;
 
@@ -22,7 +24,7 @@ public sealed class InputValidationIntegrationTests : IAsyncLifetime
 
     public InputValidationIntegrationTests()
     {
-        _fixture = new WebAppFixture()
+        _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
             .UseSeed("tests/seed/server.yaml")
             .ConfigureWebHost(builder =>
             {
@@ -247,7 +249,7 @@ public sealed class InputValidationODataIntegrationTests : IAsyncLifetime
 
     public InputValidationODataIntegrationTests()
     {
-        _fixture = new WebAppFixture()
+        _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
             .UseSeed("tests/seed/odata.yaml")
             .ConfigureWebHost(builder =>
             {

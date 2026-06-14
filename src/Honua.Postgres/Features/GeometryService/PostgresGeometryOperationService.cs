@@ -5,6 +5,8 @@ using System.Collections.Concurrent;
 using System.Data.Common;
 using Honua.Core.Features.GeometryService.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using NetTopologySuite.Geometries;
+using NetTopologySuite.IO;
 using Npgsql;
 
 namespace Honua.Postgres.Features.GeometryService;
@@ -119,6 +121,11 @@ internal sealed class PostgresGeometryOperationService(
         await using var connection = await _connectionProvider.OpenConnectionAsync(ct).ConfigureAwait(false);
         await using var cmd = connection.CreateCommand();
 
+        if (fromSrid == 4326 && IsWebMercatorSrid(toSrid))
+        {
+            wkb = ClampWebMercatorLatitudes(wkb, fromSrid);
+        }
+
         cmd.CommandText = "SELECT ST_AsBinary(ST_Transform(ST_SetSRID($1::geometry, $2), $3))";
 
         cmd.Parameters.Add(new NpgsqlParameter { Value = wkb });
@@ -127,6 +134,46 @@ internal sealed class PostgresGeometryOperationService(
 
         var result = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
         return result as byte[] ?? throw new InvalidOperationException("PostGIS project returned null.");
+    }
+
+    private static bool IsWebMercatorSrid(int srid)
+        => srid is 3857 or 900913 or 102100 or 102113 or 3785;
+
+    private static byte[] ClampWebMercatorLatitudes(byte[] wkb, int srid)
+    {
+        var geometry = new WKBReader().Read(wkb);
+        var filter = new WebMercatorLatitudeClampFilter();
+        geometry.Apply(filter);
+        if (!filter.GeometryChanged)
+        {
+            return wkb;
+        }
+
+        geometry.SRID = srid;
+        return new WKBWriter().Write(geometry);
+    }
+
+    private sealed class WebMercatorLatitudeClampFilter : ICoordinateSequenceFilter
+    {
+        public bool Done => false;
+
+        public bool GeometryChanged { get; private set; }
+
+        public void Filter(CoordinateSequence seq, int i)
+        {
+            var latitude = seq.GetY(i);
+            var clamped = Math.Clamp(
+                latitude,
+                -WebMercatorMaxAbsoluteLatitudeDegrees,
+                WebMercatorMaxAbsoluteLatitudeDegrees);
+            if (clamped.Equals(latitude))
+            {
+                return;
+            }
+
+            seq.SetOrdinate(i, Ordinate.Y, clamped);
+            GeometryChanged = true;
+        }
     }
 
     public async Task<byte[]> MakeValidAsync(byte[] wkb, int srid, CancellationToken ct = default)

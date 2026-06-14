@@ -56,13 +56,13 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
             }),
             NullLogger<FeatureStreamSessionManager>.Instance);
 
-        var startGate = new ManualResetEventSlim(false);
+        var startGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var sessions = new ConcurrentBag<FeatureStreamSession>();
 
         var tasks = Enumerable.Range(0, 16)
-            .Select(_ => Task.Run(() =>
+            .Select(_ => Task.Run(async () =>
             {
-                startGate.Wait();
+                await startGate.Task;
                 var session = manager.TryCreateSession("WebSocket", "load-test");
                 if (session is not null)
                 {
@@ -71,7 +71,7 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
             }))
             .ToArray();
 
-        startGate.Set();
+        startGate.SetResult();
         await Task.WhenAll(tasks);
 
         Assert.Single(sessions);

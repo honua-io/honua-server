@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Xml.Linq;
 using FluentAssertions;
 using Xunit;
 
@@ -43,14 +42,7 @@ public sealed class SceneIsolationTests
             "the Honua.Scene csproj must exist at the canonical carve path: {0}",
             sceneCsproj);
 
-        var document = XDocument.Load(sceneCsproj);
-
-        var projectReferences = document
-            .Descendants("ProjectReference")
-            .Select(element => element.Attribute("Include")?.Value)
-            .Where(value => !string.IsNullOrWhiteSpace(value))
-            .Select(value => Path.GetFileNameWithoutExtension(value!.Replace('\\', '/')))
-            .ToList();
+        var projectReferences = ArchitectureTestHelpers.DirectProjectReferenceNames(sceneCsproj);
 
         var offending = projectReferences
             .Where(name => BannedProjectReferences.Contains(name, StringComparer.Ordinal))

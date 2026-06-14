@@ -55,7 +55,6 @@ public interface IDatabaseSession : IAsyncDisposable
     /// <list type="bullet">
     ///   <item><description><c>null</c> (no parameters)</description></item>
     ///   <item><description><c>IReadOnlyDictionary&lt;string, object?&gt;</c> — name → value</description></item>
-    ///   <item><description>Anonymous object — property names become parameter names</description></item>
     /// </list>
     /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>

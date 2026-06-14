@@ -8,6 +8,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.SqlServer;
 using Honua.SqlServer.Features.FeatureStore;
 using Honua.SqlServer.Features.FeatureStore.Services;
+using Honua.TestKit.Attributes;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -29,23 +30,21 @@ namespace Honua.SqlServer.Tests;
 /// </code>
 /// </remarks>
 [Trait("Category", "SqlServerIntegration")]
-public class SqlServerFeatureStoreIntegrationTests : IAsyncLifetime
+public sealed class SqlServerFeatureStoreIntegrationTests : IAsyncLifetime
 {
-    private const string ConnectionEnvVar = "HONUA_SQLSERVER_TEST_CONNECTION";
+    internal const string ConnectionEnvVar = "HONUA_SQLSERVER_TEST_CONNECTION";
     private const int LayerId = 1;
 
     private string? _connectionString;
     private string _tableName = null!;
     private IFeatureReader _store = null!;
 
-    public static bool ShouldRun => !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(ConnectionEnvVar));
-
     public async Task InitializeAsync()
     {
         _connectionString = Environment.GetEnvironmentVariable(ConnectionEnvVar);
         if (string.IsNullOrWhiteSpace(_connectionString))
         {
-            return;
+            throw new InvalidOperationException($"Set {ConnectionEnvVar} to run SQL Server integration tests.");
         }
 
         _tableName = $"honua_sqlserver_test_{Guid.NewGuid():N}";
@@ -82,49 +81,41 @@ public class SqlServerFeatureStoreIntegrationTests : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        if (string.IsNullOrWhiteSpace(_connectionString) || string.IsNullOrWhiteSpace(_tableName))
+        if (!string.IsNullOrWhiteSpace(_connectionString) && !string.IsNullOrWhiteSpace(_tableName))
         {
-            return;
-        }
-
-        try
-        {
-            await using var connection = new SqlConnection(_connectionString);
-            await connection.OpenAsync();
-            await Execute(connection, $"DROP TABLE IF EXISTS [dbo].[{_tableName}]");
-        }
-        catch
-        {
-            // Best-effort cleanup; the test database may already have been dropped.
+            try
+            {
+                await using var connection = new SqlConnection(_connectionString);
+                await connection.OpenAsync();
+                await Execute(connection, $"DROP TABLE IF EXISTS [dbo].[{_tableName}]");
+            }
+            catch
+            {
+                // Best-effort cleanup; the test database may already have been dropped.
+            }
         }
     }
 
-    [SkippableFact]
+    [RequiredEnvironmentFact(ConnectionEnvVar, skipReason: "Set HONUA_SQLSERVER_TEST_CONNECTION to run SQL Server integration tests.")]
     public async Task QueryAsync_NoFilter_ReturnsAllFeatures()
     {
-        Skip.IfNot(ShouldRun, $"Set {ConnectionEnvVar} to run SQL Server integration tests.");
-
         var result = await _store.QueryAsync(LayerId, new FeatureQuery());
 
         Assert.Equal(3, result.Items.Length);
         Assert.All(result.Items, f => Assert.NotNull(f.Geometry));
     }
 
-    [SkippableFact]
+    [RequiredEnvironmentFact(ConnectionEnvVar, skipReason: "Set HONUA_SQLSERVER_TEST_CONNECTION to run SQL Server integration tests.")]
     public async Task CountAsync_NoFilter_ReturnsTotalRowCount()
     {
-        Skip.IfNot(ShouldRun, $"Set {ConnectionEnvVar} to run SQL Server integration tests.");
-
         var count = await _store.CountAsync(LayerId, new FeatureQuery());
 
         Assert.Equal(3, count);
     }
 
-    [SkippableFact]
+    [RequiredEnvironmentFact(ConnectionEnvVar, skipReason: "Set HONUA_SQLSERVER_TEST_CONNECTION to run SQL Server integration tests.")]
     public async Task GetExtentAsync_ReturnsLayerEnvelope()
     {
-        Skip.IfNot(ShouldRun, $"Set {ConnectionEnvVar} to run SQL Server integration tests.");
-
         var extent = await _store.GetExtentAsync(LayerId);
 
         Assert.NotNull(extent);
@@ -134,22 +125,18 @@ public class SqlServerFeatureStoreIntegrationTests : IAsyncLifetime
         Assert.Equal(20, extent.Value.MaxY);
     }
 
-    [SkippableFact]
+    [RequiredEnvironmentFact(ConnectionEnvVar, skipReason: "Set HONUA_SQLSERVER_TEST_CONNECTION to run SQL Server integration tests.")]
     public async Task QueryAsync_AttributeFilter_ReturnsMatching()
     {
-        Skip.IfNot(ShouldRun, $"Set {ConnectionEnvVar} to run SQL Server integration tests.");
-
         var result = await _store.QueryAsync(LayerId, new FeatureQuery { Where = "name = 'Alpha'" });
 
         Assert.Single(result.Items);
         Assert.Equal(1, result.Items[0].Id);
     }
 
-    [SkippableFact]
+    [RequiredEnvironmentFact(ConnectionEnvVar, skipReason: "Set HONUA_SQLSERVER_TEST_CONNECTION to run SQL Server integration tests.")]
     public async Task QueryAsync_LimitMatchingTotalRows_ReportsNoMoreResults()
     {
-        Skip.IfNot(ShouldRun, $"Set {ConnectionEnvVar} to run SQL Server integration tests.");
-
         // Three rows are seeded; a limit equal to the row count must not falsely advertise more.
         var result = await _store.QueryAsync(LayerId, new FeatureQuery { Limit = 3 });
 
@@ -157,11 +144,9 @@ public class SqlServerFeatureStoreIntegrationTests : IAsyncLifetime
         Assert.False(result.HasMoreResults);
     }
 
-    [SkippableFact]
+    [RequiredEnvironmentFact(ConnectionEnvVar, skipReason: "Set HONUA_SQLSERVER_TEST_CONNECTION to run SQL Server integration tests.")]
     public async Task QueryAsync_LimitBelowTotalRows_ReportsMoreResults()
     {
-        Skip.IfNot(ShouldRun, $"Set {ConnectionEnvVar} to run SQL Server integration tests.");
-
         var result = await _store.QueryAsync(LayerId, new FeatureQuery { Limit = 2 });
 
         Assert.Equal(2, result.Items.Length);
@@ -238,32 +223,5 @@ public class SqlServerFeatureStoreIntegrationTests : IAsyncLifetime
             LayerId,
             provider,
             Connection: null);
-    }
-}
-
-internal static class Skip
-{
-    public static void IfNot(bool condition, string reason)
-    {
-        if (!condition)
-        {
-            throw new SkipException(reason);
-        }
-    }
-}
-
-internal sealed class SkipException : Exception
-{
-    public SkipException(string message) : base(message) { }
-}
-
-internal sealed class SkippableFactAttribute : FactAttribute
-{
-    public SkippableFactAttribute()
-    {
-        if (!SqlServerFeatureStoreIntegrationTests.ShouldRun)
-        {
-            base.Skip = "Set HONUA_SQLSERVER_TEST_CONNECTION to run SQL Server integration tests.";
-        }
     }
 }

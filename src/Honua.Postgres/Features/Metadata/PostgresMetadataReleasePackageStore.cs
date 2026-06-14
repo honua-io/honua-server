@@ -128,6 +128,78 @@ internal sealed class PostgresMetadataReleasePackageStore : IMetadataReleasePack
         };
     }
 
+    public async Task<IReadOnlyList<MetadataReleasePackageSummary>> ListAsync(
+        MetadataReleasePackageListFilter filter,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(filter);
+
+        var limit = Math.Clamp(filter.Limit, 0, 500);
+        var offset = Math.Max(0, filter.Offset);
+
+        var sql = $"""
+            SELECT package_id, package_key, package_namespace, status, source_environment, source_revision,
+                   target_environments,
+                   COALESCE(jsonb_array_length(entries), 0) AS entry_count,
+                   package_metadata ->> 'title' AS title,
+                   package_metadata ->> 'description' AS summary,
+                   created_by, created_at, updated_at
+            FROM {_packagesTable}
+            WHERE (@source_environment IS NULL OR LOWER(source_environment) = LOWER(@source_environment))
+              AND (@status IS NULL OR status = @status)
+              AND (
+                    @target_environment IS NULL
+                    OR EXISTS (
+                        SELECT 1
+                        FROM jsonb_array_elements_text(target_environments) AS target(value)
+                        WHERE LOWER(target.value) = LOWER(@target_environment)
+                    )
+                  )
+            ORDER BY created_at DESC, package_id DESC
+            LIMIT @limit OFFSET @offset
+            """;
+
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@source_environment", (object?)NullIfBlank(filter.SourceEnvironment) ?? DBNull.Value);
+        command.Parameters.AddWithValue("@target_environment", (object?)NullIfBlank(filter.TargetEnvironment) ?? DBNull.Value);
+        command.Parameters.AddWithValue("@status", (object?)(filter.Status is { } status ? ToDbStatus(status) : null) ?? DBNull.Value);
+        command.Parameters.AddWithValue("@limit", limit);
+        command.Parameters.AddWithValue("@offset", offset);
+
+        var summaries = new List<MetadataReleasePackageSummary>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var targetEnvironments = JsonSerializer.Deserialize(
+                    reader.GetString(6),
+                    MetadataReleaseJsonContext.Default.StringArray)
+                ?? Array.Empty<string>();
+
+            summaries.Add(new MetadataReleasePackageSummary
+            {
+                PackageId = reader.GetGuid(0),
+                PackageKey = reader.GetString(1),
+                Namespace = reader.IsDBNull(2) ? null : reader.GetString(2),
+                Status = FromDbStatus(reader.GetString(3)),
+                SourceEnvironment = reader.GetString(4),
+                SourceRevision = reader.GetInt64(5),
+                TargetEnvironments = targetEnvironments,
+                EntryCount = reader.GetInt32(7),
+                Title = reader.IsDBNull(8) ? null : reader.GetString(8),
+                Summary = reader.IsDBNull(9) ? null : reader.GetString(9),
+                CreatedBy = reader.GetString(10),
+                CreatedAt = reader.GetFieldValue<DateTimeOffset>(11),
+                UpdatedAt = reader.GetFieldValue<DateTimeOffset>(12),
+            });
+        }
+
+        return summaries;
+    }
+
+    private static string? NullIfBlank(string? value)
+        => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
     private static string ToDbStatus(MetadataReleasePackageStatus status)
         => status switch
         {

@@ -18,6 +18,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Npgsql;
 using CoreSslMode = Honua.Core.Features.Security.Domain.SslMode;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Admin;
 
@@ -37,7 +39,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
     };
     private const string PublishSchema = "public";
 
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
     private HttpClient _client = null!;
     private string _schema = string.Empty;
     private Guid _connectionId;
@@ -462,10 +464,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
             reader.GetInt32(8).Should().Be(4326);
         }
 
-        using var featureClient = _fixture.CreateClient(client =>
-            client.DefaultRequestHeaders.Remove("X-Honua-Test-Schema"));
-
-        var queryResponse = await featureClient.GetAsync(
+        var queryResponse = await _client.GetAsync(
             $"/rest/services/{_serviceName}/FeatureServer/{_layerId}/query?where=1%3D1&f=json");
 
         queryResponse.Be200Ok();
@@ -480,7 +479,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
             attributes.GetProperty("population").GetInt32().Should().Be(100);
         }
 
-        var metadataResponse = await featureClient.GetAsync(
+        var metadataResponse = await _client.GetAsync(
             $"/rest/services/{_serviceName}/FeatureServer/{_layerId}");
 
         metadataResponse.Be200Ok();
@@ -1802,7 +1801,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
     public async Task PublishLayer_WhenApprovalRequired_ReturnsForbidden()
     {
-        var approvalFixture = new WebAppFixture()
+        var approvalFixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
             .ConfigureServices(services =>
             {
                 services.RemoveAll<Core.Features.Authorization.Abstractions.IOperatorApprovalEvaluator>();

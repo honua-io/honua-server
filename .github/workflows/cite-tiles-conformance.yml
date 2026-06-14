@@ -2,7 +2,7 @@ name: OGC API Tiles CITE Conformance Tests
 
 on:
   # Tier: nightly — conformance suites are external and heavyweight.
-  # Run on schedule and manual dispatch only. See docs/ci/gate-model.md.
+  # Run on schedule and manual dispatch only. See docs/internal/ci/gate-model.md.
   schedule:
     # Run weekly to catch conformance regressions
     - cron: '0 6 * * 2'

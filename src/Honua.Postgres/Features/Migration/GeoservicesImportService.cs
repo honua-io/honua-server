@@ -204,7 +204,12 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
                 // is the canonical 'type' column on the imported layer; the publish path
                 // only attaches the subtypes when that column is actually published, so a
                 // subtype set referencing a dropped column never false-fails reconciliation.
-                Subtypes = layerInfo.Subtypes
+                Subtypes = layerInfo.Subtypes,
+                // Carry the captured Esri attribute rules through publish so calculation /
+                // constraint / validation rules fire on applyEdits. Calculation rules whose
+                // target column is not published are pruned in the projection so a rule
+                // referencing a dropped field never fails graph validation.
+                AttributeRules = layerInfo.AttributeRules
             };
 
             var published = await _layerPublishingService.PublishLayerAsync(
@@ -223,9 +228,9 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
 
             return published;
         }
-        catch (LayerPublishingException ex)
+        catch (LayerPublishingException)
         {
-            warnings.Add($"AutoPublish was requested, but publishing did not complete: {ex.Message}");
+            warnings.Add("AutoPublish was requested, but publishing did not complete.");
             return null;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

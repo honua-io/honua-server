@@ -165,6 +165,9 @@ class TestLayerMetadata:
             "esriGeometryPolyline",
             "esriGeometryPolygon",
             "esriGeometryEnvelope",
+            # Mixed/None/GeometryCollection layers (e.g. the shared "Mixed"
+            # integration fixture layer) report esriGeometryNull.
+            "esriGeometryNull",
         ]
         assert data["geometryType"] in valid_types or data["geometryType"] is None
 

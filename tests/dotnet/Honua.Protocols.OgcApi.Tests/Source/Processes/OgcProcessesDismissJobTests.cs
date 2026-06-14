@@ -24,7 +24,7 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes;
 /// snapshot when the authoritative job record disappears between the initial read
 /// and the post-notifier re-read.
 /// </summary>
-[Collection("Database")]
+[Collection("Database.OgcApiData")]
 [Protocol(TestProtocols.OgcApiProcesses)]
 public sealed class OgcProcessesDismissJobTests : IAsyncLifetime
 {

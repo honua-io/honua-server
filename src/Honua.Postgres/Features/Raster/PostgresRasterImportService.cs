@@ -111,6 +111,15 @@ internal sealed class PostgresRasterImportService : IRasterImportService
                 await AcquireLayerImportLockAsync(
                     connection, transaction, request.LayerId, cancellationToken).ConfigureAwait(false);
 
+                // Guarantee the monolithic raster payload is stored EXTERNAL (out-of-line,
+                // uncompressed) before the row is written, so dynamic tile/terrain/statistics
+                // reads fetch only the chunks they touch instead of detoasting + decompressing
+                // the entire 25-115 MB raster on every request (#1625). SET STORAGE only affects
+                // rows written afterwards, so applying it here (immediately before INSERT) ensures
+                // every imported raster lands EXTERNAL even on databases that predate migration 055.
+                await EnsureExternalRasterStorageAsync(
+                    connection, transaction, cancellationToken).ConfigureAwait(false);
+
                 rasterId = await InsertRasterDataAsync(
                     connection, transaction, request, fileBytes, cancellationToken).ConfigureAwait(false);
 
@@ -193,18 +202,18 @@ internal sealed class PostgresRasterImportService : IRasterImportService
             }
             catch (PostgresException ex) when (ex.SqlState == "23503")
             {
-                await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+                await TryRollbackAsync(transaction).ConfigureAwait(false);
                 throw new ArgumentException($"Layer {request.LayerId} does not exist.", ex);
             }
             catch (PostgresException ex) when (IsRasterDataError(ex))
             {
-                await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+                await TryRollbackAsync(transaction).ConfigureAwait(false);
                 throw new InvalidDataException(
-                    $"PostGIS could not process the raster file: {ex.MessageText}", ex);
+                    "PostGIS could not process the raster file.", ex);
             }
             catch
             {
-                await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+                await TryRollbackAsync(transaction).ConfigureAwait(false);
                 throw;
             }
         }
@@ -222,12 +231,12 @@ internal sealed class PostgresRasterImportService : IRasterImportService
             PostgresRasterImportLog.ImportFailed(_logger, ex, request.LayerId, request.FileName);
 
             ReportProgress(progress, operationId, startedAt, RasterImportPhase.Failed, OperationStatus.Failed,
-                $"Import failed: {ex.Message}", completedAt: DateTimeOffset.UtcNow,
-                errorMessage: ex.Message, warnings: warnings);
+                "Import failed.", completedAt: DateTimeOffset.UtcNow,
+                errorMessage: "Import failed.", warnings: warnings);
 
             return RasterImportResult.CreateFailure(
                 request.LayerId, request.Name, request.Format,
-                ex.Message, stopwatch.Elapsed, warnings);
+                "Import failed.", stopwatch.Elapsed, warnings);
         }
         catch (Exception ex)
         {
@@ -407,6 +416,43 @@ internal sealed class PostgresRasterImportService : IRasterImportService
 
         var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         return (long)result!;
+    }
+
+    private static async Task TryRollbackAsync(DbTransaction transaction)
+    {
+        try
+        {
+            await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (ObjectDisposedException)
+        {
+            // Npgsql can dispose the transaction while surfacing the original
+            // PostGIS/GDAL exception. Do not mask the user-input failure.
+        }
+        catch (InvalidOperationException)
+        {
+            // The provider may already have aborted the transaction after a
+            // server-side raster error. Preserve the original failure path.
+        }
+    }
+
+    /// <summary>
+    /// Switches the <c>raster_data.raster</c> column to EXTERNAL TOAST storage so newly inserted
+    /// rasters are stored out-of-line and uncompressed. This keeps the logical-raster identity
+    /// intact (one row per <c>raster_data.id</c>, unchanged generated columns) while making
+    /// ST_Clip / ST_Value / ST_SummaryStats reads fetch only the chunks they touch instead of
+    /// inflating the whole monolithic raster (#1625). Idempotent: PostgreSQL no-ops when the
+    /// column is already EXTERNAL.
+    /// </summary>
+    private async Task EnsureExternalRasterStorageAsync(
+        DbConnection connection,
+        DbTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = $"ALTER TABLE {_rasterDataTable} ALTER COLUMN raster SET STORAGE EXTERNAL;";
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task AcquireLayerImportLockAsync(

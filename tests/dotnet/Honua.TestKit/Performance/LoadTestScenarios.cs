@@ -16,6 +16,32 @@ namespace Honua.TestKit.Performance;
 /// </summary>
 public static class LoadTestScenarios
 {
+    public const string FeatureQueryScenarioName = "feature_query_load";
+    public const string SpatialQueryScenarioName = "spatial_query_load";
+    public const string OgcQueryScenarioName = "ogc_query_load";
+    public const string CqlFilterScenarioName = "cql_filter_load";
+    public const string ODataQueryScenarioName = "odata_query_load";
+    public const string ConnectionPoolScenarioName = "connection_pool_stress";
+    public const string MemoryStressScenarioName = "memory_stress";
+    public const string TilesScenarioName = "tiles_load";
+
+    private static readonly string[] _scenarioNames =
+    [
+        FeatureQueryScenarioName,
+        SpatialQueryScenarioName,
+        OgcQueryScenarioName,
+        CqlFilterScenarioName,
+        ODataQueryScenarioName,
+        ConnectionPoolScenarioName,
+        MemoryStressScenarioName,
+        TilesScenarioName
+    ];
+
+    /// <summary>
+    /// Gets the scenario names registered by <see cref="CreateLoadTestSuite"/>.
+    /// </summary>
+    public static IReadOnlyList<string> ScenarioNames => _scenarioNames;
+
     private static readonly string[] _cqlFilters =
     {
         "name LIKE '%test%'",
@@ -59,7 +85,7 @@ public static class LoadTestScenarios
     {
         var httpClient = Http.CreateDefaultClient();
 
-        return Scenario.Create("feature_query_load", async _ =>
+        return Scenario.Create(FeatureQueryScenarioName, async _ =>
             {
                 // Test simple feature query
                 var response = await httpClient.GetAsync($"{baseUrl}/rest/services/test/FeatureServer/{layerId}/query?f=json&where=1=1");
@@ -82,7 +108,7 @@ public static class LoadTestScenarios
     {
         var httpClient = Http.CreateDefaultClient();
 
-        return Scenario.Create("spatial_query_load", async context =>
+        return Scenario.Create(SpatialQueryScenarioName, async context =>
             {
                 // Keep generated envelopes inside the seeded test extent and below configured spatial limits.
                 var random = new Random(context.InvocationNumber.GetHashCode());
@@ -117,7 +143,7 @@ public static class LoadTestScenarios
     {
         var httpClient = Http.CreateDefaultClient();
 
-        return Scenario.Create("ogc_query_load", async _ =>
+        return Scenario.Create(OgcQueryScenarioName, async _ =>
             {
                 // Test OGC API Features endpoint
                 var response = await httpClient.GetAsync($"{baseUrl}/ogc/features/collections/{collectionId}/items?limit=10");
@@ -140,7 +166,7 @@ public static class LoadTestScenarios
     {
         var httpClient = Http.CreateDefaultClient();
 
-        return Scenario.Create("cql_filter_load", async context =>
+        return Scenario.Create(CqlFilterScenarioName, async context =>
             {
                 var filterIndex = (int)(context.InvocationNumber % _cqlFilters.Length);
                 var filter = _cqlFilters[filterIndex];
@@ -164,7 +190,7 @@ public static class LoadTestScenarios
     {
         var httpClient = Http.CreateDefaultClient();
 
-        return Scenario.Create("odata_query_load", async context =>
+        return Scenario.Create(ODataQueryScenarioName, async context =>
             {
                 var templateIndex = (int)(context.InvocationNumber % _odataQueryTemplates.Length);
                 var template = _odataQueryTemplates[templateIndex];
@@ -189,7 +215,7 @@ public static class LoadTestScenarios
     {
         var httpClient = Http.CreateDefaultClient();
 
-        return Scenario.Create("connection_pool_stress", async context =>
+        return Scenario.Create(ConnectionPoolScenarioName, async context =>
             {
                 // Mix of different endpoints to stress connection pool
                 var endpointIndex = (int)(context.InvocationNumber % _connectionPoolEndpoints.Length);
@@ -214,7 +240,7 @@ public static class LoadTestScenarios
     {
         var httpClient = Http.CreateDefaultClient();
 
-        return Scenario.Create("memory_stress", async _ =>
+        return Scenario.Create(MemoryStressScenarioName, async _ =>
             {
                 // Request large result sets
                 var response = await httpClient.GetAsync(
@@ -242,7 +268,7 @@ public static class LoadTestScenarios
     {
         var httpClient = Http.CreateDefaultClient();
 
-        return Scenario.Create("tiles_load", async context =>
+        return Scenario.Create(TilesScenarioName, async context =>
             {
                 var random = new Random(context.InvocationNumber.GetHashCode());
                 var zoom = random.Next(0, 3);

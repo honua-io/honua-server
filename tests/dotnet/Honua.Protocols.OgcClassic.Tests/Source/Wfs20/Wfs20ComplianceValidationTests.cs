@@ -3,8 +3,6 @@
 
 using FluentAssertions;
 using Honua.Protocols.Ogc.Classic.Wfs20.Models;
-using Honua.Protocols.Ogc.Classic.Wfs20.Services;
-using System.Reflection;
 using System.Xml;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
@@ -17,7 +15,7 @@ public class Wfs20ComplianceValidationTests
     [Fact]
     public void FilterCapabilities_ShouldAdvertiseOnlyRuntimeSupportedOptionalCapabilities()
     {
-        var filterCapabilities = InvokeBuildFilterCapabilities();
+        var filterCapabilities = Wfs20FilterCapabilitiesFactory.Build();
         var constraintValues = filterCapabilities.Conformance.Constraints
             .ToDictionary(c => c.Name, c => c.DefaultValue);
 
@@ -50,7 +48,7 @@ public class Wfs20ComplianceValidationTests
     [Fact]
     public void TemporalCapabilities_ShouldAdvertiseMinimumTemporalOperators()
     {
-        var filterCapabilities = InvokeBuildFilterCapabilities();
+        var filterCapabilities = Wfs20FilterCapabilitiesFactory.Build();
 
         filterCapabilities.TemporalCapabilities.Should().NotBeNull();
         filterCapabilities.TemporalCapabilities!.TemporalOperators!.Operators
@@ -61,20 +59,12 @@ public class Wfs20ComplianceValidationTests
     [Fact]
     public void FunctionDefinitions_ShouldBeOmittedWhenFunctionsConformanceIsFalse()
     {
-        var filterCapabilities = InvokeBuildFilterCapabilities();
+        var filterCapabilities = Wfs20FilterCapabilitiesFactory.Build();
 
         filterCapabilities.Functions.Should().BeNull();
         filterCapabilities.Conformance.Constraints
             .Single(c => c.Name == "ImplementsFunctions")
             .DefaultValue.Should().Be("FALSE");
-    }
-
-    private static FilterCapabilities InvokeBuildFilterCapabilities()
-    {
-        var type = typeof(Wfs20Handler);
-        var method = type.GetMethod("BuildFilterCapabilities", BindingFlags.NonPublic | BindingFlags.Static);
-        var result = method!.Invoke(null, null);
-        return (FilterCapabilities)result!;
     }
 
     private static WfsCapabilities CreateSampleWfsCapabilities()
@@ -83,7 +73,7 @@ public class Wfs20ComplianceValidationTests
         {
             ServiceIdentification = new ServiceIdentification(),
             ServiceProvider = new ServiceProvider(),
-            FilterCapabilities = InvokeBuildFilterCapabilities()
+            FilterCapabilities = Wfs20FilterCapabilitiesFactory.Build()
         };
     }
 

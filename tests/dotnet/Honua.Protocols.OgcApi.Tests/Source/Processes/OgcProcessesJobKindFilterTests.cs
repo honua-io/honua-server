@@ -21,7 +21,7 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes;
 /// Non-geoprocessing jobs must return 404 (no-such-job) so the adapter
 /// never exposes or mislabels jobs from other execution slices.
 /// </summary>
-[Collection("Database")]
+[Collection("Database.OgcApiData")]
 [Protocol(TestProtocols.OgcApiProcesses)]
 public sealed class OgcProcessesJobKindFilterTests : IAsyncLifetime
 {

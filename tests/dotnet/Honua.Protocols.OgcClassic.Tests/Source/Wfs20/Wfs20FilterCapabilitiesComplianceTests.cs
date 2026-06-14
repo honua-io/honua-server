@@ -2,9 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
-using Honua.Protocols.Ogc.Classic.Wfs20.Models;
-using Honua.Protocols.Ogc.Classic.Wfs20.Services;
-using System.Reflection;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
 
@@ -16,7 +13,7 @@ public class Wfs20FilterCapabilitiesComplianceTests
     [Fact]
     public void FilterCapabilities_TemporalConformance_ShouldAdvertiseMinimumTemporalFilterSupport()
     {
-        var filterCapabilities = GetActualFilterCapabilities();
+        var filterCapabilities = Wfs20FilterCapabilitiesFactory.Build();
         var constraintDict = filterCapabilities.Conformance.Constraints
             .ToDictionary(c => c.Name, c => c.DefaultValue);
 
@@ -33,7 +30,7 @@ public class Wfs20FilterCapabilitiesComplianceTests
     [Fact]
     public void FilterCapabilities_FunctionsAndCql2_ShouldAdvertiseRuntimeSupportedCapabilities()
     {
-        var filterCapabilities = GetActualFilterCapabilities();
+        var filterCapabilities = Wfs20FilterCapabilitiesFactory.Build();
         var constraintDict = filterCapabilities.Conformance.Constraints
             .ToDictionary(c => c.Name, c => c.DefaultValue);
 
@@ -55,7 +52,7 @@ public class Wfs20FilterCapabilitiesComplianceTests
     [Fact]
     public void FilterCapabilities_SpatialAndComparisonOperators_ShouldMatchRuntimeSupport()
     {
-        var filterCapabilities = GetActualFilterCapabilities();
+        var filterCapabilities = Wfs20FilterCapabilitiesFactory.Build();
 
         var comparisonOperators = filterCapabilities.ScalarCapabilities!.ComparisonOperators!.Operators
             .Select(op => op.Name)
@@ -106,13 +103,5 @@ public class Wfs20FilterCapabilitiesComplianceTests
         }
         spatialOperators.Should().NotContain("EnvelopeIntersects");
         spatialOperators.Should().NotContain("Relate");
-    }
-
-    private static FilterCapabilities GetActualFilterCapabilities()
-    {
-        var type = typeof(Wfs20Handler);
-        var method = type.GetMethod("BuildFilterCapabilities",
-            BindingFlags.NonPublic | BindingFlags.Static);
-        return (FilterCapabilities)method!.Invoke(null, null)!;
     }
 }

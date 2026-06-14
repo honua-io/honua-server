@@ -248,6 +248,9 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             request.ServiceId, request.LayerId, context.CancellationToken).ConfigureAwait(false);
         await EnsureWriteAccessAsync(context, layer.Service, layer.Resource).ConfigureAwait(false);
 
+        // gRPC ApplyEdits is an open-protocol edit surface and remains Community (#1591).
+        // Validation, authz, eventing, and telemetry still run through the shared edit pipeline.
+
         FeatureEditBatch editBatch;
         try
         {

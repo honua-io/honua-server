@@ -134,7 +134,10 @@ internal static class OgcCoverageImportEndpoints
         }
         catch (ArgumentException ex)
         {
-            await AdminResponseWriter.WriteErrorAsync(context, ex.Message, StatusCodes.Status400BadRequest);
+            await AdminResponseWriter.WriteErrorAsync(
+                context,
+                ImportValidationErrorMessage.FromArgument(ex, "Invalid coverage import request."),
+                StatusCodes.Status400BadRequest);
         }
         catch (HttpRequestException)
         {

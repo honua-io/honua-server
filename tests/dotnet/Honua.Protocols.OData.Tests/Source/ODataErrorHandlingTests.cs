@@ -12,6 +12,7 @@ using Honua.TestKit.Helpers;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.Core.Features.Licensing.Domain;
 
 namespace Honua.Server.Tests.Features.Protocols.OData;
 
@@ -24,7 +25,7 @@ namespace Honua.Server.Tests.Features.Protocols.OData;
 [Protocol(TestProtocols.ODataV4)]
 public sealed class ODataErrorHandlingTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
     private const int TestLayerId = 0;
 
     public async Task InitializeAsync()
@@ -972,14 +973,15 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     private static async Task AssertODataErrorAsync(HttpResponseMessage response, string? expectedCode = null)
     {
         var content = await response.Content.ReadAsStringAsync();
-        if (string.IsNullOrWhiteSpace(content))
-        {
-            return;
-        }
+        content.Should().NotBeNullOrWhiteSpace("OData error responses must include a JSON error payload");
+
         using var document = JsonDocument.Parse(content);
 
         document.RootElement.TryGetProperty("error", out var errorElement).Should().BeTrue(
             $"Response should contain OData error format. Response: {content}");
+        errorElement.ValueKind.Should().Be(JsonValueKind.Object);
+        errorElement.TryGetProperty("message", out var messageElement).Should().BeTrue();
+        messageElement.GetString().Should().NotBeNullOrWhiteSpace();
 
         if (expectedCode != null)
         {

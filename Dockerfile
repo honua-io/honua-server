@@ -21,22 +21,23 @@ WORKDIR /src
 RUN groupadd --gid 1001 --system builduser && \
     useradd --uid 1001 --gid 1001 --system --no-create-home --shell /usr/sbin/nologin builduser
 
-# Copy solution and project files first for better layer caching
+# Copy solution and source project graph first for restore. The modularized
+# assembly graph changes often enough that a hand-maintained csproj list is
+# more brittle than copying src/ into the restore layer.
 COPY Honua.sln Directory.Build.props Directory.Packages.props NuGet.config .editorconfig ./
+COPY eng/Honua.BuildProfiles.props eng/
 COPY scripts/docker/restore-dotnet-with-github-packages.sh scripts/docker/
-COPY src/Honua.Core/*.csproj src/Honua.Core/
-COPY src/Honua.DuckDB/*.csproj src/Honua.DuckDB/
-COPY src/Honua.MySql/*.csproj src/Honua.MySql/
-COPY src/Honua.Postgres/*.csproj src/Honua.Postgres/
-COPY src/Honua.SqlServer/*.csproj src/Honua.SqlServer/
-COPY src/Honua.ServiceDefaults/*.csproj src/Honua.ServiceDefaults/
-COPY src/Honua.Server/*.csproj src/Honua.Server/
+COPY src/ src/
 COPY docs/developer/api-specs/admin-api.json docs/developer/api-specs/
 COPY samples/Honua.StacOpsDemo/*.csproj samples/Honua.StacOpsDemo/
 
 ARG TARGETARCH
 # Slim by default: set HONUA_INCLUDE_STAC_OPS_DEMO=true to keep the hosted STAC ops demo assets.
 ARG HONUA_INCLUDE_STAC_OPS_DEMO=false
+ARG HONUA_BUILD_PROFILE=full
+ARG HONUA_INCLUDE_AWS=
+ARG HONUA_INCLUDE_AZURE=
+ARG HONUA_INCLUDE_ORACLE=
 
 # Restore dependencies.
 # SC2086 suppression rationale: EXTRA_MSBUILD_ARGS holds multiple MSBuild flags that must
@@ -49,7 +50,11 @@ RUN --mount=type=secret,id=github_actor \
         arm64) RUNTIME_ID="linux-musl-arm64" ;; \
         *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
     esac && \
-    EXTRA_MSBUILD_ARGS="-p:RuntimeIdentifier=$RUNTIME_ID -p:HonuaIncludeStacOpsDemo=false" && \
+    MODULE_MSBUILD_ARGS="-p:HonuaBuildProfile=${HONUA_BUILD_PROFILE:-full}" && \
+    if [ -n "${HONUA_INCLUDE_AWS:-}" ]; then MODULE_MSBUILD_ARGS="$MODULE_MSBUILD_ARGS -p:HonuaIncludeAws=$HONUA_INCLUDE_AWS"; fi && \
+    if [ -n "${HONUA_INCLUDE_AZURE:-}" ]; then MODULE_MSBUILD_ARGS="$MODULE_MSBUILD_ARGS -p:HonuaIncludeAzure=$HONUA_INCLUDE_AZURE"; fi && \
+    if [ -n "${HONUA_INCLUDE_ORACLE:-}" ]; then MODULE_MSBUILD_ARGS="$MODULE_MSBUILD_ARGS -p:HonuaIncludeOracle=$HONUA_INCLUDE_ORACLE"; fi && \
+    EXTRA_MSBUILD_ARGS="-p:RuntimeIdentifier=$RUNTIME_ID -p:HonuaIncludeStacOpsDemo=false $MODULE_MSBUILD_ARGS" && \
     sh scripts/docker/restore-dotnet-with-github-packages.sh src/Honua.Server/Honua.Server.csproj \
       --runtime "$RUNTIME_ID" \
       $EXTRA_MSBUILD_ARGS && \
@@ -73,7 +78,11 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
         arm64) RUNTIME_ID="linux-musl-arm64" ;; \
         *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
     esac && \
-    EXTRA_MSBUILD_ARGS="-p:RuntimeIdentifier=$RUNTIME_ID -p:HonuaIncludeStacOpsDemo=false" && \
+    MODULE_MSBUILD_ARGS="-p:HonuaBuildProfile=${HONUA_BUILD_PROFILE:-full}" && \
+    if [ -n "${HONUA_INCLUDE_AWS:-}" ]; then MODULE_MSBUILD_ARGS="$MODULE_MSBUILD_ARGS -p:HonuaIncludeAws=$HONUA_INCLUDE_AWS"; fi && \
+    if [ -n "${HONUA_INCLUDE_AZURE:-}" ]; then MODULE_MSBUILD_ARGS="$MODULE_MSBUILD_ARGS -p:HonuaIncludeAzure=$HONUA_INCLUDE_AZURE"; fi && \
+    if [ -n "${HONUA_INCLUDE_ORACLE:-}" ]; then MODULE_MSBUILD_ARGS="$MODULE_MSBUILD_ARGS -p:HonuaIncludeOracle=$HONUA_INCLUDE_ORACLE"; fi && \
+    EXTRA_MSBUILD_ARGS="-p:RuntimeIdentifier=$RUNTIME_ID -p:HonuaIncludeStacOpsDemo=false $MODULE_MSBUILD_ARGS" && \
     sh scripts/docker/restore-dotnet-with-github-packages.sh src/Honua.Server/Honua.Server.csproj \
       --runtime "$RUNTIME_ID" \
       $EXTRA_MSBUILD_ARGS && \

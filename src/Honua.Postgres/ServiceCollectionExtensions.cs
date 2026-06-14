@@ -164,6 +164,10 @@ internal static class ServiceCollectionExtensions
         // Register Forms package store (#1184)
         services.AddScoped<IFormPackageStore, PostgresFormPackageStore>();
 
+        // Register back-office field review store (#1159)
+        services.AddScoped<Honua.Core.Features.FieldWorkflows.Review.IFieldReviewStore,
+            Features.FieldWorkflows.PostgresFieldReviewStore>();
+
         // Register Metadata v2 graph store (Postgres-backed JSONB + sidecar indexes)
         services.AddScoped<IMetadataV2GraphStore>(serviceProvider =>
             new Features.Metadata.PostgresMetadataV2GraphStore(
@@ -360,6 +364,13 @@ internal static class ServiceCollectionExtensions
             return limits;
         });
 
+        // The datum-transformation catalog is the auditable source of truth for which PROJ
+        // pipeline a (sourceSrid -> targetSrid) reprojection uses. It is also registered by
+        // the GeoServices query slice; TryAdd keeps this idempotent so the import path can
+        // resolve it even when GeoServices is not composed (#1501).
+        services.TryAddSingleton<Honua.Core.Features.Infrastructure.Crs.IDatumTransformationCatalog>(
+            static _ => Honua.Core.Features.Infrastructure.Crs.EsriDatumTransformationCatalog.Create());
+
         // Register streaming file import service with memory-efficient batch processing
         services.AddScoped<IFileImportService>(serviceProvider =>
         {
@@ -376,7 +387,8 @@ internal static class ServiceCollectionExtensions
                 logger,
                 limits,
                 cloudStorage,
-                serviceProvider.GetRequiredService<PostgresSchemaConfiguration>());
+                serviceProvider.GetRequiredService<PostgresSchemaConfiguration>(),
+                serviceProvider.GetService<Honua.Core.Features.Infrastructure.Crs.IDatumTransformationCatalog>());
         });
 
         // Register universal import job service using unified progress store
@@ -414,6 +426,13 @@ internal static class ServiceCollectionExtensions
             new PostgresMigrationBatchRunCatalog(
                 ResolveConnectionString(serviceProvider, configuration),
                 serviceProvider.GetRequiredService<ILogger<PostgresMigrationBatchRunCatalog>>()));
+
+        // Migration run catalog (#1015/#1598). Persists lifecycle rows backing the
+        // admin run-history write/read API.
+        services.AddScoped<IMigrationRunCatalog>(serviceProvider =>
+            new PostgresMigrationRunCatalog(
+                ResolveConnectionString(serviceProvider, configuration),
+                serviceProvider.GetRequiredService<ILogger<PostgresMigrationRunCatalog>>()));
 
         // Register the post-publish reconciliation service (issues #1247/#1380). It probes the
         // published layer through IFeatureReader, so it is scoped to align with the scoped feature

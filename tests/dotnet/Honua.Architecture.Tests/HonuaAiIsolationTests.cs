@@ -23,7 +23,7 @@ namespace Honua.Architecture.Tests;
 /// (re-introducing the cycle ADR-0047 forbids).
 /// </para>
 /// <para>
-/// See <c>docs/contributor/adr/0047-module-dependency-policy.md</c> for
+/// See <c>docs/internal/contributor/adr/0047-module-dependency-policy.md</c> for
 /// the module-dependency policy this guard sits inside.
 /// </para>
 /// </remarks>
@@ -58,10 +58,14 @@ public sealed class HonuaAiIsolationTests
 
     /// <summary>
     /// Asserts the ProjectReference set declared by Honua.Ai stays inside the
-    /// canonical allow-list (Abstractions, Core, Hosting, Jobs, Geoprocessing,
-    /// ServiceDefaults). New references — to a storage provider, a protocol
-    /// module, or any other satellite — must come with a deliberate matrix
-    /// update in ADR-0047 / <see cref="ModuleDependencyPolicyTests"/>.
+    /// canonical allow-list (Abstractions, Core, Geocoding, Routing, Hosting,
+    /// Jobs, Geoprocessing, ServiceDefaults). Geocoding and Routing entered the
+    /// list with #1597: the MCP geocode/route tools adapt the canonical
+    /// IGeocodeCoordinatorService / IRoutingProvider pipelines, mirroring the
+    /// Protocols -> Routing edge the NAServer adapter uses. Further new
+    /// references - to a storage provider, a protocol module, or any other
+    /// satellite — must come with a deliberate matrix update in ADR-0047 /
+    /// <see cref="ModuleDependencyPolicyTests"/>.
     /// </summary>
     [ArchitectureTest]
     public void HonuaAi_MustOnlyReference_PermittedProviders()
@@ -73,19 +77,15 @@ public sealed class HonuaAiIsolationTests
         {
             "Honua.Core.Abstractions",
             "Honua.Core",
+            "Honua.Geocoding",
+            "Honua.Routing",
             "Honua.Hosting",
             "Honua.Jobs",
             "Honua.Geoprocessing",
             "Honua.ServiceDefaults",
         };
 
-        var document = XDocument.Load(csprojPath);
-        var referenced = document
-            .Descendants("ProjectReference")
-            .Select(element => element.Attribute("Include")?.Value)
-            .Where(value => !string.IsNullOrWhiteSpace(value))
-            .Select(value => Path.GetFileNameWithoutExtension(value!.Replace('\\', '/'))!)
-            .ToList();
+        var referenced = ArchitectureTestHelpers.DirectProjectReferenceNames(csprojPath);
 
         referenced
             .Should()
@@ -100,8 +100,9 @@ public sealed class HonuaAiIsolationTests
         disallowed
             .Should()
             .BeEmpty(
-                "Honua.Ai may only reference Honua.Core.Abstractions, Honua.Core, Honua.Hosting, " +
-                "Honua.Jobs, Honua.Geoprocessing, and Honua.ServiceDefaults. Disallowed references: {0}",
+                "Honua.Ai may only reference Honua.Core.Abstractions, Honua.Core, Honua.Geocoding, " +
+                "Honua.Routing, Honua.Hosting, Honua.Jobs, Honua.Geoprocessing, and " +
+                "Honua.ServiceDefaults. Disallowed references: {0}",
                 string.Join(", ", disallowed));
     }
 

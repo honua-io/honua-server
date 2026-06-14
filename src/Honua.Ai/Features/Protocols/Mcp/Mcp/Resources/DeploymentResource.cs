@@ -67,8 +67,9 @@ internal sealed class DeploymentResource : IMcpResource
     {
         McpTelemetry.EnrichActivity("GetDeployment");
         var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
-        _jobService.EnsureCallerAuthorized(
-            principal, OperatorResourceType.Deployment, OperatorOperation.Read);
+        await _jobService.EnsureCallerAuthorizedAsync(
+                principal, OperatorResourceType.Deployment, OperatorOperation.Read, cancellationToken)
+            .ConfigureAwait(false);
 
         var deploymentId = uri[McpResourceUris.DeploymentsPrefix.Length..];
         McpLog.ResourceRead(_logger, Family, uri);

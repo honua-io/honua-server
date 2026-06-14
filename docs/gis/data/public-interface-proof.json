@@ -32,12 +32,12 @@
         },
         {
           "proofClass": "contract-governance",
-          "proofMechanism": "Source-generated CapabilityManifestJsonContext keeps the wire shape AOT-safe; docs/developer/capability-manifest.md documents the raw manifest, scope validation, availability gates, limit sections, reason codes, cache policy, and SDK projection rules.",
+          "proofMechanism": "Source-generated CapabilityManifestJsonContext keeps the wire shape AOT-safe; docs/reference/admin-api/overview.md documents the raw manifest, scope validation, availability gates, limit sections, reason codes, cache policy, and SDK projection rules.",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
             "src/Honua.Server/Features/Capabilities/Models/CapabilityManifestJsonContext.cs",
             "src/Honua.Server/Features/Capabilities/Models/CapabilityManifestModels.cs",
-            "docs/developer/capability-manifest.md"
+            "docs/reference/admin-api/overview.md"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -208,7 +208,7 @@
           "evidenceLocations": [
             ".github/workflows/sdk-server-compatibility.yml",
             "scripts/ci/run-sdk-server-compatibility.sh",
-            "docs/developer/SDK_COMPATIBILITY_MATRIX.md",
+            "docs/concepts/ecosystem.md",
             "https://github.com/honua-io/honua-sdk-js/issues/39"
           ],
           "ownerRepo": "honua-sdk-js",
@@ -223,7 +223,7 @@
           "evidenceLocations": [
             ".github/workflows/sdk-server-compatibility.yml",
             "scripts/ci/run-sdk-server-compatibility.sh",
-            "docs/developer/SDK_COMPATIBILITY_MATRIX.md",
+            "docs/concepts/ecosystem.md",
             "https://github.com/honua-io/honua-sdk-python/issues/21"
           ],
           "ownerRepo": "honua-sdk-python",
@@ -238,7 +238,7 @@
           "evidenceLocations": [
             ".github/workflows/sdk-server-compatibility.yml",
             "scripts/ci/run-sdk-server-compatibility.sh",
-            "docs/developer/SDK_COMPATIBILITY_MATRIX.md",
+            "docs/concepts/ecosystem.md",
             "https://github.com/honua-io/honua-sdk-dotnet/issues/31"
           ],
           "ownerRepo": "honua-sdk-dotnet",
@@ -281,7 +281,7 @@
           "proofMechanism": "Form package contract and offline policy semantics are documented for Console, mobile, and SDK clients.",
           "executionLane": "docs+review",
           "evidenceLocations": [
-            "docs/developer/form-package-api.md",
+            "docs/reference/admin-api/forms.md",
             "src/Honua.Core/Features/Forms/Packages/FormPackageContracts.cs"
           ],
           "ownerRepo": "honua-server",
@@ -322,14 +322,14 @@
         },
         {
           "proofClass": "contract-governance",
-          "proofMechanism": "Source-generated ConsoleJsonContext keeps the wire shapes AOT-safe and SDK-consumable; the docs/admin-api/console-content-and-rbac.md contract describes the canonical item, action, provenance, Share, public-link, and embed shapes.",
+          "proofMechanism": "Source-generated ConsoleJsonContext keeps the wire shapes AOT-safe and SDK-consumable; the docs/internal/admin-api/console-content-and-rbac.md contract describes the canonical item, action, provenance, Share, public-link, and embed shapes.",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
             "src/Honua.Server/Features/Console/Models/ConsoleJsonContext.cs",
             "src/Honua.Core.Abstractions/Features/Console/Domain/ConsoleContentItem.cs",
             "src/Honua.Core.Abstractions/Features/Console/Domain/ConsoleShareProjection.cs",
             "src/Honua.Core.Abstractions/Features/Console/Domain/ConsoleShareTokens.cs",
-            "docs/admin-api/console-content-and-rbac.md"
+            "docs/internal/admin-api/console-content-and-rbac.md"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -373,7 +373,7 @@
           "evidenceLocations": [
             "src/Honua.Server/Features/WorkflowPackages/WorkflowPackagesJsonContext.cs",
             "src/Honua.Core/Features/WorkflowPackages/Domain/WorkflowPackageModels.cs",
-            "docs/admin-api/console-workflow-packages.md"
+            "docs/internal/admin-api/console-workflow-packages.md"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -418,7 +418,7 @@
           "evidenceLocations": [
             "src/Honua.Server/Features/Admin/Jobs/ConsoleJobJsonContext.cs",
             "src/Honua.Server/Features/Admin/Jobs/ConsoleJobModels.cs",
-            "docs/admin-api/console-job-observability.md"
+            "docs/internal/admin-api/console-job-observability.md"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -581,7 +581,7 @@
           "evidenceLocations": [
             "src/Honua.Server/Features/Studio/Models/StudioApiJsonContext.cs",
             "src/Honua.Core/Features/Studio/Domain/StudioJsonContext.cs",
-            "docs/admin-api/studio-package-lifecycle.md"
+            "docs/internal/admin-api/studio-package-lifecycle.md"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -625,7 +625,7 @@
           "evidenceLocations": [
             ".github/workflows/sdk-server-compatibility.yml",
             "scripts/ci/run-sdk-server-compatibility.sh",
-            "docs/developer/SDK_COMPATIBILITY_MATRIX.md",
+            "docs/concepts/ecosystem.md",
             "https://github.com/honua-io/honua-sdk-js/issues/105"
           ],
           "ownerRepo": "honua-sdk-js",
@@ -640,7 +640,7 @@
           "evidenceLocations": [
             ".github/workflows/sdk-server-compatibility.yml",
             "scripts/ci/run-sdk-server-compatibility.sh",
-            "docs/developer/SDK_COMPATIBILITY_MATRIX.md",
+            "docs/concepts/ecosystem.md",
             "https://github.com/honua-io/honua-sdk-python/issues/49"
           ],
           "ownerRepo": "honua-sdk-python",
@@ -655,7 +655,7 @@
           "evidenceLocations": [
             ".github/workflows/sdk-server-compatibility.yml",
             "scripts/ci/run-sdk-server-compatibility.sh",
-            "docs/developer/SDK_COMPATIBILITY_MATRIX.md",
+            "docs/concepts/ecosystem.md",
             "https://github.com/honua-io/honua-sdk-dotnet/issues/134"
           ],
           "ownerRepo": "honua-sdk-dotnet",
@@ -700,7 +700,7 @@
           "evidenceLocations": [
             ".github/workflows/sdk-server-compatibility.yml",
             "scripts/ci/run-sdk-server-compatibility.sh",
-            "docs/developer/SDK_COMPATIBILITY_MATRIX.md",
+            "docs/concepts/ecosystem.md",
             "https://github.com/honua-io/honua-sdk-js/issues/105"
           ],
           "ownerRepo": "honua-sdk-js",
@@ -715,7 +715,7 @@
           "evidenceLocations": [
             ".github/workflows/sdk-server-compatibility.yml",
             "scripts/ci/run-sdk-server-compatibility.sh",
-            "docs/developer/SDK_COMPATIBILITY_MATRIX.md",
+            "docs/concepts/ecosystem.md",
             "https://github.com/honua-io/honua-sdk-python/issues/49"
           ],
           "ownerRepo": "honua-sdk-python",
@@ -730,7 +730,7 @@
           "evidenceLocations": [
             ".github/workflows/sdk-server-compatibility.yml",
             "scripts/ci/run-sdk-server-compatibility.sh",
-            "docs/developer/SDK_COMPATIBILITY_MATRIX.md",
+            "docs/concepts/ecosystem.md",
             "https://github.com/honua-io/honua-sdk-dotnet/issues/134"
           ],
           "ownerRepo": "honua-sdk-dotnet",
@@ -775,7 +775,7 @@
           "evidenceLocations": [
             ".github/workflows/sdk-server-compatibility.yml",
             "scripts/ci/run-sdk-server-compatibility.sh",
-            "docs/developer/SDK_COMPATIBILITY_MATRIX.md",
+            "docs/concepts/ecosystem.md",
             "https://github.com/honua-io/honua-sdk-js/issues/105"
           ],
           "ownerRepo": "honua-sdk-js",
@@ -790,7 +790,7 @@
           "evidenceLocations": [
             ".github/workflows/sdk-server-compatibility.yml",
             "scripts/ci/run-sdk-server-compatibility.sh",
-            "docs/developer/SDK_COMPATIBILITY_MATRIX.md",
+            "docs/concepts/ecosystem.md",
             "https://github.com/honua-io/honua-sdk-python/issues/49"
           ],
           "ownerRepo": "honua-sdk-python",
@@ -805,7 +805,7 @@
           "evidenceLocations": [
             ".github/workflows/sdk-server-compatibility.yml",
             "scripts/ci/run-sdk-server-compatibility.sh",
-            "docs/developer/SDK_COMPATIBILITY_MATRIX.md",
+            "docs/concepts/ecosystem.md",
             "https://github.com/honua-io/honua-sdk-dotnet/issues/134"
           ],
           "ownerRepo": "honua-sdk-dotnet",
@@ -851,7 +851,7 @@
           "evidenceLocations": [
             ".github/workflows/sdk-server-compatibility.yml",
             "scripts/ci/run-sdk-server-compatibility.sh",
-            "docs/developer/SDK_COMPATIBILITY_MATRIX.md",
+            "docs/concepts/ecosystem.md",
             "https://github.com/honua-io/honua-sdk-js/issues/105"
           ],
           "ownerRepo": "honua-sdk-js",
@@ -866,7 +866,7 @@
           "evidenceLocations": [
             ".github/workflows/sdk-server-compatibility.yml",
             "scripts/ci/run-sdk-server-compatibility.sh",
-            "docs/developer/SDK_COMPATIBILITY_MATRIX.md",
+            "docs/concepts/ecosystem.md",
             "https://github.com/honua-io/honua-sdk-python/issues/49"
           ],
           "ownerRepo": "honua-sdk-python",
@@ -881,7 +881,7 @@
           "evidenceLocations": [
             ".github/workflows/sdk-server-compatibility.yml",
             "scripts/ci/run-sdk-server-compatibility.sh",
-            "docs/developer/SDK_COMPATIBILITY_MATRIX.md",
+            "docs/concepts/ecosystem.md",
             "https://github.com/honua-io/honua-sdk-dotnet/issues/134"
           ],
           "ownerRepo": "honua-sdk-dotnet",
@@ -1117,7 +1117,7 @@
           "evidenceLocations": [
             ".github/workflows/geoservices-parity-nightly.yml",
             ".github/workflows/parity-scorecard-governance.yml",
-            "docs/gis/geoservices-rest-parity.md",
+            "docs/reference/compatibility/geoservices-parity.md",
             "docs/gis/data/geoservices-rest-parity.json"
           ],
           "ownerRepo": "honua-server",
@@ -1178,7 +1178,7 @@
           "evidenceLocations": [
             ".github/workflows/geoservices-parity-nightly.yml",
             ".github/workflows/parity-scorecard-governance.yml",
-            "docs/gis/geoservices-rest-parity.md",
+            "docs/reference/compatibility/geoservices-parity.md",
             "docs/gis/data/geoservices-rest-parity.json"
           ],
           "ownerRepo": "honua-server",
@@ -1266,8 +1266,7 @@
           "evidenceLocations": [
             ".github/workflows/geoservices-parity-nightly.yml",
             ".github/workflows/parity-scorecard-governance.yml",
-            "docs/gis/geoservices-rest-parity.md",
-            "docs/gis/feature-server-matrix.md",
+            "docs/reference/compatibility/geoservices-parity.md",
             "docs/gis/data/geoservices-rest-parity.json"
           ],
           "ownerRepo": "honua-server",
@@ -1312,7 +1311,7 @@
           "evidenceLocations": [
             ".github/workflows/sdk-server-compatibility.yml",
             "scripts/ci/run-sdk-server-compatibility.sh",
-            "docs/developer/SDK_COMPATIBILITY_MATRIX.md",
+            "docs/concepts/ecosystem.md",
             "https://github.com/honua-io/honua-sdk-js/issues/39"
           ],
           "ownerRepo": "honua-sdk-js",
@@ -1327,7 +1326,7 @@
           "evidenceLocations": [
             ".github/workflows/sdk-server-compatibility.yml",
             "scripts/ci/run-sdk-server-compatibility.sh",
-            "docs/developer/SDK_COMPATIBILITY_MATRIX.md",
+            "docs/concepts/ecosystem.md",
             "https://github.com/honua-io/honua-sdk-python/issues/21"
           ],
           "ownerRepo": "honua-sdk-python",
@@ -1342,7 +1341,7 @@
           "evidenceLocations": [
             ".github/workflows/sdk-server-compatibility.yml",
             "scripts/ci/run-sdk-server-compatibility.sh",
-            "docs/developer/SDK_COMPATIBILITY_MATRIX.md",
+            "docs/concepts/ecosystem.md",
             "https://github.com/honua-io/honua-sdk-dotnet/issues/31"
           ],
           "ownerRepo": "honua-sdk-dotnet",
@@ -1376,7 +1375,10 @@
         "VersionManagementServer::startEditing",
         "VersionManagementServer::stopEditing",
         "VersionManagementServer::reconcile",
-        "VersionManagementServer::post"
+        "VersionManagementServer::inspectConflicts",
+        "VersionManagementServer::resolveConflicts",
+        "VersionManagementServer::post",
+        "VersionManagementServer::jobStatus"
       ],
       "proofs": [
         {
@@ -1444,8 +1446,7 @@
           "evidenceLocations": [
             ".github/workflows/geoservices-parity-nightly.yml",
             ".github/workflows/parity-scorecard-governance.yml",
-            "docs/gis/geoservices-rest-parity.md",
-            "docs/gis/map-server-matrix.md",
+            "docs/reference/compatibility/geoservices-parity.md",
             "docs/gis/data/geoservices-rest-parity.json"
           ],
           "ownerRepo": "honua-server",
@@ -1525,7 +1526,7 @@
           "executionLane": "nightly:cite-wms-conformance",
           "evidenceLocations": [
             ".github/workflows/cite-wms-conformance.yml",
-            "docs/gis/map-server-matrix.md"
+            "docs/reference/compatibility/geoservices-parity.md"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -1539,7 +1540,7 @@
           "evidenceLocations": [
             "tests/js/openlayers/wms/wms-discovery.test.ts",
             "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
-            "docs/contributor/public-interface-quality-model.md"
+            "docs/internal/contributor/public-interface-quality-model.md"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -1635,7 +1636,7 @@
           "executionLane": "nightly:cite-wmts-conformance",
           "evidenceLocations": [
             ".github/workflows/cite-wmts-conformance.yml",
-            "docs/gis/map-server-matrix.md"
+            "docs/reference/compatibility/geoservices-parity.md"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -1649,7 +1650,7 @@
           "evidenceLocations": [
             "tests/js/openlayers/wmts/wmts-discovery.test.ts",
             "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
-            "docs/contributor/public-interface-quality-model.md"
+            "docs/internal/contributor/public-interface-quality-model.md"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -1693,8 +1694,7 @@
           "evidenceLocations": [
             ".github/workflows/geoservices-parity-nightly.yml",
             ".github/workflows/parity-scorecard-governance.yml",
-            "docs/gis/geoservices-rest-parity.md",
-            "docs/gis/image-server-matrix.md",
+            "docs/reference/compatibility/geoservices-parity.md",
             "docs/gis/data/geoservices-rest-parity.json"
           ],
           "ownerRepo": "honua-server",
@@ -1756,8 +1756,8 @@
           "proofMechanism": "WCS coverage docs and ImageServer parity matrix describe the supported KVP operations, formats, CRS handling and CRS-advertisement caveats, cache posture, error behavior, and deferred extensions.",
           "executionLane": "release:docs-review",
           "evidenceLocations": [
-            "docs/gis/specifications/wcs-2.0.1-coverage.md",
-            "docs/gis/image-server-matrix.md",
+            "docs/archive/specifications/wcs-2.0.1-coverage.md",
+            "docs/reference/compatibility/geoservices-parity.md",
             "docs/gis/data/geoservices-rest-parity.json"
           ],
           "ownerRepo": "honua-server",
@@ -1903,7 +1903,7 @@
           "executionLane": "nightly:cite-conformance",
           "evidenceLocations": [
             ".github/workflows/cite-conformance.yml",
-            "docs/gis/specifications/ogc-api-features-coverage.md"
+            "docs/archive/specifications/ogc-api-features-coverage.md"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -1949,7 +1949,7 @@
           "evidenceLocations": [
             ".github/workflows/sdk-server-compatibility.yml",
             "scripts/ci/run-sdk-server-compatibility.sh",
-            "docs/developer/SDK_COMPATIBILITY_MATRIX.md",
+            "docs/concepts/ecosystem.md",
             "https://github.com/honua-io/honua-sdk-js/issues/39"
           ],
           "ownerRepo": "honua-sdk-js",
@@ -1964,7 +1964,7 @@
           "evidenceLocations": [
             ".github/workflows/sdk-server-compatibility.yml",
             "scripts/ci/run-sdk-server-compatibility.sh",
-            "docs/developer/SDK_COMPATIBILITY_MATRIX.md",
+            "docs/concepts/ecosystem.md",
             "https://github.com/honua-io/honua-sdk-python/issues/21"
           ],
           "ownerRepo": "honua-sdk-python",
@@ -1979,7 +1979,7 @@
           "evidenceLocations": [
             ".github/workflows/sdk-server-compatibility.yml",
             "scripts/ci/run-sdk-server-compatibility.sh",
-            "docs/developer/SDK_COMPATIBILITY_MATRIX.md",
+            "docs/concepts/ecosystem.md",
             "https://github.com/honua-io/honua-sdk-dotnet/issues/31"
           ],
           "ownerRepo": "honua-sdk-dotnet",
@@ -2023,7 +2023,7 @@
           "proofMechanism": "Supported OGC API Records subset is documented and validated by targeted endpoint coverage",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
-            "docs/gis/specifications/ogc-api-records-coverage.md",
+            "docs/archive/specifications/ogc-api-records-coverage.md",
             "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Records/OgcRecordsEndpointTests.cs"
           ],
           "ownerRepo": "honua-server",
@@ -2123,7 +2123,7 @@
           "executionLane": "nightly:cite-tiles-conformance",
           "evidenceLocations": [
             ".github/workflows/cite-tiles-conformance.yml",
-            "docs/gis/specifications/ogc-api-tiles-coverage.md"
+            "docs/archive/specifications/ogc-api-tiles-coverage.md"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -2184,8 +2184,7 @@
           "evidenceLocations": [
             ".github/workflows/geoservices-parity-nightly.yml",
             ".github/workflows/parity-scorecard-governance.yml",
-            "docs/gis/geoservices-rest-parity.md",
-            "docs/gis/geometry-service-matrix.md",
+            "docs/reference/compatibility/geoservices-parity.md",
             "docs/gis/data/geoservices-rest-parity.json"
           ],
           "ownerRepo": "honua-server",
@@ -2242,7 +2241,7 @@
           "proofMechanism": "OGC API Coverages route contract and implemented support matrix are documented with targeted endpoint coverage",
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
-            "docs/gis/specifications/ogc-api-coverages-coverage.md",
+            "docs/archive/specifications/ogc-api-coverages-coverage.md",
             "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Coverages/OgcCoveragesEndpointsTests.cs"
           ],
           "ownerRepo": "honua-server",
@@ -2285,7 +2284,7 @@
           "proofMechanism": "OGC API Styles Phase 1 conformance classes (core, mapbox-styles, sld-10, sld-11, style-validation, partial manage-styles) are declared at /ogc/styles/conformance and documented, with targeted endpoint coverage",
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
-            "docs/gis/style-engine-protocol-consumption.md",
+            "docs/guides/style/style-maps.md",
             "tests/dotnet/Honua.Server.Tests/Features/Styling/OgcStylesEndpointTests.cs"
           ],
           "ownerRepo": "honua-server",
@@ -2730,7 +2729,7 @@
           "evidenceLocations": [
             "tests/dotnet/Honua.Server.Tests/Features/Protocols/Terrain/TerrainEndpointTests.cs",
             "tests/dotnet/Honua.Core.Tests/Features/Raster/TerrainRgbEncodingTests.cs",
-            "docs/gis/terrain-tiles.md"
+            "docs/reference/protocols/terrain-and-elevation.md"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -2778,7 +2777,7 @@
             "tests/dotnet/Honua.Protocols.Scene.Tests/Source/SceneAuthorizationTests.cs",
             "tests/dotnet/Honua.Protocols.Scene.Tests/Source/SceneAssetResolverTests.cs",
             "tests/fixtures/scenes/fixture-tileset/tileset.json",
-            "docs/gis/scenes-3dtiles.md"
+            "docs/reference/protocols/3d-tiles-and-scenes.md"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -2793,7 +2792,7 @@
             "tests/dotnet/Honua.Protocols.Scene.Tests/Source/SceneAccessEnvelopeEndpointTests.cs",
             "tests/dotnet/Honua.Protocols.Scene.Tests/Source/SceneAccessEnvelopeServiceTests.cs",
             "tests/dotnet/Honua.Protocols.Scene.Tests/Source/SceneAccessEnvelopeMisconfiguredEndpointTests.cs",
-            "docs/gis/scenes-3dtiles.md"
+            "docs/reference/protocols/3d-tiles-and-scenes.md"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -2897,7 +2896,7 @@
             "tests/dotnet/Honua.Server.Tests/Features/Admin/SceneDatasetEndpointsTests.cs",
             "tests/dotnet/Honua.Core.Tests/Features/Scene/SceneDatasetValidatorTests.cs",
             "tests/dotnet/Honua.Core.Tests/Features/Scene/SceneSnippetGeneratorTests.cs",
-            "docs/admin-api/scene-dataset-registry.md"
+            "docs/internal/admin-api/scene-dataset-registry.md"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -2945,7 +2944,7 @@
             "tests/dotnet/Honua.Core.Tests/Features/Scene/Generation/GeometryTileBuilderTests.cs",
             "tests/dotnet/Honua.Core.Tests/Features/Scene/Generation/TilesetDocumentWriterTests.cs",
             "tests/dotnet/Honua.Server.Tests/Features/Infrastructure/Scene/SceneTilesPublishExecutorTests.cs",
-            "docs/gis/scene-generation.md"
+            "docs/guides/publish/publish-3d-scenes.md"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -2988,7 +2987,7 @@
           "executionLane": "ci:test-all",
           "evidenceLocations": [
             "tests/dotnet/Honua.Server.Tests/Features/Protocols/Elevation/ElevationEndpointTests.cs",
-            "docs/gis/elevation-api.md"
+            "docs/reference/protocols/terrain-and-elevation.md"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -3248,8 +3247,8 @@
           "executionLane": "ci:mcp-certification",
           "evidenceLocations": [
             ".github/workflows/ci.yml",
-            "docs/contributor/mcp-certification.md",
-            "docs/developer/MCP_SERVER.md"
+            "docs/internal/contributor/mcp-certification.md",
+            "docs/guides/connect/ai-agents-mcp.md"
           ],
           "ownerRepo": "honua-sdk-js",
           "status": "bounded-child-ticket",
@@ -3262,7 +3261,7 @@
           "executionLane": "ci:mcp-llm-smoke",
           "evidenceLocations": [
             ".github/workflows/ci.yml",
-            "docs/contributor/mcp-certification.md"
+            "docs/internal/contributor/mcp-certification.md"
           ],
           "ownerRepo": "honua-sdk-js",
           "status": "bounded-child-ticket",

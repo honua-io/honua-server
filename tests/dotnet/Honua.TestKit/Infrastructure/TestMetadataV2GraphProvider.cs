@@ -1,47 +1,103 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Concurrent;
 using System.Text.Json;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
+using Honua.Infrastructure.Middleware;
 
 namespace Honua.TestKit.Infrastructure;
 
 /// <summary>
-/// In-memory <see cref="IMetadataV2GraphProvider"/> for tests. Holds a single graph
-/// snapshot supplied at construction; callers can swap the snapshot at any time.
+/// In-memory <see cref="IMetadataV2GraphProvider"/> for tests.
 /// </summary>
+/// <remarks>
+/// <para>
+/// Parallel-isolation contract (#1359): the shared test server is process-wide singleton
+/// state, so a single mutable graph snapshot would let two schema-isolated tests running
+/// concurrently in the same assembly clobber each other's metadata. To make the shared
+/// server safe to run under parallel xUnit collections, this provider partitions the graph
+/// <b>by database schema</b>.
+/// </para>
+/// <para>
+/// Reads (<see cref="GetCurrentAsync"/>) resolve the per-request schema from the ambient
+/// <see cref="SchemaContext"/> that <c>TestSchemaMiddleware</c> populates from the
+/// <c>X-Honua-Test-Schema</c> header, so a request issued by test A only ever sees graph
+/// mutations that test A applied to its own schema. Writes from the fixture
+/// (<see cref="SetGraph(MetadataV2Graph, string?, string?)"/>) target an explicit schema key
+/// supplied by the owning <c>WebAppFixture</c>. When no schema is in scope (isolated-mode
+/// fixtures that build their own server, or tests that never send the header) the provider
+/// falls back to a shared baseline partition — those callers already get a dedicated server
+/// instance, so the baseline is private to them.
+/// </para>
+/// </remarks>
 public sealed class TestMetadataV2GraphProvider : IMetadataV2GraphStore
 {
-    private MetadataV2GraphSnapshot _snapshot;
+    private const string BaselineSchemaKey = "<baseline>";
+
+    private readonly ConcurrentDictionary<string, MetadataV2GraphSnapshot> _bySchema = new(StringComparer.Ordinal);
+    private MetadataV2GraphSnapshot _baseline;
 
     public TestMetadataV2GraphProvider(MetadataV2Graph graph, string? etag = null)
     {
         ArgumentNullException.ThrowIfNull(graph);
-        _snapshot = new MetadataV2GraphSnapshot(
+        _baseline = new MetadataV2GraphSnapshot(
             graph,
             etag ?? $"\"test-{graph.Revision}\"",
             DateTimeOffset.UtcNow);
     }
 
     /// <summary>
-    /// Replaces the snapshot returned by future calls.
+    /// Replaces the snapshot for the supplied schema partition. When <paramref name="schema"/>
+    /// is null the ambient request schema is used, falling back to the shared baseline.
     /// </summary>
-    public void SetGraph(MetadataV2Graph graph, string? etag = null)
+    public void SetGraph(MetadataV2Graph graph, string? etag = null, string? schema = null)
     {
         ArgumentNullException.ThrowIfNull(graph);
-        _snapshot = new MetadataV2GraphSnapshot(
+        var snapshot = new MetadataV2GraphSnapshot(
             graph,
             etag ?? $"\"test-{graph.Revision}\"",
             DateTimeOffset.UtcNow);
+
+        var key = ResolveSchemaKey(schema);
+        if (string.Equals(key, BaselineSchemaKey, StringComparison.Ordinal))
+        {
+            _baseline = snapshot;
+        }
+        else
+        {
+            _bySchema[key] = snapshot;
+        }
     }
 
     public ValueTask<MetadataV2GraphSnapshot> GetCurrentAsync(CancellationToken cancellationToken = default)
-        => new(_snapshot);
+        => new(CurrentSnapshot());
+
+    /// <summary>
+    /// Returns the snapshot for an explicit schema partition (or the shared baseline when
+    /// <paramref name="schema"/> resolves to no partition). Fixture mutation helpers use this
+    /// to read-modify-write a test's own partition without depending on an ambient request
+    /// schema being in scope.
+    /// </summary>
+    internal MetadataV2GraphSnapshot GetCurrentForSchema(string? schema)
+    {
+        var key = ResolveSchemaKey(schema);
+        if (!string.Equals(key, BaselineSchemaKey, StringComparison.Ordinal) &&
+            _bySchema.TryGetValue(key, out var scoped))
+        {
+            return scoped;
+        }
+
+        return _baseline;
+    }
 
     public ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(long revision, CancellationToken cancellationToken = default)
-        => new(_snapshot.Graph.Revision == revision ? _snapshot : null);
+    {
+        var snapshot = CurrentSnapshot();
+        return new(snapshot.Graph.Revision == revision ? snapshot : null);
+    }
 
     public Task<MetadataV2GraphSnapshot> SaveAsync(
         MetadataV2Graph graph,
@@ -49,17 +105,47 @@ public sealed class TestMetadataV2GraphProvider : IMetadataV2GraphStore
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(graph);
+        var current = CurrentSnapshot();
         if (expectedEtag is not null &&
-            !string.Equals(expectedEtag, _snapshot.Etag, StringComparison.Ordinal))
+            !string.Equals(expectedEtag, current.Etag, StringComparison.Ordinal))
         {
             throw new InvalidOperationException("Metadata v2 graph ETag mismatch.");
         }
 
-        _snapshot = new MetadataV2GraphSnapshot(
+        var snapshot = new MetadataV2GraphSnapshot(
             graph,
             $"\"test-{graph.Revision}\"",
             DateTimeOffset.UtcNow);
-        return Task.FromResult(_snapshot);
+
+        var key = ResolveSchemaKey(null);
+        if (string.Equals(key, BaselineSchemaKey, StringComparison.Ordinal))
+        {
+            _baseline = snapshot;
+        }
+        else
+        {
+            _bySchema[key] = snapshot;
+        }
+
+        return Task.FromResult(snapshot);
+    }
+
+    private MetadataV2GraphSnapshot CurrentSnapshot()
+    {
+        var key = ResolveSchemaKey(null);
+        if (!string.Equals(key, BaselineSchemaKey, StringComparison.Ordinal) &&
+            _bySchema.TryGetValue(key, out var scoped))
+        {
+            return scoped;
+        }
+
+        return _baseline;
+    }
+
+    private static string ResolveSchemaKey(string? schema)
+    {
+        var resolved = schema ?? SchemaContext.AmbientCurrentSchema;
+        return string.IsNullOrWhiteSpace(resolved) ? BaselineSchemaKey : resolved;
     }
 }
 

@@ -21,7 +21,7 @@ namespace Honua.Server.Tests.Seed;
 /// storage bindings must carry layerDiscriminatorColumn/geometryColumn/attributesColumn
 /// so reads are constrained to a single layer and project geometry).
 /// </summary>
-[Collection("Database")]
+[Collection("Database.CoreEndpoints")]
 [Protocol(TestProtocols.Infrastructure)]
 public sealed class CompatCompileBindingAndAccessPolicyTests
 {

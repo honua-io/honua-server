@@ -70,14 +70,20 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
             // (and the collection-detail/items paths) to HTTP 500 alongside every other
             // protocol that resolves through this same shared metadata seam. Restore parity
             // by synthesizing the equivalent snapshot from the V1 catalog at read time.
-            // When the V1 catalog is also empty there is genuinely nothing to serve, so we
-            // keep the original throw. (honua-server#1412.)
+            // (honua-server#1412.)
             current = await TryBuildCompatSnapshotFromV1CatalogAsync(cancellationToken).ConfigureAwait(false);
-            if (current is null)
-            {
-                throw new InvalidOperationException(
-                    $"No Metadata v2 snapshot has been activated for environment '{_environment}'.");
-            }
+
+            // When both the V2 snapshot table and the V1 catalog are absent or empty the
+            // server is freshly deployed with zero published datasets. Every catalog-style
+            // endpoint (STAC /stac, GeoServices /rest/services, OGC API /collections, OData
+            // service document, WFS GetCapabilities, …) already handles an empty list
+            // gracefully and returns a valid empty response. Returning an empty-but-valid
+            // snapshot here makes ALL of those surfaces return 200 with zero
+            // items — the correct behaviour for a healthy but unpopulated server — instead
+            // of surfacing a 500. A snapshot that EXISTS in the database but fails to load
+            // (network/parse error) still 500s correctly because TryLoadCurrentAsync
+            // propagates that exception rather than returning null. (honua-server#1619.)
+            current ??= BuildEmptySnapshot();
         }
 
         if (_cachedCurrent is not null && _cachedCurrent.Etag == current.Etag)
@@ -205,8 +211,21 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
             }
         }
 
+        // Bootstrap reconciliation (honua-server#1395): when no current snapshot is
+        // activated for this environment the caller (LoadCurrentOrEmptyGraphAsync) started
+        // from an empty graph and is forcing a first write at a low revision. A shared or
+        // partially-written database can still carry orphaned sidecar rows (e.g. a prior
+        // RefreshSidecarsAsync that committed before metadata_v2_current did). On databases
+        // created before migration 046 those rows also collided with the then-unique
+        // idx_metadata_v2_services_name and surfaced as a raw Postgres 23505. When
+        // bootstrapping, clear stale sidecar rows for the whole environment (all revisions)
+        // rather than only the target (environment, revision), so the first write reconciles
+        // cleanly instead of 500ing the layer-publish path and never leaves orphaned
+        // revisions behind.
+        var isBootstrap = await ReadCurrentEtagAsync(connection, transaction, cancellationToken).ConfigureAwait(false) is null;
+
         await UpsertSnapshotAsync(connection, transaction, graph, json, etag, cancellationToken).ConfigureAwait(false);
-        await RefreshSidecarsAsync(connection, transaction, graph, cancellationToken).ConfigureAwait(false);
+        await RefreshSidecarsAsync(connection, transaction, graph, clearStaleEnvironmentRows: isBootstrap, cancellationToken).ConfigureAwait(false);
         await UpsertCurrentAsync(connection, transaction, graph.Revision, etag, cancellationToken).ConfigureAwait(false);
 
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
@@ -425,22 +444,32 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         MetadataV2Graph graph,
+        bool clearStaleEnvironmentRows,
         CancellationToken cancellationToken)
     {
         // Wipe sidecars for this (environment, revision) and rewrite. Cheap and simple.
+        // On a bootstrap write (no activated current snapshot) also clear any orphaned
+        // rows for the whole environment so a stale partial write does not collide with
+        // the unique service-name index. (honua-server#1395.)
+        var revisionScope = clearStaleEnvironmentRows
+            ? string.Empty
+            : " AND revision = @revision";
         var deleteSql = new[]
         {
-            $"DELETE FROM {_resourcesIdxTable} WHERE environment = @environment AND revision = @revision",
-            $"DELETE FROM {_servicesIdxTable} WHERE environment = @environment AND revision = @revision",
-            $"DELETE FROM {_publicationsIdxTable} WHERE environment = @environment AND revision = @revision",
-            $"DELETE FROM {_storageBindingsIdxTable} WHERE environment = @environment AND revision = @revision",
-            $"DELETE FROM {_connectionsIdxTable} WHERE environment = @environment AND revision = @revision",
+            $"DELETE FROM {_resourcesIdxTable} WHERE environment = @environment{revisionScope}",
+            $"DELETE FROM {_servicesIdxTable} WHERE environment = @environment{revisionScope}",
+            $"DELETE FROM {_publicationsIdxTable} WHERE environment = @environment{revisionScope}",
+            $"DELETE FROM {_storageBindingsIdxTable} WHERE environment = @environment{revisionScope}",
+            $"DELETE FROM {_connectionsIdxTable} WHERE environment = @environment{revisionScope}",
         };
         foreach (var sql in deleteSql)
         {
             await using var cmd = new NpgsqlCommand(sql, connection, transaction);
             cmd.Parameters.AddWithValue("@environment", _environment);
-            cmd.Parameters.AddWithValue("@revision", graph.Revision);
+            if (!clearStaleEnvironmentRows)
+            {
+                cmd.Parameters.AddWithValue("@revision", graph.Revision);
+            }
             await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
@@ -543,6 +572,25 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
             cmd.Parameters.AddWithValue("@provider", (object?)conn.Provider ?? DBNull.Value);
             await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
+    }
+
+    /// <summary>
+    /// Builds an empty-but-valid in-memory snapshot for a freshly deployed server with no
+    /// published datasets. All catalog-style read surfaces (STAC, GeoServices, OGC API
+    /// Features, OData, WFS, …) enumerate the collections/services list and return a valid
+    /// empty response when the list is zero-length, so this snapshot produces 200s with no
+    /// items rather than 500s. It is never persisted to the database. (honua-server#1619.)
+    /// </summary>
+    private MetadataV2GraphSnapshot BuildEmptySnapshot()
+    {
+        var graph = new MetadataV2Graph
+        {
+            Environment = _environment,
+            Revision = 0,
+            GeneratedAt = DateTimeOffset.UtcNow,
+        };
+
+        return new MetadataV2GraphSnapshot(graph, "\"empty\"", DateTimeOffset.UtcNow);
     }
 
     private static MetadataV2GraphSnapshot MaterializeSnapshot(string json, string etag)

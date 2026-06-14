@@ -30,6 +30,11 @@ public static class AdminServiceCollectionExtensions
             client.DefaultRequestHeaders.UserAgent.ParseAdd("HonuaServer/1.0");
             client.Timeout = TimeSpan.FromMinutes(2);
         });
+        services.AddHttpClient(StartupConnectivityTestService.HttpClientName, client =>
+        {
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("HonuaServer/1.0");
+            client.Timeout = TimeSpan.FromSeconds(10);
+        });
 
         // Register configuration documentation service (existing)
         services.TryAddScoped<ConfigurationDocumentationService>();

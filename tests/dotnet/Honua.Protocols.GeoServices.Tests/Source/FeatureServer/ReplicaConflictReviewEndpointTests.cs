@@ -15,6 +15,8 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.DependencyInjection;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
@@ -30,7 +32,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 [Protocol(TestProtocols.Admin)]
 public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
 
     public Task InitializeAsync() => _fixture.InitializeAsync();
 
@@ -364,7 +366,7 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
         // Simulate a read-only provider deployment by replacing the conflict repository with the
         // no-op implementation whose SupportsConflictReview flag is false. The endpoint must then
         // deny the request with a not-supported status rather than returning an empty result.
-        var fixture = new WebAppFixture().ConfigureServices(services =>
+        var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro).ConfigureServices(services =>
         {
             services.AddScoped<IReplicaConflictRepository>(_ => new NoOpReplicaConflictRepository());
         });

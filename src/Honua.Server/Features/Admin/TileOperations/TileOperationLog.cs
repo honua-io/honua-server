@@ -39,4 +39,13 @@ internal static partial class TileOperationLog
 
     [LoggerMessage(EventId = 9215, Level = LogLevel.Warning, Message = "Retained overwritten PMTiles publish artifact {ArtifactId} for tile job {JobId} (strategy {UrlStrategy}) after access URL generation failure to preserve the previously published bytes.")]
     public static partial void PublishOverwriteRetained(ILogger logger, string jobId, string artifactId, PMTilesUrlStrategy urlStrategy);
+
+    [LoggerMessage(EventId = 9216, Level = LogLevel.Warning, Message = "Tile generation failed for layer {LayerId} tile {Z}/{X}/{Y}.")]
+    public static partial void TileGenerationFailed(
+        ILogger logger,
+        int layerId,
+        int z,
+        int x,
+        int y,
+        Exception exception);
 }

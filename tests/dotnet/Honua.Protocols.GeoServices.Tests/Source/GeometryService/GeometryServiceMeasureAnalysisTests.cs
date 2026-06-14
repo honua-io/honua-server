@@ -19,7 +19,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService;
 /// frequently and which previously returned 404.
 /// </summary>
 [Protocol(TestProtocols.GeometryService)]
-[Collection("Database")]
+[Collection("Database.GeoServicesRaster")]
 public sealed class GeometryServiceMeasureAnalysisTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();

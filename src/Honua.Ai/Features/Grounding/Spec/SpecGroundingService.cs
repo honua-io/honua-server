@@ -179,9 +179,10 @@ internal sealed partial class SpecGroundingService
         }
         catch (InvalidOperationException ex)
         {
+            const string message = "The proposed mutation could not be applied to the spec.";
             warnings.Add(SpecDiagnostic.Error(
                 SpecDiagnosticCode.UnknownReference,
-                ex.Message,
+                message,
                 SourceSpan.Synthetic));
             SpecGroundingTelemetry.RecordValidationFailures([SpecDiagnosticCode.UnknownReference.ToString()]);
             SpecGroundingTelemetry.RecordMutateTurn(clarified: false, retried: retried, errorKind: "invalid_mutation");
@@ -189,7 +190,7 @@ internal sealed partial class SpecGroundingService
             return new SpecGroundingResult
             {
                 ErrorKind = SpecGroundingErrorKind.InvalidMutation,
-                ErrorMessage = ex.Message,
+                ErrorMessage = message,
                 Warnings = warnings
             };
         }
@@ -765,7 +766,7 @@ internal sealed partial class SpecGroundingService
             SpecGroundingLog.CatalogUnavailable(_logger, ex.Message);
             warnings.Add(SpecDiagnostic.Warning(
                 SpecDiagnosticCode.CatalogUnavailable,
-                $"Metadata graph unavailable: {ex.Message}",
+                "Metadata graph is unavailable.",
                 SourceSpan.Synthetic));
             return [];
         }

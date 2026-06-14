@@ -44,6 +44,47 @@ internal sealed class InMemoryMetadataReleasePackageStore : IMetadataReleasePack
         return Task.FromResult(package);
     }
 
+    public Task<IReadOnlyList<MetadataReleasePackageSummary>> ListAsync(
+        MetadataReleasePackageListFilter filter,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(filter);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var query = _packages.Values.AsEnumerable();
+
+        if (!string.IsNullOrWhiteSpace(filter.SourceEnvironment))
+        {
+            query = query.Where(package => string.Equals(
+                package.SourceEnvironment,
+                filter.SourceEnvironment.Trim(),
+                StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter.TargetEnvironment))
+        {
+            query = query.Where(package => package.TargetEnvironments.Any(target => string.Equals(
+                target,
+                filter.TargetEnvironment.Trim(),
+                StringComparison.OrdinalIgnoreCase)));
+        }
+
+        if (filter.Status is { } status)
+        {
+            query = query.Where(package => package.Status == status);
+        }
+
+        var summaries = query
+            .OrderByDescending(package => package.CreatedAt)
+            .ThenByDescending(package => package.PackageId)
+            .Skip(Math.Max(0, filter.Offset))
+            .Take(Math.Max(0, filter.Limit))
+            .Select(MetadataReleasePackageSummaryFactory.From)
+            .ToArray();
+
+        return Task.FromResult<IReadOnlyList<MetadataReleasePackageSummary>>(summaries);
+    }
+
     private readonly record struct PackageIdentity(string Namespace, string PackageKey)
     {
         public static PackageIdentity From(MetadataV2ObjectMetadata metadata)

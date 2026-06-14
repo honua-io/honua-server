@@ -74,6 +74,7 @@ public sealed class ErrorHandlingPolicyTests
         Path.Combine("src", "Honua.Server", "Features", "Collaboration", "CollaborationEndpoints.cs"),
         Path.Combine("src", "Honua.Server", "Features", "FileStorage", "FileStorageEndpoints.cs"),
         Path.Combine("src", "Honua.Server", "Features", "Forms", "FormPackageEndpoints.cs"),
+        Path.Combine("src", "Honua.Server", "Features", "FieldWorkflows", "Review", "FieldReviewEndpoints.cs"),
         Path.Combine("src", "Honua.Server", "Features", "Geocoding", "GeocodingEndpoints.cs"),
         Path.Combine("src", "Honua.Server", "Features", "Infrastructure", "Caching", "CachingEndpoints.cs"),
         Path.Combine("src", "Honua.Server", "Features", "Protocols", "GeoServices", "FeatureServer", "FeatureServerEndpoints.cs"),

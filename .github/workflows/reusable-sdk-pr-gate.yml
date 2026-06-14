@@ -1,7 +1,7 @@
 # Reusable SDK PR gate workflow.
 # Provides a shared PR-gate contract for honua-sdk-js, honua-sdk-dotnet,
 # and honua-sdk-python.
-# See docs/ci/gate-model.md and docs/ci/config-conventions.md.
+# See docs/internal/ci/gate-model.md and docs/internal/ci/config-conventions.md.
 
 name: SDK PR Gate
 

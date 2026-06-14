@@ -724,7 +724,9 @@ internal static partial class MapServerEndpoints
             case "png32":
             case "jpg":
             case "jpeg":
-            case "gif":
+                // gif is intentionally not accepted: SkiaSharp's default native build ships
+                // no GIF encoder, so attempting it threw and surfaced as a 500. Reject it as
+                // an unsupported format (clean 400) via the default branch below.
                 normalized = candidate;
                 return true;
             default:

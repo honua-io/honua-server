@@ -132,6 +132,8 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
         GetCapability(root, "query.features").GetProperty("available").GetBoolean().Should().BeTrue();
         GetCapability(root, "upload.file").GetProperty("available").GetBoolean().Should().BeFalse();
         GetCapability(root, "upload.file").GetProperty("reasonCode").GetString().Should().Be("insufficient-policy");
+        GetCapability(root, "edit.features").GetProperty("entitlementKey").GetString()
+            .Should().Be(FeatureCatalog.FeatureServerEditsKey);
         root.GetProperty("policies").GetProperty("callerCapabilities").EnumerateArray().Should().BeEmpty();
         GetLink(root, "feature-streaming-capabilities").GetProperty("href").GetString()
             .Should().Be("/api/v1/streaming/features/capabilities");

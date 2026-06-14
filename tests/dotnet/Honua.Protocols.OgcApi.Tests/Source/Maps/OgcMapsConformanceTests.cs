@@ -15,7 +15,7 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps;
 /// <summary>
 /// Tests for OGC Maps conformance endpoint, verifying all declared conformance classes.
 /// </summary>
-[Collection("Database")]
+[Collection("Database.OgcApiTiles")]
 [Protocol(TestProtocols.OgcApiMaps)]
 public class OgcMapsConformanceTests : IAsyncLifetime
 {

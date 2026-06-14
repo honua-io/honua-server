@@ -7,6 +7,9 @@ namespace Honua.Core.Configuration;
 /// </summary>
 public class LimitsOptions
 {
+    /// <summary>
+    /// The configuration section name that binds to these options.
+    /// </summary>
     public const string SectionName = "Limits";
 
     /// <summary>

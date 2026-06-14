@@ -8,7 +8,7 @@ pass rate for each protocol on `trunk`?" It exists so re-grading agents and
 auditors can find an authoritative number without spelunking workflow artifacts.
 
 **Source of truth.** This page mirrors the totals in
-[`docs/contributor/ogc-cite-conformance-evidence.md`](contributor/ogc-cite-conformance-evidence.md),
+[`docs/contributor/ogc-cite-conformance-evidence.md`](internal/contributor/ogc-cite-conformance-evidence.md),
 which is the canonical, website-linkable summary. When the two diverge, the
 contributor doc wins and this page must be re-synchronized.
 
@@ -115,7 +115,7 @@ accurate `/conformance` declaration:
   surface supersedes the deprecated layerId-keyed style aliases
   (`/api/styles/{layerId}.json`, admin `…/layers/{layerId}/style`), which remain
   working but emit advisory `Deprecation`/`Sunset` headers pending removal.
-  See [`docs/gis/style-engine-protocol-consumption.md`](gis/style-engine-protocol-consumption.md).
+  See [`docs/gis/style-engine-protocol-consumption.md`](guides/style/style-maps.md).
 
 ## How To Refresh This Page
 
@@ -134,12 +134,12 @@ accurate `/conformance` declaration:
 
 ## Related Documents
 
-- [`docs/contributor/ogc-cite-conformance-evidence.md`](contributor/ogc-cite-conformance-evidence.md)
+- [`docs/contributor/ogc-cite-conformance-evidence.md`](internal/contributor/ogc-cite-conformance-evidence.md)
   — canonical, website-linkable summary (source of truth).
-- [`docs/contributor/cite-runbook.md`](contributor/cite-runbook.md) —
+- [`docs/contributor/cite-runbook.md`](internal/contributor/cite-runbook.md) —
   per-suite scope, scripts, workflow files, and open issues.
-- [`docs/contributor/ogc-certification-path.md`](contributor/ogc-certification-path.md)
+- [`docs/contributor/ogc-certification-path.md`](internal/contributor/ogc-certification-path.md)
   — decision record on formal OGC certification posture.
-- [`docs/contributor/CI_QUALITY_GATES.md`](contributor/CI_QUALITY_GATES.md)
+- [`docs/contributor/CI_QUALITY_GATES.md`](internal/contributor/CI_QUALITY_GATES.md)
   — gate model that triggers each `cite-*-conformance.yml` workflow.
-- [`docs/evidence/README.md`](evidence/README.md) — top-level evidence index.
+- [`docs/evidence/README.md`](internal/evidence/README.md) — top-level evidence index.

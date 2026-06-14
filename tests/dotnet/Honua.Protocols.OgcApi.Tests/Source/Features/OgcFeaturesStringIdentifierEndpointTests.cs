@@ -28,6 +28,7 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
+using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 
@@ -565,6 +566,9 @@ public sealed class OgcFeaturesStringIdentifierEndpointTests
                 // layer id resolution match the layers this fixture exposes.
                 services.RemoveAll<IMetadataV2GraphProvider>();
                 services.AddSingleton<IMetadataV2GraphProvider>(_ => BuildStringIdGraphProvider());
+
+                // OGC API Features writes are Community (#1591); these string-id tests should
+                // reach validation and edit behavior without a paid edit entitlement.
             });
         });
     }

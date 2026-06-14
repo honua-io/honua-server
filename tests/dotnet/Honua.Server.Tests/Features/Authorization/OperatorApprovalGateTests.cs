@@ -12,12 +12,12 @@ namespace Honua.Server.Tests.Features.Authorization;
 public sealed class OperatorApprovalGateTests
 {
     [UnitTest]
-    public void CheckAuthorization_Allowed_ReturnsAllowedDecision()
+    public async Task CheckAuthorization_Allowed_ReturnsAllowedDecision()
     {
         var gate = CreateGate(authDecision: AccessDecision.Allowed());
         var principal = CreatePrincipal();
 
-        var result = gate.CheckAuthorization(principal, new OperatorAuthorizationRequest
+        var result = await gate.CheckAuthorizationAsync(principal, new OperatorAuthorizationRequest
         {
             ResourceType = OperatorResourceType.Process,
             Operation = OperatorOperation.Execute
@@ -27,12 +27,12 @@ public sealed class OperatorApprovalGateTests
     }
 
     [UnitTest]
-    public void CheckAuthorization_Denied_ReturnsForbiddenDecision()
+    public async Task CheckAuthorization_Denied_ReturnsForbiddenDecision()
     {
         var gate = CreateGate(authDecision: AccessDecision.Forbidden("no access"));
         var principal = CreatePrincipal();
 
-        var result = gate.CheckAuthorization(principal, new OperatorAuthorizationRequest
+        var result = await gate.CheckAuthorizationAsync(principal, new OperatorAuthorizationRequest
         {
             ResourceType = OperatorResourceType.Process,
             Operation = OperatorOperation.Execute
@@ -43,12 +43,12 @@ public sealed class OperatorApprovalGateTests
     }
 
     [UnitTest]
-    public void CheckAuthorization_RequiresAuth_ReturnsRequiresAuthDecision()
+    public async Task CheckAuthorization_RequiresAuth_ReturnsRequiresAuthDecision()
     {
         var gate = CreateGate(authDecision: AccessDecision.RequiresAuth());
         var principal = CreatePrincipal();
 
-        var result = gate.CheckAuthorization(principal, new OperatorAuthorizationRequest
+        var result = await gate.CheckAuthorizationAsync(principal, new OperatorAuthorizationRequest
         {
             ResourceType = OperatorResourceType.Process,
             Operation = OperatorOperation.Execute

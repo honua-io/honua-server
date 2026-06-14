@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Globalization;
 using DuckDB.NET.Data;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.DuckDB.Features.FeatureStore;
@@ -21,6 +22,7 @@ public class DuckDBFeatureStoreIntegrationTests : IAsyncLifetime
     private DuckDBFeatureStore _store = null!;
     private DuckDBLayerRegistry _registry = null!;
     private string _connectionString = null!;
+    private DuckDBSpatialBootstrap _spatialBootstrap = null!;
     private const int LayerId = 0;
 
     public async Task InitializeAsync()
@@ -32,8 +34,10 @@ public class DuckDBFeatureStoreIntegrationTests : IAsyncLifetime
         await using var seedConnection = new DuckDBConnection(_connectionString);
         await seedConnection.OpenAsync();
 
-        await ExecuteAsync(seedConnection, "INSTALL spatial");
-        await ExecuteAsync(seedConnection, "LOAD spatial");
+        _spatialBootstrap = new DuckDBSpatialBootstrap(
+            extensionPath: null,
+            logger: NullLogger<DuckDBSpatialBootstrap>.Instance);
+        await _spatialBootstrap.EnsureSpatialExtensionAsync(seedConnection, CancellationToken.None);
 
         await ExecuteAsync(seedConnection, """
             CREATE TABLE parcels (
@@ -51,16 +55,19 @@ public class DuckDBFeatureStoreIntegrationTests : IAsyncLifetime
         {
             var lon = -122.0 + i * 0.01;
             var lat = 37.0 + i * 0.01;
+            var area = i * 100.5;
+            var landUse = i % 2 == 0 ? "residential" : "commercial";
             // start_time spans 2024-01-{i} (one day per parcel); end_time
             // overlaps the next parcel so the interval-intersection path
             // can be exercised. Parcel 5 has a NULL end_time so the
             // COALESCE fallback in the temporal filter is also covered.
-            var startDay = i.ToString("D2", System.Globalization.CultureInfo.InvariantCulture);
+            var startDay = i.ToString("D2", CultureInfo.InvariantCulture);
+            var endDay = (i + 2).ToString("D2", CultureInfo.InvariantCulture);
             var endLiteral = i == 5
                 ? "NULL"
-                : $"TIMESTAMPTZ '2024-01-{(i + 2).ToString("D2", System.Globalization.CultureInfo.InvariantCulture)} 12:00:00+00'";
-            await ExecuteAsync(seedConnection,
-                $"INSERT INTO parcels VALUES ({i}, ST_Point({lon.ToString(System.Globalization.CultureInfo.InvariantCulture)}, {lat.ToString(System.Globalization.CultureInfo.InvariantCulture)}), 'Parcel {i}', {(i * 100.5).ToString(System.Globalization.CultureInfo.InvariantCulture)}, '{(i % 2 == 0 ? "residential" : "commercial")}', TIMESTAMPTZ '2024-01-{startDay} 00:00:00+00', {endLiteral})");
+                : FormattableString.Invariant($"TIMESTAMPTZ '2024-01-{endDay} 12:00:00+00'");
+            await ExecuteAsync(seedConnection, FormattableString.Invariant(
+                $"INSERT INTO parcels VALUES ({i}, ST_Point({lon}, {lat}), 'Parcel {i}', {area}, '{landUse}', TIMESTAMPTZ '2024-01-{startDay} 00:00:00+00', {endLiteral})"));
         }
 
         var mapping = new DuckDBLayerMapping
@@ -74,7 +81,7 @@ public class DuckDBFeatureStoreIntegrationTests : IAsyncLifetime
         };
 
         _registry = new DuckDBLayerRegistry([mapping]);
-        var connectionProvider = new FileDuckDBConnectionProvider(_connectionString);
+        var connectionProvider = new FileDuckDBConnectionProvider(_connectionString, _spatialBootstrap);
         var queryBuilder = new DuckDBFeatureQueryBuilder(_registry);
         var dataAccess = new DuckDBFeatureDataAccess(
             connectionProvider,
@@ -88,6 +95,7 @@ public class DuckDBFeatureStoreIntegrationTests : IAsyncLifetime
 
     public Task DisposeAsync()
     {
+        _spatialBootstrap?.Dispose();
         try { File.Delete(_dbPath); } catch { /* best effort cleanup */ }
         try { File.Delete(_dbPath + ".wal"); } catch { /* best effort cleanup */ }
         return Task.CompletedTask;
@@ -345,10 +353,12 @@ public class DuckDBFeatureStoreIntegrationTests : IAsyncLifetime
     private sealed class FileDuckDBConnectionProvider : Core.Features.Infrastructure.Abstractions.IDatabaseConnectionProvider
     {
         private readonly string _connectionString;
+        private readonly DuckDBSpatialBootstrap _spatialBootstrap;
 
-        public FileDuckDBConnectionProvider(string connectionString)
+        public FileDuckDBConnectionProvider(string connectionString, DuckDBSpatialBootstrap spatialBootstrap)
         {
             _connectionString = connectionString;
+            _spatialBootstrap = spatialBootstrap;
         }
 
         public string GetConnectionString() => _connectionString;
@@ -357,9 +367,7 @@ public class DuckDBFeatureStoreIntegrationTests : IAsyncLifetime
         {
             var conn = new DuckDBConnection(_connectionString);
             await conn.OpenAsync(ct);
-            await using var cmd = conn.CreateCommand();
-            cmd.CommandText = "LOAD spatial";
-            await cmd.ExecuteNonQueryAsync(ct);
+            await _spatialBootstrap.EnsureSpatialExtensionAsync(conn, ct);
             return conn;
         }
 

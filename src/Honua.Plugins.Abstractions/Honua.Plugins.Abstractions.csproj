@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <NoWarn>$(NoWarn);CS1591;CA1716</NoWarn>
+    <IsAotCompatible>true</IsAotCompatible>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageLicenseExpression>Elastic-2.0</PackageLicenseExpression>
+    <RootNamespace>Honua.Plugins.Abstractions</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+
+    <!--
+      Public, AOT-safe plugin SDK contract surface (issue #347). Third-party plugin
+      authors reference THIS assembly only. Keep it dependency-minimal: it references
+      Honua.Core.Abstractions purely for the canonical Feature type and takes no
+      dependency on the heavy data-layer/host assemblies.
+    -->
+    <ProjectReference Include="..\Honua.Core.Abstractions\Honua.Core.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Honua.Plugins" />
+    <InternalsVisibleTo Include="Honua.Plugins.Tests" />
+    <InternalsVisibleTo Include="Honua.Server.Tests" />
+  </ItemGroup>
+
+</Project>

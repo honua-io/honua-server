@@ -106,7 +106,7 @@ internal sealed class StacMappingService
         };
     }
 
-    private static string ResolveDisplayName(
+    internal static string ResolveDisplayName(
         MetadataV2Publication publication,
         MetadataV2Resource resource,
         int layerIndex)
@@ -186,7 +186,9 @@ internal sealed class StacMappingService
             }
         }
 
-        var title = resource.Metadata.Title ?? resource.Metadata.Name;
+        // Use the same canonical title resolver as the collection resource so the
+        // collection/parent link titles match the collection's own title.
+        var title = ResolveDisplayName(publication, resource, layerIndex);
 
         var links = ImmutableArray.Create(
             Link.Create(
@@ -294,7 +296,10 @@ internal sealed class StacMappingService
             return;
         }
 
+        // Per the STAC spec, when datetime is null both interval bounds MUST be present.
         properties["datetime"] = null;
+        properties["start_datetime"] = null;
+        properties["end_datetime"] = null;
     }
 
     private static string ResolveItemId(Feature feature)
