@@ -35,6 +35,8 @@ Optional form fields: `description`, `srid` (overrides CRS detection), `acquisit
 
 Every raster uploaded to the same layer must match the layer's first raster in SRID and band count; mismatches return `400` with a structured homogeneity message.
 
+Imported rasters are stored with `EXTERNAL` TOAST storage (out-of-line and uncompressed) so tile, terrain, statistics, and export reads fetch only the pixels they need instead of detoasting and decompressing the entire raster on every request. Combined with the default `0-8` tile pre-generation, web tile requests resolve as indexed `raster_tiles` lookups rather than full-raster clips.
+
 ### 3. Register a cloud-hosted COG (alternative to import)
 
 ```bash

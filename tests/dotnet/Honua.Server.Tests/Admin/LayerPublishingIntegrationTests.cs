@@ -495,6 +495,95 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Update)]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers/{layerId}/features/refresh")]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    [Endpoint("GET /ogc/tiles/collections/{collectionId}/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}")]
+    public async Task RefreshMaterializedFeatures_AfterSourceUpdate_RebuildsSnapshotMvtReads()
+    {
+        // The published layer materializes a one-time snapshot of the source table into the
+        // canonical `honua.features` table that the server-side MVT/tile path reads, while the
+        // feature-query paths read the live source. After updating the source, the query path
+        // sees the new row but the MVT snapshot stays stale until rebuilt (honua-server#1628).
+        var publishedLayer = await PublishLayerAsync(new PublishLayerRequest
+        {
+            Schema = _schema,
+            Table = _tableName,
+            LayerName = $"Layer {_tableName}",
+            Description = "Layer publish materialized feature refresh integration test",
+            GeometryColumn = "geom",
+            GeometryType = "Point",
+            Srid = 4326,
+            PrimaryKey = "id",
+            Fields = _idNamePopulationFields,
+            ServiceName = _serviceName,
+            Enabled = true
+        });
+        _layerId = publishedLayer.LayerId;
+
+        // The publish-time snapshot has exactly one row (the seeded "Test Feature").
+        (await GetCanonicalSnapshotCountAsync(_layerId.Value)).Should().Be(1);
+
+        // The vector tile path serves data from that canonical snapshot. (200 with bytes when the
+        // tile holds features, 204 when empty; either confirms the MVT endpoint is reachable for
+        // the published collection — the load-bearing assertions below are the snapshot row count.)
+        var tilePath = $"/ogc/tiles/collections/{_layerId}/tiles/WebMercatorQuad/4/7/8";
+        var staleTileResponse = await _client.GetAsync(tilePath);
+        staleTileResponse.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NoContent);
+
+        // Update the live source table, as a re-import would.
+        await InsertPostGisFeatureAsync("Reimported Feature", 250, 1.001d, 1.001d);
+
+        // The feature-query path reads the live source and immediately sees the new row, but the
+        // canonical snapshot the MVT path reads is unchanged — the staleness this fix addresses.
+        var ogcItemsResponse = await _client.GetAsync(
+            $"/ogc/features/collections/{_layerId}/items?f=json&limit=10");
+        ogcItemsResponse.Be200Ok();
+        using (var ogcItemsDocument = JsonDocument.Parse(await ogcItemsResponse.Content.ReadAsStringAsync()))
+        {
+            ogcItemsDocument.RootElement.GetProperty("features").GetArrayLength().Should().Be(2);
+        }
+
+        (await GetCanonicalSnapshotCountAsync(_layerId.Value))
+            .Should().Be(1, "the snapshot the MVT path reads is stale until rebuilt");
+
+        // Rebuilding the snapshot from the live source brings the MVT path back in sync.
+        var refreshResponse = await _client.PostAsync(
+            $"/api/v1/admin/connections/{_connectionId}/layers/{_layerId}/features/refresh",
+            content: null);
+
+        var refreshPayload = await refreshResponse.Content.ReadAsStringAsync();
+        refreshResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {refreshPayload}");
+        var refreshApi = JsonSerializer.Deserialize<ApiResponse<MaterializedFeatureRefreshResult>>(
+            refreshPayload,
+            _jsonOptions);
+
+        refreshApi.Should().NotBeNull();
+        refreshApi!.Success.Should().BeTrue();
+        refreshApi.Data.Should().NotBeNull();
+        refreshApi.Data!.LayerId.Should().Be(_layerId.Value);
+        refreshApi.Data.MaterializedFeatureCount.Should().Be(2);
+
+        // The canonical snapshot the MVT path reads now reflects the updated source.
+        (await GetCanonicalSnapshotCountAsync(_layerId.Value)).Should().Be(2);
+
+        var rebuiltTileResponse = await _client.GetAsync(tilePath);
+        rebuiltTileResponse.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NoContent);
+    }
+
+    private async Task<int> GetCanonicalSnapshotCountAsync(int layerId)
+    {
+        await using var connection = await _fixture.Postgres.GetConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*)::int FROM features WHERE layer_id = @layerId;";
+        command.Parameters.AddWithValue("layerId", layerId);
+        var result = await command.ExecuteScalarAsync();
+        return Convert.ToInt32(result, System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
     [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
     [Endpoint("POST /api/v1/admin/connections/{id}/layers/extents/refresh")]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]

@@ -91,7 +91,7 @@ raster layer identifier.
 
 | Operation(s) | Status | Notes |
 | --- | --- | --- |
-| Service metadata | Implemented | Aggregate mosaic extent/statistics, `timeInfo` when acquisition dates exist, `tileInfo`, output-cached. `objectIdField`/`fields`/`rasterFunctionInfos` root properties not yet populated. |
+| Service metadata | Implemented | Aggregate mosaic extent/statistics, `timeInfo` when acquisition dates exist, output-cached. Dynamic (`singleFusedMapCache: false`) by default; opt in to a WebMercatorQuad `tileInfo` for tiled Esri clients via `GeoServices:ImageServer:TileMetadata:Enabled`. `objectIdField`/`fields`/`rasterFunctionInfos` root properties not yet populated. |
 | tile, computeHistograms, getSamples | Implemented | PNG/JPEG/TIFF tiles, zoom 0–28, multi-raster mosaic; getSamples caps at 1000 samples. |
 | exportImage | Partial | JSON envelope with temporary `href` by default; `f=image` streams bytes. `bandIds`, `noData`, mosaic + single-instant `time` supported; `pixelType` validated but not applied; non-empty `renderingRule` returns 501; `bmp`/`gif` rejected with 400. |
 | identify | Partial | Point/envelope/polygon (area geometries identify at the envelope centroid); `returnCatalogItems`; `pixelSize` echoed but pyramid selection deferred; `renderingRule` not applied. |
