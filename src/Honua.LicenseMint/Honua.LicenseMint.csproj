@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Honua.LicenseMint</RootNamespace>
+    <AssemblyName>honua-license-mint</AssemblyName>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!--
+      Publisher-only offline mint tool. Not a packaged library, not shipped to
+      customers; excluded from NuGet packing/publishing of the runtime.
+    -->
+    <IsPackable>false</IsPackable>
+    <!--
+      AOT-conscious: the mint path uses source-generated System.Text.Json
+      (LicenseMintJsonContext) and has no reflection-based serialization. The
+      console front-end itself is not AOT-published, but the mint primitives are
+      trim/AOT-safe so they can be reused from an AOT host later.
+    -->
+    <IsAotCompatible>true</IsAotCompatible>
+    <NoWarn>$(NoWarn);CA1303</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- HonuaEdition + FeatureCatalog are the canonical edition/entitlement
+         source of truth; the mint tool resolves and validates against them so
+         minted envelopes can never reference unknown entitlement keys. -->
+    <ProjectReference Include="..\Honua.Core\Honua.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Managed, AOT-friendly Ed25519 signer. Mirrors the runtime verifier
+         (BouncyCastleEd25519Verifier) so mint and verify share one curve
+         implementation. -->
+    <PackageReference Include="BouncyCastle.Cryptography" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Honua.Server.Tests" />
+  </ItemGroup>
+
+</Project>
