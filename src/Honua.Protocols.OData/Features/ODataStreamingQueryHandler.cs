@@ -157,7 +157,7 @@ internal sealed partial class ODataStreamingQueryHandler(
                 return formatValidation;
             }
 
-            BoundingBox? bboxFilter = null;
+            Honua.Core.Features.Shared.Models.BoundingBox? bboxFilter = null;
             if (!string.IsNullOrWhiteSpace(bbox))
             {
                 var bboxValidation = _validationService.ValidateBbox(bbox, targetSrid: 4326);
@@ -169,7 +169,18 @@ internal sealed partial class ODataStreamingQueryHandler(
                         bboxValidation.ErrorMessage ?? "Invalid bbox parameter.");
                 }
 
-                bboxFilter = bboxValidation.Value;
+                // Validation returns the lightweight Validation.BoundingBox; adapt it to the
+                // canonical Shared.Models.BoundingBox that the shared query pipeline expects,
+                // carrying the validated target SRID (4326).
+                if (bboxValidation.Value is { } validatedBbox)
+                {
+                    bboxFilter = Honua.Core.Features.Shared.Models.BoundingBox.Create(
+                        validatedBbox.MinX,
+                        validatedBbox.MinY,
+                        validatedBbox.MaxX,
+                        validatedBbox.MaxY,
+                        spatialReferenceId: 4326);
+                }
             }
 
             var pagingError = ODataRequestValidation.TryGetPagingValues(

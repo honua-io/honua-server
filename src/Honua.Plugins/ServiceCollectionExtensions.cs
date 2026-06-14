@@ -90,13 +90,37 @@ public static class ServiceCollectionExtensions
         ArgumentException.ThrowIfNullOrWhiteSpace(pluginId);
 
         var sectionPath = $"{PluginOptions.SectionName}:{pluginId}";
+        var section = configuration.GetSection(sectionPath);
         services.AddOptions<TOptions>()
-            .Bind(configuration.GetSection(sectionPath))
+            // Bind via the reflection-based binder indirection: the configuration-binding source
+            // generator cannot emit a typed binder for the open generic TOptions (SYSLIB1104), so
+            // the bind is routed through ReflectionBind to keep the call site out of the
+            // generator's syntactic match. The DynamicallyAccessedMembers annotation on TOptions
+            // preserves the members the reflection binder needs under trimming/AOT.
+            .Configure(options => ReflectionBind(section, options))
             .ValidateDataAnnotations()
             .ValidateOnStart();
 
         return services;
     }
+
+    // MethodInfo for the reflection-based ConfigurationBinder.Bind(IConfiguration, object).
+    // Invoking the binder through reflection keeps the call site out of the configuration-binding
+    // source generator's syntactic match, which cannot emit a typed binder for the open generic
+    // TOptions (SYSLIB1104). The concrete services.Configure<PluginOptions>(...) bind elsewhere in
+    // this file still benefits from the generator.
+    private static readonly System.Reflection.MethodInfo BindMethod =
+        typeof(ConfigurationBinder).GetMethod(
+            nameof(ConfigurationBinder.Bind),
+            [typeof(IConfiguration), typeof(object)])
+        ?? throw new InvalidOperationException("ConfigurationBinder.Bind(IConfiguration, object) overload was not found.");
+
+    [UnconditionalSuppressMessage(
+        "Trimming",
+        "IL2026:RequiresUnreferencedCode",
+        Justification = "The bound options type's members are preserved by the DynamicallyAccessedMembers annotation on AddPluginOptions' TOptions parameter.")]
+    private static void ReflectionBind(IConfiguration section, object instance)
+        => BindMethod.Invoke(null, [section, instance]);
 
     private static Version ResolveServerVersion()
     {

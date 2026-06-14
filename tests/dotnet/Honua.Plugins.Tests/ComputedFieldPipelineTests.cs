@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Globalization;
 using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Licensing.Domain;
@@ -101,8 +102,8 @@ public sealed class ComputedFieldPipelineTests
 
         public ValueTask<object?> ComputeAsync(Feature feature, ComputedFieldContext context, CancellationToken cancellationToken)
         {
-            var w = Convert.ToDouble(feature.Attributes["Width"]);
-            var h = Convert.ToDouble(feature.Attributes["Height"]);
+            var w = Convert.ToDouble(feature.Attributes["Width"], CultureInfo.InvariantCulture);
+            var h = Convert.ToDouble(feature.Attributes["Height"], CultureInfo.InvariantCulture);
             return ValueTask.FromResult<object?>(w * h);
         }
     }
