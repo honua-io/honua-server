@@ -293,6 +293,9 @@ Honua.Postgres.Features.Security.PostgresConnectionDriverServiceCollectionExtens
 Honua.MySql.Features.Security.MySqlConnectionDriverServiceCollectionExtensions.AddMySqlConnectionDriver(builder.Services);
 Honua.SqlServer.Features.Security.SqlServerConnectionDriverServiceCollectionExtensions.AddSqlServerConnectionDriver(builder.Services);
 #if !HONUA_SKIP_ORACLE
+// The Native AOT publish (HonuaSkipOracleForAotVerification) drops the Honua.Oracle
+// ProjectReference and defines HONUA_SKIP_ORACLE, so this registration is compiled out
+// (Oracle.ManagedDataAccess is not single-file/AOT safe — see Honua.Server.csproj).
 Honua.Oracle.Features.Security.OracleConnectionDriverServiceCollectionExtensions.AddOracleConnectionDriver(builder.Services);
 #endif
 builder.Services.AddSingleton<Honua.Core.Features.Security.Abstractions.IConnectionDriverRegistry, Honua.Core.Features.Security.Abstractions.ConnectionDriverRegistry>();
@@ -926,7 +929,9 @@ if (serveApiDocs)
             .AddDocument("coverages", "OGC API Coverages", "/ogc/coverages/openapi.json")
             .AddDocument("tiles", "OGC API Tiles", "/ogc/tiles/openapi.json")
             .AddDocument("maps", "OGC API Maps", "/ogc/maps/openapi.json")
+            .AddDocument("styles", "OGC API Styles", "/ogc/styles/openapi.json")
             .AddDocument("processes", "OGC API Processes", "/ogc/processes/openapi.json")
+            .AddDocument("stac", "STAC API", "/stac/openapi.json")
             .AddDocument("admin", "Admin API", "/api/v1/admin/openapi.json");
     });
 }
