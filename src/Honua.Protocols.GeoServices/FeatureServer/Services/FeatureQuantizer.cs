@@ -69,8 +69,12 @@ internal static class FeatureQuantizer
 
         if (root.ValueKind != JsonValueKind.Object)
         {
-            error = "quantizationParameters must be a JSON object.";
-            return false;
+            // ArcGIS Pro and the JS API send compatibility-oriented scalar
+            // quantizationParameters values that the backing service does not honor
+            // (e.g. "quantizationParameters=1"). These parse as valid JSON but are not
+            // quantization documents; rejecting them would break out-of-the-box client
+            // connections, so a non-object scalar is accepted as a no-op (no transform).
+            return true;
         }
 
         // Only the default "view" mode is supported; "edit" mode has different semantics.

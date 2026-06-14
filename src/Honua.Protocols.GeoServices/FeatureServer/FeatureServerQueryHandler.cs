@@ -794,11 +794,11 @@ internal sealed partial class FeatureServerQueryHandler(
                 return StandardErrorHelpers.CreateBadRequest(context, quantizationError ?? "Invalid quantizationParameters.");
             }
 
-            // returnExceededLimitFeatures=false must drop the truncated page; quantization must
-            // post-process the materialized featureSet. Route both through the materialized path
-            // instead of the streaming writer.
+            // quantization must post-process the materialized featureSet, so route it through
+            // the materialized path instead of the streaming writer. returnExceededLimitFeatures
+            // is accept-and-ignore (#1460): Honua already returns the page plus
+            // exceededTransferLimit, so it does not change the streaming decision.
             var useStreaming = effectiveLimit > StreamingThreshold && !isPbf && !isFgb && !isGeobuf && !isParquet && !isArrow
-                && validatedParams.ReturnExceededLimitFeatures
                 && quantizationTransform is null;
 
             if (!useStreaming)
@@ -927,8 +927,7 @@ internal sealed partial class FeatureServerQueryHandler(
                     outFields = parsed.Length == 0 ? null : parsed;
                 }
                 var shouldApplyDistinct = validatedParams.ReturnDistinctValues && outFields is { Length: > 0 };
-                if (validatedParams.ReturnExceededLimitFeatures &&
-                    quantizationTransform is null &&
+                if (quantizationTransform is null &&
                     CanUseRawGeoServicesPointFastPath(queryLayer.Resource, validatedParams, query, outputSrid, format) &&
                     await _queryExecutor.SupportsRawGeoServicesPointOutputAsync(
                         queryLayer.Service,
@@ -975,8 +974,6 @@ internal sealed partial class FeatureServerQueryHandler(
                     result = ApplyDistinctValues(result, outFields!);
                     result = ApplyPaginationWindow(result, query.Offset, query.Limit);
                 }
-
-                result = ApplyReturnExceededLimitFeatures(result, validatedParams.ReturnExceededLimitFeatures);
 
                 (object? formattedResponse, string? contentType) = await _queryServices.FormatQueryResultAsync(
                     result,
@@ -1759,8 +1756,6 @@ internal sealed partial class FeatureServerQueryHandler(
             queryResult = ApplyDistinctValues(queryResult, outFields!);
             queryResult = ApplyPaginationWindow(queryResult, query.Offset, query.Limit);
         }
-
-        queryResult = ApplyReturnExceededLimitFeatures(queryResult, validatedParams.ReturnExceededLimitFeatures);
 
         (object? formattedResponse, _) = await _queryServices.FormatQueryResultAsync(
             queryResult,
@@ -2673,22 +2668,6 @@ internal sealed partial class FeatureServerQueryHandler(
         var hasMore = effectiveOffset + take < totalCount;
 
         return QueryResult<Feature>.Create(totalCount, pageItems, hasMore);
-    }
-
-    // Esri returnExceededLimitFeatures=false: when the result exceeds the page limit,
-    // return no features while still flagging exceededTransferLimit=true so the client
-    // knows to refine the query. Applies to the materialized json/geojson responses;
-    // binary export formats (pbf/fgb/geobuf/parquet/arrow) always stream their rows.
-    private static QueryResult<Feature> ApplyReturnExceededLimitFeatures(
-        QueryResult<Feature> result,
-        bool returnExceededLimitFeatures)
-    {
-        if (returnExceededLimitFeatures || !result.HasMoreResults)
-        {
-            return result;
-        }
-
-        return QueryResult<Feature>.Create(result.TotalCount, ImmutableArray<Feature>.Empty, true);
     }
 
     // Rebuilds the Esri json featureSet with quantized (integer grid, delta-encoded)

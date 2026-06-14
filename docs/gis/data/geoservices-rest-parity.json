@@ -675,8 +675,8 @@
           },
           {
             "name": "returnExceededLimitFeatures",
-            "status": "implemented",
-            "notes": "Defaults to true (returns the truncated page plus exceededTransferLimit). When false and the limit is exceeded, the f=json/geojson response omits the features while still flagging exceededTransferLimit=true; binary export formats always stream their rows."
+            "status": "ignored",
+            "notes": "Accept-and-ignore for interop (#1460): the ArcGIS Maps SDK for .NET always sends it. Honua already returns the truncated page plus exceededTransferLimit=true, so both the default and an explicit false return the same page and flag."
           },
           {
             "name": "resultType",

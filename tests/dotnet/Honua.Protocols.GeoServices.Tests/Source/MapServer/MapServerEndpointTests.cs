@@ -325,6 +325,24 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
         estimate.StorageFormat.Should().Be("zip");
         estimate.ContentType.Should().Be("application/zip");
         estimate.ExceededTransferLimit.Should().BeFalse();
+
+        // POST form-encoded equivalent must produce the same estimate.
+        var postResponse = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/estimateExportTilesSize",
+            new FormUrlEncodedContent(
+            [
+                new KeyValuePair<string, string>("f", "json"),
+                new KeyValuePair<string, string>("levels", "0"),
+                new KeyValuePair<string, string>("exportExtent", "-180,-85,180,85"),
+                new KeyValuePair<string, string>("maxTiles", "1"),
+            ]));
+
+        var postContent = await postResponse.Content.ReadAsStringAsync();
+        postResponse.StatusCode.Should().Be(HttpStatusCode.OK, postContent);
+        var postEstimate = JsonSerializer.Deserialize(postContent, MapServerJsonContext.Default.ExportTilesEstimateResponse);
+        postEstimate.Should().NotBeNull();
+        postEstimate!.TileCount.Should().Be(1);
+        postEstimate.Size.Should().BeGreaterThan(0);
     }
 
     [IntegrationTest]
@@ -351,6 +369,26 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
         export.Files.Should().ContainSingle();
         export.Results.Should().NotBeNull();
         export.Results!.OutServiceUrl.Should().NotBeNull();
+
+        // POST form-encoded equivalent must also succeed and write an archive.
+        var postResponse = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/exportTiles",
+            new FormUrlEncodedContent(
+            [
+                new KeyValuePair<string, string>("f", "json"),
+                new KeyValuePair<string, string>("levels", "0"),
+                new KeyValuePair<string, string>("exportExtent", "-180,-85,180,85"),
+                new KeyValuePair<string, string>("maxTiles", "1"),
+            ]));
+        var postContent = await postResponse.Content.ReadAsStringAsync();
+        postResponse.StatusCode.Should().Be(HttpStatusCode.OK, postContent);
+        var postExport = JsonSerializer.Deserialize(postContent, MapServerJsonContext.Default.ExportTilesResponse);
+        postExport.Should().NotBeNull();
+        postExport!.JobStatus.Should().Be("esriJobSucceeded");
+        if (!string.IsNullOrWhiteSpace(postExport.ArchiveFileId))
+        {
+            await _fixture.GetService<ICloudFileStorage>().DeleteAsync(postExport.ArchiveFileId!);
+        }
 
         var fileId = export.ArchiveFileId!;
         var storage = _fixture.GetService<ICloudFileStorage>();
@@ -1105,6 +1143,20 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
         legend.Should().NotBeNull();
         legend!.Layers.Should().NotBeNullOrEmpty();
         legend.Layers!.First().Legend.Should().NotBeNullOrEmpty();
+
+        // POST form-encoded equivalent must return the same legend layers.
+        var postResponse = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/queryLegends",
+            new FormUrlEncodedContent(
+            [
+                new KeyValuePair<string, string>("f", "json"),
+                new KeyValuePair<string, string>("size", "16"),
+            ]));
+        var postContent = await postResponse.Content.ReadAsStringAsync();
+        postResponse.StatusCode.Should().Be(HttpStatusCode.OK, postContent);
+        var postLegend = JsonSerializer.Deserialize(postContent, MapServerJsonContext.Default.LegendResponse);
+        postLegend.Should().NotBeNull();
+        postLegend!.Layers.Should().NotBeNullOrEmpty();
     }
 
     [IntegrationTest]
