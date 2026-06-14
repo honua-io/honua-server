@@ -7,10 +7,21 @@ namespace Honua.Core.Features.Infrastructure.Crs;
 /// A resolved datum (geographic/geodetic) transformation selected for a single
 /// source-to-target reprojection. Carries enough provenance to drive an
 /// authoritative PROJ pipeline through PostGIS' 3-argument
-/// <c>ST_Transform(geom, '&lt;pipeline&gt;', toSrid)</c> overload and to surface
+/// <c>ST_Transform(geom, '&lt;projText&gt;', toSrid)</c> overload and to surface
 /// the choice back to clients (matching ArcGIS' geotransformation metadata).
 /// </summary>
 /// <remarks>
+/// <para>
+/// PostGIS constraint: the middle argument of the text overload is the
+/// <em>source CRS</em> proj string, not a coordinate-operation pipeline. PostGIS
+/// exposes no overload that injects a <c>+proj=pipeline</c> string, so only proj
+/// strings that parse as a CRS — and the exact-identity <c>+proj=noop</c> — apply
+/// through this chokepoint on the current runtime. Selections whose
+/// <see cref="ProjPipeline"/> is a non-identity pipeline (multi-step Helmert /
+/// grid shift) cannot yet be forced this way and fall back to PROJ's default
+/// operation selection on the 2-argument path. See
+/// <c>docs/internal/evidence/datum-transformation-parity.md</c>.
+/// </para>
 /// <para>
 /// Honua keeps PostGIS/PROJ as the transformation engine; the gap addressed by
 /// this type is <em>pipeline selection</em>, not engine capability. The default

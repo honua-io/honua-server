@@ -39,8 +39,11 @@ later (a fixture with documented provenance) without restructuring.
 
 | From | To | Esri default | WKID | EPSG op | Tolerance (horizontal) | Notes |
 |---|---|---|---|---:|---:|---|
-| NAD83 (4269) | WGS84 (4326) | NAD_1983_To_WGS_1984_1 | 108001 | 1188 | 0.01 m | EPSG 1188 is a null transformation; pipeline is `+proj=noop` (exact identity, PROJ-version stable). Validated against the runtime. |
-| NAD27 (4267) | NAD83 (4269) | NAD_1927_To_NAD_1983_NADCON | 1241 | 1241 | 0.3 km* | Grid-based (NADCON); requires `us_noaa_conus.tif`. *When the grid is absent the transform fails explicitly (null), per the grid-data follow-up below. |
+| NAD83 (4269) | WGS84 (4326) | NAD_1983_To_WGS_1984_1 | 108001 | 1188 | 1e-9 deg | EPSG 1188 is a null transformation; pipeline is `+proj=noop` (exact identity, PROJ-version stable). Validated against the runtime. |
+| NAD83(HARN) (4152) | WGS84 (4326) | NAD_1983_HARN_To_WGS_1984_1 | — | 1580 | 1e-9 deg | EPSG 1580 is a null transformation (`+proj=noop`). Seeded under #1501; validated against the runtime in both directions. No distinct Esri WKID — ArcGIS applies no geographic transformation by default for this pair. |
+| NAD83(NSRS2007) (4759) | WGS84 (4326) | NAD_1983_NSRS2007_To_WGS_1984_1 | — | 15931 | 1e-9 deg | EPSG 15931 null transformation (`+proj=noop`). Seeded under #1501; runtime-validated. |
+| NAD83(2011) (6318) | WGS84 (4326) | NAD_1983_2011_To_WGS_1984_1 | — | 9774 | 1e-9 deg | EPSG 9774 null transformation (`+proj=noop`). Seeded under #1501; runtime-validated. |
+| NAD27 (4267) | NAD83 (4269) | NAD_1927_To_NAD_1983_NADCON | 1241 | 1241 | 0.3 km* | Grid-based (NADCON); requires `us_noaa_conus.tif`. *See the PROJ pipeline-application constraint below — a `+proj=pipeline` string cannot be forced through PostGIS' text overload, so the seeded NADCON pipeline does not apply; the explicit-failure (null) contract holds, and the 2-argument default path already resolves PROJ's NADCON-equivalent shift. |
 
 Tolerances are conservative upper bounds for the *selection* test: they prove Honua
 applies the correct pipeline, not that PROJ and EPSG agree to sub-millimeter. Tighten
@@ -49,15 +52,39 @@ them when an ArcGIS golden set is added.
 ### Seeded vs deferred pairs
 
 Only pipelines verified against the PostGIS/PROJ runtime are seeded in the table.
-Additional Esri-default pairs that use multi-step Helmert pipelines (for example
-`NAD_1983_To_NAD_1983_2011_1` / EPSG 1311, `WGS_1984_(ITRF00)_To_NAD_1983_2011` /
-EPSG 8259, and HARN realizations) are a **documented follow-up**: each Helmert PROJ
-pipeline string must be generated from the EPSG operation via `projinfo` and validated
-against the runtime before seeding, so the catalog never ships a pipeline string that
-PostGIS rejects (which would surface as a null/error result rather than a silent wrong
-answer). Until seeded, those pairs fall through to PROJ's default pipeline (no regression
-versus prior behavior) and a client-requested WKID for them returns an explicit
-"unsupported" error.
+
+Seeded under #1501: the WGS84-realization pairs **NAD83(HARN) → WGS84** (EPSG 1580),
+**NAD83(NSRS2007) → WGS84** (EPSG 15931), and **NAD83(2011) → WGS84** (EPSG 9774). EPSG
+defines all three as **null transformations** (the datums are coincident at the meter
+level, which is exactly the ArcGIS default of applying no geographic transformation). They
+are expressed as the exact-identity `+proj=noop` and validated against the runtime in both
+directions (`DatumTransformationParityTests.TransformPoint_Wgs84RealizationNullPair_SeededPipelineApplies`).
+The all-zero geocentric-translation Helmert parameters were confirmed against the runtime
+`proj.db` `helmert_transformation` table (codes 1188/1580/9774/15931).
+
+#### PROJ pipeline-application constraint (deferred non-null pairs)
+
+The remaining Esri-default pairs that resolve to a **non-identity** operation — the
+rotation-bearing Helmert pairs (e.g. `WGS_1984_(ITRF00)_To_NAD_1983` / EPSG 108190 family,
+`NAD_1983_HARN_To_WGS_1984_2` / EPSG 1901) and the grid-based NADCON/NTv2 pairs — remain a
+**documented follow-up**, but **not** because the PROJ pipeline string is unknown. The
+blocker is a PostGIS limitation: `ST_Transform`'s text overload is
+`ST_Transform(geom, from_proj text, to_srid int)`, where the middle argument is the
+**source CRS**, not a coordinate-operation pipeline. PostGIS on the current runtime
+(PostGIS 18-3.6 / PROJ 9.6) exposes **no overload that injects a `+proj=pipeline` string**;
+a pipeline string passed there fails to parse as a CRS. Only proj strings that parse as a
+CRS apply — and `+proj=noop`, which behaves as exact identity, which is why the null pairs
+can be seeded today.
+
+Consequently the `DatumTransformSql` 3-argument chokepoint can force the **identity** Esri
+default but cannot yet force a specific **non-identity** operation. Until a PostGIS
+pipeline-application mechanism is available (e.g. a custom `spatial_ref_sys` operation
+registration, a `cs2cs`-style sidecar, or a PostGIS overload that accepts a coordinate
+operation), those pairs continue to use PROJ's **default** operation selection on the
+2-argument path. PROJ's default already follows EPSG accuracy ranking, which matches Esri's
+default selection for these CONUS pairs (no regression versus prior behavior), and a
+client-requested WKID for a non-seeded pair returns an explicit "unsupported" error rather
+than a silent substitute.
 
 ## PROJ grid-data requirement (follow-up)
 
@@ -66,10 +93,25 @@ the PostGIS image's default PROJ data path. The catalog records each pipeline's
 `requiredGrids`; when a required grid is absent the runtime must **fail explicitly**
 rather than degrade to a Helmert approximation.
 
-This PR does **not** modify the Docker image. Provisioning the PROJ grid data
-(e.g. `us_noaa_conus.tif` for NAD27↔NAD83 NADCON, and GEOID grids for vertical work) in
-the PostGIS image is a documented follow-up. Until then, grid-backed selections that hit
-a missing grid surface a PostGIS error mapped to the shared problem helper.
+Runtime observations on the test image (`postgis/postgis:18-3.6`, PROJ 9.6.0,
+`NETWORK_ENABLED=OFF`):
+
+- The seeded NADCON pipeline string is a `+proj=pipeline +step +proj=hgridshift ...`
+  expression, which — per the PROJ pipeline-application constraint above — **cannot be
+  forced through PostGIS' `ST_Transform` text overload**, so the explicit-grid path always
+  fails to apply on this runtime regardless of whether the grid is present. The
+  explicit-failure (null) contract therefore holds.
+- The **2-argument default** `ST_Transform(geom, 4267, 4269)` *does* resolve a NAD27→NAD83
+  datum shift on this image (PROJ selects its best-available NADCON-equivalent operation
+  from the data bundled with PROJ 9.6), so import/query reprojection of NAD27 data is not
+  silently identity.
+
+This PR does **not** modify the production Docker image. Provisioning explicit PROJ grid
+data (e.g. `us_noaa_conus.tif` for high-accuracy NADCON, NTv2 `.gsb` files, and GEOID
+grids for vertical work) into the image — and a pipeline-application mechanism to actually
+force them — is a documented follow-up. Until then, grid-backed *selections* that hit a
+missing grid surface a PostGIS error mapped to the shared problem helper, and the
+2-argument default path provides PROJ's best-available operation.
 
 ## Import / reprojection path
 
