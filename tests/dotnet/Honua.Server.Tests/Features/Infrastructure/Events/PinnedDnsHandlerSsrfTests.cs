@@ -22,9 +22,9 @@ namespace Honua.Server.Tests.Features.Infrastructure.Events;
 [Protocol(TestProtocols.TestQuality)]
 public sealed class PinnedDnsHandlerSsrfTests
 {
-    [UnitTest]
-    [Operation(Operations.TestInfrastructure)]
     [Theory]
+    [Trait("Category", "Unit")]
+    [Operation(Operations.TestInfrastructure)]
     [InlineData("http://169.254.169.254/latest/meta-data/")] // AWS/cloud metadata endpoint
     [InlineData("http://10.0.0.5/internal")] // RFC1918 private
     [InlineData("http://172.16.0.1/")] // RFC1918 private
@@ -46,7 +46,6 @@ public sealed class PinnedDnsHandlerSsrfTests
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
-    [Fact]
     public async Task PinnedDnsHandler_HostResolvingToCloudMetadataAddress_RejectsBeforeConnect()
     {
         // DNS-rebinding shape: a benign-looking host name resolves to the cloud
@@ -62,7 +61,6 @@ public sealed class PinnedDnsHandlerSsrfTests
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
-    [Fact]
     public async Task PinnedDnsHandler_HostResolvingToMixedPublicAndPrivateAddresses_RejectsBeforeConnect()
     {
         // A single private address in the answer set poisons the whole
@@ -82,7 +80,6 @@ public sealed class PinnedDnsHandlerSsrfTests
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
-    [Fact]
     public async Task PinnedDnsHandler_HostWithEmptyResolution_RejectsBeforeConnect()
     {
         using var client = CreateClient(WebhookDeliveryHelper.CreatePinnedDnsHttpMessageHandler(
@@ -96,7 +93,6 @@ public sealed class PinnedDnsHandlerSsrfTests
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
-    [Fact]
     public async Task ImportHttpClientHandler_LiteralCloudMetadataAddress_RejectsBeforeConnect()
     {
         // The import-from-URL surface delegates to the same pinned-DNS handler;
