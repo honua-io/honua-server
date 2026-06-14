@@ -67,6 +67,7 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
         GeoJsonFileSinkExecutor geoJsonFileSink,
         QuarantineSinkExecutor quarantineSink,
         ExternalPostgisSinkExecutor externalPostgisSink,
+        ImportDatasetJobExecutor importDataset,
         ILogger<GeoprocessingDispatchJobExecutor> logger)
     {
         ArgumentNullException.ThrowIfNull(buffer);
@@ -100,6 +101,7 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
         ArgumentNullException.ThrowIfNull(geoJsonFileSink);
         ArgumentNullException.ThrowIfNull(quarantineSink);
         ArgumentNullException.ThrowIfNull(externalPostgisSink);
+        ArgumentNullException.ThrowIfNull(importDataset);
         ArgumentNullException.ThrowIfNull(logger);
 
         _handlers = new Dictionary<string, IJobExecutor>(StringComparer.Ordinal)
@@ -135,6 +137,7 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
             [GeoJsonFileSinkExecutor.HandledProcessId] = geoJsonFileSink,
             [QuarantineSinkExecutor.HandledProcessId] = quarantineSink,
             [ExternalPostgisSinkExecutor.HandledProcessId] = externalPostgisSink,
+            [ImportDatasetJobExecutor.HandledProcessId] = importDataset,
         }.ToFrozenDictionary(StringComparer.Ordinal);
 
         _logger = logger;
