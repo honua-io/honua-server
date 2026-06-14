@@ -156,7 +156,11 @@ public sealed class ZarrSubsetReader : IZarrSubsetReader
             $"Zarr compressor '{compressor}' is not supported by the MVP reader. Use uncompressed or zlib chunks.");
     }
 
-    private static int ResolveElementSize(string dtype)
+    /// <summary>
+    /// Resolves the element size in bytes for a numpy-style dtype string
+    /// (e.g. <c>&lt;f4</c>). Rejects big-endian and non-numeric dtypes.
+    /// </summary>
+    internal static int ResolveElementSize(string dtype)
     {
         var span = dtype.AsSpan();
         if (span.IsEmpty)

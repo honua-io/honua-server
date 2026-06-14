@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Protocols.Ogc.Api.Coverages.Handlers;
+using Honua.Protocols.Ogc.Api.Coverages.Services;
 
 namespace Honua.Protocols.Ogc.Api.Coverages;
 
@@ -17,6 +18,7 @@ internal static class OgcCoveragesServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
 
+        services.AddScoped<ZarrCoverageService>();
         services.AddScoped<OgcCoveragesDependencies>();
         services.AddScoped<OgcCoveragesHandler>();
 

@@ -67,6 +67,7 @@ internal sealed class OgcCoveragesHandler
     private readonly IRasterStore _rasterStore;
     private readonly ICoordinateTransformService _coordinateTransformService;
     private readonly ICrsRegistry _crsRegistry;
+    private readonly Services.ZarrCoverageService _zarrCoverages;
     private readonly ILogger<OgcCoveragesHandler> _logger;
 
     public OgcCoveragesHandler(
@@ -79,6 +80,7 @@ internal sealed class OgcCoveragesHandler
         _rasterStore = dependencies.RasterStore;
         _coordinateTransformService = dependencies.CoordinateTransformService;
         _crsRegistry = dependencies.CrsRegistry;
+        _zarrCoverages = dependencies.ZarrCoverages;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -270,7 +272,10 @@ internal sealed class OgcCoveragesHandler
                     var raster = await GetPrimaryRasterWithExtentAsync(storageLayerId.Value, ct).ConfigureAwait(false);
                     if (raster is null)
                     {
-                        return null;
+                        var zarr = await _zarrCoverages.FindServableRegistrationAsync(storageLayerId.Value, ct).ConfigureAwait(false);
+                        return zarr is null
+                            ? null
+                            : Services.ZarrCoverageService.CreateCollection(entry.Resource, storageLayerId.Value, zarr, baseUrl);
                     }
                     return await CreateCollectionAsync(entry.Resource, entry.Service, storageLayerId.Value, raster.Value, baseUrl, ct)
                         .ConfigureAwait(false);
@@ -342,14 +347,26 @@ internal sealed class OgcCoveragesHandler
             }
 
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
-            var collection = await CreateCollectionAsync(
+            OgcCoverageCollection collection;
+            if (resolution.ZarrRegistration is { } zarrCollection)
+            {
+                collection = Services.ZarrCoverageService.CreateCollection(
                     resolution.Resource!,
-                    resolution.Service,
                     resolution.StorageLayerId!.Value,
-                    resolution.Raster!.Value,
-                    baseUrl,
-                    cancellationToken)
-                .ConfigureAwait(false);
+                    zarrCollection,
+                    baseUrl);
+            }
+            else
+            {
+                collection = await CreateCollectionAsync(
+                        resolution.Resource!,
+                        resolution.Service,
+                        resolution.StorageLayerId!.Value,
+                        resolution.Raster!.Value,
+                        baseUrl,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
 
             return OgcCommonUtilities.FormatMetadataResponse(
                 collection,
@@ -396,12 +413,17 @@ internal sealed class OgcCoveragesHandler
                 return resolution.Error;
             }
 
-            var schema = await CreateSchemaAsync(
+            var schema = resolution.ZarrRegistration is { } zarrSchema
+                ? Services.ZarrCoverageService.CreateSchema(
                     resolution.Resource!,
                     resolution.StorageLayerId!.Value,
-                    resolution.Raster!.Value,
-                    cancellationToken)
-                .ConfigureAwait(false);
+                    zarrSchema)
+                : await CreateSchemaAsync(
+                        resolution.Resource!,
+                        resolution.StorageLayerId!.Value,
+                        resolution.Raster!.Value,
+                        cancellationToken)
+                    .ConfigureAwait(false);
 
             return OgcCommonUtilities.FormatMetadataResponse(
                 schema,
@@ -441,17 +463,30 @@ internal sealed class OgcCoveragesHandler
 
         try
         {
+            var resolution = await ResolveCoverageAsync(context, collectionId, cancellationToken).ConfigureAwait(false);
+            if (resolution.Error is not null)
+            {
+                return resolution.Error;
+            }
+
+            if (resolution.ZarrRegistration is { } zarrRegistration)
+            {
+                var zarrResult = await _zarrCoverages.GetCoverageAsync(
+                        context,
+                        collectionId,
+                        zarrRegistration,
+                        f,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                telemetry.SetSuccess(1);
+                return zarrResult;
+            }
+
             var parameterError = ValidateCoverageQueryParameters(context);
             if (parameterError is not null)
             {
                 OgcCoveragesLog.ValidationFailed(_logger, collectionId, parameterError);
                 return StandardErrorHelpers.CreateBadRequest(context, parameterError);
-            }
-
-            var resolution = await ResolveCoverageAsync(context, collectionId, cancellationToken).ConfigureAwait(false);
-            if (resolution.Error is not null)
-            {
-                return resolution.Error;
             }
 
             var storageSrid = ResolveStorageSrid(resolution.Resource!, resolution.Raster!.Value);
@@ -551,7 +586,7 @@ internal sealed class OgcCoveragesHandler
             .ConfigureAwait(false);
         if (!validation.IsValid)
         {
-            return new CoverageResolution(null, null, null, null, validation.ErrorResult);
+            return new CoverageResolution(null, null, null, null, null, validation.ErrorResult);
         }
 
         var resource = validation.Resource!;
@@ -566,13 +601,21 @@ internal sealed class OgcCoveragesHandler
                 null,
                 null,
                 null,
+                null,
                 StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' does not expose a raster coverage."));
         }
 
         var raster = await GetPrimaryRasterWithExtentAsync(storageLayerId.Value, cancellationToken).ConfigureAwait(false);
         if (raster is null)
         {
+            var zarr = await _zarrCoverages.FindServableRegistrationAsync(storageLayerId.Value, cancellationToken).ConfigureAwait(false);
+            if (zarr is not null)
+            {
+                return new CoverageResolution(resource, service, storageLayerId.Value, null, zarr, null);
+            }
+
             return new CoverageResolution(
+                null,
                 null,
                 null,
                 null,
@@ -580,7 +623,7 @@ internal sealed class OgcCoveragesHandler
                 StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' does not expose a raster coverage."));
         }
 
-        return new CoverageResolution(resource, service, storageLayerId.Value, raster.Value, null);
+        return new CoverageResolution(resource, service, storageLayerId.Value, raster.Value, null, null);
     }
 
     private async Task<RasterInfo?> GetPrimaryRasterWithExtentAsync(int layerId, CancellationToken cancellationToken)
@@ -1770,5 +1813,6 @@ internal sealed class OgcCoveragesHandler
         MetadataV2Service? Service,
         int? StorageLayerId,
         RasterInfo? Raster,
+        ZarrRegistration? ZarrRegistration,
         IResult? Error);
 }
