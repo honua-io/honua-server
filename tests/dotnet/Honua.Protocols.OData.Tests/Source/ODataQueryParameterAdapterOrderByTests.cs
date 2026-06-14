@@ -5,8 +5,10 @@ using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Queries.Filters;
+using Honua.Protocols.OData;
 using Honua.Protocols.OData.Services;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Protocols.OData;
 
@@ -20,6 +22,7 @@ public sealed class ODataQueryParameterAdapterOrderByTests
 {
     private readonly ODataQueryParameterAdapter _adapter = new(
         new StubFilterExpressionService(),
+        Options.Create(new ODataOptions()),
         NullLogger<ODataQueryParameterAdapter>.Instance);
 
     private static MetadataV2Resource CreateResource()
