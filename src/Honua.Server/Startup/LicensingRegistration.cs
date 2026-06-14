@@ -8,6 +8,7 @@ using Honua.Infrastructure.Extensions;
 using Honua.Infrastructure.Licensing;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using StackExchange.Redis;
 
 namespace Honua.Server.Startup;
 
@@ -26,6 +27,8 @@ internal static class LicensingRegistration
     {
         services.Configure<LicenseOptions>(
             configuration.GetSection(LicenseOptions.SectionName));
+        services.Configure<LicenseCapacityOptions>(
+            configuration.GetSection(LicenseCapacityOptions.SectionName));
         services.AddSingleton<IEd25519Verifier, BouncyCastleEd25519Verifier>();
         services.AddSingleton<FileBackedLicenseService>();
         services.AddSingleton<ILicenseEntitlementService>(sp =>
@@ -36,6 +39,18 @@ internal static class LicensingRegistration
             sp.GetRequiredService<FileBackedLicenseService>());
         services.AddHostedService(sp =>
             sp.GetRequiredService<FileBackedLicenseService>());
+
+        services.AddSingleton<LicenseCapacityMeter>(sp =>
+            new LicenseCapacityMeter(
+                sp.GetRequiredService<ILicenseEntitlementService>(),
+                sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<LicenseCapacityOptions>>(),
+                sp.GetService<TimeProvider>() ?? TimeProvider.System,
+                sp.GetRequiredService<ILogger<LicenseCapacityMeter>>(),
+                sp.GetService<IConnectionMultiplexer>()));
+        services.AddSingleton<ILicenseCapacityMeter>(sp =>
+            sp.GetRequiredService<LicenseCapacityMeter>());
+        services.AddHostedService(sp =>
+            sp.GetRequiredService<LicenseCapacityMeter>());
 
         // Test/dev only: an explicit Licensing:DevGrantEdition grants every entitlement up to that
         // edition without a signed license, so an out-of-process test/CI server can exercise

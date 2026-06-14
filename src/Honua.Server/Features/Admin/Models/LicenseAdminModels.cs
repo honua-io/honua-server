@@ -70,3 +70,19 @@ public sealed class LicenseUploadResponse
     /// </summary>
     public required string Message { get; init; }
 }
+
+/// <summary>
+/// Request body for changing declared license surge mode.
+/// </summary>
+public sealed class LicenseSurgeModeRequest
+{
+    /// <summary>
+    /// Whether surge mode should be active.
+    /// </summary>
+    public required bool Enabled { get; init; }
+
+    /// <summary>
+    /// Optional operator-facing reason for the surge declaration.
+    /// </summary>
+    public string? Reason { get; init; }
+}

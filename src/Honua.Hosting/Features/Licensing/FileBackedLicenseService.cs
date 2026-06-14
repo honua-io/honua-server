@@ -105,7 +105,8 @@ internal sealed class FileBackedLicenseService :
             snapshot.ValidationState,
             snapshot.LicenseId,
             snapshot.IssuedAt,
-            snapshot.Entitlements);
+            snapshot.Entitlements,
+            snapshot.CapacityTerms);
     }
 
     public async Task<LicenseUploadResult> UploadLicenseAsync(
@@ -149,7 +150,8 @@ internal sealed class FileBackedLicenseService :
             snapshot.ValidationState,
             snapshot.LicenseId,
             snapshot.IssuedAt,
-            snapshot.Entitlements);
+            snapshot.Entitlements,
+            snapshot.CapacityTerms);
 
         var activeEntitlements = snapshot.Entitlements
             .Where(entitlement => entitlement.IsActive)
@@ -399,6 +401,37 @@ internal sealed class FileBackedLicenseService :
             return false;
         }
 
+        if (payload.Capacity is not null &&
+            !TryValidateCapacityTerms(payload.Capacity, out reason))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool TryValidateCapacityTerms(LicenseCapacityTerms capacity, out string reason)
+    {
+        reason = string.Empty;
+
+        if (capacity.MaxSustainedServingUnits <= 0m)
+        {
+            reason = "invalid-capacity-band";
+            return false;
+        }
+
+        if (capacity.AnnualSurgeDays is < 0)
+        {
+            reason = "invalid-surge-days";
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(capacity.SurgeAllowance))
+        {
+            reason = "invalid-surge-allowance";
+            return false;
+        }
+
         return true;
     }
 
@@ -482,6 +515,8 @@ internal sealed class FileBackedLicenseService :
             })
             .ToArray();
 
+        var capacityTerms = isValid ? payload?.Capacity : null;
+
         return new LicenseSnapshot(
             edition,
             isValid,
@@ -493,7 +528,8 @@ internal sealed class FileBackedLicenseService :
             entitlements,
             activeKeys,
             snapshotVersion,
-            keyId);
+            keyId,
+            capacityTerms);
     }
 
     private void PublishCommunity(
@@ -558,7 +594,8 @@ internal sealed class FileBackedLicenseService :
             LicensedTo = snapshot.LicensedTo,
             LicenseId = snapshot.LicenseId,
             IssuedAt = snapshot.IssuedAt,
-            Entitlements = snapshot.Entitlements
+            Entitlements = snapshot.Entitlements,
+            CapacityTerms = snapshot.CapacityTerms
         };
     }
 

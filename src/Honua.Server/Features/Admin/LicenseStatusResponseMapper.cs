@@ -8,7 +8,10 @@ namespace Honua.Server.Features.Admin;
 
 internal static class LicenseStatusResponseMapper
 {
-    internal static LicenseStatusResponse FromInfo(LicenseInfo info, int expiryWarningDays)
+    internal static LicenseStatusResponse FromInfo(
+        LicenseInfo info,
+        int expiryWarningDays,
+        LicenseCapacityState? capacity = null)
     {
         ArgumentNullException.ThrowIfNull(info);
 
@@ -26,10 +29,14 @@ internal static class LicenseStatusResponseMapper
             DaysUntilExpiry = daysUntilExpiry,
             ExpiryWarning = IsExpiryWarning(daysUntilExpiry, expiryWarningDays),
             Entitlements = info.Entitlements.Select(ToEntitlementResponse).ToList(),
+            Capacity = capacity,
         };
     }
 
-    internal static LicenseStatusResponse FromStatus(LicenseStatus status, int expiryWarningDays)
+    internal static LicenseStatusResponse FromStatus(
+        LicenseStatus status,
+        int expiryWarningDays,
+        LicenseCapacityState? capacity = null)
     {
         ArgumentNullException.ThrowIfNull(status);
 
@@ -47,6 +54,7 @@ internal static class LicenseStatusResponseMapper
             DaysUntilExpiry = daysUntilExpiry,
             ExpiryWarning = IsExpiryWarning(daysUntilExpiry, expiryWarningDays),
             Entitlements = (status.Entitlements ?? []).Select(ToEntitlementResponse).ToList(),
+            Capacity = capacity,
         };
     }
 
