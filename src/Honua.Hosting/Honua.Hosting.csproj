@@ -57,6 +57,13 @@
          cluster depends only on Honua.Core's Redis abstractions (no Jobs/Server
          dependency, so no Hosting->Jobs cycle). -->
     <PackageReference Include="StackExchange.Redis" />
+    <!-- Apache.Arrow + ParquetSharp back the shared GeoParquet feature writer
+         (GeoParquetFeatureWriter), lifted here so both the GeoServices
+         (f=parquet) and OData ($format=parquet) protocol adapters share a single
+         cloud-native export encoder instead of maintaining protocol-local
+         Parquet paths. -->
+    <PackageReference Include="Apache.Arrow" />
+    <PackageReference Include="ParquetSharp" />
   </ItemGroup>
 
   <ItemGroup>

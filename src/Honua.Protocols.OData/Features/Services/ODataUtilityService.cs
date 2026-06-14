@@ -33,6 +33,11 @@ internal static class ODataUtilityService
     private const string ODataMetadataNone = "none";
     private const string ODataContentType = $"{ODataMediaType};metadata={ODataMetadataMinimal}";
 
+    /// <summary>
+    /// GeoParquet content type emitted for <c>$format=parquet</c> exports.
+    /// </summary>
+    public const string ParquetContentType = "application/vnd.apache.parquet";
+
     private static readonly FrozenSet<string> _allowedFormats = new[]
         {
             "json",
@@ -44,7 +49,18 @@ internal static class ODataUtilityService
             "application/json;metadata=minimal",
             "application/json;metadata=none",
             "application/json;odata.metadata=minimal",
-            "application/json;odata.metadata=none"
+            "application/json;odata.metadata=none",
+            "parquet",
+            "geoparquet",
+            ParquetContentType
+        }
+        .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
+    private static readonly FrozenSet<string> _parquetFormats = new[]
+        {
+            "parquet",
+            "geoparquet",
+            ParquetContentType
         }
         .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
@@ -410,6 +426,12 @@ internal static class ODataUtilityService
     {
         return _allowedFormats;
     }
+
+    /// <summary>
+    /// Returns true when the requested <c>$format</c> selects GeoParquet output.
+    /// </summary>
+    public static bool IsParquetFormat(string? format)
+        => !string.IsNullOrWhiteSpace(format) && _parquetFormats.Contains(format.Trim());
 
     public static bool TryGetUnsupportedMetadataLevel(HttpRequest request, string? format, out string level)
     {
