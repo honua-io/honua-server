@@ -328,6 +328,36 @@ internal static class CatalogEndpoints
                     }
                   }
                 },
+                "/stac/queryables": {
+                  "get": {
+                    "summary": "STAC catalog queryables",
+                    "responses": {
+                      "200": {
+                        "description": "Queryables JSON Schema"
+                      }
+                    }
+                  }
+                },
+                "/stac/collections/{collectionId}/queryables": {
+                  "get": {
+                    "summary": "STAC collection queryables",
+                    "parameters": [
+                      {
+                        "name": "collectionId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                          "type": "string"
+                        }
+                      }
+                    ],
+                    "responses": {
+                      "200": {
+                        "description": "Queryables JSON Schema"
+                      }
+                    }
+                  }
+                },
                 "/stac/search": {
                   "get": {
                     "summary": "STAC item search",
