@@ -5,9 +5,15 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Helpers;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Spec;
 
@@ -826,7 +832,101 @@ public sealed class SpecEndpointsTests
         Assert.Equal(contentHash, doc.RootElement.GetProperty("contentHash").GetString());
     }
 
+    // ---- AI-operations guardrail ladder (#1631) -------------------------
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /v1/spec/apply")]
+    public async Task Apply_CommunityEdition_RunsDirectlyWithoutGuardrailGate()
+    {
+        // Community posture: agent-initiated apply runs with no enforced
+        // guardrails, so the request proceeds past the ladder. With a valid
+        // grammar/process-family it streams SSE rather than returning 402.
+        using var factory = WithEdition(HonuaEdition.Community);
+        using var client = factory.CreateClient();
+
+        var document = BuildDocument(ComputeNode("a"));
+        var events = await CollectSseEventsAsync(client, document);
+
+        Assert.Contains("ApplyStarted", events.Select(e => e.Kind));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /v1/spec/apply")]
+    public async Task Apply_ProEditionWithoutEntitlement_Returns402()
+    {
+        // Pro guardrail level requires the validation-layer entitlement. A
+        // snapshot carrying no entitlements (validation failure) leaves the gate
+        // closed, so apply is rejected with 402 before the stream opens.
+        using var factory = WithLicense(new TestLicenseEntitlementService(
+            HonuaEdition.Pro, LicenseValidationState.Valid, entitlements: []));
+        using var client = factory.CreateClient();
+
+        var response = await SendApplyAsync(client, BuildDocument(ComputeNode("a")));
+
+        Assert.Equal(HttpStatusCode.PaymentRequired, response.StatusCode);
+        Assert.NotEqual("text/event-stream", response.Content.Headers.ContentType?.MediaType);
+        response.Dispose();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /v1/spec/apply")]
+    public async Task Apply_ProEditionWithEntitlement_PassesGuardrailGate()
+    {
+        // Pro with the agent-operations entitlement satisfies the validation
+        // layer, so apply proceeds and streams SSE.
+        using var factory = WithEdition(HonuaEdition.Pro);
+        using var client = factory.CreateClient();
+
+        var document = BuildDocument(ComputeNode("a"));
+        var events = await CollectSseEventsAsync(client, document);
+
+        Assert.Contains("ApplyStarted", events.Select(e => e.Kind));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /v1/spec/apply")]
+    public async Task Apply_EnterpriseEdition_PassesValidationAndApprovalGates()
+    {
+        // Enterprise carries both the validation-layer and approval-workflow
+        // entitlements, so the full ladder is satisfied and apply proceeds.
+        using var factory = WithEdition(HonuaEdition.Enterprise);
+        using var client = factory.CreateClient();
+
+        var document = BuildDocument(ComputeNode("a"));
+        var events = await CollectSseEventsAsync(client, document);
+
+        Assert.Contains("ApplyStarted", events.Select(e => e.Kind));
+    }
+
     // ---- helpers --------------------------------------------------------
+
+    private static WebApplicationFactory<Program> WithEdition(HonuaEdition edition)
+        => WithLicense(new TestLicenseEntitlementService(edition));
+
+    private static WebApplicationFactory<Program> WithLicense(TestLicenseEntitlementService license)
+    {
+        var factory = new TestWebApplicationFactory();
+        return factory.WithWebHostBuilder(builder =>
+            builder.ConfigureTestServices(services =>
+            {
+                services.AddSingleton<ILicenseEntitlementService>(license);
+                services.AddSingleton<ILicenseStatusProvider>(license);
+            }));
+    }
+
+    private static async Task<HttpResponseMessage> SendApplyAsync(HttpClient client, object document)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/spec/apply")
+        {
+            Content = JsonContent(document)
+        };
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+        return await client.SendAsync(request);
+    }
 
     private static StringContent JsonContent(object document) =>
         new(JsonSerializer.Serialize(document), Encoding.UTF8, "application/json");

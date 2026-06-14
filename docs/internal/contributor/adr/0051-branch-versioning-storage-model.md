@@ -247,10 +247,15 @@ only**; the durable `sync_generation` sequence as the "moment."
 - **Single global generation sequence serializes posts.** Accepted for v1; per-layer
   generation streams are a future option if concurrent multi-version post throughput
   becomes a bottleneck.
-- **Esri `startReading`/`stopReading`/`startEditing`/`stopEditing`** are stateless
+- **Esri `startReading`/`stopReading`/`startEditing`/`stopEditing`** remain stateless
   acknowledgements (the overlay/moment model carries the version per-request via
-  `gdbVersion`, so there is no server-held session); session-token semantics can be
-  added if a target client requires them.
+  `gdbVersion`, so there is no server-held session token / edit lock to mint). They are
+  no longer no-ops, though (#1511): each resolves the named version (unknown → 404),
+  returns the version's durable `BranchGeneration` as the read/edit `moment` — a stable
+  cursor an Esri client can echo to pin a consistent snapshot, rather than a throwaway
+  wall-clock value — and `startEditing` refuses with a 409 in-progress when the version
+  is mid-reconcile/post (locked). A full server-held session-token/edit-lock handshake is
+  still only warranted if a target client requires it; no such client is in scope.
 
 ## Cross-references
 

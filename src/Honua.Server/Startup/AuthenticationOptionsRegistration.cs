@@ -85,6 +85,12 @@ internal static class AuthenticationOptionsRegistration
         // Operator authorization and approval
         services.AddSingleton<IOperatorAuthorizationEvaluator, OperatorAuthorizationEvaluator>();
         services.AddSingleton<IOperatorApprovalEvaluator, DefaultOperatorApprovalEvaluator>();
+
+        // AI-operations guardrail ladder by edition (#1631): the shared,
+        // protocol-neutral policy that maps edition -> guardrail level
+        // (Community direct, Pro validation layer, Enterprise approval + policy).
+        services.AddSingleton<IAgentGuardrailPolicy,
+            Honua.Core.Features.Authorization.EditionAgentGuardrailPolicy>();
         services.Configure<OperatorApprovalOptions>(
             configuration.GetSection(OperatorApprovalOptions.SectionName));
         services.AddScoped<OperatorApprovalGate>();

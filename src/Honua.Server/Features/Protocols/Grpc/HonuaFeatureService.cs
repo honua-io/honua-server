@@ -658,6 +658,19 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
     {
         var httpContext = context.GetHttpContext();
 
+        // Layer-scoped write keys (#1637) are enforced here in the shared pipeline:
+        // a scoped key authorizes the gRPC edit only when one of its grants matches
+        // the target (service, layer). Scoped keys never fall through to the coarse
+        // role / AccessPolicy checks used for ordinary principals.
+        if (LayerScopedWriteKey.IsScopedWritePrincipal(httpContext.User))
+        {
+            ThrowIfAccessDenied(ServiceDataEditorAuthorization.EvaluateScopedWriteKeyDecision(
+                httpContext,
+                service.Metadata.Name,
+                resource.Metadata.Name));
+            return;
+        }
+
         // Per-operation RBAC grants are consulted first (#1376); when a grant
         // matches the request is authorized directly. Otherwise we fall through
         // to the coarse AccessPolicy + scoped data-editor behavior unchanged.

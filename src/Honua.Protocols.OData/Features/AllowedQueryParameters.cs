@@ -57,6 +57,7 @@ internal static class AllowedQueryParameters
         "$search",
         "$deltatoken",
         "$format",
+        "bbox",
         "honua_track_changes",
         "honua_track_changes_snapshot");
 

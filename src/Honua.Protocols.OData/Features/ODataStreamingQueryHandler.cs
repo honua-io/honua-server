@@ -61,6 +61,7 @@ internal sealed partial class ODataStreamingQueryHandler(
         [FromQuery(Name = "$apply")] string? apply = null,
         [FromQuery(Name = "$deltatoken")] string? deltatoken = null,
         [FromQuery(Name = "$format")] string? format = null,
+        [FromQuery(Name = "bbox")] string? bbox = null,
         CancellationToken cancellationToken = default)
     {
         Activity? featureActivity = null;
@@ -154,6 +155,32 @@ internal sealed partial class ODataStreamingQueryHandler(
             if (formatValidation != null)
             {
                 return formatValidation;
+            }
+
+            Honua.Core.Features.Shared.Models.BoundingBox? bboxFilter = null;
+            if (!string.IsNullOrWhiteSpace(bbox))
+            {
+                var bboxValidation = _validationService.ValidateBbox(bbox, targetSrid: 4326);
+                if (!bboxValidation.IsValid)
+                {
+                    return ODataUtilityService.CreateODataError(
+                        context,
+                        "InvalidQueryOption",
+                        bboxValidation.ErrorMessage ?? "Invalid bbox parameter.");
+                }
+
+                // Validation returns the lightweight Validation.BoundingBox; adapt it to the
+                // canonical Shared.Models.BoundingBox that the shared query pipeline expects,
+                // carrying the validated target SRID (4326).
+                if (bboxValidation.Value is { } validatedBbox)
+                {
+                    bboxFilter = Honua.Core.Features.Shared.Models.BoundingBox.Create(
+                        validatedBbox.MinX,
+                        validatedBbox.MinY,
+                        validatedBbox.MaxX,
+                        validatedBbox.MaxY,
+                        spatialReferenceId: 4326);
+                }
             }
 
             var pagingError = ODataRequestValidation.TryGetPagingValues(
@@ -395,6 +422,7 @@ internal sealed partial class ODataStreamingQueryHandler(
                 countValue,
                 compute,
                 format,
+                bboxFilter,
                 effectiveToken);
 
             if (queryError != null)
@@ -407,7 +435,13 @@ internal sealed partial class ODataStreamingQueryHandler(
             // a request for a large page still streams the clamped page and emits an
             // @odata.nextLink, rather than falling back to the buffered handler.
             var requestedTop = topValue ?? pagination.Limit;
-            bool useStreaming = requestedTop > StreamingThreshold && string.IsNullOrWhiteSpace(expand);
+            // GeoParquet export must materialize the full page into a record batch, so it
+            // routes through the buffered (non-streaming) handler rather than the
+            // feature-by-feature JSON streamer.
+            var parquetRequested = ODataUtilityService.IsParquetFormat(format);
+            bool useStreaming = !parquetRequested
+                && requestedTop > StreamingThreshold
+                && string.IsNullOrWhiteSpace(expand);
 
             if (!useStreaming)
             {
@@ -435,6 +469,7 @@ internal sealed partial class ODataStreamingQueryHandler(
                     trackChangesRequested,
                     deltatoken,
                     deltaDefinition,
+                    bboxFilter,
                     cancellationToken);
             }
 

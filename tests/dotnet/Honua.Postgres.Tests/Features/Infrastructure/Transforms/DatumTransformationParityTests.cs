@@ -20,7 +20,7 @@ namespace Honua.Postgres.Tests.Features.Infrastructure.Transforms;
 /// <remarks>
 /// The oracle is currently the EPSG/PROJ reference pipeline executed by PostGIS itself.
 /// The tests are structured so an ArcGIS-generated golden coordinate set can be dropped
-/// in later (see docs/gis/datum-transformation-parity.md) without restructuring.
+/// in later (see docs/internal/evidence/datum-transformation-parity.md) without restructuring.
 /// </remarks>
 [Collection("Database")]
 public sealed class DatumTransformationParityTests : IAsyncLifetime
@@ -52,7 +52,7 @@ public sealed class DatumTransformationParityTests : IAsyncLifetime
         var result = await _service!.TransformPointAsync(-104.9903, 39.7392, 4269, 4326, selection);
 
         result.Should().NotBeNull();
-        // Tolerance per docs/gis/datum-transformation-parity.md (NAD83->WGS84_1: 0.01 m ~ 1e-7 deg).
+        // Tolerance per docs/internal/evidence/datum-transformation-parity.md (NAD83->WGS84_1: null transform, exact identity).
         result!.Value.X.Should().BeApproximately(-104.9903, 1e-5);
         result.Value.Y.Should().BeApproximately(39.7392, 1e-5);
     }
@@ -77,6 +77,30 @@ public sealed class DatumTransformationParityTests : IAsyncLifetime
         // Both should be sub-meter; ~1e-5 deg ~ 1.1 m upper bound.
         selected!.Value.X.Should().BeApproximately(oracle!.Value.X, 1e-5);
         selected.Value.Y.Should().BeApproximately(oracle.Value.Y, 1e-5);
+    }
+
+    [Theory]
+    [InlineData(4152)] // NAD83(HARN)     -> WGS84, EPSG 1580 (null)
+    [InlineData(4759)] // NAD83(NSRS2007) -> WGS84, EPSG 15931 (null)
+    [InlineData(6318)] // NAD83(2011)     -> WGS84, EPSG 9774 (null)
+    public async Task TransformPoint_Wgs84RealizationNullPair_SeededPipelineApplies(int fromSrid)
+    {
+        // The deferred Helmert/WGS84-realization pairs seeded under #1501 are EPSG null
+        // transformations (+proj=noop). This proves the seeded pipeline actually applies
+        // through PostGIS' 3-argument ST_Transform on the runtime (not hand-authored) and
+        // produces the exact-identity result the null transform mandates.
+        _catalog.TryGetDefault(fromSrid, 4326, out var selection).Should().BeTrue();
+        selection!.ProjPipeline.Should().Be("+proj=noop");
+
+        const double lon = -96.0;
+        const double lat = 41.0;
+
+        var result = await _service!.TransformPointAsync(lon, lat, fromSrid, 4326, selection);
+
+        result.Should().NotBeNull();
+        // Null transform = exact identity; allow only floating-point noise.
+        result!.Value.X.Should().BeApproximately(lon, 1e-9);
+        result.Value.Y.Should().BeApproximately(lat, 1e-9);
     }
 
     [IntegrationTest]

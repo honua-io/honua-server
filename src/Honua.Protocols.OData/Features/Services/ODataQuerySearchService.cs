@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Shared.Models;
 using Honua.Protocols.OData.Models;
 
 namespace Honua.Protocols.OData.Services;
@@ -42,6 +43,7 @@ internal sealed class ODataQuerySearchService
         bool? count = null,
         string? compute = null,
         string? format = null,
+        BoundingBox? bbox = null,
         CancellationToken cancellationToken = default)
     {
         return await _queryService.BuildFeatureQueryAsync(
@@ -55,6 +57,7 @@ internal sealed class ODataQuerySearchService
             count,
             compute,
             format,
+            bbox,
             cancellationToken).ConfigureAwait(false);
     }
 

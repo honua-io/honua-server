@@ -66,7 +66,12 @@ building their own. Priority order:
 1. SDK conformance (`sdk-dotnet`, `sdk-python`) — add a server-image input; this
    also closes the local-fallback gap (honua-sdk-python#50).
 2. `client-interop-nightly` — accept a prebuilt image instead of rebuilding.
-3. CITE suites — add an image input to `cite-conformance-common.yml`.
+3. CITE suites — **done for OGC API Features**: `cite-conformance-common.yml` takes
+   a `honua-image` input that pulls + retags the RC image as `honua-server:latest`,
+   and `cite-conformance.yml` exposes a `honua_image` dispatch input wired into the
+   registry (`server-cite-conformance`, `mode: dispatch`). The sibling `cite-*`
+   dispatchers (WFS/WMS/WMTS/WCS/GML/KML/GeoPackage/Tiles) still build their own
+   image; flip each one by adding the same passthrough input.
 4. admin/helm/terraform lanes — emit RC-pinned evidence from those repos.
 
 ## Tooling tests

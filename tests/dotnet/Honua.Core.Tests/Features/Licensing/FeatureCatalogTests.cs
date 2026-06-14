@@ -175,8 +175,33 @@ public sealed class FeatureCatalogTests
             "temporal.extent-discovery",
             "identity.portal-token",
             "identity.portal-sharing",
-            "import.file"
+            "import.file",
+            "ai.mcp-discovery"
         ]);
+    }
+
+    [Fact]
+    public void All_AiGuardrailLadderHasExpectedEditions()
+    {
+        // Ticket #1631 / #1592: the AI-operations guardrail ladder is the edition
+        // axis. MCP discovery/query stays Community (agent reads never gated), the
+        // agent-operations validation layer is Pro, and approval workflows are
+        // Enterprise.
+        var discovery = FeatureCatalog.All.SingleOrDefault(f => f.Key == FeatureCatalog.McpDiscoveryKey);
+        var operations = FeatureCatalog.All.SingleOrDefault(f => f.Key == FeatureCatalog.AiOperationsKey);
+        var approval = FeatureCatalog.All.SingleOrDefault(f => f.Key == FeatureCatalog.AiApprovalWorkflowsKey);
+
+        discovery.Should().NotBeNull("MCP discovery/query stays Community for ticket #1631");
+        discovery!.Category.Should().Be(FeatureCatalog.Categories.Ai);
+        discovery.MinimumEdition.Should().Be(HonuaEdition.Community);
+
+        operations.Should().NotBeNull("agent-operations validation layer is Pro for ticket #1631");
+        operations!.Category.Should().Be(FeatureCatalog.Categories.Ai);
+        operations.MinimumEdition.Should().Be(HonuaEdition.Pro);
+
+        approval.Should().NotBeNull("agent approval workflows are Enterprise for ticket #1631");
+        approval!.Category.Should().Be(FeatureCatalog.Categories.Ai);
+        approval.MinimumEdition.Should().Be(HonuaEdition.Enterprise);
     }
 
     [Theory]

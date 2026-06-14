@@ -8,6 +8,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Query;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
+using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Validation;
 
 namespace Honua.Protocols.OData.Services;
@@ -51,6 +52,7 @@ internal sealed partial class ODataQueryService
         bool? count = null,
         string? compute = null,
         string? format = null,
+        BoundingBox? bbox = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(resource);
@@ -83,7 +85,24 @@ internal sealed partial class ODataQueryService
         }
 
         var optimized = _queryProcessor.OptimizeQuery(conversion.Query.Value, resource);
-        return (_queryProcessor.ToFeatureQuery(optimized, resource), null);
+        var featureQuery = _queryProcessor.ToFeatureQuery(optimized, resource);
+
+        // bbox shorthand: attach an envelope spatial filter through the shared spatial-filter
+        // helper so the canonical query pipeline applies viewport windowing instead of the
+        // OData adapter requiring a verbose geo.intersects(...) WKT polygon for the common case.
+        // This is a display/windowing path (envelope-only semantics) per the bbox spatial rule.
+        if (bbox is { } box)
+        {
+            var spatialFilter = SpatialFilterHelpers.CreateBboxSpatialFilter(
+                box.MinX,
+                box.MinY,
+                box.MaxX,
+                box.MaxY,
+                box.SpatialReferenceId ?? resource.ReadSrid() ?? 4326);
+            featureQuery = featureQuery with { SpatialFilter = spatialFilter };
+        }
+
+        return (featureQuery, null);
     }
 
     /// <summary>
