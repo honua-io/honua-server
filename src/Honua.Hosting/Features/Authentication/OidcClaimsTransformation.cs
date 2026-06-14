@@ -29,9 +29,11 @@ internal sealed class OidcClaimsTransformation(
             return Task.FromResult(principal);
         }
 
-        // Skip transformation for API key authenticated users
+        // Skip transformation for API key authenticated users (including
+        // layer-scoped write keys, #1637, which must not be granted a default
+        // role that would widen their tightly scoped write authority).
         var authType = identity.FindFirst("auth_type")?.Value;
-        if (authType is "admin" or "dev-bypass")
+        if (authType is "admin" or "dev-bypass" or LayerScopedWriteKey.AuthType)
         {
             return Task.FromResult(principal);
         }
