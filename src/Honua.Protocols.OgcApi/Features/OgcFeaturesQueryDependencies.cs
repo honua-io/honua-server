@@ -10,6 +10,7 @@ using Honua.Core.Features.Query;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Infrastructure.Caching;
 using Honua.Protocols.Ogc.Api.Features.Services;
+using Honua.Protocols.Ogc.Common;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Protocols.Ogc.Api.Features;

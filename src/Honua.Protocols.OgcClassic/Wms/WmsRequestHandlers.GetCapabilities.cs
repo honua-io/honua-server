@@ -9,7 +9,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Rendering;
 using Honua.Infrastructure.Services;
-using Honua.Protocols.Ogc.Api.Features;
+using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Ogc.Classic;
 using Microsoft.Extensions.DependencyInjection;
 using static Honua.Infrastructure.Rendering.RasterMapRenderingPipeline;

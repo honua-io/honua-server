@@ -10,8 +10,7 @@ using Honua.Core.Features.Query;
 using Honua.Core.Queries.Filters;
 using Honua.Infrastructure.Events;
 using Honua.Infrastructure.Validation;
-using Honua.Protocols.Ogc.Api.Features;
-using Honua.Protocols.Ogc.Api.Features.Services;
+using Honua.Protocols.Ogc.Common;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Protocols.Ogc.Classic.Wfs20.Services;

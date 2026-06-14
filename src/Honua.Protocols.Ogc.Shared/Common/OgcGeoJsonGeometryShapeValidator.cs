@@ -3,7 +3,7 @@
 
 using System.Text.Json;
 
-namespace Honua.Protocols.Ogc.Api.Features.Services;
+namespace Honua.Protocols.Ogc.Common;
 
 internal static class OgcGeoJsonGeometryShapeValidator
 {

@@ -10,6 +10,7 @@ using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Infrastructure.Validation;
+using Honua.Protocols.Ogc.Common;
 
 namespace Honua.Protocols.Ogc.Api.Features.Services;
 
