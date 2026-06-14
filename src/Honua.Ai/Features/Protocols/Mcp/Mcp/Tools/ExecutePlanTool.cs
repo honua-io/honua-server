@@ -69,10 +69,24 @@ internal sealed class ExecutePlanTool : IMcpTool
             .EnsureCallerAuthorizedAsync(principal, OperatorResourceType.Process, OperatorOperation.Execute, cancellationToken)
             .ConfigureAwait(false);
 
+        // Pro spec-apply gate (#1592): MCP execute is an agentic execution tool
+        // that submits server-side work, so it routes through the same
+        // ai.spec-apply entitlement as POST /v1/spec/apply. Discovery/query MCP
+        // tools stay ungated (Community).
+        var entitlement = LicenseGate.CheckEntitlement(
+            httpContext.RequestServices,
+            FeatureCatalog.AiSpecApplyKey);
+        if (!entitlement.IsActive)
+        {
+            throw new GeoprocessingPreconditionFailedException(entitlement.UpgradeMessage);
+        }
+
         // AI-operations guardrail ladder (#1631): agent-initiated execution is a
-        // mutating operation, so it crosses the shared edition-driven policy.
+        // mutating operation, so it also crosses the shared edition-driven policy.
         // Community runs directly; Pro requires the validation-layer entitlement;
         // Enterprise additionally requires the approval-workflows entitlement.
+        // This composes with (rather than replaces) the spec-apply gate above,
+        // mirroring SpecEndpoints.HandleApplyAsync.
         EnforceGuardrails(httpContext);
 
         var argument = McpToolHelpers.ParseArguments(arguments, McpJsonContext.Default.McpExecutePlanArgument);

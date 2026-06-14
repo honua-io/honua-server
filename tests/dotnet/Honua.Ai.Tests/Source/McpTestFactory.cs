@@ -3,9 +3,13 @@
 
 using System.Security.Claims;
 using System.Text.Json;
+using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Ai.Protocols.Mcp.Models;
+using Honua.TestKit.Helpers;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
@@ -15,13 +19,20 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 /// </summary>
 internal static class McpTestFactory
 {
-    public static DefaultHttpContext AuthenticatedHttpContext(string user = "test-user") => new()
+    public static DefaultHttpContext AuthenticatedHttpContext(
+        string user = "test-user",
+        HonuaEdition edition = HonuaEdition.Pro) => new()
     {
+        RequestServices = CreateRequestServices(edition),
         User = new ClaimsPrincipal(new ClaimsIdentity(
             [new Claim(ClaimTypes.Name, user)], "Test"))
     };
 
-    public static DefaultHttpContext AnonymousHttpContext() => new();
+    public static DefaultHttpContext AnonymousHttpContext(
+        HonuaEdition edition = HonuaEdition.Pro) => new()
+    {
+        RequestServices = CreateRequestServices(edition)
+    };
 
     public static McpPlanInput CreateValidPlanInput() => new()
     {
@@ -50,5 +61,14 @@ internal static class McpTestFactory
     {
         using var document = JsonDocument.Parse(json);
         return document.RootElement.Clone();
+    }
+
+    private static ServiceProvider CreateRequestServices(HonuaEdition edition)
+    {
+        var license = new TestLicenseEntitlementService(edition);
+        return new ServiceCollection()
+            .AddSingleton<ILicenseEntitlementService>(license)
+            .AddSingleton<ILicenseStatusProvider>(license)
+            .BuildServiceProvider();
     }
 }

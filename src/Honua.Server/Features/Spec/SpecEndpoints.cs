@@ -224,6 +224,7 @@ internal static class SpecEndpoints
 
     private static async Task<IResult> HandleApplyAsync(
         HttpContext context,
+        ISpecPlanner planner,
         ISpecApplyEngine engine,
         IAgentGuardrailPolicy guardrailPolicy,
         CancellationToken cancellationToken)
@@ -277,6 +278,24 @@ internal static class SpecEndpoints
             return BuildProblem(StatusCodes.Status400BadRequest,
                 SpecDiagnosticCodes.UnknownCacheMode,
                 "Request 'cacheMode' must be one of: ReadWrite, ReadOnly, Bypass.");
+        }
+
+        var plan = await planner.PlanAsync(document, cancellationToken).ConfigureAwait(false);
+        var fatalPlanDiagnostics = plan.Warnings
+            .Where(static warning => warning.Severity == SpecDiagnosticSeverity.Error)
+            .ToList();
+        if (fatalPlanDiagnostics.Count > 0)
+        {
+            return ProblemFromInvalid(new SpecDocumentInvalidException(fatalPlanDiagnostics));
+        }
+
+        var entitlementGate = LicenseGate.RequireEntitlement(
+            context,
+            FeatureCatalog.AiSpecApplyKey,
+            "Spec apply");
+        if (entitlementGate is not null)
+        {
+            return entitlementGate;
         }
 
         var options = new SpecApplyOptions

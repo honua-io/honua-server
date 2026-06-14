@@ -7,6 +7,7 @@ using FluentAssertions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.Protocols.Mcp.Models;
@@ -201,6 +202,38 @@ public sealed class McpToolDelegationTests
             Arg.Any<ClaimsPrincipal>(),
             Arg.Any<IReadOnlyDictionary<string, string>>(),
             Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /mcp tools/call honua_execute_plan")]
+    public async Task ExecutePlan_WithCommunityLicense_ThrowsPreconditionBeforeSubmitting()
+    {
+        var tool = new ExecutePlanTool(_jobService, NullLogger<ExecutePlanTool>.Instance);
+        var arguments = McpTestFactory.ToArguments(
+            new McpExecutePlanArgument
+            {
+                Plan = McpTestFactory.CreateValidPlanInput(),
+                IdempotencyKey = "idem-key-1"
+            },
+            McpJsonContext.Default.McpExecutePlanArgument);
+        var context = McpTestFactory.AuthenticatedHttpContext(edition: HonuaEdition.Community);
+
+        var act = async () => await tool.InvokeAsync(context, arguments, CancellationToken.None);
+
+        var ex = await act.Should().ThrowAsync<GeoprocessingPreconditionFailedException>();
+        ex.Which.Message.Should().Contain(FeatureCatalog.AiSpecApplyKey);
+        await _jobService.Received(1).EnsureCallerAuthorizedAsync(
+            Arg.Any<ClaimsPrincipal>(),
+            OperatorResourceType.Process,
+            OperatorOperation.Execute,
+            Arg.Any<CancellationToken>());
+        await _jobService.DidNotReceiveWithAnyArgs().SubmitJobAsync(
+            default!,
+            default,
+            default!,
+            default!,
+            default);
     }
 
     [UnitTest]
