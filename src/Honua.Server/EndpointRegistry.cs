@@ -92,6 +92,7 @@ public static class EndpointRegistry
         new("GET", "/api/v1/admin/connections/{id}/layers"),
         new("POST", "/api/v1/admin/connections/{id}/layers"),
         new("POST", "/api/v1/admin/connections/{id}/layers/extents/refresh"),
+        new("POST", "/api/v1/admin/connections/{id}/layers/{layerId}/features/refresh"),
         new("PUT", "/api/v1/admin/connections/{id}/layers/{layerId}/enabled"),
         new("PUT", "/api/v1/admin/connections/{id}/layers/enabled"),
         new("GET", "/api/v1/admin/version"),

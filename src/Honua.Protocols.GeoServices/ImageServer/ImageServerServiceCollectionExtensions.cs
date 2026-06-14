@@ -4,6 +4,7 @@
 using Honua.Protocols.GeoServices.ImageServer.Handlers;
 using Honua.Protocols.GeoServices.ImageServer.Services;
 using Honua.Infrastructure.Services;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Protocols.GeoServices.ImageServer;
@@ -16,9 +17,22 @@ internal static class ImageServerServiceCollectionExtensions
     /// <summary>
     /// Registers Image Server services with dependency injection.
     /// </summary>
-    public static IServiceCollection AddImageServer(this IServiceCollection services)
+    /// <param name="services">The service collection to register into.</param>
+    /// <param name="configuration">
+    /// Application configuration used to bind <see cref="ImageServerTileMetadataOptions"/>
+    /// (the opt-in tiled-consumption metadata flag, #1648).
+    /// </param>
+    public static IServiceCollection AddImageServer(this IServiceCollection services, IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        // Opt-in WebMercatorQuad tileInfo advertising. Defaults OFF to keep the
+        // dynamic (#1456-safe) ImageServer contract the ArcGIS Maps SDK for .NET
+        // native runtime requires; deployments serving tiled Esri clients enable it
+        // via GeoServices:ImageServer:TileMetadata:Enabled (#1648).
+        services.Configure<ImageServerTileMetadataOptions>(
+            configuration.GetSection(ImageServerTileMetadataOptions.SectionName));
 
         // Register handlers
         services.AddScoped<ImageServerMetadataHandler>();

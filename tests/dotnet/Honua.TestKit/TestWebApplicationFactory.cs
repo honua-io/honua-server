@@ -347,6 +347,23 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
         {
             return Task.FromResult<LayerExtentRefreshResult?>(null);
         }
+
+        public Task<MaterializedFeatureRefreshResult?> RefreshMaterializedFeaturesAsync(
+            string connectionString,
+            int layerId,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult<MaterializedFeatureRefreshResult?>(null);
+        }
+
+        public Task<IReadOnlyList<MaterializedFeatureRefreshResult>> RefreshMaterializedFeaturesForSourceTableAsync(
+            string connectionString,
+            string? schema,
+            string table,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult<IReadOnlyList<MaterializedFeatureRefreshResult>>([]);
+        }
     }
 
     private sealed class NullDatabaseMigrationRunner : IDatabaseMigrationRunner

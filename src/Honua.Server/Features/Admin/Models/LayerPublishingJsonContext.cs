@@ -18,6 +18,8 @@ namespace Honua.Server.Features.Admin.Models;
 [JsonSerializable(typeof(ApiResponse<PublishedLayerSummary>))]
 [JsonSerializable(typeof(ApiResponse<TablePublishValidationResult>))]
 [JsonSerializable(typeof(ApiResponse<LayerExtentRefreshResult>))]
+[JsonSerializable(typeof(ApiResponse<MaterializedFeatureRefreshResult>))]
+[JsonSerializable(typeof(MaterializedFeatureRefreshResult))]
 [JsonSerializable(typeof(ApiResponse<object>))]
 [JsonSerializable(typeof(PublishLayerRequest))]
 [JsonSerializable(typeof(ValidateTablePublishRequest))]

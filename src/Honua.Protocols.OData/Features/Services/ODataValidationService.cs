@@ -4,6 +4,7 @@
 using Honua.Core.Configuration;
 using Honua.Core.Features.Validation;
 using Honua.Core.Features.Validation.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Protocols.OData.Services;
 
@@ -14,15 +15,20 @@ namespace Honua.Protocols.OData.Services;
 internal sealed class ODataValidationService
 {
     private readonly ICommonQueryValidator _commonQueryValidator;
+    private readonly int _maxPageSize;
     private static readonly PaginationValidationOptions _odataPagination =
         new(MinOffset: 0, MinLimit: 1, OffsetParameterName: "$skip", LimitParameterName: "$top");
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ODataValidationService"/> class.
     /// </summary>
-    public ODataValidationService(ICommonQueryValidator commonQueryValidator)
+    public ODataValidationService(
+        ICommonQueryValidator commonQueryValidator,
+        IOptions<ODataOptions> odataOptions)
     {
         _commonQueryValidator = commonQueryValidator;
+        ArgumentNullException.ThrowIfNull(odataOptions);
+        _maxPageSize = odataOptions.Value.MaxPageSize;
     }
 
     /// <summary>
@@ -74,11 +80,38 @@ internal sealed class ODataValidationService
     }
 
     /// <summary>
+    /// The server-driven paging cap applied to OData <c>$top</c>. The effective
+    /// page size never exceeds this value; larger requests page via
+    /// <c>@odata.nextLink</c>.
+    /// </summary>
+    public int MaxPageSize => _maxPageSize;
+
+    /// <summary>
+    /// Clamps a requested page size to the configured server-driven paging cap.
+    /// A non-positive limit yields the cap so callers always materialize a
+    /// bounded page.
+    /// </summary>
+    public int ClampPageSize(int limit) => limit <= 0 ? _maxPageSize : Math.Min(limit, _maxPageSize);
+
+    /// <summary>
     /// Validates and normalizes pagination parameters, returning effective values with defaults.
+    /// The effective limit is clamped to <see cref="MaxPageSize"/> so a single OData request
+    /// never materializes an unbounded page; the streaming handler emits an <c>@odata.nextLink</c>
+    /// carrying the clamped <c>$top</c> so clients page through the remaining rows.
     /// </summary>
     public ValidationResult<PaginationValues> ValidateAndNormalizePagination(int? offset, int? limit)
     {
-        return _commonQueryValidator.ValidateAndNormalizePagination(offset, limit, _odataPagination);
+        var result = _commonQueryValidator.ValidateAndNormalizePagination(offset, limit, _odataPagination);
+        if (!result.IsValid || result.Value is null)
+        {
+            return result;
+        }
+
+        var normalized = result.Value;
+        var clampedLimit = ClampPageSize(normalized.Limit);
+        return clampedLimit == normalized.Limit
+            ? result
+            : ValidationResult<PaginationValues>.Success(normalized with { Limit = clampedLimit });
     }
 
     /// <summary>
