@@ -24,7 +24,7 @@ internal static class TenantScopeHelpers
     /// <param name="context">The request context.</param>
     /// <returns>The resolved tenant id, or null.</returns>
     internal static string? ResolveRequestTenantId(HttpContext context)
-        => context.RequestServices.GetService<ITenantContext>()?.TenantId;
+        => context.RequestServices?.GetService<ITenantContext>()?.TenantId;
 
     /// <summary>
     /// Whether the (resource, service) pair is visible to the current request's tenant.
