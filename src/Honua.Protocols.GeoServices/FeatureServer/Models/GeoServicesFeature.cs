@@ -23,6 +23,12 @@ public sealed class GeoServicesFeature
     public GeoServicesGeometry? Geometry { get; init; }
 
     /// <summary>
+    /// Polygon centroid returned when <c>returnCentroid=true</c>.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public GeoServicesGeometry? Centroid { get; init; }
+
+    /// <summary>
     /// Controls whether the geometry property is emitted when null.
     /// </summary>
     [JsonIgnore]

@@ -96,6 +96,14 @@ public sealed class QueryResponse : ICollectionResponse<GeoServicesFeature>
     /// </summary>
     public bool ExceededTransferLimit { get; init; }
 
+    /// <summary>
+    /// Coordinate quantization transform (origin/scale/translate) emitted when the
+    /// request supplied <c>quantizationParameters</c>; geometry coordinates are then
+    /// integer grid deltas recoverable through this transform.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public GeoServicesTransform? Transform { get; init; }
+
     ImmutableArray<GeoServicesFeature> ICollectionResponse<GeoServicesFeature>.Items =>
         Features?.ToImmutableArray() ?? ImmutableArray<GeoServicesFeature>.Empty;
     ImmutableArray<ILink>? ICollectionResponse<GeoServicesFeature>.Links => null; // FeatureServer doesn't use links

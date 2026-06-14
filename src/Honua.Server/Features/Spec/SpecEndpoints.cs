@@ -2,8 +2,12 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Spec.Abstractions;
 using Honua.Core.Features.Spec.Domain;
+using Honua.Infrastructure.Licensing;
 using Honua.Server.Features.Spec.Models;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Http;
@@ -233,6 +237,7 @@ internal static class SpecEndpoints
     private static async Task<IResult> HandleApplyAsync(
         HttpContext context,
         ISpecApplyEngine engine,
+        IAgentGuardrailPolicy guardrailPolicy,
         CancellationToken cancellationToken)
     {
         var accept = context.Request.Headers.Accept.ToString();
@@ -241,6 +246,18 @@ internal static class SpecEndpoints
             return BuildProblem(StatusCodes.Status400BadRequest,
                 "accept-required",
                 "POST /v1/spec/apply requires Accept: text/event-stream.");
+        }
+
+        // AI-operations guardrail ladder (#1631): spec apply is the canonical
+        // agent-initiated change surface, so it crosses the shared edition-driven
+        // policy. Community applies directly; Pro requires the validation-layer
+        // entitlement; Enterprise additionally requires approval workflows. The
+        // gate is enforced before the SSE stream opens so denials surface as a
+        // clean 402 rather than an in-stream event.
+        var guardrail = EnforceApplyGuardrails(context, guardrailPolicy);
+        if (guardrail is not null)
+        {
+            return guardrail;
         }
 
         var request = await TryReadRequestAsync(context, cancellationToken).ConfigureAwait(false);
@@ -433,6 +450,47 @@ internal static class SpecEndpoints
         var contentType = reference.ContentType ?? "application/octet-stream";
         context.Response.Headers["X-Spec-Content-Hash"] = reference.ContentHash;
         return Results.Stream(stream, contentType);
+    }
+
+    private static IResult? EnforceApplyGuardrails(HttpContext context, IAgentGuardrailPolicy guardrailPolicy)
+    {
+        var descriptor = new AgentOperationDescriptor
+        {
+            OperationId = "spec.apply",
+            Protocol = "spec",
+            IsMutating = true,
+            IsDestructive = false,
+            SupportsSnapshot = false,
+        };
+
+        var decision = guardrailPolicy.Evaluate(descriptor);
+        if (!decision.HasGuardrails)
+        {
+            // Community/Direct posture: apply runs with no enforced guardrails.
+            return null;
+        }
+
+        // Pro validation layer: the agent-operations entitlement gates apply.
+        var validationGate = LicenseGate.RequireEntitlement(
+            context, FeatureCatalog.AiOperationsKey, "agent operations validation layer");
+        if (validationGate is not null)
+        {
+            return validationGate;
+        }
+
+        // Enterprise approval + policy layer: the approval-workflows entitlement
+        // must be provisioned before approval-gated agent apply proceeds.
+        if (decision.RequiresApproval)
+        {
+            var approvalGate = LicenseGate.RequireEntitlement(
+                context, FeatureCatalog.AiApprovalWorkflowsKey, "agent approval workflows");
+            if (approvalGate is not null)
+            {
+                return approvalGate;
+            }
+        }
+
+        return null;
     }
 
     private static async Task<SpecDocumentRequest?> TryReadRequestAsync(HttpContext context, CancellationToken cancellationToken)

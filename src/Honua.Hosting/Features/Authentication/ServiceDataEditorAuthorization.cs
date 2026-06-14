@@ -36,6 +36,15 @@ internal static class ServiceDataEditorAuthorization
     {
         ArgumentNullException.ThrowIfNull(service);
 
+        // Layer-scoped write keys (#1637) are enforced here in the shared pipeline:
+        // a scoped key authorizes a write only when one of its grants matches the
+        // target service; otherwise the write is forbidden. Scoped keys never fall
+        // through to the admin/data-editor role checks below.
+        if (LayerScopedWriteKey.IsScopedWritePrincipal(context.User))
+        {
+            return EvaluateScopedWriteKey(context, service.Metadata.Name, layerName: null);
+        }
+
         // An explicit AccessPolicy write restriction stays authoritative (it is a
         // deliberate per-resource grant/deny and must not be widened by a wildcard
         // RBAC grant). When no explicit write policy applies, a per-operation RBAC
@@ -63,6 +72,15 @@ internal static class ServiceDataEditorAuthorization
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(resource);
+
+        // Layer-scoped write keys (#1637) are enforced here in the shared pipeline.
+        // The key must carry a grant for the target (service, layer); a service-wide
+        // grant authorizes any layer of that service, a layer-specific grant only
+        // the named layer. Out-of-scope targets are forbidden.
+        if (LayerScopedWriteKey.IsScopedWritePrincipal(context.User))
+        {
+            return EvaluateScopedWriteKey(context, service?.Metadata.Name, resource.Metadata.Name);
+        }
 
         // An explicit AccessPolicy write restriction stays authoritative (a
         // deliberate per-resource grant/deny must not be widened by a wildcard
@@ -107,6 +125,26 @@ internal static class ServiceDataEditorAuthorization
         return CreateDecisionResult(context, decision);
     }
 
+    /// <summary>
+    /// Evaluates a layer-scoped write key (#1637) for non-HTTP adapters (such as
+    /// gRPC) that consume an <see cref="AccessDecision"/> rather than an
+    /// <see cref="IResult"/>. Returns an allowed decision only when a grant covers
+    /// the target <c>(service, layer)</c>; otherwise forbidden.
+    /// </summary>
+    internal static AccessDecision EvaluateScopedWriteKeyDecision(
+        HttpContext context,
+        string? serviceName,
+        string? layerName)
+    {
+        if (!string.IsNullOrWhiteSpace(serviceName) &&
+            LayerScopedWriteKey.AllowsWrite(context.User, serviceName, layerName))
+        {
+            return AccessDecision.Allowed();
+        }
+
+        return AccessDecision.Forbidden("The supplied write key is not scoped to this resource.");
+    }
+
     internal static Task<AccessDecision> EvaluateServiceAccessAsync(
         HttpContext context,
         string serviceId,
@@ -140,6 +178,30 @@ internal static class ServiceDataEditorAuthorization
         }
 
         return Task.FromResult(AccessDecision.Forbidden("User does not have the required data editor role."));
+    }
+
+    /// <summary>
+    /// Authorizes a layer-scoped write key (#1637) against the target
+    /// <c>(service, layer)</c>. Returns <see langword="null"/> when a grant
+    /// authorizes the write; otherwise returns a 403 (the principal is already
+    /// authenticated, so a denial is never a 401). Scoped keys are write-only and
+    /// confer no admin or read authority, so they are never widened by the coarse
+    /// role checks used for ordinary principals.
+    /// </summary>
+    private static IResult? EvaluateScopedWriteKey(
+        HttpContext context,
+        string? serviceName,
+        string? layerName)
+    {
+        if (!string.IsNullOrWhiteSpace(serviceName) &&
+            LayerScopedWriteKey.AllowsWrite(context.User, serviceName, layerName))
+        {
+            return null;
+        }
+
+        return CreateDecisionResult(
+            context,
+            AccessDecision.Forbidden("The supplied write key is not scoped to this resource."));
     }
 
     private static IResult? CreateDecisionResult(HttpContext context, AccessDecision decision)

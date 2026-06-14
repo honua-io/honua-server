@@ -208,6 +208,66 @@ public interface IRasterStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Computes per-band statistics over the portion of a raster clipped to an
+    /// area-of-interest geometry (WKB). Always computed fresh (the cached
+    /// whole-raster statistics are not used). Used by ImageServer
+    /// <c>computeStatisticsHistograms</c> when an AOI <c>geometry</c> is supplied.
+    /// </summary>
+    /// <param name="layerId">Layer identifier containing the raster.</param>
+    /// <param name="rasterId">Raster identifier to analyse.</param>
+    /// <param name="clipGeometry">Clip geometry in Well-Known Binary form.</param>
+    /// <param name="clipSrid">SRID of <paramref name="clipGeometry"/>; <c>null</c> assumes the raster SRID.</param>
+    /// <param name="bands">Optional 1-based band selection; <c>null</c> requests every band.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<RasterStatistics[]> GetClippedStatisticsAsync(
+        int layerId,
+        long rasterId,
+        byte[] clipGeometry,
+        int? clipSrid,
+        int[]? bands = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Computes per-band histograms over the portion of a raster clipped to an
+    /// area-of-interest geometry (WKB). Always computed fresh.
+    /// </summary>
+    Task<RasterHistogram[]> GetClippedHistogramsAsync(
+        int layerId,
+        long rasterId,
+        byte[] clipGeometry,
+        int? clipSrid,
+        int[]? bands = null,
+        int binCount = 256,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Computes per-band statistics over a composited layer mosaic clipped to an
+    /// area-of-interest geometry (WKB).
+    /// </summary>
+    Task<RasterStatistics[]> GetClippedMosaicStatisticsAsync(
+        int layerId,
+        long[] rasterIds,
+        RasterMergeStrategy mergeStrategy,
+        byte[] clipGeometry,
+        int? clipSrid,
+        int[]? bands = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Computes per-band histograms over a composited layer mosaic clipped to an
+    /// area-of-interest geometry (WKB).
+    /// </summary>
+    Task<RasterHistogram[]> GetClippedMosaicHistogramsAsync(
+        int layerId,
+        long[] rasterIds,
+        RasterMergeStrategy mergeStrategy,
+        byte[] clipGeometry,
+        int? clipSrid,
+        int[]? bands = null,
+        int binCount = 256,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Computes zonal aggregates by intersecting a raster with the geometries
     /// of a zones feature layer, producing one row per eligible zone.
     /// </summary>

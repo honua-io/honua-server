@@ -332,12 +332,27 @@ internal sealed class ApiKeyAuthenticationHandler(
         string? apiKeyName = null,
         IReadOnlyList<string>? permissions = null)
     {
-        var claims = new List<Claim>
-        {
-            new Claim(ClaimTypes.Name, "admin"),
-            new Claim(ClaimTypes.Role, "admin"),
-            new Claim("auth_type", authenticationType)
-        };
+        // A key whose grants describe a layer-scoped write credential (#1637) is
+        // authenticated as a NON-admin principal: it never receives the admin role
+        // and so cannot satisfy the admin authorization policy guarding admin
+        // endpoints. Its write authority is enforced by the shared
+        // ServiceDataEditorAuthorization pipeline against the scope claims below.
+        var isScopedWriteKey = LayerScopedWriteKey.IsScopedWriteKey(permissions);
+
+        var claims = isScopedWriteKey
+            ? new List<Claim>
+            {
+                new Claim(ClaimTypes.Name, apiKeyName ?? "layer-write-key"),
+                new Claim(ClaimTypes.Role, LayerScopedWriteKey.Role),
+                new Claim("auth_type", LayerScopedWriteKey.AuthType),
+                new Claim(LayerScopedWriteKey.ScopeClaimType, LayerScopedWriteKey.AuthType),
+            }
+            : new List<Claim>
+            {
+                new Claim(ClaimTypes.Name, "admin"),
+                new Claim(ClaimTypes.Role, "admin"),
+                new Claim("auth_type", authenticationType),
+            };
 
         if (apiKeyId.HasValue)
         {

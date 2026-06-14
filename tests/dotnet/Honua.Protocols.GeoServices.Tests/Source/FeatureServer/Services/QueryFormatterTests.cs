@@ -56,6 +56,49 @@ public sealed class QueryFormatterTests
     }
 
     [Fact]
+    public async Task FormatQueryResultAsync_WithJsonReturnCentroid_OnPolygonLayer_EmitsCentroidWithoutGeometry()
+    {
+        var limitsOptions = Options.Create(new LimitsOptions());
+        var formatter = new QueryFormatter(
+            limitsOptions,
+            new PbfQueryFormatter(limitsOptions),
+            NullLogger<QueryFormatter>.Instance);
+
+        var result = QueryResult<Feature>.Create(
+            1,
+            [
+                Feature.Create(
+                    1,
+                    CreatePolygonGeometry(),
+                    ImmutableDictionary<string, object?>.Empty.Add("name", "parcel"))
+            ]);
+
+        var (response, contentType) = await formatter.FormatQueryResultAsync(
+            result,
+            CreatePolygonLayer(),
+            format: "json",
+            returnGeometry: false,
+            outputSrid: null,
+            returnZ: true,
+            returnM: true,
+            geometryPrecision: null,
+            maxAllowableOffset: null,
+            returnCentroid: true);
+
+        contentType.Should().Be("application/json");
+        var queryResponse = response.Should().BeOfType<QueryResponse>().Subject;
+        var feature = queryResponse.Features.Should().ContainSingle().Subject;
+        feature.Geometry.Should().BeNull();
+        feature.Centroid.Should().NotBeNull();
+        feature.Centroid!.X.Should().BeApproximately(0.5, 0.0001);
+        feature.Centroid.Y.Should().BeApproximately(0.5, 0.0001);
+
+        var json = JsonSerializer.Serialize(feature, FeatureServerJsonContext.Default.GeoServicesFeature);
+        json.Should().Contain("\"centroid\"");
+        json.Should().NotContain("\"geometry\"");
+    }
+
+    [Fact]
     public async Task FormatQueryResultAsync_WithGeoJson_UsesSharedIdAndPropertyProjection()
     {
         var limitsOptions = Options.Create(new LimitsOptions());
@@ -531,7 +574,20 @@ public sealed class QueryFormatterTests
             new MetadataV2Field { Name = FieldNames.ObjectId, Type = MetadataV2FieldType.Integer, Nullable = false },
             new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Length = 128 });
 
+    private static MetadataV2Resource CreatePolygonLayer()
+        => CreateResource(
+            "polygon-test-layer",
+            MetadataV2GeometryType.Polygon,
+            new MetadataV2Field { Name = FieldNames.ObjectId, Type = MetadataV2FieldType.Integer, Nullable = false },
+            new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Length = 128 });
+
     private static MetadataV2Resource CreatePointResource(string name, params MetadataV2Field[] fields)
+        => CreateResource(name, MetadataV2GeometryType.Point, fields);
+
+    private static MetadataV2Resource CreateResource(
+        string name,
+        MetadataV2GeometryType geometryType,
+        params MetadataV2Field[] fields)
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata
@@ -553,7 +609,7 @@ public sealed class QueryFormatterTests
             Spatial = new MetadataV2ResourceSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.Wgs84,
-                GeometryType = MetadataV2GeometryType.Point,
+                GeometryType = geometryType,
                 PrimaryGeometryField = "shape"
             }
         };
@@ -563,6 +619,20 @@ public sealed class QueryFormatterTests
         var writer = new WKBWriter();
         var point = new Point(x, y) { SRID = srid };
         return writer.Write(point);
+    }
+
+    private static byte[] CreatePolygonGeometry()
+    {
+        var writer = new WKBWriter();
+        var ring = new LinearRing(
+            [
+                new Coordinate(0, 0),
+                new Coordinate(1, 0),
+                new Coordinate(1, 1),
+                new Coordinate(0, 1),
+                new Coordinate(0, 0)
+            ]);
+        return writer.Write(new Polygon(ring) { SRID = 4326 });
     }
 
     private static byte[] CreateMeasuredPointGeometry(double x, double y, double z, double m)

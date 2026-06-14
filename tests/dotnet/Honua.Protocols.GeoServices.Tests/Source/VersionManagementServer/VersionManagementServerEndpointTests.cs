@@ -164,7 +164,25 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
         var response = await PostFormAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{guid}/startReading",
             ("f", "json"));
-        await AssertSuccessMomentAsync(response);
+
+        // The read session returns the version's durable branch generation as a stable moment (a
+        // cursor a client echoes to pin a snapshot), not a throwaway wall-clock value.
+        await AssertSuccessMomentAsync(response, expectGenerationMoment: true);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.VersionManagement)]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/startReading")]
+    [InterfaceOperation(TestProtocols.VersionManagementServer, "startReading")]
+    public async Task StartReading_UnknownVersion_ReturnsNotFound()
+    {
+        // The session acknowledgement now resolves the named version, so an unknown GUID is a 404
+        // rather than a false success.
+        var response = await PostFormAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{Guid.NewGuid()}/startReading",
+            ("f", "json"));
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound,
+            "an unknown version should not open a session; body: {0}", await response.Content.ReadAsStringAsync());
     }
 
     [IntegrationTest]
@@ -194,7 +212,22 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
         var response = await PostFormAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{guid}/startEditing",
             ("f", "json"));
-        await AssertSuccessMomentAsync(response);
+
+        // An active version opens an edit session and reports its branch generation as the moment.
+        await AssertSuccessMomentAsync(response, expectGenerationMoment: true);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.VersionManagement)]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/startEditing")]
+    [InterfaceOperation(TestProtocols.VersionManagementServer, "startEditing")]
+    public async Task StartEditing_UnknownVersion_ReturnsNotFound()
+    {
+        var response = await PostFormAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{Guid.NewGuid()}/startEditing",
+            ("f", "json"));
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound,
+            "an unknown version should not open an edit session; body: {0}", await response.Content.ReadAsStringAsync());
     }
 
     [IntegrationTest]
@@ -394,12 +427,20 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
         return doc.RootElement.GetProperty("versionInfo").Clone();
     }
 
-    private async Task AssertSuccessMomentAsync(HttpResponseMessage response)
+    private async Task AssertSuccessMomentAsync(HttpResponseMessage response, bool expectGenerationMoment = false)
     {
         response.StatusCode.Should().Be(HttpStatusCode.OK,
             "operation should succeed; body: {0}", await response.Content.ReadAsStringAsync());
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         doc.RootElement.GetProperty("success").GetBoolean().Should().BeTrue();
+
+        if (expectGenerationMoment)
+        {
+            // Session moments are bound to the version's durable branch generation (a non-negative
+            // cursor), not a wall-clock timestamp.
+            doc.RootElement.TryGetProperty("moment", out var moment).Should().BeTrue();
+            moment.GetInt64().Should().BeGreaterThanOrEqualTo(0);
+        }
     }
 
     private async Task<JsonElement> PollJobStatusAsync(string statusUrl)

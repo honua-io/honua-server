@@ -3,7 +3,9 @@
 
 using Honua.Protocols.GeoServices.ImageServer.Handlers;
 using Honua.Protocols.GeoServices.ImageServer.Services;
+using Honua.Infrastructure.Services;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Protocols.GeoServices.ImageServer;
 
@@ -46,8 +48,15 @@ internal static class ImageServerServiceCollectionExtensions
         services.AddScoped<ImageServerLegendHandler>();
         services.AddScoped<ImageServerAnalyzeHandler>();
         services.AddScoped<ImageServerRasterMetadataHandler>();
+        services.AddScoped<ImageServerCoordinateMetadataHandler>();
+        services.AddScoped<ImageServerProjectHandler>();
+        services.AddScoped<ImageServerExportTilesHandler>();
+        services.AddScoped<ImageServerFindHandler>();
+        services.AddScoped<ImageServerMeasureHandler>();
+        services.AddScoped<ImageServerWmtsHandler>();
 
         // Register supporting services
+        services.TryAddScoped<SpatialReferenceResolver>();
         services.AddScoped<IImageServerLayerResolver, MetadataV2ImageServerLayerResolver>();
         services.AddScoped<IImageServerCatalogReader, ImageServerCatalogReader>();
         services.AddSingleton<IImageServerCatalogFilterEvaluator, ImageServerCatalogFilterEvaluator>();

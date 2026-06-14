@@ -895,6 +895,84 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.ODataApply)]
+    [InterfaceOperation(TestProtocols.ODataV4, "Apply")]
+    [Endpoint("GET /odata/Features({layerId})/$apply")]
+    public async Task Apply_WithComputeFloor_ReturnsFlooredField()
+    {
+        // floor() is the OData v4 canonical numeric function that makes histogram binning
+        // first-class instead of requiring the x sub (x mod w) workaround (#1620).
+        var response = await _fixture.Client.GetAsync(
+            $"/odata/Features({TestLayerId})/$apply?$apply=compute(floor(area_sq_km) as FlooredArea)");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(responseContent);
+
+        var values = document.RootElement.GetProperty("value");
+        values.GetArrayLength().Should().BeGreaterThan(0);
+
+        var firstValue = values[0];
+        firstValue.TryGetProperty("area_sq_km", out var area).Should().BeTrue();
+        firstValue.TryGetProperty("FlooredArea", out var flooredArea).Should().BeTrue();
+
+        flooredArea.GetDouble().Should().Be(Math.Floor(area.GetDouble()));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ODataApply)]
+    [InterfaceOperation(TestProtocols.ODataV4, "Apply")]
+    [Endpoint("GET /odata/Features({layerId})/$apply")]
+    public async Task Apply_WithComputeFloorBinning_ReturnsHistogramBins()
+    {
+        // floor(population div 1000000) buckets each city into a population band. This is the
+        // real Analyst Workbench histogram query that previously required arithmetic workarounds.
+        var response = await _fixture.Client.GetAsync(
+            $"/odata/Features({TestLayerId})/$apply?$apply=compute(floor(population div 1000000) as PopBin)");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(responseContent);
+
+        var values = document.RootElement.GetProperty("value").EnumerateArray().ToList();
+        values.Should().NotBeEmpty();
+
+        foreach (var value in values)
+        {
+            value.TryGetProperty("population", out var population).Should().BeTrue();
+            value.TryGetProperty("PopBin", out var popBin).Should().BeTrue();
+            popBin.GetDouble().Should().Be(Math.Floor(population.GetInt64() / 1000000d));
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ODataApply)]
+    [InterfaceOperation(TestProtocols.ODataV4, "Apply")]
+    [Endpoint("GET /odata/Features({layerId})/$apply")]
+    public async Task Apply_WithComputeModulo_ReturnsRemainder()
+    {
+        // mod is now part of the documented compute grammar (the binning building block).
+        var response = await _fixture.Client.GetAsync(
+            $"/odata/Features({TestLayerId})/$apply?$apply=compute(population mod 1000000 as PopRemainder)");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(responseContent);
+
+        var values = document.RootElement.GetProperty("value").EnumerateArray().ToList();
+        values.Should().NotBeEmpty();
+
+        var first = values[0];
+        first.TryGetProperty("population", out var population).Should().BeTrue();
+        first.TryGetProperty("PopRemainder", out var remainder).Should().BeTrue();
+        remainder.GetDouble().Should().Be(population.GetInt64() % 1000000);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ODataApply)]
+    [InterfaceOperation(TestProtocols.ODataV4, "Apply")]
     [Endpoint("GET /odata/Features({layerId})/$apply")]
     public async Task Apply_WithFilter_ReturnsFilteredFeatures()
     {

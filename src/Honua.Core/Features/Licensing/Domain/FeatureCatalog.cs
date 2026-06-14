@@ -75,7 +75,36 @@ public static class FeatureCatalog
 
         /// <summary>Server extensibility features — plugin/extension SDK.</summary>
         public const string Extensibility = "Extensibility";
+
+        /// <summary>Agentic AI operations — MCP, spec plan/apply, grounding, workflow generation, guardrails.</summary>
+        public const string Ai = "AI";
     }
+
+    /// <summary>
+    /// Entitlement key for agent-initiated operations under the Pro validation
+    /// layer (#1631, #1592): spec apply execution, NL grounding mutate surfaces,
+    /// AI workflow generation, and MCP execute/mutate tools. Pro and above run
+    /// agent changes through the validation layer (plan + dry-run + validate with
+    /// a pre-change snapshot/backup gate) before apply. MCP discovery/query and
+    /// agent reads remain Community and carry no gate.
+    /// </summary>
+    public const string AiOperationsKey = "ai.agent-operations";
+
+    /// <summary>
+    /// Entitlement key for human-in-the-loop approval workflows over
+    /// agent-initiated operations (#1631). Enterprise-only: layers approval,
+    /// policy-scoped agent permissions, and immutable audit on top of the Pro
+    /// validation layer.
+    /// </summary>
+    public const string AiApprovalWorkflowsKey = "ai.approval-workflows";
+
+    /// <summary>
+    /// Entitlement key for MCP discovery and query — the read/search/analyze
+    /// agent surface. Community-tier and always active: preserves the adoption
+    /// thesis that the work goes to agents on the free tier (#1592). Present in
+    /// the catalog so the capability manifest can advertise it explicitly.
+    /// </summary>
+    public const string McpDiscoveryKey = "ai.mcp-discovery";
 
     /// <summary>
     /// Entitlement key for Esri-style branch versioning (named gdb versions, version read/edit
@@ -282,5 +311,17 @@ public static class FeatureCatalog
         // Extensibility — Enterprise (plugin/extension SDK)
         new(PluginSdkKey, "Plugin/Extension SDK", Categories.Extensibility,
             HonuaEdition.Enterprise, "Register compile-time, AOT-safe server plugins (custom feature validators and pre/post-edit hooks) discovered and gated at startup."),
+
+        // AI — Community (MCP discovery/query stays free to keep agent reads ungated)
+        new(McpDiscoveryKey, "MCP Discovery & Query", Categories.Ai,
+            HonuaEdition.Community, "Discover, search, and query Honua through MCP and the agent read surface without a license."),
+
+        // AI — Pro (validation layer for agent-initiated change)
+        new(AiOperationsKey, "Agent Operations (Validation Layer)", Categories.Ai,
+            HonuaEdition.Pro, "Agent-initiated changes run through a validation layer — planned, dry-run, validated, with a pre-change snapshot/backup gate before apply (spec apply, NL grounding mutations, workflow generation, and MCP execute tools)."),
+
+        // AI — Enterprise (approval + policy on top of the validation layer)
+        new(AiApprovalWorkflowsKey, "Agent Approval Workflows", Categories.Ai,
+            HonuaEdition.Enterprise, "Human-in-the-loop approval, policy-scoped agent permissions, and immutable audit for agent-initiated operations."),
     ];
 }

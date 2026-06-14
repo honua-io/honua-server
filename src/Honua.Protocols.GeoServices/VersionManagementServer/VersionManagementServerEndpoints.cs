@@ -38,10 +38,13 @@ namespace Honua.Protocols.GeoServices.VersionManagementServer;
 /// In Honua's overlay/moment storage model a version read/edit carries its
 /// <see cref="VersionContext"/> per-request (resolved from <c>gdbVersion</c> on the FeatureServer
 /// surface), so there is no server-held read/edit session. The <c>startReading</c>/<c>stopReading</c>
-/// and <c>startEditing</c>/<c>stopEditing</c> operations are therefore stateless acknowledgements
-/// that validate the named version exists and return a moment; this divergence from Esri's
-/// session-token model is intentional and documented here. Reconcile/post delegate straight to the
-/// version manager, which owns the Redis-backed version lock and job runtime.
+/// and <c>startEditing</c>/<c>stopEditing</c> operations are therefore stateless acknowledgements;
+/// this divergence from Esri's session-token model is intentional and documented here. They are not,
+/// however, no-ops: each resolves the named version, returns the version's durable branch generation
+/// as the read/edit <c>moment</c> (a stable cursor an Esri client can echo to pin a consistent
+/// snapshot), and <c>startEditing</c> refuses with a 409 in-progress when the version is
+/// mid-reconcile/post (locked). Reconcile/post delegate straight to the version manager, which owns
+/// the Redis-backed version lock and job runtime.
 /// </para>
 /// </remarks>
 public static class VersionManagementServerEndpoints
@@ -347,7 +350,7 @@ public static class VersionManagementServerEndpoints
         HttpContext context,
         [FromServices] IVersionManager versionManager,
         CancellationToken cancellationToken)
-        => AcknowledgeSessionAsync(serviceId, versionGuid, context, versionManager, cancellationToken);
+        => AcknowledgeSessionAsync(serviceId, versionGuid, context, versionManager, requireWritable: false, cancellationToken);
 
     private static Task<IResult> HandleStopReading(
         string serviceId,
@@ -355,7 +358,7 @@ public static class VersionManagementServerEndpoints
         HttpContext context,
         [FromServices] IVersionManager versionManager,
         CancellationToken cancellationToken)
-        => AcknowledgeSessionAsync(serviceId, versionGuid, context, versionManager, cancellationToken);
+        => AcknowledgeSessionAsync(serviceId, versionGuid, context, versionManager, requireWritable: false, cancellationToken);
 
     private static Task<IResult> HandleStartEditing(
         string serviceId,
@@ -363,7 +366,7 @@ public static class VersionManagementServerEndpoints
         HttpContext context,
         [FromServices] IVersionManager versionManager,
         CancellationToken cancellationToken)
-        => AcknowledgeSessionAsync(serviceId, versionGuid, context, versionManager, cancellationToken);
+        => AcknowledgeSessionAsync(serviceId, versionGuid, context, versionManager, requireWritable: true, cancellationToken);
 
     private static Task<IResult> HandleStopEditing(
         string serviceId,
@@ -371,7 +374,7 @@ public static class VersionManagementServerEndpoints
         HttpContext context,
         [FromServices] IVersionManager versionManager,
         CancellationToken cancellationToken)
-        => AcknowledgeSessionAsync(serviceId, versionGuid, context, versionManager, cancellationToken);
+        => AcknowledgeSessionAsync(serviceId, versionGuid, context, versionManager, requireWritable: false, cancellationToken);
 
     private static async Task<IResult> HandleReconcile(
         string serviceId,
@@ -612,28 +615,64 @@ public static class VersionManagementServerEndpoints
 
     // ---- Shared adapter plumbing ---------------------------------------------------------------
 
+    /// <summary>
+    /// Handles the <c>startReading</c>/<c>stopReading</c>/<c>startEditing</c>/<c>stopEditing</c>
+    /// session acknowledgements. Honua threads the version per-request via <c>gdbVersion</c>
+    /// (overlay/moment model), so there is no server-held read/edit session to open or close. The
+    /// acknowledgement is nonetheless made meaningful: it resolves the named version, returns its
+    /// durable branch generation as the read/edit moment (a stable cursor an Esri client can echo on
+    /// subsequent reads), and — when the version is mid-reconcile/post (locked) — refuses an
+    /// edit-session open with a 409 in-progress instead of returning a false success. A
+    /// <paramref name="requireWritable"/> session against a transitional version is rejected; a
+    /// read/stop session reports the current moment regardless of state.
+    /// </summary>
     private static async Task<IResult> AcknowledgeSessionAsync(
         string serviceId,
         string versionGuid,
         HttpContext context,
         IVersionManager versionManager,
+        bool requireWritable,
         CancellationToken cancellationToken)
     {
-        var (gate, _, _) = await AuthorizeReadAndResolveVersionAsync(
+        var (gate, _, versionId) = await AuthorizeReadAndResolveVersionAsync(
             serviceId, versionGuid, context, versionManager, cancellationToken).ConfigureAwait(false);
         if (gate is not null)
         {
             return gate;
         }
 
-        // Honua threads the version per-request via gdbVersion (overlay/moment model); there is no
-        // server-held read/edit session to open or close, so this is a stateless acknowledgement.
-        return Moment(true);
+        var versions = await versionManager.ListAsync(cancellationToken).ConfigureAwait(false);
+        var version = versions.FirstOrDefault(v => v.VersionId == versionId);
+        if (version.VersionId != versionId)
+        {
+            return StandardErrorHelpers.CreateNotFound(context, $"Version '{versionGuid}' was not found.");
+        }
+
+        // Opening an edit session against a version that is mid-reconcile/post would be a false
+        // acknowledgement: the version is locked (Redis-backed) for the duration of that job, so no
+        // edit can land. Refuse with a 409 in-progress, matching reconcile/post lock contention.
+        if (requireWritable && version.State is VersionState.Reconciling or VersionState.Posting)
+        {
+            return StandardErrorHelpers.CreateConflict(
+                context,
+                $"Version '{version.VersionName}' is {StatusToString(version.State)} and cannot be edited.",
+                ["A reconcile or post is in progress for this version. Open an edit session once it completes."]);
+        }
+
+        // The version's durable branch generation is the read/edit moment: a stable cursor the client
+        // can echo to pin a consistent snapshot, rather than a throwaway wall-clock value.
+        return Moment(version.BranchGeneration);
     }
 
     private static IResult Moment(bool success) =>
         Results.Json(
             new VersionMomentResponse { Success = success, Moment = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() },
+            VersionManagementJsonContext.Default.VersionMomentResponse,
+            contentType: "application/json");
+
+    private static IResult Moment(long moment) =>
+        Results.Json(
+            new VersionMomentResponse { Success = true, Moment = moment },
             VersionManagementJsonContext.Default.VersionMomentResponse,
             contentType: "application/json");
 

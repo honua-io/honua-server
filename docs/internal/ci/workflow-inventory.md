@@ -37,7 +37,7 @@
 | `codeql.yml` | CodeQL | nightly | `schedule` | No | Weekly security analysis |
 | `nightly-container-build.yml` | Nightly Container Build | nightly | `schedule`, `workflow_dispatch` | No | Scheduled container build |
 | `nuget-publish.yml` | NuGet Publish | release | `push`, `workflow_dispatch` | No | Release-only publishing |
-| `deploy.yml` | Deploy | deploy | `push` (tags), `workflow_dispatch` | No | Environment promotion |
+| `deploy.yml` | Build & Publish Images | deploy | `push` (tags), `workflow_dispatch` | No | Builds and publishes multi-arch (and AOT) container images on `v*` tags. After `publish-manifests` succeeds on a tag, the `dispatch-geobench` job sends a `repository_dispatch` (`honua-server-release`) to `honua-io/geobench` carrying the release tag and `ghcr.io/honua-io/honua-server:<tag>` so the per-release benchmark suite (latency p50/p95/p99, RPS, error rate, cold-start) runs against the tagged image and flags regressions. Requires the `GEOBENCH_DISPATCH_TOKEN` secret (PAT with `repository_dispatch` on geobench); the step skips with a notice when the secret is absent (#1596) |
 | `deploy-platform-images.yml` | Deploy Platform Images | deploy | `push` (tags), `workflow_dispatch` | No | Platform image deployment |
 | `reusable-sdk-pr-gate.yml` | SDK PR Gate | PR | `workflow_call` | Yes (via caller) | Reusable gate for honua-sdk-js, honua-sdk-dotnet, and honua-sdk-python |
 | `cloud-post-apply-validation.yml` | Cloud Post-Apply Validation | deploy | `workflow_call`, `workflow_dispatch` | No | Post-deploy validation |

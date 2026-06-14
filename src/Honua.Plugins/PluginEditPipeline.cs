@@ -21,6 +21,7 @@ namespace Honua.Plugins;
 internal sealed partial class PluginEditPipeline : IPluginEditPipeline
 {
     private readonly IFeatureValidator[] _validators;
+    private readonly IFieldValidator[] _fieldValidators;
     private readonly IEditHook[] _hooks;
     private readonly ILicenseEntitlementService _licensing;
     private readonly IAuditLog _auditLog;
@@ -30,6 +31,7 @@ internal sealed partial class PluginEditPipeline : IPluginEditPipeline
 
     public PluginEditPipeline(
         IEnumerable<IFeatureValidator> validators,
+        IEnumerable<IFieldValidator> fieldValidators,
         IEnumerable<IEditHook> hooks,
         ILicenseEntitlementService licensing,
         IAuditLog auditLog,
@@ -38,6 +40,7 @@ internal sealed partial class PluginEditPipeline : IPluginEditPipeline
     {
         ArgumentNullException.ThrowIfNull(options);
         _validators = OrderByPluginId(validators);
+        _fieldValidators = OrderByPluginId(fieldValidators);
         _hooks = OrderByPluginId(hooks);
         _licensing = licensing ?? throw new ArgumentNullException(nameof(licensing));
         _auditLog = auditLog ?? throw new ArgumentNullException(nameof(auditLog));
@@ -46,7 +49,8 @@ internal sealed partial class PluginEditPipeline : IPluginEditPipeline
     }
 
     /// <inheritdoc />
-    public bool HasPlugins => _enabledByConfig && (_validators.Length > 0 || _hooks.Length > 0);
+    public bool HasPlugins => _enabledByConfig
+        && (_validators.Length > 0 || _fieldValidators.Length > 0 || _hooks.Length > 0);
 
     /// <inheritdoc />
     public async ValueTask<PluginEditOutcome> ValidateAndRunBeforeHooksAsync(
@@ -65,7 +69,7 @@ internal sealed partial class PluginEditPipeline : IPluginEditPipeline
         // inbound attributes for field-level rules, so validators do not see them.
         foreach (var item in context.Features)
         {
-            if (item.Kind == EditKind.Delete || _validators.Length == 0)
+            if (item.Kind == EditKind.Delete || (_validators.Length == 0 && _fieldValidators.Length == 0))
             {
                 continue;
             }
@@ -78,6 +82,7 @@ internal sealed partial class PluginEditPipeline : IPluginEditPipeline
                 item.ObjectId,
                 context.Actor);
 
+            var rejected = false;
             foreach (var validator in _validators)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -89,7 +94,34 @@ internal sealed partial class PluginEditPipeline : IPluginEditPipeline
                         item.Kind, item.RequestIndex, item.ObjectId, result.ErrorCode, result.ErrorMessage!));
                     await AuditRejectionAsync(context, item.ObjectId, result.ErrorMessage!, cancellationToken)
                         .ConfigureAwait(false);
+                    rejected = true;
                     break; // short-circuit remaining validators for this feature
+                }
+            }
+
+            // Field-level validators run after feature-level rules pass. Each only fires for the
+            // attribute it governs; the first field rejection short-circuits the rest for this feature.
+            if (!rejected)
+            {
+                foreach (var fieldValidator in _fieldValidators)
+                {
+                    if (!TryGetAttribute(item.Feature, fieldValidator.FieldName, out var value))
+                    {
+                        continue;
+                    }
+
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var result = await fieldValidator
+                        .ValidateFieldAsync(value, item.Feature, validationContext, cancellationToken)
+                        .ConfigureAwait(false);
+                    if (!result.IsValid)
+                    {
+                        rejections.Add(new PluginEditRejection(
+                            item.Kind, item.RequestIndex, item.ObjectId, result.ErrorCode, result.ErrorMessage!));
+                        await AuditRejectionAsync(context, item.ObjectId, result.ErrorMessage!, cancellationToken)
+                            .ConfigureAwait(false);
+                        break;
+                    }
                 }
             }
         }
@@ -156,7 +188,7 @@ internal sealed partial class PluginEditPipeline : IPluginEditPipeline
 
         if (Interlocked.Exchange(ref _unlicensedLogged, 1) == 0)
         {
-            Log.PluginsUnlicensed(_logger, _validators.Length + _hooks.Length);
+            Log.PluginsUnlicensed(_logger, _validators.Length + _fieldValidators.Length + _hooks.Length);
         }
 
         return false;
@@ -185,6 +217,31 @@ internal sealed partial class PluginEditPipeline : IPluginEditPipeline
         };
 
         await _auditLog.RecordAsync(auditEvent, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static bool TryGetAttribute(
+        Honua.Core.Features.FeatureStore.Domain.Feature feature,
+        string fieldName,
+        out object? value)
+    {
+        if (feature.Attributes.TryGetValue(fieldName, out value))
+        {
+            return true;
+        }
+
+        // Fall back to a case-insensitive scan to honor the case-insensitive field-name contract
+        // even when the attribute bag is keyed ordinally.
+        foreach (var pair in feature.Attributes)
+        {
+            if (string.Equals(pair.Key, fieldName, StringComparison.OrdinalIgnoreCase))
+            {
+                value = pair.Value;
+                return true;
+            }
+        }
+
+        value = null;
+        return false;
     }
 
     private static T[] OrderByPluginId<T>(IEnumerable<T> instances)

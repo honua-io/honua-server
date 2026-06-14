@@ -18,7 +18,12 @@ public sealed class CreateAdminApiKeyRequest
     public required string Name { get; init; }
 
     /// <summary>
-    /// Optional permission labels assigned to the key.
+    /// Optional permission labels assigned to the key. A key whose grants are all
+    /// layer-scoped write grants (<c>write:{service}</c> or
+    /// <c>write:{service}/{layer}</c>) and that carries no full-admin grant
+    /// (<c>admin</c> or <c>*</c>) is minted as a low-blast-radius, write-only,
+    /// layer-scoped credential (#1637): it authenticates as a non-admin principal
+    /// and is authorized only for writes to the named service(s)/layer(s).
     /// </summary>
     public IReadOnlyList<string> Permissions { get; init; } = [];
 

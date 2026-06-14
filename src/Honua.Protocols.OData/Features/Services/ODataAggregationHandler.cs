@@ -480,38 +480,20 @@ internal sealed class ODataAggregationHandler
 
     private static object[] ApplyCompute(List<Feature> features, string computeExpression)
     {
-        // Parse compute expression: field mul/add/sub/div value as alias
-        var computeMatch = Regex.Match(computeExpression.Trim(), @"^(\w+)\s+(mul|add|sub|div)\s+(\w+)\s+as\s+(\w+)$", RegexOptions.IgnoreCase);
-
-        if (!computeMatch.Success)
+        // Delegate to the shared compute grammar so $apply=compute(...) and the $compute
+        // query option behave identically (including floor()/ceiling()/round() and the
+        // mod operator used for histogram binning). On an unparseable expression we fall
+        // back to returning the raw features, preserving the previous lenient behavior.
+        if (!ODataComputeService.TryParse(computeExpression, out var expressions, out _) || expressions.IsDefaultOrEmpty)
         {
-            return features.Select(f => FeatureToDictionary(f)).ToArray();
+            return features.Select(f => (object)FeatureToDictionary(f)).ToArray();
         }
-
-        var field1 = computeMatch.Groups[1].Value;
-        var operation = computeMatch.Groups[2].Value.ToLowerInvariant();
-        var field2 = computeMatch.Groups[3].Value;
-        var alias = computeMatch.Groups[4].Value;
 
         return features.Select(f =>
         {
             var dict = FeatureToDictionary(f);
-
-            var value1 = GetNumericValue(GetFieldValue(f, field1));
-            var value2 = double.TryParse(field2, NumberStyles.Float, CultureInfo.InvariantCulture, out var constVal)
-                ? constVal
-                : GetNumericValue(GetFieldValue(f, field2));
-
-            dict[alias] = operation switch
-            {
-                "mul" => value1 * value2,
-                "add" => value1 + value2,
-                "sub" => value1 - value2,
-                "div" => value2 != 0 ? value1 / value2 : null,
-                _ => null
-            };
-
-            return dict;
+            ODataComputeService.ApplyCompute(dict, expressions);
+            return (object)dict;
         }).ToArray();
     }
 

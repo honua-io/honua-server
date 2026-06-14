@@ -83,6 +83,53 @@ internal static class GeoServicesGeometryConverter
         return ConvertGeometryToGeoServicesGeometry(geometry, spatialReference);
     }
 
+    internal static GeoServicesGeometry? ConvertWkbToGeoServicesCentroid(
+        byte[]? wkbGeometry,
+        int? srid = null,
+        Honua.Core.Configuration.GeometryLimits? geometryLimits = null)
+    {
+        if (wkbGeometry == null || wkbGeometry.Length == 0)
+        {
+            return null;
+        }
+
+        var reader = WkbReaderCache.Get();
+        Geometry geometry;
+
+        try
+        {
+            geometry = reader.Read(wkbGeometry);
+        }
+        catch (Exception ex) when (ex is ParseException or FormatException)
+        {
+            return null;
+        }
+
+        if (geometry is not (Polygon or MultiPolygon) || geometry.IsEmpty)
+        {
+            return null;
+        }
+
+        var centroid = geometry.Centroid;
+        if (centroid == null || centroid.IsEmpty)
+        {
+            return null;
+        }
+
+        if (geometryLimits != null &&
+            GeometryOutputProcessor.ApplyLimits(centroid, geometryLimits) is Point limitedCentroid)
+        {
+            centroid = limitedCentroid;
+        }
+
+        if (srid.HasValue)
+        {
+            centroid.SRID = srid.Value;
+        }
+
+        return ConvertGeometryToGeoServicesGeometry(centroid, CreateSpatialReference(srid));
+    }
+
     internal static bool TryWriteWkbAsGeoServicesGeometry(
         Utf8JsonWriter writer,
         byte[]? wkbGeometry,

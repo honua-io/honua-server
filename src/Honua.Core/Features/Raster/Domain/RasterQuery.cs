@@ -14,6 +14,13 @@ public readonly record struct RasterQuery
     public RasterClipRegion? ClipRegion { get; init; }
 
     /// <summary>
+    /// Optional additional clip region from a renderingRule <c>Clip</c> raster function.
+    /// Applied as a second mask after <see cref="ClipRegion"/> so a non-rectangular
+    /// area-of-interest can refine the output window. When <c>null</c> no extra clip applies.
+    /// </summary>
+    public RasterClipRegion? RenderingClip { get; init; }
+
+    /// <summary>
     /// Target spatial reference system for output.
     /// </summary>
     public int? OutputSrid { get; init; }
@@ -59,6 +66,21 @@ public readonly record struct RasterQuery
     /// When set, the raster will be resized to this height.
     /// </summary>
     public int? OutputHeight { get; init; }
+
+    /// <summary>
+    /// Optional display stretch applied to pixel values before encoding. When
+    /// set, each selected band is linearly rescaled to the 8-bit display range
+    /// using bounds derived from the chosen <see cref="RasterStretchType"/>.
+    /// When <c>null</c> the raw pixel values are encoded unchanged.
+    /// </summary>
+    public RasterStretch? Stretch { get; init; }
+
+    /// <summary>
+    /// Optional pseudocolour colormap applied after <see cref="Stretch"/> to map
+    /// single-band pixel values to an RGBA image. When <c>null</c> no colormap is
+    /// applied.
+    /// </summary>
+    public RasterColormap? Colormap { get; init; }
 
     /// <summary>
     /// Initializes a new instance of the RasterQuery struct.

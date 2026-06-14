@@ -326,6 +326,7 @@ internal static partial class MapServerEndpoints
 
             var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
             var styleCatalog = context.RequestServices.GetRequiredService<ILayerStyleCatalog>();
+            var geoServicesStyleConverter = context.RequestServices.GetRequiredService<IGeoServicesStyleConverter>();
             var filterExpressionService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
 
             var totalFeatureCount = 0;
@@ -395,10 +396,32 @@ internal static partial class MapServerEndpoints
                         filterError ?? "Invalid filter parameter.");
                 }
 
-                var stylePlan = await GetRasterStylePlanAsync(
-                    styleCatalog,
-                    layer.StorageLayerId,
-                    cancellationToken).ConfigureAwait(false);
+                RasterStylePlan stylePlan;
+                if (renderLayer.DrawingInfoJson is { } dynamicDrawingInfoJson)
+                {
+                    if (!TryConvertDynamicLayerDrawingInfo(
+                            renderLayer.Id,
+                            dynamicDrawingInfoJson,
+                            layer.StorageLayerId,
+                            layer.Name,
+                            resource.ReadGeometryType(),
+                            geoServicesStyleConverter,
+                            out var dynamicMapLibreStyleJson,
+                            out var dynamicStyleError))
+                    {
+                        return StandardErrorHelpers.CreateBadRequest(context,
+                            dynamicStyleError ?? "Invalid dynamicLayers drawingInfo renderer.");
+                    }
+
+                    stylePlan = BuildRasterStylePlanFromJson(dynamicMapLibreStyleJson);
+                }
+                else
+                {
+                    stylePlan = await GetRasterStylePlanAsync(
+                        styleCatalog,
+                        layer.StorageLayerId,
+                        cancellationToken).ConfigureAwait(false);
+                }
                 var featureQuery = CreateRasterFeatureQuery(
                     stylePlan,
                     spatialFilter,
@@ -750,12 +773,14 @@ internal static partial class MapServerEndpoints
     private sealed record DynamicLayerDefinition(
         int Id,
         int MapLayerId,
-        string? DefinitionExpression);
+        string? DefinitionExpression,
+        string? DrawingInfoJson);
 
     private sealed record ExportRenderLayer(
         MapServerMetadataLayerDescriptor Layer,
         int Id,
-        string? DefinitionExpression);
+        string? DefinitionExpression,
+        string? DrawingInfoJson);
 
     private static bool TryParseLayerDefs(
         string? layerDefsValue,
@@ -989,16 +1014,45 @@ internal static partial class MapServerEndpoints
                     }
                 }
 
+                JsonElement? layerDefinitionElement = null;
+                if (element.TryGetProperty("layerDefinition", out var candidateLayerDefinition) &&
+                    candidateLayerDefinition.ValueKind == JsonValueKind.Object)
+                {
+                    layerDefinitionElement = candidateLayerDefinition;
+                }
+
                 if (definitionExpression == null &&
-                    element.TryGetProperty("layerDefinition", out var layerDefinitionElement) &&
-                    layerDefinitionElement.ValueKind == JsonValueKind.Object &&
-                    layerDefinitionElement.TryGetProperty("definitionExpression", out var nestedDefinition))
+                    layerDefinitionElement is { } layerDefinition &&
+                    layerDefinition.TryGetProperty("definitionExpression", out var nestedDefinition))
                 {
                     if (!TryReadJsonStringOrNumber(nestedDefinition, out definitionExpression))
                     {
                         error = $"dynamicLayers entry '{id}' has an invalid layerDefinition.definitionExpression.";
                         return false;
                     }
+                }
+
+                string? drawingInfoJson = null;
+                if (element.TryGetProperty("drawingInfo", out var drawingInfoElement))
+                {
+                    if (drawingInfoElement.ValueKind != JsonValueKind.Object)
+                    {
+                        error = $"dynamicLayers entry '{id}' has an invalid drawingInfo object.";
+                        return false;
+                    }
+
+                    drawingInfoJson = drawingInfoElement.GetRawText();
+                }
+                else if (layerDefinitionElement is { } layerDefinitionWithDrawingInfo &&
+                         layerDefinitionWithDrawingInfo.TryGetProperty("drawingInfo", out var nestedDrawingInfo))
+                {
+                    if (nestedDrawingInfo.ValueKind != JsonValueKind.Object)
+                    {
+                        error = $"dynamicLayers entry '{id}' has an invalid layerDefinition.drawingInfo object.";
+                        return false;
+                    }
+
+                    drawingInfoJson = nestedDrawingInfo.GetRawText();
                 }
 
                 if (!string.IsNullOrWhiteSpace(definitionExpression))
@@ -1014,7 +1068,8 @@ internal static partial class MapServerEndpoints
                 dynamicLayers.Add(new DynamicLayerDefinition(
                     id,
                     mapLayerId,
-                    string.IsNullOrWhiteSpace(definitionExpression) ? null : definitionExpression));
+                    string.IsNullOrWhiteSpace(definitionExpression) ? null : definitionExpression,
+                    string.IsNullOrWhiteSpace(drawingInfoJson) ? null : drawingInfoJson));
             }
 
             return true;
@@ -1044,7 +1099,7 @@ internal static partial class MapServerEndpoints
             {
                 return (accessibleLayers
                     .Where(static layer => layer.Resource.Display?.DefaultVisibility ?? true)
-                    .Select(static layer => new ExportRenderLayer(layer, layer.PublicLayerId, null))
+                    .Select(static layer => new ExportRenderLayer(layer, layer.PublicLayerId, null, null))
                     .ToArray(), null);
             }
 
@@ -1084,7 +1139,7 @@ internal static partial class MapServerEndpoints
 
             return (accessibleLayers
                 .Where(LayerSelected)
-                .Select(static layer => new ExportRenderLayer(layer, layer.PublicLayerId, null))
+                .Select(static layer => new ExportRenderLayer(layer, layer.PublicLayerId, null, null))
                 .ToArray(), null);
         }
 
@@ -1150,10 +1205,64 @@ internal static partial class MapServerEndpoints
                     "layers parameter references an invalid or inaccessible layer."));
             }
 
-            renderLayers.Add(new ExportRenderLayer(layer, dynamicLayer.Id, dynamicLayer.DefinitionExpression));
+            renderLayers.Add(new ExportRenderLayer(
+                layer,
+                dynamicLayer.Id,
+                dynamicLayer.DefinitionExpression,
+                dynamicLayer.DrawingInfoJson));
         }
 
         return (renderLayers.ToArray(), null);
+    }
+
+    private static bool TryConvertDynamicLayerDrawingInfo(
+        int dynamicLayerId,
+        string dynamicDrawingInfoJson,
+        int styleLayerId,
+        string layerName,
+        MetadataV2GeometryType geometryType,
+        IGeoServicesStyleConverter geoServicesStyleConverter,
+        out string? mapLibreStyleJson,
+        out string? error)
+    {
+        mapLibreStyleJson = null;
+        error = null;
+
+        try
+        {
+            using var document = JsonDocument.Parse(dynamicDrawingInfoJson);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                error = $"dynamicLayers entry '{dynamicLayerId}' has an invalid drawingInfo object.";
+                return false;
+            }
+
+            var conversion = geoServicesStyleConverter.Convert(
+                document.RootElement,
+                styleLayerId,
+                layerName,
+                geometryType);
+
+            if (conversion.Unsupported.Count > 0)
+            {
+                error = $"dynamicLayers entry '{dynamicLayerId}' has an unsupported drawingInfo renderer ({conversion.Unsupported[0].Code}).";
+                return false;
+            }
+
+            if (StyleTranslator.ParseStyleLayers(conversion.MapLibreStyleJson).Length == 0)
+            {
+                error = $"dynamicLayers entry '{dynamicLayerId}' drawingInfo renderer could not be converted to a renderable style.";
+                return false;
+            }
+
+            mapLibreStyleJson = conversion.MapLibreStyleJson;
+            return true;
+        }
+        catch (JsonException)
+        {
+            error = InvalidDynamicLayersJsonMessage;
+            return false;
+        }
     }
 
     private static string? NormalizeTimeRelation(string? timeRelation)

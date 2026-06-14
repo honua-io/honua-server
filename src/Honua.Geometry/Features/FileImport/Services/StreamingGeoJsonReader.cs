@@ -85,6 +85,7 @@ internal sealed class StreamingGeoJsonReader
 
             var featureCount = 0;
             var processingState = new JsonProcessingState();
+            var firstChunk = true;
 
             while (true)
             {
@@ -108,6 +109,19 @@ internal sealed class StreamingGeoJsonReader
                     leftoverBuffer!.AsSpan(0, leftoverLength).CopyTo(combinedBuffer);
                     buffer.AsSpan(0, bytesRead).CopyTo(combinedBuffer.AsSpan(leftoverLength, bytesRead));
                     data = combinedBuffer.AsMemory(0, leftoverLength + bytesRead);
+                }
+
+                // Skip a leading UTF-8 BOM (EF BB BF) on the first chunk — many real-world
+                // GeoJSON files (and anything written via Encoding.UTF8) start with one, and
+                // Utf8JsonReader treats it as an invalid start-of-value token otherwise.
+                if (firstChunk)
+                {
+                    firstChunk = false;
+                    var span = data.Span;
+                    if (span.Length >= 3 && span[0] == 0xEF && span[1] == 0xBB && span[2] == 0xBF)
+                    {
+                        data = data[3..];
+                    }
                 }
 
                 // Process chunk synchronously to avoid ref struct issues
