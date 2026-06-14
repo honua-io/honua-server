@@ -145,16 +145,20 @@ internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBa
         var field = context.TryGetField(property.PropertyName) ??
             throw new ArgumentException(ErrorMessages.NotFound.FormatField(property.PropertyName, context.ResourceName));
 
+        if (field.IsGeometry)
+        {
+            // Geometry properties (in both column and JSON-attribute modes) must be
+            // wrapped in the `::geometry` cast expression so generic spatial functions
+            // (e.g. ST_Length/ST_Area/ST_Distance) operate on a typed geometry rather
+            // than a bare/unknown column value.
+            return GetGeometryColumnExpression(context);
+        }
+
         if (!_useJsonAttributes)
         {
             // Quote field name to handle reserved words and mixed-case names
             // PostgreSQL uses double quotes for identifiers
             return QuoteIdentifier(field.Name);
-        }
-
-        if (field.IsGeometry)
-        {
-            return GetGeometryColumnExpression(context);
         }
 
         if (field.IsPrimaryKey)

@@ -386,8 +386,8 @@ internal sealed class PbfQueryFormatter
     /// <remarks>
     /// Esri PBF quantization semantics (matching ArcGIS Server output and the
     /// reference decoders in github.com/Esri/arcgis-pbf):
-    /// - The default quantization origin is upperLeft, so quantized Y is the
-    ///   NEGATED map-space Y (decoders compute y = yTranslate - y' * yScale).
+    /// - Quantized ordinates are delta-encoded against the running accumulator;
+    ///   X and Y are emitted in map-space units scaled by the quantization scale.
     /// - Each lengths[] segment (ring/path) restarts delta encoding: the first
     ///   vertex of every segment is absolute and only subsequent vertices are
     ///   deltas, so the running accumulator resets at each part boundary.
@@ -511,8 +511,7 @@ internal sealed class PbfQueryFormatter
         bool returnM)
     {
         long x = (long)Math.Round(coord.X * scale);
-        // upperLeft quantization origin: quantized Y is negated map-space Y.
-        long y = -(long)Math.Round(coord.Y * scale);
+        long y = (long)Math.Round(coord.Y * scale);
         coords.Add(x - prevX);
         coords.Add(y - prevY);
         prevX = x;
@@ -547,8 +546,7 @@ internal sealed class PbfQueryFormatter
         {
             var i = reverse ? sequence.Count - 1 - index : index;
             long x = (long)Math.Round(sequence.GetX(i) * scale);
-            // upperLeft quantization origin: quantized Y is negated map-space Y.
-            long y = -(long)Math.Round(sequence.GetY(i) * scale);
+            long y = (long)Math.Round(sequence.GetY(i) * scale);
             coords.Add(x - prevX);
             coords.Add(y - prevY);
             prevX = x;
@@ -626,7 +624,6 @@ internal sealed class PbfQueryFormatter
         var transform = new ProtobufWriter(64);
 
         // field 1: quantizeOriginPosition (0 = upperLeft, default).
-        // The coordinate encoder negates Y accordingly (see EncodeGeometryCoordinates).
 
         // field 2: scale (Scale: xScale=1, yScale=2, mScale=3, zScale=4).
         // Z/M ordinates are quantized at the same precision as X/Y, so their scales

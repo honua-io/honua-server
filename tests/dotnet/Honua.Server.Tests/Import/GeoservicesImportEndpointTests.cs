@@ -8,6 +8,7 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Import.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.Import.Domain;
@@ -21,6 +22,7 @@ using Honua.Import.RasterImport;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Helpers;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -40,7 +42,7 @@ namespace Honua.Server.Tests.Import;
 [Operation(Operations.Import)]
 public class GeoservicesImportEndpointTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Enterprise);
     private HttpClient _client = null!;
 
     public async Task InitializeAsync()
@@ -143,6 +145,7 @@ public class GeoservicesImportEndpointTests : IAsyncLifetime
         const string accessToken = "plaintext-discovery-token";
         var isolatedImportService = new TestGeoservicesImportService(TimeSpan.Zero);
         var isolatedFixture = new WebAppFixture()
+            .WithTestLicense(HonuaEdition.Enterprise)
             .ReplaceService<IGeoservicesImportService>(isolatedImportService);
 
         try
@@ -373,6 +376,7 @@ public class GeoservicesImportEndpointTests : IAsyncLifetime
         var distributedCache = new TrackingDistributedCache();
         var isolatedImportService = new TestGeoservicesImportService(TimeSpan.FromMilliseconds(25));
         var isolatedFixture = new WebAppFixture()
+            .WithTestLicense(HonuaEdition.Enterprise)
             .ReplaceService<IGeoservicesImportService>(isolatedImportService)
             .ConfigureServices(services =>
             {
@@ -462,6 +466,7 @@ public class GeoservicesImportEndpointTests : IAsyncLifetime
     public async Task Start_WhenDistributedCoordinationIsUnavailable_ReturnsServiceUnavailable()
     {
         await using var degradedFixture = new WebAppFixture()
+            .WithTestLicense(HonuaEdition.Enterprise)
             .ConfigureServices(services =>
             {
                 services.AddSingleton<IDistributedImportJobManager, DegradedImportJobManager>();
@@ -497,6 +502,7 @@ public class GeoservicesImportEndpointTests : IAsyncLifetime
             .Returns(database);
 
         var isolatedFixture = new WebAppFixture()
+            .WithTestLicense(HonuaEdition.Enterprise)
             .ConfigureServices(services =>
             {
                 services.RemoveAll<IDistributedCache>();
