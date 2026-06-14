@@ -88,6 +88,19 @@ Base: `/rest/services/{serviceId}/ImageServer` (raster-backed services).
 curl -o dem.tif "https://server.example.com/rest/services/dem/ImageServer/exportImage?bbox=-122.5,37.7,-122.3,37.9&size=512,512&format=tiff&f=image"
 ```
 
+### Tiled-consumption metadata (`tileInfo`)
+
+By default an ImageServer advertises a **dynamic** service (`singleFusedMapCache: false`, no `tileInfo`). This keeps the descriptor — which the ArcGIS Maps SDK for .NET native runtime reads verbatim from `/conf.json` — compatible with the dynamic `exportImage` load path; advertising a cache makes that native runtime treat the service as cached and reject the configuration.
+
+The `/tile/{level}/{row}/{col}` route is always served. To let tiled Esri clients (for example `L.esri.tiledMapLayer`, which keys off `metadata.tileInfo.lods`) consume it directly, opt in to the static WebMercatorQuad cache descriptor:
+
+| Setting | Default | Effect |
+| --- | --- | --- |
+| `GeoServices:ImageServer:TileMetadata:Enabled` | `false` | When `true`, ImageServer metadata reports `singleFusedMapCache: true` plus a WebMercatorQuad `tileInfo` block (256×256 tiles, origin `(-20037508.34, 20037508.34)`, spatial reference 102100/3857, and the standard level-of-detail array). |
+| `GeoServices:ImageServer:TileMetadata:MaxLevel` | `23` | Highest zoom level emitted in `tileInfo.lods` (the tile route accepts up to 28). |
+
+Enable it only for deployments that primarily serve tiled Esri clients; the native ArcGIS Maps SDK for .NET dynamic `exportImage` path expects the default (dynamic) contract.
+
 See [GeoServices parity — ImageServer](../compatibility/geoservices-parity.md#imageserver).
 
 ## Geometry service
