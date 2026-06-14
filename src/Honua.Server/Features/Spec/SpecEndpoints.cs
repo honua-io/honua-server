@@ -2,8 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Spec.Abstractions;
 using Honua.Core.Features.Spec.Domain;
+using Honua.Infrastructure.Licensing;
 using Honua.Server.Features.Spec.Models;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Http;
@@ -220,6 +222,7 @@ internal static class SpecEndpoints
 
     private static async Task<IResult> HandleApplyAsync(
         HttpContext context,
+        ISpecPlanner planner,
         ISpecApplyEngine engine,
         CancellationToken cancellationToken)
     {
@@ -260,6 +263,24 @@ internal static class SpecEndpoints
             return BuildProblem(StatusCodes.Status400BadRequest,
                 SpecDiagnosticCodes.UnknownCacheMode,
                 "Request 'cacheMode' must be one of: ReadWrite, ReadOnly, Bypass.");
+        }
+
+        var plan = await planner.PlanAsync(document, cancellationToken).ConfigureAwait(false);
+        var fatalPlanDiagnostics = plan.Warnings
+            .Where(static warning => warning.Severity == SpecDiagnosticSeverity.Error)
+            .ToList();
+        if (fatalPlanDiagnostics.Count > 0)
+        {
+            return ProblemFromInvalid(new SpecDocumentInvalidException(fatalPlanDiagnostics));
+        }
+
+        var entitlementGate = LicenseGate.RequireEntitlement(
+            context,
+            FeatureCatalog.AiSpecApplyKey,
+            "Spec apply");
+        if (entitlementGate is not null)
+        {
+            return entitlementGate;
         }
 
         var options = new SpecApplyOptions

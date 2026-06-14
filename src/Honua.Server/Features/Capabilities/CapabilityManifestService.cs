@@ -306,10 +306,13 @@ internal sealed class CapabilityManifestService(
             Capability("temporal.histogram", "temporal", context, entitlementKey: "temporal.histogram"),
             Capability("temporal.time-series-tiles", "temporal", context, entitlementKey: "temporal.time-series-tiles"),
 
-            Capability("sync.offline", "sync", context, supported: syncSupported, policyCapability: "features.edit", requiresWorkspace: true),
+            Capability("sync.offline", "sync", context, supported: syncSupported, entitlementKey: FeatureCatalog.FieldOpsOfflineSyncKey, policyCapability: "features.edit", requiresWorkspace: true),
             Capability("realtime.feature-streams", "realtime", context, entitlementKey: "streaming.feature-subscriptions"),
             Capability("alerts.geofence", "alerts", context, entitlementKey: "alerts.enter-exit", configured: alertOptionsValue.Enabled),
             Capability("jobs.runner", "jobs", context, supported: workloadCount > 0 || batchBackends.Any(), requiresAuthentication: true),
+            Capability("ai.spec-apply", "ai", context, entitlementKey: FeatureCatalog.AiSpecApplyKey),
+            Capability("ai.grounding", "ai", context, entitlementKey: FeatureCatalog.AiGroundingKey),
+            Capability("ai.workflow-generation", "ai", context, entitlementKey: FeatureCatalog.AiWorkflowGenerationKey),
             Capability("gitops.release-manifest", "gitops", context, configured: deployTargetCount > 0, policyCapability: "catalog.publish", requiresEnvironment: true),
 
             Capability("transport.grpc", "transports", context),

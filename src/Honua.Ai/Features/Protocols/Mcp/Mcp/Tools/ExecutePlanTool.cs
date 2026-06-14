@@ -3,7 +3,9 @@
 
 using System.Text.Json;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Geoprocessing;
+using Honua.Infrastructure.Licensing;
 using Honua.Ai.Protocols.Mcp.Models;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
@@ -52,6 +54,14 @@ internal sealed class ExecutePlanTool : IMcpTool
         await _jobService
             .EnsureCallerAuthorizedAsync(principal, OperatorResourceType.Process, OperatorOperation.Execute, cancellationToken)
             .ConfigureAwait(false);
+
+        var entitlement = LicenseGate.CheckEntitlement(
+            httpContext.RequestServices,
+            FeatureCatalog.AiSpecApplyKey);
+        if (!entitlement.IsActive)
+        {
+            throw new GeoprocessingPreconditionFailedException(entitlement.UpgradeMessage);
+        }
 
         var argument = McpToolHelpers.ParseArguments(arguments, McpJsonContext.Default.McpExecutePlanArgument);
         var plan = McpToolHelpers.ToDomainPlan(argument.Plan);

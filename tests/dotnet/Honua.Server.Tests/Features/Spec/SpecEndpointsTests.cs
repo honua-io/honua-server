@@ -5,9 +5,16 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Helpers;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Spec;
 
@@ -659,7 +666,7 @@ public sealed class SpecEndpointsTests
         // Production DI registers a placeholder ReservedSpecResourceStateStore
         // for Dataset/Service/App. Apply must still reject the node kind-based
         // so the DI placeholder cannot mask the S1 gap.
-        using var factory = new TestWebApplicationFactory();
+        using var factory = CreateLicensedFactory(HonuaEdition.Pro);
         using var client = factory.CreateClient();
 
         var datasetNode = new Dictionary<string, object?>(StringComparer.Ordinal)
@@ -676,6 +683,26 @@ public sealed class SpecEndpointsTests
         Assert.Equal(
             "spec-kind-not-in-s1",
             failed.Payload.GetProperty("diagnostic").GetProperty("code").GetString());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /v1/spec/apply")]
+    public async Task Apply_WithCommunityLicense_ReturnsPaymentRequired()
+    {
+        using var factory = CreateLicensedFactory(HonuaEdition.Community);
+        using var client = factory.CreateClient();
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/spec/apply")
+        {
+            Content = JsonContent(BuildDocument(ComputeNode("a")))
+        };
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.PaymentRequired, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains(FeatureCatalog.AiSpecApplyKey, body, StringComparison.Ordinal);
     }
 
     [IntegrationTest]
@@ -700,7 +727,7 @@ public sealed class SpecEndpointsTests
     [FlakyTest("SSE response headers occasionally null mid-stream under combined Testcontainers/fixture load — tracked in #812")]
     public async Task Apply_LinearChain_StreamsSseEvents_AndSucceeds()
     {
-        using var factory = new TestWebApplicationFactory();
+        using var factory = CreateLicensedFactory(HonuaEdition.Pro);
         using var client = factory.CreateClient();
 
         var document = BuildDocument(
@@ -727,7 +754,7 @@ public sealed class SpecEndpointsTests
     [Endpoint("POST /v1/spec/apply")]
     public async Task Apply_RerunSameDocument_YieldsCachedEventsForEveryNode()
     {
-        using var factory = new TestWebApplicationFactory();
+        using var factory = CreateLicensedFactory(HonuaEdition.Pro);
         using var client = factory.CreateClient();
 
         var document = BuildDocument(
@@ -805,7 +832,7 @@ public sealed class SpecEndpointsTests
     [Endpoint("GET /v1/spec/artifact/{hash}")]
     public async Task Artifact_AfterApply_ReturnsStoredBytes()
     {
-        using var factory = new TestWebApplicationFactory();
+        using var factory = CreateLicensedFactory(HonuaEdition.Pro);
         using var client = factory.CreateClient();
 
         var document = BuildDocument(ComputeNode("a"));
@@ -855,6 +882,20 @@ public sealed class SpecEndpointsTests
             ["processFamilyVersion"] = "family/1.0",
             ["nodes"] = nodes
         };
+
+    private static WebApplicationFactory<Program> CreateLicensedFactory(HonuaEdition edition)
+    {
+        var license = new TestLicenseEntitlementService(edition);
+        return new TestWebApplicationFactory()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.ConfigureServices(services =>
+                {
+                    services.Replace(ServiceDescriptor.Singleton<ILicenseEntitlementService>(license));
+                    services.Replace(ServiceDescriptor.Singleton<ILicenseStatusProvider>(license));
+                });
+            });
+    }
 
     private static async Task<IReadOnlyList<SseFrame>> CollectSseEventsAsync(
         HttpClient client,

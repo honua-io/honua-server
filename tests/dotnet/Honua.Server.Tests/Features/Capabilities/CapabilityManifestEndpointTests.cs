@@ -45,9 +45,11 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
         _fixture = CreateManifestFixture();
     }
 
-    private static WebAppFixture CreateManifestFixture(string[]? entitlements = null)
+    private static WebAppFixture CreateManifestFixture(
+        string[]? entitlements = null,
+        HonuaEdition edition = HonuaEdition.Pro)
         => new WebAppFixture()
-            .WithTestLicense(HonuaEdition.Pro, entitlements: entitlements)
+            .WithTestLicense(edition, entitlements: entitlements)
             .ConfigureServices(services =>
             {
                 services.RemoveAll<IMetadataV2EnvironmentSnapshotReader>();
@@ -173,7 +175,18 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
             .Select(item => item.GetString())
             .Should().Contain("admin.rbac.write");
 
-        GetCapability(root, "sync.offline").GetProperty("category").GetString().Should().Be("sync");
+        var offlineSync = GetCapability(root, "sync.offline");
+        offlineSync.GetProperty("category").GetString().Should().Be("sync");
+        offlineSync.GetProperty("entitlementKey").GetString().Should().Be(FeatureCatalog.FieldOpsOfflineSyncKey);
+        offlineSync.GetProperty("minimumEdition").GetString().Should().Be("Pro");
+
+        var specApply = GetCapability(root, "ai.spec-apply");
+        specApply.GetProperty("available").GetBoolean().Should().BeTrue();
+        specApply.GetProperty("entitlementKey").GetString().Should().Be(FeatureCatalog.AiSpecApplyKey);
+        GetCapability(root, "ai.grounding").GetProperty("entitlementKey").GetString()
+            .Should().Be(FeatureCatalog.AiGroundingKey);
+        GetCapability(root, "ai.workflow-generation").GetProperty("entitlementKey").GetString()
+            .Should().Be(FeatureCatalog.AiWorkflowGenerationKey);
         GetCapability(root, "publication.metadata-release").GetProperty("available").GetBoolean().Should().BeTrue();
         root.GetProperty("limits").GetProperty("upload").GetProperty("maxUploadSizeBytes").GetInt64()
             .Should().Be(123456);
@@ -227,6 +240,43 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
             appPackage.GetProperty("available").GetBoolean().Should().BeTrue();
             appPackage.TryGetProperty("reasonCode", out _).Should().BeFalse();
             appPackage.TryGetProperty("entitlementKey", out _).Should().BeFalse();
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task GetManifest_WithCommunityLicense_MarksOfflineSyncAndAiOperationsUnavailable()
+    {
+        var fixture = CreateManifestFixture(edition: HonuaEdition.Community);
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            using var response = await client.GetAsync(
+                "/api/v1/capabilities/manifest?workspaceId=field-team");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            using var document = await ReadDocumentAsync(response);
+            var root = document.RootElement;
+
+            var offlineSync = GetCapability(root, "sync.offline");
+            offlineSync.GetProperty("available").GetBoolean().Should().BeFalse();
+            offlineSync.GetProperty("reasonCode").GetString().Should().Be("license-required");
+            offlineSync.GetProperty("entitlementKey").GetString().Should().Be(FeatureCatalog.FieldOpsOfflineSyncKey);
+
+            foreach (var capabilityId in new[] { "ai.spec-apply", "ai.grounding", "ai.workflow-generation" })
+            {
+                var capability = GetCapability(root, capabilityId);
+                capability.GetProperty("available").GetBoolean().Should().BeFalse();
+                capability.GetProperty("reasonCode").GetString().Should().Be("license-required");
+                capability.GetProperty("minimumEdition").GetString().Should().Be("Pro");
+            }
         }
         finally
         {

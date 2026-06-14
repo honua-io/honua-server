@@ -5,8 +5,10 @@ using Honua.Core.Features.WorkflowPackages.Abstractions;
 using Honua.Core.Features.WorkflowPackages.Domain;
 using Honua.Core.Features.WorkflowPackages.Generation.Abstractions;
 using Honua.Core.Features.WorkflowPackages.Generation.Domain;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
 
 namespace Honua.Server.Features.WorkflowPackages;
@@ -155,6 +157,15 @@ internal static class WorkflowPackageEndpoints
         {
             return TypedResults.BadRequest(
                 ApiResponse<WorkflowGenerationResult>.Failure("A non-empty 'prompt' is required."));
+        }
+
+        var entitlementGate = LicenseGate.RequireEntitlement(
+            context,
+            FeatureCatalog.AiWorkflowGenerationKey,
+            "AI workflow generation");
+        if (entitlementGate is not null)
+        {
+            return entitlementGate;
         }
 
         var result = await generation.GenerateAsync(
