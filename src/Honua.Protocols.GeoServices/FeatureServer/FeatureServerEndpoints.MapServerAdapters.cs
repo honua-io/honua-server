@@ -30,6 +30,18 @@ internal static partial class FeatureServerEndpoints
         => HandleGenerateRenderer(context);
 
     /// <summary>
+    /// MapServer service-level adapter entry point for <c>generateRenderer</c>.
+    /// The MapServer wrapper resolves the target layer from request parameters,
+    /// then forwards the remaining renderer parameters into the FeatureServer
+    /// implementation.
+    /// </summary>
+    internal static Task<IResult> HandleGenerateRendererForMapServer(
+        HttpContext context,
+        IReadOnlyDictionary<string, Microsoft.Extensions.Primitives.StringValues> values,
+        int layerId)
+        => HandleGenerateRenderer(context, values, layerId);
+
+    /// <summary>
     /// MapServer adapter entry point that reuses the FeatureServer
     /// queryRelatedRecords (GET) handler verbatim.
     /// </summary>

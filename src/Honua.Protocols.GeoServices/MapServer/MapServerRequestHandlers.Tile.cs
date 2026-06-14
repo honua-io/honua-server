@@ -1,9 +1,12 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Tiles;
@@ -11,6 +14,7 @@ using Honua.Core.Features.Validation.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
+using Honua.Protocols.GeoServices;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Options;
 using static Honua.Infrastructure.Rendering.RasterMapRenderingPipeline;
@@ -104,6 +108,29 @@ internal static partial class MapServerEndpoints
                 .ToArray();
             var maxFeatures = service.Settings?.MaxFeaturesPerLayer ?? MaxFeaturesPerLayer;
             var serviceSrid = ResolveTileServiceSrid(service, publishedLayers);
+            var storage = context.RequestServices.GetService<ICloudFileStorage>();
+            var storageOptions = context.RequestServices.GetService<IOptions<CloudStorageOptions>>()?.Value;
+            var tileCacheKey = BuildMapServerTileCacheKey(
+                storageOptions,
+                snapshot,
+                serviceId,
+                service,
+                renderLayers,
+                serviceSrid,
+                maxFeatures,
+                z,
+                y,
+                x);
+
+            if (await GeoServicesCloudTileCache.TryReadAsync(storage, storageOptions, tileCacheKey, cancellationToken).ConfigureAwait(false) is { } cachedTile)
+            {
+                stopwatch.Stop();
+                MapServerLog.TileCompleted(logger, serviceId, 0, stopwatch.Elapsed.TotalMilliseconds);
+                HonuaTelemetry.SetSuccess(activity, 0);
+                HonuaTelemetry.CategorizeLatency(activity, stopwatch.Elapsed.TotalMilliseconds);
+                return Results.Bytes(cachedTile.Data, cachedTile.ContentType);
+            }
+
             var renderResult = await RenderRasterTileV2Async(
                 context,
                 serviceSrid,
@@ -122,6 +149,24 @@ internal static partial class MapServerEndpoints
             MapServerLog.TileCompleted(logger, serviceId, renderResult.FeatureCount, stopwatch.Elapsed.TotalMilliseconds);
             HonuaTelemetry.SetSuccess(activity, renderResult.FeatureCount);
             HonuaTelemetry.CategorizeLatency(activity, stopwatch.Elapsed.TotalMilliseconds);
+
+            await GeoServicesCloudTileCache.TryWriteAsync(
+                storage,
+                storageOptions,
+                tileCacheKey,
+                renderResult.ImageBytes,
+                "image/png",
+                $"{z.ToString(CultureInfo.InvariantCulture)}-{x.ToString(CultureInfo.InvariantCulture)}-{y.ToString(CultureInfo.InvariantCulture)}.png",
+                ImmutableDictionary<string, string>.Empty
+                    .Add("operation", "tile")
+                    .Add("protocol", "MapServer")
+                    .Add("serviceId", serviceId)
+                    .Add("tileMatrixSetId", "WebMercatorQuad")
+                    .Add("z", z.ToString(CultureInfo.InvariantCulture))
+                    .Add("x", x.ToString(CultureInfo.InvariantCulture))
+                    .Add("y", y.ToString(CultureInfo.InvariantCulture))
+                    .Add("metadataEtag", snapshot.Etag),
+                cancellationToken).ConfigureAwait(false);
 
             return Results.Bytes(renderResult.ImageBytes, "image/png");
         }
@@ -198,4 +243,45 @@ internal static partial class MapServerEndpoints
 
     private static bool IsTileLayerVisibleByDefault(MetadataV2Resource resource)
         => resource.Display?.DefaultVisibility ?? true;
+
+    private static string BuildMapServerTileCacheKey(
+        CloudStorageOptions? storageOptions,
+        MetadataV2GraphSnapshot snapshot,
+        string serviceId,
+        MetadataV2Service service,
+        IReadOnlyList<RenderLayerDescriptor> renderLayers,
+        int serviceSrid,
+        int maxFeatures,
+        int z,
+        int y,
+        int x)
+    {
+        var renderLayerKey = string.Join(
+            ',',
+            renderLayers
+                .OrderBy(static layer => layer.LayerId)
+                .Select(static layer => string.Join(
+                    ':',
+                    layer.LayerId.ToString(CultureInfo.InvariantCulture),
+                    layer.HasGeometry ? "1" : "0",
+                    layer.GeometryType.ToString())));
+        var behaviorHash = GeoServicesCloudTileCache.Hash(string.Join(
+            '|',
+            snapshot.Etag,
+            service.Metadata.Id,
+            serviceSrid.ToString(CultureInfo.InvariantCulture),
+            maxFeatures.ToString(CultureInfo.InvariantCulture),
+            renderLayerKey));
+
+        return GeoServicesCloudTileCache.BuildObjectKey(
+            storageOptions,
+            "mapserver",
+            "tiles",
+            serviceId,
+            behaviorHash,
+            "WebMercatorQuad",
+            z.ToString(CultureInfo.InvariantCulture),
+            x.ToString(CultureInfo.InvariantCulture),
+            $"{y.ToString(CultureInfo.InvariantCulture)}.png");
+    }
 }

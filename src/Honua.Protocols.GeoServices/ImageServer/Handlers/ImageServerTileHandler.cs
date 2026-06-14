@@ -1,16 +1,22 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using System.Globalization;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Protocols.GeoServices.ImageServer.Services;
+using Honua.Protocols.GeoServices;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Services;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 
@@ -118,6 +124,28 @@ internal sealed class ImageServerTileHandler
 
             if (selectedRasters.Length > 0)
             {
+                var storage = context.RequestServices.GetService<ICloudFileStorage>();
+                var storageOptions = context.RequestServices.GetService<IOptions<CloudStorageOptions>>()?.Value;
+                var tileCacheKey = BuildImageServerTileCacheKey(
+                    storageOptions,
+                    snapshot.Etag,
+                    layerId,
+                    selectedRasters,
+                    mergeStrategy,
+                    timestamp,
+                    context.Request.Query["mosaicRule"].ToString(),
+                    rasterFormat,
+                    level,
+                    row,
+                    col);
+
+                if (await GeoServicesCloudTileCache.TryReadAsync(storage, storageOptions, tileCacheKey, cancellationToken).ConfigureAwait(false) is { } cachedTile)
+                {
+                    ImageServerLog.ImageTileGenerated(_logger, layerId, cachedTile.Data.Length);
+                    scope.SetSuccess(1);
+                    return Results.File(cachedTile.Data, cachedTile.ContentType);
+                }
+
                 // Get the image tile from PostGIS
                 var tileResult = selectedRasters.Length == 1
                     ? await _rasterStore.GetImageTileAsync(
@@ -143,6 +171,24 @@ internal sealed class ImageServerTileHandler
                     var result = tileResult.Value;
                     ImageServerLog.ImageTileGenerated(_logger, layerId, result.Data.Length);
                     scope.SetSuccess(1);
+                    await GeoServicesCloudTileCache.TryWriteAsync(
+                        storage,
+                        storageOptions,
+                        tileCacheKey,
+                        result.Data,
+                        result.ContentType,
+                        $"{level.ToString(CultureInfo.InvariantCulture)}-{col.ToString(CultureInfo.InvariantCulture)}-{row.ToString(CultureInfo.InvariantCulture)}.{GetTileFileExtension(rasterFormat)}",
+                        ImmutableDictionary<string, string>.Empty
+                            .Add("operation", "tile")
+                            .Add("protocol", "ImageServer")
+                            .Add("layerId", layerId.ToString(CultureInfo.InvariantCulture))
+                            .Add("tileMatrixSetId", "WebMercatorQuad")
+                            .Add("z", level.ToString(CultureInfo.InvariantCulture))
+                            .Add("x", col.ToString(CultureInfo.InvariantCulture))
+                            .Add("y", row.ToString(CultureInfo.InvariantCulture))
+                            .Add("format", rasterFormat.ToString())
+                            .Add("metadataEtag", snapshot.Etag),
+                        cancellationToken).ConfigureAwait(false);
                     return Results.File(result.Data, result.ContentType);
                 }
             }
@@ -196,4 +242,50 @@ internal sealed class ImageServerTileHandler
         var minY = maxY - tileSpan;
         return ImageServerMosaicHelpers.CreateEnvelopeGeometry(minX, minY, maxX, maxY);
     }
+
+    private static string BuildImageServerTileCacheKey(
+        CloudStorageOptions? storageOptions,
+        string metadataEtag,
+        int layerId,
+        IReadOnlyList<RasterInfo> selectedRasters,
+        RasterMergeStrategy mergeStrategy,
+        DateTimeOffset? timestamp,
+        string mosaicRule,
+        RasterFormat rasterFormat,
+        int level,
+        int row,
+        int col)
+    {
+        var rasterKey = string.Join(
+            ',',
+            selectedRasters.Select(static raster => raster.Id.ToString(CultureInfo.InvariantCulture)));
+        var behaviorHash = GeoServicesCloudTileCache.Hash(string.Join(
+            '|',
+            metadataEtag,
+            layerId.ToString(CultureInfo.InvariantCulture),
+            rasterKey,
+            mergeStrategy.ToString(),
+            timestamp?.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+            mosaicRule,
+            rasterFormat.ToString()));
+
+        return GeoServicesCloudTileCache.BuildObjectKey(
+            storageOptions,
+            "imageserver",
+            "tiles",
+            layerId.ToString(CultureInfo.InvariantCulture),
+            behaviorHash,
+            "WebMercatorQuad",
+            level.ToString(CultureInfo.InvariantCulture),
+            col.ToString(CultureInfo.InvariantCulture),
+            $"{row.ToString(CultureInfo.InvariantCulture)}.{GetTileFileExtension(rasterFormat)}");
+    }
+
+    private static string GetTileFileExtension(RasterFormat rasterFormat)
+        => rasterFormat switch
+        {
+            RasterFormat.JPEG => "jpg",
+            RasterFormat.TIFF or RasterFormat.COG => "tif",
+            _ => "png"
+        };
 }

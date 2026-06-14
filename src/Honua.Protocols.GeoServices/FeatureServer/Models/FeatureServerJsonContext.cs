@@ -39,6 +39,7 @@ namespace Honua.Protocols.GeoServices.FeatureServer.Models;
 [JsonSerializable(typeof(GeoServicesFeature))]
 [JsonSerializable(typeof(GeoServicesFeature[]), TypeInfoPropertyName = "GeoServicesFeatureArray")]
 [JsonSerializable(typeof(GeoServicesGeometry))]
+[JsonSerializable(typeof(GeoServicesTransform))]
 [JsonSerializable(typeof(QueryParameters))]
 [JsonSerializable(typeof(GeoJsonFeatureSet))]
 [JsonSerializable(typeof(GeoJsonFeature), TypeInfoPropertyName = "FeatureServerGeoJsonFeature")]

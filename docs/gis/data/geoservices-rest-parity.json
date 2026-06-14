@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "lastReviewed": "2026-06-10",
+  "lastReviewed": "2026-06-13",
   "canonicalDocs": {
     "landingPage": "docs/reference/compatibility/geoservices-parity.md",
     "machineReadableExport": "docs/gis/data/geoservices-rest-parity.json"
@@ -661,19 +661,22 @@
           },
           {
             "name": "having",
-            "status": "rejected"
+            "status": "implemented"
           },
           {
             "name": "returnCentroid",
-            "status": "rejected"
+            "status": "implemented",
+            "notes": "GeoServices JSON responses emit polygon centroids and polygon layer metadata advertises supportsReturningGeometryCentroid."
           },
           {
             "name": "returnTrueCurves",
-            "status": "rejected"
+            "status": "ignored",
+            "notes": "Accepted for client compatibility; Honua advertises supportsTrueCurve=false and emits linearized geometries."
           },
           {
             "name": "returnExceededLimitFeatures",
-            "status": "rejected"
+            "status": "ignored",
+            "notes": "Accept-and-ignore for interop (#1460): the ArcGIS Maps SDK for .NET always sends it. Honua already returns the truncated page plus exceededTransferLimit=true, so both the default and an explicit false return the same page and flag."
           },
           {
             "name": "resultType",
@@ -690,7 +693,8 @@
           },
           {
             "name": "quantizationParameters",
-            "status": "rejected"
+            "status": "implemented",
+            "notes": "Honored for f=json: the featureSet emits a transform (originPosition/scale/translate, upperLeft or lowerLeft) and geometry coordinates become integer grid deltas; supportsCoordinatesQuantization is advertised true. Ignored for f=geojson; f=pbf returns its own quantized transform."
           },
           {
             "name": "datumTransformation",
@@ -722,8 +726,13 @@
             "status": "implemented"
           },
           {
-            "name": "historicMoment, returnTrueCurves, gdbVersion",
+            "name": "historicMoment, gdbVersion",
             "status": "rejected"
+          },
+          {
+            "name": "returnTrueCurves",
+            "status": "ignored",
+            "notes": "Accepted for client compatibility; related record geometries remain linearized."
           },
           {
             "name": "f",
@@ -749,13 +758,21 @@
         "layer metadata",
         "all layers and tables",
         "export",
+        "dynamicLayers mapLayer renderer overrides",
         "identify",
         "find",
         "legend",
+        "queryLegends",
         "query",
+        "dynamicLayer child resource (mapLayer source)",
         "query domains",
+        "generateRenderer (service-level)",
+        "generateRenderer (per layer)",
+        "queryAttachments",
+        "queryRelatedRecords",
         "feature child resource",
-        "tiles",
+        "tiles with cloud-storage cache",
+        "storage-backed exportTiles",
         "generateKml",
         "WMS",
         "WMTS",
@@ -764,25 +781,32 @@
         "queryRelatedRecords"
       ],
       "knownGaps": [
-        "exportTiles",
-        "estimateExportTilesSize",
-        "queryLegends",
+        "full Esri tile-package/job exportTiles semantics",
+        "queryAnalytic",
+        "workspace dynamic layers, joins, and dynamic tables",
+        "image/KML-image/job child resources",
         "additional Esri child resources"
       ],
       "evidence": {
         "code": [
-          "src/Honua.Server/Features/Protocols/GeoServices/MapServer/MapServerEndpoints.cs",
-          "src/Honua.Server/Features/Protocols/GeoServices/MapServer/MapServerRequestHandlers.Export.cs",
-          "src/Honua.Server/Features/Protocols/GeoServices/MapServer/MapServerRequestHandlers.Identify.cs",
-          "src/Honua.Server/Features/Protocols/GeoServices/MapServer/MapServerRequestHandlers.Find.cs",
-          "src/Honua.Server/Features/Protocols/Ogc/Classic/OgcClassicRequestHandlers.Wms.cs",
-          "src/Honua.Server/Features/Protocols/Ogc/Classic/OgcClassicRequestHandlers.Wmts.cs"
+          "src/Honua.Protocols.GeoServices/MapServer/MapServerEndpoints.cs",
+          "src/Honua.Protocols.GeoServices/MapServer/MapServerRequestHandlers.Export.cs",
+          "src/Honua.Protocols.GeoServices/MapServer/MapServerRequestHandlers.ExportTiles.cs",
+          "src/Honua.Protocols.GeoServices/MapServer/MapServerRequestHandlers.DynamicLayer.cs",
+          "src/Honua.Protocols.GeoServices/MapServer/MapServerRequestHandlers.Identify.cs",
+          "src/Honua.Protocols.GeoServices/MapServer/MapServerRequestHandlers.Find.cs",
+          "src/Honua.Protocols.GeoServices/MapServer/MapServerRequestHandlers.Legend.cs",
+          "src/Honua.Protocols.GeoServices/MapServer/MapServerRequestHandlers.RelatedAndRenderer.cs",
+          "src/Honua.Protocols.GeoServices/MapServer/MapServerRequestHandlers.Tile.cs",
+          "src/Honua.Protocols.GeoServices/GeoServicesCloudTileCache.cs",
+          "src/Honua.Protocols.OgcClassic/Wms/WmsRequestHandlers.cs",
+          "src/Honua.Protocols.OgcClassic/Wmts/WmtsRequestHandlers.cs"
         ],
         "tests": [
-          "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/MapServer/MapServerEndpointTests.cs",
-          "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/MapServer/MapServerTileEndpointTests.cs",
-          "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Classic/OgcClassicWmsTests.cs",
-          "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Classic/OgcClassicWmtsTests.cs"
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/MapServer/MapServerEndpointTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/MapServer/MapServerTileEndpointTests.cs",
+          "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wms/OgcClassicWmsTests.cs",
+          "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wmts/OgcClassicWmtsTests.cs"
         ]
       },
       "operations": {
@@ -818,7 +842,7 @@
               "GET /rest/services/{serviceId}/MapServer/export",
               "POST /rest/services/{serviceId}/MapServer/export"
             ],
-            "notes": "Supports image streaming via f=image and JSON envelope responses via f=json or f=pjson."
+            "notes": "Supports image streaming via f=image and JSON envelope responses via f=json or f=pjson. dynamicLayers supports source.type=mapLayer, request-scoped definitionExpression, and drawingInfo.renderer overrides for simple, unique-value, and class-breaks renderers."
           },
           {
             "name": "Identify",
@@ -860,11 +884,27 @@
             "name": "Legend",
             "esriPath": "/rest/services/{serviceId}/MapServer/legend",
             "methods": [
-              "GET"
+              "GET",
+              "POST"
             ],
             "honuaEndpoints": [
-              "GET /rest/services/{serviceId}/MapServer/legend"
-            ]
+              "GET /rest/services/{serviceId}/MapServer/legend",
+              "POST /rest/services/{serviceId}/MapServer/legend"
+            ],
+            "notes": "Builds swatches from stored styles or request-scoped dynamicLayers drawingInfo.renderer overrides for simple, unique-value, and class-breaks renderers."
+          },
+          {
+            "name": "Query Legends",
+            "esriPath": "/rest/services/{serviceId}/MapServer/queryLegends",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/MapServer/queryLegends",
+              "POST /rest/services/{serviceId}/MapServer/queryLegends"
+            ],
+            "notes": "Alias over the legend handler; returns Esri-shaped layers[].legend[] swatches, including dynamicLayers drawingInfo.renderer overrides."
           },
           {
             "name": "Layer query",
@@ -900,7 +940,8 @@
             ],
             "honuaEndpoints": [
               "GET /rest/services/{serviceId}/MapServer/tile/{z}/{y}/{x}"
-            ]
+            ],
+            "notes": "Returns dynamic WebMercatorQuad PNG tiles and uses configured cloud file storage (local, S3, Azure Blob) as a deterministic loose-object read-through/write-through cache."
           },
           {
             "name": "WMS",
@@ -944,7 +985,20 @@
             ]
           },
           {
-            "name": "Generate Renderer",
+            "name": "Generate Renderer (service level)",
+            "esriPath": "/rest/services/{serviceId}/MapServer/generateRenderer",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/MapServer/generateRenderer",
+              "POST /rest/services/{serviceId}/MapServer/generateRenderer"
+            ],
+            "notes": "Delegates to the FeatureServer generateRenderer contract after selecting the target layer from layer or layerId."
+          },
+          {
+            "name": "Generate Renderer (per layer)",
             "esriPath": "/rest/services/{serviceId}/MapServer/{layerId}/generateRenderer",
             "methods": [
               "GET",
@@ -985,6 +1039,43 @@
         ],
         "partial": [
           {
+            "name": "Estimate Export Tile Size",
+            "esriPath": "/rest/services/{serviceId}/MapServer/estimateExportTilesSize",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/MapServer/estimateExportTilesSize",
+              "POST /rest/services/{serviceId}/MapServer/estimateExportTilesSize"
+            ],
+            "notes": "Estimates bounded WebMercatorQuad ZIP archive size for the current storage-backed exportTiles implementation."
+          },
+          {
+            "name": "Export Tiles",
+            "esriPath": "/rest/services/{serviceId}/MapServer/exportTiles",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/MapServer/exportTiles",
+              "POST /rest/services/{serviceId}/MapServer/exportTiles"
+            ],
+            "notes": "Exports bounded WebMercatorQuad PNG tiles to a ZIP archive in configured cloud file storage. Full Esri TPK/TPKX/compact cache and async job resources are not implemented."
+          },
+          {
+            "name": "Dynamic Layer or Table resource",
+            "esriPath": "/rest/services/{serviceId}/MapServer/dynamicLayer",
+            "methods": [
+              "GET"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/MapServer/dynamicLayer"
+            ],
+            "notes": "Returns layer metadata for source.type=mapLayer definitions, including request-scoped id, definitionExpression, and drawingInfo. Workspace layers, joins, and dynamic tables remain deferred."
+          },
+          {
             "name": "WMTS",
             "esriPath": "/rest/services/{serviceId}/MapServer/WMTS",
             "methods": [
@@ -1000,41 +1091,11 @@
         ],
         "notImplemented": [
           {
-            "name": "Estimate Export Tile Size",
-            "esriPath": "/rest/services/{serviceId}/MapServer/estimateExportTilesSize",
-            "methods": [
-              "GET",
-              "POST"
-            ]
-          },
-          {
-            "name": "Export Tiles",
-            "esriPath": "/rest/services/{serviceId}/MapServer/exportTiles",
-            "methods": [
-              "POST"
-            ]
-          },
-          {
-            "name": "Query Legends",
-            "esriPath": "/rest/services/{serviceId}/MapServer/queryLegends",
-            "methods": [
-              "GET",
-              "POST"
-            ]
-          },
-          {
             "name": "Query Analytic",
             "esriPath": "/rest/services/{serviceId}/MapServer/{layerId}/queryAnalytic",
             "methods": [
               "GET",
               "POST"
-            ]
-          },
-          {
-            "name": "Dynamic Layer or Table resource",
-            "esriPath": "/rest/services/{serviceId}/MapServer/dynamicLayer",
-            "methods": [
-              "GET"
             ]
           },
           {
@@ -1072,7 +1133,7 @@
           {
             "name": "bbox, size, dpi, format, transparent, layers, bboxSR, imageSR, layerDefs, dynamicLayers, time, timeRelation, layerTimeOptions, backgroundColor",
             "status": "implemented",
-            "notes": "CRS inputs for `bboxSR` and `imageSR` accept numeric WKID, `EPSG:####`, OGC CRS URI/URN, bracket-safe forms (`[EPSG:####]`), and `CRS84` aliases."
+            "notes": "CRS inputs for `bboxSR` and `imageSR` accept numeric WKID, `EPSG:####`, OGC CRS URI/URN, bracket-safe forms (`[EPSG:####]`), and `CRS84` aliases. dynamicLayers supports source.type=mapLayer, definitionExpression, and drawingInfo.renderer overrides for simple, unique-value, and class-breaks renderers."
           },
           {
             "name": "f",
@@ -1109,6 +1170,8 @@
       "knownLimitations": [
         "WMTS support remains WebMercatorQuad-only.",
         "Layer queries inherit the FeatureServer query contract, including its format behavior.",
+        "MapServer tile GET storage is a loose-object cache, not an Esri compact cache or tile package.",
+        "dynamicLayers and the dynamicLayer child resource are limited to source.type=mapLayer, definitionExpression, and drawingInfo.renderer overrides; workspace layers, joins, and dynamic tables remain unimplemented.",
         "Advanced rendering parameters such as maxAllowableOffset and geometryPrecision are accepted but not yet applied."
       ]
     },
@@ -1121,68 +1184,85 @@
         "service metadata (with timeInfo when temporal)",
         "exportImage",
         "identify",
-        "tile",
+        "tile with cloud-storage cache",
+        "WMTS 1.0 GetCapabilities/GetTile/GetFeatureInfo",
         "query (raster catalog features)",
+        "find",
+        "measure (Basic mensuration)",
         "computeStatisticsHistograms",
+        "AOI-clipped computeStatisticsHistograms (envelope-scoped)",
+        "computeHistograms",
+        "getSamples",
+        "queryBoundary",
+        "computePixelLocation",
+        "project",
+        "storage-backed exportTiles",
+        "computeCacheInfo (dynamic cache metadata)",
         "legend",
         "computeClass (raster function chain validation)",
-        "WCS 2.0.1 KVP",
-        "getSamples",
-        "computeHistograms",
+        "exportImage Stretch renderingRule (MinMax/StandardDeviation/PercentClip)",
+        "auto display stretch for non-8-bit dynamic tiles",
         "keyProperties",
         "multidimensionalInfo",
         "statistics",
         "histograms",
         "rasterFunctionInfos",
-        "rasterAttributeTable"
+        "rasterAttributeTable",
+        "WCS 2.0.1 KVP"
       ],
       "knownGaps": [
-        "queryBoundary",
-        "find",
-        "measure",
-        "project",
-        "exportTiles",
+        "sensor/DEM-backed ImageServer height and 3D mensuration",
+        "full Esri tile-package/job exportTiles semantics",
+        "Esri compact/generated tile-cache management",
         "catalog mutation",
-        "AOI clipping for computeStatisticsHistograms",
+        "camera/orientation-ranked ImageServer find",
+        "datumTransformation/image coordinate systems for ImageServer project",
         "spatial WHERE pushdown for query",
-        "renderingRule honoured by exportImage/identify/legend",
-        "raster function executor (computeClass currently validates only)",
-        "multidimensional cube ingestion",
-        "WCS range subset/band selection/scaling/temporal extensions",
+        "renderingRule honoured by identify (legend honours an explicit Colormap; exportImage executes Stretch + Colormap)",
+                "multidimensional cube ingestion",
+        "WCS SCALEFACTOR/SCALEAXES/SCALEEXTENT and temporal extensions (RANGESUBSET band selection and SCALESIZE output sizing implemented)",
         "full WCS CRS extension advertisement beyond native coverage CRS values",
-        "WMTS",
+        "WMTS non-WebMercator matrix sets",
         "richer image child resources"
       ],
       "evidence": {
         "code": [
-          "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/ImageServerEndpoints.cs",
-          "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Handlers/ImageServerMetadataHandler.cs",
-          "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Handlers/ImageServerExportHandler.cs",
-          "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Handlers/ImageServerIdentifyHandler.cs",
-          "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Handlers/ImageServerTileHandler.cs",
-          "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Handlers/ImageServerCatalogQueryHandler.cs",
-          "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Handlers/ImageServerStatisticsHistogramsHandler.cs",
-          "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Handlers/ImageServerLegendHandler.cs",
-          "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Handlers/ImageServerAnalyzeHandler.cs",
-          "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Services/ImageServerCatalogReader.cs",
-          "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Services/ImageServerCatalogFilterEvaluator.cs",
-          "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Services/ImageServerMosaicHelpers.cs",
-          "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Services/ImageServerLegendSwatchBuilder.cs",
-          "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Services/ImageServerRasterFunctionPlanner.cs",
-          "src/Honua.Server/Features/Protocols/Ogc/Classic/Wcs20/Wcs20Endpoints.cs",
-          "src/Honua.Server/Features/Protocols/Ogc/Classic/Wcs20/Wcs20Handler.cs"
+          "src/Honua.Protocols.GeoServices/ImageServer/ImageServerEndpoints.cs",
+          "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerMetadataHandler.cs",
+          "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerExportHandler.cs",
+          "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerIdentifyHandler.cs",
+          "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerTileHandler.cs",
+          "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerWmtsHandler.cs",
+          "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerCatalogQueryHandler.cs",
+          "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerStatisticsHistogramsHandler.cs",
+          "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerCoordinateMetadataHandler.cs",
+          "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerProjectHandler.cs",
+          "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerExportTilesHandler.cs",
+          "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerFindHandler.cs",
+          "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerMeasureHandler.cs",
+          "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerLegendHandler.cs",
+          "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerAnalyzeHandler.cs",
+          "src/Honua.Protocols.GeoServices/ImageServer/Services/ImageServerCatalogReader.cs",
+          "src/Honua.Protocols.GeoServices/ImageServer/Services/ImageServerCatalogFilterEvaluator.cs",
+          "src/Honua.Protocols.GeoServices/ImageServer/Services/ImageServerMosaicHelpers.cs",
+          "src/Honua.Protocols.GeoServices/ImageServer/Services/ImageServerLegendSwatchBuilder.cs",
+          "src/Honua.Protocols.GeoServices/ImageServer/Services/ImageServerRasterFunctionPlanner.cs",
+          "src/Honua.Protocols.GeoServices/GeoServicesCloudTileCache.cs",
+          "src/Honua.Protocols.OgcClassic/Wcs20/Wcs20Endpoints.cs",
+          "src/Honua.Protocols.OgcClassic/Wcs20/Wcs20Handler.cs"
         ],
         "tests": [
-          "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerBasicTests.cs",
-          "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerParameterValidationTests.cs",
-          "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerErrorHandlingTests.cs",
-          "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerEndpointsTests.cs",
-          "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerMosaicIntegrationTests.cs",
-          "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerCatalogQueryHandlerTests.cs",
-          "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerStatisticsHistogramsHandlerTests.cs",
-          "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerLegendHandlerTests.cs",
-          "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerAnalyzeHandlerTests.cs",
-          "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Classic/Wcs20/Wcs20EndpointsTests.cs"
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerBasicTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerParameterValidationTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerErrorHandlingTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerEndpointsTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerTileHandlerTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerMosaicIntegrationTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerCatalogQueryHandlerTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerStatisticsHistogramsHandlerTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerLegendHandlerTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerAnalyzeHandlerTests.cs",
+          "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wcs20/Wcs20EndpointsTests.cs"
         ]
       },
       "operations": {
@@ -1207,7 +1287,7 @@
             "honuaEndpoints": [
               "GET /rest/services/{id}/ImageServer/tile/{level}/{row}/{col}"
             ],
-            "notes": "Supports png, jpeg, and tiff tile output. When multiple rasters overlap the requested tile, Honua renders a mosaic using the resolved merge strategy."
+            "notes": "Supports png, jpeg, and tiff tile output. When multiple rasters overlap the requested tile, Honua renders a mosaic using the resolved merge strategy. Tile GETs use configured cloud file storage (local, S3, Azure Blob) as a deterministic loose-object read-through/write-through cache."
           },
           {
             "name": "Compute Histograms",
@@ -1304,6 +1384,20 @@
         ],
         "partial": [
           {
+            "name": "WMTS",
+            "esriPath": "/rest/services/{id}/ImageServer/WMTS",
+            "methods": [
+              "GET"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer/WMTS",
+              "GET /rest/services/{id}/ImageServer/WMTS/{**restPath}",
+              "GET /rest/services/{serviceId}/ImageServer/WMTS",
+              "GET /rest/services/{serviceId}/ImageServer/WMTS/{**restPath}"
+            ],
+            "notes": "OGC WMTS 1.0 GetCapabilities/GetTile facade over the ImageServer tile/cloud-cache pipeline. Supports KVP and RESTful resources, WebMercatorQuad matrices, STYLE=default, image/png + image/jpeg + image/tiff tiles, GetFeatureInfo (application/json/text/xml) returning the pixel band values at the requested tile pixel, and a TIME dimension for temporal layers (GetTile/GetFeatureInfo honour a TIME parameter). Non-WebMercator tile matrix sets are deferred."
+          },
+          {
             "name": "Export Image",
             "esriPath": "/rest/services/{id}/ImageServer/exportImage",
             "methods": [
@@ -1336,7 +1430,37 @@
               "GET /rest/services/{id}/ImageServer/query",
               "POST /rest/services/{id}/ImageServer/query"
             ],
-            "notes": "Returns Esri-compatible raster catalog features (OBJECTID, footprint polygon, MinPS/MaxPS/LowPS/HighPS/CenterX/CenterY/ZOrder/Shape_Length/Shape_Area/BandCount/PixelType/AcquisitionDate/CreatedAt). Supports where (parsed via the GeoServices SQL filter parser, applied in-memory; max 2000 chars), objectIds, outSR (envelope-only stamping; geometry is NOT reprojected), single-instant time filtering to the newest layer-wide effective acquisition batch, resultOffset, resultRecordCount (default 100, capped at 1000), and the returnGeometry/returnIdsOnly/returnCountOnly/returnExtentOnly shaping flags. Spatial WHERE pushdown, outFields projection, orderByFields, pixelSize, and arbitrary geometry/spatialRel filters are not yet honoured."
+            "notes": "Returns Esri-compatible raster catalog features (OBJECTID, footprint polygon, MinPS/MaxPS/LowPS/HighPS/CenterX/CenterY/ZOrder/Shape_Length/Shape_Area/BandCount/PixelType/AcquisitionDate/CreatedAt). Supports where (parsed via the GeoServices SQL filter parser, applied in-memory; max 2000 chars), objectIds, outFields projection, orderByFields, an envelope-intersects spatial filter, outSR (footprint rings and the aggregate extent are reprojected when a transform is available), single-instant time filtering to the newest layer-wide effective acquisition batch, resultOffset, resultRecordCount (default 100, capped at 1000), and the returnGeometry/returnIdsOnly/returnCountOnly/returnExtentOnly shaping flags. Spatial WHERE pushdown to the database, pixelSize, and non-envelope geometry/spatialRel predicates are not yet honoured."
+          },
+          {
+            "name": "Find",
+            "esriPath": "/rest/services/{id}/ImageServer/find",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer/find",
+              "POST /rest/services/{id}/ImageServer/find",
+              "GET /rest/services/{serviceId}/ImageServer/find",
+              "POST /rest/services/{serviceId}/ImageServer/find"
+            ],
+            "notes": "Finds raster catalog images whose footprints contain toGeometry. Supports objectIds, where, inSR, fromGeometry validation, and maxCount. Results return catalog id/name, acquisition date, center, pixel size, rows, and cols; Esri camera/orientation-ranked image selection is deferred until sensor metadata is modeled."
+          },
+          {
+            "name": "Measure",
+            "esriPath": "/rest/services/{id}/ImageServer/measure",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer/measure",
+              "POST /rest/services/{id}/ImageServer/measure",
+              "GET /rest/services/{serviceId}/ImageServer/measure",
+              "POST /rest/services/{serviceId}/ImageServer/measure"
+            ],
+            "notes": "Implements Basic map-space point, distance/azimuth, area/perimeter, and centroid mensuration over point, envelope, and polygon Esri JSON. Sensor/DEM-backed height and 3D operations return 501 until sensor/orientation metadata is modeled."
           },
           {
             "name": "Compute Statistics and Histograms",
@@ -1349,7 +1473,117 @@
               "GET /rest/services/{id}/ImageServer/computeStatisticsHistograms",
               "POST /rest/services/{id}/ImageServer/computeStatisticsHistograms"
             ],
-            "notes": "Returns per-band statistics ({min,max,mean,standardDeviation,count}) and per-band histograms ({size,min,max,counts[]}). Supports rasterIds (CSV/JSON array of catalog object IDs; defaults to the selected layer mosaic), the Honua-extension bandIds selector (1-based), mosaicRule, single-instant time filtering to the newest layer-wide effective acquisition batch, and histogramParameters.size (default 256, capped at 1024). The parallel statistics[] and histograms[] arrays are aligned positionally: index i on both sides describes the same band. Multiple rasterIds are appended in request order. A band is only dropped from both arrays when neither the statistics nor the histograms result contained an entry for it; when a band is present on only one side, the missing side is zero-filled (an all-zero BandStatistic, or a BandHistogram with empty counts[]) so the parallel arrays stay index-aligned. AOI clipping (geometry/geometryType/renderingRule) and pixelSize are accepted as request fields but not yet applied — analysis always covers the full selected raster or mosaic."
+            "notes": "Returns per-band statistics ({min,max,mean,standardDeviation,count}) and per-band histograms ({size,min,max,counts[]}). Supports rasterIds (CSV/JSON array of catalog object IDs; defaults to the selected layer mosaic), the Honua-extension bandIds selector (1-based), mosaicRule, single-instant time filtering to the newest layer-wide effective acquisition batch, and histogramParameters.size (default 256, capped at 1024). The parallel statistics[] and histograms[] arrays are aligned positionally: index i on both sides describes the same band. Multiple rasterIds are appended in request order. A band is only dropped from both arrays when neither the statistics nor the histograms result contained an entry for it; when a band is present on only one side, the missing side is zero-filled (an all-zero BandStatistic, or a BandHistogram with empty counts[]) so the parallel arrays stay index-aligned. An AOI geometry/geometryType clips the analysis to that area (envelope-scoped) for both single rasters and mosaics; without a geometry the full selected raster or mosaic is analysed. renderingRule and pixelSize are accepted but not yet applied."
+          },
+          {
+            "name": "Compute Histograms",
+            "esriPath": "/rest/services/{id}/ImageServer/computeHistograms",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer/computeHistograms",
+              "POST /rest/services/{id}/ImageServer/computeHistograms"
+            ],
+            "notes": "Returns per-band histograms without the parallel statistics array. Supports the same rasterIds, bandIds, mosaicRule, time, and histogramParameters.size selection path as computeStatisticsHistograms; An AOI geometry clips the analysis to that area (envelope-scoped); renderingRule execution remains deferred."
+          },
+          {
+            "name": "Get Samples",
+            "esriPath": "/rest/services/{id}/ImageServer/getSamples",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer/getSamples",
+              "POST /rest/services/{id}/ImageServer/getSamples"
+            ],
+            "notes": "Samples pixel values at point, multipoint, polyline/polygon vertex, or envelope-center locations using the shared raster identify pipeline. sampleCount is capped at 1000."
+          },
+          {
+            "name": "Compute Cache Info",
+            "esriPath": "/rest/services/{id}/ImageServer/computeCacheInfo",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer/computeCacheInfo",
+              "POST /rest/services/{id}/ImageServer/computeCacheInfo"
+            ],
+            "notes": "Dynamic ImageServer layers return a spec-shaped cacheInfo object with the service extent and intentionally omit tileInfo/cacheType until a formal Esri-style raster tile cache is configured. The loose-object tile GET cache is operational storage, not advertised cache metadata."
+          },
+          {
+            "name": "Compute Pixel Location",
+            "esriPath": "/rest/services/{id}/ImageServer/computePixelLocation",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer/computePixelLocation",
+              "POST /rest/services/{id}/ImageServer/computePixelLocation"
+            ],
+            "notes": "Converts point geometries to raster pixel column/row coordinates using the raster geotransform, falling back to the raster extent when no affine transform is present. Supports rasterId and input spatial references when the shared CRS transform service is available."
+          },
+          {
+            "name": "Query Boundary",
+            "esriPath": "/rest/services/{id}/ImageServer/queryBoundary",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer/queryBoundary",
+              "POST /rest/services/{id}/ImageServer/queryBoundary"
+            ],
+            "notes": "Returns the aggregate raster footprint boundary as Esri shape plus approximate area. The boundary is extent/footprint based; NoData-trimmed single-raster boundaries are deferred."
+          },
+          {
+            "name": "Project",
+            "esriPath": "/rest/services/{id}/ImageServer/project",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer/project",
+              "POST /rest/services/{id}/ImageServer/project",
+              "GET /rest/services/{serviceId}/ImageServer/project",
+              "POST /rest/services/{serviceId}/ImageServer/project"
+            ],
+            "notes": "Reprojects Esri JSON geometry arrays between supported spatial references via the shared CRS projection pipeline and returns the Image Service geometries[] response shape. Envelope geometries remain envelope-shaped. datumTransformation/transformation parameters and image coordinate system identifiers are rejected until neutral support is added."
+          },
+          {
+            "name": "Estimate Export Tiles Size",
+            "esriPath": "/rest/services/{id}/ImageServer/estimateExportTilesSize",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer/estimateExportTilesSize",
+              "POST /rest/services/{id}/ImageServer/estimateExportTilesSize",
+              "GET /rest/services/{serviceId}/ImageServer/estimateExportTilesSize",
+              "POST /rest/services/{serviceId}/ImageServer/estimateExportTilesSize"
+            ],
+            "notes": "Estimates bounded WebMercatorQuad ZIP archive size for the current storage-backed ImageServer exportTiles implementation."
+          },
+          {
+            "name": "Export Tiles",
+            "esriPath": "/rest/services/{id}/ImageServer/exportTiles",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer/exportTiles",
+              "POST /rest/services/{id}/ImageServer/exportTiles",
+              "GET /rest/services/{serviceId}/ImageServer/exportTiles",
+              "POST /rest/services/{serviceId}/ImageServer/exportTiles"
+            ],
+            "notes": "Exports bounded WebMercatorQuad image tiles as a ZIP archive written through configured cloud file storage (local, S3, Azure Blob). This supports common storage-backed tile archive workflows; Esri TPK/TPKX/compact cache packages and async job child resources are deferred."
           }
         ],
         "notImplemented": [
@@ -1363,14 +1597,6 @@
           {
             "name": "Calculate Volume",
             "esriPath": "/rest/services/{id}/ImageServer/calculateVolume",
-            "methods": [
-              "GET",
-              "POST"
-            ]
-          },
-          {
-            "name": "Compute Cache Info",
-            "esriPath": "/rest/services/{id}/ImageServer/computeCacheInfo",
             "methods": [
               "GET",
               "POST"
@@ -1400,39 +1626,8 @@
             ]
           },
           {
-            "name": "Export Tiles",
-            "esriPath": "/rest/services/{id}/ImageServer/exportTiles",
-            "methods": [
-              "POST"
-            ]
-          },
-          {
-            "name": "Find",
-            "esriPath": "/rest/services/{id}/ImageServer/find",
-            "methods": [
-              "GET",
-              "POST"
-            ]
-          },
-          {
-            "name": "Measure",
-            "esriPath": "/rest/services/{id}/ImageServer/measure",
-            "methods": [
-              "GET",
-              "POST"
-            ]
-          },
-          {
-            "name": "Project",
-            "esriPath": "/rest/services/{id}/ImageServer/project",
-            "methods": [
-              "GET",
-              "POST"
-            ]
-          },
-          {
-            "name": "Query Boundary",
-            "esriPath": "/rest/services/{id}/ImageServer/queryBoundary",
+            "name": "Compute Tie Points",
+            "esriPath": "/rest/services/{id}/ImageServer/computeTiePoints",
             "methods": [
               "GET",
               "POST"
@@ -1447,10 +1642,68 @@
             "GET /rest/services/{id}/ImageServer/computeClass",
             "POST /rest/services/{id}/ImageServer/computeClass"
           ],
-          "notes": "Closest in spirit to Esri's validate operation. Accepts a raster function chain document via renderingRule (or the legacy rasterFunction alias) and returns the planned execution metadata (rasterFunction, chainDepth, executedFunctions[], outputPixelType, status). The MVP planner walks Identity / Stretch / Clip nodes (max chain depth 8) and rejects unknown functions with a 400; full executor wiring into exportImage / computeStatisticsHistograms is tracked as a follow-on."
+          "notes": "Closest in spirit to Esri's validate operation. Accepts a raster function chain document via renderingRule (or the legacy rasterFunction alias) and returns the planned execution metadata (rasterFunction, chainDepth, executedFunctions[], outputPixelType, status). The MVP planner walks Identity / Stretch / Clip nodes (max chain depth 8) and rejects unknown functions with a 400; exportImage now executes the Stretch portion (MinMax/StandardDeviation/PercentClip), an explicit Colormap, and a Clip (envelope/polygon) raster function; computeStatisticsHistograms wiring remains a follow-on."
         }
       ],
       "childResources": {
+        "implemented": [
+          {
+            "name": "Key Properties",
+            "esriPath": "/rest/services/{id}/ImageServer/keyProperties",
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer/keyProperties",
+              "POST /rest/services/{id}/ImageServer/keyProperties"
+            ],
+            "notes": "Returns the Esri key-properties document for the primary raster, including BandProperties and cell-size metadata."
+          },
+          {
+            "name": "Statistics",
+            "esriPath": "/rest/services/{id}/ImageServer/statistics",
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer/statistics",
+              "POST /rest/services/{id}/ImageServer/statistics"
+            ],
+            "notes": "Returns per-band raster statistics."
+          },
+          {
+            "name": "Histograms",
+            "esriPath": "/rest/services/{id}/ImageServer/histograms",
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer/histograms",
+              "POST /rest/services/{id}/ImageServer/histograms"
+            ],
+            "notes": "Returns per-band raster histograms."
+          },
+          {
+            "name": "Raster Attribute Table",
+            "esriPath": "/rest/services/{id}/ImageServer/rasterAttributeTable",
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer/rasterAttributeTable",
+              "POST /rest/services/{id}/ImageServer/rasterAttributeTable"
+            ],
+            "notes": "Continuous rasters return a spec-shaped empty feature set with field schema."
+          },
+          {
+            "name": "Raster Function Infos",
+            "esriPath": "/rest/services/{id}/ImageServer/rasterFunctionInfos",
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer/rasterFunctionInfos",
+              "POST /rest/services/{id}/ImageServer/rasterFunctionInfos"
+            ],
+            "notes": "Advertises raster functions accepted by renderingRule planning."
+          },
+          {
+            "name": "Multidimensional Info and Slices",
+            "esriPath": "/rest/services/{id}/ImageServer/multidimensionalInfo",
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer/multidimensionalInfo",
+              "POST /rest/services/{id}/ImageServer/multidimensionalInfo",
+              "GET /rest/services/{id}/ImageServer/slices",
+              "POST /rest/services/{id}/ImageServer/slices"
+            ],
+            "notes": "Returns spec-shaped empty documents for non-multidimensional rasters and populated variables/slices when multidimensional coverage metadata is available."
+          }
+        ],
         "partial": [
           {
             "name": "Legend",
@@ -1458,7 +1711,7 @@
             "honuaEndpoints": [
               "GET /rest/services/{id}/ImageServer/legend"
             ],
-            "notes": "Returns Esri-shaped layers[].legend[] swatches as base64 PNGs (image/png). The MVP renders a fixed 5-class equal-interval ramp keyed off the resolved layer mosaic's band-1 statistics; per-layer renderer persistence and renderingRule overrides are not yet honoured. Only f=json/f=pjson is accepted."
+            "notes": "Returns Esri-shaped layers[].legend[] swatches as base64 PNGs (image/png). Renders a 5-class equal-interval ramp keyed off the resolved layer mosaic's band-1 statistics by default; a renderingRule with an explicit Colormap is honoured (one swatch per colour stop). Per-layer renderer persistence and non-colormap renderer overrides are not yet honoured. Only f=json/f=pjson is accepted."
           },
           {
             "name": "WCS",
@@ -1467,7 +1720,7 @@
               "GET /rest/services/{id}/ImageServer/WCS",
               "GET /ogc/services/{serviceId}/wcs"
             ],
-            "notes": "WCS 2.0.1 KVP adapter for WCS-enabled raster layers. Supports GetCapabilities, DescribeCoverage, and GetCoverage over the primary raster with image/tiff, image/png, image/jpeg, SUBSET/BBOX spatial trim, SUBSETTINGCRS/BBOXCRS, and optional OUTPUTCRS. Capabilities advertise native CRSs for visible coverages; one-axis SUBSET is native-CRS only. Range subset, scaling, temporal/multidimensional slicing, NetCDF, XML POST, and WCS-specific mosaic selection are deferred."
+            "notes": "WCS 2.0.1 KVP adapter for WCS-enabled raster layers. Supports GetCapabilities, DescribeCoverage, and GetCoverage over the primary raster with image/tiff, image/png, image/jpeg, SUBSET/BBOX spatial trim, SUBSETTINGCRS/BBOXCRS, optional OUTPUTCRS, RANGESUBSET band selection (band1..bandN, comma list and band1:bandN intervals), and SCALESIZE explicit per-axis output sizing (x(w),y(h)). Capabilities advertise native CRSs for visible coverages; one-axis SUBSET is native-CRS only. The range-subsetting and scaling extension conformance classes are not advertised pending CITE validation. SCALEFACTOR/SCALEAXES/SCALEEXTENT, temporal/multidimensional slicing, NetCDF, XML POST, and WCS-specific mosaic selection are deferred."
           }
         ],
         "notImplemented": [
@@ -1477,8 +1730,7 @@
           "kml",
           "{rasterId}/*",
           "rasterFile",
-          "slices",
-          "WMTS"
+          "slices"
         ]
       },
       "parameterCoverage": {
@@ -1681,9 +1933,9 @@
         "Metadata, export, identify, tile, and statistics operate on the selected raster mosaic rather than a single primary raster.",
         "Default exportImage responses return JSON with a temporary file URL; f=image returns rendered bytes inline.",
         "Temporal mosaic uses newest-batch semantics: a time filter selects rasters from the single most-recent layer-wide effective acquisition batch (AcquisitionDate, falling back to CreatedAt) at or before the requested instant before applying request geometry, so mixed-date scenes can leave spatial coverage gaps until per-pixel temporal mosaicking is implemented.",
-        "The query catalog reader applies WHERE/objectIds filters in-memory and does not reproject footprint geometry to outSR.",
+        "The query catalog reader applies WHERE/objectIds filters in-memory and reprojects footprint geometry to outSR when a coordinate transform is available.",
         "computeStatisticsHistograms always analyses the full selected raster or mosaic — geometry clipping and renderingRule are not yet honoured.",
-        "computeClass currently only validates and plans the raster function chain; it does not yet execute the chain into exportImage / computeStatisticsHistograms.",
+        "exportImage executes the Stretch raster function from renderingRule (MinMax/StandardDeviation/PercentClip, with optional per-band Statistics); exportImage also executes an explicit Colormap and a Clip (envelope/polygon), and the legend honours a Colormap renderingRule; other stretch types, clip-inside, and identify renderingRule are not yet honoured.",
         "Legend swatches use a fixed 5-class equal-interval ramp; per-layer renderer persistence and renderingRule overrides are not yet wired up.",
         "Service info exposes timeInfo when the layer metadata declares temporal fields or raster catalog items carry acquisition timestamps.",
         "Rendered ImageServer byte output still depends on the PostGIS raster output drivers configured in the database.",
@@ -1691,7 +1943,11 @@
         "WCS GetCapabilities advertises native CRS values for visible coverages, not every transformable output CRS.",
         "WCS single-axis SUBSET fills the omitted axis from the stored raster extent only for native-CRS subsets; callers using a non-native SUBSETTINGCRS/BBOXCRS must supply both axes or use BBOX.",
         "hasMultidimensions is always false until cube ingestion ships; multidimensionalInfo remains absent.",
-        "Honua does not currently expose ImageServer WMTS or offline tile export."
+        "ImageServer find filters by raster catalog footprint and returns catalog metadata; true camera/orientation-ranked image selection is deferred until sensor metadata is modeled.",
+        "ImageServer measure supports Basic map-space mensuration only; sensor/DEM-backed height and 3D mensuration are not implemented.",
+        "ImageServer tile GET storage is a loose-object cache, not an Esri compact cache, tile package, or advertised cacheInfo tile cache.",
+        "ImageServer exportTiles writes ZIP archives to configured cloud file storage; Esri TPK/TPKX/compact cache packages and async job resources are not implemented.",
+        "ImageServer WMTS supports GetCapabilities/GetTile/GetFeatureInfo for WebMercatorQuad image/png, image/jpeg, and image/tiff tiles with a TIME dimension for temporal layers; non-WebMercator matrix sets are deferred."
       ]
     },
     {
@@ -2327,17 +2583,16 @@
         "findAddressCandidates",
         "reverseGeocode",
         "suggest",
-        "geocodeAddresses (batch)"
+        "geocodeAddresses (batch)",
+        "outFields projection",
+        "outSR reprojection",
+        "candidateFields metadata"
       ],
       "knownGaps": [
-        "outFields projection",
         "magicKey round-trip",
         "category filtering",
         "forStorage",
-        "matchOutOfRange",
-        "non-default outSR reprojection",
-        "candidateFields metadata",
-        "categories metadata"
+        "matchOutOfRange"
       ],
       "evidence": {
         "code": [
@@ -2380,7 +2635,7 @@
               "POST /rest/services/{locatorName}/GeocodeServer/findAddressCandidates",
               "GET /rest/services/GeocodeServer/findAddressCandidates"
             ],
-            "notes": "Honors singleLine/structured fields, maxLocations, outSR (default WKID only), countryCode(s), and searchExtent."
+            "notes": "Honors singleLine/structured fields, maxLocations, outSR (reprojected via the shared transform service), countryCode(s), and searchExtent."
           },
           {
             "name": "Reverse Geocode",
@@ -2394,7 +2649,7 @@
               "POST /rest/services/{locatorName}/GeocodeServer/reverseGeocode",
               "GET /rest/services/GeocodeServer/reverseGeocode"
             ],
-            "notes": "Honors location, outSR (default WKID only), and langCode."
+            "notes": "Honors location, outSR (reprojected via the shared transform service), and langCode."
           },
           {
             "name": "Suggest",
@@ -2422,7 +2677,7 @@
               "POST /rest/services/{locatorName}/GeocodeServer/geocodeAddresses",
               "GET /rest/services/GeocodeServer/geocodeAddresses"
             ],
-            "notes": "Accepts the Esri addresses={\"records\":[...]} payload and a bare records array. Honors outSR (default WKID only) and countryCode(s); enforces the provider batch-size cap."
+            "notes": "Accepts the Esri addresses={\"records\":[...]} payload and a bare records array. Honors outSR (reprojected via the shared transform service) and countryCode(s); enforces the provider batch-size cap."
           }
         ],
         "notImplemented": []
@@ -2447,8 +2702,8 @@
           },
           {
             "name": "outSR",
-            "status": "partial",
-            "notes": "Only the default WKID (4326) is accepted."
+            "status": "implemented",
+            "notes": "Output coordinates are reprojected to the requested WKID via the shared coordinate-transform service; a transform the service cannot perform returns 400."
           },
           {
             "name": "searchExtent",
@@ -2456,7 +2711,12 @@
             "notes": "Accepts xmin,ymin,xmax,ymax or an Esri envelope JSON in the default SR; forwarded to the provider as a search/view bounds."
           },
           {
-            "name": "outFields, category, magicKey, location, matchOutOfRange, forStorage",
+            "name": "outFields",
+            "status": "implemented",
+            "notes": "Projects the returned attributes to the requested fields (case-insensitive); * or omitted returns all; an empty token returns 400."
+          },
+          {
+            "name": "category, magicKey, location, matchOutOfRange, forStorage",
             "status": "notImplemented",
             "notes": "Accepted but not applied."
           }
@@ -2469,8 +2729,8 @@
           },
           {
             "name": "outSR",
-            "status": "partial",
-            "notes": "Only the default WKID (4326) is accepted."
+            "status": "implemented",
+            "notes": "Output coordinates are reprojected to the requested WKID via the shared coordinate-transform service; a transform the service cannot perform returns 400."
           },
           {
             "name": "langCode",
@@ -2504,8 +2764,8 @@
           },
           {
             "name": "outSR",
-            "status": "partial",
-            "notes": "Only the default WKID (4326) is accepted."
+            "status": "implemented",
+            "notes": "Output coordinates are reprojected to the requested WKID via the shared coordinate-transform service; a transform the service cannot perform returns 400."
           },
           {
             "name": "sourceCountry, matchOutOfRange, category",
@@ -2516,7 +2776,7 @@
       "knownLimitations": [
         "Output is WGS84 (wkid 4326) only; a non-default outSR is rejected rather than reprojected.",
         "Only f=json and f=pjson responses are supported.",
-        "outFields projection, magicKey round-tripping, category filtering, and forStorage/matchOutOfRange are not implemented.",
+        "outFields projection and outSR reprojection are implemented; magicKey round-tripping, category filtering, and forStorage/matchOutOfRange are not implemented.",
         "A parameter is only forwarded when at least one backing provider acts on it (Nominatim honors searchExtent for forward and langCode for reverse; Azure Maps and Amazon Location additionally honor suggestion bounds/bias)."
       ]
     },

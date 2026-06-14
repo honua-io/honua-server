@@ -783,7 +783,23 @@ internal sealed partial class FeatureServerQueryHandler(
             var isGeobuf = string.Equals(format, "geobuf", StringComparison.OrdinalIgnoreCase);
             var isParquet = string.Equals(format, "parquet", StringComparison.OrdinalIgnoreCase);
             var isArrow = string.Equals(format, "arrow", StringComparison.OrdinalIgnoreCase);
-            var useStreaming = effectiveLimit > StreamingThreshold && !isPbf && !isFgb && !isGeobuf && !isParquet && !isArrow;
+            // Esri json coordinate quantization (quantizationParameters) applies only to the
+            // GeoServices json featureSet, not geojson or the binary export formats.
+            var isGeoJson = string.Equals(format, "geojson", StringComparison.OrdinalIgnoreCase);
+            var isEsriJson = !isPbf && !isFgb && !isGeobuf && !isParquet && !isArrow && !isGeoJson;
+            QuantizationTransform? quantizationTransform = null;
+            if (isEsriJson &&
+                !FeatureQuantizer.TryParse(validatedParams.QuantizationParameters, out quantizationTransform, out var quantizationError))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, quantizationError ?? "Invalid quantizationParameters.");
+            }
+
+            // quantization must post-process the materialized featureSet, so route it through
+            // the materialized path instead of the streaming writer. returnExceededLimitFeatures
+            // is accept-and-ignore (#1460): Honua already returns the page plus
+            // exceededTransferLimit, so it does not change the streaming decision.
+            var useStreaming = effectiveLimit > StreamingThreshold && !isPbf && !isFgb && !isGeobuf && !isParquet && !isArrow
+                && quantizationTransform is null;
 
             if (!useStreaming)
             {
@@ -911,7 +927,8 @@ internal sealed partial class FeatureServerQueryHandler(
                     outFields = parsed.Length == 0 ? null : parsed;
                 }
                 var shouldApplyDistinct = validatedParams.ReturnDistinctValues && outFields is { Length: > 0 };
-                if (CanUseRawGeoServicesPointFastPath(queryLayer.Resource, validatedParams, query, outputSrid, format) &&
+                if (quantizationTransform is null &&
+                    CanUseRawGeoServicesPointFastPath(queryLayer.Resource, validatedParams, query, outputSrid, format) &&
                     await _queryExecutor.SupportsRawGeoServicesPointOutputAsync(
                         queryLayer.Service,
                         queryLayer.Resource,
@@ -969,7 +986,8 @@ internal sealed partial class FeatureServerQueryHandler(
                     validatedParams.GeometryPrecision,
                     validatedParams.MaxAllowableOffset,
                     outFields,
-                    suppressObjectId: shouldApplyDistinct);
+                    suppressObjectId: shouldApplyDistinct,
+                    returnCentroid: validatedParams.ReturnCentroid);
 
                 FeatureServerLog.QueryCompleted(_logger, serviceId, layerId, result.Items.Length, result.TotalCount);
                 HonuaTelemetry.SetSuccess(featureActivity, result.Items.Length);
@@ -993,6 +1011,11 @@ internal sealed partial class FeatureServerQueryHandler(
                     return await CreateCachedBytesResultAsync(
                         (byte[])formattedResponse!,
                         contentType ?? "application/vnd.apache.arrow.stream");
+                }
+
+                if (quantizationTransform is not null && formattedResponse is QueryResponse quantizableResponse)
+                {
+                    formattedResponse = ApplyQuantization(quantizableResponse, quantizationTransform);
                 }
 
                 return format.ToLowerInvariant() switch
@@ -1120,7 +1143,6 @@ internal sealed partial class FeatureServerQueryHandler(
             parameters.ReturnCentroid ||
             parameters.ReturnDistance ||
             parameters.ReturnDistinctValues ||
-            parameters.ReturnTrueCurves ||
             parameters.GeometryPrecision.HasValue ||
             parameters.MaxAllowableOffset.HasValue ||
             parameters.NearestCount.HasValue)
@@ -1746,7 +1768,8 @@ internal sealed partial class FeatureServerQueryHandler(
             validatedParams.GeometryPrecision,
             validatedParams.MaxAllowableOffset,
             outFields,
-            suppressObjectId: shouldApplyDistinct).ConfigureAwait(false);
+            suppressObjectId: shouldApplyDistinct,
+            returnCentroid: validatedParams.ReturnCentroid).ConfigureAwait(false);
 
         var response = (QueryResponse)formattedResponse!;
         FeatureServerLog.QueryCompleted(_logger, serviceId, layerId, queryResult.Items.Length, queryResult.TotalCount);
@@ -2261,20 +2284,14 @@ internal sealed partial class FeatureServerQueryHandler(
     {
         var unsupported = new List<string>();
 
-        if (queryParams.ReturnTrueCurves)
-        {
-            unsupported.Add("returnTrueCurves");
-        }
-
         // returnExceededLimitFeatures is accepted and ignored: Honua already reports
         // exceededTransferLimit when more rows exist within the page, so the flag needs no
         // special handling. The ArcGIS Maps SDK for .NET ServiceFeatureTable.QueryFeaturesAsync
         // always sends it, so rejecting it broke every .NET FeatureServer client (#1460).
-
-        if (queryParams.ReturnCentroid)
-        {
-            unsupported.Add("returnCentroid");
-        }
+        //
+        // returnTrueCurves is also accepted as a no-op. Honua does not advertise true-curve
+        // support and the current geometry writers emit linearized geometries, but ArcGIS
+        // clients may still include the flag on otherwise ordinary feature queries.
 
         if (unsupported.Count == 0)
         {
@@ -2651,6 +2668,55 @@ internal sealed partial class FeatureServerQueryHandler(
         var hasMore = effectiveOffset + take < totalCount;
 
         return QueryResult<Feature>.Create(totalCount, pageItems, hasMore);
+    }
+
+    // Rebuilds the Esri json featureSet with quantized (integer grid, delta-encoded)
+    // geometry coordinates and the matching transform, when quantizationParameters was
+    // requested. The transform lets clients recover world coordinates.
+    private static QueryResponse ApplyQuantization(QueryResponse response, QuantizationTransform transform)
+    {
+        GeoServicesFeature[]? features = response.Features;
+        if (features is { Length: > 0 })
+        {
+            var quantized = new GeoServicesFeature[features.Length];
+            for (var i = 0; i < features.Length; i++)
+            {
+                var feature = features[i];
+                quantized[i] = new GeoServicesFeature
+                {
+                    Attributes = feature.Attributes,
+                    Geometry = feature.Geometry is { } geometry ? FeatureQuantizer.Quantize(geometry, transform) : null,
+                    Centroid = feature.Centroid is { } centroid ? FeatureQuantizer.Quantize(centroid, transform) : null,
+                    IncludeGeometry = feature.IncludeGeometry,
+                };
+            }
+
+            features = quantized;
+        }
+
+        return new QueryResponse
+        {
+            GeometryType = response.GeometryType,
+            SpatialReference = response.SpatialReference,
+            DisplayFieldName = response.DisplayFieldName,
+            Fields = response.Fields,
+            HasZ = response.HasZ,
+            HasM = response.HasM,
+            ObjectIdFieldName = response.ObjectIdFieldName,
+            ObjectIds = response.ObjectIds,
+            Count = response.Count,
+            Extent = response.Extent,
+            UniqueIdField = response.UniqueIdField,
+            GlobalIdFieldName = response.GlobalIdFieldName,
+            Features = features,
+            ExceededTransferLimit = response.ExceededTransferLimit,
+            Transform = new GeoServicesTransform
+            {
+                OriginPosition = transform.OriginPosition,
+                Scale = [transform.ScaleX, transform.ScaleY],
+                Translate = [transform.TranslateX, transform.TranslateY],
+            },
+        };
     }
 
     private static string BuildDistinctKey(Feature feature, string[] outFields)

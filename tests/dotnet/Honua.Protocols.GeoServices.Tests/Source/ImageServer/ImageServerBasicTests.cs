@@ -282,6 +282,12 @@ public class ImageServerBasicTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/ImageServer/computeHistograms")]
     [Endpoint("GET /rest/services/{serviceId}/ImageServer/getSamples")]
     [Endpoint("POST /rest/services/{serviceId}/ImageServer/getSamples")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/computeCacheInfo")]
+    [Endpoint("POST /rest/services/{serviceId}/ImageServer/computeCacheInfo")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/computePixelLocation")]
+    [Endpoint("POST /rest/services/{serviceId}/ImageServer/computePixelLocation")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/queryBoundary")]
+    [Endpoint("POST /rest/services/{serviceId}/ImageServer/queryBoundary")]
     [Endpoint("GET /rest/services/{serviceId}/ImageServer/keyProperties")]
     [Endpoint("POST /rest/services/{serviceId}/ImageServer/keyProperties")]
     [Endpoint("GET /rest/services/{serviceId}/ImageServer/legend")]
@@ -300,6 +306,8 @@ public class ImageServerBasicTests : IAsyncLifetime
             """{"classes":[{"id":1,"name":"water","geometry":{"rings":[[[-1,-1],[-1,1],[1,1],[1,-1],[-1,-1]]]}}]}""");
         var geometry = Uri.EscapeDataString(
             """{"xmin":-180,"ymin":-90,"xmax":180,"ymax":90,"spatialReference":{"wkid":4326}}""");
+        var pixelGeometries = Uri.EscapeDataString(
+            """{"geometries":[{"x":0,"y":0,"spatialReference":{"wkid":4326}}],"geometryType":"esriGeometryPoint"}""");
 
         var getUris = new[]
         {
@@ -311,6 +319,9 @@ public class ImageServerBasicTests : IAsyncLifetime
             $"/rest/services/{serviceId}/ImageServer/computeStatisticsHistograms?f=json&geometryType=esriGeometryEnvelope&geometry={geometry}",
             $"/rest/services/{serviceId}/ImageServer/computeHistograms?f=json&geometryType=esriGeometryEnvelope&geometry={geometry}",
             $"/rest/services/{serviceId}/ImageServer/getSamples?f=json&geometryType=esriGeometryMultipoint&geometry={geometry}",
+            $"/rest/services/{serviceId}/ImageServer/computeCacheInfo?f=json",
+            $"/rest/services/{serviceId}/ImageServer/computePixelLocation?f=json&geometries={pixelGeometries}",
+            $"/rest/services/{serviceId}/ImageServer/queryBoundary?f=json",
             $"/rest/services/{serviceId}/ImageServer/keyProperties?f=json",
             $"/rest/services/{serviceId}/ImageServer/legend?f=json",
             $"/rest/services/{serviceId}/ImageServer/computeClassStatistics?f=json&classDescriptions={classDescriptions}",
@@ -365,6 +376,19 @@ public class ImageServerBasicTests : IAsyncLifetime
                 new("f", "json"),
                 new("geometryType", "esriGeometryMultipoint"),
                 new("geometry", """{"points":[[0,0]],"spatialReference":{"wkid":4326}}""")
+            ]),
+            ($"/rest/services/{serviceId}/ImageServer/computeCacheInfo",
+            [
+                new("f", "json")
+            ]),
+            ($"/rest/services/{serviceId}/ImageServer/computePixelLocation",
+            [
+                new("f", "json"),
+                new("geometries", """{"geometries":[{"x":0,"y":0,"spatialReference":{"wkid":4326}}],"geometryType":"esriGeometryPoint"}""")
+            ]),
+            ($"/rest/services/{serviceId}/ImageServer/queryBoundary",
+            [
+                new("f", "json")
             ]),
             ($"/rest/services/{serviceId}/ImageServer/computeClassStatistics",
             [

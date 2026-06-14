@@ -21,11 +21,13 @@ internal static partial class MapServerEndpoints
 
     private sealed record LegendLayerDescriptor(
         int LayerId,
+        int StyleLayerId,
         string LayerName,
         MetadataV2GeometryType GeometryType,
         double? MinScale,
         double? MaxScale,
-        MetadataV2Resource Resource);
+        MetadataV2Resource Resource,
+        string? DrawingInfoJson = null);
 
     /// <summary>
     /// Handle MapServer legend requests.
@@ -96,7 +98,11 @@ internal static partial class MapServerEndpoints
             var layerLookup = legendLayerDescriptors.ToDictionary(static layer => layer.LayerId);
             visibleLayers = dynamicLayers
                 .Where(dynamicLayer => layerLookup.ContainsKey(dynamicLayer.MapLayerId))
-                .Select(dynamicLayer => layerLookup[dynamicLayer.MapLayerId])
+                .Select(dynamicLayer => layerLookup[dynamicLayer.MapLayerId] with
+                {
+                    LayerId = dynamicLayer.Id,
+                    DrawingInfoJson = dynamicLayer.DrawingInfoJson
+                })
                 .Where(layer => AccessPolicyHelpers.IsResourceAccessible(context, layer.Resource, service))
                 .ToArray();
         }
@@ -108,12 +114,35 @@ internal static partial class MapServerEndpoints
         }
 
         var styleCatalog = context.RequestServices.GetRequiredService<ILayerStyleCatalog>();
+        var geoServicesStyleConverter = context.RequestServices.GetRequiredService<IGeoServicesStyleConverter>();
         var legendLayers = new List<LegendLayerInfo>();
 
         foreach (var layer in visibleLayers)
         {
-            var style = await styleCatalog.GetLayerStyleAsync(layer.LayerId, cancellationToken);
-            var styleLayers = StyleTranslator.ParseStyleLayers(style?.MapLibreStyleJson);
+            MapLibreStyleLayer[] styleLayers;
+            if (layer.DrawingInfoJson is { } dynamicDrawingInfoJson)
+            {
+                if (!TryConvertDynamicLayerDrawingInfo(
+                        layer.LayerId,
+                        dynamicDrawingInfoJson,
+                        layer.StyleLayerId,
+                        layer.LayerName,
+                        layer.GeometryType,
+                        geoServicesStyleConverter,
+                        out var dynamicMapLibreStyleJson,
+                        out var dynamicStyleError))
+                {
+                    return StandardErrorHelpers.CreateBadRequest(context,
+                        dynamicStyleError ?? "Invalid dynamicLayers drawingInfo renderer.");
+                }
+
+                styleLayers = StyleTranslator.ParseStyleLayers(dynamicMapLibreStyleJson);
+            }
+            else
+            {
+                var style = await styleCatalog.GetLayerStyleAsync(layer.StyleLayerId, cancellationToken);
+                styleLayers = StyleTranslator.ParseStyleLayers(style?.MapLibreStyleJson);
+            }
 
             var entries = BuildLegendEntries(styleLayers, layer.GeometryType, swatchWidth, swatchHeight);
 
@@ -152,8 +181,13 @@ internal static partial class MapServerEndpoints
                 continue;
             }
 
+            var styleLayerId = snapshot.ResolveStorageLayerId(publication)
+                ?? snapshot.ResolveStorageLayerId(resource)
+                ?? layerId;
+
             descriptors.Add(new LegendLayerDescriptor(
                 layerId,
+                styleLayerId,
                 string.IsNullOrWhiteSpace(resource.Metadata.Name)
                     ? publication.Metadata.Name
                     : resource.Metadata.Name,

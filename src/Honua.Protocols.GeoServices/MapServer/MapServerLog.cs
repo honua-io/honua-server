@@ -182,4 +182,30 @@ internal static partial class MapServerLog
         Message = "MapServer tile failed: {ServiceId}: {ErrorMessage}")]
     public static partial void TileFailed(ILogger logger, string serviceId, string errorMessage, Exception? exception = null);
 
+    /// <summary>
+    /// Logs when an exportTiles request is received.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 5460,
+        Level = LogLevel.Information,
+        Message = "MapServer exportTiles requested: {ServiceId} tileCount={TileCount}")]
+    public static partial void ExportTilesRequested(ILogger logger, string serviceId, int tileCount);
+
+    /// <summary>
+    /// Logs when exportTiles completes.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 5461,
+        Level = LogLevel.Information,
+        Message = "MapServer exportTiles completed: {ServiceId} wrote {TileCount} tiles ({SizeBytes} bytes) in {ElapsedMs}ms")]
+    public static partial void ExportTilesCompleted(ILogger logger, string serviceId, int tileCount, long sizeBytes, double elapsedMs);
+
+    /// <summary>
+    /// Logs when exportTiles fails.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 5462,
+        Level = LogLevel.Error,
+        Message = "MapServer exportTiles failed: {ServiceId}: {ErrorMessage}")]
+    public static partial void ExportTilesFailed(ILogger logger, string serviceId, string errorMessage, Exception? exception = null);
 }

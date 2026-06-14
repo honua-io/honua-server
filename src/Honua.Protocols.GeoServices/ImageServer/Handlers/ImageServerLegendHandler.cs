@@ -88,15 +88,26 @@ internal sealed class ImageServerLegendHandler
             }
 
             var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, mosaicRule: null);
-            var statistics = rasters.Length == 1
-                ? await _rasterStore.GetStatisticsAsync(layerId, rasters[0].Id, bands: null, cancellationToken)
-                : await _rasterStore.GetMosaicStatisticsAsync(
-                    layerId,
-                    rasters.Select(r => r.Id).ToArray(),
-                    mergeStrategy,
-                    bands: null,
-                    cancellationToken);
-            var swatches = BuildSwatches(statistics);
+
+            // When a renderingRule supplies a Colormap, the legend reflects that colormap so
+            // it matches the rendered image; otherwise fall back to the default class breaks.
+            LegendEntry[] swatches;
+            if (TryGetColormap(context.Request.Query["renderingRule"].ToString(), out var colormap))
+            {
+                swatches = BuildColormapSwatches(colormap);
+            }
+            else
+            {
+                var statistics = rasters.Length == 1
+                    ? await _rasterStore.GetStatisticsAsync(layerId, rasters[0].Id, bands: null, cancellationToken)
+                    : await _rasterStore.GetMosaicStatisticsAsync(
+                        layerId,
+                        rasters.Select(r => r.Id).ToArray(),
+                        mergeStrategy,
+                        bands: null,
+                        cancellationToken);
+                swatches = BuildSwatches(statistics);
+            }
 
             var response = new LegendResponse
             {
@@ -131,6 +142,61 @@ internal sealed class ImageServerLegendHandler
                 context,
                 "An error occurred while generating the legend.");
         }
+    }
+
+    // Parses a renderingRule and extracts an explicit Colormap, if present. Best-effort:
+    // an absent/invalid/non-colormap rule simply returns false so the default legend is used.
+    private static bool TryGetColormap(string? renderingRule, out RasterColormap colormap)
+    {
+        colormap = null!;
+        if (string.IsNullOrWhiteSpace(renderingRule))
+        {
+            return false;
+        }
+
+        try
+        {
+            var document = System.Text.Json.JsonSerializer.Deserialize(
+                renderingRule, ImageServerJsonContext.Default.RasterFunctionDocument);
+            if (document is null)
+            {
+                return false;
+            }
+
+            var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+            if (mapping is { Supported: true, Colormap: { } resolved })
+            {
+                colormap = resolved;
+                return true;
+            }
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            // Ignore: fall back to the default legend.
+        }
+
+        return false;
+    }
+
+    private LegendEntry[] BuildColormapSwatches(RasterColormap colormap)
+    {
+        var sorted = colormap.Entries.OrderBy(static e => e.Value).ToArray();
+        var entries = new LegendEntry[sorted.Length];
+        for (var i = 0; i < sorted.Length; i++)
+        {
+            var entry = sorted[i];
+            var swatch = _swatchBuilder.Render(new SKColor(entry.Red, entry.Green, entry.Blue, entry.Alpha));
+            entries[i] = new LegendEntry
+            {
+                Label = FormattableString.Invariant($"{entry.Value:0.##}"),
+                ImageData = swatch.Base64Png,
+                Width = swatch.Width,
+                Height = swatch.Height,
+                Values = [entry.Value, entry.Value],
+            };
+        }
+
+        return entries;
     }
 
     private LegendEntry[] BuildSwatches(RasterStatistics[] statistics)

@@ -50,14 +50,14 @@ internal sealed class Wcs20Handler
         Wcs20Utilities.Parameters.OutputCrs,
         Wcs20Utilities.Parameters.BBox,
         Wcs20Utilities.Parameters.BBoxCrs,
+        Wcs20Utilities.Parameters.RangeSubset,
+        Wcs20Utilities.Parameters.ScaleSize,
     };
 
     private static readonly HashSet<string> _explicitlyUnsupportedGetCoverageParameters = new(StringComparer.OrdinalIgnoreCase)
     {
-        "RANGESUBSET",
         "SCALEFACTOR",
         "SCALEAXES",
-        "SCALESIZE",
         "SCALEEXTENT",
         "SIZE",
         "WIDTH",
@@ -967,8 +967,173 @@ internal sealed class Wcs20Handler
             rasterQuery = rasterQuery with { ClipRegion = CreateClipRegion(envelope, subsettingCrs.Srid) };
         }
 
+        if (!TryResolveRangeSubset(query, raster, out var bands, out error))
+        {
+            return false;
+        }
+
+        if (bands is { Length: > 0 })
+        {
+            rasterQuery = rasterQuery with { Bands = bands };
+        }
+
+        if (!TryResolveScaleSize(query, out var width, out var height, out error))
+        {
+            return false;
+        }
+
+        if (width.HasValue)
+        {
+            rasterQuery = rasterQuery with { OutputWidth = width.Value };
+        }
+
+        if (height.HasValue)
+        {
+            rasterQuery = rasterQuery with { OutputHeight = height.Value };
+        }
+
         return true;
     }
+
+    // WCS 2.0 Scaling extension (SCALESIZE): sets an explicit output grid size per axis,
+    // e.g. SCALESIZE=x(512),y(256). The x/E/Long axis maps to output width and y/N/Lat to
+    // output height. Only the unambiguous explicit-size form is supported.
+    private static bool TryResolveScaleSize(
+        IQueryCollection query,
+        out int? width,
+        out int? height,
+        out WcsParameterError error)
+    {
+        width = null;
+        height = null;
+        error = default;
+
+        var values = GetQueryValues(query, Wcs20Utilities.Parameters.ScaleSize);
+        foreach (var rawValue in values)
+        {
+            if (string.IsNullOrWhiteSpace(rawValue))
+            {
+                continue;
+            }
+
+            foreach (var token in rawValue.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                if (!TryParseSingleSubset(token, out var axis, out var size, out _, out var isSlice) ||
+                    !isSlice || size <= 0 || size != Math.Floor(size))
+                {
+                    error = CreateScaleSizeError(token);
+                    return false;
+                }
+
+                var target = (int)size;
+                if (string.Equals(axis, "x", StringComparison.Ordinal))
+                {
+                    if (width.HasValue)
+                    {
+                        error = CreateScaleSizeError("duplicate x axis");
+                        return false;
+                    }
+
+                    width = target;
+                }
+                else if (string.Equals(axis, "y", StringComparison.Ordinal))
+                {
+                    if (height.HasValue)
+                    {
+                        error = CreateScaleSizeError("duplicate y axis");
+                        return false;
+                    }
+
+                    height = target;
+                }
+                else
+                {
+                    error = CreateScaleSizeError(token);
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    private static WcsParameterError CreateScaleSizeError(string token)
+        => new(
+            Wcs20Utilities.ExceptionCodes.InvalidParameterValue,
+            $"SCALESIZE '{token}' must use axis(size) with a positive integer size on the x/E/Long or y/N/Lat axis.",
+            Wcs20Utilities.Parameters.ScaleSize);
+
+    // WCS 2.0 Range Subsetting extension: RANGESUBSET selects coverage range-type fields,
+    // which DescribeCoverage advertises as band1..bandN. Accepts a comma list of field
+    // names and band1:bandN intervals.
+    private static bool TryResolveRangeSubset(
+        IQueryCollection query,
+        RasterInfo raster,
+        out int[]? bands,
+        out WcsParameterError error)
+    {
+        bands = null;
+        error = default;
+
+        var rangeSubset = GetQueryValue(query, Wcs20Utilities.Parameters.RangeSubset);
+        if (string.IsNullOrWhiteSpace(rangeSubset))
+        {
+            return true;
+        }
+
+        var bandCount = Math.Max(raster.BandCount, 1);
+        var selected = new List<int>();
+        foreach (var token in rangeSubset.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var intervalSeparator = token.IndexOf(':');
+            if (intervalSeparator >= 0)
+            {
+                if (!TryParseBandField(token[..intervalSeparator], bandCount, out var low) ||
+                    !TryParseBandField(token[(intervalSeparator + 1)..], bandCount, out var high) ||
+                    low > high)
+                {
+                    error = CreateRangeSubsetError(token);
+                    return false;
+                }
+
+                for (var band = low; band <= high; band++)
+                {
+                    selected.Add(band);
+                }
+            }
+            else if (TryParseBandField(token, bandCount, out var band))
+            {
+                selected.Add(band);
+            }
+            else
+            {
+                error = CreateRangeSubsetError(token);
+                return false;
+            }
+        }
+
+        bands = selected.Count == 0 ? null : selected.ToArray();
+        return true;
+    }
+
+    private static bool TryParseBandField(string field, int bandCount, out int band)
+    {
+        band = 0;
+        var trimmed = field.Trim();
+        if (!trimmed.StartsWith("band", StringComparison.OrdinalIgnoreCase) ||
+            !int.TryParse(trimmed.AsSpan(4), NumberStyles.None, CultureInfo.InvariantCulture, out band))
+        {
+            return false;
+        }
+
+        return band >= 1 && band <= bandCount;
+    }
+
+    private static WcsParameterError CreateRangeSubsetError(string token)
+        => new(
+            Wcs20Utilities.ExceptionCodes.InvalidParameterValue,
+            $"RANGESUBSET field '{token}' is not a valid coverage band. Use band1..bandN.",
+            Wcs20Utilities.Parameters.RangeSubset);
 
     private static bool TryResolveRequestCrs(
         IQueryCollection query,

@@ -22,6 +22,7 @@ public sealed class FeatureServerSpatialReferenceTests : IAsyncLifetime
     private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
     private const double CoordinateTolerance = 0.0001;
     private long _pointObjectId;
+    private long _polygonObjectId;
 
     public async Task InitializeAsync()
     {
@@ -36,6 +37,14 @@ public sealed class FeatureServerSpatialReferenceTests : IAsyncLifetime
             -122.4194,
             37.7749,
             "San Francisco");
+        _polygonObjectId = await SpatialReferenceTestData.InsertSquarePolygonAsync(
+            _fixture.Postgres,
+            schema,
+            SpatialReferenceTestLayerCatalog.PolygonLayerId,
+            -122.45,
+            37.75,
+            0.02,
+            "Centroid Test Polygon");
     }
 
     public async Task DisposeAsync()
@@ -114,6 +123,46 @@ public sealed class FeatureServerSpatialReferenceTests : IAsyncLifetime
 
         coordinates[0].GetDouble().Should().BeApproximately(-122.4194, CoordinateTolerance);
         coordinates[1].GetDouble().Should().BeApproximately(37.7749, CoordinateTolerance);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithReturnCentroidOnPolygonLayer_ReturnsCentroidWithoutGeometry()
+    {
+        var requestUri = $"/rest/services/{SpatialReferenceTestLayerCatalog.ServiceId}/FeatureServer/{SpatialReferenceTestLayerCatalog.PolygonLayerId}/query" +
+                         $"?where=objectid%20%3D%20{_polygonObjectId}&returnGeometry=false&returnCentroid=true&outSR=4326&f=json";
+
+        var response = await _fixture.Client.GetAsync(requestUri);
+
+        response.Be200Ok();
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.QueryResponse);
+
+        result.Should().NotBeNull();
+        result!.SpatialReference.Should().NotBeNull();
+        result.SpatialReference!.Wkid.Should().Be(4326);
+        var feature = result.Features.Should().ContainSingle().Subject;
+        feature.Geometry.Should().BeNull();
+        feature.Centroid.Should().NotBeNull();
+        feature.Centroid!.X.Should().BeApproximately(-122.45, CoordinateTolerance);
+        feature.Centroid.Y.Should().BeApproximately(37.75, CoordinateTolerance);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetLayerInfo)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
+    public async Task LayerMetadata_ForPolygonLayer_AdvertisesReturnCentroid()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{SpatialReferenceTestLayerCatalog.ServiceId}/FeatureServer/{SpatialReferenceTestLayerCatalog.PolygonLayerId}?f=json");
+
+        response.Be200Ok();
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+        var capabilities = document.RootElement.GetProperty("advancedQueryCapabilities");
+
+        capabilities.GetProperty("supportsReturningGeometryCentroid").GetBoolean().Should().BeTrue();
     }
 
     [IntegrationTest]

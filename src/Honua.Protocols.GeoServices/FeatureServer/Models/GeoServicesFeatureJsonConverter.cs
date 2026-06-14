@@ -31,6 +31,7 @@ internal sealed class GeoServicesFeatureJsonConverter : JsonConverter<GeoService
         }
 
         GeoServicesGeometry? geometry = null;
+        GeoServicesGeometry? centroid = null;
         var includeGeometry = false;
         if (root.TryGetProperty("geometry", out var geometryElement))
         {
@@ -41,10 +42,17 @@ internal sealed class GeoServicesFeatureJsonConverter : JsonConverter<GeoService
             }
         }
 
+        if (root.TryGetProperty("centroid", out var centroidElement) &&
+            centroidElement.ValueKind != JsonValueKind.Null)
+        {
+            centroid = JsonSerializer.Deserialize(centroidElement, _geometryTypeInfo) as GeoServicesGeometry;
+        }
+
         return new GeoServicesFeature
         {
             Attributes = attributes,
             Geometry = geometry,
+            Centroid = centroid,
             IncludeGeometry = includeGeometry
         };
     }
@@ -70,6 +78,12 @@ internal sealed class GeoServicesFeatureJsonConverter : JsonConverter<GeoService
             {
                 JsonSerializer.Serialize(writer, value.Geometry, _geometryTypeInfo);
             }
+        }
+
+        if (value.Centroid is not null)
+        {
+            writer.WritePropertyName("centroid");
+            JsonSerializer.Serialize(writer, value.Centroid, _geometryTypeInfo);
         }
 
         writer.WriteEndObject();

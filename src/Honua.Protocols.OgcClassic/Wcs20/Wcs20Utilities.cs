@@ -85,6 +85,8 @@ internal static class Wcs20Utilities
         internal const string OutputCrs = "OUTPUTCRS";
         internal const string BBox = "BBOX";
         internal const string BBoxCrs = "BBOXCRS";
+        internal const string RangeSubset = "RANGESUBSET";
+        internal const string ScaleSize = "SCALESIZE";
     }
 
     internal static class ExceptionCodes

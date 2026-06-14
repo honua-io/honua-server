@@ -208,4 +208,76 @@ internal static partial class ImageServerLog
         Level = LogLevel.Error,
         Message = "Failed to get multidimensional slices for layer {LayerId}")]
     public static partial void SlicesFailed(ILogger logger, Exception ex, int layerId);
+
+    [LoggerMessage(
+        EventId = 5833,
+        Level = LogLevel.Warning,
+        Message = "Invalid project parameters for layer {LayerId}: {ValidationErrors}")]
+    public static partial void InvalidProjectParameters(ILogger logger, int layerId, string validationErrors);
+
+    [LoggerMessage(
+        EventId = 5834,
+        Level = LogLevel.Information,
+        Message = "Projected {GeometryCount} geometries for layer {LayerId}: {InSrid} -> {OutSrid}")]
+    public static partial void ProjectCompleted(ILogger logger, int layerId, int geometryCount, int inSrid, int outSrid);
+
+    [LoggerMessage(
+        EventId = 5835,
+        Level = LogLevel.Error,
+        Message = "Failed to project geometries for layer {LayerId}")]
+    public static partial void ProjectFailed(ILogger logger, Exception ex, int layerId);
+
+    [LoggerMessage(
+        EventId = 5836,
+        Level = LogLevel.Information,
+        Message = "ImageServer exportTiles requested for layer {LayerId}: tileCount={TileCount}")]
+    public static partial void ExportTilesRequested(ILogger logger, int layerId, int tileCount);
+
+    [LoggerMessage(
+        EventId = 5837,
+        Level = LogLevel.Information,
+        Message = "ImageServer exportTiles completed for layer {LayerId}: wrote {TileCount} tiles ({SizeBytes} bytes) in {ElapsedMs}ms")]
+    public static partial void ExportTilesCompleted(ILogger logger, int layerId, int tileCount, long sizeBytes, double elapsedMs);
+
+    [LoggerMessage(
+        EventId = 5838,
+        Level = LogLevel.Error,
+        Message = "ImageServer exportTiles failed for layer {LayerId}: {ErrorMessage}")]
+    public static partial void ExportTilesFailed(ILogger logger, Exception ex, int layerId, string errorMessage);
+
+    [LoggerMessage(
+        EventId = 5839,
+        Level = LogLevel.Warning,
+        Message = "Invalid find parameters for layer {LayerId}: {ValidationErrors}")]
+    public static partial void InvalidFindParameters(ILogger logger, int layerId, string validationErrors);
+
+    [LoggerMessage(
+        EventId = 5840,
+        Level = LogLevel.Information,
+        Message = "ImageServer find for layer {LayerId} returned {ResultCount} images in {ElapsedMs}ms")]
+    public static partial void FindCompleted(ILogger logger, int layerId, int resultCount, double elapsedMs);
+
+    [LoggerMessage(
+        EventId = 5841,
+        Level = LogLevel.Error,
+        Message = "ImageServer find failed for layer {LayerId}")]
+    public static partial void FindFailed(ILogger logger, Exception ex, int layerId);
+
+    [LoggerMessage(
+        EventId = 5842,
+        Level = LogLevel.Warning,
+        Message = "Invalid measure parameters for layer {LayerId}: {ValidationErrors}")]
+    public static partial void InvalidMeasureParameters(ILogger logger, int layerId, string validationErrors);
+
+    [LoggerMessage(
+        EventId = 5843,
+        Level = LogLevel.Information,
+        Message = "ImageServer measure for layer {LayerId} completed operation {Operation} in {ElapsedMs}ms")]
+    public static partial void MeasureCompleted(ILogger logger, int layerId, string operation, double elapsedMs);
+
+    [LoggerMessage(
+        EventId = 5844,
+        Level = LogLevel.Error,
+        Message = "ImageServer measure failed for layer {LayerId}")]
+    public static partial void MeasureFailed(ILogger logger, Exception ex, int layerId);
 }
