@@ -27,7 +27,7 @@ PATCH, PUT, and DELETE are also available on the layer-scoped key form `/odata/L
 | `$filter` | Partial | Operators and functions limited to the implemented subset below. |
 | `$select` | Implemented | Field projection; `*` returns all fields. |
 | `$orderby` | Partial | Simple field names with `asc`/`desc`; no expressions. |
-| `$top` / `$skip` | Implemented | Normalized by server limits. |
+| `$top` / `$skip` | Implemented | Normalized by server limits; `$top` is capped to the server page size (`OData:MaxPageSize`, see below). |
 | `$skiptoken` | Implemented | Opaque cursor paging; mutually exclusive with `$skip`. |
 | `$count` | Implemented | `@odata.count` in payload; `/$count` routes return text. |
 | `$expand` | Implemented | Relationship names; nested expand paths not supported. |
@@ -36,6 +36,23 @@ PATCH, PUT, and DELETE are also available on the layer-scoped key form `/odata/L
 | `$apply` | Implemented | `aggregate`, `groupby`, `filter`, `compute` transformations. |
 | `$deltatoken` | Implemented | Timestamp-based change tracking via `@odata.deltaLink`. |
 | `$format` | Partial | `json` / `application/json` only. |
+
+## Server-driven paging
+
+The server applies a page-size cap so a single request never tries to materialize an
+unbounded result set. The effective page size is `min($top, OData:MaxPageSize)`
+(default `1000`, configurable via the `OData:MaxPageSize` setting or the
+`OData__MaxPageSize` environment variable). When a client requests a `$top` larger than
+the cap, the server returns the first page (up to the cap) and an `@odata.nextLink` that
+carries the clamped `$top` and the next `$skip`; clients follow `@odata.nextLink` to page
+through the remaining rows. This is standard OData server-driven paging and keeps ad hoc
+spatial queries (for example `geo.intersects` combined with `$select`) from forcing a
+pathological database plan on a very large `LIMIT`.
+
+> **Behind a proxy/CDN:** `@odata.nextLink` (and all emitted links) use the configured
+> public origin, not the inbound `Host` header. Set `PUBLIC_BASE_URL` (or `Public:BaseUrl`)
+> so paging links resolve to the external URL. Clients that resolve `@odata.nextLink`
+> relative to the request URL are unaffected.
 
 ## $filter support
 
