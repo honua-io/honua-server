@@ -215,7 +215,7 @@ public class ServiceValidationHelpersTests
     }
 
     // Test classes for dependency validation
-    private sealed class TestConnectionProvider : IDatabaseConnectionProvider
+    private sealed class TestConnectionProvider : IAdoNetDatabaseConnectionProvider
     {
         public string GetConnectionString() => "Host=localhost;Database=test;";
 

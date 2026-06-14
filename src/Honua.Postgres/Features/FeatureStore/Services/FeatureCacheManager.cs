@@ -24,7 +24,7 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
     private const int MaxLayerSridOverflowRemovalsPerCleanup = 256;
 
     // Cache state is static so it persists across scoped instances (FeatureCacheManager is registered
-    // as scoped because it depends on scoped IDatabaseConnectionProvider, but the cached values are
+    // as scoped because it depends on scoped IAdoNetDatabaseConnectionProvider, but the cached values are
     // stable for the lifetime of the application).
     // All caches are keyed by schema identity to ensure correctness across multi-schema deployments.
     private static readonly ConcurrentDictionary<(string Identity, int LayerId), LayerSridCacheEntry> _layerSridCache = new();
@@ -33,7 +33,7 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
     private static readonly ConcurrentDictionary<string, int> _geometryStorageTypeCache = new(StringComparer.Ordinal);
     private static readonly ConcurrentDictionary<string, int> _hasLayerCatalogCache = new(StringComparer.Ordinal);
 
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly ILogger<FeatureCacheManager> _logger;
     private readonly string? _tableSchema;
     private readonly string _cacheIdentity;
@@ -104,7 +104,7 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
         }
     }
 
-    public FeatureCacheManager(IDatabaseConnectionProvider connectionProvider, ILogger<FeatureCacheManager> logger, string? schemaName = null)
+    public FeatureCacheManager(IAdoNetDatabaseConnectionProvider connectionProvider, ILogger<FeatureCacheManager> logger, string? schemaName = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));

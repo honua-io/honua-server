@@ -46,7 +46,7 @@ internal sealed class PostgresRasterImportService : IRasterImportService
     // Stable namespace for PostgreSQL two-key advisory locks used by raster imports.
     private const int RasterImportLayerLockNamespace = 0x0484_5221;
 
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly ICrsDetectionService _crsDetectionService;
     private readonly ILogger<PostgresRasterImportService> _logger;
     private readonly string _rasterDataTable;
@@ -54,7 +54,7 @@ internal sealed class PostgresRasterImportService : IRasterImportService
     private readonly string _rasterTilesTable;
 
     public PostgresRasterImportService(
-        IDatabaseConnectionProvider connectionProvider,
+        IAdoNetDatabaseConnectionProvider connectionProvider,
         ICrsDetectionService crsDetectionService,
         ILogger<PostgresRasterImportService> logger,
         string? schemaName = null)

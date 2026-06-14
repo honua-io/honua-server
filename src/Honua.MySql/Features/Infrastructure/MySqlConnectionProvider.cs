@@ -9,10 +9,10 @@ using MySqlConnector;
 namespace Honua.MySql.Features.Infrastructure;
 
 /// <summary>
-/// MySQL/MariaDB implementation of <see cref="IDatabaseConnectionProvider"/>.
+/// MySQL/MariaDB implementation of <see cref="IAdoNetDatabaseConnectionProvider"/>.
 /// Wraps a pooled <see cref="MySqlDataSource"/> for read-only feature workloads.
 /// </summary>
-internal sealed class MySqlConnectionProvider : IDatabaseConnectionProvider
+internal sealed class MySqlConnectionProvider : IAdoNetDatabaseConnectionProvider
 {
     private readonly MySqlDataSource _dataSource;
 

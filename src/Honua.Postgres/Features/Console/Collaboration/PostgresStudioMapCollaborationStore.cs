@@ -18,14 +18,14 @@ namespace Honua.Postgres.Features.Console.Collaboration;
 /// </summary>
 internal sealed class PostgresStudioMapCollaborationStore : IStudioMapCollaborationStore
 {
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly TimeProvider _timeProvider;
     private readonly string _threadsTable;
     private readonly string _messagesTable;
     private readonly string _activityTable;
 
     public PostgresStudioMapCollaborationStore(
-        IDatabaseConnectionProvider connectionProvider,
+        IAdoNetDatabaseConnectionProvider connectionProvider,
         TimeProvider? timeProvider = null,
         string? schemaName = null)
     {

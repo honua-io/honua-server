@@ -20,7 +20,7 @@ namespace Honua.Postgres.Features.Metadata;
 /// </summary>
 internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMetadataV2GraphWriteBaseReader
 {
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly string _environment;
     private readonly string _schemaName;
     private readonly string _snapshotsTable;
@@ -33,7 +33,7 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
     private MetadataV2GraphSnapshot? _cachedCurrent;
 
     public PostgresMetadataV2GraphStore(
-        IDatabaseConnectionProvider connectionProvider,
+        IAdoNetDatabaseConnectionProvider connectionProvider,
         string environment,
         string? schemaName = null)
     {

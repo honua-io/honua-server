@@ -32,7 +32,7 @@ namespace Honua.Postgres.Features.FileImport;
 /// </summary>
 internal sealed partial class StreamingFileImportService : IFileImportService
 {
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly ICrsDetectionService _crsDetectionService;
     private readonly IFileFormatDetectionService _formatDetectionService;
     private readonly ImportLimits _limits;
@@ -73,7 +73,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     private static partial Regex GeoPackageTableNameRegex();
 
     public StreamingFileImportService(
-        IDatabaseConnectionProvider connectionProvider,
+        IAdoNetDatabaseConnectionProvider connectionProvider,
         ICrsDetectionService crsDetectionService,
         IFileFormatDetectionService formatDetectionService,
         IPerformanceMonitor performanceMonitor,

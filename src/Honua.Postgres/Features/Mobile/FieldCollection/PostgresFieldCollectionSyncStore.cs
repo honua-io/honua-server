@@ -135,9 +135,9 @@ internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncSto
     private const string AcquireFeatureLockSql =
         "SELECT pg_advisory_xact_lock(@namespace, hashtext(@feature_lock_key))";
 
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
 
-    public PostgresFieldCollectionSyncStore(IDatabaseConnectionProvider connectionProvider)
+    public PostgresFieldCollectionSyncStore(IAdoNetDatabaseConnectionProvider connectionProvider)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
     }

@@ -13,11 +13,11 @@ namespace Honua.Postgres.Features.Alerts;
 
 internal sealed class PostgresAlertDispatchStore : IAlertDispatchStore
 {
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly ILogger<PostgresAlertDispatchStore> _logger;
 
     public PostgresAlertDispatchStore(
-        IDatabaseConnectionProvider connectionProvider,
+        IAdoNetDatabaseConnectionProvider connectionProvider,
         ILogger<PostgresAlertDispatchStore> logger)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));

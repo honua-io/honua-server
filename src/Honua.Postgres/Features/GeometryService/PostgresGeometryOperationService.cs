@@ -15,12 +15,12 @@ namespace Honua.Postgres.Features.GeometryService;
 /// PostGIS-backed implementation of geometry operations (buffer, simplify, project, union).
 /// </summary>
 internal sealed class PostgresGeometryOperationService(
-    IDatabaseConnectionProvider connectionProvider) : IGeometryOperationService
+    IAdoNetDatabaseConnectionProvider connectionProvider) : IGeometryOperationService
 {
     private readonly record struct CrsMetrics(bool IsGeographic, double MetersPerUnit);
     private static readonly ConcurrentDictionary<int, CrsMetrics> _crsMetricsCache = new();
 
-    private readonly IDatabaseConnectionProvider _connectionProvider = connectionProvider
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider = connectionProvider
         ?? throw new ArgumentNullException(nameof(connectionProvider));
 
     // Web Mercator (EPSG:3857) is only well-defined within roughly ±85.0511° latitude;

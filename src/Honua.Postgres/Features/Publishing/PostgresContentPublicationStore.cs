@@ -32,12 +32,12 @@ internal sealed class PostgresContentPublicationStore : IContentPublicationStore
     private const string EventColumns =
         "event_seq, event_id, publication_id, operation, version_id, revision, route_slug, actor, correlation_id, detail, created_at";
 
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly string _versionsTable;
     private readonly string _routesTable;
     private readonly string _eventsTable;
 
-    public PostgresContentPublicationStore(IDatabaseConnectionProvider connectionProvider, string? schemaName = null)
+    public PostgresContentPublicationStore(IAdoNetDatabaseConnectionProvider connectionProvider, string? schemaName = null)
     {
         ArgumentNullException.ThrowIfNull(connectionProvider);
         _connectionProvider = connectionProvider;

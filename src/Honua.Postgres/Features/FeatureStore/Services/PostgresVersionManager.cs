@@ -28,7 +28,7 @@ internal sealed partial class PostgresVersionManager : IVersionManager
     // handle renews the lease while the critical section runs.
     private static readonly TimeSpan MaintenanceLockLease = TimeSpan.FromMinutes(15);
 
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly string? _schemaName;
     private readonly IVersionLock _versionLock;
     private readonly string _lockScope;
@@ -42,7 +42,7 @@ internal sealed partial class PostgresVersionManager : IVersionManager
     /// deployments); the Redis-backed lock is injected in multi-replica deployments.
     /// </param>
     public PostgresVersionManager(
-        IDatabaseConnectionProvider connectionProvider,
+        IAdoNetDatabaseConnectionProvider connectionProvider,
         string? schemaName = null,
         IVersionLock? versionLock = null)
     {

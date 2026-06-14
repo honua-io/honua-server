@@ -249,7 +249,7 @@ public sealed class GeoservicesImportReconciliationGateTests(PostgresFixture fix
             => new(HttpStatusCode.OK) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
     }
 
-    private sealed class FixtureConnectionProvider(PostgresFixture postgresFixture) : IDatabaseConnectionProvider
+    private sealed class FixtureConnectionProvider(PostgresFixture postgresFixture) : IAdoNetDatabaseConnectionProvider
     {
         public string GetConnectionString() => postgresFixture.ConnectionString;
 

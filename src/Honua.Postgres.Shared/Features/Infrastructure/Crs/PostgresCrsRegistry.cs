@@ -30,14 +30,14 @@ internal sealed partial class PostgresCrsRegistry : ICrsRegistry
     private static readonly TimeSpan _cacheRetention = TimeSpan.FromHours(24);
     private const int MaxCacheEntries = 10000;
 
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly ILogger<PostgresCrsRegistry> _logger;
-    // Instance-scoped caches: each registry is constructed per IDatabaseConnectionProvider,
+    // Instance-scoped caches: each registry is constructed per database provider,
     // so custom SRIDs defined differently in separate databases cannot bleed across sources.
     private readonly ConcurrentDictionary<int, CrsCacheEntry> _sridCache = new();
     private readonly ConcurrentDictionary<string, CrsCacheEntry> _identifierCache = new(StringComparer.OrdinalIgnoreCase);
 
-    public PostgresCrsRegistry(IDatabaseConnectionProvider connectionProvider, ILogger<PostgresCrsRegistry> logger)
+    public PostgresCrsRegistry(IAdoNetDatabaseConnectionProvider connectionProvider, ILogger<PostgresCrsRegistry> logger)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));

@@ -291,12 +291,12 @@ public sealed class PostgresAuditLogTests(PostgresFixture fixture)
         string Details);
 
     /// <summary>
-    /// Minimal <see cref="IDatabaseConnectionProvider"/> that pins the
+    /// Minimal <see cref="IAdoNetDatabaseConnectionProvider"/> that pins the
     /// per-test isolated schema on every connection. Lives in the test
     /// assembly because <c>Honua.TestKit.TestDatabaseConnectionProvider</c>
     /// is only IVT-visible to <c>Honua.Server.Tests</c>.
     /// </summary>
-    private sealed class TestConnectionProvider(NpgsqlDataSource dataSource, string schemaName) : IDatabaseConnectionProvider
+    private sealed class TestConnectionProvider(NpgsqlDataSource dataSource, string schemaName) : IAdoNetDatabaseConnectionProvider
     {
         public string GetConnectionString() => dataSource.ConnectionString;
 

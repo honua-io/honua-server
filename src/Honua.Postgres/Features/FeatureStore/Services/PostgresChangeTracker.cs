@@ -14,10 +14,10 @@ namespace Honua.Postgres.Features.FeatureStore.Services;
 /// </summary>
 internal sealed class PostgresChangeTracker : IChangeTracker
 {
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
 
     public PostgresChangeTracker(
-        IDatabaseConnectionProvider connectionProvider)
+        IAdoNetDatabaseConnectionProvider connectionProvider)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
     }

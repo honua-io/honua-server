@@ -7,7 +7,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 
 namespace Honua.Server.Features.CloudDemo;
 
-internal sealed class CloudDemoServiceSeeder(IDatabaseConnectionProvider connectionProvider)
+internal sealed class CloudDemoServiceSeeder(IAdoNetDatabaseConnectionProvider connectionProvider)
 {
     private const int CommandTimeoutSeconds = 60;
 

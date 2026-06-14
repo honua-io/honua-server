@@ -20,9 +20,9 @@ internal sealed class PostgresFeatureChangeOutboxRepository : IFeatureChangeOutb
 {
     private const string TableName = "honua.feature_change_outbox";
 
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
 
-    public PostgresFeatureChangeOutboxRepository(IDatabaseConnectionProvider connectionProvider)
+    public PostgresFeatureChangeOutboxRepository(IAdoNetDatabaseConnectionProvider connectionProvider)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
     }

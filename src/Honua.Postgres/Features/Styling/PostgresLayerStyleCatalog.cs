@@ -24,10 +24,10 @@ internal sealed class PostgresLayerStyleCatalog : ILayerStyleCatalog
         style_change_summary
         """;
 
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly string _layersTable;
 
-    public PostgresLayerStyleCatalog(IDatabaseConnectionProvider connectionProvider, string? schemaName = null)
+    public PostgresLayerStyleCatalog(IAdoNetDatabaseConnectionProvider connectionProvider, string? schemaName = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
 

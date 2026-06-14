@@ -21,9 +21,9 @@ internal sealed class PostgresReplicaConflictRepository : IReplicaConflictReposi
         resolution_action, resolved_by, resolved_at, resolved_server_generation
         """;
 
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
 
-    public PostgresReplicaConflictRepository(IDatabaseConnectionProvider connectionProvider)
+    public PostgresReplicaConflictRepository(IAdoNetDatabaseConnectionProvider connectionProvider)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
     }

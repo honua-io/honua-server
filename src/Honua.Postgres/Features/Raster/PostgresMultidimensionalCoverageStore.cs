@@ -19,12 +19,12 @@ namespace Honua.Postgres.Features.Raster;
 /// </summary>
 internal sealed class PostgresMultidimensionalCoverageStore : IMultidimensionalCoverageStore
 {
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly ILogger<PostgresMultidimensionalCoverageStore> _logger;
     private readonly string _tableName;
 
     public PostgresMultidimensionalCoverageStore(
-        IDatabaseConnectionProvider connectionProvider,
+        IAdoNetDatabaseConnectionProvider connectionProvider,
         ILogger<PostgresMultidimensionalCoverageStore> logger,
         string? schemaName = null)
     {

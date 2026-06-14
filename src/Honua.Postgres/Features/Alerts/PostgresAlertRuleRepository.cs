@@ -12,11 +12,11 @@ namespace Honua.Postgres.Features.Alerts;
 
 internal sealed class PostgresAlertRuleRepository : IAlertRuleRepository
 {
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly ILogger<PostgresAlertRuleRepository> _logger;
 
     public PostgresAlertRuleRepository(
-        IDatabaseConnectionProvider connectionProvider,
+        IAdoNetDatabaseConnectionProvider connectionProvider,
         ILogger<PostgresAlertRuleRepository> logger)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));

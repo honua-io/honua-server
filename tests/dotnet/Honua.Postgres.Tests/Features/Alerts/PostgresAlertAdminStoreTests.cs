@@ -305,7 +305,7 @@ public sealed class PostgresAlertAdminStoreTests(PostgresFixture fixture)
         await command.ExecuteNonQueryAsync();
     }
 
-    private sealed class TestConnectionProvider(NpgsqlDataSource dataSource) : IDatabaseConnectionProvider
+    private sealed class TestConnectionProvider(NpgsqlDataSource dataSource) : IAdoNetDatabaseConnectionProvider
     {
         public string GetConnectionString() => dataSource.ConnectionString;
 

@@ -395,7 +395,7 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
         throw new DirectoryNotFoundException("Repository root could not be located.");
     }
 
-    private sealed class TestConnectionProvider(NpgsqlDataSource dataSource, string schemaName) : IDatabaseConnectionProvider
+    private sealed class TestConnectionProvider(NpgsqlDataSource dataSource, string schemaName) : IAdoNetDatabaseConnectionProvider
     {
         public string GetConnectionString() => dataSource.ConnectionString;
 

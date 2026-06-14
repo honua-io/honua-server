@@ -250,7 +250,7 @@ public sealed class GeoservicesImportSubtypePersistenceTests(PostgresFixture fix
         }
     }
 
-    private sealed class FixtureConnectionProvider(PostgresFixture postgresFixture) : IDatabaseConnectionProvider
+    private sealed class FixtureConnectionProvider(PostgresFixture postgresFixture) : IAdoNetDatabaseConnectionProvider
     {
         public string GetConnectionString()
             => new Npgsql.NpgsqlConnectionStringBuilder(postgresFixture.ConnectionString)

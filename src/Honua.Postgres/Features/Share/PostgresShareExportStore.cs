@@ -15,11 +15,11 @@ namespace Honua.Postgres.Features.Share;
 
 internal sealed class PostgresShareExportStore : IShareExportStore
 {
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly string _definitionsTable;
     private readonly string _runsTable;
 
-    public PostgresShareExportStore(IDatabaseConnectionProvider connectionProvider, string? schemaName = null)
+    public PostgresShareExportStore(IAdoNetDatabaseConnectionProvider connectionProvider, string? schemaName = null)
     {
         ArgumentNullException.ThrowIfNull(connectionProvider);
         _connectionProvider = connectionProvider;

@@ -53,7 +53,7 @@ internal sealed partial class OperateObservabilityFixtureSeeder(
         var geometryService = services.GetRequiredService<IGeometryService>();
         var alertEventStore = services.GetRequiredService<IAlertEventStore>();
         var lifecycleStore = services.GetRequiredService<IAlertLifecycleStore>();
-        var connectionProvider = services.GetRequiredService<IDatabaseConnectionProvider>();
+        var connectionProvider = services.GetRequiredService<IAdoNetDatabaseConnectionProvider>();
         var jobStore = services.GetRequiredService<IExecutionJobStore>();
         var logStore = services.GetRequiredService<IExecutionLogStore>();
         var recentErrors = services.GetRequiredService<RecentErrorBuffer>();
@@ -196,7 +196,7 @@ internal sealed partial class OperateObservabilityFixtureSeeder(
     private static async Task<OperateObservabilityAlertFixtureSeed> EnsureAlertEventsAsync(
         IAlertEventStore store,
         IAlertLifecycleStore lifecycleStore,
-        IDatabaseConnectionProvider connectionProvider,
+        IAdoNetDatabaseConnectionProvider connectionProvider,
         AlertRuleDefinition rule,
         AlertZoneDefinition zone,
         string profile,
@@ -257,7 +257,7 @@ internal sealed partial class OperateObservabilityFixtureSeeder(
 
     private static async Task<long> EnsureAlertEventAsync(
         IAlertEventStore store,
-        IDatabaseConnectionProvider connectionProvider,
+        IAdoNetDatabaseConnectionProvider connectionProvider,
         string dedupeKey,
         AlertRuleDefinition rule,
         AlertZoneDefinition zone,
@@ -304,7 +304,7 @@ internal sealed partial class OperateObservabilityFixtureSeeder(
     }
 
     private static async Task ClearAlertLifecycleAsync(
-        IDatabaseConnectionProvider connectionProvider,
+        IAdoNetDatabaseConnectionProvider connectionProvider,
         long eventId,
         CancellationToken cancellationToken)
     {
@@ -316,7 +316,7 @@ internal sealed partial class OperateObservabilityFixtureSeeder(
     }
 
     private static async Task EnsureAuditEventsAsync(
-        IDatabaseConnectionProvider connectionProvider,
+        IAdoNetDatabaseConnectionProvider connectionProvider,
         AlertZoneDefinition zone,
         AlertRuleDefinition rule,
         OperateObservabilityAlertFixtureSeed alertSeed,
@@ -367,7 +367,7 @@ internal sealed partial class OperateObservabilityFixtureSeeder(
     }
 
     private static async Task InsertAuditIfMissingAsync(
-        IDatabaseConnectionProvider connectionProvider,
+        IAdoNetDatabaseConnectionProvider connectionProvider,
         DateTimeOffset timestamp,
         string eventType,
         string resourceType,
@@ -650,7 +650,7 @@ internal sealed partial class OperateObservabilityFixtureSeeder(
     }
 
     private static async Task<OperateObservabilityInvestigationFixtureSeed> EnsureInvestigationAsync(
-        IDatabaseConnectionProvider connectionProvider,
+        IAdoNetDatabaseConnectionProvider connectionProvider,
         long openAlertEventId,
         DateTimeOffset seededAt,
         CancellationToken cancellationToken)

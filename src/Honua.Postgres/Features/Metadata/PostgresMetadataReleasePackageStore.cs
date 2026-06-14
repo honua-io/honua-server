@@ -12,11 +12,11 @@ namespace Honua.Postgres.Features.Metadata;
 
 internal sealed class PostgresMetadataReleasePackageStore : IMetadataReleasePackageStore
 {
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly string _packagesTable;
 
     public PostgresMetadataReleasePackageStore(
-        IDatabaseConnectionProvider connectionProvider,
+        IAdoNetDatabaseConnectionProvider connectionProvider,
         string? schemaName = null)
     {
         ArgumentNullException.ThrowIfNull(connectionProvider);

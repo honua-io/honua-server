@@ -47,7 +47,9 @@ public sealed class PgRoutingProviderIntegrationTests : IClassFixture<PgRoutingF
         ArgumentNullException.ThrowIfNull(fixture);
         _fixture = fixture;
         var connectionProvider = new FixtureDatabaseConnectionProvider(fixture.DataSource, fixture.ConnectionString);
-        _provider = new PgRoutingProvider(connectionProvider, NullLogger<PgRoutingProvider>.Instance);
+        _provider = new PgRoutingProvider(
+            new FixtureDatabaseSessionFactory(connectionProvider),
+            NullLogger<PgRoutingProvider>.Instance);
     }
 
     [RoutingTest(RoutingTestEnv)]

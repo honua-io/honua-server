@@ -85,11 +85,16 @@ internal static class ServiceCollectionExtensions
                 sp.GetRequiredService<DuckDBSpatialBootstrap>(),
                 sp.GetRequiredService<ILogger<DuckDBConnectionProvider>>()));
 
+        // Provider-internal ADO.NET escape hatch (ADR 0046): forwards to the
+        // registered provider instance.
+        services.AddScoped<IAdoNetDatabaseConnectionProvider>(sp =>
+            (IAdoNetDatabaseConnectionProvider)sp.GetRequiredService<IDatabaseConnectionProvider>());
+
         // Audit-C3 session abstraction registered alongside the legacy provider
         // during the progressive migration (see ADR 0046).
         services.AddScoped<IDatabaseSessionFactory>(sp =>
             new Features.Infrastructure.Session.DuckDbDatabaseSessionFactory(
-                sp.GetRequiredService<IDatabaseConnectionProvider>()));
+                sp.GetRequiredService<IAdoNetDatabaseConnectionProvider>()));
 
         // Register query builder (scoped — depends on layer registry)
         services.AddScoped<IFeatureQueryBuilder>(sp =>
@@ -99,7 +104,7 @@ internal static class ServiceCollectionExtensions
         // Register data access (scoped)
         services.AddScoped<IFeatureDataAccess>(sp =>
             new DuckDBFeatureDataAccess(
-                sp.GetRequiredService<IDatabaseConnectionProvider>(),
+                sp.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 sp.GetRequiredService<DuckDBLayerRegistry>(),
                 sp.GetService<Core.Features.Infrastructure.Monitoring.IPerformanceMonitor>(),
                 sp.GetRequiredService<ILogger<DuckDBFeatureDataAccess>>()));

@@ -8,14 +8,14 @@ namespace Honua.MySql.Features.Infrastructure.Session;
 
 /// <summary>
 /// MySQL/MariaDB implementation of <see cref="IDatabaseSessionFactory"/>. Wraps
-/// the existing <see cref="IDatabaseConnectionProvider"/> so resilience and
+/// the existing <see cref="IAdoNetDatabaseConnectionProvider"/> so resilience and
 /// data-source pooling are reused.
 /// </summary>
 internal sealed class MySqlDatabaseSessionFactory : IDatabaseSessionFactory
 {
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
 
-    public MySqlDatabaseSessionFactory(IDatabaseConnectionProvider connectionProvider)
+    public MySqlDatabaseSessionFactory(IAdoNetDatabaseConnectionProvider connectionProvider)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
     }

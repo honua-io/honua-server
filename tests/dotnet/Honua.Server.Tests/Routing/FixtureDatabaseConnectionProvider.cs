@@ -4,18 +4,19 @@
 using System.Data;
 using System.Data.Common;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Session;
 using Npgsql;
 
 namespace Honua.Server.Tests.Routing;
 
 /// <summary>
-/// Minimal <see cref="IDatabaseConnectionProvider"/> test double that wraps a
+/// Minimal <see cref="IAdoNetDatabaseConnectionProvider"/> test double that wraps a
 /// <see cref="NpgsqlDataSource"/> from the pgRouting fixture. Lets the
 /// integration test construct <c>PgRoutingProvider</c> directly without the full
 /// Postgres provider stack. Deadlock-retry is a passthrough (no retry needed for
 /// read-only routing queries in the test).
 /// </summary>
-internal sealed class FixtureDatabaseConnectionProvider : IDatabaseConnectionProvider
+internal sealed class FixtureDatabaseConnectionProvider : IAdoNetDatabaseConnectionProvider
 {
     private readonly NpgsqlDataSource _dataSource;
     private readonly string _connectionString;
@@ -67,4 +68,36 @@ internal sealed class FixtureDatabaseConnectionProvider : IDatabaseConnectionPro
         ArgumentNullException.ThrowIfNull(operation);
         await operation().ConfigureAwait(false);
     }
+}
+
+/// <summary>
+/// Minimal <see cref="IDatabaseSessionFactory"/> wrapper over
+/// <see cref="FixtureDatabaseConnectionProvider"/> for direct pgRouting provider
+/// tests.
+/// </summary>
+internal sealed class FixtureDatabaseSessionFactory(FixtureDatabaseConnectionProvider connectionProvider) : IDatabaseSessionFactory
+{
+    private readonly FixtureDatabaseConnectionProvider _connectionProvider =
+        connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
+
+    /// <inheritdoc />
+    public async Task<IDatabaseSession> OpenAsync(CancellationToken cancellationToken = default)
+    {
+        var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        return new FixtureDatabaseSession(connection);
+    }
+
+    /// <inheritdoc />
+    public async Task<IDatabaseSession> OpenTransactionAsync(
+        IsolationLevel isolationLevel = IsolationLevel.RepeatableRead,
+        CancellationToken cancellationToken = default)
+    {
+        var (connection, transaction) = await _connectionProvider
+            .OpenTransactionAsync(isolationLevel, cancellationToken)
+            .ConfigureAwait(false);
+        return new FixtureDatabaseSession(connection, transaction);
+    }
+
+    private sealed class FixtureDatabaseSession(DbConnection connection, DbTransaction? transaction = null)
+        : AdoNetDatabaseSession(connection, transaction, ownsConnection: true);
 }

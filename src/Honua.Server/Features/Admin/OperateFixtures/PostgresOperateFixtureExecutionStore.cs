@@ -440,7 +440,7 @@ internal sealed partial class PostgresOperateFixtureExecutionStore(
         var scope = scopeFactory.CreateScope();
         try
         {
-            var connectionProvider = scope.ServiceProvider.GetRequiredService<IDatabaseConnectionProvider>();
+            var connectionProvider = scope.ServiceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>();
             var connection = await connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
             return new ScopedConnectionLease(scope, connection);
         }

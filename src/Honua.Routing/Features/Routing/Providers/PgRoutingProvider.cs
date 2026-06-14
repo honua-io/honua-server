@@ -1,9 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Data.Common;
 using System.Diagnostics;
-using System.Globalization;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Routing.Features.Routing.Abstractions;
 using Honua.Routing.Features.Routing.Domain;
@@ -18,7 +16,7 @@ namespace Honua.Routing.Features.Routing.Providers;
 /// 043_CreatePgRoutingTopology.sql.
 /// </summary>
 /// <remarks>
-/// Connections are acquired from the shared <see cref="IDatabaseConnectionProvider"/>
+/// Sessions are acquired from the shared <see cref="IDatabaseSessionFactory"/>
 /// (registered by the active Postgres provider) so routing reuses the application's
 /// pooled, secure connection substrate rather than opening its own data source. All
 /// queries are read-only and parameterized; no user value is string-interpolated
@@ -40,19 +38,19 @@ internal sealed class PgRoutingProvider : IRoutingProvider
     private const string ReversedEdgesSql =
         "SELECT gid AS id, target AS source, source AS target, cost, reverse_cost FROM public.ways";
 
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IDatabaseSessionFactory _sessionFactory;
     private readonly ILogger<PgRoutingProvider> _logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="PgRoutingProvider"/> class.
     /// </summary>
-    /// <param name="connectionProvider">Shared database connection provider.</param>
+    /// <param name="sessionFactory">Shared database session factory.</param>
     /// <param name="logger">Logger.</param>
     public PgRoutingProvider(
-        IDatabaseConnectionProvider connectionProvider,
+        IDatabaseSessionFactory sessionFactory,
         ILogger<PgRoutingProvider> logger)
     {
-        _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
+        _sessionFactory = sessionFactory ?? throw new ArgumentNullException(nameof(sessionFactory));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -85,9 +83,7 @@ internal sealed class PgRoutingProvider : IRoutingProvider
                 return new RouteSolveResult(string.Empty, 0, 0, []);
             }
 
-            await using var connection = await _connectionProvider
-                .OpenConnectionAsync(cancellationToken)
-                .ConfigureAwait(false);
+            await using var session = await _sessionFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
 
             // Snap each stop to its nearest graph vertex (input transformed from the
             // request SRID to the graph SRID 4326 before the KNN snap).
@@ -95,7 +91,7 @@ internal sealed class PgRoutingProvider : IRoutingProvider
             for (var i = 0; i < request.Stops.Count; i++)
             {
                 var vertexId = await SnapToNearestVertexAsync(
-                        connection, request.Stops[i], request.InSrid, cancellationToken)
+                        session, request.Stops[i], request.InSrid, cancellationToken)
                     .ConfigureAwait(false);
                 if (vertexId is null)
                 {
@@ -114,7 +110,7 @@ internal sealed class PgRoutingProvider : IRoutingProvider
             var totalCost = 0.0;
             for (var i = 0; i < vertexIds.Length - 1; i++)
             {
-                var leg = await SolveDijkstraLegAsync(connection, vertexIds[i], vertexIds[i + 1], cancellationToken)
+                var leg = await SolveDijkstraLegAsync(session, vertexIds[i], vertexIds[i + 1], cancellationToken)
                     .ConfigureAwait(false);
                 if (leg is null)
                 {
@@ -136,7 +132,7 @@ internal sealed class PgRoutingProvider : IRoutingProvider
             }
 
             var (geometryGeoJson, lengthMeters) = await MergeEdgeGeometryAsync(
-                connection, steps, request.OutSrid, cancellationToken).ConfigureAwait(false);
+                session, steps, request.OutSrid, cancellationToken).ConfigureAwait(false);
 
             // The pgRouting cost weight is treated as travel-time minutes for the MVP;
             // the geodesic length is computed from the geometry in meters.
@@ -186,9 +182,7 @@ internal sealed class PgRoutingProvider : IRoutingProvider
                 return new ServiceAreaSolveResult([]);
             }
 
-            await using var connection = await _connectionProvider
-                .OpenConnectionAsync(cancellationToken)
-                .ConfigureAwait(false);
+            await using var session = await _sessionFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
 
             // ToFacility coverage runs driving-distance over the reversed graph
             // (source/target swapped) so it computes who can reach the facility
@@ -202,7 +196,7 @@ internal sealed class PgRoutingProvider : IRoutingProvider
             for (var facilityId = 0; facilityId < request.Facilities.Count; facilityId++)
             {
                 var vertexId = await SnapToNearestVertexAsync(
-                        connection, request.Facilities[facilityId], request.InSrid, cancellationToken)
+                        session, request.Facilities[facilityId], request.InSrid, cancellationToken)
                     .ConfigureAwait(false);
                 if (vertexId is null)
                 {
@@ -216,7 +210,7 @@ internal sealed class PgRoutingProvider : IRoutingProvider
                     cancellationToken.ThrowIfCancellationRequested();
 
                     var geometry = await SolveServiceAreaRingAsync(
-                        connection, vertexId.Value, toBreak, edgesSql, request.OutSrid, cancellationToken)
+                        session, vertexId.Value, toBreak, edgesSql, request.OutSrid, cancellationToken)
                         .ConfigureAwait(false);
 
                     // Skip degenerate rings: pgRouting may reach fewer than three
@@ -247,7 +241,7 @@ internal sealed class PgRoutingProvider : IRoutingProvider
     }
 
     private static async Task<long?> SnapToNearestVertexAsync(
-        DbConnection connection,
+        IDatabaseSession session,
         RoutePoint point,
         int inSrid,
         CancellationToken cancellationToken)
@@ -263,18 +257,21 @@ internal sealed class PgRoutingProvider : IRoutingProvider
             LIMIT 1;
             """;
 
-        await using var command = connection.CreateCommand();
-        command.CommandText = sql;
-        AddParameter(command, "lon", point.Lon);
-        AddParameter(command, "lat", point.Lat);
-        AddParameter(command, "in_srid", inSrid);
-
-        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-        return result is null or DBNull ? null : Convert.ToInt64(result, CultureInfo.InvariantCulture);
+        return await session.QuerySingleOrDefaultAsync<long?>(
+                sql,
+                static row => row.IsNull(0) ? null : row.GetFieldValue<long>(0),
+                new Dictionary<string, object?>
+                {
+                    ["lon"] = point.Lon,
+                    ["lat"] = point.Lat,
+                    ["in_srid"] = inSrid,
+                },
+                cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private static async Task<(IReadOnlyList<RouteStep> Steps, double Cost)?> SolveDijkstraLegAsync(
-        DbConnection connection,
+        IDatabaseSession session,
         long sourceVertex,
         long targetVertex,
         CancellationToken cancellationToken)
@@ -293,30 +290,35 @@ internal sealed class PgRoutingProvider : IRoutingProvider
             ORDER BY seq;
             """;
 
-        await using var command = connection.CreateCommand();
-        command.CommandText = sql;
-        AddParameter(command, "source", sourceVertex);
-        AddParameter(command, "target", targetVertex);
-
         var steps = new List<RouteStep>();
         var cost = 0.0;
         var any = false;
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        await foreach (var row in session.QueryAsync(
+                           sql,
+                           static row => new
+                           {
+                               Node = row.IsNull(0) ? (long?)null : row.GetFieldValue<long>(0),
+                               Edge = row.IsNull(1) ? (long?)null : row.GetFieldValue<long>(1),
+                               Cost = row.IsNull(2) ? (double?)null : row.GetFieldValue<double>(2),
+                           },
+                           new Dictionary<string, object?>
+                           {
+                               ["source"] = sourceVertex,
+                               ["target"] = targetVertex,
+                           },
+                           cancellationToken).ConfigureAwait(false))
         {
             any = true;
 
-            var nodeIsNull = await reader.IsDBNullAsync(0, cancellationToken).ConfigureAwait(false);
-            var edgeIsNull = await reader.IsDBNullAsync(1, cancellationToken).ConfigureAwait(false);
-            if (!nodeIsNull && !edgeIsNull)
+            if (row.Node is { } node && row.Edge is { } edge)
             {
-                steps.Add(new RouteStep(reader.GetInt64(0), reader.GetInt64(1)));
+                steps.Add(new RouteStep(node, edge));
             }
 
-            if (!await reader.IsDBNullAsync(2, cancellationToken).ConfigureAwait(false))
+            if (row.Cost is { } rowCost)
             {
-                cost += reader.GetDouble(2);
+                cost += rowCost;
             }
         }
 
@@ -324,7 +326,7 @@ internal sealed class PgRoutingProvider : IRoutingProvider
     }
 
     private static async Task<(string GeometryGeoJson, double LengthMeters)> MergeEdgeGeometryAsync(
-        DbConnection connection,
+        IDatabaseSession session,
         IReadOnlyList<RouteStep> steps,
         int outSrid,
         CancellationToken cancellationToken)
@@ -355,30 +357,25 @@ internal sealed class PgRoutingProvider : IRoutingProvider
             FROM oriented;
             """;
 
-        await using var command = connection.CreateCommand();
-        command.CommandText = sql;
-        AddArrayParameter(command, "edge_ids", steps.Select(s => s.Edge));
-        AddArrayParameter(command, "nodes", steps.Select(s => s.Node));
-        AddParameter(command, "out_srid", outSrid);
+        var result = await session.QuerySingleOrDefaultAsync<(string GeometryGeoJson, double LengthMeters)>(
+                sql,
+                static row => (
+                    row.IsNull(0) ? string.Empty : row.GetFieldValue<string>(0),
+                    row.IsNull(1) ? 0 : row.GetFieldValue<double>(1)),
+                new Dictionary<string, object?>
+                {
+                    ["edge_ids"] = steps.Select(s => s.Edge).ToArray(),
+                    ["nodes"] = steps.Select(s => s.Node).ToArray(),
+                    ["out_srid"] = outSrid,
+                },
+                cancellationToken)
+            .ConfigureAwait(false);
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            return (string.Empty, 0);
-        }
-
-        var geometry = await reader.IsDBNullAsync(0, cancellationToken).ConfigureAwait(false)
-            ? string.Empty
-            : reader.GetString(0);
-        var length = await reader.IsDBNullAsync(1, cancellationToken).ConfigureAwait(false)
-            ? 0
-            : reader.GetDouble(1);
-
-        return (geometry, length);
+        return result;
     }
 
     private static async Task<string> SolveServiceAreaRingAsync(
-        DbConnection connection,
+        IDatabaseSession session,
         long facilityVertex,
         double breakCost,
         string edgesSql,
@@ -420,31 +417,18 @@ internal sealed class PgRoutingProvider : IRoutingProvider
             FROM hull;
             """;
 
-        await using var command = connection.CreateCommand();
-        command.CommandText = sql;
-        AddParameter(command, "edges_sql", edgesSql);
-        AddParameter(command, "facility", facilityVertex);
-        AddParameter(command, "break_cost", breakCost);
-        AddParameter(command, "out_srid", outSrid);
-
-        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-        return result is null or DBNull ? string.Empty : (string)result;
-    }
-
-    private static void AddParameter(DbCommand command, string name, object value)
-    {
-        var parameter = command.CreateParameter();
-        parameter.ParameterName = name;
-        parameter.Value = value;
-        command.Parameters.Add(parameter);
-    }
-
-    private static void AddArrayParameter(DbCommand command, string name, IEnumerable<long> values)
-    {
-        var parameter = command.CreateParameter();
-        parameter.ParameterName = name;
-        parameter.Value = values.ToArray();
-        command.Parameters.Add(parameter);
+        return await session.QuerySingleOrDefaultAsync(
+                sql,
+                static row => row.IsNull(0) ? string.Empty : row.GetFieldValue<string>(0),
+                new Dictionary<string, object?>
+                {
+                    ["edges_sql"] = edgesSql,
+                    ["facility"] = facilityVertex,
+                    ["break_cost"] = breakCost,
+                    ["out_srid"] = outSrid,
+                },
+                cancellationToken)
+            .ConfigureAwait(false) ?? string.Empty;
     }
 
     /// <summary>

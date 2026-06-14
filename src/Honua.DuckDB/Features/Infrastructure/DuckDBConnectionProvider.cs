@@ -13,7 +13,7 @@ namespace Honua.DuckDB.Features.Infrastructure;
 /// DuckDB implementation of database connection provider.
 /// Opens read-only connections to a DuckDB database file.
 /// </summary>
-internal sealed class DuckDBConnectionProvider : IDatabaseConnectionProvider
+internal sealed class DuckDBConnectionProvider : IAdoNetDatabaseConnectionProvider
 {
     private readonly string _connectionString;
     private readonly ILogger<DuckDBConnectionProvider> _logger;

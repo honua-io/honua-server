@@ -315,7 +315,7 @@ public sealed class PostgresRasterImportServiceTests(PostgresFixture fixture)
         }
     }
 
-    private sealed class FixtureConnectionProvider(NpgsqlDataSource dataSource) : IDatabaseConnectionProvider
+    private sealed class FixtureConnectionProvider(NpgsqlDataSource dataSource) : IAdoNetDatabaseConnectionProvider
     {
         public string GetConnectionString() => dataSource.ConnectionString;
 

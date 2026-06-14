@@ -21,13 +21,13 @@ namespace Honua.Postgres.Features.Attachments;
 /// </remarks>
 internal sealed class PostgresAttachmentStore : IAttachmentStore
 {
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly ICloudFileStorage _fileStorage;
     private readonly ILogger<PostgresAttachmentStore> _logger;
     private readonly string _tableName;
 
     public PostgresAttachmentStore(
-        IDatabaseConnectionProvider connectionProvider,
+        IAdoNetDatabaseConnectionProvider connectionProvider,
         ICloudFileStorage fileStorage,
         ILogger<PostgresAttachmentStore> logger,
         string? schemaName = null)

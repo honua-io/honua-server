@@ -16,7 +16,7 @@ namespace Honua.Postgres.Features.Studio;
 
 internal sealed class PostgresStudioPackageStore : IStudioPackageStore
 {
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly string _itemsTable;
     private readonly string _draftsTable;
     private readonly string _versionsTable;
@@ -24,7 +24,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
     private readonly string _publicationRequestsTable;
     private readonly string _rollbackRequestsTable;
 
-    public PostgresStudioPackageStore(IDatabaseConnectionProvider connectionProvider, string? schemaName = null)
+    public PostgresStudioPackageStore(IAdoNetDatabaseConnectionProvider connectionProvider, string? schemaName = null)
     {
         ArgumentNullException.ThrowIfNull(connectionProvider);
         _connectionProvider = connectionProvider;

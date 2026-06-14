@@ -16,13 +16,13 @@ namespace Honua.Postgres.Features.Forms;
 
 internal sealed class PostgresFormPackageStore : IFormPackageStore
 {
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly string _packagesTable;
     private readonly string _versionsTable;
     private readonly string _submissionsTable;
     private readonly string _attachmentsTable;
 
-    public PostgresFormPackageStore(IDatabaseConnectionProvider connectionProvider)
+    public PostgresFormPackageStore(IAdoNetDatabaseConnectionProvider connectionProvider)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _packagesTable = SchemaSearchPath.QualifyTable("form_packages", "honua");

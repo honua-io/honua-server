@@ -10,9 +10,9 @@ using Npgsql;
 namespace Honua.Postgres.Features.Geometry;
 
 internal sealed class PostgresGeometryTopologyValidator(
-    IDatabaseConnectionProvider connectionProvider) : IGeometryTopologyValidator
+    IAdoNetDatabaseConnectionProvider connectionProvider) : IGeometryTopologyValidator
 {
-    private readonly IDatabaseConnectionProvider _connectionProvider = connectionProvider
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider = connectionProvider
         ?? throw new ArgumentNullException(nameof(connectionProvider));
 
     public async Task<GeometryValidationResult> ValidateTopologyAsync(

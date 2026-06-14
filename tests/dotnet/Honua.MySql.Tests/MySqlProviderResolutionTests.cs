@@ -191,7 +191,7 @@ public sealed class MySqlProviderResolutionTests
         return new MySqlFeatureStore(queryBuilder, dataAccess);
     }
 
-    private sealed class ThrowingConnectionProvider : IDatabaseConnectionProvider
+    private sealed class ThrowingConnectionProvider : IAdoNetDatabaseConnectionProvider
     {
         public string GetConnectionString() => string.Empty;
 

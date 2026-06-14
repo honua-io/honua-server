@@ -22,7 +22,7 @@ internal sealed class PostgresRasterStore : IRasterStore
     private static readonly FrozenSet<string> _allowedResamplingAlgorithms = new[] { "NearestNeighbor", "Bilinear", "Cubic", "Lanczos" }.ToFrozenSet(StringComparer.Ordinal);
     private static readonly FrozenSet<string> _allowedZonalStatistics = new[] { "count", "sum", "mean", "min", "max", "stddev", "variance" }.ToFrozenSet(StringComparer.Ordinal);
 
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly ILogger<PostgresRasterStore> _logger;
     private readonly string _rasterDataTable;
     private readonly string _rasterStatisticsTable;
@@ -30,7 +30,7 @@ internal sealed class PostgresRasterStore : IRasterStore
     private readonly string _featuresTable;
 
     public PostgresRasterStore(
-        IDatabaseConnectionProvider connectionProvider,
+        IAdoNetDatabaseConnectionProvider connectionProvider,
         ILogger<PostgresRasterStore> logger,
         string? schemaName = null)
     {

@@ -19,12 +19,12 @@ namespace Honua.Postgres.Features.Raster;
 /// </summary>
 internal sealed class PostgresCogStore : ICogStore
 {
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly ILogger<PostgresCogStore> _logger;
     private readonly string _tableName;
 
     public PostgresCogStore(
-        IDatabaseConnectionProvider connectionProvider,
+        IAdoNetDatabaseConnectionProvider connectionProvider,
         ILogger<PostgresCogStore> logger,
         string? schemaName = null)
     {

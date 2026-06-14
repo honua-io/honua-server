@@ -218,7 +218,7 @@ public sealed class PostgresInvestigationStoreTests(PostgresFixture fixture)
             """);
     }
 
-    private sealed class TestConnectionProvider(NpgsqlDataSource dataSource, string schema) : IDatabaseConnectionProvider
+    private sealed class TestConnectionProvider(NpgsqlDataSource dataSource, string schema) : IAdoNetDatabaseConnectionProvider
     {
         public string GetConnectionString() => dataSource.ConnectionString;
 

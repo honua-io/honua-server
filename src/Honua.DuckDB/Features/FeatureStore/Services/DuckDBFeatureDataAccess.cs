@@ -26,13 +26,13 @@ namespace Honua.DuckDB.Features.FeatureStore.Services;
 /// </summary>
 internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
 {
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly DuckDBLayerRegistry _layerRegistry;
     private readonly IPerformanceMonitor? _performanceMonitor;
     private readonly ILogger<DuckDBFeatureDataAccess> _logger;
 
     public DuckDBFeatureDataAccess(
-        IDatabaseConnectionProvider connectionProvider,
+        IAdoNetDatabaseConnectionProvider connectionProvider,
         DuckDBLayerRegistry layerRegistry,
         IPerformanceMonitor? performanceMonitor,
         ILogger<DuckDBFeatureDataAccess> logger)
