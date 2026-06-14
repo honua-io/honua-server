@@ -7,6 +7,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit.Infrastructure;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Protocols.GeoServices.ImageServer;
 using Honua.Protocols.GeoServices.ImageServer.Handlers;
 using Honua.Protocols.GeoServices.ImageServer.Models;
 using Honua.Protocols.GeoServices.ImageServer.Services;
@@ -370,10 +371,95 @@ public class ImageServerMetadataHandlerTests
         jsonResult!.Value!.SpatialReference.Wkid.Should().Be(4326);
     }
 
-    private static DefaultHttpContext CreateImageServerContext()
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task GetServiceInfoAsync_TileMetadataDisabled_OmitsTileInfoAndCache()
+    {
+        // Default (#1456-safe) contract: the ArcGIS Maps SDK for .NET native runtime
+        // reads this same descriptor from conf.json and rejects a service that
+        // advertises a cache. Tiled advertising must stay off unless opted in (#1648).
+        SetupSuccessfulMetadata();
+
+        var context = CreateImageServerContext();
+        var result = await _handler.GetServiceInfoAsync(context, 1);
+
+        var jsonResult = result as JsonHttpResult<ImageServerServiceInfo>;
+        jsonResult.Should().NotBeNull();
+        jsonResult!.Value!.SingleFusedMapCache.Should().BeFalse();
+        jsonResult.Value.TileInfo.Should().BeNull();
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task GetServiceInfoAsync_TileMetadataEnabled_EmitsWebMercatorTileInfo()
+    {
+        SetupSuccessfulMetadata();
+
+        var context = CreateImageServerContext(new ImageServerTileMetadataOptions { Enabled = true });
+        var result = await _handler.GetServiceInfoAsync(context, 1);
+
+        var jsonResult = result as JsonHttpResult<ImageServerServiceInfo>;
+        jsonResult.Should().NotBeNull();
+        var serviceInfo = jsonResult!.Value!;
+
+        serviceInfo.SingleFusedMapCache.Should().BeTrue();
+        serviceInfo.TileInfo.Should().NotBeNull();
+
+        var tileInfo = serviceInfo.TileInfo!;
+        tileInfo.Rows.Should().Be(256);
+        tileInfo.Cols.Should().Be(256);
+
+        // WebMercator (Esri 102100 / EPSG 3857) spatial reference.
+        tileInfo.SpatialReference.Wkid.Should().Be(102100);
+        tileInfo.SpatialReference.LatestWkid.Should().Be(3857);
+
+        // WebMercatorQuad tiles originate at the top-left of the world extent.
+        tileInfo.Origin.X.Should().BeApproximately(-20037508.342789244, 1e-6);
+        tileInfo.Origin.Y.Should().BeApproximately(20037508.342789244, 1e-6);
+
+        // Default depth is levels 0..23 inclusive.
+        tileInfo.Lods.Should().HaveCount(24);
+        tileInfo.Lods[0].Level.Should().Be(0);
+        tileInfo.Lods[0].Scale.Should().BeApproximately(559082264.0287178, 1e-3);
+        tileInfo.Lods[0].Resolution.Should().BeApproximately(156543.03392804097, 1e-6);
+
+        // Each successive level halves the scale denominator and resolution.
+        tileInfo.Lods[1].Scale.Should().BeApproximately(559082264.0287178 / 2.0, 1e-3);
+        tileInfo.Lods[23].Level.Should().Be(23);
+        tileInfo.Lods[23].Resolution.Should()
+            .BeApproximately(156543.03392804097 / (1L << 23), 1e-9);
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task GetServiceInfoAsync_TileMetadataEnabled_HonorsMaxLevel()
+    {
+        SetupSuccessfulMetadata();
+
+        var context = CreateImageServerContext(
+            new ImageServerTileMetadataOptions { Enabled = true, MaxLevel = 18 });
+        var result = await _handler.GetServiceInfoAsync(context, 1);
+
+        var jsonResult = result as JsonHttpResult<ImageServerServiceInfo>;
+        jsonResult.Should().NotBeNull();
+        var tileInfo = jsonResult!.Value!.TileInfo;
+        tileInfo.Should().NotBeNull();
+        tileInfo!.Lods.Should().HaveCount(19);
+        tileInfo.Lods[^1].Level.Should().Be(18);
+    }
+
+    private static DefaultHttpContext CreateImageServerContext(
+        ImageServerTileMetadataOptions? tileMetadataOptions = null)
     {
         var services = new ServiceCollection();
         services.AddSingleton<Microsoft.Extensions.Logging.ILoggerFactory>(NullLoggerFactory.Instance);
+        services.AddOptions();
+        services.Configure<ImageServerTileMetadataOptions>(options =>
+        {
+            var source = tileMetadataOptions ?? new ImageServerTileMetadataOptions();
+            options.Enabled = source.Enabled;
+            options.MaxLevel = source.MaxLevel;
+        });
 
         var context = new DefaultHttpContext();
         context.RequestServices = services.BuildServiceProvider();

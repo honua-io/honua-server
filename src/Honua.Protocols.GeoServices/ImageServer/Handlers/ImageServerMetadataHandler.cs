@@ -11,7 +11,9 @@ using Honua.Protocols.GeoServices.ImageServer.Services;
 using Honua.Infrastructure.Models;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 
@@ -119,6 +121,21 @@ internal sealed class ImageServerMetadataHandler
                 return StandardErrorHelpers.CreateInternalServerError(context, "Unable to determine raster extent.");
             }
 
+            // Tiled-consumption advertising is opt-in and defaults OFF. The same
+            // service descriptor is returned from the conf.json route the ArcGIS
+            // Maps SDK for .NET native runtime reads while loading an
+            // ImageServiceRaster; advertising a cache (singleFusedMapCache:true /
+            // tileInfo) makes that native parser treat the dynamic service as cached
+            // and reject the exportImage config (#1456). Enabling the flag emits the
+            // static WebMercatorQuad tileInfo that L.esri.tiledMapLayer requires while
+            // leaving the default (#1456-safe) dynamic contract untouched (#1648).
+            var tileMetadataOptions = context.RequestServices
+                .GetRequiredService<IOptions<ImageServerTileMetadataOptions>>().Value;
+            var advertiseTileCache = tileMetadataOptions.Enabled;
+            var tileInfo = advertiseTileCache
+                ? ImageServerTileInfoBuilder.Build(tileMetadataOptions.MaxLevel)
+                : null;
+
             // Build service info response
             var serviceInfo = new ImageServerServiceInfo
             {
@@ -165,9 +182,9 @@ internal sealed class ImageServerMetadataHandler
                 MaxImageHeight = MaxImageHeight,
                 MaxImageWidth = MaxImageWidth,
                 MaxRecordCount = MaxRecordCount,
-                SingleFusedMapCache = false,
+                SingleFusedMapCache = advertiseTileCache,
                 CacheType = null,
-                TileInfo = null,
+                TileInfo = tileInfo,
                 HasHistograms = true,
                 TimeInfo = BuildTimeInfo(ImageServerV2Lookups.ReadTimeFieldHints(resolved.Resource), rasters),
                 HasMultidimensions = multidimensionalInfo is { Variables.Length: > 0 },
