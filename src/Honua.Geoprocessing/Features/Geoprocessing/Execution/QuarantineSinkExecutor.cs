@@ -138,7 +138,7 @@ internal sealed partial class QuarantineSinkExecutor : IJobExecutor
 
         cancellationToken.ThrowIfCancellationRequested();
         await context.PublishArtifactAsync(
-            SinkResultArtifact.Build(HandledProcessId, ("path", path), ("featuresQuarantined", quarantined)),
+            SinkResultArtifact.Build(HandledProcessId, ("path", resolvedPath), ("featuresQuarantined", quarantined)),
             cancellationToken).ConfigureAwait(false);
         await context.ReportProgressAsync(100, $"{HandledProcessId} completed", cancellationToken).ConfigureAwait(false);
 

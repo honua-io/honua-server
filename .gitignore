@@ -68,6 +68,7 @@ DocProject/Help/*.hhp
 DocProject/Help/Html2
 DocProject/Help/html
 publish/
+!docs/guides/publish/
 *.[Pp]ublish.xml
 *.azurePubxml
 *.pubxml

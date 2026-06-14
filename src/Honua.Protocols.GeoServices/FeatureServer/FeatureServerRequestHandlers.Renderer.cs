@@ -9,6 +9,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Validation;
+using Microsoft.Extensions.Primitives;
 
 namespace Honua.Protocols.GeoServices.FeatureServer;
 
@@ -19,14 +20,6 @@ internal static partial class FeatureServerEndpoints
     private static async Task<IResult> HandleGenerateRenderer(
         HttpContext context)
     {
-        var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
-        if (!TryValidateAllowedParameters(context.Request.Query, queryValidator, AllowedQueryParameters.GenerateRenderer, out var error))
-        {
-            return StandardErrorHelpers.CreateBadRequest(context,
-                "Invalid query parameters",
-                [error ?? "Invalid query parameter."]);
-        }
-
         // ArcGIS API for Python POSTs generateRenderer; accept the form/body payload
         // in addition to the query string so the POST companion behaves like the
         // sibling query operations (which all support GET+POST).
@@ -47,29 +40,47 @@ internal static partial class FeatureServerEndpoints
                     [readError ?? "Invalid request body."]);
             }
 
-            if (!TryValidateAllowedParameters(bodyValues, queryValidator, AllowedQueryParameters.GenerateRenderer, out error))
-            {
-                return StandardErrorHelpers.CreateBadRequest(context,
-                    "Invalid query parameters",
-                    [error ?? "Invalid query parameter."]);
-            }
-
             foreach (var pair in bodyValues)
             {
                 values[pair.Key] = pair.Value;
             }
         }
 
+        return await HandleGenerateRenderer(context, values, layerIdOverride: null).ConfigureAwait(false);
+    }
+
+    private static async Task<IResult> HandleGenerateRenderer(
+        HttpContext context,
+        IReadOnlyDictionary<string, StringValues> values,
+        int? layerIdOverride)
+    {
+        var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
+        if (!TryValidateAllowedParameters(values, queryValidator, AllowedQueryParameters.GenerateRenderer, out var error))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid query parameters",
+                [error ?? "Invalid query parameter."]);
+        }
+
+        var cancellationToken = GetTimeoutAwareCancellationToken(context);
         var serviceError = RouteValidationHelpers.ValidateServiceId(context, out var serviceId);
         if (serviceError is not null)
         {
             return serviceError;
         }
 
-        var layerError = RouteValidationHelpers.ValidateLayerId(context, out var layerId);
-        if (layerError is not null)
+        int layerId;
+        if (layerIdOverride.HasValue)
         {
-            return layerError;
+            layerId = layerIdOverride.Value;
+        }
+        else
+        {
+            var layerError = RouteValidationHelpers.ValidateLayerId(context, out layerId);
+            if (layerError is not null)
+            {
+                return layerError;
+            }
         }
 
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();

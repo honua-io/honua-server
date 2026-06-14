@@ -16,12 +16,12 @@ The full table of contents for everything under `docs/` lives at **[docs/README.
 
 Frequent destinations:
 
-- [Operator Guide](docs/operator/README.md) — deploy, configure, monitor
-- [GIS User Guide](docs/gis/README.md) — connect QGIS, ArcGIS Pro, Power BI, Excel
-- [Developer Guide](docs/developer/README.md) — APIs, SDKs, integration patterns
-- [Contributor Guide](docs/contributor/README.md) — architecture, testing, ADRs
-- [Standards & APIs Overview](docs/gis/STANDARDS_APIS.md) — every protocol Honua speaks
-- [Evidence Index](docs/evidence/README.md) — conformance, certification, parity artifacts
+- [Operator Guide](docs/archive/role-indexes/operator-README.md) — deploy, configure, monitor
+- [GIS User Guide](docs/archive/role-indexes/gis-README.md) — connect QGIS, ArcGIS Pro, Power BI, Excel
+- [Developer Guide](docs/archive/role-indexes/developer-README.md) — APIs, SDKs, integration patterns
+- [Contributor Guide](docs/internal/contributor/README.md) — architecture, testing, ADRs
+- [Standards & APIs Overview](docs/concepts/protocols.md) — every protocol Honua speaks
+- [Evidence Index](docs/internal/evidence/README.md) — conformance, certification, parity artifacts
 - [AGENTS.md](AGENTS.md) — repo guide for human and AI agents
 - [Security Policy](SECURITY.md) — supported versions and vulnerability reporting
 
@@ -29,10 +29,10 @@ Full hosted documentation: **[honua.gitbook.io/honuaio](https://honua.gitbook.io
 
 ## Compliance
 
-- **OGC CITE:** 952 / 952 passing across 11 conformance suites (OGC API Features 1.0, OGC API Tiles 1.0, GeoPackage 1.2, GML 3.2, KML 2.2, WFS 1.0/1.1/2.0, WCS 2.0, WMS 1.3, WMTS 1.0) on `trunk` — see [docs/cite-status.md](docs/cite-status.md) for the authoritative snapshot and [docs/contributor/ogc-cite-conformance-evidence.md](docs/contributor/ogc-cite-conformance-evidence.md) for evidence links.
-- **gRPC stability:** versioning, deprecation, and stability guarantees for the `Geospatial.V1` surface are defined in [docs/grpc-versioning-policy.md](docs/grpc-versioning-policy.md).
-- **Control plane stability:** admin / control-plane API versioning is governed by [docs/developer/CONTROL_PLANE_VERSIONING_POLICY.md](docs/developer/CONTROL_PLANE_VERSIONING_POLICY.md).
-- **Client compatibility:** the supported client x protocol matrix is the [MVP Compatibility Contract](docs/gis/MVP_COMPATIBILITY_CONTRACT.md).
+- **OGC CITE:** 952 / 952 passing across 11 conformance suites (OGC API Features 1.0, OGC API Tiles 1.0, GeoPackage 1.2, GML 3.2, KML 2.2, WFS 1.0/1.1/2.0, WCS 2.0, WMS 1.3, WMTS 1.0) on `trunk` — see [docs/cite-status.md](docs/cite-status.md) for the authoritative snapshot and [docs/internal/contributor/ogc-cite-conformance-evidence.md](docs/internal/contributor/ogc-cite-conformance-evidence.md) for evidence links.
+- **gRPC stability:** versioning, deprecation, and stability guarantees for the `Geospatial.V1` surface are defined in [docs/reference/protocols/grpc.md](docs/reference/protocols/grpc.md).
+- **Control plane stability:** admin / control-plane API versioning is governed by [docs/reference/versioning-and-support.md](docs/reference/versioning-and-support.md).
+- **Client compatibility:** the supported client x protocol matrix is the [MVP Compatibility Contract](docs/reference/compatibility/clients.md).
 
 ## Why Honua
 
@@ -53,6 +53,8 @@ curl http://localhost:8080/healthz/ready
 
 PostGIS starts automatically. Migrations run on first boot. HTTP/1 REST and gRPC-Web are at
 `http://localhost:8080`; native h2c gRPC for SDK/mobile clients is at `http://localhost:8081`.
+For self-hosted pilots, run the [pilot onboarding runbook](docs/guides/deploy/pilot-onboarding-runbook.md)
+before exercising durable jobs/workflows or handing the deployment to another team.
 
 **Pre-built image** (bring your own PostGIS):
 
@@ -129,7 +131,7 @@ Please use these forms instead of blank issues so reports include enough detail 
 
 ## Capabilities
 
-The source-backed feature map is maintained in [docs/features/README.md](docs/features/README.md).
+The source-backed feature map is maintained in [docs/internal/features/README.md](docs/internal/features/README.md).
 
 **Query and edit** — FeatureServer query, applyEdits, attachments, and related records. OGC transactions (POST/PUT/DELETE). OData CRUD with spatial functions. Query output in JSON, GeoJSON, PBF, FlatGeobuf, GeoParquet, and GeoArrow (Arrow IPC) formats, plus GeoBuf when the configured feature store supports native GeoBuf output, with Accept-header content negotiation.
 
@@ -190,28 +192,28 @@ HONUA_ADMIN_PASSWORD="change-me"
 DataSource__Provider=duckdb
 DuckDB__DatabasePath="/data/layers.duckdb"
 ```
-See the [DuckDB Provider Guide](docs/operator/duckdb-provider.md) for layer and service configuration.
+See the [DuckDB Provider Guide](docs/reference/configuration/data-sources/duckdb.md) for layer and service configuration.
 
 **SQL Server provider** (read-only against existing `geometry`/`geography` tables):
 ```bash
 SqlServer__Enabled=true
 SqlServer__ConnectionString="Server=mssql.example.com,1433;Database=geo;User Id=honua;Password=${SQLSERVER_PASSWORD};Encrypt=True;TrustServerCertificate=False"
 ```
-See the [SQL Server Provider Guide](docs/operator/sqlserver-provider.md) for supported versions, layer mapping, and limitations.
+See the [SQL Server Provider Guide](docs/reference/configuration/data-sources/sql-server.md) for supported versions, layer mapping, and limitations.
 
 **Oracle provider** (read-only against standard Oracle Spatial `SDO_GEOMETRY` tables; ArcSDE `ST_Geometry` and versioned tables refused):
 ```bash
 Oracle__Enabled=true
 Oracle__ConnectionString="User Id=honua;Password=${ORACLE_PASSWORD};Data Source=oracle.example.com:1521/ORCL"
 ```
-Not Native AOT compatible (`Oracle.ManagedDataAccess.Core` reflection). See the [Oracle Provider Guide](docs/operator/oracle-provider.md) for supported sources, layer mapping, and limitations.
+Not Native AOT compatible (`Oracle.ManagedDataAccess.Core` reflection). See the [Oracle Provider Guide](docs/reference/configuration/data-sources/oracle.md) for supported sources, layer mapping, and limitations.
 
 **MySQL / MariaDB provider** (read/query-only against existing tables):
 ```bash
 DataSource__Provider=mysql            # or mariadb (alias)
 MySql__ConnectionString="Server=mysql;Database=honua;User=honua_ro;Password=${MYSQL_PASSWORD};SslMode=Required"
 ```
-Requires MySQL 8.0.11+ or MariaDB 10.6+. No edits, native MVT, FlatGeobuf, Geobuf, GML, streaming GeoJSON, statistics, KNN, temporal `datetime` filters, or cross-SRID `ST_Transform`. Extent is supported for Point and Polygon/MultiPolygon layers only. See the [MySQL/MariaDB Provider Guide](docs/operator/mysql-provider.md) for layer mapping, supported operations, and limitations.
+Requires MySQL 8.0.11+ or MariaDB 10.6+. No edits, native MVT, FlatGeobuf, Geobuf, GML, streaming GeoJSON, statistics, KNN, temporal `datetime` filters, or cross-SRID `ST_Transform`. Extent is supported for Point and Polygon/MultiPolygon layers only. See the [MySQL/MariaDB Provider Guide](docs/reference/configuration/data-sources/mysql-mariadb.md) for layer mapping, supported operations, and limitations.
 
 **Common options:**
 ```bash
@@ -283,14 +285,14 @@ See **[docs/README.md](docs/README.md)** for the full table of contents. Common 
 
 | I want to... | Go to |
 |---|---|
-| Deploy to production | [Infrastructure](docs/operator/infrastructure.md) |
-| Connect QGIS | [QGIS Tutorial](docs/gis/tutorials/qgis-getting-started.md) |
-| See protocol coverage | [Protocols Overview](docs/gis/STANDARDS_APIS.md) |
-| Use the admin API | [Control Plane API](docs/operator/CONTROL_PLANE_API.md) |
-| Check compatibility | [MVP Compatibility Contract](docs/gis/MVP_COMPATIBILITY_CONTRACT.md) |
-| Prevalidate Metadata v2 release packages | [Metadata Prevalidation Admin API](docs/admin-api/metadata-prevalidation.md) |
+| Deploy to production | [Infrastructure](docs/guides/deploy/kubernetes.md) |
+| Connect QGIS | [QGIS Tutorial](docs/guides/connect/qgis.md) |
+| See protocol coverage | [Protocols Overview](docs/concepts/protocols.md) |
+| Use the admin API | [Control Plane API](docs/reference/admin-api/overview.md) |
+| Check compatibility | [MVP Compatibility Contract](docs/reference/compatibility/clients.md) |
+| Prevalidate Metadata v2 release packages | [Metadata Prevalidation Admin API](docs/internal/admin-api/metadata-prevalidation.md) |
 | Run the STAC ops sample | [STAC Ops Demo](samples/Honua.StacOpsDemo/README.md) |
-| Contribute code | [Contributing](docs/contributor/development/contributing.md) |
+| Contribute code | [Contributing](docs/internal/contributor/development/contributing.md) |
 
 ## License
 

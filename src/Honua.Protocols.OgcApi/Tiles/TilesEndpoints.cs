@@ -1599,7 +1599,7 @@ internal static partial class TilesEndpoints
 
         error = StandardErrorHelpers.CreateForbidden(
             context,
-            "Tenant context is required to access tiles.");
+            "Tenant context is required to access collection tiles.");
         return false;
     }
 

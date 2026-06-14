@@ -19,10 +19,12 @@ public sealed class PluginEditPipelineTests
         HonuaEdition edition = HonuaEdition.Enterprise,
         bool enabled = true,
         IEnumerable<IFeatureValidator>? validators = null,
+        IEnumerable<IFieldValidator>? fieldValidators = null,
         IEnumerable<IEditHook>? hooks = null,
         IAuditLog? auditLog = null)
         => new(
             validators ?? [],
+            fieldValidators ?? [],
             hooks ?? [],
             new TestLicenseEntitlementService(edition),
             auditLog ?? new RecordingAuditLog(),

@@ -100,13 +100,16 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/openapi.json")]
-    public async Task Authentication_AdminOpenApiWithoutApiKey_ShouldReturn401()
+    public async Task Authentication_AdminOpenApiWithoutApiKey_ShouldReturn200()
     {
+        // The admin OpenAPI document is public documentation (the bundled
+        // admin-api.json snapshot) and is intentionally anonymous (#1635);
+        // the admin operations it documents remain authenticated.
         var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/openapi.json");
 
         var response = await _client.SendAsync(request);
 
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]

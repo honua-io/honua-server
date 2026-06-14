@@ -22,4 +22,15 @@ public sealed class FileGdbFormatDetectionTests
         service.GetSupportedExtensions().Should().Contain(".gdb.zip");
         service.GetSupportedExtensions().Should().NotContain(".gdb");
     }
+
+    [Fact]
+    public void DetectFormat_UnsupportedAdvertisedFormats_AreRejected()
+    {
+        var service = new FileFormatDetectionService(NullLogger<FileFormatDetectionService>.Instance);
+
+        service.DetectFormat("sample.gml").Should().BeNull();
+        service.DetectFormat("sample.twkb").Should().BeNull();
+        service.GetSupportedExtensions().Should().NotContain(".gml");
+        service.GetSupportedExtensions().Should().NotContain(".twkb");
+    }
 }

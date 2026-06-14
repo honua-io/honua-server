@@ -3,7 +3,7 @@
 These sources feed the Windows client compatibility pack and the manual smoke runbook.
 Generate native client artifacts (`.aprx`, `.qgz`, `.pbix`, `.xlsx`) from these sources and attach them to release/certification evidence.
 
-Most source files live in this directory. The QGIS project template currently lives in [`docs/user/client-templates/qgis`](../../user/client-templates/qgis/). The `windows-client-compat-nightly.yml` workflow assembles both locations into one canonical pack under:
+Most source files live in this directory. The QGIS project template currently lives in [`docs/user/client-templates/qgis`](../../user/client-templates/qgis). The `windows-client-compat-nightly.yml` workflow assembles both locations into one canonical pack under:
 
 ```text
 artifacts/client-compat/<service>-<timestamp>/pack/templates/

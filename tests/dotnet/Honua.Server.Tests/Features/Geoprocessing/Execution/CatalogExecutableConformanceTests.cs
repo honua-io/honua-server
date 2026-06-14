@@ -6,6 +6,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Geoprocessing;
 using Honua.Geoprocessing.Execution;
 using Honua.TestKit.Attributes;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -87,6 +88,9 @@ public sealed class CatalogExecutableConformanceTests
         "sink.geojson-file",
         "sink.quarantine",
         "sink.external-postgis",
+        // Durable import pipeline (#1630): managed orchestration job that composes
+        // the import / publishing / raster services through an IServiceScopeFactory.
+        "import.dataset",
     };
 
     // Processes that execute ONLY through the synchronous PostGIS SpatialAnalytics
@@ -336,6 +340,9 @@ public sealed class CatalogExecutableConformanceTests
             new GeoJsonFileSinkExecutor(monitor),
             new QuarantineSinkExecutor(monitor),
             new ExternalPostgisSinkExecutor(monitor),
+            new ImportDatasetJobExecutor(
+                Substitute.For<IServiceScopeFactory>(),
+                NullLogger<ImportDatasetJobExecutor>.Instance),
             NullLogger<GeoprocessingDispatchJobExecutor>.Instance);
 
         return dispatcher.SupportedProcessIds;

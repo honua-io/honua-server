@@ -15,6 +15,14 @@ on:
           - default
           - minimal
           - full
+      honua_image:
+        description: >-
+          Optional prebuilt Honua Server image (ref, optionally @sha256:digest) to test
+          instead of building from source. The release-bundle orchestrator passes the
+          immutable release-candidate image here so CITE evidence is pinned to that digest.
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -27,6 +35,7 @@ concurrency:
 jobs:
   cite:
     uses: ./.github/workflows/cite-conformance-common.yml
+    secrets: inherit
     with:
       suite: features
       display-name: OGC API Features
@@ -36,5 +45,6 @@ jobs:
       timeout-seconds: 2400
       job-timeout-minutes: 45
       cite-profile: ${{ inputs.profile || 'default' }}
+      honua-image: ${{ inputs.honua_image || '' }}
       validation-command: bash ./scripts/conformance/ogc/validate-ogc-conformance.sh --results cite-results
       extra-artifact-paths: docker/cite/ogc-api-features/config/

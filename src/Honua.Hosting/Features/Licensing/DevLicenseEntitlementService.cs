@@ -11,8 +11,9 @@ namespace Honua.Infrastructure.Licensing;
 /// Test/dev-only <see cref="ILicenseEntitlementService"/> that grants every catalog entitlement up
 /// to a configured edition without a signed license. Activated only when
 /// <c>Licensing:DevGrantEdition</c> is set (default off). It exists so an out-of-process test/CI
-/// server can exercise edition-gated features — chiefly feature editing (<c>editing.feature-edits</c>,
-/// honua-server#1548/#1577) — that in-process tests grant via <c>TestLicenseEntitlementService</c>.
+/// server can exercise edition-gated features — including FeatureServer editing
+/// (<c>editing.featureserver-edits</c>, honua-server#1591) — that in-process tests grant via
+/// <c>TestLicenseEntitlementService</c>.
 /// Never enable this in production.
 /// </summary>
 internal sealed partial class DevLicenseEntitlementService : ILicenseEntitlementService

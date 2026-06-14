@@ -30,11 +30,18 @@ internal static class AdminInfoEndpoints
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
             .Produces<ApiResponse<AdminVersionResponse>>();
 
+        // Anonymous by design (#1633): this is the SDK compatibility handshake
+        // (checkCompatibility/getCompatibility) that browser consumers run before they
+        // have credentials. The payload is constant, non-sensitive build metadata —
+        // server version, release channel, control-plane API major/base path, metadata
+        // schema versions, and compile-time feature switches. It contains no connection
+        // details, tenants, topology, or deployment-specific configuration.
         group.MapGet("/capabilities", HandleGetCapabilities)
             .WithName("GetAdminCapabilities")
             .WithSummary("Get admin API capabilities")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
-            .Produces<ApiResponse<AdminCapabilitiesResponse>>();
+            .Produces<ApiResponse<AdminCapabilitiesResponse>>()
+            .AllowAnonymous();
     }
 
     private static IResult HandleGetVersion()

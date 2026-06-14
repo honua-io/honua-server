@@ -283,6 +283,24 @@ internal sealed partial class StreamingFileImportService
             return null;
         }
 
+        // Hard memory guard (#1626): reject oversized geometries on vertex/ring count BEFORE
+        // materializing coordinate arrays or writing WKB. A single island-scale multipolygon can
+        // carry millions of vertices; copying its coordinates and serializing its WKB can allocate
+        // hundreds of MB and OOM-crash a memory-constrained serverless host. This guard runs
+        // regardless of the optional ValidateGeometry pass so the ceiling always holds, and surfaces
+        // a clear, machine-readable error (413-style) rather than crashing.
+        var sizeResult = ImportGeometrySizeGuard.Check(feature.Geometry, _limits.MaxVertices, _limits.MaxRings);
+        if (!sizeResult.IsWithinLimits)
+        {
+            if (_limits.SkipInvalidGeometry)
+            {
+                ImportLog.GeometryTooLargeSkipped(_logger, sizeResult.Message ?? "Geometry exceeds import size limit.");
+                return null;
+            }
+
+            throw new ImportGeometryTooLargeException(sizeResult.Message ?? "Geometry exceeds import size limit.");
+        }
+
         if (_limits.ValidateGeometry)
         {
             var validationError = ValidateGeometry(feature.Geometry);
@@ -302,15 +320,22 @@ internal sealed partial class StreamingFileImportService
             : wkbWriter;
         var wkb = writer.Write(feature.Geometry);
 
-        if (_limits.ValidateGeometry && wkb.Length > _limits.MaxWkbSize)
+        if (wkb.Length > _limits.MaxWkbSize)
         {
+            // The serialized WKB exceeded the per-geometry byte ceiling. This is also enforced
+            // independently of ValidateGeometry so a degenerate geometry (few vertices, huge
+            // serialized size) cannot blow the memory budget.
             if (_limits.SkipInvalidGeometry)
             {
+                ImportLog.GeometryTooLargeSkipped(
+                    _logger,
+                    $"Geometry WKB size ({wkb.Length:N0} bytes) exceeds maximum allowed ({_limits.MaxWkbSize:N0} bytes).");
                 return null;
             }
 
-            throw new InvalidOperationException(
-                $"Geometry WKB size ({wkb.Length:N0} bytes) exceeds maximum allowed ({_limits.MaxWkbSize:N0} bytes)");
+            throw new ImportGeometryTooLargeException(
+                $"Geometry WKB size ({wkb.Length:N0} bytes) exceeds maximum allowed ({_limits.MaxWkbSize:N0} bytes). "
+                + "Explode multipart features or simplify the geometry before importing.");
         }
 
         return wkb;

@@ -244,7 +244,7 @@ internal sealed partial class DeployWorkflowService
                 {
                     throw;
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
                     Log.DeploySubmissionFailed(_logger, operation.OperationId, targetId, ex);
                     operation = operation with
@@ -253,7 +253,7 @@ internal sealed partial class DeployWorkflowService
                         UpdatedAt = DateTimeOffset.UtcNow,
                         CompletedAt = DateTimeOffset.UtcNow,
                         CurrentPhase = "Backend submission failed.",
-                        ErrorMessage = $"Backend submission failed ({ex.GetType().Name})."
+                        ErrorMessage = "Backend submission failed."
                     };
                 }
 
@@ -332,7 +332,7 @@ internal sealed partial class DeployWorkflowService
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             Log.DeploySubmissionFailed(_logger, operation.OperationId, operation.Deploy.TargetId, ex);
             var failed = operation with
@@ -341,7 +341,7 @@ internal sealed partial class DeployWorkflowService
                 UpdatedAt = DateTimeOffset.UtcNow,
                 CompletedAt = DateTimeOffset.UtcNow,
                 CurrentPhase = "Backend submission failed.",
-                ErrorMessage = $"Backend submission failed ({ex.GetType().Name}).",
+                ErrorMessage = "Backend submission failed.",
                 Audit = MergeSubmissionAudit(operation.Audit, requestedBy, reason)
             };
 

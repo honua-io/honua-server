@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using System.Text;
+using System.Text.Json;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Infrastructure.Authentication;
@@ -49,6 +50,10 @@ internal static class MigrationRunAdminEndpoints
             .WithName("ListMigrationRuns")
             .WithSummary("List GeoServer migration runs (most recent first, paged)");
 
+        _ = group.MapPost("/", HandleRecordStartedAsync)
+            .WithName("RecordMigrationRunStarted")
+            .WithSummary("Record the start of a migration run");
+
         _ = group.MapGet("/{runId}", HandleGetAsync)
             .WithName("GetMigrationRun")
             .WithSummary("Return a single GeoServer migration run by id");
@@ -60,6 +65,14 @@ internal static class MigrationRunAdminEndpoints
         _ = group.MapGet("/{runId}/scorecard", HandleGetScorecardAsync)
             .WithName("GetMigrationRunScorecard")
             .WithSummary("Download the signed reconciliation scorecard JSON for a migration run");
+
+        _ = group.MapPost("/{runId}/complete", HandleCompleteAsync)
+            .WithName("RecordMigrationRunCompleted")
+            .WithSummary("Record the terminal state of a migration run");
+
+        _ = group.MapPost("/{runId}/scorecard", HandleRecordScorecardAsync)
+            .WithName("RecordMigrationRunScorecard")
+            .WithSummary("Persist the signed reconciliation scorecard JSON for a migration run");
 
         _ = group.MapPost("/{runId}/cancel", HandleCancelAsync)
             .WithName("CancelMigrationRun")
@@ -88,6 +101,57 @@ internal static class MigrationRunAdminEndpoints
         };
 
         await Results.Json(response, ImportJsonContext.Default.MigrationRunListResponse)
+            .ExecuteAsync(context).ConfigureAwait(false);
+    }
+
+    private static async Task HandleRecordStartedAsync(HttpContext context)
+    {
+        MigrationRunStartRequest? request;
+        try
+        {
+            request = await context.Request.ReadFromJsonAsync(
+                ImportJsonContext.Default.MigrationRunStartRequest,
+                context.RequestAborted).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            await AdminResponseWriter.WriteErrorAsync(context, "Invalid request body.", StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        if (request is null)
+        {
+            await AdminResponseWriter.WriteErrorAsync(context, "Request body is required.", StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(request.RunId))
+        {
+            await AdminResponseWriter.WriteErrorAsync(context, "runId is required.", StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(request.SourceKind))
+        {
+            await AdminResponseWriter.WriteErrorAsync(context, "sourceKind is required.", StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        var record = new MigrationRunRecord
+        {
+            RunId = request.RunId.Trim(),
+            SourceKind = request.SourceKind.Trim(),
+            SourceUrl = TrimToEmpty(request.SourceUrl),
+            SourceDisplayName = TrimToNull(request.SourceDisplayName),
+            Status = MigrationRunStatus.Running,
+            StartedAt = request.StartedAt ?? DateTimeOffset.UtcNow,
+            StatusNote = TrimToNull(request.StatusNote)
+        };
+
+        var catalog = context.RequestServices.GetRequiredService<IMigrationRunCatalog>();
+        var persisted = await catalog.RecordStartedAsync(record, context.RequestAborted).ConfigureAwait(false);
+
+        await Results.Json(ToDto(persisted), ImportJsonContext.Default.MigrationRunDto)
             .ExecuteAsync(context).ConfigureAwait(false);
     }
 
@@ -200,6 +264,144 @@ internal static class MigrationRunAdminEndpoints
         }
 
         await context.Response.Body.WriteAsync(bytes, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task HandleCompleteAsync(HttpContext context)
+    {
+        var cancellationToken = context.RequestAborted;
+        var runId = context.Request.RouteValues["runId"]?.ToString();
+        if (string.IsNullOrWhiteSpace(runId))
+        {
+            await AdminResponseWriter.WriteErrorAsync(context, "Run id is required.", StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        MigrationRunCompletionRequest? request;
+        try
+        {
+            request = await context.Request.ReadFromJsonAsync(
+                ImportJsonContext.Default.MigrationRunCompletionRequest,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            await AdminResponseWriter.WriteErrorAsync(context, "Invalid request body.", StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        if (request is null)
+        {
+            await AdminResponseWriter.WriteErrorAsync(context, "Request body is required.", StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Status)
+            || !MigrationRunSerialization.TryParseStatus(request.Status, out var status)
+            || status == MigrationRunStatus.Running)
+        {
+            await AdminResponseWriter.WriteErrorAsync(
+                context,
+                "status must be one of: succeeded, failed, cancelled.",
+                StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.EvidencePackBody) && !IsValidJson(request.EvidencePackBody!))
+        {
+            await AdminResponseWriter.WriteErrorAsync(
+                context,
+                "evidencePackBody must be valid JSON when supplied.",
+                StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        var catalog = context.RequestServices.GetRequiredService<IMigrationRunCatalog>();
+        var completed = await catalog.RecordCompletedAsync(
+            runId,
+            status,
+            request.CompletedAt ?? DateTimeOffset.UtcNow,
+            TrimToNull(request.EvidencePackRef),
+            TrimToNull(request.EvidencePackFingerprint),
+            string.IsNullOrWhiteSpace(request.EvidencePackBody) ? null : request.EvidencePackBody,
+            TrimToNull(request.StatusNote),
+            cancellationToken).ConfigureAwait(false);
+
+        if (completed is null)
+        {
+            await AdminResponseWriter.WriteErrorAsync(context, $"Migration run '{runId}' was not found.", StatusCodes.Status404NotFound);
+            return;
+        }
+
+        await Results.Json(ToDto(completed), ImportJsonContext.Default.MigrationRunDto)
+            .ExecuteAsync(context).ConfigureAwait(false);
+    }
+
+    private static async Task HandleRecordScorecardAsync(HttpContext context)
+    {
+        var cancellationToken = context.RequestAborted;
+        var runId = context.Request.RouteValues["runId"]?.ToString();
+        if (string.IsNullOrWhiteSpace(runId))
+        {
+            await AdminResponseWriter.WriteErrorAsync(context, "Run id is required.", StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        MigrationReconciliationScorecard? scorecard;
+        try
+        {
+            scorecard = await context.Request.ReadFromJsonAsync(
+                ImportJsonContext.Default.MigrationReconciliationScorecard,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            await AdminResponseWriter.WriteErrorAsync(context, "Invalid request body.", StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        if (scorecard is null)
+        {
+            await AdminResponseWriter.WriteErrorAsync(context, "Request body is required.", StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        if (!string.Equals(scorecard.RunId, runId, StringComparison.Ordinal))
+        {
+            await AdminResponseWriter.WriteErrorAsync(
+                context,
+                "scorecard.runId must match the route run id.",
+                StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(scorecard.Fingerprint))
+        {
+            await AdminResponseWriter.WriteErrorAsync(
+                context,
+                "scorecard.fingerprint is required.",
+                StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        var scorecardBody = JsonSerializer.Serialize(
+            scorecard,
+            ImportJsonContext.Default.MigrationReconciliationScorecard);
+
+        var catalog = context.RequestServices.GetRequiredService<IMigrationRunCatalog>();
+        var updated = await catalog.RecordScorecardAsync(
+            runId,
+            scorecard.Fingerprint,
+            scorecardBody,
+            cancellationToken).ConfigureAwait(false);
+
+        if (updated is null)
+        {
+            await AdminResponseWriter.WriteErrorAsync(context, $"Migration run '{runId}' was not found.", StatusCodes.Status404NotFound);
+            return;
+        }
+
+        await Results.Json(ToDto(updated), ImportJsonContext.Default.MigrationRunDto)
+            .ExecuteAsync(context).ConfigureAwait(false);
     }
 
     private static async Task HandleCancelAsync(HttpContext context)
@@ -328,6 +530,81 @@ internal static class MigrationRunAdminEndpoints
         ReconciliationScorecardFingerprint = record.ReconciliationScorecardFingerprint,
         HasReconciliationScorecard = !string.IsNullOrEmpty(record.ReconciliationScorecardFingerprint)
     };
+
+    private static bool IsValidJson(string json)
+    {
+        try
+        {
+            using var _ = JsonDocument.Parse(json);
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static string TrimToEmpty(string? value)
+        => string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+
+    private static string? TrimToNull(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var trimmed = value.Trim();
+        return trimmed.Length == 0 ? null : trimmed;
+    }
+}
+
+/// <summary>
+/// Request body for recording a migration run start.
+/// </summary>
+public sealed record MigrationRunStartRequest
+{
+    /// <summary>Stable run identifier supplied by the migration producer.</summary>
+    public string? RunId { get; init; }
+
+    /// <summary>Source kind identifier, for example <c>arcgis-geoservices-rest</c>.</summary>
+    public string? SourceKind { get; init; }
+
+    /// <summary>Redacted source URL. Optional for offline-manifest runs.</summary>
+    public string? SourceUrl { get; init; }
+
+    /// <summary>Optional operator-visible source display name.</summary>
+    public string? SourceDisplayName { get; init; }
+
+    /// <summary>UTC instant the run started. Defaults to server receive time.</summary>
+    public DateTimeOffset? StartedAt { get; init; }
+
+    /// <summary>Optional operator-visible note.</summary>
+    public string? StatusNote { get; init; }
+}
+
+/// <summary>
+/// Request body for recording the terminal state of a migration run.
+/// </summary>
+public sealed record MigrationRunCompletionRequest
+{
+    /// <summary>Terminal status: <c>succeeded</c>, <c>failed</c>, or <c>cancelled</c>.</summary>
+    public string? Status { get; init; }
+
+    /// <summary>UTC instant the run completed. Defaults to server receive time.</summary>
+    public DateTimeOffset? CompletedAt { get; init; }
+
+    /// <summary>Optional storage reference for the evidence pack.</summary>
+    public string? EvidencePackRef { get; init; }
+
+    /// <summary>Optional evidence pack fingerprint.</summary>
+    public string? EvidencePackFingerprint { get; init; }
+
+    /// <summary>Optional evidence pack JSON body to persist inline.</summary>
+    public string? EvidencePackBody { get; init; }
+
+    /// <summary>Optional operator-visible note.</summary>
+    public string? StatusNote { get; init; }
 }
 
 /// <summary>

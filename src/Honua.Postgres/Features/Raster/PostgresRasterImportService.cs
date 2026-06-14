@@ -111,6 +111,15 @@ internal sealed class PostgresRasterImportService : IRasterImportService
                 await AcquireLayerImportLockAsync(
                     connection, transaction, request.LayerId, cancellationToken).ConfigureAwait(false);
 
+                // Guarantee the monolithic raster payload is stored EXTERNAL (out-of-line,
+                // uncompressed) before the row is written, so dynamic tile/terrain/statistics
+                // reads fetch only the chunks they touch instead of detoasting + decompressing
+                // the entire 25-115 MB raster on every request (#1625). SET STORAGE only affects
+                // rows written afterwards, so applying it here (immediately before INSERT) ensures
+                // every imported raster lands EXTERNAL even on databases that predate migration 055.
+                await EnsureExternalRasterStorageAsync(
+                    connection, transaction, cancellationToken).ConfigureAwait(false);
+
                 rasterId = await InsertRasterDataAsync(
                     connection, transaction, request, fileBytes, cancellationToken).ConfigureAwait(false);
 
@@ -425,6 +434,25 @@ internal sealed class PostgresRasterImportService : IRasterImportService
             // The provider may already have aborted the transaction after a
             // server-side raster error. Preserve the original failure path.
         }
+    }
+
+    /// <summary>
+    /// Switches the <c>raster_data.raster</c> column to EXTERNAL TOAST storage so newly inserted
+    /// rasters are stored out-of-line and uncompressed. This keeps the logical-raster identity
+    /// intact (one row per <c>raster_data.id</c>, unchanged generated columns) while making
+    /// ST_Clip / ST_Value / ST_SummaryStats reads fetch only the chunks they touch instead of
+    /// inflating the whole monolithic raster (#1625). Idempotent: PostgreSQL no-ops when the
+    /// column is already EXTERNAL.
+    /// </summary>
+    private async Task EnsureExternalRasterStorageAsync(
+        DbConnection connection,
+        DbTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = $"ALTER TABLE {_rasterDataTable} ALTER COLUMN raster SET STORAGE EXTERNAL;";
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task AcquireLayerImportLockAsync(

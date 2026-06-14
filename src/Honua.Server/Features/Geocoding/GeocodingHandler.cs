@@ -133,6 +133,11 @@ internal sealed class GeocodingHandler(
             return StandardErrorHelpers.CreateBadRequest(context, "Invalid outSR parameter.");
         }
 
+        if (!TryParseOutFields(GetValue(values, "outFields"), out var outFields, out var outFieldsError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, outFieldsError ?? "Invalid outFields parameter.");
+        }
+
         try
         {
             var requestedProviderName = GetValue(values, "provider");
@@ -191,7 +196,7 @@ internal sealed class GeocodingHandler(
                             LatestWkid = outSrid
                         }
                     },
-                    Attributes = candidate.Attributes
+                    Attributes = ProjectAttributes(candidate.Attributes, outFields)
                 });
             }
 
@@ -534,6 +539,11 @@ internal sealed class GeocodingHandler(
             return StandardErrorHelpers.CreateBadRequest(context, "Invalid outSR parameter.");
         }
 
+        if (!TryParseOutFields(GetValue(values, "outFields"), out var outFields, out var outFieldsError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, outFieldsError ?? "Invalid outFields parameter.");
+        }
+
         try
         {
             var batchRequest = new Honua.Geocoding.Features.Geocoding.Domain.BatchGeocodeRequest(
@@ -576,7 +586,7 @@ internal sealed class GeocodingHandler(
                             LatestWkid = outSrid
                         }
                     },
-                    Attributes = candidate.Attributes
+                    Attributes = ProjectAttributes(candidate.Attributes, outFields)
                 });
             }
 
@@ -951,6 +961,69 @@ internal sealed class GeocodingHandler(
         => StandardErrorHelpers.CreateBadRequest(
             context,
             $"outSR={outSrid} is not supported for reprojection.");
+
+    // Parses the Esri outFields parameter. Missing/blank or "*" selects every
+    // available attribute (fields = null). An explicit comma list selects only the
+    // named fields; an empty token (e.g. "a,,b") is rejected like FeatureServer.
+    private static bool TryParseOutFields(string? rawOutFields, out string[]? fields, out string? error)
+    {
+        fields = null;
+        error = null;
+
+        if (string.IsNullOrWhiteSpace(rawOutFields))
+        {
+            return true;
+        }
+
+        var tokens = rawOutFields.Split(',');
+        var selected = new List<string>(tokens.Length);
+        foreach (var token in tokens)
+        {
+            var trimmed = token.Trim();
+            if (trimmed.Length == 0)
+            {
+                error = "outFields parameter contains an empty field name.";
+                return false;
+            }
+
+            if (trimmed == "*")
+            {
+                // "*" anywhere in the list means "all fields".
+                fields = null;
+                return true;
+            }
+
+            selected.Add(trimmed);
+        }
+
+        fields = [.. selected];
+        return true;
+    }
+
+    // Projects a provider attribute bag down to the requested outFields, matching
+    // field names case-insensitively and preserving the original key casing.
+    // A null selection returns the attributes unchanged.
+    private static IReadOnlyDictionary<string, string?> ProjectAttributes(
+        IReadOnlyDictionary<string, string?> attributes,
+        string[]? fields)
+    {
+        if (fields is null || fields.Length == 0)
+        {
+            return attributes;
+        }
+
+        var requested = new HashSet<string>(fields, StringComparer.OrdinalIgnoreCase);
+        var projected = new Dictionary<string, string?>(StringComparer.Ordinal);
+        foreach (var pair in attributes)
+        {
+            if (requested.Contains(pair.Key))
+            {
+                projected[pair.Key] = pair.Value;
+            }
+        }
+
+        return projected;
+    }
 
     private static bool TryParseSpatialReference(string? rawOutSpatialReference, int defaultWkid, out int wkid)
     {

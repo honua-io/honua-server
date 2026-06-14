@@ -201,6 +201,14 @@ public sealed class GeoservicesImportReconciliationGateTests(PostgresFixture fix
         public Task<LayerExtentRefreshResult?> RefreshLayerExtentsAsync(
             string connectionString, string serviceName, CancellationToken cancellationToken = default)
             => Task.FromResult<LayerExtentRefreshResult?>(null);
+
+        public Task<MaterializedFeatureRefreshResult?> RefreshMaterializedFeaturesAsync(
+            string connectionString, int layerId, CancellationToken cancellationToken = default)
+            => Task.FromResult<MaterializedFeatureRefreshResult?>(null);
+
+        public Task<IReadOnlyList<MaterializedFeatureRefreshResult>> RefreshMaterializedFeaturesForSourceTableAsync(
+            string connectionString, string? schema, string table, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<MaterializedFeatureRefreshResult>>([]);
     }
 
     private sealed class SimpleFeatureServerHandler : HttpMessageHandler

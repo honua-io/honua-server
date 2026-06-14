@@ -1,8 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Buffers;
 using System.Collections.Frozen;
 using System.Globalization;
+using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
@@ -31,6 +33,11 @@ internal static class ODataUtilityService
     private const string ODataMetadataNone = "none";
     private const string ODataContentType = $"{ODataMediaType};metadata={ODataMetadataMinimal}";
 
+    /// <summary>
+    /// GeoParquet content type emitted for <c>$format=parquet</c> exports.
+    /// </summary>
+    public const string ParquetContentType = "application/vnd.apache.parquet";
+
     private static readonly FrozenSet<string> _allowedFormats = new[]
         {
             "json",
@@ -42,7 +49,18 @@ internal static class ODataUtilityService
             "application/json;metadata=minimal",
             "application/json;metadata=none",
             "application/json;odata.metadata=minimal",
-            "application/json;odata.metadata=none"
+            "application/json;odata.metadata=none",
+            "parquet",
+            "geoparquet",
+            ParquetContentType
+        }
+        .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
+    private static readonly FrozenSet<string> _parquetFormats = new[]
+        {
+            "parquet",
+            "geoparquet",
+            ParquetContentType
         }
         .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
@@ -408,6 +426,12 @@ internal static class ODataUtilityService
     {
         return _allowedFormats;
     }
+
+    /// <summary>
+    /// Returns true when the requested <c>$format</c> selects GeoParquet output.
+    /// </summary>
+    public static bool IsParquetFormat(string? format)
+        => !string.IsNullOrWhiteSpace(format) && _parquetFormats.Contains(format.Trim());
 
     public static bool TryGetUnsupportedMetadataLevel(HttpRequest request, string? format, out string level)
     {
@@ -813,6 +837,106 @@ internal static class ODataUtilityService
         }
 
         return value;
+    }
+
+    /// <summary>
+    /// Produces deterministic UTF-8 JSON bytes for ETag computation by walking the
+    /// key-sorted <see cref="NormalizeForEtag(object?)"/> structure with a manual
+    /// <see cref="Utf8JsonWriter"/>. This replaces the reflection-based
+    /// <c>JsonSerializer.SerializeToUtf8Bytes(object)</c> overload, which throws
+    /// "Reflection-based serialization has been disabled" under <c>PublishAot=true</c>
+    /// and previously 500'd every OData write on AOT images (#1647).
+    /// </summary>
+    /// <param name="payload">The feature payload to canonicalize for ETag hashing.</param>
+    /// <returns>Canonical UTF-8 JSON bytes with object keys sorted for stability.</returns>
+    public static byte[] SerializeForEtag(IReadOnlyDictionary<string, object?> payload)
+    {
+        ArgumentNullException.ThrowIfNull(payload);
+
+        var canonical = NormalizeForEtag(payload);
+        var buffer = new ArrayBufferWriter<byte>();
+        using (var writer = new Utf8JsonWriter(buffer))
+        {
+            WriteEtagValue(writer, canonical);
+        }
+
+        return buffer.WrittenSpan.ToArray();
+    }
+
+    private static void WriteEtagValue(Utf8JsonWriter writer, object? value)
+    {
+        switch (value)
+        {
+            case null:
+                writer.WriteNullValue();
+                break;
+            case SortedDictionary<string, object?> dict:
+                writer.WriteStartObject();
+                foreach (var kvp in dict)
+                {
+                    writer.WritePropertyName(kvp.Key);
+                    WriteEtagValue(writer, kvp.Value);
+                }
+
+                writer.WriteEndObject();
+                break;
+            case object?[] array:
+                writer.WriteStartArray();
+                foreach (var item in array)
+                {
+                    WriteEtagValue(writer, item);
+                }
+
+                writer.WriteEndArray();
+                break;
+            case string s:
+                writer.WriteStringValue(s);
+                break;
+            case bool b:
+                writer.WriteBooleanValue(b);
+                break;
+            case byte bt:
+                writer.WriteNumberValue(bt);
+                break;
+            case short sh:
+                writer.WriteNumberValue(sh);
+                break;
+            case int i:
+                writer.WriteNumberValue(i);
+                break;
+            case long l:
+                writer.WriteNumberValue(l);
+                break;
+            case float f:
+                writer.WriteNumberValue(f);
+                break;
+            case double d:
+                writer.WriteNumberValue(d);
+                break;
+            case decimal dec:
+                writer.WriteNumberValue(dec);
+                break;
+            case DateTime dt:
+                writer.WriteStringValue(dt.ToString("O", CultureInfo.InvariantCulture));
+                break;
+            case DateTimeOffset dto:
+                writer.WriteStringValue(dto.ToString("O", CultureInfo.InvariantCulture));
+                break;
+            case Guid g:
+                writer.WriteStringValue(g);
+                break;
+            case ODataSpatialGeometry geometry:
+                // Geometry is a known, source-generated type — serialize it through its
+                // JsonTypeInfo so geometry changes still affect the ETag (AOT-safe).
+                JsonSerializer.Serialize(writer, geometry, ODataJsonContext.Default.ODataSpatialGeometry);
+                break;
+            default:
+                // Last-resort for unanticipated complex attribute values: the
+                // source-generated Object type info, matching the streaming writer's
+                // AOT-safe fallback. Avoids the reflection-based serializer overload.
+                JsonSerializer.Serialize(writer, value, ODataJsonContext.Default.Object);
+                break;
+        }
     }
 
     private static string NormalizeEtagHeader(string etag)

@@ -4,8 +4,11 @@
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.FileImport.Domain;
+using Honua.Core.Features.Migration.Abstractions;
+using Honua.Postgres.Features.Migration;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Honua.Postgres.Tests;
 
@@ -86,5 +89,26 @@ public sealed class ServiceCollectionExtensionsImportLimitsTests
         limits.MaxArchiveEntryBytes.Should().Be(10000);
         limits.MaxArchiveExtractedBytes.Should().Be(20000);
         limits.MaxArchiveCompressionRatio.Should().Be(75.5);
+    }
+
+    [Fact]
+    public void AddPostgreSqlServices_RegistersMigrationRunCatalog()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=honua_test;Username=honua;Password=test"
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddPostgreSqlServices(configuration);
+
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+
+        scope.ServiceProvider.GetRequiredService<IMigrationRunCatalog>()
+            .Should().BeOfType<PostgresMigrationRunCatalog>();
     }
 }

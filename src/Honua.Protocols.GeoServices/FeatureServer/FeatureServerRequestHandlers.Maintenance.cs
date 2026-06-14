@@ -261,11 +261,11 @@ internal static partial class FeatureServerEndpoints
             return rbacError;
         }
 
-        // Calculate is a bulk field update; enforce the same Pro feature-editing
+        // Calculate is a bulk field update; enforce the same Pro FeatureServer-editing
         // entitlement as every other FeatureServer write entrypoint before doing
         // any read work (the shared edits handler re-checks it per batch below).
         var licenseError = LicenseGate.RequireEntitlement(
-            context, FeatureCatalog.FeatureEditsKey, "Feature editing");
+            context, FeatureCatalog.FeatureServerEditsKey, "FeatureServer editing");
         if (licenseError != null)
         {
             return licenseError;

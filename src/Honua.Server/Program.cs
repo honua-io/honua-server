@@ -293,6 +293,9 @@ Honua.Postgres.Features.Security.PostgresConnectionDriverServiceCollectionExtens
 Honua.MySql.Features.Security.MySqlConnectionDriverServiceCollectionExtensions.AddMySqlConnectionDriver(builder.Services);
 Honua.SqlServer.Features.Security.SqlServerConnectionDriverServiceCollectionExtensions.AddSqlServerConnectionDriver(builder.Services);
 #if !HONUA_SKIP_ORACLE
+// The Native AOT publish (HonuaSkipOracleForAotVerification) drops the Honua.Oracle
+// ProjectReference and defines HONUA_SKIP_ORACLE, so this registration is compiled out
+// (Oracle.ManagedDataAccess is not single-file/AOT safe — see Honua.Server.csproj).
 Honua.Oracle.Features.Security.OracleConnectionDriverServiceCollectionExtensions.AddOracleConnectionDriver(builder.Services);
 #endif
 builder.Services.AddSingleton<Honua.Core.Features.Security.Abstractions.IConnectionDriverRegistry, Honua.Core.Features.Security.Abstractions.ConnectionDriverRegistry>();
@@ -421,6 +424,22 @@ StartupConfigurationHelpers.RegisterConfigurationValidators(builder.Services);
 // Register health check services
 builder.Services.AddSingleton<Honua.Infrastructure.Monitoring.MigrationState>();
 builder.Services.AddSingleton<Honua.Infrastructure.Monitoring.DatabaseCompatibilityState>();
+
+// Degraded-start resilience (#1632): when enabled, transient DB-unavailability at startup does
+// not crash the process; the host serves non-DB routes and recovers connectivity in the background.
+var startupResilienceOptions = builder.Configuration
+    .GetSection(Honua.Core.Configuration.StartupResilienceOptions.SectionName)
+    .Get<Honua.Core.Configuration.StartupResilienceOptions>()
+    ?? new Honua.Core.Configuration.StartupResilienceOptions();
+// Env-friendly override (HONUA_DB_DEGRADED_START=true) for serverless presets.
+if (builder.Configuration.GetValue<bool?>("HONUA_DB_DEGRADED_START") is { } envDegradedStart)
+{
+    startupResilienceOptions = startupResilienceOptions with { DegradedStartEnabled = envDegradedStart };
+}
+
+builder.Services.AddSingleton(startupResilienceOptions);
+builder.Services.AddSingleton<Honua.Infrastructure.Monitoring.DegradedStartupContext>();
+builder.Services.AddHostedService<Honua.Infrastructure.Monitoring.DatabaseRecoveryBackgroundService>();
 builder.Services.AddScoped<Honua.Infrastructure.Monitoring.IDeployPreflightProbe,
     Honua.Infrastructure.Monitoring.DeployPreflightProbe>();
 builder.Services.AddScoped<Honua.Server.Features.HealthCheck.IReadinessCheckService,
@@ -439,18 +458,10 @@ builder.Services.TryAddSingleton<IShareExportDestinationResolver, UnsupportedSha
 builder.Services.TryAddSingleton<IShareExportStore, InMemoryShareExportStore>();
 builder.Services.TryAddSingleton<IShareTrafficStore, InMemoryShareTrafficStore>();
 
-// Register control plane IAM services (in-memory implementations until #496, #498, #355 land)
-builder.Services.AddSingleton<Honua.Core.Features.Identity.Abstractions.IOidcProviderStore,
-    Honua.Server.Features.Admin.Services.InMemoryOidcProviderStore>();
-builder.Services.AddSingleton<Honua.Core.Features.Identity.Abstractions.IUserStore,
-    Honua.Server.Features.Admin.Services.InMemoryUserStore>();
-// TryAdd so the durable scoped PostgresRoleStore registered by AddPostgreSqlServices wins
-// when the Postgres provider is active (#1374); the in-memory singleton is only the
-// fallback for providers without a durable role store. All IRoleStore consumers are
-// scoped or resolve per-operation via IServiceScopeFactory, so the scoped registration
-// is lifetime-safe.
-builder.Services.TryAddSingleton<Honua.Core.Features.Authorization.Abstractions.IRoleStore,
-    Honua.Server.Features.Admin.Services.InMemoryRoleStore>();
+// Register control plane IAM in-memory defaults. Uses TryAdd so a durable provider
+// implementation registered earlier (e.g. PostgresRoleStore from AddPostgreSqlServices)
+// wins — otherwise the later default would shadow it and grants would not persist (#1575).
+builder.Services.AddInMemoryControlPlaneIamDefaults();
 // Canonical per-operation permission resolver (#1375): the shared authorization
 // seam over EffectivePermissions. Scoped so it can consume the (scoped) Postgres
 // role store when durable RBAC is active.
@@ -919,7 +930,9 @@ if (serveApiDocs)
             .AddDocument("coverages", "OGC API Coverages", "/ogc/coverages/openapi.json")
             .AddDocument("tiles", "OGC API Tiles", "/ogc/tiles/openapi.json")
             .AddDocument("maps", "OGC API Maps", "/ogc/maps/openapi.json")
+            .AddDocument("styles", "OGC API Styles", "/ogc/styles/openapi.json")
             .AddDocument("processes", "OGC API Processes", "/ogc/processes/openapi.json")
+            .AddDocument("stac", "STAC API", "/stac/openapi.json")
             .AddDocument("admin", "Admin API", "/api/v1/admin/openapi.json");
     });
 }
@@ -990,16 +1003,6 @@ app.UseSerilogRequestLogging(options =>
             : Serilog.Events.LogEventLevel.Information;
 });
 
-// Add global exception handling middleware after request logging.
-app.UseGlobalExceptionHandling();
-
-// Emit the Esri/GeoServices error envelope for routing-level 404/405 (and
-// 406/415/501) terminations under /rest that would otherwise return a bodyless
-// status. Scoped to GeoServices paths so OGC/STAC/OData/admin contracts are
-// untouched. Runs after global exception handling so thrown exceptions keep their
-// existing protocol shaping and only status-only responses are re-shaped here.
-app.UseRestErrorEnvelope();
-
 // Capture the original gRPC-Web indicator before UseGrpcWeb rewrites Content-Type
 // from application/grpc-web* to application/grpc, so the client-certificate
 // enforcement middleware downstream can still distinguish gRPC-Web from native gRPC
@@ -1020,8 +1023,22 @@ app.Use(async (context, next) =>
 // Enable gRPC-Web for all gRPC services (before CORS and endpoint mapping)
 app.UseGrpcWeb(new GrpcWebOptions { DefaultEnabled = true });
 
-// Add CORS middleware before auth to handle preflight requests
+// Add CORS middleware before the exception handler so error responses (4xx/5xx) carry
+// Access-Control-Allow-Origin headers; otherwise browsers report every server error as
+// a CORS failure, masking the real status/body from web clients (#1627). It also stays
+// after UseGrpcWeb (preserving the gRPC-Web preflight ordering) and before auth so it can
+// answer preflight requests.
 app.UseHonuaCors(app.Environment);
+
+// Add global exception handling middleware after request logging.
+app.UseGlobalExceptionHandling();
+
+// Emit the Esri/GeoServices error envelope for routing-level 404/405 (and
+// 406/415/501) terminations under /rest that would otherwise return a bodyless
+// status. Scoped to GeoServices paths so OGC/STAC/OData/admin contracts are
+// untouched. Runs after global exception handling so thrown exceptions keep their
+// existing protocol shaping and only status-only responses are re-shaped here.
+app.UseRestErrorEnvelope();
 
 // Validate query, form, and selected header inputs before authentication and endpoint execution.
 app.UseInputValidation();
@@ -1319,8 +1336,10 @@ async Task RunDatabaseMigrationsAsync()
             migrationState.MarkFailed("Database migrations failed.");
 
             // In non-Development environments, re-throw so the app fails to start
-            // (gives a clear CrashLoopBackOff signal in Kubernetes).
-            if (!app.Environment.IsDevelopment())
+            // (gives a clear CrashLoopBackOff signal in Kubernetes) — unless degraded
+            // start is enabled and the failure is transient connectivity (#1632).
+            if (!app.Environment.IsDevelopment()
+                && !TryEnterDegradedStart("migrations", error, migrationsPending: true))
             {
                 throw error;
             }
@@ -1352,12 +1371,43 @@ async Task RunDatabaseMigrationsAsync()
         migrationState.MarkFailed("Database migrations failed.");
 
         // In non-Development environments, re-throw so the app fails to start
-        // (gives a clear CrashLoopBackOff signal in Kubernetes).
-        if (!app.Environment.IsDevelopment())
+        // (gives a clear CrashLoopBackOff signal in Kubernetes) — unless degraded
+        // start is enabled and the failure is transient connectivity (#1632).
+        if (!app.Environment.IsDevelopment()
+            && !TryEnterDegradedStart("migrations", ex, migrationsPending: true))
         {
             throw;
         }
     }
+}
+
+// Degraded-start gate (#1632): returns true when the host should keep running despite a
+// startup database failure, rather than crashing the process (which on AWS Lambda becomes a
+// Runtime.ExitError crash loop that 500s every route, including non-database routes). Only
+// transient connectivity failures are suppressed, and only when degraded start is enabled;
+// genuine misconfiguration still fails loudly. When suppressed, the degraded context is armed
+// so the background recovery loop retries connectivity and flips readiness once recovered.
+bool TryEnterDegradedStart(string phase, Exception error, bool migrationsPending)
+{
+    var resilienceOptions = app.Services.GetRequiredService<Honua.Core.Configuration.StartupResilienceOptions>();
+    if (!resilienceOptions.DegradedStartEnabled)
+    {
+        return false;
+    }
+
+    if (!Honua.Core.Features.Infrastructure.Resilience.StartupDatabaseResilience.IsTransientConnectivityError(error))
+    {
+        // Real misconfiguration (bad migration SQL, incompatible PostGIS): never mask it.
+        return false;
+    }
+
+    var warning = Honua.Core.Features.Infrastructure.Resilience.StartupDatabaseResilience
+        .BuildDegradedStartWarning(phase, error.Message);
+    Honua.Infrastructure.Logging.Log.DatabaseStartupDegraded(app.Logger, warning);
+
+    var degradedContext = app.Services.GetRequiredService<Honua.Infrastructure.Monitoring.DegradedStartupContext>();
+    degradedContext.MarkDegraded(migrationsPending, Assembly.GetExecutingAssembly());
+    return true;
 }
 
 // PostGIS preflight compatibility check
@@ -1384,7 +1434,24 @@ async Task RunPostGisPreflightCheckAsync()
 
     Honua.Infrastructure.Logging.Log.PostGisPreflightCheckStarting(app.Logger);
 
-    var result = await checker.CheckCompatibilityAsync(connectionString, app.Lifetime.ApplicationStopping);
+    Honua.Core.Features.Infrastructure.Domain.DatabaseCompatibilityResult result;
+    try
+    {
+        result = await checker.CheckCompatibilityAsync(connectionString, app.Lifetime.ApplicationStopping);
+    }
+    catch (Exception ex) when (!app.Environment.IsDevelopment())
+    {
+        // The preflight could not reach the database to check compatibility. If degraded start is
+        // enabled and the failure is transient connectivity, arm degraded mode (migrations are run
+        // after this method, so they are still pending) rather than crashing the process (#1632).
+        if (TryEnterDegradedStart("PostGIS preflight", ex, migrationsPending: true))
+        {
+            return;
+        }
+
+        throw;
+    }
+
     compatibilityState.SetResult(result);
 
     if (result.IsCompatible)

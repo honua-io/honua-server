@@ -90,6 +90,85 @@ public sealed class GeocodingEndpointTests
         Assert.InRange(y, 4706000, 4708000);
     }
 
+    // findAddressCandidates must honour outFields by projecting each candidate's
+    // attribute bag down to the requested fields (case-insensitive).
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
+    public async Task FindAddressCandidates_WithOutFields_ProjectsAttributes()
+    {
+        using var factory = CreateDefaultFactory();
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync(
+            "/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=1600+Pennsylvania+Ave+NW&outFields=match_addr&f=json");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var attributes = payload.RootElement.GetProperty("candidates")[0].GetProperty("attributes");
+
+        Assert.True(attributes.TryGetProperty("Match_addr", out _));
+        Assert.False(attributes.TryGetProperty("Provider", out _));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
+    public async Task FindAddressCandidates_WithOutFieldsWildcard_ReturnsAllAttributes()
+    {
+        using var factory = CreateDefaultFactory();
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync(
+            "/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=1600+Pennsylvania+Ave+NW&outFields=*&f=json");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var attributes = payload.RootElement.GetProperty("candidates")[0].GetProperty("attributes");
+
+        Assert.True(attributes.TryGetProperty("Match_addr", out _));
+        Assert.True(attributes.TryGetProperty("Provider", out _));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
+    public async Task FindAddressCandidates_WithEmptyOutFieldsToken_ReturnsBadRequest()
+    {
+        using var factory = CreateDefaultFactory();
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync(
+            "/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=1600+Pennsylvania+Ave+NW&outFields=Match_addr,,Provider&f=json");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    // geocodeAddresses must honour outFields per result location.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/geocodeAddresses")]
+    public async Task GeocodeAddresses_WithOutFields_ProjectsAttributes()
+    {
+        using var factory = CreateDefaultFactory();
+        using var client = factory.CreateClient();
+
+        var addresses = Uri.EscapeDataString(
+            """{"records":[{"attributes":{"OBJECTID":1,"SingleLine":"1600 Pennsylvania Ave NW"}}]}""");
+        using var response = await client.GetAsync(
+            $"/rest/services/World/GeocodeServer/geocodeAddresses?addresses={addresses}&outFields=Provider&f=json");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var attributes = payload.RootElement.GetProperty("locations")[0].GetProperty("attributes");
+
+        Assert.True(attributes.TryGetProperty("Provider", out _));
+        Assert.False(attributes.TryGetProperty("Match_addr", out _));
+    }
+
     // Regression (#1442): reverseGeocode must read the INPUT location's own
     // spatialReference (here Web Mercator 3857) and use outSR only for the OUTPUT
     // geometry. A location in 3857 with outSR=3857 must reproject to the provider SRID
@@ -163,6 +242,16 @@ public sealed class GeocodingEndpointTests
         using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var capabilities = payload.RootElement.GetProperty("capabilities").GetString();
         Assert.Equal("Geocode,ReverseGeocode,Suggest", capabilities);
+
+        // candidateFields advertises the attributes every candidate emits; categories
+        // is advertised (empty) for client compatibility since filtering is unsupported.
+        var candidateFields = payload.RootElement.GetProperty("candidateFields");
+        Assert.Equal(JsonValueKind.Array, candidateFields.ValueKind);
+        Assert.Contains(
+            candidateFields.EnumerateArray(),
+            field => field.GetProperty("name").GetString() == "Match_addr");
+        Assert.Equal(JsonValueKind.Array, payload.RootElement.GetProperty("categories").ValueKind);
+        Assert.Equal(0, payload.RootElement.GetProperty("categories").GetArrayLength());
     }
 
     [IntegrationTest]

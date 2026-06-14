@@ -60,6 +60,75 @@ public sealed class FeatureServerQueryGapsTests : IAsyncLifetime
         extent.Ymax.Should().BeApproximately(37.8, 0.01);
     }
 
+    // returnExceededLimitFeatures is accept-and-ignore (#1460): the ArcGIS Maps SDK for .NET
+    // always sends it (often serialized as false from a default DTO), and Honua already returns
+    // the truncated page plus exceededTransferLimit=true. Both the default and an explicit false
+    // must therefore return the same page; altering this re-breaks every .NET FeatureServer client.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_ReturnExceededLimitFeatures_IsAcceptedAndIgnored()
+    {
+        var baseUrl =
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=json&where=1%3D1&resultRecordCount=2";
+
+        // Default (returnExceededLimitFeatures omitted): truncated page + flag.
+        var defaultResponse = await _fixture.Client.GetAsync(baseUrl);
+        var defaultContent = await defaultResponse.Content.ReadAsStringAsync();
+        defaultResponse.StatusCode.Should().Be(HttpStatusCode.OK, defaultContent);
+        var defaultQuery = JsonSerializer.Deserialize(defaultContent, FeatureServerJsonContext.Default.QueryResponse)!;
+        defaultQuery.Features.Should().NotBeNull();
+        defaultQuery.Features!.Length.Should().Be(2);
+        defaultQuery.ExceededTransferLimit.Should().BeTrue();
+
+        // Explicit false: same page is returned, exceededTransferLimit stays true.
+        var falseResponse = await _fixture.Client.GetAsync($"{baseUrl}&returnExceededLimitFeatures=false");
+        var falseContent = await falseResponse.Content.ReadAsStringAsync();
+        falseResponse.StatusCode.Should().Be(HttpStatusCode.OK, falseContent);
+        var falseQuery = JsonSerializer.Deserialize(falseContent, FeatureServerJsonContext.Default.QueryResponse)!;
+        falseQuery.ExceededTransferLimit.Should().BeTrue();
+        falseQuery.Features.Should().NotBeNull();
+        falseQuery.Features!.Length.Should().Be(2, "returnExceededLimitFeatures is accept-and-ignore");
+    }
+
+    // quantizationParameters must emit a transform and quantize geometry coordinates to the
+    // integer grid for f=json.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithQuantizationParameters_EmitsTransformAndIntegerCoordinates()
+    {
+        var quantization = Uri.EscapeDataString(
+            """{"mode":"view","originPosition":"upperLeft","tolerance":0.001,"extent":{"xmin":-122.7,"ymin":37.3,"xmax":-121.9,"ymax":37.8}}""");
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=json&where=1%3D1&quantizationParameters={quantization}");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+        var queryResponse = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.QueryResponse)!;
+        queryResponse.Transform.Should().NotBeNull("quantizationParameters must emit a transform");
+        queryResponse.Transform!.OriginPosition.Should().Be("upperLeft");
+        queryResponse.Transform.Scale.Should().Equal(0.001, 0.001);
+        queryResponse.Transform.Translate.Should().Equal(-122.7, 37.8);
+
+        GeoServicesFeature? pointFeature = null;
+        foreach (var feature in queryResponse.Features ?? [])
+        {
+            if (feature.Geometry?.X is not null)
+            {
+                pointFeature = feature;
+                break;
+            }
+        }
+
+        pointFeature.Should().NotBeNull("the seeded layer has point features");
+        var x = pointFeature!.Geometry!.X!.Value;
+        var y = pointFeature.Geometry.Y!.Value;
+        x.Should().Be(Math.Truncate(x), "quantized coordinates are integers");
+        y.Should().Be(Math.Truncate(y), "quantized coordinates are integers");
+    }
+
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]

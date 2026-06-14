@@ -44,6 +44,7 @@ public sealed class FeatureCatalogTests
         categories.Should().Contain(FeatureCatalog.Categories.Alerts);
         categories.Should().Contain(FeatureCatalog.Categories.Channels);
         categories.Should().Contain(FeatureCatalog.Categories.Geocoding);
+        categories.Should().Contain(FeatureCatalog.Categories.Routing);
         categories.Should().Contain(FeatureCatalog.Categories.Identity);
         categories.Should().Contain(FeatureCatalog.Categories.Caching);
         categories.Should().Contain(FeatureCatalog.Categories.Import);
@@ -94,31 +95,68 @@ public sealed class FeatureCatalogTests
     }
 
     [Fact]
-    public void All_FeatureEditingIsProTier()
+    public void All_RoutingSolveIsProTier()
     {
-        // Ticket #1548: multi-user feature editing across the shared edit pipeline
-        // (FeatureServer applyEdits/add/update/delete, OGC API Features mutations,
-        // WFS-T, OData CRUD, gRPC edits) is a Pro entitlement. Community remains
-        // read + serve + one-shot file import. This is the catalog-side counterpart
-        // to FeatureEditsEditionGateTests on the protocol handlers.
-        var feature = FeatureCatalog.All.SingleOrDefault(f => f.Key == FeatureCatalog.FeatureEditsKey);
+        var feature = FeatureCatalog.All.SingleOrDefault(f => f.Key == "routing.solve");
 
-        feature.Should().NotBeNull("feature catalog must define multi-user editing for ticket #1548");
-        feature!.Key.Should().Be("editing.feature-edits");
+        feature.Should().NotBeNull("MCP route solving is gated by the Pro license entitlement for ticket #1597");
+        feature!.Category.Should().Be(FeatureCatalog.Categories.Routing);
+        feature.MinimumEdition.Should().Be(HonuaEdition.Pro);
+    }
+
+    [Fact]
+    public void All_FeatureServerEditingIsProTier()
+    {
+        // Ticket #1591: only the Esri GeoServices FeatureServer write surface is
+        // Pro-gated. Open-protocol edits remain Community while using the shared
+        // edit pipeline.
+        var feature = FeatureCatalog.All.SingleOrDefault(f => f.Key == FeatureCatalog.FeatureServerEditsKey);
+
+        feature.Should().NotBeNull("feature catalog must define FeatureServer editing for ticket #1591");
+        feature!.Key.Should().Be("editing.featureserver-edits");
         feature.Category.Should().Be(FeatureCatalog.Categories.Editing);
         feature.MinimumEdition.Should().Be(HonuaEdition.Pro);
+        feature.Description.Should().Contain("FeatureServer");
+        feature.Description.Should().NotContain("OGC API Features");
+        feature.Description.Should().NotContain("WFS-T");
+        feature.Description.Should().NotContain("OData");
+        feature.Description.Should().NotContain("gRPC");
     }
 
     [Fact]
     public void All_BranchVersioningIsEnterpriseTier()
     {
         // Branch versioning stays an Enterprise entitlement, distinct from the Pro
-        // multi-user editing gate added in #1548.
+        // FeatureServer editing gate scoped in #1591.
         var feature = FeatureCatalog.All.SingleOrDefault(f => f.Key == FeatureCatalog.BranchVersioningKey);
 
         feature.Should().NotBeNull("feature catalog must define branch versioning");
         feature!.Category.Should().Be(FeatureCatalog.Categories.Editing);
         feature.MinimumEdition.Should().Be(HonuaEdition.Enterprise);
+    }
+
+    [Fact]
+    public void All_OidcSingleProviderIsProAndGovernanceIsEnterprise()
+    {
+        // Ticket #1612: basic single-provider OIDC has no SSO tax and validates
+        // under Pro. Multi-provider configuration and claim-to-role mapping stay
+        // Enterprise identity-governance entitlements.
+        var oidc = FeatureCatalog.All.SingleOrDefault(f => f.Key == FeatureCatalog.OidcAuthenticationKey);
+        var multiProvider = FeatureCatalog.All.SingleOrDefault(f => f.Key == FeatureCatalog.OidcMultiProviderKey);
+        var claimsMapping = FeatureCatalog.All.SingleOrDefault(f => f.Key == FeatureCatalog.OidcClaimsMappingKey);
+
+        oidc.Should().NotBeNull("feature catalog must define basic OIDC authentication for ticket #1612");
+        oidc!.Category.Should().Be(FeatureCatalog.Categories.Identity);
+        oidc.MinimumEdition.Should().Be(HonuaEdition.Pro);
+        oidc.Description.Should().Contain("Single-provider");
+
+        multiProvider.Should().NotBeNull("feature catalog must keep multi-provider SSO Enterprise-gated");
+        multiProvider!.Category.Should().Be(FeatureCatalog.Categories.Identity);
+        multiProvider.MinimumEdition.Should().Be(HonuaEdition.Enterprise);
+
+        claimsMapping.Should().NotBeNull("feature catalog must keep OIDC claims mapping Enterprise-gated");
+        claimsMapping!.Category.Should().Be(FeatureCatalog.Categories.Identity);
+        claimsMapping.MinimumEdition.Should().Be(HonuaEdition.Enterprise);
     }
 
     [Fact]
@@ -137,8 +175,33 @@ public sealed class FeatureCatalogTests
             "temporal.extent-discovery",
             "identity.portal-token",
             "identity.portal-sharing",
-            "import.file"
+            "import.file",
+            "ai.mcp-discovery"
         ]);
+    }
+
+    [Fact]
+    public void All_AiGuardrailLadderHasExpectedEditions()
+    {
+        // Ticket #1631 / #1592: the AI-operations guardrail ladder is the edition
+        // axis. MCP discovery/query stays Community (agent reads never gated), the
+        // agent-operations validation layer is Pro, and approval workflows are
+        // Enterprise.
+        var discovery = FeatureCatalog.All.SingleOrDefault(f => f.Key == FeatureCatalog.McpDiscoveryKey);
+        var operations = FeatureCatalog.All.SingleOrDefault(f => f.Key == FeatureCatalog.AiOperationsKey);
+        var approval = FeatureCatalog.All.SingleOrDefault(f => f.Key == FeatureCatalog.AiApprovalWorkflowsKey);
+
+        discovery.Should().NotBeNull("MCP discovery/query stays Community for ticket #1631");
+        discovery!.Category.Should().Be(FeatureCatalog.Categories.Ai);
+        discovery.MinimumEdition.Should().Be(HonuaEdition.Community);
+
+        operations.Should().NotBeNull("agent-operations validation layer is Pro for ticket #1631");
+        operations!.Category.Should().Be(FeatureCatalog.Categories.Ai);
+        operations.MinimumEdition.Should().Be(HonuaEdition.Pro);
+
+        approval.Should().NotBeNull("agent approval workflows are Enterprise for ticket #1631");
+        approval!.Category.Should().Be(FeatureCatalog.Categories.Ai);
+        approval.MinimumEdition.Should().Be(HonuaEdition.Enterprise);
     }
 
     [Theory]

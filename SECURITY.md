@@ -23,7 +23,7 @@ In scope:
 - application code in `src/`
 - published Honua container images
 - Helm chart content in `infrastructure/helm/`
-- deployment and security guidance in `docs/devops/`
+- deployment and security guidance in `docs/guides/deploy/`
 
 Out of scope unless Honua code is the root cause:
 
@@ -58,13 +58,13 @@ These are response targets, not a guarantee that every issue will be fixed in th
 
 Honua's current operator-facing security guidance lives in:
 
-- `docs/operator/security.md`
-- `docs/operator/infrastructure.md`
+- `docs/guides/secure/production-checklist.md`
+- `docs/guides/deploy/kubernetes.md`
 
 These documents define the shared-responsibility model for TLS termination, WAF/rate limiting, identity configuration, managed database usage, and production deployment expectations.
 
 ## Code-scanning Remediation Notes
 
-Periodic remediation passes against the GitHub Code Scanning backlog (Trivy / CodeQL / Hadolint) are documented under `docs/security/`. Each note records refreshed image digests, dismissed findings with rationale, and findings inherited from upstream base images.
+Periodic remediation passes against the GitHub Code Scanning backlog (Trivy / CodeQL / Hadolint) are documented under `docs/internal/security/`. Each note records refreshed image digests, dismissed findings with rationale, and findings inherited from upstream base images.
 
-- [`docs/security/code-scanning-2026-Q2-remediation.md`](docs/security/code-scanning-2026-Q2-remediation.md) — 2026 Q2 backlog reduction (issue [#757](https://github.com/honua-io/honua-server/issues/757))
+- [`docs/internal/security/code-scanning-2026-Q2-remediation.md`](docs/internal/security/code-scanning-2026-Q2-remediation.md) — 2026 Q2 backlog reduction (issue [#757](https://github.com/honua-io/honua-server/issues/757))

@@ -7,8 +7,148 @@ structure:
 
 format: markdown
 
-# Redirect old GitHub Pages URLs to maintain links
+# Redirects for pages moved by the 2026-06 workflow-first docs restructure,
+# plus legacy GitHub Pages paths. Keys are old URL paths, values are current files.
 redirects:
-  user/STANDARDS_APIS: user/standards-apis
-  user/CONTROL_PLANE_API: user/control-plane-api
-  devops/DEPLOYMENT_SCENARIOS: devops/deployment-scenarios
+  # Legacy paths (pre-restructure)
+  user/STANDARDS_APIS: concepts/protocols.md
+  user/CONTROL_PLANE_API: reference/admin-api/overview.md
+  devops/DEPLOYMENT_SCENARIOS: guides/deploy/cloud-deployments.md
+  # Operator guide
+  operator/README: archive/README.md
+  operator/infrastructure: guides/deploy/kubernetes.md
+  operator/docker-compose: guides/deploy/docker-compose.md
+  operator/DEPLOYMENT_SCENARIOS: guides/deploy/cloud-deployments.md
+  operator/database-support-matrix: reference/configuration/data-sources/README.md
+  operator/duckdb-provider: reference/configuration/data-sources/duckdb.md
+  operator/sqlserver-provider: reference/configuration/data-sources/sql-server.md
+  operator/oracle-provider: reference/configuration/data-sources/oracle.md
+  operator/mysql-provider: reference/configuration/data-sources/mysql-mariadb.md
+  operator/tls-connection-guide: guides/secure/tls-and-mtls.md
+  operator/security: guides/secure/authentication.md
+  operator/client-certificate-authentication: guides/secure/tls-and-mtls.md
+  operator/compliance-framework: guides/secure/compliance.md
+  operator/http-client-resilience: guides/deploy/scaling-and-performance.md
+  operator/monitoring: guides/deploy/monitoring.md
+  operator/operations: guides/deploy/backup-and-restore.md
+  operator/CONTROL_PLANE_API: reference/admin-api/overview.md
+  operator/arcgis-inventory-discovery: guides/migrate/from-arcgis-server.md
+  operator/feature-change-webhooks: guides/edit/react-to-changes.md
+  operator/feature-streaming: guides/edit/react-to-changes.md
+  operator/tile-operations-runbook: guides/publish/publish-tiles.md
+  operator/sld-migration: guides/style/import-sld-styles.md
+  operator/pmtiles-publishing: guides/publish/publish-tiles.md
+  operator/troubleshooting: guides/deploy/troubleshooting.md
+  operator/runbooks/UPGRADE_AND_ROLLBACK: guides/deploy/upgrade-and-rollback.md
+  # GIS user guide
+  gis/README: archive/README.md
+  gis/STANDARDS_APIS: concepts/protocols.md
+  gis/DATA_MODELING_GUIDE: concepts/data-model.md
+  gis/FILEGDB_IMPORT_WORKFLOW: guides/publish/import-files.md
+  gis/raster-overview: guides/publish/publish-rasters.md
+  gis/cloud-optimized-hdf-netcdf-support: guides/publish/publish-rasters.md
+  gis/terrain-tiles: guides/publish/publish-terrain-and-elevation.md
+  gis/scenes-3dtiles: guides/publish/publish-3d-scenes.md
+  gis/openusd-omniverse-export-path: internal/README.md
+  gis/point-cloud-reality-capture-ingest: internal/README.md
+  gis/citygml-bim-building-scene-layer-ingest: internal/README.md
+  gis/scene-generation: guides/publish/publish-3d-scenes.md
+  gis/elevation-api: reference/protocols/terrain-and-elevation.md
+  gis/MVP_COMPATIBILITY_CONTRACT: reference/compatibility/clients.md
+  gis/style-engine-protocol-consumption: guides/style/style-maps.md
+  gis/tutorials/qgis-getting-started: guides/connect/qgis.md
+  gis/tutorials/geoserver-migration-guide: guides/migrate/from-geoserver.md
+  gis/geoservices-rest-parity: reference/compatibility/geoservices-parity.md
+  gis/feature-server-matrix: reference/compatibility/geoservices-parity.md
+  gis/map-server-matrix: reference/compatibility/geoservices-parity.md
+  gis/image-server-matrix: reference/compatibility/geoservices-parity.md
+  gis/specifications/ogc-api-features-coverage: reference/protocols/ogc-apis.md
+  gis/specifications/ogc-api-tiles-coverage: reference/protocols/ogc-apis.md
+  gis/specifications/ogc-api-processes-coverage: reference/protocols/ogc-apis.md
+  gis/specifications/ogc-api-records-coverage: reference/protocols/ogc-apis.md
+  gis/specifications/wcs-2.0.1-coverage: reference/protocols/wms-wfs-wcs-wmts.md
+  gis/specifications/odata-v4-coverage: reference/protocols/odata.md
+  gis/geometry-service-matrix: reference/compatibility/geoservices-parity.md
+  gis/geoprocess-framework-analysis: guides/query-analyze/run-geoprocessing.md
+  compatibility/cross-server-consume-gap-report: internal/README.md
+  # Developer guide
+  developer/README: archive/README.md
+  developer/API_EXAMPLES: guides/query-analyze/query-features.md
+  developer/INTEGRATION_PATTERNS: reference/integration-patterns.md
+  developer/capability-manifest: reference/admin-api/overview.md
+  developer/metadata-catalog-parity-matrix: internal/README.md
+  developer/share-export-traffic-api: internal/README.md
+  developer/form-package-api: reference/admin-api/forms.md
+  developer/package-review-api: internal/README.md
+  developer/SDK_COMPATIBILITY_MATRIX: concepts/ecosystem.md
+  developer/sdk-migration-evidence-manifest: internal/README.md
+  developer/SDK_STANDARDS_COVERAGE: internal/README.md
+  developer/mobile-sdk-roadmap: internal/README.md
+  developer/fieldcollection-mobile-sync-api: internal/README.md
+  developer/MCP_SERVER: guides/connect/ai-agents-mcp.md
+  developer/ai-builder-contract-fixtures: internal/README.md
+  developer/SPEC_ENGINE: reference/spec-engine.md
+  developer/GROUNDING: internal/README.md
+  developer/REDIS_FALLBACK_PATTERNS: internal/README.md
+  developer/CONTROL_PLANE_VERSIONING_POLICY: reference/versioning-and-support.md
+  developer/CONTROL_PLANE_MIGRATION_GUIDE: reference/control-plane-migration-guide.md
+  ai-builder-sdk-contract: internal/README.md
+  demo/nvidia-construction: internal/README.md
+  # Admin API contracts (Console-pending, moved internal)
+  admin-api/console-content-and-rbac: internal/README.md
+  admin-api/console-workflow-packages: internal/README.md
+  admin-api/console-job-observability: internal/README.md
+  admin-api/operate-observability-fixtures: internal/README.md
+  admin-api/metadata-prevalidation: internal/README.md
+  admin-api/studio-package-lifecycle: internal/README.md
+  admin-api/content-publication-registry: internal/README.md
+  admin-api/analysis-content: internal/README.md
+  admin-api/scene-dataset-registry: internal/README.md
+  # Contributor guide (moved internal)
+  contributor/README: internal/README.md
+  contributor/development/getting-started: internal/README.md
+  contributor/development/contributing: internal/README.md
+  contributor/ARCHITECTURE: internal/README.md
+  contributor/adr/README: internal/README.md
+  contributor/architecture/metadata-v2-release-readiness: internal/README.md
+  contributor/architecture/metadata-v2-admin-ui-information-model: internal/README.md
+  contributor/architecture/admin-operator-workflows: internal/README.md
+  contributor/testkit: internal/README.md
+  contributor/public-interface-quality-model: internal/README.md
+  contributor/compatibility-and-migration-evidence: internal/README.md
+  contributor/import-capability-evidence: internal/README.md
+  contributor/ogc-certification-path: internal/README.md
+  contributor/ogc-cite-conformance-evidence: internal/README.md
+  contributor/RELEASE_CHECKLIST: internal/README.md
+  contributor/geoetl-roadmap: internal/README.md
+  # Security & evidence (moved internal)
+  security/base-url-and-open-redirect-handling: internal/README.md
+  security/code-scanning-2026-Q2-remediation: internal/README.md
+  evidence/README: internal/README.md
+  # Transitional paths (existed between the restructure and the content rewrite)
+  concepts/license-migration: concepts/editions-and-licensing.md
+  guides/publish/filegdb-import-workflow: guides/publish/import-files.md
+  guides/publish/cloud-optimized-hdf-netcdf-support: guides/publish/publish-rasters.md
+  guides/publish/scene-generation: guides/publish/publish-3d-scenes.md
+  guides/publish/extruded-3d-feature-layers: guides/publish/publish-3d-scenes.md
+  guides/publish/pmtiles-publishing: guides/publish/publish-tiles.md
+  guides/edit/feature-streaming: guides/edit/react-to-changes.md
+  guides/secure/client-certificate-authentication: guides/secure/tls-and-mtls.md
+  guides/migrate/arcgis-inventory-discovery: guides/migrate/from-arcgis-server.md
+  guides/migrate/migration-pilot-cutover-checklist: guides/migrate/from-arcgis-server.md
+  guides/deploy/deployment-scenarios: guides/deploy/cloud-deployments.md
+  guides/deploy/http-client-resilience: guides/deploy/scaling-and-performance.md
+  guides/deploy/operations: guides/deploy/backup-and-restore.md
+  reference/admin-api/capability-manifest: reference/admin-api/overview.md
+  reference/admin-api/license-key-rotation: reference/admin-api/users-roles-licensing.md
+  reference/protocols/specifications/README: reference/protocols/ogc-apis.md
+  reference/protocols/specifications/ogc-api-features-coverage: reference/protocols/ogc-apis.md
+  reference/protocols/specifications/ogc-api-features-part1-core: reference/protocols/ogc-apis.md
+  reference/protocols/specifications/ogc-api-features-part2-crs: reference/protocols/ogc-apis.md
+  reference/protocols/specifications/ogc-api-features-part3-filtering: reference/protocols/ogc-apis.md
+  reference/protocols/specifications/ogc-api-tiles-coverage: reference/protocols/ogc-apis.md
+  reference/protocols/specifications/ogc-api-coverages-coverage: reference/protocols/ogc-apis.md
+  reference/protocols/specifications/ogc-api-processes-coverage: reference/protocols/ogc-apis.md
+  reference/protocols/specifications/ogc-api-records-coverage: reference/protocols/ogc-apis.md
+  reference/protocols/specifications/wcs-2.0.1-coverage: reference/protocols/wms-wfs-wcs-wmts.md
+  reference/protocols/specifications/odata-v4-coverage: reference/protocols/odata.md

@@ -76,6 +76,40 @@ internal static partial class MapServerEndpoints
             .WithTags("MapServer")
             .AllowAnonymous();
 
+        endpoints.MapGet("/rest/services/{serviceId}/MapServer/estimateExportTilesSize",
+                static (HttpContext context, CancellationToken cancellationToken) => HandleEstimateExportTilesSize(context))
+            .WithDisplayName("Estimate Export Tiles Size")
+            .WithName("MapServerEstimateExportTilesSize")
+            .WithSummary("Estimate the size of an exported tile archive")
+            .WithDescription("Estimates WebMercatorQuad tile count and archive size for a MapServer exportTiles request")
+            .WithTags("MapServer");
+
+        endpoints.MapPost("/rest/services/{serviceId}/MapServer/estimateExportTilesSize",
+                static (HttpContext context, CancellationToken cancellationToken) => HandleEstimateExportTilesSize(context))
+            .WithDisplayName("Estimate Export Tiles Size (POST)")
+            .WithName("MapServerEstimateExportTilesSizePost")
+            .WithSummary("Estimate the size of an exported tile archive using POST")
+            .WithDescription("POST equivalent of the MapServer estimateExportTilesSize endpoint")
+            .WithTags("MapServer")
+            .AllowAnonymous();
+
+        endpoints.MapGet("/rest/services/{serviceId}/MapServer/exportTiles",
+                static (HttpContext context, CancellationToken cancellationToken) => HandleExportTiles(context))
+            .WithDisplayName("Export Map Tiles")
+            .WithName("MapServerExportTiles")
+            .WithSummary("Export rendered map tiles to a storage-backed archive")
+            .WithDescription("Exports bounded WebMercatorQuad PNG tiles to configured cloud file storage")
+            .WithTags("MapServer");
+
+        endpoints.MapPost("/rest/services/{serviceId}/MapServer/exportTiles",
+                static (HttpContext context, CancellationToken cancellationToken) => HandleExportTiles(context))
+            .WithDisplayName("Export Map Tiles (POST)")
+            .WithName("MapServerExportTilesPost")
+            .WithSummary("Export rendered map tiles to a storage-backed archive using POST")
+            .WithDescription("POST equivalent of the MapServer exportTiles endpoint")
+            .WithTags("MapServer")
+            .AllowAnonymous();
+
         endpoints.MapGet("/rest/services/{serviceId}/MapServer/generateKml",
                 static (HttpContext context, CancellationToken cancellationToken) => HandleGenerateKml(context))
             .WithDisplayName("Generate KML")
@@ -125,6 +159,24 @@ internal static partial class MapServerEndpoints
             .WithName("MapServerLegendPost")
             .WithSummary("Get map legend using POST")
             .WithDescription("Returns legend information with swatch images for all visible layers")
+            .WithTags("MapServer")
+            .AllowAnonymous();
+
+        endpoints.MapGet("/rest/services/{serviceId}/MapServer/queryLegends",
+                static (HttpContext context, CancellationToken cancellationToken) => HandleLegend(context))
+            .WithDisplayName("Query Map Legends")
+            .WithName("MapServerQueryLegends")
+            .WithSummary("Query map legends")
+            .WithDescription("Returns legend information using the GeoServices queryLegends operation")
+            .WithTags("MapServer")
+            .CacheOutput("MapServerLegend");
+
+        endpoints.MapPost("/rest/services/{serviceId}/MapServer/queryLegends",
+                static (HttpContext context, CancellationToken cancellationToken) => HandleLegend(context))
+            .WithDisplayName("Query Map Legends (POST)")
+            .WithName("MapServerQueryLegendsPost")
+            .WithSummary("Query map legends using POST")
+            .WithDescription("POST equivalent of the MapServer queryLegends endpoint")
             .WithTags("MapServer")
             .AllowAnonymous();
 
@@ -204,6 +256,29 @@ internal static partial class MapServerEndpoints
             .WithDescription("Returns the domains referenced by the requested layers")
             .WithTags("MapServer")
             .CacheOutput("LayerMetadata");
+
+        endpoints.MapGet("/rest/services/{serviceId}/MapServer/dynamicLayer",
+                static (HttpContext context, CancellationToken cancellationToken) => HandleDynamicLayerResource(context))
+            .WithDisplayName("Get MapServer Dynamic Layer")
+            .WithName("MapServerDynamicLayer")
+            .WithSummary("Get metadata for a request-scoped dynamic layer")
+            .WithDescription("Returns layer metadata for a dynamic layer whose source is an existing map layer")
+            .WithTags("MapServer");
+
+        endpoints.MapGet("/rest/services/{serviceId}/MapServer/generateRenderer", HandleMapServerServiceGenerateRenderer)
+            .WithDisplayName("Generate MapServer Service Renderer (GET)")
+            .WithName("MapServerServiceGenerateRenderer")
+            .WithSummary("Generate a renderer for a MapServer layer using service-level parameters")
+            .WithDescription("Generates a renderer definition for the layer selected by layer or layerId")
+            .WithTags("MapServer");
+
+        endpoints.MapPost("/rest/services/{serviceId}/MapServer/generateRenderer", HandleMapServerServiceGenerateRenderer)
+            .WithDisplayName("Generate MapServer Service Renderer (POST)")
+            .WithName("MapServerServiceGenerateRendererPost")
+            .WithSummary("Generate a renderer for a MapServer layer using POST")
+            .WithDescription("POST equivalent of the MapServer service-level generateRenderer endpoint")
+            .WithTags("MapServer")
+            .AllowAnonymous();
 
         // FeatureServer-style layer operations exposed on the MapServer surface.
         // These forward to the existing FeatureServer handlers as-is (the MapServer

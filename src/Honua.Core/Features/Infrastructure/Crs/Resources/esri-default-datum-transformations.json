@@ -15,12 +15,25 @@
     "explicitly when a listed grid is absent from the PROJ data path rather than",
     "silently degrading to a Helmert/geocentric approximation.",
     "",
-    "Only pipelines verified against the PostGIS/PROJ runtime are seeded here. EPSG 1188",
-    "(NAD83<->WGS84) is a null transformation, expressed as +proj=noop (exact identity,",
-    "version-stable). Additional Helmert-based pairs (NAD83(2011), HARN realizations) are",
-    "a documented follow-up: each Helmert pipeline string must be generated from the EPSG",
-    "operation via projinfo and validated against the runtime before seeding, so the table",
-    "never ships a pipeline string PostGIS rejects (which would degrade to a null result)."
+    "Only pipelines verified against the PostGIS/PROJ runtime are seeded here. The seeded",
+    "WGS84-realization pairs (NAD83, NAD83(HARN), NAD83(NSRS2007), NAD83(2011)) are all",
+    "null transformations (EPSG considers the datums coincident at the meter level, which",
+    "matches the ArcGIS default of applying no geographic transformation), expressed as the",
+    "exact-identity, PROJ-version-stable +proj=noop. The Helmert parameters for these EPSG",
+    "operations (1188/1580/9774/15931) are all-zero geocentric translations, confirmed",
+    "against the runtime proj.db helmert_transformation table.",
+    "",
+    "IMPORTANT PostGIS constraint: ST_Transform's text overload is ST_Transform(geom,",
+    "from_proj_text, to_srid) -- the middle argument is the SOURCE CRS, not a coordinate",
+    "operation pipeline. PostGIS exposes no overload that injects a +proj=pipeline string,",
+    "so non-identity Helmert/grid pipelines cannot be forced through this chokepoint on the",
+    "current PostGIS/PROJ runtime; only proj strings that parse as a CRS (and +proj=noop,",
+    "which behaves as exact identity) apply. Multi-step Helmert pairs that need a specific",
+    "non-default operation (e.g. NAD83(HARN)_To_WGS_1984_2 / EPSG 1901, the rotation-bearing",
+    "WGS_1984_(ITRF00)_To_NAD_1983 family) therefore remain a documented follow-up gated on a",
+    "PostGIS pipeline-application mechanism; until then PROJ's default operation selection",
+    "(which already follows EPSG accuracy ranking, matching Esri's default for these pairs)",
+    "is used by the 2-argument path and a client WKID for them returns explicit 'unsupported'."
   ],
   "transformations": [
     {
@@ -30,6 +43,36 @@
       "toSrid": 4326,
       "areaOfUse": "North America - onshore (CONUS, Canada, Mexico, Central America)",
       "epsgOperationCode": 1188,
+      "projPipeline": "+proj=noop",
+      "requiredGrids": []
+    },
+    {
+      "wkid": null,
+      "name": "NAD_1983_HARN_To_WGS_1984_1",
+      "fromSrid": 4152,
+      "toSrid": 4326,
+      "areaOfUse": "North America - NAD83(HARN) onshore",
+      "epsgOperationCode": 1580,
+      "projPipeline": "+proj=noop",
+      "requiredGrids": []
+    },
+    {
+      "wkid": null,
+      "name": "NAD_1983_NSRS2007_To_WGS_1984_1",
+      "fromSrid": 4759,
+      "toSrid": 4326,
+      "areaOfUse": "North America - NAD83(NSRS2007) onshore",
+      "epsgOperationCode": 15931,
+      "projPipeline": "+proj=noop",
+      "requiredGrids": []
+    },
+    {
+      "wkid": null,
+      "name": "NAD_1983_2011_To_WGS_1984_1",
+      "fromSrid": 6318,
+      "toSrid": 4326,
+      "areaOfUse": "North America - NAD83(2011) onshore",
+      "epsgOperationCode": 9774,
       "projPipeline": "+proj=noop",
       "requiredGrids": []
     },

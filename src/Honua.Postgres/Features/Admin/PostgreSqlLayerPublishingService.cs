@@ -649,6 +649,12 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             Level = LogLevel.Information,
             Message = "Materialized {FeatureCount} features for published layer {LayerId}")]
         public static partial void LayerMaterialized(ILogger logger, int layerId, int featureCount);
+
+        [LoggerMessage(
+            EventId = 8203,
+            Level = LogLevel.Information,
+            Message = "Rebuilt canonical feature snapshot with {FeatureCount} features for published layer {LayerId}")]
+        public static partial void LayerSnapshotRefreshed(ILogger logger, int layerId, int featureCount);
     }
 
     private sealed record LayerFieldInsert(

@@ -79,6 +79,7 @@ internal sealed partial class ODataBatchHandler
                         GetQueryValue(query, "$apply"),
                         GetQueryValue(query, "$deltatoken"),
                         GetQueryValue(query, "$format"),
+                        GetQueryValue(query, "bbox"),
                         cancellationToken),
 
                 ODataResourceKind.Features when request.Method.Equals("POST", StringComparison.OrdinalIgnoreCase) =>

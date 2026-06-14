@@ -4,13 +4,22 @@
 using System.Collections.Frozen;
 using System.Data.Common;
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 
 namespace Honua.Postgres.Features.Raster;
+
+/// <summary>
+/// Resolved low/high pixel-value bounds for a single band's display stretch.
+/// Values within <see cref="Lo"/>..<see cref="Hi"/> map linearly onto 0..255.
+/// </summary>
+internal readonly record struct StretchBounds(double Lo, double Hi);
 
 /// <summary>
 /// PostgreSQL-based raster store implementation using PostGIS raster functions.
@@ -22,10 +31,25 @@ internal sealed class PostgresRasterStore : IRasterStore
     private static readonly FrozenSet<string> _allowedResamplingAlgorithms = new[] { "NearestNeighbor", "Bilinear", "Cubic", "Lanczos" }.ToFrozenSet(StringComparer.Ordinal);
     private static readonly FrozenSet<string> _allowedZonalStatistics = new[] { "count", "sum", "mean", "min", "max", "stddev", "variance" }.ToFrozenSet(StringComparer.Ordinal);
 
+    // Advisory-lock namespaces for the compute-once-then-persist statistics backfill.
+    // Distinct from PostgresRasterImportService.RasterImportLayerLockNamespace (0x0484_5221)
+    // so a long-running import never serializes against a metadata read.
+    private const int RasterStatisticsLockNamespace = 0x0484_5222;
+    private const int LayerStatisticsLockNamespace = 0x0484_5223;
+
+    // A single statistics backfill runs ST_SummaryStats across every pixel of a raster (or
+    // every raster in a mosaic) and can exceed a minute on county-scale imagery. The compute
+    // is serialized behind a transaction-scoped advisory lock (single-flight), so it is given
+    // a dedicated, generous timeout — independent of the ~30s request-path command/statement
+    // timeout default — otherwise the first cold read on a large raster times out and the
+    // statistics never persist, retrying forever instead of self-healing (#1649).
+    private const int StatisticsComputeTimeoutSeconds = 300;
+
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly ILogger<PostgresRasterStore> _logger;
     private readonly string _rasterDataTable;
     private readonly string _rasterStatisticsTable;
+    private readonly string _rasterLayerStatisticsTable;
     private readonly string _rasterTilesTable;
     private readonly string _featuresTable;
 
@@ -39,6 +63,7 @@ internal sealed class PostgresRasterStore : IRasterStore
 
         _rasterDataTable = SchemaSearchPath.QualifyTable("raster_data", schemaName);
         _rasterStatisticsTable = SchemaSearchPath.QualifyTable("raster_statistics", schemaName);
+        _rasterLayerStatisticsTable = SchemaSearchPath.QualifyTable("raster_layer_statistics", schemaName);
         _rasterTilesTable = SchemaSearchPath.QualifyTable("raster_tiles", schemaName);
         _featuresTable = SchemaSearchPath.QualifyTable(DatabaseSchema.FeaturesTable, schemaName);
     }
@@ -202,6 +227,22 @@ internal sealed class PostgresRasterStore : IRasterStore
             extraParams.Add(("@clipGeom", clip.Geometry));
         }
 
+        // 1a. Second clip from a renderingRule Clip raster function (area-of-interest mask).
+        if (query.RenderingClip is { } renderClip)
+        {
+            if (renderClip.Srid is > 0)
+            {
+                rasterExpr = $"ST_Clip({rasterExpr}, ST_Transform(ST_GeomFromWKB(@renderClipGeom, @renderClipSrid), ST_SRID(raster)))";
+                extraParams.Add(("@renderClipSrid", renderClip.Srid.Value));
+            }
+            else
+            {
+                rasterExpr = $"ST_Clip({rasterExpr}, ST_GeomFromWKB(@renderClipGeom, ST_SRID(raster)))";
+            }
+
+            extraParams.Add(("@renderClipGeom", renderClip.Geometry));
+        }
+
         if (query.Bands is { Length: > 0 } bands)
         {
             if (bands.Any(static band => band <= 0))
@@ -211,6 +252,23 @@ internal sealed class PostgresRasterStore : IRasterStore
 
             rasterExpr = $"ST_Band({rasterExpr}, @bands)";
             extraParams.Add(("@bands", bands));
+        }
+
+        // 1b. Apply display stretch (renderingRule Stretch) on the selected bands.
+        if (query.Stretch is { } stretch)
+        {
+            var stretchBounds = await ResolveStretchBoundsAsync(
+                stretch, layerId, rasterId, query.Bands, cancellationToken).ConfigureAwait(false);
+            if (stretchBounds is { Count: > 0 })
+            {
+                rasterExpr = BuildStretchedRasterExpression(rasterExpr, stretchBounds);
+            }
+        }
+
+        // 1c. Apply pseudocolour colormap (renderingRule Colormap) to band 1.
+        if (query.Colormap is { Entries.Count: > 0 } colormap)
+        {
+            rasterExpr = BuildColormapExpression(rasterExpr, colormap);
         }
 
         // 2. Resize to output dimensions if specified
@@ -394,6 +452,303 @@ internal sealed class PostgresRasterStore : IRasterStore
         return $", ARRAY[{string.Join(", ", quotedOptions)}]";
     }
 
+    // ----- Display stretch execution (renderingRule Stretch) -------------------
+    // A stretch linearly rescales each band's pixel values onto the 8-bit display
+    // range, clamping out-of-range values. Bounds are derived on the C# side from
+    // the cached band statistics/histograms; the rescale itself is pushed into the
+    // PostGIS pipeline through ST_MapAlgebra so it composes with clip/band/resize.
+
+    /// <summary>
+    /// Builds the ST_MapAlgebra expression that linearly maps <paramref name="lo"/>..<paramref name="hi"/>
+    /// onto 0..255 with clamping. <c>[rast.val]</c> is the PostGIS per-pixel value token.
+    /// </summary>
+    internal static string BuildStretchMapAlgebraExpression(double lo, double hi)
+    {
+        var loText = FormatStretchNumber(lo);
+        var hiText = FormatStretchNumber(hi);
+        return $"LEAST(255.0, GREATEST(0.0, ([rast.val] - {loText}) * 255.0 / ({hiText} - {loText})))";
+    }
+
+    /// <summary>
+    /// Wraps <paramref name="baseExpr"/> so each band is rescaled to an 8-bit band
+    /// using its resolved <see cref="StretchBounds"/>. Multi-band rasters are
+    /// re-assembled with ST_AddBand in band order.
+    /// </summary>
+    internal static string BuildStretchedRasterExpression(string baseExpr, IReadOnlyList<StretchBounds> bounds)
+    {
+        if (bounds.Count == 0)
+        {
+            return baseExpr;
+        }
+
+        if (bounds.Count == 1)
+        {
+            return BuildStretchedBandExpression(baseExpr, 1, bounds[0]);
+        }
+
+        var first = BuildStretchedBandExpression(baseExpr, 1, bounds[0]);
+        var rest = string.Join(
+            ", ",
+            Enumerable.Range(2, bounds.Count - 1)
+                .Select(band => BuildStretchedBandExpression(baseExpr, band, bounds[band - 1])));
+        return $"ST_AddBand({first}, ARRAY[{rest}]::raster[])";
+    }
+
+    private static string BuildStretchedBandExpression(string baseExpr, int band, StretchBounds bounds)
+    {
+        var expression = BuildStretchMapAlgebraExpression(bounds.Lo, bounds.Hi);
+        var bandText = band.ToString(CultureInfo.InvariantCulture);
+        return $"ST_MapAlgebra({baseExpr}, {bandText}, '8BUI', '{expression}', NULL::double precision)";
+    }
+
+    private static string FormatStretchNumber(double value)
+        => value.ToString("G17", CultureInfo.InvariantCulture);
+
+    // ----- Pseudocolour colormap execution (renderingRule Colormap) -----------
+    // Maps single-band pixel values to an RGBA image via PostGIS ST_ColorMap,
+    // interpolating between the supplied colour stops.
+
+    /// <summary>
+    /// Builds the ST_ColorMap colormap definition text from the colour stops, ordered
+    /// by descending value as PostGIS expects. Each line is <c>value r g b a</c>.
+    /// </summary>
+    internal static string BuildColormapText(RasterColormap colormap)
+    {
+        var builder = new System.Text.StringBuilder(colormap.Entries.Count * 24);
+        foreach (var entry in colormap.Entries.OrderByDescending(static e => e.Value))
+        {
+            builder
+                .Append(FormatStretchNumber(entry.Value)).Append(' ')
+                .Append(entry.Red.ToString(CultureInfo.InvariantCulture)).Append(' ')
+                .Append(entry.Green.ToString(CultureInfo.InvariantCulture)).Append(' ')
+                .Append(entry.Blue.ToString(CultureInfo.InvariantCulture)).Append(' ')
+                .Append(entry.Alpha.ToString(CultureInfo.InvariantCulture)).Append('\n');
+        }
+
+        return builder.ToString();
+    }
+
+    /// <summary>
+    /// Wraps <paramref name="baseExpr"/> in ST_ColorMap over band 1. The colormap text
+    /// is composed only of numeric tokens, so it is safe to embed as a SQL literal.
+    /// </summary>
+    internal static string BuildColormapExpression(string baseExpr, RasterColormap colormap)
+        => $"ST_ColorMap({baseExpr}, 1, '{BuildColormapText(colormap)}', 'INTERPOLATE')";
+
+    /// <summary>
+    /// Resolves per-band low/high stretch bounds for every band in
+    /// <paramref name="stats"/>, pairing each band with its histogram when supplied.
+    /// </summary>
+    internal static IReadOnlyList<StretchBounds> BuildStretchBounds(
+        RasterStretch stretch,
+        RasterStatistics[] stats,
+        RasterHistogram[]? histograms)
+    {
+        var bounds = new StretchBounds[stats.Length];
+        for (var i = 0; i < stats.Length; i++)
+        {
+            var histogram = histograms is { Length: > 0 } && i < histograms.Length
+                ? histograms[i]
+                : (RasterHistogram?)null;
+            bounds[i] = ResolveStretchBounds(stretch, i, stats[i], histogram);
+        }
+
+        return bounds;
+    }
+
+    /// <summary>
+    /// Resolves the low/high stretch bounds for a single band from the rendering
+    /// rule and the band statistics/histogram. The result always satisfies
+    /// <c>Hi &gt; Lo</c> and is finite.
+    /// </summary>
+    internal static StretchBounds ResolveStretchBounds(
+        RasterStretch stretch,
+        int bandIndex,
+        RasterStatistics stat,
+        RasterHistogram? histogram)
+    {
+        // Explicit statistics on the rule win when present for this band.
+        if (stretch.StatisticsMin is { } explicitMin && stretch.StatisticsMax is { } explicitMax &&
+            bandIndex < explicitMin.Length && bandIndex < explicitMax.Length)
+        {
+            return NormalizeBounds(explicitMin[bandIndex], explicitMax[bandIndex]);
+        }
+
+        var min = stat.MinValue;
+        var max = stat.MaxValue;
+
+        switch (stretch.StretchType)
+        {
+            case RasterStretchType.StandardDeviation:
+                {
+                    var mean = stat.MeanValue ?? ((min ?? 0) + (max ?? 255)) / 2.0;
+                    var sd = stat.StandardDeviation ?? 0;
+                    var lo = mean - (stretch.NumberOfStandardDeviations * sd);
+                    var hi = mean + (stretch.NumberOfStandardDeviations * sd);
+                    if (min is { } mn)
+                    {
+                        lo = Math.Max(lo, mn);
+                    }
+
+                    if (max is { } mx)
+                    {
+                        hi = Math.Min(hi, mx);
+                    }
+
+                    return NormalizeBounds(lo, hi);
+                }
+
+            case RasterStretchType.PercentClip when histogram is { } h && h.BinCount > 0 && h.Counts.Length > 0:
+                {
+                    var lo = PercentileFromLow(h, stretch.MinPercent);
+                    var hi = PercentileFromHigh(h, stretch.MaxPercent);
+                    return NormalizeBounds(lo, hi);
+                }
+
+            // MinMax, or PercentClip without a usable histogram, fall back to min/max.
+            default:
+                return NormalizeBounds(min ?? 0, max ?? 255);
+        }
+    }
+
+    private static double PercentileFromLow(RasterHistogram histogram, double percent)
+    {
+        var total = SumCounts(histogram.Counts);
+        if (total <= 0)
+        {
+            return histogram.Min;
+        }
+
+        var target = total * (percent / 100.0);
+        var binWidth = (histogram.Max - histogram.Min) / histogram.BinCount;
+        double cumulative = 0;
+        for (var i = 0; i < histogram.Counts.Length; i++)
+        {
+            cumulative += histogram.Counts[i];
+            if (cumulative >= target)
+            {
+                return histogram.Min + (i * binWidth);
+            }
+        }
+
+        return histogram.Max;
+    }
+
+    private static double PercentileFromHigh(RasterHistogram histogram, double percent)
+    {
+        var total = SumCounts(histogram.Counts);
+        if (total <= 0)
+        {
+            return histogram.Max;
+        }
+
+        var target = total * (percent / 100.0);
+        var binWidth = (histogram.Max - histogram.Min) / histogram.BinCount;
+        double cumulative = 0;
+        for (var i = histogram.Counts.Length - 1; i >= 0; i--)
+        {
+            cumulative += histogram.Counts[i];
+            if (cumulative >= target)
+            {
+                return histogram.Min + ((i + 1) * binWidth);
+            }
+        }
+
+        return histogram.Min;
+    }
+
+    private static double SumCounts(long[] counts)
+    {
+        double total = 0;
+        foreach (var count in counts)
+        {
+            total += count;
+        }
+
+        return total;
+    }
+
+    private static StretchBounds NormalizeBounds(double lo, double hi)
+    {
+        if (!double.IsFinite(lo) || !double.IsFinite(hi))
+        {
+            return new StretchBounds(0, 255);
+        }
+
+        if (hi <= lo)
+        {
+            hi = lo + 1;
+        }
+
+        return new StretchBounds(lo, hi);
+    }
+
+    private async Task<IReadOnlyList<StretchBounds>?> ResolveStretchBoundsAsync(
+        RasterStretch stretch,
+        int layerId,
+        long rasterId,
+        int[]? bands,
+        CancellationToken cancellationToken)
+    {
+        var stats = await GetStatisticsAsync(layerId, rasterId, bands, cancellationToken).ConfigureAwait(false);
+        if (stats.Length == 0)
+        {
+            return null;
+        }
+
+        var histograms = await ResolveStretchHistogramsAsync(
+            stretch,
+            () => GetHistogramsAsync(layerId, rasterId, bands, StretchHistogramBins, cancellationToken)).ConfigureAwait(false);
+        return BuildStretchBounds(stretch, stats, histograms);
+    }
+
+    private async Task<IReadOnlyList<StretchBounds>?> ResolveMosaicStretchBoundsAsync(
+        RasterStretch stretch,
+        int layerId,
+        long[] rasterIds,
+        RasterMergeStrategy mergeStrategy,
+        CancellationToken cancellationToken)
+    {
+        var stats = await GetMosaicStatisticsAsync(layerId, rasterIds, mergeStrategy, null, cancellationToken).ConfigureAwait(false);
+        if (stats.Length == 0)
+        {
+            return null;
+        }
+
+        var histograms = await ResolveStretchHistogramsAsync(
+            stretch,
+            () => GetMosaicHistogramsAsync(layerId, rasterIds, mergeStrategy, null, StretchHistogramBins, cancellationToken)).ConfigureAwait(false);
+        return BuildStretchBounds(stretch, stats, histograms);
+    }
+
+    private static async Task<RasterHistogram[]?> ResolveStretchHistogramsAsync(
+        RasterStretch stretch,
+        Func<Task<RasterHistogram[]>> histogramFactory)
+    {
+        var needsHistogram = stretch.StretchType == RasterStretchType.PercentClip &&
+            (stretch.StatisticsMin is null || stretch.StatisticsMax is null);
+        return needsHistogram ? await histogramFactory().ConfigureAwait(false) : null;
+    }
+
+    // Dynamic tiles carry no per-request renderingRule, so non-8-bit source rasters
+    // (elevation, analytic, float reflectance) would otherwise render near-black.
+    // Apply an automatic MinMax stretch only when the band statistics fall outside
+    // the 8-bit display range, leaving display-ready 8-bit rasters untouched.
+    private static IReadOnlyList<StretchBounds>? BuildAutoTileStretchBounds(RasterStatistics[] stats)
+    {
+        if (stats.Length == 0 || !RequiresAutoTileStretch(stats))
+        {
+            return null;
+        }
+
+        return BuildStretchBounds(new RasterStretch { StretchType = RasterStretchType.MinMax }, stats, null);
+    }
+
+    private static bool RequiresAutoTileStretch(RasterStatistics[] stats)
+        => stats.Any(static s => (s.MinValue is { } min && min < 0) || (s.MaxValue is { } max && max > 255));
+
+    private const int StretchHistogramBins = 256;
+
     /// <inheritdoc />
     public async Task<RasterResult> ExportMosaicAsync(
         int layerId,
@@ -442,6 +797,39 @@ internal sealed class PostgresRasterStore : IRasterStore
             }
 
             extraParams.Add(("@clipGeom", clip.Geometry));
+        }
+
+        // Second clip from a renderingRule Clip raster function (area-of-interest mask).
+        if (query.RenderingClip is { } renderClip)
+        {
+            if (renderClip.Srid is > 0)
+            {
+                sourceRasterExpr = $"ST_Clip({sourceRasterExpr}, ST_Transform(ST_GeomFromWKB(@renderClipGeom, @renderClipSrid), ST_SRID(raster)))";
+                extraParams.Add(("@renderClipSrid", renderClip.Srid.Value));
+            }
+            else
+            {
+                sourceRasterExpr = $"ST_Clip({sourceRasterExpr}, ST_GeomFromWKB(@renderClipGeom, ST_SRID(raster)))";
+            }
+
+            extraParams.Add(("@renderClipGeom", renderClip.Geometry));
+        }
+
+        // Apply display stretch (renderingRule Stretch) on the merged mosaic bands.
+        if (query.Stretch is { } stretch)
+        {
+            var stretchBounds = await ResolveMosaicStretchBoundsAsync(
+                stretch, layerId, rasterIds, mergeStrategy, cancellationToken).ConfigureAwait(false);
+            if (stretchBounds is { Count: > 0 })
+            {
+                postMergeRasterExpr = BuildStretchedRasterExpression(postMergeRasterExpr, stretchBounds);
+            }
+        }
+
+        // Apply pseudocolour colormap (renderingRule Colormap) to band 1.
+        if (query.Colormap is { Entries.Count: > 0 } colormap)
+        {
+            postMergeRasterExpr = BuildColormapExpression(postMergeRasterExpr, colormap);
         }
 
         if (query.OutputWidth is > 0 && query.OutputHeight is > 0)
@@ -774,6 +1162,14 @@ internal sealed class PostgresRasterStore : IRasterStore
                 includeOverviewResampling: false, cancellationToken).ConfigureAwait(false);
         }
 
+        var tileClipExpr = "ST_Clip(raster, ST_Transform(tb.geom, ST_SRID(raster)))";
+        var tileStats = await GetStatisticsAsync(layerId, rasterId, bands: null, cancellationToken).ConfigureAwait(false);
+        var tileStretchBounds = BuildAutoTileStretchBounds(tileStats);
+        if (tileStretchBounds is { Count: > 0 })
+        {
+            tileClipExpr = BuildStretchedRasterExpression(tileClipExpr, tileStretchBounds);
+        }
+
         await using var dynCommand = connection.CreateCommand();
         // Build a 256×256 reference raster exactly aligned to the WebMercatorQuad tile
         // envelope (EPSG:3857). ST_Resample reprojects the source raster onto that grid so
@@ -860,6 +1256,14 @@ internal sealed class PostgresRasterStore : IRasterStore
                 includeOverviewResampling: false, cancellationToken).ConfigureAwait(false);
         }
 
+        var mosaicTileExpr = "rast";
+        var mosaicTileStats = await GetMosaicStatisticsAsync(layerId, rasterIds, mergeStrategy, bands: null, cancellationToken).ConfigureAwait(false);
+        var mosaicTileBounds = BuildAutoTileStretchBounds(mosaicTileStats);
+        if (mosaicTileBounds is { Count: > 0 })
+        {
+            mosaicTileExpr = BuildStretchedRasterExpression(mosaicTileExpr, mosaicTileBounds);
+        }
+
         await using var command = connection.CreateCommand();
         // Same tile-envelope-aligned approach as GetImageTileAsync: build a 256×256
         // reference raster in EPSG:3857 and use ST_Resample so the mosaic output covers
@@ -928,77 +1332,16 @@ internal sealed class PostgresRasterStore : IRasterStore
     {
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
-        // Try cached statistics first
-        await using var cachedCommand = connection.CreateCommand();
-        cachedCommand.CommandText = $"""
-            SELECT band_number, min_value, max_value, mean_value, std_dev,
-                   valid_pixel_count, nodata_pixel_count
-            FROM {_rasterStatisticsTable}
-            WHERE raster_data_id = @rasterId
-            ORDER BY band_number
-            """;
-        AddParameter(cachedCommand, "@rasterId", rasterId);
+        // Serve persisted statistics (written at import time, or backfilled below). Computing
+        // ST_SummaryStats per request scans every raster pixel and takes tens of seconds on
+        // real-world datasets (#1639), so the request path must never recompute.
+        var stats = await ReadPersistedRasterStatisticsAsync(connection, transaction: null, rasterId, cancellationToken).ConfigureAwait(false);
 
-        var stats = new List<RasterStatistics>();
-        await using var cachedReader = await cachedCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        while (await cachedReader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        if (stats.Count == 0)
         {
-            stats.Add(new RasterStatistics
-            {
-                Band = cachedReader.GetInt32(0),
-                MinValue = cachedReader.IsDBNull(1) ? null : cachedReader.GetDouble(1),
-                MaxValue = cachedReader.IsDBNull(2) ? null : cachedReader.GetDouble(2),
-                MeanValue = cachedReader.IsDBNull(3) ? null : cachedReader.GetDouble(3),
-                StandardDeviation = cachedReader.IsDBNull(4) ? null : cachedReader.GetDouble(4),
-                ValidPixelCount = cachedReader.IsDBNull(5) ? 0 : cachedReader.GetInt64(5),
-                NoDataPixelCount = cachedReader.IsDBNull(6) ? 0 : cachedReader.GetInt64(6)
-            });
-        }
-
-        if (stats.Count > 0)
-        {
-            if (bands != null)
-            {
-                stats = stats.Where(s => bands.Contains(s.Band)).ToList();
-            }
-
-            PostgresRasterLog.StatisticsCalculated(_logger, layerId, rasterId, stats.Count);
-            return stats.ToArray();
-        }
-
-        // Compute statistics dynamically via PostGIS ST_SummaryStats
-        await using var computeCommand = connection.CreateCommand();
-        computeCommand.CommandText = $"""
-            SELECT band,
-                   (stats).min AS min_value,
-                   (stats).max AS max_value,
-                   (stats).mean AS mean_value,
-                   (stats).stddev AS std_dev,
-                   (stats).count AS valid_count
-            FROM (
-                SELECT generate_series(1, ST_NumBands(raster)) AS band,
-                       ST_SummaryStats(raster, generate_series(1, ST_NumBands(raster))) AS stats
-                FROM {_rasterDataTable}
-                WHERE layer_id = @layerId AND id = @rasterId
-            ) sub
-            ORDER BY band
-            """;
-        AddParameter(computeCommand, "@layerId", layerId);
-        AddParameter(computeCommand, "@rasterId", rasterId);
-
-        await using var computeReader = await computeCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        while (await computeReader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            stats.Add(new RasterStatistics
-            {
-                Band = computeReader.GetInt32(0),
-                MinValue = computeReader.IsDBNull(1) ? null : computeReader.GetDouble(1),
-                MaxValue = computeReader.IsDBNull(2) ? null : computeReader.GetDouble(2),
-                MeanValue = computeReader.IsDBNull(3) ? null : computeReader.GetDouble(3),
-                StandardDeviation = computeReader.IsDBNull(4) ? null : computeReader.GetDouble(4),
-                ValidPixelCount = computeReader.IsDBNull(5) ? 0 : computeReader.GetInt64(5),
-                NoDataPixelCount = 0
-            });
+            // Lazy backfill for rasters registered before statistics persistence existed:
+            // compute once, persist, then serve the persisted rows forever.
+            stats = await BackfillRasterStatisticsAsync(connection, layerId, rasterId, cancellationToken).ConfigureAwait(false);
         }
 
         if (bands != null)
@@ -1025,7 +1368,303 @@ internal sealed class PostgresRasterStore : IRasterStore
 
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
+        // Mosaic statistics are keyed by (layer, merge strategy, raster-id set) so any change
+        // to the layer's raster membership invalidates the persisted rows automatically.
+        var signature = CreateMosaicSignature(rasterIds);
+        var strategyKey = mergeStrategy.ToString();
+
+        var stats = await ReadPersistedLayerStatisticsAsync(connection, transaction: null, layerId, strategyKey, signature, cancellationToken).ConfigureAwait(false);
+
+        if (stats.Count == 0)
+        {
+            stats = await BackfillLayerStatisticsAsync(connection, layerId, rasterIds, mergeStrategy, strategyKey, signature, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (bands != null)
+        {
+            stats = stats.Where(s => bands.Contains(s.Band)).ToList();
+        }
+
+        return stats.ToArray();
+    }
+
+    // =============================================================================
+    // Statistics persistence (compute-once-then-persist backfill, #1639)
+    // =============================================================================
+
+    /// <summary>
+    /// Backfills per-raster band statistics: serializes concurrent cold readers behind a
+    /// transaction-scoped advisory lock (thundering-herd guard), computes ST_SummaryStats once,
+    /// persists the rows into <c>raster_statistics</c>, and returns them. If persistence is not
+    /// possible (e.g. a read-only connection) the computed values are still served.
+    /// </summary>
+    private async Task<List<RasterStatistics>> BackfillRasterStatisticsAsync(
+        DbConnection connection,
+        int layerId,
+        long rasterId,
+        CancellationToken cancellationToken)
+    {
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        await AcquireBackfillLockAsync(connection, transaction, RasterStatisticsLockNamespace, HashLockKey(rasterId), cancellationToken).ConfigureAwait(false);
+
+        // Another request may have computed and committed while we waited on the lock.
+        var persisted = await ReadPersistedRasterStatisticsAsync(connection, transaction, rasterId, cancellationToken).ConfigureAwait(false);
+        if (persisted.Count > 0)
+        {
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return persisted;
+        }
+
+        try
+        {
+            // Grant this single-flight transaction the dedicated compute budget so a
+            // county-scale ST_SummaryStats can finish and persist instead of timing out (#1649).
+            await ApplyStatisticsComputeBudgetAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
+
+            // Compute and persist in a single statement (mirrors the import-time
+            // ComputeAndStoreStatisticsAsync semantics, including nodata_pixel_count).
+            await using (var command = connection.CreateCommand())
+            {
+                command.Transaction = transaction;
+                command.CommandTimeout = StatisticsComputeTimeoutSeconds;
+                command.CommandText = $"""
+                    INSERT INTO {_rasterStatisticsTable}
+                        (raster_data_id, band_number, min_value, max_value, mean_value, std_dev, valid_pixel_count, nodata_pixel_count)
+                    SELECT @rasterId, sub.band,
+                           (sub.stats).min, (sub.stats).max, (sub.stats).mean, (sub.stats).stddev,
+                           (sub.stats).count,
+                           GREATEST(sub.total_pixels - (sub.stats).count, 0)
+                    FROM (
+                        SELECT generate_series(1, ST_NumBands(raster)) AS band,
+                               ST_SummaryStats(raster, generate_series(1, ST_NumBands(raster))) AS stats,
+                               (ST_Width(raster)::bigint * ST_Height(raster)::bigint) AS total_pixels
+                        FROM {_rasterDataTable}
+                        WHERE layer_id = @layerId AND id = @rasterId
+                    ) sub
+                    ON CONFLICT (raster_data_id, band_number) DO NOTHING
+                    """;
+                AddParameter(command, "@layerId", layerId);
+                AddParameter(command, "@rasterId", rasterId);
+                await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            var stats = await ReadPersistedRasterStatisticsAsync(connection, transaction, rasterId, cancellationToken).ConfigureAwait(false);
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            PostgresRasterLog.RasterStatisticsBackfilled(_logger, layerId, rasterId, stats.Count);
+            return stats;
+        }
+        catch (PostgresException ex)
+        {
+            // Persistence is best-effort: fall back to computing without persisting so
+            // read-only deployments keep working (at the old per-request cost).
+            await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+            PostgresRasterLog.RasterStatisticsPersistFailed(_logger, ex, layerId, rasterId);
+            return await ComputeRasterStatisticsAsync(connection, layerId, rasterId, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Backfills layer-level mosaic statistics into <c>raster_layer_statistics</c>, pruning rows
+    /// persisted for a previous raster-id set of the same merge strategy. Follows the same
+    /// advisory-lock + compute-once-then-persist pattern as <see cref="BackfillRasterStatisticsAsync"/>.
+    /// </summary>
+    private async Task<List<RasterStatistics>> BackfillLayerStatisticsAsync(
+        DbConnection connection,
+        int layerId,
+        long[] rasterIds,
+        RasterMergeStrategy mergeStrategy,
+        string strategyKey,
+        string signature,
+        CancellationToken cancellationToken)
+    {
+        // Self-provision the snapshot table so already-registered datasets backfill without a
+        // manual migration (same pattern as PostgresMetadataV2GraphStore.EnsureSchemaAsync —
+        // a no-op once 003_CreateRasterLayerStatistics.sql has been applied). Best-effort: a
+        // read-only connection simply keeps the legacy compute path below.
+        await TryEnsureLayerStatisticsTableAsync(connection, cancellationToken).ConfigureAwait(false);
+
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        await AcquireBackfillLockAsync(connection, transaction, LayerStatisticsLockNamespace, layerId, cancellationToken).ConfigureAwait(false);
+
+        // Grant this single-flight transaction the dedicated compute budget so a large-mosaic
+        // ST_SummaryStats can finish and persist instead of timing out (#1649).
+        await ApplyStatisticsComputeBudgetAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
+
+        List<RasterStatistics> persisted;
+        try
+        {
+            persisted = await ReadPersistedLayerStatisticsAsync(connection, transaction, layerId, strategyKey, signature, cancellationToken).ConfigureAwait(false);
+        }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UndefinedTable)
+        {
+            // Table could not be provisioned (read-only deployment); compute without persisting.
+            await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+            PostgresRasterLog.LayerStatisticsPersistFailed(_logger, ex, layerId);
+            return await ComputeMosaicStatisticsAsync(connection, transaction: null, layerId, rasterIds, mergeStrategy, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (persisted.Count > 0)
+        {
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return persisted;
+        }
+
+        var computed = await ComputeMosaicStatisticsAsync(connection, transaction, layerId, rasterIds, mergeStrategy, cancellationToken).ConfigureAwait(false);
+        if (computed.Count == 0)
+        {
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return computed;
+        }
+
+        try
+        {
+            // Prune rows computed for a previous raster-id set of this strategy, then persist.
+            await using (var prune = connection.CreateCommand())
+            {
+                prune.Transaction = transaction;
+                prune.CommandText = $"""
+                    DELETE FROM {_rasterLayerStatisticsTable}
+                    WHERE layer_id = @layerId AND merge_strategy = @strategy AND raster_signature <> @signature
+                    """;
+                AddParameter(prune, "@layerId", layerId);
+                AddParameter(prune, "@strategy", strategyKey);
+                AddParameter(prune, "@signature", signature);
+                await prune.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            foreach (var band in computed)
+            {
+                await using var insert = connection.CreateCommand();
+                insert.Transaction = transaction;
+                insert.CommandText = $"""
+                    INSERT INTO {_rasterLayerStatisticsTable}
+                        (layer_id, merge_strategy, raster_signature, band_number, min_value, max_value, mean_value, std_dev, valid_pixel_count, nodata_pixel_count)
+                    VALUES (@layerId, @strategy, @signature, @band, @min, @max, @mean, @stddev, @validCount, @noDataCount)
+                    ON CONFLICT (layer_id, merge_strategy, raster_signature, band_number) DO NOTHING
+                    """;
+                AddParameter(insert, "@layerId", layerId);
+                AddParameter(insert, "@strategy", strategyKey);
+                AddParameter(insert, "@signature", signature);
+                AddParameter(insert, "@band", band.Band);
+                AddParameter(insert, "@min", (object?)band.MinValue ?? DBNull.Value);
+                AddParameter(insert, "@max", (object?)band.MaxValue ?? DBNull.Value);
+                AddParameter(insert, "@mean", (object?)band.MeanValue ?? DBNull.Value);
+                AddParameter(insert, "@stddev", (object?)band.StandardDeviation ?? DBNull.Value);
+                AddParameter(insert, "@validCount", band.ValidPixelCount);
+                AddParameter(insert, "@noDataCount", band.NoDataPixelCount);
+                await insert.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            PostgresRasterLog.LayerStatisticsBackfilled(_logger, layerId, rasterIds.Length, strategyKey, computed.Count);
+        }
+        catch (PostgresException ex)
+        {
+            // Persistence is best-effort; still serve the computed values.
+            await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+            PostgresRasterLog.LayerStatisticsPersistFailed(_logger, ex, layerId);
+        }
+
+        return computed;
+    }
+
+    private async Task<List<RasterStatistics>> ReadPersistedRasterStatisticsAsync(
+        DbConnection connection,
+        DbTransaction? transaction,
+        long rasterId,
+        CancellationToken cancellationToken)
+    {
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = $"""
+            SELECT band_number, min_value, max_value, mean_value, std_dev,
+                   valid_pixel_count, nodata_pixel_count
+            FROM {_rasterStatisticsTable}
+            WHERE raster_data_id = @rasterId
+            ORDER BY band_number
+            """;
+        AddParameter(command, "@rasterId", rasterId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        return await ReadStatisticsRowsAsync(reader, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<List<RasterStatistics>> ReadPersistedLayerStatisticsAsync(
+        DbConnection connection,
+        DbTransaction? transaction,
+        int layerId,
+        string strategyKey,
+        string signature,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = $"""
+                SELECT band_number, min_value, max_value, mean_value, std_dev,
+                       valid_pixel_count, nodata_pixel_count
+                FROM {_rasterLayerStatisticsTable}
+                WHERE layer_id = @layerId AND merge_strategy = @strategy AND raster_signature = @signature
+                ORDER BY band_number
+                """;
+            AddParameter(command, "@layerId", layerId);
+            AddParameter(command, "@strategy", strategyKey);
+            AddParameter(command, "@signature", signature);
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            return await ReadStatisticsRowsAsync(reader, cancellationToken).ConfigureAwait(false);
+        }
+        catch (PostgresException ex) when (transaction is null && ex.SqlState == PostgresErrorCodes.UndefinedTable)
+        {
+            // Snapshot table not provisioned yet; treat as a cache miss so the backfill
+            // path can create it. Inside a transaction the error must propagate because
+            // the transaction is already aborted.
+            return [];
+        }
+    }
+
+    private async Task<List<RasterStatistics>> ComputeRasterStatisticsAsync(
+        DbConnection connection,
+        int layerId,
+        long rasterId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandTimeout = StatisticsComputeTimeoutSeconds;
+        command.CommandText = $"""
+            SELECT band,
+                   (stats).min AS min_value,
+                   (stats).max AS max_value,
+                   (stats).mean AS mean_value,
+                   (stats).stddev AS std_dev,
+                   (stats).count AS valid_count
+            FROM (
+                SELECT generate_series(1, ST_NumBands(raster)) AS band,
+                       ST_SummaryStats(raster, generate_series(1, ST_NumBands(raster))) AS stats
+                FROM {_rasterDataTable}
+                WHERE layer_id = @layerId AND id = @rasterId
+            ) sub
+            ORDER BY band
+            """;
+        AddParameter(command, "@layerId", layerId);
+        AddParameter(command, "@rasterId", rasterId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        return await ReadStatisticsRowsAsync(reader, cancellationToken, hasNoDataColumn: false).ConfigureAwait(false);
+    }
+
+    private async Task<List<RasterStatistics>> ComputeMosaicStatisticsAsync(
+        DbConnection connection,
+        DbTransaction? transaction,
+        int layerId,
+        long[] rasterIds,
+        RasterMergeStrategy mergeStrategy,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandTimeout = StatisticsComputeTimeoutSeconds;
         command.CommandText = $"""
             WITH requested AS (
                 SELECT unnest(@rasterIds) AS raster_id
@@ -1061,8 +1700,16 @@ internal sealed class PostgresRasterStore : IRasterStore
         AddParameter(command, "@layerId", layerId);
         AddParameter(command, "@rasterIds", rasterIds);
 
-        var stats = new List<RasterStatistics>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        return await ReadStatisticsRowsAsync(reader, cancellationToken, hasNoDataColumn: false).ConfigureAwait(false);
+    }
+
+    private static async Task<List<RasterStatistics>> ReadStatisticsRowsAsync(
+        DbDataReader reader,
+        CancellationToken cancellationToken,
+        bool hasNoDataColumn = true)
+    {
+        var stats = new List<RasterStatistics>();
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             stats.Add(new RasterStatistics
@@ -1073,16 +1720,94 @@ internal sealed class PostgresRasterStore : IRasterStore
                 MeanValue = reader.IsDBNull(3) ? null : reader.GetDouble(3),
                 StandardDeviation = reader.IsDBNull(4) ? null : reader.GetDouble(4),
                 ValidPixelCount = reader.IsDBNull(5) ? 0 : reader.GetInt64(5),
-                NoDataPixelCount = 0
+                NoDataPixelCount = hasNoDataColumn && !reader.IsDBNull(6) ? reader.GetInt64(6) : 0
             });
         }
 
-        if (bands != null)
-        {
-            stats = stats.Where(s => bands.Contains(s.Band)).ToList();
-        }
+        return stats;
+    }
 
-        return stats.ToArray();
+    private async Task TryEnsureLayerStatisticsTableAsync(DbConnection connection, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            CREATE TABLE IF NOT EXISTS {_rasterLayerStatisticsTable} (
+                layer_id INTEGER NOT NULL,
+                merge_strategy VARCHAR(32) NOT NULL,
+                raster_signature TEXT NOT NULL,
+                band_number INTEGER NOT NULL,
+                min_value DOUBLE PRECISION,
+                max_value DOUBLE PRECISION,
+                mean_value DOUBLE PRECISION,
+                std_dev DOUBLE PRECISION,
+                valid_pixel_count BIGINT,
+                nodata_pixel_count BIGINT,
+                computed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (layer_id, merge_strategy, raster_signature, band_number)
+            )
+            """;
+
+        try
+        {
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (PostgresException ex) when (
+            ex.SqlState is PostgresErrorCodes.UniqueViolation
+                or PostgresErrorCodes.DuplicateTable
+                or PostgresErrorCodes.DuplicateObject
+                or PostgresErrorCodes.InsufficientPrivilege
+                or PostgresErrorCodes.ReadOnlySqlTransaction)
+        {
+            // Concurrent CREATE TABLE IF NOT EXISTS race, or a read-only deployment.
+            // Both are tolerated: the read path treats a missing table as a cache miss.
+        }
+    }
+
+    private static async Task AcquireBackfillLockAsync(
+        DbConnection connection,
+        DbTransaction transaction,
+        int lockNamespace,
+        int lockKey,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT pg_advisory_xact_lock(@namespace, @lockKey);";
+        AddParameter(command, "@namespace", lockNamespace);
+        AddParameter(command, "@lockKey", lockKey);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Raises the statement timeout for the statistics-backfill transaction to the dedicated
+    /// compute budget. <c>SET LOCAL</c> is transaction-scoped, so the elevated budget reverts on
+    /// commit/rollback and never leaks back to the pooled connection's request-path statements.
+    /// </summary>
+    private static async Task ApplyStatisticsComputeBudgetAsync(
+        DbConnection connection,
+        DbTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = FormattableString.Invariant(
+            $"SET LOCAL statement_timeout = {StatisticsComputeTimeoutSeconds * 1000}");
+        command.CommandTimeout = StatisticsComputeTimeoutSeconds;
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static int HashLockKey(long value) => unchecked((int)value ^ (int)(value >>> 32));
+
+    /// <summary>
+    /// Builds a deterministic identity for a layer's mosaic source set. Any raster added to or
+    /// removed from the layer changes the signature, which invalidates persisted mosaic rows.
+    /// </summary>
+    private static string CreateMosaicSignature(long[] rasterIds)
+    {
+        var ordered = rasterIds.Distinct().Order().ToArray();
+        var joined = string.Join(",", ordered);
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(joined));
+        return string.Create(CultureInfo.InvariantCulture, $"{ordered.Length}:{Convert.ToHexStringLower(hash)}");
     }
 
     /// <inheritdoc />
@@ -1488,6 +2213,342 @@ internal sealed class PostgresRasterStore : IRasterStore
         }
 
         return results.ToArray();
+    }
+
+    // ----- AOI-clipped statistics / histograms --------------------------------
+    // ImageServer computeStatisticsHistograms with a geometry parameter analyses
+    // only the pixels inside the AOI. These always compute fresh (the cached
+    // whole-raster statistics never apply to a clip) and reuse the same ST_Clip
+    // primitive proven by ComputeZonalStatisticsAsync.
+
+    /// <inheritdoc />
+    public async Task<RasterStatistics[]> GetClippedStatisticsAsync(
+        int layerId,
+        long rasterId,
+        byte[] clipGeometry,
+        int? clipSrid,
+        int[]? bands = null,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+        var rastCte = $"""
+            SELECT {BuildClipExpression("raster", clipSrid)} AS rast
+            FROM {_rasterDataTable}
+            WHERE layer_id = @layerId AND id = @rasterId
+            """;
+        return await ComputeClippedStatisticsAsync(
+            connection,
+            rastCte,
+            bands,
+            command =>
+            {
+                AddParameter(command, "@layerId", layerId);
+                AddParameter(command, "@rasterId", rasterId);
+                AddClipParameters(command, clipGeometry, clipSrid, bands);
+            },
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<RasterStatistics[]> GetClippedMosaicStatisticsAsync(
+        int layerId,
+        long[] rasterIds,
+        RasterMergeStrategy mergeStrategy,
+        byte[] clipGeometry,
+        int? clipSrid,
+        int[]? bands = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (rasterIds.Length == 0)
+        {
+            return Array.Empty<RasterStatistics>();
+        }
+
+        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+        var rastCte = $"""
+            WITH requested AS (
+                SELECT unnest(@rasterIds) AS raster_id
+            ),
+            source AS (
+                SELECT {BuildClipExpression("raster", clipSrid)} AS rast
+                FROM {_rasterDataTable}
+                WHERE layer_id = @layerId AND id IN (SELECT raster_id FROM requested)
+            )
+            SELECT {CreateMosaicAggregateExpression(mergeStrategy)} AS rast
+            FROM source
+            WHERE rast IS NOT NULL
+            """;
+        return await ComputeClippedStatisticsAsync(
+            connection,
+            rastCte,
+            bands,
+            command =>
+            {
+                AddParameter(command, "@layerId", layerId);
+                AddParameter(command, "@rasterIds", rasterIds);
+                AddClipParameters(command, clipGeometry, clipSrid, bands);
+            },
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<RasterHistogram[]> GetClippedHistogramsAsync(
+        int layerId,
+        long rasterId,
+        byte[] clipGeometry,
+        int? clipSrid,
+        int[]? bands = null,
+        int binCount = 256,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+        var rastCte = $"""
+            SELECT {BuildClipExpression("raster", clipSrid)} AS rast
+            FROM {_rasterDataTable}
+            WHERE layer_id = @layerId AND id = @rasterId
+            """;
+        return await ComputeClippedHistogramsAsync(
+            connection,
+            rastCte,
+            bands,
+            binCount,
+            command =>
+            {
+                AddParameter(command, "@layerId", layerId);
+                AddParameter(command, "@rasterId", rasterId);
+                AddClipParameters(command, clipGeometry, clipSrid, bands: null);
+            },
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<RasterHistogram[]> GetClippedMosaicHistogramsAsync(
+        int layerId,
+        long[] rasterIds,
+        RasterMergeStrategy mergeStrategy,
+        byte[] clipGeometry,
+        int? clipSrid,
+        int[]? bands = null,
+        int binCount = 256,
+        CancellationToken cancellationToken = default)
+    {
+        if (rasterIds.Length == 0)
+        {
+            return Array.Empty<RasterHistogram>();
+        }
+
+        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+        var rastCte = $"""
+            WITH requested AS (
+                SELECT unnest(@rasterIds) AS raster_id
+            ),
+            source AS (
+                SELECT {BuildClipExpression("raster", clipSrid)} AS rast
+                FROM {_rasterDataTable}
+                WHERE layer_id = @layerId AND id IN (SELECT raster_id FROM requested)
+            )
+            SELECT {CreateMosaicAggregateExpression(mergeStrategy)} AS rast
+            FROM source
+            WHERE rast IS NOT NULL
+            """;
+        return await ComputeClippedHistogramsAsync(
+            connection,
+            rastCte,
+            bands,
+            binCount,
+            command =>
+            {
+                AddParameter(command, "@layerId", layerId);
+                AddParameter(command, "@rasterIds", rasterIds);
+                AddClipParameters(command, clipGeometry, clipSrid, bands: null);
+            },
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private static string BuildClipExpression(string rasterExpr, int? clipSrid)
+        => clipSrid is > 0
+            ? $"ST_Clip({rasterExpr}, ST_Transform(ST_GeomFromWKB(@clipGeom, @clipSrid), ST_SRID({rasterExpr})), TRUE)"
+            : $"ST_Clip({rasterExpr}, ST_GeomFromWKB(@clipGeom, ST_SRID({rasterExpr})), TRUE)";
+
+    private static void AddClipParameters(DbCommand command, byte[] clipGeometry, int? clipSrid, int[]? bands)
+    {
+        AddParameter(command, "@clipGeom", clipGeometry);
+        if (clipSrid is > 0)
+        {
+            AddParameter(command, "@clipSrid", clipSrid.Value);
+        }
+
+        if (bands is { Length: > 0 })
+        {
+            AddParameter(command, "@bands", bands);
+        }
+    }
+
+    private static async Task<RasterStatistics[]> ComputeClippedStatisticsAsync(
+        DbConnection connection,
+        string rastCteSql,
+        int[]? bands,
+        Action<DbCommand> bindParameters,
+        CancellationToken cancellationToken)
+    {
+        var bandListSql = bands is { Length: > 0 }
+            ? "SELECT b AS band FROM unnest(@bands::int[]) AS b"
+            : "SELECT generate_series(1, ST_NumBands(t.rast)) AS band FROM target t";
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            WITH target AS (
+                {rastCteSql}
+            ),
+            band_list AS (
+                {bandListSql}
+            )
+            SELECT bl.band,
+                   (s).min AS min_value,
+                   (s).max AS max_value,
+                   (s).mean AS mean_value,
+                   (s).stddev AS std_dev,
+                   (s).count AS valid_count
+            FROM target t, band_list bl,
+                 LATERAL ST_SummaryStats(t.rast, bl.band) AS s
+            WHERE t.rast IS NOT NULL
+            ORDER BY bl.band
+            """;
+        bindParameters(command);
+
+        var results = new List<RasterStatistics>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            results.Add(new RasterStatistics
+            {
+                Band = reader.GetInt32(0),
+                MinValue = reader.IsDBNull(1) ? null : reader.GetDouble(1),
+                MaxValue = reader.IsDBNull(2) ? null : reader.GetDouble(2),
+                MeanValue = reader.IsDBNull(3) ? null : reader.GetDouble(3),
+                StandardDeviation = reader.IsDBNull(4) ? null : reader.GetDouble(4),
+                ValidPixelCount = reader.IsDBNull(5) ? 0 : reader.GetInt64(5),
+                NoDataPixelCount = 0
+            });
+        }
+
+        return results.ToArray();
+    }
+
+    private static async Task<RasterHistogram[]> ComputeClippedHistogramsAsync(
+        DbConnection connection,
+        string rastCteSql,
+        int[]? bands,
+        int binCount,
+        Action<DbCommand> bindParameters,
+        CancellationToken cancellationToken)
+    {
+        binCount = binCount switch
+        {
+            <= 0 => 256,
+            > 1024 => 1024,
+            _ => binCount
+        };
+
+        // Resolve the band list up front so each band can run in its own statement;
+        // ST_Histogram aborts on a uniform-value (single-value) clip, so per-band
+        // isolation lets one flat band degrade to an empty histogram without failing
+        // the others.
+        var effectiveBands = bands is { Length: > 0 }
+            ? bands
+            : await ResolveClippedBandCountAsync(connection, rastCteSql, bindParameters, cancellationToken).ConfigureAwait(false);
+
+        var results = new List<RasterHistogram>(effectiveBands.Length);
+        foreach (var band in effectiveBands)
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"""
+                WITH target AS (
+                    {rastCteSql}
+                )
+                SELECT (h).min AS bin_min, (h).max AS bin_max, (h).count AS bin_count
+                FROM target t, LATERAL ST_Histogram(t.rast, @band, @binCount, false) AS h
+                WHERE t.rast IS NOT NULL
+                """;
+            bindParameters(command);
+            AddParameter(command, "@band", band);
+            AddParameter(command, "@binCount", binCount);
+
+            var counts = new List<long>(binCount);
+            double min = double.NaN;
+            double max = double.NaN;
+            try
+            {
+                await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+                while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    if (counts.Count == 0 && !reader.IsDBNull(0))
+                    {
+                        min = reader.GetDouble(0);
+                    }
+
+                    if (!reader.IsDBNull(1))
+                    {
+                        max = reader.GetDouble(1);
+                    }
+
+                    counts.Add(reader.IsDBNull(2) ? 0L : Convert.ToInt64(reader.GetValue(2), CultureInfo.InvariantCulture));
+                }
+            }
+            catch (DbException)
+            {
+                // Uniform-value clip or empty intersection: emit an empty histogram for the band.
+                counts.Clear();
+            }
+
+            results.Add(new RasterHistogram
+            {
+                Band = band,
+                BinCount = counts.Count,
+                Min = double.IsNaN(min) ? 0 : min,
+                Max = double.IsNaN(max) ? 0 : max,
+                Counts = counts.ToArray()
+            });
+        }
+
+        return results.ToArray();
+    }
+
+    private static async Task<int[]> ResolveClippedBandCountAsync(
+        DbConnection connection,
+        string rastCteSql,
+        Action<DbCommand> bindParameters,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            WITH target AS (
+                {rastCteSql}
+            )
+            SELECT ST_NumBands(t.rast) AS band_count
+            FROM target t
+            WHERE t.rast IS NOT NULL
+            """;
+        bindParameters(command);
+
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        if (result is null or DBNull)
+        {
+            return Array.Empty<int>();
+        }
+
+        var total = Convert.ToInt32(result, CultureInfo.InvariantCulture);
+        var bands = new int[total];
+        for (var i = 0; i < total; i++)
+        {
+            bands[i] = i + 1;
+        }
+
+        return bands;
     }
 
     /// <summary>

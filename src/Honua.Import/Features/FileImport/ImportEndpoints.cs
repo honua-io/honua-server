@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -203,10 +204,8 @@ internal static partial class ImportEndpoints
             [".gpx"] = "GPX - GPS Exchange format",
             [".kml"] = "KML - Keyhole Markup Language (Google Earth)",
             [".kmz"] = "KMZ - Compressed KML format",
-            [".gml"] = "GML - Geography Markup Language",
             [".wkt"] = "WKT - Well-Known Text format",
             [".csv"] = "CSV - Comma-separated values with lon/lat or WKT geometry columns",
-            [".twkb"] = "TinyWKB - Compact binary format",
             [".fgb"] = "FlatGeobuf - Compact binary geospatial format",
             [".gdb.zip"] = "Zipped File Geodatabase - compressed .gdb archive",
             [".parquet"] = "GeoParquet - Apache Parquet with WKB geometry encoding",
@@ -636,6 +635,21 @@ internal static partial class ImportEndpoints
                 UploadId = importRequest.UploadId,
                 CloudFileId = importRequest.CloudFileId
             };
+
+            // Re-importing into a table that is already published leaves the canonical
+            // `honua.features` snapshot — and the MVT/tiles built from it — stale, while the
+            // feature-query paths read the live source. Rebuild the snapshot so tiles stay
+            // consistent with the freshly imported data (honua-server#1628). Best-effort:
+            // a refresh failure must not fail the import that already succeeded.
+            if (importResult.Success)
+            {
+                await TryRefreshPublishedSnapshotAsync(
+                    context,
+                    importRequest.TargetSchema,
+                    importRequest.TableName,
+                    cancellationToken);
+            }
+
             IResult syncResult = Results.Json(importResult, ImportJsonContext.Default.ImportResult);
             await syncResult.ExecuteAsync(context);
         }
@@ -679,6 +693,52 @@ internal static partial class ImportEndpoints
             {
                 MultipartParsingHelpers.TryDeleteFile(request.File.LocalFilePath);
             }
+        }
+    }
+
+    /// <summary>
+    /// Best-effort rebuild of the canonical <c>honua.features</c> snapshot for any published
+    /// layer backed by the just-imported source table, so MVT/tiles reflect the new data.
+    /// A failure here is logged and swallowed: the import itself already succeeded.
+    /// </summary>
+    private static async Task TryRefreshPublishedSnapshotAsync(
+        HttpContext context,
+        string? targetSchema,
+        string tableName,
+        CancellationToken cancellationToken)
+    {
+        var publishingService = context.RequestServices.GetService<ILayerPublishingService>();
+        var connectionProvider = context.RequestServices.GetService<IDatabaseConnectionProvider>();
+        if (publishingService == null || connectionProvider == null)
+        {
+            return;
+        }
+
+        try
+        {
+            var connectionString = connectionProvider.GetConnectionString();
+            var refreshed = await publishingService
+                .RefreshMaterializedFeaturesForSourceTableAsync(
+                    connectionString,
+                    targetSchema,
+                    tableName,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            if (refreshed.Count > 0)
+            {
+                var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
+                Log.SnapshotRefreshed(logger, tableName, refreshed.Count);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
+            Log.SnapshotRefreshFailed(logger, tableName, ex);
         }
     }
 
@@ -1455,6 +1515,24 @@ internal static partial class ImportEndpoints
         /// <param name="failureReason">Provider-specific failure reason.</param>
         [LoggerMessage(EventId = 3304, Level = LogLevel.Warning, Message = "Cloud upload failed for import file {FileName}: {FailureReason}")]
         public static partial void CloudUploadFailed(ILogger logger, string fileName, string failureReason);
+
+        /// <summary>
+        /// Logs when the post-import canonical snapshot rebuild for published layers fails.
+        /// </summary>
+        /// <param name="logger">The logger instance.</param>
+        /// <param name="tableName">The imported source table name.</param>
+        /// <param name="exception">The exception that caused the failure.</param>
+        [LoggerMessage(EventId = 3305, Level = LogLevel.Warning, Message = "Failed to rebuild published feature snapshot after importing table {TableName}")]
+        public static partial void SnapshotRefreshFailed(ILogger logger, string tableName, Exception exception);
+
+        /// <summary>
+        /// Logs when the post-import canonical snapshot rebuild refreshes one or more layers.
+        /// </summary>
+        /// <param name="logger">The logger instance.</param>
+        /// <param name="tableName">The imported source table name.</param>
+        /// <param name="layerCount">Number of published layers whose snapshot was rebuilt.</param>
+        [LoggerMessage(EventId = 3306, Level = LogLevel.Information, Message = "Rebuilt published feature snapshot for {LayerCount} layer(s) after importing table {TableName}")]
+        public static partial void SnapshotRefreshed(ILogger logger, string tableName, int layerCount);
     }
 
 }

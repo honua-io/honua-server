@@ -13,6 +13,7 @@ using Honua.Infrastructure.Events;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Validation;
 using Honua.Protocols.OData.Services;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -20,9 +21,18 @@ namespace Honua.Protocols.OData;
 
 internal static class ODataServiceCollectionExtensions
 {
-    public static IServiceCollection AddOData(this IServiceCollection services)
+    public static IServiceCollection AddOData(this IServiceCollection services, IConfiguration? configuration = null)
     {
         ArgumentNullException.ThrowIfNull(services);
+
+        // Bind OData adapter options (e.g. OData:MaxPageSize, the server-driven
+        // paging cap). Binding is idempotent so module- and direct-registration
+        // paths can both call AddOData() safely.
+        var odataOptions = services.AddOptions<ODataOptions>();
+        if (configuration != null)
+        {
+            odataOptions.Bind(configuration.GetSection(ODataOptions.SectionName));
+        }
 
         // Audit-A1: install the OData error formatter delegate so
         // StandardErrorResponseFormatter (in Honua.Infrastructure.Models) can

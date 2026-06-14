@@ -263,7 +263,8 @@ internal static partial class FeatureServerEndpoints
         bool supportsOrderBy,
         bool supportsDistinct,
         bool supportsPagination,
-        bool supportsQueryAttachments = false)
+        bool supportsQueryAttachments = false,
+        bool supportsReturningGeometryCentroid = false)
     {
         return new AdvancedQueryCapabilities
         {
@@ -275,6 +276,7 @@ internal static partial class FeatureServerEndpoints
             SupportsCountDistinct = supportsStatistics,
             SupportsPagination = supportsPagination,
             SupportsReturningQueryExtent = supportsAdvancedQueries,
+            SupportsReturningGeometryCentroid = supportsReturningGeometryCentroid,
             SupportsQueryWithDistance = supportsAdvancedQueries,
             SupportsSqlExpression = supportsAdvancedQueries,
             // queryTopFeatures is served unconditionally by HandleQueryTopFeatures;

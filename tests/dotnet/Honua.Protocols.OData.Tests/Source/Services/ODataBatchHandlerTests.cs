@@ -20,6 +20,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Events;
 using Honua.Infrastructure.Validation;
+using Honua.Protocols.OData;
 using Honua.Protocols.OData.Models;
 using Honua.Protocols.OData.Services;
 using Honua.TestKit.Infrastructure;
@@ -30,8 +31,6 @@ using Microsoft.Extensions.Options;
 using System.Security.Claims;
 using NSubstitute;
 using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
-using Honua.Core.Features.Licensing.Abstractions;
-using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.OData.Services;
@@ -160,7 +159,7 @@ public sealed class ODataBatchHandlerTests
             new FeatureMutationValidator(Substitute.For<IGeometryValidator>()),
             Substitute.For<ICrsRegistry>(),
             new EditLimits(),
-            new ODataValidationService(Substitute.For<ICommonQueryValidator>()),
+            new ODataValidationService(Substitute.For<ICommonQueryValidator>(), Options.Create(new ODataOptions())),
             new ETagService(),
             new ODataEditParameterAdapter(Substitute.For<ILogger<ODataEditParameterAdapter>>()),
             new EditProcessor(Substitute.For<ILogger<EditProcessor>>()),
@@ -178,13 +177,6 @@ public sealed class ODataBatchHandlerTests
         services.AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>();
         services.AddSingleton<IOptions<RbacOptions>>(Options.Create(new RbacOptions()));
         services.AddSingleton<IMetadataV2GraphProvider>(CreateMetadataProvider());
-
-        // #1548: atomic $batch change-set writes are gated behind the Pro editing.feature-edits
-        // entitlement via RequestServices. Register a Pro license so these handler unit tests
-        // exercise the batch write path instead of short-circuiting with 402.
-        var proLicense = new TestLicenseEntitlementService(HonuaEdition.Pro);
-        services.AddSingleton<ILicenseEntitlementService>(proLicense);
-        services.AddSingleton<ILicenseStatusProvider>(proLicense);
 
         var context = new DefaultHttpContext
         {

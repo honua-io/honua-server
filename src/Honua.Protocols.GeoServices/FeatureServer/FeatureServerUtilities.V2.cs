@@ -135,6 +135,7 @@ internal static partial class FeatureServerEndpoints
         var supportsPagination = supportsAdvancedQueries;
         var supportsEditing = ServiceSupportsEditingV2(service);
         var supportsAttachments = ResourceSupportsAttachmentsV2(resource);
+        var supportsReturningGeometryCentroid = supportsAdvancedQueries && IsPolygonalGeometryTypeV2(resource.ReadGeometryType());
         // The layer advertises queryAttachments only when it declares attachment
         // support AND the runtime has attachment uploads wired up. This single value
         // feeds both the layer-root flag and the nested operations block so they stay
@@ -146,7 +147,8 @@ internal static partial class FeatureServerEndpoints
             supportsOrderBy,
             supportsDistinct,
             supportsPagination,
-            supportsQueryAttachments);
+            supportsQueryAttachments,
+            supportsReturningGeometryCentroid);
 
         var srid = resource.ReadSrid();
         var spatialReference = srid.HasValue
@@ -196,7 +198,7 @@ internal static partial class FeatureServerEndpoints
             SupportsAttachmentsByUploadId = supportsQueryAttachments,
             SupportsQueryRelated = supportsRelated,
             SupportedQueryFormats = NormalizeSupportedQueryFormats(supportedFormats, supportsGeobufOutput),
-            SupportsCoordinatesQuantization = false,
+            SupportsCoordinatesQuantization = true,
             Relationships = BuildRelationshipResponseV2(resource, snapshot),
             AllowGeometryUpdates = supportsEditing,
             EditFieldsInfo = null,
@@ -899,6 +901,9 @@ internal static partial class FeatureServerEndpoints
                TryReadBoolAnnotation(resource.Metadata.Annotations, "supportsAttachments") ??
                false;
     }
+
+    private static bool IsPolygonalGeometryTypeV2(MetadataV2GeometryType geometryType)
+        => geometryType is MetadataV2GeometryType.Polygon or MetadataV2GeometryType.MultiPolygon;
 
     private static bool? TryReadBoolAnnotation(IReadOnlyDictionary<string, string>? annotations, string key)
     {

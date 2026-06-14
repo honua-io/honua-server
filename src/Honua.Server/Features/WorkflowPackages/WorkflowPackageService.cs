@@ -378,6 +378,11 @@ internal sealed class WorkflowPackageService(
             };
         }
 
+        await geoprocessingJobService.EnsureCallerAuthorizedAsync(
+            principal,
+            OperatorResourceType.Process,
+            OperatorOperation.Execute,
+            cancellationToken).ConfigureAwait(false);
         var plan = await CompileAnalysisPlanAsync(version, cancellationToken).ConfigureAwait(false);
         var job = await geoprocessingJobService
             .SubmitJobAsync(plan, request.IdempotencyKey, principal, provenance, cancellationToken)

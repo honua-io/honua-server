@@ -22,60 +22,50 @@ public enum SupportedFileFormat
     /// <summary>
     /// GeoJSON format (.geojson, .json)
     /// </summary>
-    GeoJson,
+    GeoJson = 0,
 
     /// <summary>
     /// Shapefile format (.shp + .shx + .dbf)
     /// </summary>
-    Shapefile,
+    Shapefile = 1,
 
     /// <summary>
     /// OGC GeoPackage format (.gpkg)
     /// </summary>
-    GeoPackage,
+    GeoPackage = 2,
 
     /// <summary>
     /// GPS Exchange format (.gpx)
     /// </summary>
-    Gpx,
+    Gpx = 3,
 
     /// <summary>
     /// Keyhole Markup Language (.kml, .kmz)
     /// </summary>
-    Kml,
-
-    /// <summary>
-    /// Geography Markup Language (.gml)
-    /// </summary>
-    Gml,
+    Kml = 4,
 
     /// <summary>
     /// Well-Known Text format (.wkt)
     /// </summary>
-    Wkt,
+    Wkt = 6,
 
     /// <summary>
     /// Comma-separated values (.csv)
     /// </summary>
-    Csv,
-
-    /// <summary>
-    /// Tiny Well-Known Binary format (.twkb)
-    /// </summary>
-    TinyWkb,
+    Csv = 7,
 
     /// <summary>
     /// Esri File Geodatabase format (.gdb)
     /// </summary>
-    FileGdb,
+    FileGdb = 9,
 
     /// <summary>
     /// FlatGeobuf format (.fgb) - compact binary geospatial format
     /// </summary>
-    FlatGeobuf,
+    FlatGeobuf = 10,
 
     /// <summary>
     /// GeoParquet format (.parquet, .geoparquet)
     /// </summary>
-    GeoParquet
+    GeoParquet = 11
 }

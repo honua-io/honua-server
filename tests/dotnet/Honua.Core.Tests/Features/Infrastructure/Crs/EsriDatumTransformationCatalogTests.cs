@@ -17,6 +17,8 @@ public sealed class EsriDatumTransformationCatalogTests
     private const int Nad83 = 4269;
     private const int Wgs84 = 4326;
     private const int Nad27 = 4267;
+    private const int Nad83Harn = 4152;
+    private const int Nad83Nsrs2007 = 4759;
     private const int Nad83_2011 = 6318;
 
     private readonly IDatumTransformationCatalog _catalog = EsriDatumTransformationCatalog.Create();
@@ -61,6 +63,45 @@ public sealed class EsriDatumTransformationCatalogTests
         selection.Name.Should().Be("NAD_1927_To_NAD_1983_NADCON");
         selection.RequiredGrids.Should().Contain("us_noaa_conus.tif");
         selection.ProjPipeline.Should().Contain("hgridshift");
+    }
+
+    [Theory]
+    [InlineData(Nad83Harn, 1580, "NAD_1983_HARN_To_WGS_1984_1")]
+    [InlineData(Nad83Nsrs2007, 15931, "NAD_1983_NSRS2007_To_WGS_1984_1")]
+    [InlineData(Nad83_2011, 9774, "NAD_1983_2011_To_WGS_1984_1")]
+    public void TryGetDefault_Wgs84RealizationPair_ReturnsNullTransformPipeline(int fromSrid, int epsgOp, string name)
+    {
+        // NAD83(HARN)/NSRS2007/2011 -> WGS84 are EPSG null transformations (#1501).
+        // They are seeded as the exact-identity +proj=noop, which PostGIS applies through
+        // the 3-argument ST_Transform chokepoint (validated against the runtime).
+        var found = _catalog.TryGetDefault(fromSrid, Wgs84, out var selection);
+
+        found.Should().BeTrue();
+        selection.Should().NotBeNull();
+        selection!.Name.Should().Be(name);
+        selection.FromSrid.Should().Be(fromSrid);
+        selection.ToSrid.Should().Be(Wgs84);
+        selection.EpsgOperationCode.Should().Be(epsgOp);
+        selection.ProjPipeline.Should().Be("+proj=noop");
+        selection.RequiredGrids.Should().BeEmpty();
+        selection.TransformForward.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(Nad83Harn)]
+    [InlineData(Nad83Nsrs2007)]
+    [InlineData(Nad83_2011)]
+    public void TryGetDefault_Wgs84RealizationInverse_IsSynthesizedAsInverse(int fromSrid)
+    {
+        // The inverse (WGS84 -> realization) is synthesized; for a null transform the
+        // inverse pipeline is the same exact-identity +proj=noop.
+        var found = _catalog.TryGetDefault(Wgs84, fromSrid, out var selection);
+
+        found.Should().BeTrue();
+        selection!.FromSrid.Should().Be(Wgs84);
+        selection.ToSrid.Should().Be(fromSrid);
+        selection.TransformForward.Should().BeFalse();
+        selection.ProjPipeline.Should().Be("+proj=noop");
     }
 
     [UnitTest]

@@ -86,6 +86,9 @@ internal sealed class InMemoryFeatureChangeEventStore(
         ? !_redisUnavailable || _allowInMemoryFallback
         : _allowInMemoryFallback;
 
+    public bool IsUsingInMemoryFallback => _allowInMemoryFallback
+        && (_redisDb is null || _redisUnavailable);
+
     public async Task<FeatureChangeEvent> AppendAsync(
         FeatureChangeEventRequest request,
         CancellationToken cancellationToken = default)

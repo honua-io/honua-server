@@ -36,6 +36,7 @@ internal sealed record ODataQueryOptions
     [FromQuery(Name = "deltatoken")] public string? BareDeltatoken { get; init; }
     [FromQuery(Name = "$format")] public string? DollarFormat { get; init; }
     [FromQuery(Name = "format")] public string? BareFormat { get; init; }
+    [FromQuery(Name = "bbox")] public string? Bbox { get; init; }
 
     public string? Filter => DollarFilter ?? BareFilter;
     public string? Select => DollarSelect ?? BareSelect;

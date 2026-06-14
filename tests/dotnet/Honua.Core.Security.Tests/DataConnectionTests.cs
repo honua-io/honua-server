@@ -91,8 +91,10 @@ public sealed class DataConnectionTests
         };
 
         var json = JsonSerializer.Serialize(connection);
+        using var document = JsonDocument.Parse(json);
 
-        Assert.DoesNotContain("ConnectionString", json, StringComparison.OrdinalIgnoreCase);
+        Assert.False(document.RootElement.TryGetProperty(nameof(DataConnection.ConnectionString), out _));
+        Assert.True(document.RootElement.TryGetProperty(nameof(DataConnection.EncryptedConnectionString), out _));
         Assert.DoesNotContain("Password=secret", json, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("secret-token", json, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("SecretRef", json, StringComparison.OrdinalIgnoreCase);

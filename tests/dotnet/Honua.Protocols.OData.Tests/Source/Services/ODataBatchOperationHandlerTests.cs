@@ -26,9 +26,8 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NSubstitute;
-using Honua.Core.Features.Licensing.Abstractions;
-using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.OData.Services;
@@ -311,12 +310,6 @@ public sealed class ODataBatchOperationHandlerTests
         services.AddSingleton<IMetadataV2GraphProvider>(
             new TestMetadataV2GraphProvider(new TestMetadataV2GraphBuilder().Build()));
 
-        // #1548: batch/change-set writes are gated behind the Pro editing.feature-edits
-        // entitlement via RequestServices; register a Pro license for these handler unit tests.
-        var proLicense = new TestLicenseEntitlementService(HonuaEdition.Pro);
-        services.AddSingleton<ILicenseEntitlementService>(proLicense);
-        services.AddSingleton<ILicenseStatusProvider>(proLicense);
-
         var context = new DefaultHttpContext
         {
             RequestServices = services.BuildServiceProvider()
@@ -329,7 +322,7 @@ public sealed class ODataBatchOperationHandlerTests
             new FeatureMutationValidator(Substitute.For<IGeometryValidator>()),
             Substitute.For<ICrsRegistry>(),
             new EditLimits(),
-            new ODataValidationService(Substitute.For<ICommonQueryValidator>()),
+            new ODataValidationService(Substitute.For<ICommonQueryValidator>(), Options.Create(new ODataOptions())),
             new ETagService(),
             new ODataEditParameterAdapter(NullLogger<ODataEditParameterAdapter>.Instance),
             new EditProcessor(NullLogger<EditProcessor>.Instance),

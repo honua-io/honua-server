@@ -3,10 +3,15 @@
 
 using System.Net;
 using FluentAssertions;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Infrastructure.Rendering;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.MapServer;
 
@@ -19,6 +24,24 @@ public sealed class MapServerRenderCapacityTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         _fixture.ReplaceService(new RasterRenderCapacityLimiter(maxConcurrentRenders: 1, maxReservedBytes: 1));
+
+        // The MapServer tile path consults the storage-backed tile cache before it
+        // renders, and a cache hit short-circuits ahead of the render capacity gate.
+        // Tests in this collection share a single LocalFileStorage directory, so a
+        // tile rendered by another test (e.g. MapServerTileEndpointTests for 0/0/0
+        // on the same service) would otherwise be served as a 200 here, bypassing the
+        // capacity check this test asserts. Force every request to miss the cache so
+        // the render path — and its capacity gate — is exercised deterministically.
+        var storage = Substitute.For<ICloudFileStorage>();
+        storage.Provider.Returns(CloudStorageProvider.Local);
+        storage.GetMetadataAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((CloudFile?)null);
+        _fixture.ConfigureServices(services =>
+        {
+            services.RemoveAll<ICloudFileStorage>();
+            services.AddSingleton(storage);
+        });
+
         await _fixture.InitializeAsync();
     }
 

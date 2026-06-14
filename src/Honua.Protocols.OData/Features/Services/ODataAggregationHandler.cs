@@ -52,29 +52,42 @@ internal sealed class ODataAggregationHandler
     {
         ArgumentNullException.ThrowIfNull(resource);
 
-        // Parse the $apply expression
-        var aggregation = ParseApplyExpression(applyExpression);
+        // $apply is a transformation pipeline: segments separated by a top-level '/' are applied
+        // left to right (e.g. filter(...)/groupby(...)). Leading filter(...) transforms refine the
+        // underlying query before the terminal aggregate/groupby/compute runs. Previously only a
+        // single transform was parsed, so on a pipeline the filter() regex greedily swallowed the
+        // remaining segments and produced a broken filter — 400ing extent-scoped aggregation such
+        // as filter(geo.intersects(...))/groupby(...) (#1636).
+        var segments = SplitApplyTransforms(applyExpression);
 
-        // Build the query
+        // Build the query, starting from the $filter query option (composes with $apply).
         var query = new FeatureQuery();
         query = ApplyODataFilter(query, filter, resource);
 
-        if (aggregation.Type == AggregationType.Filter && !string.IsNullOrWhiteSpace(aggregation.FilterExpression))
+        // The terminal (last) transform decides whether the result is an aggregation or features.
+        var terminal = ParseApplyExpression(segments[^1]);
+        foreach (var segment in segments)
         {
-            query = ApplyODataFilter(query, aggregation.FilterExpression, resource);
+            var parsed = ParseApplyExpression(segment);
+            if (parsed.Type == AggregationType.Filter && !string.IsNullOrWhiteSpace(parsed.FilterExpression))
+            {
+                // filter() narrows rows before aggregation; apply every filter segment to the query
+                // (a trailing filter-only pipeline then simply returns the filtered features).
+                query = ApplyODataFilter(query, parsed.FilterExpression, resource);
+            }
         }
 
         object[] aggregatedValues;
-        if (aggregation.Type is AggregationType.Aggregate or AggregationType.GroupBy)
+        if (terminal.Type is AggregationType.Aggregate or AggregationType.GroupBy)
         {
             var stream = _streamingFeatureStore.StreamFeaturesAsync(layerId, query, cancellationToken);
-            aggregatedValues = await ApplyAggregationStreamingAsync(stream, aggregation);
+            aggregatedValues = await ApplyAggregationStreamingAsync(stream, terminal);
         }
         else
         {
             // Fallback to in-memory aggregation for non-aggregate/groupby operations
             var result = await _featureReader.QueryAsync(layerId, query, cancellationToken);
-            aggregatedValues = ApplyAggregation(result.Items, aggregation);
+            aggregatedValues = ApplyAggregation(result.Items, terminal);
         }
 
         return new ODataAggregationResult
@@ -82,6 +95,58 @@ internal sealed class ODataAggregationHandler
             Context = $"{baseUrl}/odata/$metadata#Features",
             Value = aggregatedValues
         };
+    }
+
+    /// <summary>
+    /// Splits an OData <c>$apply</c> expression into its pipeline transformation segments on each
+    /// top-level <c>/</c> separator. Slashes inside parentheses or single-quoted literals (e.g. a
+    /// <c>geography'…'</c> WKT value) are preserved, so a segment is never split mid-expression.
+    /// </summary>
+    /// <param name="applyExpression">The raw <c>$apply</c> expression.</param>
+    /// <returns>The trimmed, non-empty pipeline segments in evaluation order (always at least one).</returns>
+    public static IReadOnlyList<string> SplitApplyTransforms(string applyExpression)
+    {
+        ArgumentNullException.ThrowIfNull(applyExpression);
+
+        var segments = new List<string>();
+        var depth = 0;
+        var inQuote = false;
+        var start = 0;
+        for (var i = 0; i < applyExpression.Length; i++)
+        {
+            var c = applyExpression[i];
+            if (c == '\'')
+            {
+                inQuote = !inQuote;
+            }
+            else if (!inQuote && c == '(')
+            {
+                depth++;
+            }
+            else if (!inQuote && c == ')')
+            {
+                if (depth > 0)
+                {
+                    depth--;
+                }
+            }
+            else if (!inQuote && c == '/' && depth == 0)
+            {
+                segments.Add(applyExpression[start..i]);
+                start = i + 1;
+            }
+        }
+
+        segments.Add(applyExpression[start..]);
+
+        var trimmed = segments
+            .Select(s => s.Trim())
+            .Where(s => s.Length > 0)
+            .ToList();
+
+        // A blank or all-slash expression still yields one (empty-after-trim) segment for the
+        // parser to reject with a clear "Unsupported $apply expression" rather than crashing here.
+        return trimmed.Count > 0 ? trimmed : new List<string> { applyExpression.Trim() };
     }
 
     /// <summary>
@@ -415,38 +480,20 @@ internal sealed class ODataAggregationHandler
 
     private static object[] ApplyCompute(List<Feature> features, string computeExpression)
     {
-        // Parse compute expression: field mul/add/sub/div value as alias
-        var computeMatch = Regex.Match(computeExpression.Trim(), @"^(\w+)\s+(mul|add|sub|div)\s+(\w+)\s+as\s+(\w+)$", RegexOptions.IgnoreCase);
-
-        if (!computeMatch.Success)
+        // Delegate to the shared compute grammar so $apply=compute(...) and the $compute
+        // query option behave identically (including floor()/ceiling()/round() and the
+        // mod operator used for histogram binning). On an unparseable expression we fall
+        // back to returning the raw features, preserving the previous lenient behavior.
+        if (!ODataComputeService.TryParse(computeExpression, out var expressions, out _) || expressions.IsDefaultOrEmpty)
         {
-            return features.Select(f => FeatureToDictionary(f)).ToArray();
+            return features.Select(f => (object)FeatureToDictionary(f)).ToArray();
         }
-
-        var field1 = computeMatch.Groups[1].Value;
-        var operation = computeMatch.Groups[2].Value.ToLowerInvariant();
-        var field2 = computeMatch.Groups[3].Value;
-        var alias = computeMatch.Groups[4].Value;
 
         return features.Select(f =>
         {
             var dict = FeatureToDictionary(f);
-
-            var value1 = GetNumericValue(GetFieldValue(f, field1));
-            var value2 = double.TryParse(field2, NumberStyles.Float, CultureInfo.InvariantCulture, out var constVal)
-                ? constVal
-                : GetNumericValue(GetFieldValue(f, field2));
-
-            dict[alias] = operation switch
-            {
-                "mul" => value1 * value2,
-                "add" => value1 + value2,
-                "sub" => value1 - value2,
-                "div" => value2 != 0 ? value1 / value2 : null,
-                _ => null
-            };
-
-            return dict;
+            ODataComputeService.ApplyCompute(dict, expressions);
+            return (object)dict;
         }).ToArray();
     }
 

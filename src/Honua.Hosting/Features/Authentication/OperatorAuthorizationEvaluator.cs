@@ -20,7 +20,7 @@ namespace Honua.Infrastructure.Authentication;
 /// <c>IDatabaseConnectionProvider</c>) works correctly once durable RBAC lands.
 /// </remarks>
 internal sealed class OperatorAuthorizationEvaluator(
-    IServiceScopeFactory serviceScopeFactory,
+    IServiceScopeFactory scopeFactory,
     IOptions<RbacOptions> rbacOptions,
     ILogger<OperatorAuthorizationEvaluator> logger) : IOperatorAuthorizationEvaluator
 {
@@ -126,13 +126,17 @@ internal sealed class OperatorAuthorizationEvaluator(
             return AccessDecision.Forbidden("No operator-eligible roles assigned.");
         }
 
-        // Resolve IRoleStore per call via a short-lived scope so this singleton
-        // evaluator works correctly whether the active implementation is the
-        // in-memory singleton store or the scoped PostgresRoleStore (#498).
-        await using var scope = serviceScopeFactory.CreateAsyncScope();
-        var roleStore = scope.ServiceProvider.GetRequiredService<IRoleStore>();
-        var effective = await roleStore.GetEffectivePermissionsAsync(
-            userId ?? string.Empty, roleNames, cancellationToken).ConfigureAwait(false);
+        // This evaluator is a singleton, but IRoleStore may be a scoped durable provider
+        // (PostgresRoleStore depends on the scoped connection provider). Resolve it within a
+        // fresh scope per evaluation so the singleton never captures a scoped dependency
+        // (#1575). EffectivePermissions is fully materialised before the scope is disposed.
+        EffectivePermissions effective;
+        using (var scope = scopeFactory.CreateScope())
+        {
+            var roleStore = scope.ServiceProvider.GetRequiredService<IRoleStore>();
+            effective = await roleStore.GetEffectivePermissionsAsync(
+                userId ?? string.Empty, roleNames, cancellationToken).ConfigureAwait(false);
+        }
 
         var permissions = effective.Permissions;
         for (var i = 0; i < permissions.Count; i++)

@@ -26,6 +26,23 @@ public sealed record ImportResult
     public required string TableName { get; init; }
 
     /// <summary>
+    /// Physical staging table name actually created in the database (provider-prefixed,
+    /// e.g. <c>imported_&lt;table&gt;</c>). Distinct from <see cref="TableName"/>, which is
+    /// the caller-supplied logical name. Callers that need to introspect or publish the
+    /// imported table (for example the durable import GP job) must use this name rather than
+    /// reconstructing the provider naming convention. Falls back to <see cref="TableName"/>
+    /// when the provider does not stage into a separate physical table.
+    /// </summary>
+    public string? PhysicalTableName { get; init; }
+
+    /// <summary>
+    /// Schema that owns the physical staging table (provider operational-data schema,
+    /// e.g. <c>honua_data</c>). Pair with <see cref="PhysicalTableName"/> to locate the
+    /// imported table.
+    /// </summary>
+    public string? Schema { get; init; }
+
+    /// <summary>
     /// Stable source kind for admin import result views.
     /// </summary>
     public string SourceKind { get; init; } = "file";
@@ -89,11 +106,15 @@ public sealed record ImportResult
         int featureCount,
         int? detectedSrid = null,
         TimeSpan duration = default,
-        IReadOnlyList<string>? warnings = null) =>
+        IReadOnlyList<string>? warnings = null,
+        string? physicalTableName = null,
+        string? schema = null) =>
         new()
         {
             Success = true,
             TableName = tableName,
+            PhysicalTableName = physicalTableName ?? tableName,
+            Schema = schema,
             Format = format,
             FeatureCount = featureCount,
             DetectedSrid = detectedSrid,
@@ -141,6 +162,13 @@ public static class ImportValidationErrorCodes
 
     /// <summary>A feature had invalid geometry.</summary>
     public const string GeometryInvalid = "import.geometry_invalid";
+
+    /// <summary>
+    /// A single feature's geometry exceeded the configured size guard (vertices, rings, or WKB
+    /// bytes). The geometry is too large to materialize safely; explode/simplify it before import.
+    /// Surfaced 413-style so callers can react programmatically (#1626).
+    /// </summary>
+    public const string GeometryTooLarge = "import.geometry_too_large";
 
     /// <summary>The source GeoJSON document was invalid.</summary>
     public const string InvalidGeoJson = "import.geojson_invalid";

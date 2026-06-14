@@ -81,6 +81,21 @@ internal sealed record GeocodeServerInfoResponse
     [JsonPropertyName("capabilities")]
     public required string Capabilities { get; init; }
 
+    // Output fields present on every candidate's attribute bag. ArcGIS clients
+    // introspect candidateFields to discover the result schema; Honua advertises
+    // only the fields it consistently emits rather than a full Esri locator schema.
+    [JsonPropertyName("candidateFields")]
+    public GeocodeAddressField[] CandidateFields { get; init; } =
+    [
+        new GeocodeAddressField { Name = "Match_addr", Alias = "Match Address" },
+        new GeocodeAddressField { Name = "Provider", Alias = "Provider" }
+    ];
+
+    // Advertised for client compatibility. Honua does not filter candidates by
+    // category, so the supported set is empty.
+    [JsonPropertyName("categories")]
+    public string[] Categories { get; init; } = [];
+
     [JsonPropertyName("locatorProperties")]
     public Dictionary<string, string> LocatorProperties { get; init; } = new(StringComparer.Ordinal)
     {

@@ -108,6 +108,14 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
                         featureChangeStoreStopwatch.Elapsed.TotalMilliseconds);
                     return ReadinessResult.NotReady("Feature-change event storage unavailable");
                 }
+
+                // In-memory single-node mode (no Redis configured) is healthy-but-degraded,
+                // mirroring the cache fallback check above; it must not fail readiness (#1618).
+                Log.HealthCheckExecuted(
+                    _logger,
+                    "FeatureChangeEventStore",
+                    _featureChangeEventStoreHealth.IsUsingInMemoryFallback ? "Healthy (fallback)" : "Healthy",
+                    featureChangeStoreStopwatch.Elapsed.TotalMilliseconds);
             }
 
             return ReadinessResult.Ready();

@@ -35,6 +35,14 @@
          Honua.Server). Honua.Geoprocessing has no edge back to Ai, so this is
          acyclic. Matrix cell: (Ai, Geoprocessing) in ADR-0047. -->
     <ProjectReference Include="..\Honua.Geoprocessing\Honua.Geoprocessing.csproj" />
+    <!-- The MCP geocode/route tools (#1597) are thin protocol adapters over the
+         canonical IGeocodeCoordinatorService / IRoutingProvider pipelines that
+         live in the Geocoding / Routing satellites. Neither satellite references
+         Ai, so both edges are acyclic — mirrors the Protocols -> Routing edge
+         the GeoServices NAServer adapter already uses. Matrix cells:
+         (Ai, Geocoding) and (Ai, Routing) in ADR-0047. -->
+    <ProjectReference Include="..\Honua.Geocoding\Honua.Geocoding.csproj" />
+    <ProjectReference Include="..\Honua.Routing\Honua.Routing.csproj" />
     <ProjectReference Include="..\Honua.Hosting\Honua.Hosting.csproj" />
     <ProjectReference Include="..\Honua.Jobs\Honua.Jobs.csproj" />
     <ProjectReference Include="..\Honua.ServiceDefaults\Honua.ServiceDefaults.csproj" />

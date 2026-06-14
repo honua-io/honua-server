@@ -172,6 +172,12 @@ CREATE TABLE IF NOT EXISTS honua.raster_data (
     srid INTEGER GENERATED ALWAYS AS (ST_SRID(raster)) STORED
 );
 
+-- Store the raster payload EXTERNAL (out-of-line, UNCOMPRESSED) so dynamic
+-- tile/terrain/statistics/export reads fetch only the chunks they touch instead
+-- of detoasting and decompressing the entire monolithic row (#1625). Keep in sync
+-- with src/Honua.Postgres/Migrations/001 and Server migration 055.
+ALTER TABLE honua.raster_data ALTER COLUMN raster SET STORAGE EXTERNAL;
+
 CREATE TABLE IF NOT EXISTS honua.raster_statistics (
     id BIGSERIAL PRIMARY KEY,
     raster_data_id BIGINT NOT NULL REFERENCES honua.raster_data(id) ON DELETE CASCADE,
@@ -186,6 +192,24 @@ CREATE TABLE IF NOT EXISTS honua.raster_statistics (
     CONSTRAINT raster_statistics_unique_band UNIQUE (raster_data_id, band_number)
 );
 
+-- Layer-level (mosaic) band statistics persisted by PostgresRasterStore so ImageServer
+-- service metadata is served from persisted values instead of per-request ST_SummaryStats
+-- (#1639). Keep in sync with src/Honua.Postgres/Migrations/003_CreateRasterLayerStatistics.sql.
+CREATE TABLE IF NOT EXISTS honua.raster_layer_statistics (
+    layer_id INTEGER NOT NULL,
+    merge_strategy VARCHAR(32) NOT NULL,
+    raster_signature TEXT NOT NULL,
+    band_number INTEGER NOT NULL,
+    min_value DOUBLE PRECISION,
+    max_value DOUBLE PRECISION,
+    mean_value DOUBLE PRECISION,
+    std_dev DOUBLE PRECISION,
+    valid_pixel_count BIGINT,
+    nodata_pixel_count BIGINT,
+    computed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (layer_id, merge_strategy, raster_signature, band_number)
+);
+
 CREATE TABLE IF NOT EXISTS honua.raster_tiles (
     id BIGSERIAL PRIMARY KEY,
     raster_data_id BIGINT NOT NULL REFERENCES honua.raster_data(id) ON DELETE CASCADE,
@@ -197,6 +221,8 @@ CREATE TABLE IF NOT EXISTS honua.raster_tiles (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT raster_tiles_unique_tile UNIQUE (raster_data_id, zoom_level, tile_x, tile_y)
 );
+
+ALTER TABLE honua.raster_tiles ALTER COLUMN tile_data SET STORAGE EXTERNAL;
 
 CREATE TABLE IF NOT EXISTS honua.cloud_raster_catalog (
     id              BIGSERIAL PRIMARY KEY,
