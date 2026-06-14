@@ -442,6 +442,44 @@ public sealed class LayerExtentRefreshLayerResult
 }
 
 /// <summary>
+/// Result of re-materializing a published layer's canonical feature snapshot
+/// (<c>honua.features</c>) from its live source table.
+/// </summary>
+/// <remarks>
+/// The canonical snapshot backs the publish-time materialization that the server-side
+/// MVT/tile path reads. Re-importing or updating a published source table leaves that
+/// snapshot stale until it is rebuilt, so callers refresh it after a source mutation to
+/// keep tiles consistent with the live source the feature-query paths read.
+/// </remarks>
+public sealed class MaterializedFeatureRefreshResult
+{
+    /// <summary>
+    /// Identifier of the layer whose canonical snapshot was rebuilt.
+    /// </summary>
+    public int LayerId { get; init; }
+
+    /// <summary>
+    /// Display name of the refreshed layer.
+    /// </summary>
+    public required string LayerName { get; init; }
+
+    /// <summary>
+    /// Source schema the snapshot was rebuilt from.
+    /// </summary>
+    public required string Schema { get; init; }
+
+    /// <summary>
+    /// Source table the snapshot was rebuilt from.
+    /// </summary>
+    public required string Table { get; init; }
+
+    /// <summary>
+    /// Number of features materialized into the canonical snapshot after the rebuild.
+    /// </summary>
+    public int MaterializedFeatureCount { get; init; }
+}
+
+/// <summary>
 /// Error categories for layer publishing operations.
 /// </summary>
 public enum LayerPublishingErrorKind
