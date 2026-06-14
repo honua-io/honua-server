@@ -22,17 +22,17 @@ internal static class McpTestFactory
     public static DefaultHttpContext AuthenticatedHttpContext(
         string user = "test-user",
         HonuaEdition edition = HonuaEdition.Pro) => new()
-    {
-        RequestServices = CreateRequestServices(edition),
-        User = new ClaimsPrincipal(new ClaimsIdentity(
+        {
+            RequestServices = CreateRequestServices(edition),
+            User = new ClaimsPrincipal(new ClaimsIdentity(
             [new Claim(ClaimTypes.Name, user)], "Test"))
-    };
+        };
 
     public static DefaultHttpContext AnonymousHttpContext(
         HonuaEdition edition = HonuaEdition.Pro) => new()
-    {
-        RequestServices = CreateRequestServices(edition)
-    };
+        {
+            RequestServices = CreateRequestServices(edition)
+        };
 
     public static McpPlanInput CreateValidPlanInput() => new()
     {
