@@ -21,6 +21,7 @@ using Honua.Infrastructure.Events;
 using Honua.Infrastructure.Validation;
 using Honua.Protocols.Ogc.Api.Features.Services;
 using Honua.Protocols.Ogc.Classic.Wfs20;
+using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Ogc.Classic.Wfs20.Services;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
