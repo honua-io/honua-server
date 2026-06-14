@@ -103,6 +103,15 @@ internal sealed class SceneAccessEnvelopeService : ISceneAccessEnvelopeService
 
     public EnvelopeValidationResult Validate(string rawToken, string requestedSceneId)
     {
+        // Read (and validate) the current signing options up front so a
+        // misconfigured deployment surfaces InvalidOperationException -> a
+        // structured 500 from the endpoint, regardless of token shape. If this
+        // were deferred until after the early token-parse short-circuits below,
+        // a malformed/stray token would mask the misconfiguration as a 401
+        // (Tampered) instead. Reading CurrentValue on every call keeps key
+        // rotation taking effect on the next request.
+        var (signingKey, _, _) = GetCurrentOptions();
+
         if (string.IsNullOrEmpty(rawToken) || string.IsNullOrEmpty(requestedSceneId))
         {
             return EnvelopeValidationResult.Tampered;
@@ -147,9 +156,6 @@ internal sealed class SceneAccessEnvelopeService : ISceneAccessEnvelopeService
         {
             return EnvelopeValidationResult.Tampered;
         }
-
-        // Read the current signing key so rotation takes effect immediately.
-        var (signingKey, _, _) = GetCurrentOptions();
 
         Span<byte> expectedHash = stackalloc byte[32];
         if (!TryComputeHash(payload.SceneId, payload.ExpiresAtUnixSeconds, signingKey, expectedHash))

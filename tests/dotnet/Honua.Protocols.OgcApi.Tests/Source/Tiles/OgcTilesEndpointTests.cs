@@ -6,6 +6,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Ogc.Api.Tiles.Models;
@@ -13,6 +14,7 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Honua.TestKit.Helpers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -22,7 +24,11 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles;
 [Collection("Database.OgcApiTiles")]
 public sealed class OgcTilesEndpointTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    // Run the tiles host as Pro so the time-series vector-tile gate
+    // (temporal.time-series-tiles) passes for datetime-filtered tile requests.
+    // The gate logic itself is covered by the dedicated licensing gate tests.
+    private readonly WebAppFixture _fixture = new WebAppFixture()
+        .WithTestLicense(HonuaEdition.Pro);
 
     public async Task InitializeAsync()
     {

@@ -1164,6 +1164,8 @@ public static class EndpointRegistry
         new("GET", "/stac/collections/{collectionId}"),
         new("GET", "/stac/collections/{collectionId}/items"),
         new("GET", "/stac/collections/{collectionId}/items/{itemId}"),
+        new("GET", "/stac/queryables"),
+        new("GET", "/stac/collections/{collectionId}/queryables"),
         new("GET", "/stac/search"),
         new("POST", "/stac/search"),
 

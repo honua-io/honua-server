@@ -180,7 +180,8 @@ public sealed class CachingReplicaStoreTests
         LayerIds = state.LayerIds,
         CreatedAt = state.CreatedAt,
         LastSyncTime = state.LastSyncTime,
-        LastSyncGeneration = state.LastSyncGeneration
+        LastSyncGeneration = state.LastSyncGeneration,
+        UploadBaseGeneration = state.UploadBaseGeneration
     };
 
     private sealed record CacheHarness(DistributedReplicaStore Store, RecordingDistributedCache Backend);
