@@ -457,6 +457,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             throw new GeoprocessingNotFoundException($"Job '{jobId}' not found.");
         }
 
+        EnsureJobOwnership(job, principal);
+
         GeoprocessingServiceLog.JobRetrieved(_logger, jobId, job.Status.ToString());
         return job;
     }
@@ -484,6 +486,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             GeoprocessingServiceLog.JobNotFound(_logger, jobId);
             throw new GeoprocessingNotFoundException($"Job '{jobId}' not found.");
         }
+
+        EnsureJobOwnership(job, principal);
 
         if (!IsTerminal(job.Status))
         {
@@ -558,6 +562,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             GeoprocessingServiceLog.JobNotFound(_logger, jobId);
             throw new GeoprocessingNotFoundException($"Job '{jobId}' not found.");
         }
+
+        EnsureJobOwnership(job, principal);
 
         if (job.Status == ExecutionJobStatus.Cancelled)
         {
@@ -781,6 +787,40 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 
         GeoprocessingServiceLog.AuthorizationDenied(_logger, resourceType.ToString(), operation.ToString());
         throw new GeoprocessingAuthorizationException(decision.RequiresAuthentication);
+    }
+
+    /// <summary>
+    /// Enforces that job state, results, and cancellation are scoped to the
+    /// principal that submitted the job (threat-model residual #1576). A coarse
+    /// <c>Job</c>-level grant authorizes the operation class; this check pins the
+    /// specific record to its submitter so one authenticated user cannot read or
+    /// cancel another user's jobs. Jobs without a recorded submitter (deployments
+    /// running with authentication disabled record no identity) keep the previous
+    /// behavior, and the conventional <c>admin</c> role retains full visibility
+    /// for operations. Denials surface as not-found so cross-principal probing
+    /// cannot confirm that a job identifier exists.
+    /// </summary>
+    private void EnsureJobOwnership(ExecutionJobRecord job, ClaimsPrincipal principal)
+    {
+        var owner = job.Audit.RequestedBy;
+        if (string.IsNullOrWhiteSpace(owner))
+        {
+            return;
+        }
+
+        var caller = principal.Identity?.Name;
+        if (string.Equals(owner, caller, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        if (principal.IsInRole("admin"))
+        {
+            return;
+        }
+
+        GeoprocessingServiceLog.JobOwnershipDenied(_logger, job.OperationId);
+        throw new GeoprocessingNotFoundException($"Job '{job.OperationId}' not found.");
     }
 
     private void EnsureApproved(ClaimsPrincipal principal, AnalysisPlan plan)
