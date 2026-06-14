@@ -32,6 +32,13 @@ CREATE TABLE IF NOT EXISTS honua.raster_data (
     CONSTRAINT raster_data_layer_id_fk FOREIGN KEY (layer_id) REFERENCES honua.layers(layer_id) ON DELETE CASCADE
 );
 
+-- Store the raster payload EXTERNAL (out-of-line, UNCOMPRESSED) so dynamic
+-- tile/terrain/statistics/export reads (ST_Clip / ST_Value / ST_SummaryStats)
+-- fetch only the chunks they touch instead of detoasting and decompressing the
+-- entire 25-115 MB monolithic row on every request (#1625). The PostGIS raster
+-- type defaults to the compressed "main" strategy, which forces a full inflate.
+ALTER TABLE honua.raster_data ALTER COLUMN raster SET STORAGE EXTERNAL;
+
 -- Create indices for performance
 CREATE INDEX IF NOT EXISTS idx_raster_data_layer_id ON honua.raster_data(layer_id);
 CREATE INDEX IF NOT EXISTS idx_raster_data_name ON honua.raster_data(name);
@@ -80,6 +87,11 @@ CREATE TABLE IF NOT EXISTS honua.raster_tiles (
     CONSTRAINT raster_tiles_raster_data_id_fk FOREIGN KEY (raster_data_id) REFERENCES honua.raster_data(id) ON DELETE CASCADE,
     CONSTRAINT raster_tiles_unique_tile UNIQUE (raster_data_id, zoom_level, tile_x, tile_y)
 );
+
+-- Pre-rendered tiles are small PNG blobs read as whole rows; EXTERNAL keeps them
+-- out-of-line and uncompressed so the indexed tile lookup returns bytes without a
+-- decompression pass (#1625).
+ALTER TABLE honua.raster_tiles ALTER COLUMN tile_data SET STORAGE EXTERNAL;
 
 -- Composite index for tile lookups (zoom + coordinates)
 CREATE INDEX IF NOT EXISTS idx_raster_tiles_lookup ON honua.raster_tiles(raster_data_id, zoom_level, tile_x, tile_y);

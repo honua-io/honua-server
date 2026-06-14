@@ -172,6 +172,12 @@ CREATE TABLE IF NOT EXISTS honua.raster_data (
     srid INTEGER GENERATED ALWAYS AS (ST_SRID(raster)) STORED
 );
 
+-- Store the raster payload EXTERNAL (out-of-line, UNCOMPRESSED) so dynamic
+-- tile/terrain/statistics/export reads fetch only the chunks they touch instead
+-- of detoasting and decompressing the entire monolithic row (#1625). Keep in sync
+-- with src/Honua.Postgres/Migrations/001 and Server migration 055.
+ALTER TABLE honua.raster_data ALTER COLUMN raster SET STORAGE EXTERNAL;
+
 CREATE TABLE IF NOT EXISTS honua.raster_statistics (
     id BIGSERIAL PRIMARY KEY,
     raster_data_id BIGINT NOT NULL REFERENCES honua.raster_data(id) ON DELETE CASCADE,
@@ -215,6 +221,8 @@ CREATE TABLE IF NOT EXISTS honua.raster_tiles (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT raster_tiles_unique_tile UNIQUE (raster_data_id, zoom_level, tile_x, tile_y)
 );
+
+ALTER TABLE honua.raster_tiles ALTER COLUMN tile_data SET STORAGE EXTERNAL;
 
 CREATE TABLE IF NOT EXISTS honua.cloud_raster_catalog (
     id              BIGSERIAL PRIMARY KEY,
