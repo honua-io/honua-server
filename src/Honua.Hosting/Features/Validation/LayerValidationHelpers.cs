@@ -122,7 +122,7 @@ internal static class LayerValidationHelpers
             : cancellationToken;
 
         var snapshot = await GetV2SnapshotAsync(context, effectiveToken).ConfigureAwait(false);
-        var (publication, resource, service) = ResolveV2Triple(snapshot, layerId, requiredProtocol);
+        var (publication, resource, service) = ResolveV2Triple(context, snapshot, layerId, requiredProtocol);
 
         if (publication is null || resource is null || IsRetired(publication) || IsRetired(resource))
         {
@@ -176,7 +176,7 @@ internal static class LayerValidationHelpers
         CancellationToken cancellationToken = default)
     {
         var snapshot = await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
-        var (publication, resource, service) = ResolveV2Triple(snapshot, layerId, requiredProtocol);
+        var (publication, resource, service) = ResolveV2Triple(context, snapshot, layerId, requiredProtocol);
 
         if (publication is null || resource is null || IsRetired(publication) || IsRetired(resource))
         {
@@ -258,10 +258,18 @@ internal static class LayerValidationHelpers
         // service enables every protocol, so without the publication-type preference the
         // first publication in document order wins — which routes feature reads to the
         // raster image binding and 500s.
+        bool IsTenantVisible(MetadataV2Publication p)
+        {
+            var matchedResource = snapshot.ResolveResource(p);
+            var matchedService = snapshot.Index.ServicesById.TryGetValue(p.ServiceId, out var s) ? s : null;
+            return TenantScopeHelpers.IsPublicationVisible(context, p, matchedResource, matchedService);
+        }
+
         if (!string.IsNullOrWhiteSpace(requiredProtocol))
         {
             var protocolMatches = snapshot.Graph.Publications.Where(p =>
                 MatchesCollectionId(p) &&
+                IsTenantVisible(p) &&
                 snapshot.Index.ServicesById.TryGetValue(p.ServiceId, out var s) &&
                 MetadataV2ServiceProtocols.IsProtocolEnabled(s, requiredProtocol));
             publication = protocolMatches
@@ -269,7 +277,7 @@ internal static class LayerValidationHelpers
                 .ThenByDescending(p => p.IsPrimary)
                 .FirstOrDefault();
         }
-        publication ??= snapshot.Graph.Publications.FirstOrDefault(MatchesCollectionId);
+        publication ??= snapshot.Graph.Publications.FirstOrDefault(p => MatchesCollectionId(p) && IsTenantVisible(p));
 
         if (publication is null || IsRetired(publication))
         {
@@ -285,6 +293,16 @@ internal static class LayerValidationHelpers
         var service = snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var resolvedService)
             ? resolvedService
             : null;
+
+        if (!TenantScopeHelpers.IsPublicationVisible(context, publication, resource, service))
+        {
+            return new MetadataV2ValidationResult(
+                false,
+                null,
+                null,
+                null,
+                StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found."));
+        }
 
         if (resource is null || IsRetired(resource))
         {
@@ -355,7 +373,7 @@ internal static class LayerValidationHelpers
         CancellationToken cancellationToken = default)
     {
         var snapshot = await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
-        var (publication, resource, service) = ResolveV2Triple(snapshot, layerId, requiredProtocol);
+        var (publication, resource, service) = ResolveV2Triple(context, snapshot, layerId, requiredProtocol);
 
         if (publication is null || resource is null || IsRetired(publication) || IsRetired(resource))
         {
@@ -451,7 +469,7 @@ internal static class LayerValidationHelpers
         CancellationToken cancellationToken = default)
     {
         var snapshot = await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
-        var (_, _, service) = ResolveV2Triple(snapshot, layerId, requiredProtocol);
+        var (_, _, service) = ResolveV2Triple(context, snapshot, layerId, requiredProtocol);
         return service;
     }
 
@@ -489,6 +507,8 @@ internal static class LayerValidationHelpers
         {
             if (pub.LayerIndex != layerId) continue;
             if (!snapshot.Index.ServicesById.TryGetValue(pub.ServiceId, out var service)) continue;
+            var resource = snapshot.ResolveResource(pub);
+            if (!TenantScopeHelpers.IsPublicationVisible(context, pub, resource, service)) continue;
 
             if (!string.IsNullOrWhiteSpace(requiredProtocol) &&
                 !MetadataV2ServiceProtocols.IsProtocolEnabled(service, requiredProtocol))
@@ -550,6 +570,7 @@ internal static class LayerValidationHelpers
 
     private static (MetadataV2Publication? Publication, MetadataV2Resource? Resource, MetadataV2Service? Service)
         ResolveV2Triple(
+            HttpContext context,
             MetadataV2GraphSnapshot snapshot,
             int layerId,
             string? requiredProtocol)
@@ -561,6 +582,14 @@ internal static class LayerValidationHelpers
         //   4. lexicographically earliest by service name
         var candidatePublications = snapshot.Graph.Publications
             .Where(p => p.LayerIndex == layerId)
+            .Where(p =>
+            {
+                var resource = snapshot.ResolveResource(p);
+                var service = snapshot.Index.ServicesById.TryGetValue(p.ServiceId, out var resolvedService)
+                    ? resolvedService
+                    : null;
+                return TenantScopeHelpers.IsPublicationVisible(context, p, resource, service);
+            })
             .ToList();
 
         if (!string.IsNullOrWhiteSpace(requiredProtocol))
@@ -575,7 +604,9 @@ internal static class LayerValidationHelpers
             if (preferred is not null)
             {
                 var preferredResource = snapshot.ResolveResource(preferred);
-                var preferredService = snapshot.Index.ServicesById[preferred.ServiceId];
+                var preferredService = snapshot.Index.ServicesById.TryGetValue(preferred.ServiceId, out var resolvedPreferredService)
+                    ? resolvedPreferredService
+                    : null;
                 return (preferred, preferredResource, preferredService);
             }
         }
@@ -696,6 +727,13 @@ internal static class LayerValidationHelpers
             if (pubResource is null) continue;
             if (string.Equals(pubResource.Metadata.Id, validation.Resource.Metadata.Id, StringComparison.OrdinalIgnoreCase))
             {
+                var pubService = snapshot.Index.ServicesById.TryGetValue(pub.ServiceId, out var resolvedPubService)
+                    ? resolvedPubService
+                    : null;
+                if (!TenantScopeHelpers.IsPublicationVisible(context, pub, pubResource, pubService))
+                {
+                    continue;
+                }
                 canonical = pub;
                 break;
             }
@@ -814,7 +852,7 @@ internal static class LayerValidationHelpers
         }
         service ??= snapshot.Index.ServicesByName.TryGetValue(serviceName, out var s) ? s : null;
 
-        if (service is null)
+        if (service is null || !TenantScopeHelpers.IsTenantVisible(context, resource: null, service))
         {
             return new MetadataV2ServiceValidationResult(
                 false, null, [], [],
@@ -838,6 +876,7 @@ internal static class LayerValidationHelpers
         }
 
         var publications = snapshot.PublicationsForService(service.Metadata.Id);
+        var visiblePublications = new List<MetadataV2Publication>(publications.Count);
         var resources = new List<MetadataV2Resource>(publications.Count);
         foreach (var pub in publications)
         {
@@ -846,15 +885,20 @@ internal static class LayerValidationHelpers
             {
                 continue;
             }
+            if (!TenantScopeHelpers.IsPublicationVisible(context, pub, resource, service))
+            {
+                continue;
+            }
             // Drop resources the caller can't read; capability documents normally hide them.
             if (!AccessPolicyHelpers.IsResourceAccessible(context, resource, service, scope))
             {
                 continue;
             }
+            visiblePublications.Add(pub);
             resources.Add(resource);
         }
 
-        return new MetadataV2ServiceValidationResult(true, service, publications, resources, null);
+        return new MetadataV2ServiceValidationResult(true, service, visiblePublications, resources, null);
     }
 }
 
