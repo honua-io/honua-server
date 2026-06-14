@@ -4,8 +4,10 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Caching;
@@ -13,11 +15,14 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Services;
 using Honua.Infrastructure.Validation;
 using Honua.Protocols.OData.Models;
 using Honua.Protocols.OData.Services;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Protocols.OData;
 
@@ -342,6 +347,7 @@ internal sealed partial class ODataQueryHandler(
         bool trackChangesRequested = false,
         string? deltatoken = null,
         ODataDeltaService.DeltaQueryState? deltaState = null,
+        BoundingBox? bbox = null,
         CancellationToken cancellationToken = default)
     {
         Activity? featureActivity = null;
@@ -441,6 +447,7 @@ internal sealed partial class ODataQueryHandler(
                 count,
                 compute,
                 format,
+                bbox,
                 effectiveToken);
 
             if (queryError != null)
@@ -482,6 +489,15 @@ internal sealed partial class ODataQueryHandler(
 
             // Execute query
             var queryResult = await _featureReader.QueryAsync(storageLayerId.Value, featureQuery, effectiveToken);
+
+            // GeoParquet export ($format=parquet): emit the materialized page through the
+            // shared cloud-native writer so OData reaches parity with the GeoServices
+            // f=parquet surface without a protocol-local Parquet path.
+            if (ODataUtilityService.IsParquetFormat(format))
+            {
+                HonuaTelemetry.SetSuccess(featureActivity, queryResult.Items.Length);
+                return WriteGeoParquetResult(context, resource, queryResult, select);
+            }
 
             // Process $expand for related entities
             Dictionary<long, Dictionary<string, object?[]>>? expandedRelations = null;
@@ -644,6 +660,47 @@ internal sealed partial class ODataQueryHandler(
         finally
         {
             featureActivity?.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Writes a materialized query result as GeoParquet using the shared cloud-native writer.
+    /// </summary>
+    private IResult WriteGeoParquetResult(
+        HttpContext context,
+        MetadataV2Resource resource,
+        QueryResult<Feature> queryResult,
+        string? select)
+    {
+        var limitsOptions = context.RequestServices.GetService<IOptions<LimitsOptions>>();
+        var geometryLimits = limitsOptions?.Value?.Geometry ?? new GeometryLimits();
+        var objectIdFieldName = resource.FindPrimaryIdField()?.Name ?? FieldNames.ObjectId;
+        var selectedFields = ODataUtilityService.ParseSelect(select);
+        var outFields = selectedFields is { Count: > 0 } ? selectedFields.ToArray() : null;
+        var layerSrid = resource.ReadSrid() ?? 4326;
+
+        try
+        {
+            var (payload, contentType) = GeoParquetFeatureWriter.FormatAsGeoParquet(
+                queryResult,
+                resource,
+                objectIdFieldName,
+                returnGeometry: true,
+                outputSrid: layerSrid,
+                returnZ: false,
+                returnM: false,
+                geometryLimits,
+                outFields,
+                _logger);
+
+            ODataUtilityService.SetODataHeaders(context);
+            return Results.Bytes(payload, contentType);
+        }
+        catch (InvalidOperationException ex)
+        {
+            // The shared writer rejects unsupported cloud-native geometry exports
+            // (non-4326 SRID, returnM). Surface as a 400 rather than a 500.
+            return ODataUtilityService.CreateODataError(context, "InvalidQueryOption", ex.Message);
         }
     }
 
