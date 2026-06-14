@@ -45,4 +45,27 @@ public sealed class PluginAttribute : Attribute
     /// Gets or sets an optional human-readable description shown in health/diagnostics output.
     /// </summary>
     public string? Description { get; set; }
+
+    /// <summary>
+    /// Gets or sets the declarative capabilities this plugin requests. Capability-gated extension
+    /// points (background services, custom endpoints) are only honored when the matching flag is
+    /// present; otherwise registration fails fast at startup. Defaults to
+    /// <see cref="PluginCapability.None"/>.
+    /// </summary>
+    public PluginCapability Capabilities { get; set; } = PluginCapability.None;
+
+    /// <summary>
+    /// Gets or sets the ids of other plugins this plugin depends on, as a comma- or
+    /// semicolon-separated string (attribute arrays must be literal). The host verifies every
+    /// declared dependency id is also registered at startup and fails fast otherwise. Each entry
+    /// may carry an optional <c>"@&gt;=version"</c> suffix to constrain the dependency's version
+    /// (e.g. <c>"geometry-rules@&gt;=1.2.0"</c>).
+    /// </summary>
+    public string? DependsOnCsv { get; set; }
+
+    /// <summary>
+    /// Gets or sets the minimum Honua server semantic version this plugin supports (e.g.
+    /// <c>"1.4.0"</c>). When set, the host refuses to load the plugin on an older server.
+    /// </summary>
+    public string? MinimumServerVersion { get; set; }
 }
