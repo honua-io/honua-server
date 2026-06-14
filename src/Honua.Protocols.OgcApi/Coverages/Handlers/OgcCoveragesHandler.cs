@@ -275,7 +275,7 @@ internal sealed class OgcCoveragesHandler
                         var zarr = await _zarrCoverages.FindServableRegistrationAsync(storageLayerId.Value, ct).ConfigureAwait(false);
                         return zarr is null
                             ? null
-                            : _zarrCoverages.CreateCollection(entry.Resource, storageLayerId.Value, zarr, baseUrl);
+                            : Services.ZarrCoverageService.CreateCollection(entry.Resource, storageLayerId.Value, zarr, baseUrl);
                     }
                     return await CreateCollectionAsync(entry.Resource, entry.Service, storageLayerId.Value, raster.Value, baseUrl, ct)
                         .ConfigureAwait(false);
@@ -347,14 +347,26 @@ internal sealed class OgcCoveragesHandler
             }
 
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
-            var collection = await CreateCollectionAsync(
+            OgcCoverageCollection collection;
+            if (resolution.ZarrRegistration is { } zarrCollection)
+            {
+                collection = Services.ZarrCoverageService.CreateCollection(
                     resolution.Resource!,
-                    resolution.Service,
                     resolution.StorageLayerId!.Value,
-                    resolution.Raster!.Value,
-                    baseUrl,
-                    cancellationToken)
-                .ConfigureAwait(false);
+                    zarrCollection,
+                    baseUrl);
+            }
+            else
+            {
+                collection = await CreateCollectionAsync(
+                        resolution.Resource!,
+                        resolution.Service,
+                        resolution.StorageLayerId!.Value,
+                        resolution.Raster!.Value,
+                        baseUrl,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
 
             return OgcCommonUtilities.FormatMetadataResponse(
                 collection,
@@ -401,12 +413,17 @@ internal sealed class OgcCoveragesHandler
                 return resolution.Error;
             }
 
-            var schema = await CreateSchemaAsync(
+            var schema = resolution.ZarrRegistration is { } zarrSchema
+                ? Services.ZarrCoverageService.CreateSchema(
                     resolution.Resource!,
                     resolution.StorageLayerId!.Value,
-                    resolution.Raster!.Value,
-                    cancellationToken)
-                .ConfigureAwait(false);
+                    zarrSchema)
+                : await CreateSchemaAsync(
+                        resolution.Resource!,
+                        resolution.StorageLayerId!.Value,
+                        resolution.Raster!.Value,
+                        cancellationToken)
+                    .ConfigureAwait(false);
 
             return OgcCommonUtilities.FormatMetadataResponse(
                 schema,
@@ -446,17 +463,30 @@ internal sealed class OgcCoveragesHandler
 
         try
         {
+            var resolution = await ResolveCoverageAsync(context, collectionId, cancellationToken).ConfigureAwait(false);
+            if (resolution.Error is not null)
+            {
+                return resolution.Error;
+            }
+
+            if (resolution.ZarrRegistration is { } zarrRegistration)
+            {
+                var zarrResult = await _zarrCoverages.GetCoverageAsync(
+                        context,
+                        collectionId,
+                        zarrRegistration,
+                        f,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                telemetry.SetSuccess(1);
+                return zarrResult;
+            }
+
             var parameterError = ValidateCoverageQueryParameters(context);
             if (parameterError is not null)
             {
                 OgcCoveragesLog.ValidationFailed(_logger, collectionId, parameterError);
                 return StandardErrorHelpers.CreateBadRequest(context, parameterError);
-            }
-
-            var resolution = await ResolveCoverageAsync(context, collectionId, cancellationToken).ConfigureAwait(false);
-            if (resolution.Error is not null)
-            {
-                return resolution.Error;
             }
 
             var storageSrid = ResolveStorageSrid(resolution.Resource!, resolution.Raster!.Value);

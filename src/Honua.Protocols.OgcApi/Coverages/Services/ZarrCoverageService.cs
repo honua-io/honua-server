@@ -11,6 +11,7 @@ using Honua.Core.Features.Raster.ZarrParser;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Protocols.Ogc.Api.Coverages.Models;
+using Honua.Protocols.Ogc.Api.Features;
 using Honua.Protocols.Ogc.Common;
 using Microsoft.Extensions.Primitives;
 
@@ -78,7 +79,7 @@ internal sealed class ZarrCoverageService
     /// <summary>
     /// Builds the OGC API Coverages collection document for a Zarr-backed layer.
     /// </summary>
-    public OgcCoverageCollection CreateCollection(
+    public static OgcCoverageCollection CreateCollection(
         MetadataV2Resource resource,
         int storageLayerId,
         ZarrRegistration registration,
@@ -119,7 +120,7 @@ internal sealed class ZarrCoverageService
         {
             if (metadata.Srid == 4326)
             {
-                crs.Add(SpatialReferenceHelpers.Crs84Uri);
+                crs.Add(OgcFeaturesUtilities.Crs84Uri);
             }
             crs.Add(epsgUri);
         }
@@ -144,7 +145,7 @@ internal sealed class ZarrCoverageService
     /// Builds the field-selection schema for a Zarr-backed collection: one
     /// selectable property per discovered variable.
     /// </summary>
-    public CoverageSchema CreateSchema(MetadataV2Resource resource, int storageLayerId, ZarrRegistration registration)
+    public static CoverageSchema CreateSchema(MetadataV2Resource resource, int storageLayerId, ZarrRegistration registration)
     {
         ArgumentNullException.ThrowIfNull(resource);
         ArgumentNullException.ThrowIfNull(registration);
@@ -308,7 +309,7 @@ internal sealed class ZarrCoverageService
             {
                 BoundingBox = bbox,
                 StorageCrsBoundingBox = bbox,
-                Crs = metadata.Srid == 4326 ? SpatialReferenceHelpers.Crs84Uri : epsgUri
+                Crs = metadata.Srid == 4326 ? OgcFeaturesUtilities.Crs84Uri : epsgUri
             }
         };
     }
@@ -340,7 +341,7 @@ internal sealed class ZarrCoverageService
         };
     }
 
-    private CoverageDomain CreateDomain(ZarrStoreMetadata metadata, ZarrArrayMetadata primary, bool georeferenced)
+    private static CoverageDomain CreateDomain(ZarrStoreMetadata metadata, ZarrArrayMetadata primary, bool georeferenced)
     {
         var fullPlan = new ZarrCoverageSubsetPlan(primary, new ZarrSubsetRequest
         {
@@ -536,7 +537,7 @@ internal sealed class ZarrCoverageService
     private static bool TryParseIndex(string value, out int index)
         => int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out index) && index >= 0;
 
-    private (List<CoverageJsonAxis> Axes, string? XAxis, string? YAxis) BuildAxes(
+    private static (List<CoverageJsonAxis> Axes, string? XAxis, string? YAxis) BuildAxes(
         ZarrStoreMetadata metadata,
         ZarrCoverageSubsetPlan plan)
     {
@@ -594,7 +595,7 @@ internal sealed class ZarrCoverageService
             ? string.Equals(declared, name, StringComparison.OrdinalIgnoreCase)
             : name.ToLowerInvariant() is "y" or "lat" or "latitude";
 
-    private void WriteCoverageHeaders(HttpContext context, ZarrStoreMetadata metadata, ZarrCoverageSubsetPlan plan)
+    private static void WriteCoverageHeaders(HttpContext context, ZarrStoreMetadata metadata, ZarrCoverageSubsetPlan plan)
     {
         if (metadata.Srid <= 0)
         {
