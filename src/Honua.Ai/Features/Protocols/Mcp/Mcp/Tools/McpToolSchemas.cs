@@ -49,6 +49,32 @@ internal static class McpToolSchemas
         }
         """;
 
+    private const string ProposeOperationArgumentSchemaJson = """
+        {
+          "type": "object",
+          "required": ["kind"],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": ["AdminConfigChange", "Deploy", "MetadataRelease", "Seed"],
+              "description": "In-scope mutating control-plane operation class to propose."
+            },
+            "reason": {
+              "type": "string",
+              "description": "Operator-facing reason or change note for the proposal."
+            },
+            "executionPayload": {
+              "type": "string",
+              "description": "Opaque, class-specific JSON execution payload replayed when the proposal is approved."
+            },
+            "idempotencyKey": {
+              "type": "string",
+              "description": "Stable idempotency key for the underlying operation."
+            }
+          }
+        }
+        """;
+
     private const string PlanAnalysisArgumentSchemaJson = """
         {
           "type": "object",
@@ -146,6 +172,11 @@ internal static class McpToolSchemas
     /// Schema for <see cref="Models.McpCancelJobArgument"/>.
     /// </summary>
     public static readonly JsonElement CancelJobArgumentSchema = Parse(CancelJobArgumentSchemaJson);
+
+    /// <summary>
+    /// Schema for <see cref="Models.McpProposeOperationArgument"/>.
+    /// </summary>
+    public static readonly JsonElement ProposeOperationArgumentSchema = Parse(ProposeOperationArgumentSchemaJson);
 
     /// <summary>
     /// Schema used by stub tools that accept no arguments.

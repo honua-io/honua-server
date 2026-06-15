@@ -59,6 +59,7 @@ internal static class JsonContextRegistration
                 Honua.Server.Features.Admin.Models.OidcProviderJsonContext.Default,
                 Honua.Server.Features.Admin.Models.UserManagementJsonContext.Default,
                 Honua.Server.Features.Admin.Models.RoleJsonContext.Default,
+                Honua.Server.Features.Admin.Models.ProposalJsonContext.Default,
                 Honua.Server.Features.Console.Models.ConsoleJsonContext.Default,
                 Honua.Server.Features.Admin.Share.ShareAdminJsonContext.Default,
                 Honua.Server.Features.Studio.Models.StudioApiJsonContext.Default,

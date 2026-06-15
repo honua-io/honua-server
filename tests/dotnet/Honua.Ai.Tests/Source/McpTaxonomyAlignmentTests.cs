@@ -33,6 +33,7 @@ public sealed class McpTaxonomyAlignmentTests
         "honua_execute_plan",
         "honua_dry_run_plan",
         "honua_cancel_job",
+        "honua_propose_operation",
         "honua_plan_analysis",
         "honua_ground_candidates",
         "honua_clarify_intent",
@@ -45,6 +46,7 @@ public sealed class McpTaxonomyAlignmentTests
         "honua://jobs/{jobId}",
         "honua://jobs/{jobId}/results",
         "honua://jobs/{jobId}/report",
+        "honua://proposals/{proposalId}",
         "honua://workspaces/{workspaceId}",
         "honua://catalog/processes",
         "honua://published-services",
@@ -134,6 +136,7 @@ public sealed class McpTaxonomyAlignmentTests
             McpTelemetry.ResourceFamily.Jobs,
             McpTelemetry.ResourceFamily.JobResults,
             McpTelemetry.ResourceFamily.JobReports,
+            McpTelemetry.ResourceFamily.Proposals,
             McpTelemetry.ResourceFamily.Workspaces,
             McpTelemetry.ResourceFamily.Catalog,
             McpTelemetry.ResourceFamily.PublishedServices,
@@ -333,6 +336,7 @@ public sealed class McpTaxonomyAlignmentTests
             new DryRunPlanTool(jobService, NullLogger<DryRunPlanTool>.Instance),
             new ExecutePlanTool(jobService, NullLogger<ExecutePlanTool>.Instance),
             new CancelJobTool(jobService, NullLogger<CancelJobTool>.Instance),
+            new ProposeOperationTool(NullLogger<ProposeOperationTool>.Instance),
             new PlanAnalysisTool(
                 Substitute.For<Honua.Ai.AiBuilder.Planning.IPlanAnalysisService>(),
                 jobService,
@@ -354,6 +358,7 @@ public sealed class McpTaxonomyAlignmentTests
         [
             new JobStatusResource(jobService, NullLogger<JobStatusResource>.Instance),
             new JobResultsResource(jobService, NullLogger<JobResultsResource>.Instance),
+            new ProposalStatusResource(NullLogger<ProposalStatusResource>.Instance),
             new AnalysisReportResource(
                 reportService,
                 NullLogger<AnalysisReportResource>.Instance),

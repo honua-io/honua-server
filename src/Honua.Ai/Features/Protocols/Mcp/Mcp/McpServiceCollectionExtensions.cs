@@ -53,6 +53,7 @@ internal static class McpServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, PreviewPackageTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ExecutePlanTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, CancelJobTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ProposeOperationTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, PlanAnalysisTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, GroundCandidatesTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ClarifyIntentTool>());
@@ -76,6 +77,7 @@ internal static class McpServiceCollectionExtensions
 
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpResource, JobStatusResource>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpResource, JobResultsResource>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpResource, ProposalStatusResource>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpResource, WorkspaceResource>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpResource, ProcessCatalogResource>());
 
