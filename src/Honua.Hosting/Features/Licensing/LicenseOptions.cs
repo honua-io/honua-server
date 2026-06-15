@@ -9,6 +9,15 @@ internal sealed class LicenseOptions
 
     public string? LicensePath { get; set; }
 
+    /// <summary>
+    /// Inline signed license envelope JSON. When set (non-empty) it takes precedence over
+    /// <see cref="LicensePath"/>, so a license can be delivered without a writable filesystem —
+    /// e.g. on AWS Lambda / serverless where the image is read-only. Pair it with a secret
+    /// reference (<c>Licensing:LicenseContent=aws:secretsmanager:&lt;arn&gt;</c>) so the envelope is
+    /// resolved from a secret store at startup rather than baked into the image or env in clear text.
+    /// </summary>
+    public string? LicenseContent { get; set; }
+
     public Dictionary<string, string> TrustedKeys { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
     public bool AllowAdminUpload { get; set; }

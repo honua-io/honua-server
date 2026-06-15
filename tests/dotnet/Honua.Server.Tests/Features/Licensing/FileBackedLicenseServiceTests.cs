@@ -93,6 +93,68 @@ public sealed class FileBackedLicenseServiceTests
     }
 
     [UnitTest]
+    public async Task StartAsync_InlineLicenseContent_LoadsEditionWithoutAFile()
+    {
+        var license = LicenseTestSupport.CreateSignedLicense(
+            HonuaEdition.Pro,
+            expiresAt: DateTimeOffset.UtcNow.AddDays(30),
+            entitlements: ["analytics.clustering", "staticmap.high-dpi"]);
+
+        var logger = new RecordingLogger<FileBackedLicenseService>();
+        var service = CreateService(
+            new LicenseOptions
+            {
+                // No LicensePath: the envelope is supplied inline (e.g. resolved from a
+                // secret reference on a read-only/serverless filesystem).
+                LicenseContent = System.Text.Encoding.UTF8.GetString(license.LicenseData),
+                TrustedKeys = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    [LicenseTestSupport.KeyId] = license.PublicKeySetting
+                }
+            },
+            logger);
+
+        await service.StartAsync(CancellationToken.None);
+
+        var snapshot = service.GetSnapshot();
+        snapshot.Edition.Should().Be(HonuaEdition.Pro);
+        snapshot.IsValid.Should().BeTrue();
+        snapshot.ValidationState.Should().Be(LicenseValidationState.Valid);
+        snapshot.HasEntitlement("analytics.clustering").Should().BeTrue();
+        snapshot.HasEntitlement("staticmap.high-dpi").Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task StartAsync_InlineLicenseContent_TakesPrecedenceOverLicensePath()
+    {
+        var tempDirectory = Directory.CreateTempSubdirectory();
+        var licensePath = Path.Combine(tempDirectory.FullName, "missing.honua-license.json");
+        var license = LicenseTestSupport.CreateSignedLicense(
+            HonuaEdition.Pro,
+            expiresAt: DateTimeOffset.UtcNow.AddDays(30),
+            entitlements: ["analytics.clustering"]);
+
+        var logger = new RecordingLogger<FileBackedLicenseService>();
+        var service = CreateService(
+            new LicenseOptions
+            {
+                LicensePath = licensePath, // does not exist; inline content must win
+                LicenseContent = System.Text.Encoding.UTF8.GetString(license.LicenseData),
+                TrustedKeys = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    [LicenseTestSupport.KeyId] = license.PublicKeySetting
+                }
+            },
+            logger);
+
+        await service.StartAsync(CancellationToken.None);
+
+        var snapshot = service.GetSnapshot();
+        snapshot.Edition.Should().Be(HonuaEdition.Pro);
+        snapshot.ValidationState.Should().Be(LicenseValidationState.Valid);
+    }
+
+    [UnitTest]
     public async Task StartAsync_MalformedLicenseFile_PublishesSafeCommunitySnapshot()
     {
         var tempDirectory = Directory.CreateTempSubdirectory();
