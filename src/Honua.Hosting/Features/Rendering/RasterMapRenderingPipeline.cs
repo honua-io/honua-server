@@ -23,6 +23,23 @@ using SkiaSharp;
 
 namespace Honua.Infrastructure.Rendering;
 
+/// <summary>
+/// Identifies the tile matrix set (gridset) a raster tile render targets. Controls how the
+/// tile envelope coordinates and tile CRS are computed by the shared rendering pipeline.
+/// </summary>
+internal enum TileGridKind
+{
+    /// <summary>
+    /// OGC WebMercatorQuad gridset (EPSG:3857). One tile covers the world at zoom 0.
+    /// </summary>
+    WebMercatorQuad = 0,
+
+    /// <summary>
+    /// OGC WorldCRS84Quad gridset (CRS84 / EPSG:4326). Two columns by one row at zoom 0.
+    /// </summary>
+    WorldCrs84Quad = 1
+}
+
 internal static class RasterMapRenderingPipeline
 {
     internal sealed class RasterStylePlan
@@ -51,6 +68,7 @@ internal static class RasterMapRenderingPipeline
     private const int PointGeneralizationThreshold = 1024;
     internal const int TileSize = 256;
     internal const int TileSrid = 3857;
+    internal const int GeographicTileSrid = 4326;
     internal const int MaxFeaturesPerLayer = 10_000;
     private const string InvalidSpatialReferenceMessage = "Invalid spatial reference.";
     private static readonly ConcurrentDictionary<int, CachedRasterStylePlan> _rasterStylePlanCache = new();
@@ -67,7 +85,8 @@ internal static class RasterMapRenderingPipeline
         => new(layerId, hasGeometry, geometryType);
 
     /// <summary>
-    /// Renders a raster tile from v2 resource render descriptors.
+    /// Renders a raster tile from v2 resource render descriptors using the default
+    /// Web Mercator (EPSG:3857, WebMercatorQuad) tile matrix set.
     /// </summary>
     internal static Task<RasterTileRenderResult> RenderRasterTileV2Async(
         HttpContext context,
@@ -85,6 +104,36 @@ internal static class RasterMapRenderingPipeline
             renderLayers,
             z, y, x,
             maxFeatures,
+            TileGridKind.WebMercatorQuad,
+            cancellationToken,
+            layerTemporalFilters);
+
+    /// <summary>
+    /// Renders a raster tile from v2 resource render descriptors for an explicit tile matrix
+    /// set / gridset. Tile envelope coordinates are computed in the gridset's CRS (Web Mercator
+    /// for <see cref="TileGridKind.WebMercatorQuad"/>, geographic degrees for
+    /// <see cref="TileGridKind.WorldCrs84Quad"/>) and the canonical query pipeline reprojects
+    /// into the storage CRS as needed. This is the gridset-aware counterpart to the default
+    /// Web Mercator <see cref="RenderRasterTileV2Async(HttpContext, int, IReadOnlyList{RenderLayerDescriptor}, int, int, int, int, CancellationToken, IReadOnlyList{TemporalFilter?})"/>.
+    /// </summary>
+    internal static Task<RasterTileRenderResult> RenderRasterTileForGridAsync(
+        HttpContext context,
+        int serviceSrid,
+        IReadOnlyList<RenderLayerDescriptor> renderLayers,
+        int z,
+        int y,
+        int x,
+        int maxFeatures,
+        TileGridKind grid,
+        CancellationToken cancellationToken,
+        IReadOnlyList<TemporalFilter?>? layerTemporalFilters = null)
+        => RenderRasterTileCoreAsync(
+            context,
+            serviceSrid,
+            renderLayers,
+            z, y, x,
+            maxFeatures,
+            grid,
             cancellationToken,
             layerTemporalFilters);
 
@@ -97,11 +146,16 @@ internal static class RasterMapRenderingPipeline
         int y,
         int x,
         int maxFeatures,
+        TileGridKind grid,
         CancellationToken cancellationToken,
         IReadOnlyList<TemporalFilter?>? layerTemporalFilters)
 #pragma warning restore CA1068
     {
-        var tileBounds = TileMath.GetTileBounds(x, y, z);
+        var isGeographicGrid = grid == TileGridKind.WorldCrs84Quad;
+        var tileSrid = isGeographicGrid ? GeographicTileSrid : TileSrid;
+        var tileBounds = isGeographicGrid
+            ? TileMath.GetTileBoundsGeographic(x, y, z)
+            : TileMath.GetTileBounds(x, y, z);
         var renderExtent = new SkiaMapRenderer.RenderExtent(
             tileBounds.XMin,
             tileBounds.YMin,
@@ -138,7 +192,12 @@ internal static class RasterMapRenderingPipeline
 
         var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
         var styleCatalog = context.RequestServices.GetRequiredService<ILayerStyleCatalog>();
-        var spatialFilter = CreateBboxSpatialFilter(renderExtent, TileSrid);
+
+        // The tile envelope is expressed in the gridset CRS (3857 for WebMercatorQuad, 4326 for
+        // WorldCRS84Quad). Build the spatial filter in that CRS and let the canonical query
+        // pipeline reproject the data from the storage CRS (SpatialReferenceSrid) into the gridset
+        // CRS (OutputSrid). This mirrors the OGC API Tiles raster path so no geodesy is duplicated.
+        var spatialFilter = CreateBboxSpatialFilter(renderExtent, tileSrid);
         var totalFeatureCount = 0;
 
         using var surface = SKSurface.Create(new SKImageInfo(TileSize, TileSize, SKColorType.Rgba8888, SKAlphaType.Premul));
@@ -170,7 +229,7 @@ internal static class RasterMapRenderingPipeline
                 stylePlan,
                 spatialFilter,
                 serviceSrid,
-                TileSrid,
+                tileSrid,
                 maxFeatures,
                 temporalFilter: layerTemporalFilters is { Count: > 0 } && layerIndex < layerTemporalFilters.Count
                     ? layerTemporalFilters[layerIndex]
