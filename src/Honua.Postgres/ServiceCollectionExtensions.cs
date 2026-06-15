@@ -303,10 +303,14 @@ internal static class ServiceCollectionExtensions
         // decoration (UseSecureConnectionProvider) is honoured transparently.
         // Uses GetService (nullable) so DB-less / mocked test hosts that strip the
         // IDatabaseConnectionProvider mapping degrade to a null base provider instead
-        // of throwing while the secure decorator is being constructed.
+        // of throwing while the secure decorator is being constructed. When the base
+        // IS wired we keep the original hard cast so a wrong registration surfaces as a
+        // failure instead of silently degrading the real DB path to a null provider.
         services.AddScoped<IAdoNetDatabaseConnectionProvider>(serviceProvider =>
-            serviceProvider.GetService<IDatabaseConnectionProvider>() as IAdoNetDatabaseConnectionProvider
-                ?? null!);
+        {
+            var baseProvider = serviceProvider.GetService<IDatabaseConnectionProvider>();
+            return baseProvider is null ? null! : (IAdoNetDatabaseConnectionProvider)baseProvider;
+        });
 
         // Register the audit-C3 session abstraction alongside the legacy provider.
         // Consumers migrate from IDatabaseConnectionProvider to IDatabaseSessionFactory

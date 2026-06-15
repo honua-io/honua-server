@@ -189,9 +189,11 @@ internal static class SecurityServiceCollectionExtensions
         {
             // The captured base descriptor (ADR-0046 escape hatch) is a forwarding factory
             // that resolves IDatabaseConnectionProvider. In DB-less / mocked test hosts that
-            // service mapping is stripped, so the factory throws. Treat a missing base mapping
-            // as "no database wired" and degrade to null rather than failing decoration.
-            return descriptor.ImplementationFactory(serviceProvider) as IAdoNetDatabaseConnectionProvider;
+            // service mapping is stripped, so the factory yields null. Treat a missing base
+            // mapping as "no database wired" and degrade to null; when the base IS present
+            // keep the original hard cast so the real DB path is unchanged.
+            var resolved = descriptor.ImplementationFactory(serviceProvider);
+            return resolved is null ? null : (IAdoNetDatabaseConnectionProvider)resolved;
         }
 
         if (descriptor.ImplementationType is not null)
