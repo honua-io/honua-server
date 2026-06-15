@@ -162,6 +162,99 @@ public sealed class FeatureServerReplicaSyncTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.SynchronizeReplica)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
+    public async Task SynchronizeReplica_GeometryOnlyConflict_ClassifiesAsGeometry()
+    {
+        // Seed a feature with geometry that both client and server will edit.
+        var objectId = await AddFeatureWithGeometryAsync("geo-base", 1.0, 2.0);
+
+        var replicaId = await CreateReplicaAsync("GeometryConflictTest", "0");
+        await SynchronizeDownloadAsync(replicaId);
+
+        // Server-side concurrent edit changes ONLY the geometry; the attribute is left unchanged.
+        await UpdateFeatureGeometryAsync(objectId, "geo-base", 5.0, 6.0);
+
+        // Client uploads the same attribute value but a different geometry → geometry-only divergence.
+        var edits = JsonSerializer.Serialize(new object[]
+        {
+            new
+            {
+                id = 0,
+                updates = new[]
+                {
+                    new
+                    {
+                        attributes = new Dictionary<string, object?> { ["objectid"] = objectId, ["name"] = "geo-base" },
+                        geometry = new { x = 9.0, y = 9.0 }
+                    }
+                }
+            }
+        });
+        var root = await SynchronizeUploadAsync(replicaId, edits);
+
+        root.GetProperty("success").GetBoolean().Should().BeTrue();
+        root.TryGetProperty("conflicts", out var conflicts).Should().BeTrue();
+        conflicts.GetArrayLength().Should().Be(1);
+        var conflict = conflicts[0];
+
+        // The transient synchronize response reflects the refined geometry classification (#1287).
+        conflict.GetProperty("conflictType").GetInt32().Should().Be((int)ReplicaConflictType.Geometry);
+
+        // The durable conflict record is also refined to a geometry conflict.
+        var conflictId = conflict.GetProperty("conflictId").GetString();
+        conflictId.Should().NotBeNullOrWhiteSpace();
+        var conflictRepo = _fixture.GetService<IReplicaConflictRepository>();
+        var record = await conflictRepo.GetAsync(conflictId!);
+        record.Should().NotBeNull();
+        record!.Value.ConflictType.Should().Be(ReplicaConflictType.Geometry);
+
+        // Both captured states carry geometry so the review API can render the comparison.
+        using var clientState = JsonDocument.Parse(record.Value.ClientStateJson!);
+        using var serverState = JsonDocument.Parse(record.Value.ServerStateJson!);
+        clientState.RootElement.TryGetProperty("geometry", out _).Should().BeTrue();
+        serverState.RootElement.TryGetProperty("geometry", out _).Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.SynchronizeReplica)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
+    public async Task SynchronizeReplica_AttributeConflict_RemainsClassifiedAsAttribute()
+    {
+        // Regression guard: when the attribute changes (not only geometry) the conflict stays Attribute.
+        var objectId = await AddFeatureWithGeometryAsync("attr-base", 1.0, 2.0);
+
+        var replicaId = await CreateReplicaAsync("AttributeConflictTest", "0");
+        await SynchronizeDownloadAsync(replicaId);
+
+        await UpdateFeatureGeometryAsync(objectId, "server-name", 5.0, 6.0);
+
+        var edits = JsonSerializer.Serialize(new object[]
+        {
+            new
+            {
+                id = 0,
+                updates = new[]
+                {
+                    new
+                    {
+                        attributes = new Dictionary<string, object?> { ["objectid"] = objectId, ["name"] = "client-name" },
+                        geometry = new { x = 9.0, y = 9.0 }
+                    }
+                }
+            }
+        });
+        var root = await SynchronizeUploadAsync(replicaId, edits);
+
+        var conflict = root.GetProperty("conflicts")[0];
+        conflict.GetProperty("conflictType").GetInt32().Should().Be((int)ReplicaConflictType.Attribute);
+
+        var conflictRepo = _fixture.GetService<IReplicaConflictRepository>();
+        var record = await conflictRepo.GetAsync(conflict.GetProperty("conflictId").GetString()!);
+        record!.Value.ConflictType.Should().Be(ReplicaConflictType.Attribute);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.SynchronizeReplica)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
     public async Task SynchronizeReplica_NoConcurrentServerEdit_AppliesWithoutConflict()
     {
         var objectId = await AddFeatureAsync("no-conflict-base");
@@ -258,6 +351,48 @@ public sealed class FeatureServerReplicaSyncTests : IAsyncLifetime
         addResults.GetArrayLength().Should().Be(1);
         addResults[0].GetProperty("success").GetBoolean().Should().BeTrue();
         return addResults[0].GetProperty("objectId").GetInt64();
+    }
+
+    private async Task<long> AddFeatureWithGeometryAsync(string name, double x, double y)
+    {
+        var payload = JsonSerializer.Serialize(new
+        {
+            adds = new[] { new { attributes = new { name }, geometry = new { x, y } } },
+            f = "json"
+        });
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/applyEdits",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var addResults = doc.RootElement.GetProperty("addResults");
+        addResults.GetArrayLength().Should().Be(1);
+        addResults[0].GetProperty("success").GetBoolean().Should().BeTrue();
+        return addResults[0].GetProperty("objectId").GetInt64();
+    }
+
+    private async Task UpdateFeatureGeometryAsync(long objectId, string name, double x, double y)
+    {
+        var payload = JsonSerializer.Serialize(new
+        {
+            updates = new[]
+            {
+                new
+                {
+                    attributes = new Dictionary<string, object?> { ["objectid"] = objectId, ["name"] = name },
+                    geometry = new { x, y }
+                }
+            },
+            f = "json"
+        });
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/applyEdits",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        doc.RootElement.GetProperty("updateResults")[0].GetProperty("success").GetBoolean().Should().BeTrue();
     }
 
     private async Task UpdateFeatureAsync(long objectId, string name)

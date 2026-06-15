@@ -148,4 +148,44 @@ public sealed class PluginEditPipelineTests
         entry.Outcome.Should().Be(AuditOutcome.Denied);
         entry.CorrelationId.Should().Be("corr-1");
     }
+
+    [Fact]
+    public async Task FaultingAfterHook_IsIsolated_AndNeverPropagates()
+    {
+        var hook = new FaultingAfterHook();
+        var pipeline = CreatePipeline(hooks: [hook]);
+
+        // A best-effort after-hook that throws must never surface to the caller.
+        var act = async () => await pipeline.RunAfterHooksAsync(
+            TestData.Context(TestData.Create(TestData.Transformer(1))), CancellationToken.None);
+
+        await act.Should().NotThrowAsync();
+        hook.AfterAttempts.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task RepeatedlyFaultingAfterHook_IsAutoDisabled_AndAudited()
+    {
+        var hook = new FaultingAfterHook();
+        var audit = new RecordingAuditLog();
+        var pipeline = CreatePipeline(hooks: [hook], auditLog: audit);
+
+        // Default circuit-breaker threshold is 3 consecutive failures. After it trips, the
+        // after-hook is parked and no longer invoked.
+        for (var i = 0; i < 6; i++)
+        {
+            await pipeline.RunAfterHooksAsync(
+                TestData.Context(TestData.Create(TestData.Transformer(i))), CancellationToken.None);
+        }
+
+        hook.AfterAttempts.Should().Be(
+            PluginCircuitBreaker.DefaultFailureThreshold,
+            "once the breaker trips open the faulting after-hook is no longer invoked");
+
+        audit.Events.Should().ContainSingle(e => e.Action == "plugin.autodisabled");
+        var disabled = audit.Events.Single(e => e.Action == "plugin.autodisabled");
+        disabled.Outcome.Should().Be(AuditOutcome.Failure);
+        disabled.ResourceType.Should().Be("plugin");
+        disabled.ResourceId.Should().Be("faulting-after-hook");
+    }
 }

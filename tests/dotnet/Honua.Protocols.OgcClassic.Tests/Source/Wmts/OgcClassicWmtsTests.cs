@@ -279,6 +279,72 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Wmts)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
+    [InterfaceOperation(TestProtocols.Wmts10, "GetCapabilities")]
+    public async Task Wmts_GetCapabilities_AdvertisesWorldCrs84QuadTileMatrixSet()
+    {
+        // #1660: WMTS now advertises the WorldCRS84Quad (CRS84/EPSG:4326) gridset in addition
+        // to the WebMercatorQuad default. Both TileMatrixSet definitions and per-layer links
+        // must be present so OGC clients can request CRS84 tiles.
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetCapabilities");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().Contain("<ows:Identifier>WebMercatorQuad</ows:Identifier>");
+        content.Should().Contain("<ows:Identifier>WorldCRS84Quad</ows:Identifier>");
+        content.Should().Contain("<ows:SupportedCRS>urn:ogc:def:crs:OGC:1.3:CRS84</ows:SupportedCRS>");
+        content.Should().Contain("<TileMatrixSet>WorldCRS84Quad</TileMatrixSet>");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wmts)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
+    [InterfaceOperation(TestProtocols.Wmts10, "GetTile")]
+    public async Task Wmts_GetTile_WorldCrs84Quad_ReturnsPngImage()
+    {
+        // #1660: GetTile must serve the WorldCRS84Quad gridset. At TileMatrix 0 the grid is two
+        // columns by one row, so TILECOL up to 1 is valid.
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER={WebAppFixture.TestLayerId}&STYLE=default&FORMAT=image/png&TILEMATRIXSET=WorldCRS84Quad&TILEMATRIX=0&TILEROW=0&TILECOL=1");
+
+        var content = await response.Content.ReadAsByteArrayAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, $"Response body: {System.Text.Encoding.UTF8.GetString(content)}");
+        response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+        content.Length.Should().BeGreaterThan(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wmts)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
+    [InterfaceOperation(TestProtocols.Wmts10, "GetTile")]
+    public async Task Wmts_GetTile_WebMercatorQuad_StillReturnsPngImage()
+    {
+        // #1660 no-regression guard: adding WorldCRS84Quad must not change the existing
+        // WebMercatorQuad GetTile path (the CITE-conformant baseline).
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER={WebAppFixture.TestLayerId}&STYLE=default&FORMAT=image/png&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=1&TILEROW=0&TILECOL=0");
+
+        var content = await response.Content.ReadAsByteArrayAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, $"Response body: {System.Text.Encoding.UTF8.GetString(content)}");
+        response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+        content.Length.Should().BeGreaterThan(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wmts)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
+    public async Task Wmts_GetTile_WorldCrs84Quad_TileColOutsideGrid_ReturnsBadRequest()
+    {
+        // WorldCRS84Quad at TileMatrix 0 has only two columns (0 and 1); column 2 is out of range.
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER={WebAppFixture.TestLayerId}&STYLE=default&FORMAT=image/png&TILEMATRIXSET=WorldCRS84Quad&TILEMATRIX=0&TILEROW=0&TILECOL=2");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wmts)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
     public async Task Wmts_GetTile_InvalidTileMatrixSet_ReturnsBadRequest()
     {
         var response = await _fixture.Client.GetAsync(

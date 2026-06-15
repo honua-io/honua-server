@@ -156,7 +156,7 @@ jobs:
           done
           echo "Collected integration evidence:"; cat integration-evidence.ndjson || true
       - name: Upload integration evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: integration-evidence
           path: integration-evidence.ndjson
@@ -201,7 +201,7 @@ jobs:
           done
           echo "Collected SDK evidence:"; cat sdk-evidence.ndjson || true
       - name: Upload SDK evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sdk-evidence
           path: sdk-evidence.ndjson
@@ -224,11 +224,11 @@ jobs:
           path: .honua-devops
           token: ${{ secrets.RELEASE_BUNDLE_TOKEN || secrets.GITHUB_TOKEN }}
       - name: Download integration evidence
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with: { name: integration-evidence, path: ev }
         continue-on-error: true
       - name: Download SDK evidence
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with: { name: sdk-evidence, path: ev }
         continue-on-error: true
       - name: Assemble evidence -> manifest -> scoreboard bundle
@@ -270,7 +270,7 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Upload manifest + scoreboard bundle
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-train-evidence
           path: |
