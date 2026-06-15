@@ -224,11 +224,11 @@ jobs:
           path: .honua-devops
           token: ${{ secrets.RELEASE_BUNDLE_TOKEN || secrets.GITHUB_TOKEN }}
       - name: Download integration evidence
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with: { name: integration-evidence, path: ev }
         continue-on-error: true
       - name: Download SDK evidence
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with: { name: sdk-evidence, path: ev }
         continue-on-error: true
       - name: Assemble evidence -> manifest -> scoreboard bundle
