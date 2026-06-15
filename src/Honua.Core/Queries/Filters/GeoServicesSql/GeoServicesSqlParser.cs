@@ -357,7 +357,7 @@ public sealed class GeoServicesSqlParser
 
     // CAST(value AS type) -> FunctionCall("CAST", [value, Literal(type)]) which the shared
     // SQL translator maps to a parameter-safe `(value)::type` cast over an allowlisted type set.
-    private FilterExpression ParseCastFunction()
+    private FunctionCall ParseCastFunction()
     {
         var value = ParseExpression();
         ConsumeKeyword("AS", "Expected 'AS' in CAST expression.");
@@ -369,7 +369,7 @@ public sealed class GeoServicesSqlParser
     // EXTRACT(field FROM source) -> FunctionCall("<FIELD>", [source]). Only the ANSI date/time
     // fields the translator already supports as EXTRACT(... FROM ...) are accepted; anything
     // else is rejected so unknown fields never reach the SQL layer.
-    private FilterExpression ParseExtractFunction()
+    private FunctionCall ParseExtractFunction()
     {
         var field = ConsumeIdentifier("Expected a date/time field in EXTRACT expression.")
             .ToUpperInvariant();
@@ -386,7 +386,7 @@ public sealed class GeoServicesSqlParser
 
     // SUBSTRING(value FROM start [FOR length]) -> FunctionCall("SUBSTRING", [value, start (, length)])
     // matching the comma-delimited form the translator already supports.
-    private FilterExpression ParseSqlStandardSubstring()
+    private FunctionCall ParseSqlStandardSubstring()
     {
         var value = ParseExpression();
         ConsumeKeyword("FROM", "Expected 'FROM' in SUBSTRING expression.");
@@ -404,7 +404,7 @@ public sealed class GeoServicesSqlParser
 
     // POSITION(substring IN value) -> FunctionCall("POSITION", [substring, value]) which the
     // translator already emits as POSITION(a IN b).
-    private FilterExpression ParseSqlStandardPosition()
+    private FunctionCall ParseSqlStandardPosition()
     {
         var needle = ParseAdditive();
         Consume(TokenType.In, "Expected 'IN' in POSITION expression.");
