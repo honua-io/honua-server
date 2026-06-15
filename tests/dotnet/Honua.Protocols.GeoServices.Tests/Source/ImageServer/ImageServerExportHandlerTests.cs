@@ -208,6 +208,57 @@ public class ImageServerExportHandlerTests
 
     [UnitTest]
     [Operation(Operations.Export)]
+    public async Task ExportImageAsync_WithExtractBandRenderingRule_ThreadsShiftedBands()
+    {
+        SetupLayerAndRasters();
+        RasterQuery? capturedQuery = null;
+        _rasterStore.ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                capturedQuery = callInfo.ArgAt<RasterQuery>(2);
+                return CreateTestRasterResult();
+            });
+        _temporaryFileService.StoreTemporaryFileAsync(
+            Arg.Any<byte[]>(),
+            Arg.Any<string>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<ClaimsPrincipal?>(),
+            Arg.Any<CancellationToken>())
+            .Returns("/temp/test.png");
+        _rasterStore.GetExtentAsync(1, 100, Arg.Any<CancellationToken>())
+            .Returns(new RasterExtent { XMin = -180, YMin = -90, XMax = 180, YMax = 90, Srid = 4326 });
+
+        var context = CreateImageServerContext();
+        // ExtractBand 0-based [2,1,0] -> canonical 1-based [3,2,1]; it supersedes bandIds.
+        var request = CreateRequest(
+            renderingRule: "{\"rasterFunction\":\"ExtractBand\",\"rasterFunctionArguments\":{\"BandIds\":[2,1,0]}}",
+            bandIds: "0");
+        var result = await _handler.ExportImageAsync(context, 1, request);
+
+        result.Should().BeOfType<JsonHttpResult<ExportImageResponse>>();
+        capturedQuery.Should().NotBeNull();
+        capturedQuery!.Value.Bands.Should().Equal(3, 2, 1);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExportImageAsync_WithExtractBandByName_ReturnsNotImplemented()
+    {
+        SetupLayerAndRasters();
+
+        var context = CreateImageServerContext();
+        var request = CreateRequest(
+            renderingRule: "{\"rasterFunction\":\"ExtractBand\",\"rasterFunctionArguments\":{\"BandNames\":[\"Red\"]}}");
+        var result = await _handler.ExportImageAsync(context, 1, request);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status501NotImplemented);
+        await _rasterStore.DidNotReceive()
+            .ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
     public async Task ExportImageAsync_WithRenderingRule_ReturnsNotImplemented()
     {
         SetupLayerAndRasters();

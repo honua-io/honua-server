@@ -29,7 +29,7 @@ service; a transform the service cannot perform returns a clear 400.
 | Esri operation | Esri path | Methods | Honua status | Honua endpoint(s) | Notes |
 | --- | --- | --- | --- | --- | --- |
 | Find Address Candidates | `/GeocodeServer/findAddressCandidates` | GET, POST | Partial | `GET/POST /rest/services/{locatorName}/GeocodeServer/findAddressCandidates`, `GET /rest/services/GeocodeServer/findAddressCandidates` | Forward geocode from `singleLine` or structured fields. Honors `maxLocations`, `outSR` (reprojected via the shared transform service), `countryCode`/`countryCodes`, and `searchExtent` (passed to the provider as a search/view bounds when the provider supports it). |
-| Reverse Geocode | `/GeocodeServer/reverseGeocode` | GET, POST | Partial | `GET/POST /rest/services/{locatorName}/GeocodeServer/reverseGeocode`, `GET /rest/services/GeocodeServer/reverseGeocode` | Resolves `location` (`x,y` or JSON `{x,y}`/`{lon,lat}`) to the nearest address. Honors `outSR` (reprojected via the shared transform service) and `langCode` (passed to providers that support localized results). |
+| Reverse Geocode | `/GeocodeServer/reverseGeocode` | GET, POST | Partial | `GET/POST /rest/services/{locatorName}/GeocodeServer/reverseGeocode`, `GET /rest/services/GeocodeServer/reverseGeocode` | Resolves `location` (`x,y` or JSON `{x,y}`/`{lon,lat}`) to the nearest address. Honors `outSR` (reprojected via the shared transform service), `langCode` (passed to providers that support localized results), and the provider-dependent `distance` (search radius, meters) and `featureTypes` (type filter) parameters where a backing provider supports them (Azure Maps `radius`/`entityType`). |
 | Suggest | `/GeocodeServer/suggest` | GET, POST | Partial | `GET/POST /rest/services/{locatorName}/GeocodeServer/suggest`, `GET /rest/services/GeocodeServer/suggest` | Ranked suggestions from `text`. Honors `maxSuggestions`, `countryCode`/`countryCodes`, `searchExtent`, and `location` (bias) when the provider supports them. Returns `magicKey` per suggestion. |
 | Geocode Addresses (batch) | `/GeocodeServer/geocodeAddresses` | GET, POST | Partial | `GET/POST /rest/services/{locatorName}/GeocodeServer/geocodeAddresses`, `GET /rest/services/GeocodeServer/geocodeAddresses` | Batch forward geocode. Accepts the Esri `addresses={"records":[...]}` payload (and a bare `records` array). Honors `outSR` (reprojected via the shared transform service) and `countryCode`/`countryCodes`. Enforces the provider batch-size cap. |
 
@@ -53,10 +53,10 @@ service; a transform the service cannot perform returns a clear 400.
 | `searchExtent` | Implemented | Accepts `xmin,ymin,xmax,ymax` or an Esri envelope JSON. Forwarded to the provider as a search/view bounds (e.g. Nominatim `viewbox`+`bounded`, Azure/Amazon `bbox`). Must be in the default spatial reference. |
 | `countryCode` / `countryCodes` | Implemented | Restricts results to the given country code(s). |
 | `outFields` | Implemented | Restricts the returned `attributes` to the requested fields (case-insensitive). `*` or an omitted value returns all attributes; an empty field token returns 400. |
-| `category` | Not implemented | No backing provider currently filters forward candidates by category. |
-| `magicKey` | Not implemented | The `magicKey` returned by `suggest` is opaque and not consumed by `findAddressCandidates`. |
+| `category` | Not implemented (re-deferred) | No backing provider exposes a forward category filter on the shared geocode interface (Nominatim `/search`, Azure `/search/address`, and Amazon `SearchPlaceIndexForText` take no category parameter). |
+| `magicKey` | Not implemented (re-deferred) | The shared `IGeocodeProvider` interface has no magic-key resolution method, and `suggest` magicKeys are opaque, provider-internal IDs (`nominatim_*`, Azure result id, Amazon `PlaceId`) with no portable round-trip to `findAddressCandidates`. |
 | `location` | Not implemented | Point biasing is not applied to forward candidates (no backing provider honors it for this operation). |
-| `matchOutOfRange`, `forStorage` | Not implemented | Accepted but ignored. |
+| `matchOutOfRange`, `forStorage` | Not implemented (re-deferred) | Accepted but ignored. `matchOutOfRange` (out-of-range house-number interpolation) and `forStorage` (a licensing/storage billing flag) are not modeled by any backing provider. |
 
 ### Reverse Geocode
 
@@ -65,8 +65,8 @@ service; a transform the service cannot perform returns a clear 400.
 | `location` | Implemented | Required. Accepts `x,y` or JSON `{x,y}` / `{lon,lat}`. |
 | `outSR` | Implemented | Output coordinates are reprojected to the requested WKID via the shared coordinate-transform service; a transform the service cannot perform returns 400. |
 | `langCode` | Implemented | Forwarded to providers that support localized results (Nominatim `accept-language`, Amazon Location `Language`). |
-| `featureTypes` | Not implemented | Accepted but ignored; the nearest match is returned regardless of type. |
-| `distance` | Not implemented | Search radius is not currently configurable from the request. |
+| `featureTypes` | Implemented (provider-dependent) | Comma-delimited Esri feature-type tokens are parsed and forwarded as the canonical request's `FeatureTypes`. Honored by providers that filter reverse matches by type (Azure Maps `entityType`, with Esri tokens mapped to Azure entity types). Nominatim and Amazon Location ignore it and return the nearest match. |
+| `distance` | Implemented (provider-dependent) | A positive search radius in meters; non-positive values return 400. Forwarded as the canonical request's `DistanceMeters` and honored by providers that bound the reverse search by radius (Azure Maps `radius`). Nominatim and Amazon Location ignore it. |
 
 ### Suggest
 
@@ -92,8 +92,8 @@ service; a transform the service cannot perform returns a clear 400.
 
 - Provider output is WGS84 (`wkid` 4326); a non-default `outSR` is reprojected through the shared coordinate-transform service, and only a transform the service cannot perform is rejected with a 400.
 - Only `f=json` and `f=pjson` responses are supported; `f=html` is rejected.
-- `magicKey` round-tripping, `category` filtering, and `forStorage`/`matchOutOfRange` semantics are not implemented; unsupported parameters are accepted and ignored rather than erroring, except where validation (`outSR`, `outFields`, `searchExtent`, `f`) returns a 400.
-- Parameter wiring is honest about provider capability: a parameter is only forwarded when at least one backing provider acts on it. The default Nominatim provider honors `searchExtent` (forward) and `langCode` (reverse); Azure Maps and Amazon Location additionally honor suggestion bounds/bias.
+- `magicKey` round-tripping, `category` filtering, and `forStorage`/`matchOutOfRange` semantics are re-deferred (no backing provider exposes them on the shared geocode interface); unsupported parameters are accepted and ignored rather than erroring, except where validation (`outSR`, `outFields`, `searchExtent`, `distance`, `f`) returns a 400.
+- Parameter wiring is honest about provider capability: a parameter is only forwarded when at least one backing provider acts on it. The default Nominatim provider honors `searchExtent` (forward) and `langCode` (reverse); Azure Maps and Amazon Location additionally honor suggestion bounds/bias; Azure Maps additionally honors reverse `distance` (`radius`) and `featureTypes` (`entityType`).
 
 ## Implementation evidence
 

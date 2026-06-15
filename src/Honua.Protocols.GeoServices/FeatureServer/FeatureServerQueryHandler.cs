@@ -1480,42 +1480,27 @@ internal sealed partial class FeatureServerQueryHandler(
             return true;
         }
 
-        if (!DatumTransformationParser.TryParse(datumTransformationValue, out var request, out var parseError))
+        // Delegate the WKID -> PROJ pipeline selection to the shared resolver so the
+        // FeatureServer, Geometry Service, and ImageServer project paths stay on one
+        // catalog mapping; this method only adapts the neutral error into the
+        // FeatureServer's problem-shape and emits the protocol log.
+        if (!GeoServicesDatumTransformationResolver.TryResolve(
+                _datumTransformationCatalog,
+                datumTransformationValue,
+                layerSrid,
+                outputSrid.Value,
+                out selection,
+                out var resolveError))
         {
             error = StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid datumTransformation",
-                [parseError]);
+                [resolveError]);
             return false;
         }
 
-        if (request is { } requested)
+        if (!string.IsNullOrWhiteSpace(datumTransformationValue))
         {
-            // Client explicitly requested a transformation — it must be honored exactly
-            // or rejected; never silently substituted.
-            if (!_datumTransformationCatalog.TryGetByWkid(requested.Wkid, layerSrid, outputSrid.Value, out var resolved))
-            {
-                error = StandardErrorHelpers.CreateBadRequest(context,
-                    "Unsupported datumTransformation",
-                    [$"datumTransformation WKID {requested.Wkid} is not supported for the {layerSrid} -> {outputSrid.Value} reprojection."]);
-                return false;
-            }
-
-            // Respect the requested direction flag relative to the resolved orientation.
-            selection = requested.TransformForward
-                ? resolved
-                : resolved with { TransformForward = !resolved.TransformForward };
-
-            var loggedValue = datumTransformationValue ?? requested.Wkid.ToString(CultureInfo.InvariantCulture);
-            FeatureServerLog.DatumTransformationRequested(_logger, loggedValue);
-            return true;
-        }
-
-        // No client choice: apply the Esri default for the pair when one exists.
-        // When no curated default exists, leave selection null so PostGIS uses its
-        // default pipeline (correct for identity/no-shift pairs).
-        if (_datumTransformationCatalog.TryGetDefault(layerSrid, outputSrid.Value, out var defaultSelection))
-        {
-            selection = defaultSelection;
+            FeatureServerLog.DatumTransformationRequested(_logger, datumTransformationValue);
         }
 
         return true;

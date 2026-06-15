@@ -17,6 +17,7 @@ using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Rendering;
 using Honua.Infrastructure.Services;
+using Honua.Infrastructure.Tiles;
 using Honua.Protocols.GeoServices.ImageServer.Models;
 using Honua.Protocols.GeoServices.ImageServer.Services;
 using Honua.ServiceDefaults;
@@ -35,6 +36,8 @@ internal sealed class ImageServerExportTilesHandler
 {
     private const string ExportTilesContentType = "application/zip";
     private const string ExportTilesStorageFormat = "zip";
+    private const string ExportTilesTpkStorageFormat = "tpk";
+    private const string ExportTilesTpkContentType = "application/octet-stream";
     private const int ExportTilesTileSizeBytesEstimate = 32 * 1024;
 
     private readonly record struct ExportTileCoordinate(int Z, int X, int Y);
@@ -49,7 +52,8 @@ internal sealed class ImageServerExportTilesHandler
         bool ExceededTransferLimit,
         RasterFormat RasterFormat,
         string TileExtension,
-        DateTimeOffset? Timestamp);
+        DateTimeOffset? Timestamp,
+        bool TilePackage);
 
     private readonly IMetadataV2GraphProvider _graphProvider;
     private readonly IRasterStore _rasterStore;
@@ -93,9 +97,9 @@ internal sealed class ImageServerExportTilesHandler
             EstimatedSizeBytes = estimatedSizeBytes,
             MinZoom = plan.MinZoom,
             MaxZoom = plan.MaxZoom,
-            TilePackage = false,
-            StorageFormat = ExportTilesStorageFormat,
-            ContentType = ExportTilesContentType,
+            TilePackage = plan.TilePackage,
+            StorageFormat = plan.TilePackage ? ExportTilesTpkStorageFormat : ExportTilesStorageFormat,
+            ContentType = plan.TilePackage ? ExportTilesTpkContentType : ExportTilesContentType,
             ExceededTransferLimit = plan.ExceededTransferLimit,
         };
 
@@ -146,11 +150,14 @@ internal sealed class ImageServerExportTilesHandler
 
         try
         {
-            using (var archive = new ZipArchive(archiveStream, ZipArchiveMode.Create, leaveOpen: true))
+            // Render each populated tile once; flatten into a {z}/{x}/{y}.ext ZIP
+            // or package into the Esri exploded-cache TPK layout via the shared writer.
+            async IAsyncEnumerable<TilePackageWriter.PackagedTile> ReadTilesAsync(
+                [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken token)
             {
                 foreach (var tile in plan.Tiles)
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
+                    token.ThrowIfCancellationRequested();
                     var tileGeometry = CreateTileEnvelope(tile.Z, tile.Y, tile.X);
                     var selectedRasters = await _rasterStore.QueryRastersAsync(
                         layerId,
@@ -160,7 +167,7 @@ internal sealed class ImageServerExportTilesHandler
                             GeometrySrid = 3857,
                             Timestamp = plan.Timestamp,
                         },
-                        cancellationToken).ConfigureAwait(false);
+                        token).ConfigureAwait(false);
 
                     if (selectedRasters.Length == 0)
                     {
@@ -175,7 +182,7 @@ internal sealed class ImageServerExportTilesHandler
                             tile.Y,
                             tile.X,
                             plan.RasterFormat,
-                            cancellationToken).ConfigureAwait(false)
+                            token).ConfigureAwait(false)
                         : await _rasterStore.GetMosaicImageTileAsync(
                             layerId,
                             selectedRasters.Select(static raster => raster.Id).ToArray(),
@@ -184,18 +191,38 @@ internal sealed class ImageServerExportTilesHandler
                             tile.Y,
                             tile.X,
                             plan.RasterFormat,
-                            cancellationToken).ConfigureAwait(false);
+                            token).ConfigureAwait(false);
 
                     if (tileResult is null)
                     {
                         continue;
                     }
 
+                    yield return new TilePackageWriter.PackagedTile(tile.Z, tile.X, tile.Y, tileResult.Value.Data);
+                }
+            }
+
+            if (plan.TilePackage)
+            {
+                exportedTileCount = await TilePackageWriter.WriteAsync(
+                    archiveStream,
+                    $"imageserver-{layerId.ToString(CultureInfo.InvariantCulture)}",
+                    plan.TileExtension,
+                    ResolveEsriCacheFormat(plan.RasterFormat),
+                    plan.Bounds,
+                    ReadTilesAsync(cancellationToken),
+                    cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                using var archive = new ZipArchive(archiveStream, ZipArchiveMode.Create, leaveOpen: true);
+                await foreach (var tile in ReadTilesAsync(cancellationToken).ConfigureAwait(false))
+                {
                     var entry = archive.CreateEntry(
-                        $"{tile.Z}/{tile.X}/{tile.Y}.{plan.TileExtension}",
+                        $"{tile.Level}/{tile.Column}/{tile.Row}.{plan.TileExtension}",
                         CompressionLevel.Fastest);
                     await using var entryStream = entry.Open();
-                    await entryStream.WriteAsync(tileResult.Value.Data, cancellationToken).ConfigureAwait(false);
+                    await entryStream.WriteAsync(tile.Bytes, cancellationToken).ConfigureAwait(false);
                     exportedTileCount++;
                 }
             }
@@ -214,12 +241,14 @@ internal sealed class ImageServerExportTilesHandler
             }
 
             var uploadedAt = DateTimeOffset.UtcNow;
-            var fileName = $"imageserver-{layerId.ToString(CultureInfo.InvariantCulture)}-{uploadedAt:yyyyMMddHHmmss}-tiles.zip";
+            var archiveContentType = plan.TilePackage ? ExportTilesTpkContentType : ExportTilesContentType;
+            var archiveExtension = plan.TilePackage ? ExportTilesTpkStorageFormat : "zip";
+            var fileName = $"imageserver-{layerId.ToString(CultureInfo.InvariantCulture)}-{uploadedAt:yyyyMMddHHmmss}-tiles.{archiveExtension}";
             var uploadResult = await _storage.UploadAsync(new FileUploadRequest
             {
                 Content = archiveStream,
                 FileName = fileName,
-                ContentType = ExportTilesContentType,
+                ContentType = archiveContentType,
                 SizeBytes = archiveStream.Length,
                 TimeToLive = ttl,
                 Folder = "imageserver/export-tiles",
@@ -227,6 +256,7 @@ internal sealed class ImageServerExportTilesHandler
                     .Add("operation", "exportTiles")
                     .Add("layerId", layerId.ToString(CultureInfo.InvariantCulture))
                     .Add("tileMatrixSetId", "WebMercatorQuad")
+                    .Add("storageFormat", plan.TilePackage ? ExportTilesTpkStorageFormat : ExportTilesStorageFormat)
                     .Add("minZoom", plan.MinZoom.ToString(CultureInfo.InvariantCulture))
                     .Add("maxZoom", plan.MaxZoom.ToString(CultureInfo.InvariantCulture))
             }, cancellationToken).ConfigureAwait(false);
@@ -267,8 +297,8 @@ internal sealed class ImageServerExportTilesHandler
                 TileCount = exportedTileCount,
                 MinZoom = plan.MinZoom,
                 MaxZoom = plan.MaxZoom,
-                TilePackage = false,
-                StorageFormat = ExportTilesStorageFormat,
+                TilePackage = plan.TilePackage,
+                StorageFormat = plan.TilePackage ? ExportTilesTpkStorageFormat : ExportTilesStorageFormat,
                 ContentType = uploadResult.File.ContentType,
                 ArchiveFileId = uploadResult.File.FileId,
                 FileId = uploadResult.File.FileId,
@@ -400,6 +430,15 @@ internal sealed class ImageServerExportTilesHandler
             return (null, StandardErrorHelpers.CreateBadRequest(context, "exportTiles selected no tiles."));
         }
 
+        if (!TryResolveExportTilesPackage(
+                GetString(values, "tilePackage"),
+                GetString(values, "storageFormat") ?? GetString(values, "exportBy"),
+                out var tilePackage,
+                out var packageError))
+        {
+            return (null, StandardErrorHelpers.CreateBadRequest(context, packageError!));
+        }
+
         var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, GetString(values, "mosaicRule"));
         return (new ExportTilesPlan(
             layerId,
@@ -411,8 +450,65 @@ internal sealed class ImageServerExportTilesHandler
             exceededTransferLimit,
             rasterFormat,
             tileExtension,
-            timestamp), null);
+            timestamp,
+            tilePackage), null);
     }
+
+    /// <summary>
+    /// Resolves whether the request asked for an Esri tile package (TPK).
+    /// Accepts <c>tilePackage=true</c> or <c>storageFormat=tpk</c> for the
+    /// exploded-cache package; <c>zip</c>/empty selects the flat ZIP archive.
+    /// The proprietary compact (TPKX) form is rejected with a 400.
+    /// </summary>
+    private static bool TryResolveExportTilesPackage(
+        string? tilePackageValue,
+        string? storageFormatValue,
+        out bool tilePackage,
+        out string? error)
+    {
+        tilePackage = false;
+        error = null;
+
+        if (!string.IsNullOrWhiteSpace(tilePackageValue) &&
+            bool.TryParse(tilePackageValue.Trim(), out var parsedFlag))
+        {
+            tilePackage = parsedFlag;
+        }
+
+        if (string.IsNullOrWhiteSpace(storageFormatValue))
+        {
+            return true;
+        }
+
+        switch (storageFormatValue.Trim().ToLowerInvariant())
+        {
+            case "tpk":
+            case "esritpk":
+            case "exploded":
+                tilePackage = true;
+                return true;
+            case "zip":
+            case "":
+                return true;
+            case "tpkx":
+            case "compact":
+            case "compactv2":
+                error = "storageFormat 'tpkx'/'compact' (Esri compact bundle cache) is not supported. Use storageFormat=tpk for an exploded tile package or storageFormat=zip for a flat archive.";
+                return false;
+            default:
+                error = $"storageFormat '{storageFormatValue}' is not supported. Use tpk or zip.";
+                return false;
+        }
+    }
+
+    private static string ResolveEsriCacheFormat(RasterFormat format)
+        => format switch
+        {
+            RasterFormat.PNG => "PNG",
+            RasterFormat.JPEG => "JPEG",
+            RasterFormat.TIFF => "TIFF",
+            _ => "PNG",
+        };
 
     private static bool TryParseExportTileLevels(
         string? levelsValue,

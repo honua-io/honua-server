@@ -18,6 +18,7 @@ using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Rendering;
 using Honua.Infrastructure.Services;
+using Honua.Infrastructure.Tiles;
 using Honua.Protocols.GeoServices.MapServer.Models;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Options;
@@ -29,6 +30,8 @@ internal static partial class MapServerEndpoints
 {
     private const string ExportTilesContentType = "application/zip";
     private const string ExportTilesStorageFormat = "zip";
+    private const string ExportTilesTpkStorageFormat = "tpk";
+    private const string ExportTilesTpkContentType = "application/octet-stream";
     private const int ExportTilesTileSizeBytesEstimate = 32 * 1024;
 
     private readonly record struct ExportTileCoordinate(int Z, int X, int Y);
@@ -42,7 +45,8 @@ internal static partial class MapServerEndpoints
         double[] Bounds,
         int MinZoom,
         int MaxZoom,
-        bool ExceededTransferLimit);
+        bool ExceededTransferLimit,
+        bool TilePackage);
 
     private static async Task<IResult> HandleEstimateExportTilesSize(HttpContext context)
     {
@@ -62,9 +66,9 @@ internal static partial class MapServerEndpoints
             EstimatedSizeBytes = estimatedSizeBytes,
             MinZoom = plan.MinZoom,
             MaxZoom = plan.MaxZoom,
-            TilePackage = false,
-            StorageFormat = ExportTilesStorageFormat,
-            ContentType = ExportTilesContentType,
+            TilePackage = plan.TilePackage,
+            StorageFormat = plan.TilePackage ? ExportTilesTpkStorageFormat : ExportTilesStorageFormat,
+            ContentType = plan.TilePackage ? ExportTilesTpkContentType : ExportTilesContentType,
             ExceededTransferLimit = plan.ExceededTransferLimit
         };
 
@@ -106,14 +110,18 @@ internal static partial class MapServerEndpoints
         var stopwatch = Stopwatch.StartNew();
         await using var archiveStream = new MemoryStream();
         var totalFeatureCount = 0;
+        IResult? renderError = null;
 
         try
         {
-            using (var archive = new ZipArchive(archiveStream, ZipArchiveMode.Create, leaveOpen: true))
+            // Render each tile once; either flatten into a {z}/{x}/{y}.png ZIP or
+            // package into the Esri exploded-cache TPK layout via the shared writer.
+            async IAsyncEnumerable<TilePackageWriter.PackagedTile> RenderTilesAsync(
+                [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken token)
             {
                 foreach (var tile in plan.Tiles)
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
+                    token.ThrowIfCancellationRequested();
                     var renderResult = await RenderRasterTileV2Async(
                         context,
                         ResolveExportServiceSrid(plan.Service, plan.Layers.Select(static layer => layer.Layer).ToArray()),
@@ -122,20 +130,46 @@ internal static partial class MapServerEndpoints
                         tile.Y,
                         tile.X,
                         plan.Service.Settings?.MaxFeaturesPerLayer ?? MaxFeaturesPerLayer,
-                        cancellationToken).ConfigureAwait(false);
+                        token).ConfigureAwait(false);
 
                     if (!renderResult.IsSuccess)
                     {
-                        return renderResult.Error!;
+                        renderError = renderResult.Error!;
+                        yield break;
                     }
 
                     totalFeatureCount += renderResult.FeatureCount;
+                    yield return new TilePackageWriter.PackagedTile(tile.Z, tile.X, tile.Y, renderResult.ImageBytes);
+                }
+            }
+
+            if (plan.TilePackage)
+            {
+                await TilePackageWriter.WriteAsync(
+                    archiveStream,
+                    SanitizeExportTilesKeySegment(plan.ServiceId),
+                    "png",
+                    "PNG",
+                    plan.Bounds,
+                    RenderTilesAsync(cancellationToken),
+                    cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                using var archive = new ZipArchive(archiveStream, ZipArchiveMode.Create, leaveOpen: true);
+                await foreach (var tile in RenderTilesAsync(cancellationToken).ConfigureAwait(false))
+                {
                     var entry = archive.CreateEntry(
-                        $"{tile.Z}/{tile.X}/{tile.Y}.png",
+                        $"{tile.Level}/{tile.Column}/{tile.Row}.png",
                         CompressionLevel.Fastest);
                     await using var entryStream = entry.Open();
-                    await entryStream.WriteAsync(renderResult.ImageBytes, cancellationToken).ConfigureAwait(false);
+                    await entryStream.WriteAsync(tile.Bytes, cancellationToken).ConfigureAwait(false);
                 }
+            }
+
+            if (renderError is not null)
+            {
+                return renderError;
             }
 
             archiveStream.Position = 0;
@@ -147,12 +181,14 @@ internal static partial class MapServerEndpoints
             }
 
             var uploadedAt = DateTimeOffset.UtcNow;
-            var fileName = $"{SanitizeExportTilesKeySegment(plan.ServiceId)}-{uploadedAt:yyyyMMddHHmmss}-tiles.zip";
+            var archiveContentType = plan.TilePackage ? ExportTilesTpkContentType : ExportTilesContentType;
+            var archiveExtension = plan.TilePackage ? ExportTilesTpkStorageFormat : "zip";
+            var fileName = $"{SanitizeExportTilesKeySegment(plan.ServiceId)}-{uploadedAt:yyyyMMddHHmmss}-tiles.{archiveExtension}";
             var uploadResult = await storage.UploadAsync(new FileUploadRequest
             {
                 Content = archiveStream,
                 FileName = fileName,
-                ContentType = ExportTilesContentType,
+                ContentType = archiveContentType,
                 SizeBytes = archiveStream.Length,
                 TimeToLive = ttl,
                 Folder = "mapserver/export-tiles",
@@ -160,6 +196,7 @@ internal static partial class MapServerEndpoints
                     .Add("operation", "exportTiles")
                     .Add("serviceId", plan.ServiceId)
                     .Add("tileMatrixSetId", "WebMercatorQuad")
+                    .Add("storageFormat", plan.TilePackage ? ExportTilesTpkStorageFormat : ExportTilesStorageFormat)
                     .Add("minZoom", plan.MinZoom.ToString(CultureInfo.InvariantCulture))
                     .Add("maxZoom", plan.MaxZoom.ToString(CultureInfo.InvariantCulture))
             }, cancellationToken).ConfigureAwait(false);
@@ -199,8 +236,8 @@ internal static partial class MapServerEndpoints
                 TileCount = plan.Tiles.LongLength,
                 MinZoom = plan.MinZoom,
                 MaxZoom = plan.MaxZoom,
-                TilePackage = false,
-                StorageFormat = ExportTilesStorageFormat,
+                TilePackage = plan.TilePackage,
+                StorageFormat = plan.TilePackage ? ExportTilesTpkStorageFormat : ExportTilesStorageFormat,
                 ContentType = uploadResult.File.ContentType,
                 ArchiveFileId = uploadResult.File.FileId,
                 FileId = uploadResult.File.FileId,
@@ -271,6 +308,18 @@ internal static partial class MapServerEndpoints
             return (null, StandardErrorHelpers.CreateBadRequest(
                 context,
                 $"Output format '{outputFormat}' is not supported."));
+        }
+
+        // Esri exportTiles selects the package format via tilePackage=true (TPK)
+        // or storageFormat=tpk/compact/zip. compact/tpkx is not implemented; see
+        // the parity matrix for the documented deferral.
+        if (!TryResolveExportTilesPackage(
+                GetValue(values, "tilePackage"),
+                GetValue(values, "storageFormat") ?? GetValue(values, "exportBy"),
+                out var tilePackage,
+                out var packageError))
+        {
+            return (null, StandardErrorHelpers.CreateBadRequest(context, packageError!));
         }
 
         var limits = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value.Tiles;
@@ -380,7 +429,56 @@ internal static partial class MapServerEndpoints
             bounds,
             minZoom,
             maxZoom,
-            exceededTransferLimit), null);
+            exceededTransferLimit,
+            tilePackage), null);
+    }
+
+    /// <summary>
+    /// Resolves whether the request asked for an Esri tile package (TPK).
+    /// Accepts <c>tilePackage=true</c> or <c>storageFormat=tpk</c> for the
+    /// exploded-cache package; <c>zip</c>/empty selects the flat ZIP archive.
+    /// The proprietary compact (TPKX) form is rejected with a 400.
+    /// </summary>
+    private static bool TryResolveExportTilesPackage(
+        string? tilePackageValue,
+        string? storageFormatValue,
+        out bool tilePackage,
+        out string? error)
+    {
+        tilePackage = false;
+        error = null;
+
+        if (!string.IsNullOrWhiteSpace(tilePackageValue) &&
+            bool.TryParse(tilePackageValue.Trim(), out var parsedFlag))
+        {
+            tilePackage = parsedFlag;
+        }
+
+        if (string.IsNullOrWhiteSpace(storageFormatValue))
+        {
+            return true;
+        }
+
+        switch (storageFormatValue.Trim().ToLowerInvariant())
+        {
+            case "tpk":
+            case "esritpk":
+            case "exploded":
+                tilePackage = true;
+                return true;
+            case "zip":
+            case "":
+                tilePackage = tilePackage || false;
+                return true;
+            case "tpkx":
+            case "compact":
+            case "compactv2":
+                error = "storageFormat 'tpkx'/'compact' (Esri compact bundle cache) is not supported. Use storageFormat=tpk for an exploded tile package or storageFormat=zip for a flat archive.";
+                return false;
+            default:
+                error = $"storageFormat '{storageFormatValue}' is not supported. Use tpk or zip.";
+                return false;
+        }
     }
 
     private static bool TryParseExportTileLevels(

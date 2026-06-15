@@ -59,9 +59,13 @@ Current gaps, stated as fact. Protocol-level Esri parity detail lives in
   delivery are not implemented.
 - **OData v4 delta tracking is timestamp-based** (MVP-level) and `PUT` is not
   supported.
-- **GeoServices GPServer built-in tasks are async-only** with no generic `execute`
-  route; GP environment controls (`env:*`) are rejected; heavyweight `surface.*` /
-  `raster.*` processes are catalog/validation-only pending executor wiring.
+- **GeoServices GPServer synchronous `execute` is limited to deterministic
+  single-geometry tasks** (the `geometry.*` family and `conversion.geometry-format`,
+  run inline over the canonical job runtime); heavyweight/layer-scoped tasks stay
+  async-only and reject `execute` with a 400 pointing at `submitJob`. GP
+  environment controls (`env:*`) are rejected on `submitJob` (sync `execute`
+  honors `env:outSR`); heavyweight `surface.*` / `raster.*` processes are
+  catalog/validation-only pending executor wiring.
 - **I3S / ArcGIS Scene Layer is not implemented** (Enterprise roadmap). Unlicensed
   `SceneServer` routes return `402` with an entitlement message. CesiumJS-oriented
   3D Tiles hosting and v1 generation are supported instead — generation emits a

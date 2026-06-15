@@ -341,12 +341,30 @@ internal sealed class GeometryServiceHandler(
                 return CreateError(context, 400, outSrError);
             }
 
+            // Honor a client-supplied datumTransformation (or the catalog's Esri default)
+            // via the shared WKID -> PROJ pipeline resolver, matching the FeatureServer and
+            // ImageServer project paths.
+            var datumCatalog = context.RequestServices
+                .GetRequiredService<Core.Features.Infrastructure.Crs.IDatumTransformationCatalog>();
+            if (!GeoServicesDatumTransformationResolver.TryResolve(
+                    datumCatalog,
+                    GeometryServiceRequestParser.GetValue(values, "datumTransformation"),
+                    inSr!.Value,
+                    outSr!.Value,
+                    out var datumSelection,
+                    out var datumError))
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "project", datumError ?? "Invalid datumTransformation");
+                return CreateError(context, 400, datumError ?? "Invalid datumTransformation.");
+            }
+
             var parameters = new ProjectParameters
             {
                 GeometryJsonStrings = geomStrings,
                 GeometryType = geomType,
                 InSR = inSr!.Value,
-                OutSR = outSr!.Value
+                OutSR = outSr!.Value,
+                DatumTransformation = datumSelection
             };
 
             GeometryServiceLog.RequestParsed(_logger, "project", parameters.GeometryJsonStrings.Length, parameters.GeometryType);
@@ -2766,7 +2784,12 @@ internal sealed class GeometryServiceHandler(
         foreach (var geomJson in parameters.GeometryJsonStrings)
         {
             var wkb = _geometryConverter.ConvertGeoServicesJsonToWkb(geomJson);
-            var result = await _operationService.ProjectAsync(wkb, parameters.InSR, parameters.OutSR, ct).ConfigureAwait(false);
+            var result = await _operationService.ProjectAsync(
+                wkb,
+                parameters.InSR,
+                parameters.OutSR,
+                parameters.DatumTransformation,
+                ct).ConfigureAwait(false);
             projectedGeometries.Add(result);
         }
 

@@ -97,7 +97,7 @@ internal static class FeatureRegistrationExtensions
         services.AddMultidimensionalCoverageServices();
         services.AddZarrServices();
         services.AddImageServer(configuration);
-        services.AddMapServer();
+        services.AddMapServer(configuration);
         services.AddOgcCoverages();
         services.AddOgcFeatures(configuration);
         services.AddOgcMaps();

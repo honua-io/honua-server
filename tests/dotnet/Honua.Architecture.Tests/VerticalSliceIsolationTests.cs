@@ -132,6 +132,10 @@ public sealed class VerticalSliceIsolationTests
             "Resilience",
             "Scene",
             "Security",
+            "Tiles",            // Hosting-resident shared tile-format writer
+                                // (TilePackageWriter: Esri exploded-cache TPK packaging)
+                                // shared by the GeoServices MapServer + ImageServer
+                                // exportTiles adapters so neither owns the format logic.
             "Validation",       // Lives in Honua.Hosting under the preserved namespace.
         };
 

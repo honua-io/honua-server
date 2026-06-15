@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Queries.Filters;
+using Honua.Core.Queries.Filters.GeoServicesSql;
 using Honua.Postgres.Queries.Filters;
 
 namespace Honua.Postgres.Tests.Queries.Filters;
@@ -909,4 +910,45 @@ public class PostgresSqlFilterTranslatorTests
             Nullable = nullable,
             SemanticRoles = semanticRoles,
         };
+
+    // ArcGIS SQL parity (#1660): clauses are parsed by the GeoServices SQL parser and
+    // must translate to parameterized PostgreSQL — only allowlisted constructs ever
+    // reach the database, and every literal becomes a bound parameter.
+
+    [Fact]
+    public void Translate_ArcGisExtractYear_EmitsExtractAndParameterizesLiteral()
+    {
+        var expression = new GeoServicesSqlParser().Parse("EXTRACT(YEAR FROM timestamp) = 2024");
+
+        var result = _translator.Translate(expression, _resource);
+
+        result.Sql.Should().Be("EXTRACT(YEAR FROM \"timestamp\") = @p0");
+        result.Parameters.Should().ContainSingle().Which.Should().Be(2024L);
+    }
+
+    [Fact]
+    public void Translate_ArcGisCastAs_EmitsTypeCastWithoutParameterizingType()
+    {
+        var expression = new GeoServicesSqlParser().Parse("CAST(age AS TEXT) = '42'");
+
+        var result = _translator.Translate(expression, _resource);
+
+        // The type token is interpolated from the allowlist (not bound), but the
+        // compared value remains a bound parameter.
+        result.Sql.Should().Be("(\"age\")::TEXT = @p0");
+        result.Parameters.Should().ContainSingle().Which.Should().Be("42");
+    }
+
+    [Fact]
+    public void Translate_ArcGisStringConcatenation_EmitsConcatWithBoundLiterals()
+    {
+        var expression = new GeoServicesSqlParser().Parse("name || ' ' || description = 'a b'");
+
+        var result = _translator.Translate(expression, _resource);
+
+        result.Sql.Should().Be("CONCAT(\"name\", @p0, \"description\") = @p1");
+        result.Parameters.Should().HaveCount(2);
+        result.Parameters[0].Should().Be(" ");
+        result.Parameters[1].Should().Be("a b");
+    }
 }

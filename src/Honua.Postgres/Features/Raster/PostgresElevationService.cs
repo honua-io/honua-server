@@ -99,7 +99,7 @@ internal sealed class PostgresElevationService : IElevationService
             x,
             y,
             resolvedSrid,
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken: cancellationToken).ConfigureAwait(false);
 
         double? elevation = null;
         if (pixel.HasData && pixel.BandValues.TryGetValue(1, out var raw) && raw is double value)

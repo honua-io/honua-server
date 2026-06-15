@@ -945,6 +945,63 @@ public sealed class GeocodingEndpointTests
         Assert.Equal("fr", fakeProvider.LastReverseRequest!.LanguageCode);
     }
 
+    // reverseGeocode `distance` is a provider-capability-dependent search radius
+    // (meters). The adapter must pass it through to the canonical request so a
+    // backing provider that honors it (e.g. Azure Maps `radius`) can apply it.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/reverseGeocode")]
+    public async Task ReverseGeocode_WithDistance_PassesDistanceMetersToProvider()
+    {
+        var fakeProvider = new FakeGeocodeProvider(DefaultCapabilities);
+        using var factory = CreateFactory(fakeProvider);
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync(
+            "/rest/services/World/GeocodeServer/reverseGeocode?location=-77.03655,38.89768&distance=250&f=json");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.NotNull(fakeProvider.LastReverseRequest);
+        Assert.Equal(250.0, fakeProvider.LastReverseRequest!.DistanceMeters);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/reverseGeocode")]
+    public async Task ReverseGeocode_WithInvalidDistance_Returns400()
+    {
+        using var factory = CreateDefaultFactory();
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync(
+            "/rest/services/World/GeocodeServer/reverseGeocode?location=-77.03655,38.89768&distance=0&f=json");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("distance", body, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // reverseGeocode `featureTypes` is a provider-capability-dependent type filter.
+    // The adapter must pass the parsed tokens through to the canonical request so a
+    // backing provider that honors it (e.g. Azure Maps `entityType`) can apply it.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/reverseGeocode")]
+    public async Task ReverseGeocode_WithFeatureTypes_PassesFeatureTypesToProvider()
+    {
+        var fakeProvider = new FakeGeocodeProvider(DefaultCapabilities);
+        using var factory = CreateFactory(fakeProvider);
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync(
+            "/rest/services/World/GeocodeServer/reverseGeocode?location=-77.03655,38.89768&featureTypes=PointAddress,StreetAddress&f=json");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.NotNull(fakeProvider.LastReverseRequest);
+        Assert.NotNull(fakeProvider.LastReverseRequest!.FeatureTypes);
+        Assert.Equal(["PointAddress", "StreetAddress"], fakeProvider.LastReverseRequest.FeatureTypes!);
+    }
+
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/suggest")]

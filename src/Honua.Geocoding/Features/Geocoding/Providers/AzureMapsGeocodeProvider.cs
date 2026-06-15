@@ -383,7 +383,47 @@ internal sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
             url += $"&view={Uri.EscapeDataString(_configuration.View)}";
         }
 
+        // Esri reverseGeocode `distance` maps to the Azure reverse `radius` (meters):
+        // both bound the search to a circle around the query point.
+        if (request.DistanceMeters is > 0 and var radius)
+        {
+            url += $"&radius={radius.ToString("F0", CultureInfo.InvariantCulture)}";
+        }
+
+        // Esri reverseGeocode `featureTypes` maps to the Azure reverse `entityType`
+        // filter, which restricts the geography level of the returned match.
+        if (request.FeatureTypes is { Length: > 0 } featureTypes)
+        {
+            var entityTypes = string.Join(',', featureTypes.Select(MapFeatureTypeToEntityType));
+            if (!string.IsNullOrWhiteSpace(entityTypes))
+            {
+                url += $"&entityType={Uri.EscapeDataString(entityTypes)}";
+            }
+        }
+
         return url;
+    }
+
+    // Maps Esri feature-type tokens to the Azure Maps reverse `entityType` values.
+    // Tokens Azure does not model are passed through unchanged so callers using
+    // native Azure entity types continue to work.
+    private static string MapFeatureTypeToEntityType(string featureType)
+    {
+        return featureType switch
+        {
+            "PointAddress" => "Address",
+            "StreetAddress" => "Address",
+            "StreetInt" => "Address",
+            "Locality" => "Municipality",
+            "City" => "Municipality",
+            "Neighborhood" => "Neighbourhood",
+            "Subregion" => "MunicipalitySubdivision",
+            "Region" => "CountrySecondarySubdivision",
+            "State" => "CountrySubdivision",
+            "Country" => "Country",
+            "PostalCode" => "PostalCodeArea",
+            _ => featureType
+        };
     }
 
     private string BuildSuggestUrl(SuggestGeocodeRequest request)

@@ -5,6 +5,8 @@ using System.Collections.Concurrent;
 using System.Data.Common;
 using Honua.Core.Features.GeometryService.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Crs;
+using Honua.Postgres.Features.FeatureStore.Services;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 using Npgsql;
@@ -142,6 +144,52 @@ internal sealed class PostgresGeometryOperationService(
         cmd.Parameters.Add(new NpgsqlParameter { Value = wkb });
         cmd.Parameters.Add(new NpgsqlParameter { Value = fromSrid });
         cmd.Parameters.Add(new NpgsqlParameter { Value = toSrid });
+
+        var result = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
+        return result as byte[] ?? throw new InvalidOperationException("PostGIS project returned null.");
+    }
+
+    public async Task<byte[]> ProjectAsync(
+        byte[] wkb,
+        int fromSrid,
+        int toSrid,
+        DatumTransformationSelection? selection,
+        CancellationToken ct = default)
+    {
+        // No explicit pipeline selected: defer to the SRID-only path (PROJ default pipeline
+        // plus the Web Mercator latitude clamp).
+        if (selection?.ProjPipeline is not { Length: > 0 })
+        {
+            return await ProjectAsync(wkb, fromSrid, toSrid, ct).ConfigureAwait(false);
+        }
+
+        // Same-SRID no-op optimization (a selected pipeline implies a real datum shift,
+        // but identity stays a no-op).
+        if (fromSrid == toSrid)
+        {
+            return wkb;
+        }
+
+        await using var connection = await _connectionProvider.OpenConnectionAsync(ct).ConfigureAwait(false);
+        await using var cmd = connection.CreateCommand();
+
+        if (fromSrid == 4326 && IsWebMercatorSrid(toSrid))
+        {
+            wkb = ClampWebMercatorLatitudes(wkb, fromSrid);
+        }
+
+        // Honor the explicit (Esri-parity) datum-transformation pipeline through the shared
+        // chokepoint that emits the 3-argument ST_Transform form. The pipeline string is
+        // catalog-sourced (never user input), so it is embedded as a literal exactly as the
+        // feature-query builders do.
+        var transformExpression = DatumTransformSql.BuildTransformExpression(
+            "ST_SetSRID($1::geometry, $2)",
+            toSrid,
+            selection);
+        cmd.CommandText = $"SELECT ST_AsBinary({transformExpression})";
+
+        cmd.Parameters.Add(new NpgsqlParameter { Value = wkb });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = fromSrid });
 
         var result = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
         return result as byte[] ?? throw new InvalidOperationException("PostGIS project returned null.");

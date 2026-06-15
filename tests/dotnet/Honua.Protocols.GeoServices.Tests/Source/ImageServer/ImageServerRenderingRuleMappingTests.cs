@@ -179,10 +179,51 @@ public sealed class ImageServerRenderingRuleMappingTests
     }
 
     [UnitTest]
-    public void MapRenderingRule_ColormapByName_IsNotImplemented()
+    public void MapRenderingRule_ColormapByKnownName_ResolvesNamedRamp()
     {
         var document = Parse(
             """{"rasterFunction":"Colormap","rasterFunctionArguments":{"ColorrampName":"Elevation"}}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeTrue();
+        mapping.Colormap.Should().NotBeNull();
+        mapping.Colormap!.Entries.Should().HaveCountGreaterThan(1);
+        // Anchors span the 0..255 display range, low to high.
+        mapping.Colormap.Entries[0].Value.Should().Be(0);
+        mapping.Colormap.Entries[^1].Value.Should().Be(255);
+    }
+
+    [UnitTest]
+    public void MapRenderingRule_ColormapByKnownName_IsCaseInsensitive()
+    {
+        var document = Parse(
+            """{"rasterFunction":"Colormap","rasterFunctionArguments":{"ColorrampName":"red to green"}}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeTrue();
+        mapping.Colormap.Should().NotBeNull();
+    }
+
+    [UnitTest]
+    public void MapRenderingRule_ColormapByUnknownName_IsNotImplemented()
+    {
+        var document = Parse(
+            """{"rasterFunction":"Colormap","rasterFunctionArguments":{"ColorrampName":"Totally Made Up Ramp"}}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeFalse();
+        mapping.IsNotImplemented.Should().BeTrue();
+        mapping.Reason.Should().Contain("ColorrampName");
+    }
+
+    [UnitTest]
+    public void MapRenderingRule_ColormapByInlineColorrampObject_IsNotImplemented()
+    {
+        var document = Parse(
+            """{"rasterFunction":"Colormap","rasterFunctionArguments":{"Colorramp":{"type":"algorithmic","fromColor":[0,0,0],"toColor":[255,255,255]}}}""");
 
         var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
 
@@ -217,10 +258,35 @@ public sealed class ImageServerRenderingRuleMappingTests
     }
 
     [UnitTest]
-    public void MapRenderingRule_ClipInsideType_IsNotImplemented()
+    public void MapRenderingRule_ClipInsideType_ResolvesInvertedClip()
     {
         var document = Parse(
             """{"rasterFunction":"Clip","rasterFunctionArguments":{"ClippingType":1,"Extent":{"xmin":0,"ymin":0,"xmax":5,"ymax":5}}}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeTrue();
+        mapping.ClipRegion.Should().NotBeNull();
+        mapping.ClipRegion!.Value.Inverted.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void MapRenderingRule_ClipKeepInsideType_ResolvesNonInvertedClip()
+    {
+        var document = Parse(
+            """{"rasterFunction":"Clip","rasterFunctionArguments":{"ClippingType":0,"Extent":{"xmin":0,"ymin":0,"xmax":5,"ymax":5}}}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeTrue();
+        mapping.ClipRegion!.Value.Inverted.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void MapRenderingRule_ClipUnknownType_IsNotImplemented()
+    {
+        var document = Parse(
+            """{"rasterFunction":"Clip","rasterFunctionArguments":{"ClippingType":9,"Extent":{"xmin":0,"ymin":0,"xmax":5,"ymax":5}}}""");
 
         var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
 
@@ -232,6 +298,79 @@ public sealed class ImageServerRenderingRuleMappingTests
     public void MapRenderingRule_ClipWithoutGeometry_IsInvalid()
     {
         var document = Parse("""{"rasterFunction":"Clip","rasterFunctionArguments":{}}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeFalse();
+        mapping.IsNotImplemented.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void MapRenderingRule_ExtractBand_ShiftsToOneBasedBands()
+    {
+        var document = Parse(
+            """{"rasterFunction":"ExtractBand","rasterFunctionArguments":{"BandIds":[2,1,0]}}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeTrue();
+        // 0-based [2,1,0] -> 1-based [3,2,1], order preserved.
+        mapping.Bands.Should().Equal(3, 2, 1);
+    }
+
+    [UnitTest]
+    public void MapRenderingRule_ExtractBandWrappingStretch_ResolvesBoth()
+    {
+        var document = Parse(
+            """{"rasterFunction":"ExtractBand","rasterFunctionArguments":{"BandIds":[0,1,2],"Raster":{"rasterFunction":"Stretch","rasterFunctionArguments":{"StretchType":5}}}}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeTrue();
+        mapping.Bands.Should().Equal(1, 2, 3);
+        mapping.Stretch!.Value.StretchType.Should().Be(RasterStretchType.MinMax);
+    }
+
+    [UnitTest]
+    public void MapRenderingRule_ExtractBandByName_IsNotImplemented()
+    {
+        var document = Parse(
+            """{"rasterFunction":"ExtractBand","rasterFunctionArguments":{"BandNames":["Red","Green"]}}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeFalse();
+        mapping.IsNotImplemented.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void MapRenderingRule_ExtractBandWithEmptyIds_IsInvalid()
+    {
+        var document = Parse(
+            """{"rasterFunction":"ExtractBand","rasterFunctionArguments":{"BandIds":[]}}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeFalse();
+        mapping.IsNotImplemented.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void MapRenderingRule_ExtractBandWithNegativeId_IsInvalid()
+    {
+        var document = Parse(
+            """{"rasterFunction":"ExtractBand","rasterFunctionArguments":{"BandIds":[-1,0]}}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeFalse();
+        mapping.IsNotImplemented.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void MapRenderingRule_ExtractBandWithoutIds_IsInvalid()
+    {
+        var document = Parse("""{"rasterFunction":"ExtractBand","rasterFunctionArguments":{}}""");
 
         var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
 

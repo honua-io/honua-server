@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Protocols.GeoServices.ImageServer.Handlers;
 using Honua.Protocols.GeoServices.ImageServer.Services;
 using Honua.Infrastructure.Services;
@@ -57,6 +58,11 @@ internal static class ImageServerServiceCollectionExtensions
 
         // Register supporting services
         services.TryAddScoped<SpatialReferenceResolver>();
+
+        // Shared Esri datum-transformation catalog (WKID -> PROJ pipeline) used by the
+        // project operation. TryAdd keeps a single instance shared with the FeatureServer
+        // registration regardless of protocol registration order.
+        services.TryAddSingleton<IDatumTransformationCatalog>(static _ => EsriDatumTransformationCatalog.Create());
         services.AddScoped<IImageServerLayerResolver, MetadataV2ImageServerLayerResolver>();
         services.AddScoped<IImageServerCatalogReader, ImageServerCatalogReader>();
         services.AddSingleton<IImageServerCatalogFilterEvaluator, ImageServerCatalogFilterEvaluator>();
