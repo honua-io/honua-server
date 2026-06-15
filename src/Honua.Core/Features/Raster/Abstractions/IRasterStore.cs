@@ -71,6 +71,12 @@ public interface IRasterStore
     /// <param name="x">X coordinate of the query point</param>
     /// <param name="y">Y coordinate of the query point</param>
     /// <param name="srid">Spatial reference system of the coordinates (defaults to raster's SRID)</param>
+    /// <param name="rendering">
+    /// Optional rendering rule (stretch/colormap/clip). When supplied, the returned value
+    /// reflects the rendered pixel (post-stretch / post-colormap) instead of the raw source
+    /// value, matching Esri ImageServer identify with a <c>renderingRule</c>. When <c>null</c>
+    /// the raw source pixel values are returned (the default behaviour).
+    /// </param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Pixel values at the specified point</returns>
     Task<PixelValueResult> IdentifyAsync(
@@ -79,10 +85,12 @@ public interface IRasterStore
         double x,
         double y,
         int? srid = null,
+        RasterIdentifyRendering? rendering = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Identifies pixel values against a composited layer mosaic.
+    /// Identifies pixel values against a composited layer mosaic. When <paramref name="rendering"/>
+    /// is supplied, the returned value reflects the rendered pixel instead of the raw source value.
     /// </summary>
     Task<PixelValueResult> IdentifyMosaicAsync(
         int layerId,
@@ -91,6 +99,7 @@ public interface IRasterStore
         double x,
         double y,
         int? srid = null,
+        RasterIdentifyRendering? rendering = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

@@ -124,6 +124,7 @@ public class ImageServerEndpointsTests
                 Arg.Any<double>(),
                 Arg.Any<double>(),
                 Arg.Any<int?>(),
+                Arg.Any<RasterIdentifyRendering?>(),
                 Arg.Any<CancellationToken>())
             .Returns(callInfo => new PixelValueResult
             {

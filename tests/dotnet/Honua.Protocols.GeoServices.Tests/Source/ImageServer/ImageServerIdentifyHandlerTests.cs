@@ -107,7 +107,7 @@ public class ImageServerIdentifyHandlerTests
 
         context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
         await _rasterStore.DidNotReceive()
-            .IdentifyAsync(1, 100, Arg.Any<double>(), Arg.Any<double>(), Arg.Any<int?>(), Arg.Any<CancellationToken>());
+            .IdentifyAsync(1, 100, Arg.Any<double>(), Arg.Any<double>(), Arg.Any<int?>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -125,7 +125,7 @@ public class ImageServerIdentifyHandlerTests
 
         context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
         await _rasterStore.DidNotReceive()
-            .IdentifyAsync(1, 100, Arg.Any<double>(), Arg.Any<double>(), Arg.Any<int?>(), Arg.Any<CancellationToken>());
+            .IdentifyAsync(1, 100, Arg.Any<double>(), Arg.Any<double>(), Arg.Any<int?>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -166,7 +166,7 @@ public class ImageServerIdentifyHandlerTests
         // queried/identified at that representative location.
         _rasterStore.QueryRastersAsync(default, default, default)
             .ReturnsForAnyArgs([CreateTestRasterInfo()]);
-        _rasterStore.IdentifyAsync(1, 100, Arg.Any<double>(), Arg.Any<double>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
+        _rasterStore.IdentifyAsync(1, 100, Arg.Any<double>(), Arg.Any<double>(), Arg.Any<int?>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
             .Returns(new PixelValueResult
             {
                 X = 5,
@@ -184,7 +184,7 @@ public class ImageServerIdentifyHandlerTests
 
         result.Should().BeOfType<JsonHttpResult<IdentifyResponse>>();
         await _rasterStore.Received().IdentifyAsync(
-            1, 100, 5.0, 5.0, Arg.Any<int?>(), Arg.Any<CancellationToken>());
+            1, 100, 5.0, 5.0, Arg.Any<int?>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -193,7 +193,7 @@ public class ImageServerIdentifyHandlerTests
     {
         _rasterStore.QueryRastersAsync(default, default, default)
             .ReturnsForAnyArgs([CreateTestRasterInfo()]);
-        _rasterStore.IdentifyAsync(1, 100, Arg.Any<double>(), Arg.Any<double>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
+        _rasterStore.IdentifyAsync(1, 100, Arg.Any<double>(), Arg.Any<double>(), Arg.Any<int?>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
             .Returns(new PixelValueResult
             {
                 X = 1,
@@ -211,7 +211,7 @@ public class ImageServerIdentifyHandlerTests
 
         result.Should().BeOfType<JsonHttpResult<IdentifyResponse>>();
         await _rasterStore.Received().IdentifyAsync(
-            1, 100, 1.0, 1.0, Arg.Any<int?>(), Arg.Any<CancellationToken>());
+            1, 100, 1.0, 1.0, Arg.Any<int?>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -380,6 +380,90 @@ public class ImageServerIdentifyHandlerTests
         properties.GetProperty("Band_1").GetDouble().Should().Be(128.0);
     }
 
+    [UnitTest]
+    [Operation(Operations.Identify)]
+    public async Task IdentifyAsync_WithRenderingRule_PassesRenderingToStore()
+    {
+        // A renderingRule changes the identify contract: the store is invoked with a
+        // RasterIdentifyRendering so the returned value reflects the rendered pixel.
+        _rasterStore.QueryRastersAsync(default, default, default)
+            .ReturnsForAnyArgs([CreateTestRasterInfo()]);
+        _rasterStore.IdentifyAsync(
+                1, 100, Arg.Any<double>(), Arg.Any<double>(), Arg.Any<int?>(),
+                Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
+            .Returns(new PixelValueResult
+            {
+                X = 10,
+                Y = 20,
+                Srid = 4326,
+                HasData = true,
+                BandValues = new Dictionary<int, object?> { [1] = 200.0 },
+            });
+
+        var context = CreateImageServerContext();
+        var request = new IdentifyRequest
+        {
+            Geometry = "10,20",
+            GeometryType = "esriGeometryPoint",
+            RenderingRule = """{"rasterFunction":"Stretch","rasterFunctionArguments":{"StretchType":5}}""",
+            F = "json",
+        };
+        var result = await _handler.IdentifyAsync(context, 1, request);
+
+        result.Should().BeOfType<JsonHttpResult<IdentifyResponse>>();
+        await _rasterStore.Received().IdentifyAsync(
+            1, 100, Arg.Any<double>(), Arg.Any<double>(), Arg.Any<int?>(),
+            Arg.Is<RasterIdentifyRendering?>(r => r != null && r.Value.Stretch != null),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Identify)]
+    public async Task IdentifyAsync_WithNotImplementedRenderingRule_Returns501()
+    {
+        _rasterStore.QueryRastersAsync(default, default, default)
+            .ReturnsForAnyArgs([CreateTestRasterInfo()]);
+
+        var context = CreateImageServerContext();
+        var request = new IdentifyRequest
+        {
+            Geometry = "10,20",
+            GeometryType = "esriGeometryPoint",
+            // Histogram-equalize stretch (type 4) is recognized but unimplemented.
+            RenderingRule = """{"rasterFunction":"Stretch","rasterFunctionArguments":{"StretchType":4}}""",
+            F = "json",
+        };
+        var result = await _handler.IdentifyAsync(context, 1, request);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status501NotImplemented);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Identify)]
+    public async Task IdentifyAsync_WithIdentityRenderingRule_PreservesRawValueContract()
+    {
+        // An Identity-only chain is an executable no-op: the store is called with a null
+        // rendering so the raw source value is returned (no contract change).
+        SetupSuccessfulIdentify();
+
+        var context = CreateImageServerContext();
+        var request = new IdentifyRequest
+        {
+            Geometry = "10.5,20.3",
+            GeometryType = "esriGeometryPoint",
+            RenderingRule = """{"rasterFunction":"Identity"}""",
+            F = "json",
+        };
+        var result = await _handler.IdentifyAsync(context, 1, request);
+
+        result.Should().BeOfType<JsonHttpResult<IdentifyResponse>>();
+        await _rasterStore.Received().IdentifyAsync(
+            1, 100, Arg.Any<double>(), Arg.Any<double>(), Arg.Any<int?>(),
+            Arg.Is<RasterIdentifyRendering?>(r => r == null),
+            Arg.Any<CancellationToken>());
+    }
+
     private static DefaultHttpContext CreateImageServerContext()
     {
         var services = new ServiceCollection();
@@ -396,7 +480,7 @@ public class ImageServerIdentifyHandlerTests
     {
         _rasterStore.QueryRastersAsync(default, default, default)
             .ReturnsForAnyArgs([CreateTestRasterInfo()]);
-        _rasterStore.IdentifyAsync(1, 100, Arg.Any<double>(), Arg.Any<double>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
+        _rasterStore.IdentifyAsync(1, 100, Arg.Any<double>(), Arg.Any<double>(), Arg.Any<int?>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
             .Returns(new PixelValueResult
             {
                 X = 10.5,

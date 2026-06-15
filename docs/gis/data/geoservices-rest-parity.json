@@ -1201,6 +1201,8 @@
         "legend",
         "computeClass (raster function chain validation)",
         "exportImage Stretch renderingRule (MinMax/StandardDeviation/PercentClip)",
+        "renderingRule honoured by identify (Stretch + Colormap + Clip; renders the sampled pixel)",
+        "renderingRule Colormap by named ColorrampName and Clip ClippingType=1 (keep outside)",
         "auto display stretch for non-8-bit dynamic tiles",
         "keyProperties",
         "multidimensionalInfo",
@@ -1218,7 +1220,8 @@
         "camera/orientation-ranked ImageServer find",
         "datumTransformation/image coordinate systems for ImageServer project",
         "spatial WHERE pushdown for query",
-        "renderingRule honoured by identify (legend honours an explicit Colormap; exportImage executes Stretch + Colormap)",
+        "renderingRule honoured by computeStatisticsHistograms",
+        "inline Colorramp object (algorithmic/multipart ramp) resolution for Colormap",
                 "multidimensional cube ingestion",
         "WCS SCALEFACTOR/SCALEAXES/SCALEEXTENT and temporal extensions (RANGESUBSET band selection and SCALESIZE output sizing implemented)",
         "full WCS CRS extension advertisement beyond native coverage CRS values",
@@ -1417,7 +1420,7 @@
             "honuaEndpoints": [
               "GET /rest/services/{id}/ImageServer/identify"
             ],
-            "notes": "Point-only identify with JSON responses."
+            "notes": "Point/envelope/polygon identify with JSON responses. A renderingRule renders the sampled pixel (post clip/stretch/colormap); raw source values are returned otherwise."
           },
           {
             "name": "Query",
@@ -1642,7 +1645,7 @@
             "GET /rest/services/{id}/ImageServer/computeClass",
             "POST /rest/services/{id}/ImageServer/computeClass"
           ],
-          "notes": "Closest in spirit to Esri's validate operation. Accepts a raster function chain document via renderingRule (or the legacy rasterFunction alias) and returns the planned execution metadata (rasterFunction, chainDepth, executedFunctions[], outputPixelType, status). The MVP planner walks Identity / Stretch / Clip nodes (max chain depth 8) and rejects unknown functions with a 400; exportImage now executes the Stretch portion (MinMax/StandardDeviation/PercentClip), an explicit Colormap, and a Clip (envelope/polygon) raster function; computeStatisticsHistograms wiring remains a follow-on."
+          "notes": "Closest in spirit to Esri's validate operation. Accepts a raster function chain document via renderingRule (or the legacy rasterFunction alias) and returns the planned execution metadata (rasterFunction, chainDepth, executedFunctions[], outputPixelType, status). The MVP planner walks Identity / Stretch / Colormap / Clip nodes (max chain depth 8) and rejects unknown functions with a 400; exportImage and identify execute the Stretch portion (MinMax/StandardDeviation/PercentClip), a Colormap (explicit stops or named ColorrampName), and a Clip (envelope/polygon, including ClippingType=1 keep-outside) raster function; computeStatisticsHistograms wiring remains a follow-on."
         }
       ],
       "childResources": {
@@ -1766,8 +1769,13 @@
             "notes": "Applied to TIFF output only. Supports None, JPEG, and LZ77; LZ77 maps to GDAL DEFLATE. Ignored for non-TIFF outputs."
           },
           {
-            "name": "bandIds, renderingRule, noData, noDataInterpretation",
-            "status": "ignored"
+            "name": "renderingRule",
+            "status": "implemented",
+            "notes": "Executes a Stretch (MinMax/StandardDeviation/PercentClip, optional per-band Statistics), a Colormap (explicit [value,r,g,b] stops or a named ColorrampName), and a Clip (envelope/polygon, including ClippingType=1 keep-outside). Identity / StretchType=0 are no-ops. Unrecognized stretch/colorramp variants and inline Colorramp objects return 501; unknown functions return 400."
+          },
+          {
+            "name": "bandIds, noData, noDataInterpretation",
+            "status": "implemented"
           },
           {
             "name": "mosaicRule, time",
@@ -1797,7 +1805,12 @@
             "notes": "mosaicRule is applied when the identify point intersects multiple rasters. time accepts a single ISO 8601 instant with the active raster.temporal-mosaic entitlement; Honua selects the newest layer-wide effective acquisition batch (AcquisitionDate, falling back to CreatedAt) at or before the timestamp, then applies the identify point."
           },
           {
-            "name": "renderingRule, pixelSize, returnGeometry",
+            "name": "renderingRule",
+            "status": "implemented",
+            "notes": "When supplied, identify returns the rendered pixel value (post clip/stretch/colormap, matching exportImage) instead of the raw source value; omitting it preserves the raw-value contract. Executes the same Stretch (MinMax/StandardDeviation/PercentClip), Colormap (explicit stops or named ColorrampName), and Clip (envelope/polygon, including ClippingType=1 keep-outside) support as exportImage; unsupported chains return 400/501."
+          },
+          {
+            "name": "pixelSize, returnGeometry",
             "status": "ignored"
           }
         ],
@@ -1902,7 +1915,7 @@
           {
             "name": "renderingRule (or rasterFunction alias)",
             "status": "implemented",
-            "notes": "JSON-encoded raster function chain document. The MVP planner walks Identity / Stretch / Clip nodes (max chain depth 8) and rejects unknown functions with a 400 naming the offending node. Output pixel type defaults to U8 when the chain includes Stretch and F32 otherwise unless the document overrides outputPixelType."
+            "notes": "JSON-encoded raster function chain document. The MVP planner walks Identity / Stretch / Colormap / Clip nodes (max chain depth 8) and rejects unknown functions with a 400 naming the offending node. Output pixel type defaults to U8 when the chain includes Stretch and F32 otherwise unless the document overrides outputPixelType."
           },
           {
             "name": "f",
@@ -1935,7 +1948,7 @@
         "Temporal mosaic uses newest-batch semantics: a time filter selects rasters from the single most-recent layer-wide effective acquisition batch (AcquisitionDate, falling back to CreatedAt) at or before the requested instant before applying request geometry, so mixed-date scenes can leave spatial coverage gaps until per-pixel temporal mosaicking is implemented.",
         "The query catalog reader applies WHERE/objectIds filters in-memory and reprojects footprint geometry to outSR when a coordinate transform is available.",
         "computeStatisticsHistograms always analyses the full selected raster or mosaic — geometry clipping and renderingRule are not yet honoured.",
-        "exportImage executes the Stretch raster function from renderingRule (MinMax/StandardDeviation/PercentClip, with optional per-band Statistics); exportImage also executes an explicit Colormap and a Clip (envelope/polygon), and the legend honours a Colormap renderingRule; other stretch types, clip-inside, and identify renderingRule are not yet honoured.",
+        "exportImage and identify execute the renderingRule (Stretch MinMax/StandardDeviation/PercentClip with optional per-band Statistics; Colormap by explicit stops or named ColorrampName; Clip envelope/polygon including ClippingType=1 keep-outside), and the legend honours a Colormap renderingRule; identify with a renderingRule returns the rendered pixel (raw value otherwise); other stretch types, inline Colorramp objects, and computeStatisticsHistograms renderingRule are not yet honoured.",
         "Legend swatches use a fixed 5-class equal-interval ramp; per-layer renderer persistence and renderingRule overrides are not yet wired up.",
         "Service info exposes timeInfo when the layer metadata declares temporal fields or raster catalog items carry acquisition timestamps.",
         "Rendered ImageServer byte output still depends on the PostGIS raster output drivers configured in the database.",

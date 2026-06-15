@@ -119,7 +119,7 @@ internal sealed class ImageServerSamplesHandler
                 }
 
                 var pixelResult = selectedRasters.Length == 1
-                    ? await _rasterStore.IdentifyAsync(layerId, selectedRasters[0].Id, point.X, point.Y, srid, cancellationToken)
+                    ? await _rasterStore.IdentifyAsync(layerId, selectedRasters[0].Id, point.X, point.Y, srid, cancellationToken: cancellationToken)
                     : await _rasterStore.IdentifyMosaicAsync(
                         layerId,
                         selectedRasters.Select(r => r.Id).ToArray(),
@@ -127,7 +127,7 @@ internal sealed class ImageServerSamplesHandler
                         point.X,
                         point.Y,
                         srid,
-                        cancellationToken);
+                        cancellationToken: cancellationToken);
 
                 samples.Add(new SampleEntry
                 {

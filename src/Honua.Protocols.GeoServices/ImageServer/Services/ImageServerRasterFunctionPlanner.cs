@@ -343,12 +343,22 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
 
     private static RenderingRuleMapping MapClipArguments(Dictionary<string, object?> arguments)
     {
-        // Clip masks the raster to an area of interest. esriClippingType "outside" (keep
-        // outside the geometry) is the inverse of ST_Clip semantics and is not executed.
-        if (TryGetInt(arguments, "ClippingType", out var clippingType) && clippingType == 1)
+        // Clip masks the raster to an area of interest. esriClippingType controls which side
+        // is kept: 0 (default) keeps pixels inside the geometry; 1 ("clip inside / keep
+        // outside") removes pixels inside the geometry and keeps everything outside, executed
+        // by the raster store as an inverted clip (RasterClipRegion.Inverted).
+        var inverted = false;
+        if (TryGetInt(arguments, "ClippingType", out var clippingType))
         {
-            return RenderingRuleMapping.NotImplemented(
-                "Clip ClippingType=1 (clip inside / keep outside) is not implemented on this service.");
+            if (clippingType == 1)
+            {
+                inverted = true;
+            }
+            else if (clippingType != 0)
+            {
+                return RenderingRuleMapping.NotImplemented(
+                    $"Clip ClippingType {clippingType.ToString(CultureInfo.InvariantCulture)} is not implemented. Supported: 0 (keep inside), 1 (keep outside).");
+            }
         }
 
         JsonElement geometry;
@@ -365,7 +375,7 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
             return RenderingRuleMapping.Invalid("Clip raster function requires a ClippingGeometry or Extent argument.");
         }
 
-        if (!TryBuildClipRegion(geometry, out var region))
+        if (!TryBuildClipRegion(geometry, inverted, out var region))
         {
             return RenderingRuleMapping.Invalid("Clip geometry must be an Esri envelope or polygon.");
         }
@@ -373,7 +383,7 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
         return RenderingRuleMapping.Executable(null, null, region);
     }
 
-    private static bool TryBuildClipRegion(JsonElement geometry, out RasterClipRegion region)
+    private static bool TryBuildClipRegion(JsonElement geometry, bool inverted, out RasterClipRegion region)
     {
         region = default;
         if (geometry.ValueKind != JsonValueKind.Object)
@@ -410,6 +420,7 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
         {
             Geometry = new NetTopologySuite.IO.WKBWriter().Write(nts),
             Srid = srid,
+            Inverted = inverted,
         };
         return true;
     }
@@ -482,16 +493,32 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
     private static RenderingRuleMapping MapColormapArguments(Dictionary<string, object?> arguments)
     {
         // Esri supports a named ColorrampName or an explicit Colormap array of
-        // [value, r, g, b] (optionally with a) stops. Only the explicit array is executed.
+        // [value, r, g, b] (optionally with a) stops. An explicit array wins; otherwise a
+        // recognised ColorrampName is resolved to anchor stops over the display range.
         if (!arguments.TryGetValue("Colormap", out var raw) || raw is not JsonElement element)
         {
-            if (arguments.ContainsKey("ColorrampName") || arguments.ContainsKey("Colorramp"))
+            if (TryGetString(arguments, "ColorrampName", out var rampName))
             {
+                if (NamedColorRamp.TryResolve(rampName, out var namedColormap))
+                {
+                    return RenderingRuleMapping.Executable(null, namedColormap);
+                }
+
                 return RenderingRuleMapping.NotImplemented(
-                    "Colormap by ColorrampName is not implemented; supply an explicit Colormap array of [value, r, g, b].");
+                    $"Colormap ColorrampName '{rampName}' is not implemented. Supported named ramps: {NamedColorRamp.SupportedNamesText()}. " +
+                    "Alternatively supply an explicit Colormap array of [value, r, g, b].");
             }
 
-            return RenderingRuleMapping.Invalid("Colormap raster function requires a Colormap array of [value, r, g, b] stops.");
+            if (arguments.ContainsKey("Colorramp"))
+            {
+                // A "Colorramp" object (algorithmic/multipart ramp definition) is a richer
+                // structure than a named ramp; resolving it requires evaluating the algorithm,
+                // which is deferred. Named ramps and explicit stop arrays are supported.
+                return RenderingRuleMapping.NotImplemented(
+                    "Colormap by inline Colorramp object is not implemented; supply a ColorrampName or an explicit Colormap array of [value, r, g, b].");
+            }
+
+            return RenderingRuleMapping.Invalid("Colormap raster function requires a Colormap array of [value, r, g, b] stops or a ColorrampName.");
         }
 
         if (element.ValueKind != JsonValueKind.Array || element.GetArrayLength() == 0)
@@ -640,6 +667,27 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
             case string s when int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var fromBoxed):
                 value = fromBoxed;
                 return true;
+            default:
+                return false;
+        }
+    }
+
+    private static bool TryGetString(Dictionary<string, object?> arguments, string key, out string value)
+    {
+        value = string.Empty;
+        if (!arguments.TryGetValue(key, out var raw) || raw is null)
+        {
+            return false;
+        }
+
+        switch (raw)
+        {
+            case JsonElement json when json.ValueKind == JsonValueKind.String:
+                value = json.GetString() ?? string.Empty;
+                return !string.IsNullOrWhiteSpace(value);
+            case string s:
+                value = s;
+                return !string.IsNullOrWhiteSpace(value);
             default:
                 return false;
         }
