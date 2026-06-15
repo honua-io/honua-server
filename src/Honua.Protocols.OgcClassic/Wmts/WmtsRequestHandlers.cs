@@ -2196,7 +2196,13 @@ internal static class WmtsRequestHandlers
         sb.AppendLine("    <TileMatrixSet>");
         sb.AppendLine("      <ows:Identifier>WorldCRS84Quad</ows:Identifier>");
         sb.AppendLine("      <ows:SupportedCRS>urn:ogc:def:crs:OGC:1.3:CRS84</ows:SupportedCRS>");
-        sb.AppendLine("      <WellKnownScaleSet>urn:ogc:def:wkss:OGC:1.0:GoogleCRS84Quad</WellKnownScaleSet>");
+        // No <WellKnownScaleSet> is advertised: this 2x1 CRS84 grid follows the OGC
+        // "WorldCRS84Quad" definition (scaleDenominator 279541132.0143589 at level 0, two
+        // tiles wide), which does NOT correspond to the WMTS 1.0 GoogleCRS84Quad well-known
+        // scale set (a one-tile 559082264.0287178 set). Declaring that wkss would make the
+        // tile-matrix scale denominators inconsistent with it and fails OGC WMTS CITE
+        // (Server.KVP.GET.GetCapabilities.Response.TileMatrixSet.WellKnownScaleSet). The
+        // element is optional, so it is omitted; the grid remains fully specified inline.
 
         for (var z = 0; z <= wmtsMaxZoom; z++)
         {
