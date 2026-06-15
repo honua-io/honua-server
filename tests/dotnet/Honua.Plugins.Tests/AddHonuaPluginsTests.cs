@@ -119,6 +119,49 @@ public sealed class AddHonuaPluginsTests
         feature.Category.Should().Be(FeatureCatalog.Categories.Extensibility);
     }
 
+    [Fact]
+    public void RegistersCustomEndpoint_WhenCapabilityDeclared()
+    {
+        using var provider = BuildProvider(HonuaEdition.Enterprise, p => p.Add<UtilityStatusEndpointPlugin>());
+
+        provider.GetServices<ICustomEndpoint>().Should().ContainSingle();
+        var registration = provider.GetRequiredService<PluginCatalog>().Plugins.Single();
+        registration.ProvidesCustomEndpoint.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Add_Throws_WhenCustomEndpointCapabilityNotDeclared()
+    {
+        var act = () => BuildProvider(HonuaEdition.Enterprise, p => p.Add<UndeclaredEndpointPlugin>());
+        act.Should().Throw<InvalidOperationException>().WithMessage("*CustomEndpoints capability*");
+    }
+
+    [Fact]
+    public void Add_Throws_WhenBackgroundCapabilityNotDeclared()
+    {
+        var act = () => BuildProvider(HonuaEdition.Enterprise, p => p.Add<UndeclaredBackgroundPlugin>());
+        act.Should().Throw<InvalidOperationException>().WithMessage("*BackgroundExecution capability*");
+    }
+
+    [Plugin("undeclared-endpoint", "1.0.0")]
+    private sealed class UndeclaredEndpointPlugin : ICustomEndpoint
+    {
+        public IReadOnlyList<string> Methods { get; } = ["GET"];
+
+        public string Pattern => "x";
+
+        public bool RequiresAuthorization => false;
+
+        public ValueTask<PluginEndpointResponse> HandleAsync(PluginEndpointRequest request, CancellationToken cancellationToken)
+            => ValueTask.FromResult(PluginEndpointResponse.Status(204));
+    }
+
+    [Plugin("undeclared-background", "1.0.0")]
+    private sealed class UndeclaredBackgroundPlugin : IPluginBackgroundService
+    {
+        public Task ExecuteAsync(CancellationToken stoppingToken) => Task.CompletedTask;
+    }
+
     [Plugin("validator-and-hook", "1.0.0")]
     private sealed class ValidatorAndHookPlugin : IFeatureValidator, IEditHook
     {

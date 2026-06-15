@@ -15,6 +15,7 @@ namespace Honua.Plugins;
 /// <param name="ProvidesEditHook">Whether the plugin implements <c>IEditHook</c>.</param>
 /// <param name="ProvidesComputedField">Whether the plugin implements <c>IComputedFieldProvider</c>.</param>
 /// <param name="ProvidesBackgroundService">Whether the plugin implements <c>IPluginBackgroundService</c>.</param>
+/// <param name="ProvidesCustomEndpoint">Whether the plugin implements <c>ICustomEndpoint</c>.</param>
 public sealed record PluginRegistration(
     PluginManifest Manifest,
     Type ImplementationType,
@@ -22,7 +23,8 @@ public sealed record PluginRegistration(
     bool ProvidesFieldValidator,
     bool ProvidesEditHook,
     bool ProvidesComputedField,
-    bool ProvidesBackgroundService)
+    bool ProvidesBackgroundService,
+    bool ProvidesCustomEndpoint)
 {
     /// <summary>Gets the stable plugin identifier.</summary>
     public string Id => Manifest.Id;

@@ -2,9 +2,11 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Reflection;
+using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Plugins.Abstractions;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -20,8 +22,11 @@ namespace Honua.Plugins;
 /// </summary>
 internal sealed partial class PluginBackgroundServiceHost : IHostedService
 {
+    private const string ExtensionPoint = "background";
+
     private readonly IPluginBackgroundService[] _services;
     private readonly ILicenseEntitlementService _licensing;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<PluginBackgroundServiceHost> _logger;
     private readonly bool _enabledByConfig;
     private readonly List<Task> _runners = [];
@@ -30,12 +35,14 @@ internal sealed partial class PluginBackgroundServiceHost : IHostedService
     public PluginBackgroundServiceHost(
         IEnumerable<IPluginBackgroundService> services,
         ILicenseEntitlementService licensing,
+        IServiceScopeFactory scopeFactory,
         IOptions<PluginOptions> options,
         ILogger<PluginBackgroundServiceHost> logger)
     {
         ArgumentNullException.ThrowIfNull(options);
         _services = [.. services];
         _licensing = licensing ?? throw new ArgumentNullException(nameof(licensing));
+        _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _enabledByConfig = options.Value.Enabled;
     }
@@ -91,6 +98,11 @@ internal sealed partial class PluginBackgroundServiceHost : IHostedService
     {
         var pluginId = PluginIdOf(service);
         Log.Starting(_logger, pluginId);
+        await AuditAsync(
+            (auditLog, ct) => PluginExecutionAudit.RecordBackgroundStartedAsync(auditLog, pluginId, ct),
+            stoppingToken).ConfigureAwait(false);
+
+        using var measure = PluginMetrics.Measure(pluginId, ExtensionPoint);
         try
         {
             await service.ExecuteAsync(stoppingToken).ConfigureAwait(false);
@@ -103,7 +115,32 @@ internal sealed partial class PluginBackgroundServiceHost : IHostedService
         {
             // Failure isolation: a faulting background service is logged and disabled, never
             // propagated to the host (which would tear down the process).
+            measure.MarkFailed();
             Log.Faulted(_logger, pluginId, ex);
+            await AuditAsync(
+                (auditLog, ct) => PluginExecutionAudit.RecordBackgroundFaultedAsync(auditLog, pluginId, ct),
+                CancellationToken.None).ConfigureAwait(false);
+        }
+    }
+
+    // Background services are hosted as a singleton, so the scoped IAuditLog (PostgresAuditLog needs
+    // a per-operation DB connection) is resolved from a transient scope per audit write rather than
+    // captured as a captive dependency.
+    private async Task AuditAsync(Func<IAuditLog, CancellationToken, Task> record, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await using var scope = _scopeFactory.CreateAsyncScope();
+            var auditLog = scope.ServiceProvider.GetRequiredService<IAuditLog>();
+            await record(auditLog, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            // Auditing a background-service lifecycle transition must never crash the host.
         }
     }
 
