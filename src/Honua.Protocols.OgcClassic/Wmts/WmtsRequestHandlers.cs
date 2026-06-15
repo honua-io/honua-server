@@ -39,6 +39,11 @@ internal static class WmtsRequestHandlers
     private const double WebMercatorOrigin = SpatialConstants.WebMercatorExtent;
     private const int WmtsMaxZoom = 22;
     private const double WmtsGoogleMapsCompatibleScaleDenominator0 = 559082264.0287178;
+    // OGC WorldCRS84Quad well-known scale set: scale denominator at TileMatrix 0.
+    // Halves with each subsequent level (256px tiles, 2x1 grid at level 0).
+    private const double WmtsWorldCrs84QuadScaleDenominator0 = 279541132.0143589;
+    private const double Crs84OriginLon = -180.0;
+    private const double Crs84OriginLat = 90.0;
     private const string WmtsVersion = "1.0.0";
     private const string WmtsMimeType = "application/xml";
     private const string WmtsTextXmlMimeType = "text/xml";
@@ -579,9 +584,9 @@ internal static class WmtsRequestHandlers
             return CreateWmtsExceptionReport(context, "MissingParameterValue", "TileMatrixSet", "TILEMATRIXSET parameter is required.");
         }
 
-        if (!string.Equals(tileMatrixSet, "WebMercatorQuad", StringComparison.OrdinalIgnoreCase))
+        if (!TryResolveWmtsTileGrid(tileMatrixSet, out var tileGrid))
         {
-            return CreateWmtsExceptionReport(context, "InvalidParameterValue", "TileMatrixSet", "Only TILEMATRIXSET=WebMercatorQuad is supported.");
+            return CreateWmtsExceptionReport(context, "InvalidParameterValue", "TileMatrixSet", "Supported TILEMATRIXSET values are WebMercatorQuad and WorldCRS84Quad.");
         }
 
         if (!TryGetRequiredQueryValue(query, "TILEMATRIX", out var tileMatrixValue))
@@ -616,26 +621,16 @@ internal static class WmtsRequestHandlers
             return CreateWmtsExceptionReport(context, "InvalidParameterValue", "TileCol", "Invalid TILECOL parameter.");
         }
 
-        var maxTileIndex = (1L << tileMatrix) - 1;
-        if (tileRow > maxTileIndex)
+        var maxRowIndex = GetWmtsMaxTileRowIndex(tileMatrix);
+        var maxColIndex = GetWmtsMaxTileColIndex(tileGrid, tileMatrix);
+        if (tileRow > maxRowIndex)
         {
             return CreateWmtsExceptionReport(context, "TileOutOfRange", "TileRow", "TILEROW is outside the valid range for TILEMATRIX.");
         }
 
-        if (tileCol > maxTileIndex)
+        if (tileCol > maxColIndex)
         {
             return CreateWmtsExceptionReport(context, "TileOutOfRange", "TileCol", "TILECOL is outside the valid range for TILEMATRIX.");
-        }
-
-        var tileMatrixLimitMax = GetWmtsTileMatrixLimitMax(tileMatrix);
-        if (tileRow > tileMatrixLimitMax)
-        {
-            return CreateWmtsExceptionReport(context, "TileOutOfRange", "TileRow", "TILEROW is outside the TileMatrixSetLimits for TILEMATRIX.");
-        }
-
-        if (tileCol > tileMatrixLimitMax)
-        {
-            return CreateWmtsExceptionReport(context, "TileOutOfRange", "TileCol", "TILECOL is outside the TileMatrixSetLimits for TILEMATRIX.");
         }
 
         var serviceSrid = ResolveServiceSrid(service, layer.Resource);
@@ -644,7 +639,7 @@ internal static class WmtsRequestHandlers
             BuildRenderDescriptor(layer)
         };
 
-        var renderResult = await RenderRasterTileV2Async(
+        var renderResult = await RenderRasterTileForGridAsync(
             context,
             serviceSrid,
             renderDescriptors,
@@ -652,6 +647,7 @@ internal static class WmtsRequestHandlers
             tileRow,
             tileCol,
             MaxFeaturesPerLayer,
+            tileGrid,
             tileTemporalCancellationToken,
             tileTemporalFilter is null ? null : [tileTemporalFilter]).ConfigureAwait(false);
 
@@ -1421,22 +1417,8 @@ internal static class WmtsRequestHandlers
                 }
 
                 AppendWmtsDimensionElements(sb, dimensions);
-                sb.AppendLine("      <TileMatrixSetLink>");
-                sb.AppendLine("        <TileMatrixSet>WebMercatorQuad</TileMatrixSet>");
-                sb.AppendLine("        <TileMatrixSetLimits>");
-                for (var z = 0; z <= wmtsMaxZoom; z++)
-                {
-                    var tileMatrixLimitMax = GetWmtsTileMatrixLimitMax(z);
-                    sb.AppendLine("          <TileMatrixLimits>");
-                    sb.Append("            <TileMatrix>").Append(z.ToString(CultureInfo.InvariantCulture)).AppendLine("</TileMatrix>");
-                    sb.AppendLine("            <MinTileRow>0</MinTileRow>");
-                    sb.Append("            <MaxTileRow>").Append(tileMatrixLimitMax.ToString(CultureInfo.InvariantCulture)).AppendLine("</MaxTileRow>");
-                    sb.AppendLine("            <MinTileCol>0</MinTileCol>");
-                    sb.Append("            <MaxTileCol>").Append(tileMatrixLimitMax.ToString(CultureInfo.InvariantCulture)).AppendLine("</MaxTileCol>");
-                    sb.AppendLine("          </TileMatrixLimits>");
-                }
-                sb.AppendLine("        </TileMatrixSetLimits>");
-                sb.AppendLine("      </TileMatrixSetLink>");
+                AppendWmtsTileMatrixSetLink(sb, TileGridKind.WebMercatorQuad, wmtsMaxZoom);
+                AppendWmtsTileMatrixSetLink(sb, TileGridKind.WorldCrs84Quad, wmtsMaxZoom);
                 sb.Append("      <ResourceURL format=\"image/png\" resourceType=\"tile\" template=\"")
                     .Append(EscapeXml(tileTemplate))
                     .AppendLine("\" />");
@@ -1453,28 +1435,8 @@ internal static class WmtsRequestHandlers
                 sb.AppendLine("    </Layer>");
             }
 
-            sb.AppendLine("    <TileMatrixSet>");
-            sb.AppendLine("      <ows:Identifier>WebMercatorQuad</ows:Identifier>");
-            sb.AppendLine("      <ows:SupportedCRS>urn:ogc:def:crs:EPSG:6.18:3:3857</ows:SupportedCRS>");
-            sb.AppendLine("      <WellKnownScaleSet>urn:ogc:def:wkss:OGC:1.0:GoogleMapsCompatible</WellKnownScaleSet>");
-
-            for (var z = 0; z <= wmtsMaxZoom; z++)
-            {
-                var matrixSize = 1L << z;
-                var scaleDenominator = GetWmtsScaleDenominator(z);
-
-                sb.AppendLine("      <TileMatrix>");
-                sb.Append("        <ows:Identifier>").Append(z.ToString(CultureInfo.InvariantCulture)).AppendLine("</ows:Identifier>");
-                sb.Append("        <ScaleDenominator>").Append(FormatWmtsScaleDenominator(scaleDenominator)).AppendLine("</ScaleDenominator>");
-                sb.Append("        <TopLeftCorner>").Append((-WebMercatorOrigin).ToString("F6", CultureInfo.InvariantCulture)).Append(' ').Append(WebMercatorOrigin.ToString("F6", CultureInfo.InvariantCulture)).AppendLine("</TopLeftCorner>");
-                sb.Append("        <TileWidth>").Append(TileSize.ToString(CultureInfo.InvariantCulture)).AppendLine("</TileWidth>");
-                sb.Append("        <TileHeight>").Append(TileSize.ToString(CultureInfo.InvariantCulture)).AppendLine("</TileHeight>");
-                sb.Append("        <MatrixWidth>").Append(matrixSize.ToString(CultureInfo.InvariantCulture)).AppendLine("</MatrixWidth>");
-                sb.Append("        <MatrixHeight>").Append(matrixSize.ToString(CultureInfo.InvariantCulture)).AppendLine("</MatrixHeight>");
-                sb.AppendLine("      </TileMatrix>");
-            }
-
-            sb.AppendLine("    </TileMatrixSet>");
+            AppendWmtsWebMercatorTileMatrixSet(sb, wmtsMaxZoom);
+            AppendWmtsWorldCrs84QuadTileMatrixSet(sb, wmtsMaxZoom);
             sb.AppendLine("  </Contents>");
         }
 
@@ -2118,6 +2080,142 @@ internal static class WmtsRequestHandlers
         return tileMatrix < 0
             ? 0
             : (int)((1L << tileMatrix) - 1);
+    }
+
+    /// <summary>
+    /// Resolves a WMTS TILEMATRIXSET identifier to the shared rendering <see cref="TileGridKind"/>.
+    /// Only the advertised gridsets (WebMercatorQuad, WorldCRS84Quad) are accepted; matching is
+    /// case-insensitive to mirror the rest of the WMTS parameter handling.
+    /// </summary>
+    private static bool TryResolveWmtsTileGrid(string? tileMatrixSet, out TileGridKind grid)
+    {
+        if (string.Equals(tileMatrixSet, "WebMercatorQuad", StringComparison.OrdinalIgnoreCase))
+        {
+            grid = TileGridKind.WebMercatorQuad;
+            return true;
+        }
+
+        if (string.Equals(tileMatrixSet, "WorldCRS84Quad", StringComparison.OrdinalIgnoreCase))
+        {
+            grid = TileGridKind.WorldCrs84Quad;
+            return true;
+        }
+
+        grid = TileGridKind.WebMercatorQuad;
+        return false;
+    }
+
+    /// <summary>
+    /// Maximum valid TILEROW index (inclusive) for a tile matrix. Both supported gridsets
+    /// (WebMercatorQuad, WorldCRS84Quad) have <c>2^z</c> rows.
+    /// </summary>
+    private static int GetWmtsMaxTileRowIndex(int tileMatrix)
+        => tileMatrix < 0 ? 0 : (int)((1L << tileMatrix) - 1);
+
+    /// <summary>
+    /// Maximum valid TILECOL index (inclusive) for a tile matrix in the given gridset.
+    /// WebMercatorQuad has <c>2^z</c> columns; WorldCRS84Quad has <c>2 * 2^z</c> columns
+    /// (the world is two tiles wide at zoom 0).
+    /// </summary>
+    private static int GetWmtsMaxTileColIndex(TileGridKind grid, int tileMatrix)
+    {
+        if (tileMatrix < 0)
+        {
+            return 0;
+        }
+
+        var columns = grid == TileGridKind.WorldCrs84Quad
+            ? 2L << tileMatrix
+            : 1L << tileMatrix;
+        return (int)(columns - 1);
+    }
+
+    /// <summary>
+    /// Emits a per-layer <c>TileMatrixSetLink</c> (with explicit limits) for the given gridset.
+    /// WorldCRS84Quad has twice as many columns as rows at every level.
+    /// </summary>
+    private static void AppendWmtsTileMatrixSetLink(StringBuilder sb, TileGridKind grid, int wmtsMaxZoom)
+    {
+        var identifier = grid == TileGridKind.WorldCrs84Quad ? "WorldCRS84Quad" : "WebMercatorQuad";
+        sb.AppendLine("      <TileMatrixSetLink>");
+        sb.Append("        <TileMatrixSet>").Append(identifier).AppendLine("</TileMatrixSet>");
+        sb.AppendLine("        <TileMatrixSetLimits>");
+        for (var z = 0; z <= wmtsMaxZoom; z++)
+        {
+            var maxRow = GetWmtsMaxTileRowIndex(z);
+            var maxCol = GetWmtsMaxTileColIndex(grid, z);
+            sb.AppendLine("          <TileMatrixLimits>");
+            sb.Append("            <TileMatrix>").Append(z.ToString(CultureInfo.InvariantCulture)).AppendLine("</TileMatrix>");
+            sb.AppendLine("            <MinTileRow>0</MinTileRow>");
+            sb.Append("            <MaxTileRow>").Append(maxRow.ToString(CultureInfo.InvariantCulture)).AppendLine("</MaxTileRow>");
+            sb.AppendLine("            <MinTileCol>0</MinTileCol>");
+            sb.Append("            <MaxTileCol>").Append(maxCol.ToString(CultureInfo.InvariantCulture)).AppendLine("</MaxTileCol>");
+            sb.AppendLine("          </TileMatrixLimits>");
+        }
+
+        sb.AppendLine("        </TileMatrixSetLimits>");
+        sb.AppendLine("      </TileMatrixSetLink>");
+    }
+
+    /// <summary>
+    /// Emits the WebMercatorQuad <c>TileMatrixSet</c> definition (EPSG:3857, GoogleMapsCompatible).
+    /// </summary>
+    private static void AppendWmtsWebMercatorTileMatrixSet(StringBuilder sb, int wmtsMaxZoom)
+    {
+        sb.AppendLine("    <TileMatrixSet>");
+        sb.AppendLine("      <ows:Identifier>WebMercatorQuad</ows:Identifier>");
+        sb.AppendLine("      <ows:SupportedCRS>urn:ogc:def:crs:EPSG:6.18:3:3857</ows:SupportedCRS>");
+        sb.AppendLine("      <WellKnownScaleSet>urn:ogc:def:wkss:OGC:1.0:GoogleMapsCompatible</WellKnownScaleSet>");
+
+        for (var z = 0; z <= wmtsMaxZoom; z++)
+        {
+            var matrixSize = 1L << z;
+            var scaleDenominator = GetWmtsScaleDenominator(z);
+
+            sb.AppendLine("      <TileMatrix>");
+            sb.Append("        <ows:Identifier>").Append(z.ToString(CultureInfo.InvariantCulture)).AppendLine("</ows:Identifier>");
+            sb.Append("        <ScaleDenominator>").Append(FormatWmtsScaleDenominator(scaleDenominator)).AppendLine("</ScaleDenominator>");
+            sb.Append("        <TopLeftCorner>").Append((-WebMercatorOrigin).ToString("F6", CultureInfo.InvariantCulture)).Append(' ').Append(WebMercatorOrigin.ToString("F6", CultureInfo.InvariantCulture)).AppendLine("</TopLeftCorner>");
+            sb.Append("        <TileWidth>").Append(TileSize.ToString(CultureInfo.InvariantCulture)).AppendLine("</TileWidth>");
+            sb.Append("        <TileHeight>").Append(TileSize.ToString(CultureInfo.InvariantCulture)).AppendLine("</TileHeight>");
+            sb.Append("        <MatrixWidth>").Append(matrixSize.ToString(CultureInfo.InvariantCulture)).AppendLine("</MatrixWidth>");
+            sb.Append("        <MatrixHeight>").Append(matrixSize.ToString(CultureInfo.InvariantCulture)).AppendLine("</MatrixHeight>");
+            sb.AppendLine("      </TileMatrix>");
+        }
+
+        sb.AppendLine("    </TileMatrixSet>");
+    }
+
+    /// <summary>
+    /// Emits the WorldCRS84Quad <c>TileMatrixSet</c> definition (CRS84/EPSG:4326). The grid is
+    /// two tiles wide by one tile tall at level 0; the top-left corner is in latitude/longitude
+    /// (axis order Lat Lon for CRS84 in the WMTS TopLeftCorner element).
+    /// </summary>
+    private static void AppendWmtsWorldCrs84QuadTileMatrixSet(StringBuilder sb, int wmtsMaxZoom)
+    {
+        sb.AppendLine("    <TileMatrixSet>");
+        sb.AppendLine("      <ows:Identifier>WorldCRS84Quad</ows:Identifier>");
+        sb.AppendLine("      <ows:SupportedCRS>urn:ogc:def:crs:OGC:1.3:CRS84</ows:SupportedCRS>");
+        sb.AppendLine("      <WellKnownScaleSet>urn:ogc:def:wkss:OGC:1.0:GoogleCRS84Quad</WellKnownScaleSet>");
+
+        for (var z = 0; z <= wmtsMaxZoom; z++)
+        {
+            var matrixHeight = 1L << z;
+            var matrixWidth = 2L << z;
+            var scaleDenominator = WmtsWorldCrs84QuadScaleDenominator0 / matrixHeight;
+
+            sb.AppendLine("      <TileMatrix>");
+            sb.Append("        <ows:Identifier>").Append(z.ToString(CultureInfo.InvariantCulture)).AppendLine("</ows:Identifier>");
+            sb.Append("        <ScaleDenominator>").Append(FormatWmtsScaleDenominator(scaleDenominator)).AppendLine("</ScaleDenominator>");
+            sb.Append("        <TopLeftCorner>").Append(Crs84OriginLat.ToString("F6", CultureInfo.InvariantCulture)).Append(' ').Append(Crs84OriginLon.ToString("F6", CultureInfo.InvariantCulture)).AppendLine("</TopLeftCorner>");
+            sb.Append("        <TileWidth>").Append(TileSize.ToString(CultureInfo.InvariantCulture)).AppendLine("</TileWidth>");
+            sb.Append("        <TileHeight>").Append(TileSize.ToString(CultureInfo.InvariantCulture)).AppendLine("</TileHeight>");
+            sb.Append("        <MatrixWidth>").Append(matrixWidth.ToString(CultureInfo.InvariantCulture)).AppendLine("</MatrixWidth>");
+            sb.Append("        <MatrixHeight>").Append(matrixHeight.ToString(CultureInfo.InvariantCulture)).AppendLine("</MatrixHeight>");
+            sb.AppendLine("      </TileMatrix>");
+        }
+
+        sb.AppendLine("    </TileMatrixSet>");
     }
 
     private static async Task AppendWmtsWgs84BoundingBoxAsync(
