@@ -932,48 +932,46 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
         honuaSingleOutField.Rows[0].Should().ContainKey(sanitizedCompareField);
         honuaSingleOutField.Rows[0].Should().NotContainKey(sanitizedNumericField);
 
-        var sourceNotNullWhereCount = await QueryCountWithWhereAsync(
-            _sourceClient,
-            sourceQueryEndpoint,
-            $"{serviceCase.CompareField} IS NOT NULL");
+        // The frozen snapshot is the source of truth: the import copied exactly these rows,
+        // so derive the expected count from the snapshot rather than re-querying the live
+        // external service, whose row counts drift between snapshot capture and now (the live
+        // re-query previously made this assertion flaky — see honua-server nightly parity).
+        var expectedCompareNotNull = sourceSnapshot.TotalCount
+            - CountJsonNull(sourceSnapshot.Rows, serviceCase.CompareField);
         var honuaNotNullWhereCount = await QueryCountWithWhereAsync(
             _adminClient,
             honuaQueryEndpoint,
             $"{sanitizedCompareField} IS NOT NULL");
-        honuaNotNullWhereCount.Should().Be(sourceNotNullWhereCount);
+        honuaNotNullWhereCount.Should().Be(expectedCompareNotNull);
 
-        if (TryBuildFieldEqualityWhereClause(sourceSnapshot.Rows, serviceCase.CompareField, out var sourceWhereClause))
+        if (TryBuildFieldEqualityWhereClause(sourceSnapshot.Rows, serviceCase.CompareField, out var sourceWhereClause, out var matchedCompareValue))
         {
-            var sourceWhereCount = await QueryCountWithWhereAsync(_sourceClient, sourceQueryEndpoint, sourceWhereClause);
+            var expectedWhereCount = CountFieldEquals(sourceSnapshot.Rows, serviceCase.CompareField, matchedCompareValue);
             var honuaWhereClause = sourceWhereClause.Replace(
                 serviceCase.CompareField,
                 sanitizedCompareField,
                 StringComparison.Ordinal);
             var honuaWhereCount = await QueryCountWithWhereAsync(_adminClient, honuaQueryEndpoint, honuaWhereClause);
-            honuaWhereCount.Should().Be(sourceWhereCount);
+            honuaWhereCount.Should().Be(expectedWhereCount);
         }
 
         if (!string.IsNullOrWhiteSpace(serviceCase.DateField) && !string.IsNullOrWhiteSpace(sanitizedDateField))
         {
-            var sourceDateNullCount = await QueryCountWithWhereAsync(
-                _sourceClient,
-                sourceQueryEndpoint,
-                $"{serviceCase.DateField} IS NULL");
+            // Derive expected null/not-null counts from the frozen snapshot (matching SQL NULL
+            // semantics: only JSON null/missing values are NULL after import) instead of
+            // re-querying the drift-prone live external service.
+            var expectedDateNull = CountJsonNull(sourceSnapshot.Rows, serviceCase.DateField);
             var honuaDateNullCount = await QueryCountWithWhereAsync(
                 _adminClient,
                 honuaQueryEndpoint,
                 $"{sanitizedDateField} IS NULL");
-            honuaDateNullCount.Should().Be(sourceDateNullCount);
+            honuaDateNullCount.Should().Be(expectedDateNull);
 
-            var sourceDateNotNullCount = await QueryCountWithWhereAsync(
-                _sourceClient,
-                sourceQueryEndpoint,
-                $"{serviceCase.DateField} IS NOT NULL");
             var honuaDateNotNullCount = await QueryCountWithWhereAsync(
                 _adminClient,
                 honuaQueryEndpoint,
                 $"{sanitizedDateField} IS NOT NULL");
-            honuaDateNotNullCount.Should().Be(sourceDateNotNullCount);
+            honuaDateNotNullCount.Should().Be(sourceSnapshot.TotalCount - expectedDateNull);
         }
 
         await ValidateNoMatchQueryParityAsync(
@@ -2548,7 +2546,8 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
     private static bool TryBuildFieldEqualityWhereClause(
         IReadOnlyList<Dictionary<string, JsonElement>> rows,
         string fieldName,
-        out string whereClause)
+        out string whereClause,
+        out string matchedValue)
     {
         foreach (var row in rows)
         {
@@ -2569,18 +2568,47 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
                         }
 
                         whereClause = $"{fieldName} = '{EscapeSqlLiteral(text)}'";
+                        matchedValue = NormalizeValue(value);
                         return true;
                     }
                 case JsonValueKind.Number:
                 case JsonValueKind.True:
                 case JsonValueKind.False:
                     whereClause = $"{fieldName} = {value.GetRawText()}";
+                    matchedValue = NormalizeValue(value);
                     return true;
             }
         }
 
         whereClause = string.Empty;
+        matchedValue = string.Empty;
         return false;
+    }
+
+    // Counts rows whose field is JSON null or missing — mirrors SQL NULL semantics after import
+    // (empty strings remain non-null), so it matches BuildStringStats's null definition and the
+    // frozen snapshot's null accounting validated at import time.
+    private static int CountJsonNull(
+        IReadOnlyList<Dictionary<string, JsonElement>> rows,
+        string fieldName)
+    {
+        return rows.Count(row =>
+            !row.TryGetValue(fieldName, out var value) ||
+            value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined);
+    }
+
+    // Counts rows in the frozen snapshot whose field equals the chosen value, using the same
+    // normalization as the query comparison, so the expected count is deterministic and free of
+    // external-service drift.
+    private static int CountFieldEquals(
+        IReadOnlyList<Dictionary<string, JsonElement>> rows,
+        string fieldName,
+        string expectedValue)
+    {
+        return rows.Count(row =>
+            row.TryGetValue(fieldName, out var value) &&
+            value.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined) &&
+            string.Equals(NormalizeValue(value), expectedValue, StringComparison.Ordinal));
     }
 
     private static bool TryBuildFieldInWhereClause(
