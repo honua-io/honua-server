@@ -27,6 +27,38 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
     }
 
     [Fact]
+    public void RewriteAttributeTextAccessExpressions_WithStringField_PreservesEmptyStringForIsNotNull()
+    {
+        // Esri/PostgreSQL treat an empty string as a non-NULL value. The storage-mapped
+        // reader must not wrap a text/string column in NULLIF(..., '') when translating an
+        // IS NOT NULL filter, or empty-string rows would be silently dropped (#1703).
+        var rewritten = PostgresStorageMappedFeatureReader.RewriteAttributeTextAccessExpressions(
+            "\"attributes\" ->> 'uniquedesignation' IS NOT NULL",
+            field =>
+            {
+                field.Should().Be("uniquedesignation");
+                return "\"uniquedesignation\"";
+            },
+            _ => MetadataV2FieldType.String);
+
+        rewritten.Should().Be("(\"uniquedesignation\")::text IS NOT NULL");
+    }
+
+    [Fact]
+    public void RewriteAttributeTextAccessExpressions_WithNumericField_KeepsEmptyStringCoercion()
+    {
+        // Numeric/temporal fields keep NULLIF(..., '') so empty text does not break a
+        // downstream ::numeric/::timestamptz cast and Esri's "empty numeric == null"
+        // semantics still hold.
+        var rewritten = PostgresStorageMappedFeatureReader.RewriteAttributeTextAccessExpressions(
+            "\"attributes\" ->> 'shape__length' IS NOT NULL",
+            _ => "\"shape__length\"",
+            _ => MetadataV2FieldType.Double);
+
+        rewritten.Should().Be("NULLIF((\"shape__length\")::text, '') IS NOT NULL");
+    }
+
+    [Fact]
     public void BuildStatisticsAggregateExpression_WithNumericAggregate_CastsMappedSourceColumn()
     {
         var expression = PostgresStorageMappedFeatureReader.BuildStatisticsAggregateExpression(
