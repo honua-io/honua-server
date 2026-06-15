@@ -1303,6 +1303,94 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         errorElement.GetProperty("details").GetArrayLength().Should().BeGreaterThan(0);
     }
 
+    // ArcGIS SQL parity (#1660): the GeoServices `where` adapter must accept the
+    // standard ANSI/ArcGIS SQL forms (EXTRACT(... FROM ...), CAST(... AS type), and
+    // the `||` concatenation operator) at parse + translate time. They previously
+    // failed parsing and returned HTTP 400 "Invalid query parameters".
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_WithArcGisSqlExtractClause_IsAcceptedNotRejected()
+    {
+        var where = "EXTRACT(YEAR FROM timestamp) >= 2000 OR 1=1";
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query" +
+            $"?where={Uri.EscapeDataString(where)}&f=json");
+
+        await AssertWhereClauseNotRejectedAsync(response);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_WithArcGisSqlCastAsClause_IsAcceptedNotRejected()
+    {
+        var where = "CAST(name AS TEXT) = 'Test Feature' OR 1=1";
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query" +
+            $"?where={Uri.EscapeDataString(where)}&f=json");
+
+        await AssertWhereClauseNotRejectedAsync(response);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_WithArcGisSqlConcatOperator_IsAcceptedNotRejected()
+    {
+        var where = "name || category = 'Test Featuretest' OR 1=1";
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query" +
+            $"?where={Uri.EscapeDataString(where)}&f=json");
+
+        await AssertWhereClauseNotRejectedAsync(response);
+    }
+
+    // Re-deferred ArcGIS SQL constructs (#1660): the parser keeps an allowlist, so a
+    // CASE/WHEN conditional must be cleanly rejected as an invalid query parameter
+    // rather than leaking through to the data layer.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_WithUnsupportedCaseExpression_Returns400()
+    {
+        var where = "CASE WHEN name = 'Test Feature' THEN 1 ELSE 0 END = 1";
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query" +
+            $"?where={Uri.EscapeDataString(where)}&f=json");
+
+        response.HaveStatusCode(System.Net.HttpStatusCode.BadRequest);
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var jsonDoc = JsonDocument.Parse(content);
+        var errorElement = jsonDoc.RootElement.GetProperty("error");
+        errorElement.GetProperty("message").GetString().Should().Be("Bad Request");
+        errorElement.GetProperty("details").GetArrayLength().Should().BeGreaterThan(0);
+    }
+
+    private static async Task AssertWhereClauseNotRejectedAsync(HttpResponseMessage response)
+    {
+        // The clause must clear parse + translate validation: a parser rejection would
+        // surface as HTTP 400 "Invalid query parameters". Anything else (200, or a
+        // downstream non-parse error) proves the new construct is part of the
+        // allowlisted, parameterized surface.
+        if (response.StatusCode != System.Net.HttpStatusCode.BadRequest)
+        {
+            return;
+        }
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var jsonDoc = JsonDocument.Parse(content);
+        var details = jsonDoc.RootElement.GetProperty("error").GetProperty("details")
+            .EnumerateArray()
+            .Select(detail => detail.GetString() ?? string.Empty)
+            .ToArray();
+
+        details.Should().NotContain(
+            detail => detail.Contains("Invalid query parameters", StringComparison.OrdinalIgnoreCase),
+            "the ArcGIS SQL construct must be accepted by the where parser, not rejected as an invalid query parameter");
+    }
+
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query?unexpected=1")]

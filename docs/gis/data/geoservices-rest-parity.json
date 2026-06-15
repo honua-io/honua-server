@@ -56,7 +56,7 @@
         "queryContingentValues",
         "sharedTemplates",
         "asset and 3D operations",
-        "full ArcGIS SQL parity",
+        "ArcGIS SQL CASE/WHEN, LIKE ... ESCAPE, and scalar subqueries (remaining SQL surface; #1660)",
         "full offline change-tracking parity"
       ],
       "evidence": {
@@ -598,7 +598,7 @@
           {
             "name": "where",
             "status": "implemented",
-            "notes": "ArcGIS SQL parser."
+            "notes": "ArcGIS SQL parser. Supported: comparison/logical operators (AND/OR/NOT), parentheses, IN/NOT IN, BETWEEN/NOT BETWEEN, LIKE/NOT LIKE, IS [NOT] NULL, arithmetic (+ - * / %), date literals (#...#, DATE '...', TIMESTAMP '...'), CURRENT_DATE/CURRENT_TIMESTAMP/CURRENT_TIME, ANSI string concatenation `||`, EXTRACT(YEAR|MONTH|DAY|HOUR|MINUTE|SECOND FROM expr), CAST(expr AS type) and CAST(expr, 'type'), and the allowlisted scalar function set (string: UPPER/LOWER/LENGTH/TRIM/LTRIM/RTRIM/SUBSTRING/SUBSTR/REPLACE/CONCAT/POSITION; numeric: ABS/CEIL/FLOOR/ROUND/POWER/MOD/SQRT/SIN/COS/TAN/LOG/EXP; date-part: YEAR/MONTH/DAY/HOUR/MINUTE/SECOND/NOW; null/coalesce: COALESCE/NULLIF; spatial ST_* predicates). All literals are parameterized; only allowlisted constructs reach the database. Re-deferred: CASE/WHEN/THEN/ELSE/END conditionals, LIKE ... ESCAPE, scalar subqueries, and EXTRACT for non-time fields."
           },
           {
             "name": "objectIds",

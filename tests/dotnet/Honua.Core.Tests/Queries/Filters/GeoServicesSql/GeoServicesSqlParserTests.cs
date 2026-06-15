@@ -90,4 +90,101 @@ public class GeoServicesSqlParserTests
         function.FunctionName.Should().Be("CURRENT_DATE");
         function.Arguments.Should().BeEmpty();
     }
+
+    [Theory]
+    [InlineData("EXTRACT(YEAR FROM hire_date) = 2024", "YEAR")]
+    [InlineData("EXTRACT(month FROM hire_date) = 6", "MONTH")]
+    [InlineData("EXTRACT(Day FROM hire_date) = 14", "DAY")]
+    [InlineData("EXTRACT(HOUR FROM event_time) > 12", "HOUR")]
+    [InlineData("EXTRACT(MINUTE FROM event_time) = 30", "MINUTE")]
+    [InlineData("EXTRACT(SECOND FROM event_time) = 0", "SECOND")]
+    public void Parse_Extract_MapsToDatePartFunction(string clause, string expectedFunction)
+    {
+        var expression = _parser.Parse(clause);
+
+        var binary = (BinaryExpression)expression;
+        binary.Left.Should().BeOfType<FunctionCall>();
+
+        var function = (FunctionCall)binary.Left;
+        function.FunctionName.Should().Be(expectedFunction);
+        function.Arguments.Should().HaveCount(1);
+        function.Arguments[0].Should().BeOfType<PropertyReference>();
+        ((PropertyReference)function.Arguments[0]).PropertyName.Should().Be(
+            clause.Contains("hire_date", StringComparison.OrdinalIgnoreCase) ? "hire_date" : "event_time");
+    }
+
+    [Fact]
+    public void Parse_Extract_WithUnsupportedField_Throws()
+    {
+        var act = () => _parser.Parse("EXTRACT(QUARTER FROM hire_date) = 1");
+
+        act.Should().Throw<ArgumentException>()
+            .WithMessage("*Unsupported EXTRACT field*");
+    }
+
+    [Fact]
+    public void Parse_Extract_MissingFrom_Throws()
+    {
+        var act = () => _parser.Parse("EXTRACT(YEAR hire_date) = 2024");
+
+        act.Should().Throw<ArgumentException>()
+            .WithMessage("*Expected FROM*");
+    }
+
+    [Theory]
+    [InlineData("CAST(code AS INTEGER) = 42", "INTEGER")]
+    [InlineData("CAST(amount AS NUMERIC) > 3.14", "NUMERIC")]
+    [InlineData("CAST(label AS TEXT) = 'abc'", "TEXT")]
+    [InlineData("CAST(ratio AS DOUBLE PRECISION) > 1.0", "DOUBLE PRECISION")]
+    public void Parse_CastWithAs_EmitsCastFunctionWithTypeLiteral(string clause, string expectedType)
+    {
+        var expression = _parser.Parse(clause);
+
+        var binary = (BinaryExpression)expression;
+        binary.Left.Should().BeOfType<FunctionCall>();
+
+        var function = (FunctionCall)binary.Left;
+        function.FunctionName.Should().Be("CAST");
+        function.Arguments.Should().HaveCount(2);
+        function.Arguments[0].Should().BeOfType<PropertyReference>();
+
+        function.Arguments[1].Should().BeOfType<Literal>();
+        var typeLiteral = (Literal)function.Arguments[1];
+        typeLiteral.Type.Should().Be(LiteralType.Text);
+        typeLiteral.Value.Should().Be(expectedType);
+    }
+
+    [Fact]
+    public void Parse_CastMissingAs_Throws()
+    {
+        var act = () => _parser.Parse("CAST(code, INTEGER) = 42");
+
+        act.Should().Throw<ArgumentException>()
+            .WithMessage("*Expected AS*");
+    }
+
+    [Fact]
+    public void Parse_StringConcatenation_MapsToConcatFunction()
+    {
+        var expression = _parser.Parse("first_name || ' ' || last_name = 'John Doe'");
+
+        var binary = (BinaryExpression)expression;
+        binary.Left.Should().BeOfType<FunctionCall>();
+
+        var function = (FunctionCall)binary.Left;
+        function.FunctionName.Should().Be("CONCAT");
+        function.Arguments.Should().HaveCount(3);
+        function.Arguments[0].Should().BeOfType<PropertyReference>();
+        function.Arguments[1].Should().BeOfType<Literal>();
+        function.Arguments[2].Should().BeOfType<PropertyReference>();
+    }
+
+    [Fact]
+    public void Parse_SinglePipe_Throws()
+    {
+        var act = () => _parser.Parse("name = 'a' | 'b'");
+
+        act.Should().Throw<ArgumentException>()
+            .WithMessage("*Unexpected '|'*");
+    }
 }

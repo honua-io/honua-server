@@ -160,15 +160,37 @@ public sealed class GeoServicesSqlParser
 
     private FilterExpression ParseAdditive()
     {
-        var expression = ParseMultiplicative();
+        var expression = ParseConcatenation();
         while (Match(TokenType.Plus, TokenType.Minus))
         {
             var op = Previous().Type == TokenType.Plus ? BinaryOperator.Add : BinaryOperator.Subtract;
-            var right = ParseMultiplicative();
+            var right = ParseConcatenation();
             expression = new BinaryExpression(expression, op, right);
         }
 
         return expression;
+    }
+
+    private FilterExpression ParseConcatenation()
+    {
+        var expression = ParseMultiplicative();
+
+        // ANSI/ArcGIS SQL string concatenation operator `||`. ArcGIS and the
+        // backing geodatabases accept `a || b` as string concatenation; map it
+        // onto the canonical CONCAT function so it flows through the existing,
+        // already-parameterized function allowlist (no raw SQL reaches the DB).
+        if (!Check(TokenType.Concat))
+        {
+            return expression;
+        }
+
+        var operands = new List<FilterExpression> { expression };
+        while (Match(TokenType.Concat))
+        {
+            operands.Add(ParseMultiplicative());
+        }
+
+        return new FunctionCall("CONCAT", operands);
     }
 
     private FilterExpression ParseMultiplicative()
@@ -281,12 +303,82 @@ public sealed class GeoServicesSqlParser
             return new FunctionCall("CURRENT_TIME", Array.Empty<FilterExpression>());
         }
 
+        if (Match(TokenType.Extract))
+        {
+            return ParseExtract();
+        }
+
+        if (Match(TokenType.Cast))
+        {
+            return ParseCast();
+        }
+
         if (Match(TokenType.Identifier))
         {
             return ParseIdentifierOrFunction(Previous().Lexeme);
         }
 
         throw Error("Expected expression.");
+    }
+
+    private FunctionCall ParseExtract()
+    {
+        // ANSI/ArcGIS SQL temporal extraction: EXTRACT(<field> FROM <source>).
+        // Map the recognised fields onto the canonical single-argument date-part
+        // functions (YEAR/MONTH/DAY/HOUR/MINUTE/SECOND) that the provider
+        // translators already support and parameterize.
+        Consume(TokenType.LeftParen, "Expected '(' after EXTRACT.");
+        var field = ConsumeIdentifier("Expected a date/time field name in EXTRACT.").ToUpperInvariant();
+
+        var functionName = field switch
+        {
+            "YEAR" => "YEAR",
+            "MONTH" => "MONTH",
+            "DAY" => "DAY",
+            "HOUR" => "HOUR",
+            "MINUTE" => "MINUTE",
+            "SECOND" => "SECOND",
+            _ => throw Error(
+                $"Unsupported EXTRACT field '{field}'. Supported fields: YEAR, MONTH, DAY, HOUR, MINUTE, SECOND.")
+        };
+
+        if (!Match(TokenType.From))
+        {
+            throw Error("Expected FROM in EXTRACT expression.");
+        }
+
+        var source = ParseExpression();
+        Consume(TokenType.RightParen, "Expected ')' after EXTRACT source.");
+        return new FunctionCall(functionName, new[] { source });
+    }
+
+    private FunctionCall ParseCast()
+    {
+        // ANSI/ArcGIS SQL type conversion: CAST(<value> AS <type>). Emit the
+        // target type as a text literal so the provider translator resolves it
+        // against its allowlisted cast targets; the value flows through the
+        // normal parameterized path.
+        Consume(TokenType.LeftParen, "Expected '(' after CAST.");
+        var value = ParseExpression();
+        if (!Match(TokenType.As))
+        {
+            throw Error("Expected AS in CAST expression.");
+        }
+
+        var typeName = ConsumeIdentifier("Expected a target type in CAST.");
+
+        // Allow multi-word types such as DOUBLE PRECISION.
+        while (Check(TokenType.Identifier))
+        {
+            typeName = $"{typeName} {ConsumeIdentifier("Expected a target type in CAST.")}";
+        }
+
+        Consume(TokenType.RightParen, "Expected ')' after CAST type.");
+        return new FunctionCall("CAST", new FilterExpression[]
+        {
+            value,
+            new Literal(typeName, LiteralType.Text)
+        });
     }
 
     private FilterExpression ParseIdentifierOrFunction(string identifier)
@@ -477,6 +569,7 @@ public sealed class GeoServicesSqlParser
         Star,
         Slash,
         Percent,
+        Concat,
         Equal,
         NotEqual,
         Less,
@@ -502,6 +595,10 @@ public sealed class GeoServicesSqlParser
         CurrentDate,
         CurrentTimestamp,
         CurrentTime,
+        Extract,
+        From,
+        Cast,
+        As,
         EndOfFile
     }
 
@@ -530,7 +627,11 @@ public sealed class GeoServicesSqlParser
             ["TIMESTAMP"] = TokenType.Timestamp,
             ["CURRENT_DATE"] = TokenType.CurrentDate,
             ["CURRENT_TIMESTAMP"] = TokenType.CurrentTimestamp,
-            ["CURRENT_TIME"] = TokenType.CurrentTime
+            ["CURRENT_TIME"] = TokenType.CurrentTime,
+            ["EXTRACT"] = TokenType.Extract,
+            ["FROM"] = TokenType.From,
+            ["CAST"] = TokenType.Cast,
+            ["AS"] = TokenType.As
         };
 
         public Lexer(string source)
@@ -587,6 +688,13 @@ public sealed class GeoServicesSqlParser
                 case '%':
                     AddToken(TokenType.Percent);
                     return;
+                case '|':
+                    if (Match('|'))
+                    {
+                        AddToken(TokenType.Concat);
+                        return;
+                    }
+                    throw new ArgumentException("Unexpected '|'.");
                 case '=':
                     AddToken(TokenType.Equal);
                     return;

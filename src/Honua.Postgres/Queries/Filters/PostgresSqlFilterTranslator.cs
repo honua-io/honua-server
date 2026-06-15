@@ -447,6 +447,15 @@ internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBa
             return TranslateGeoLength(function, context);
         }
 
+        // CAST resolves its target type from the AST literal rather than a bound
+        // parameter: the type name is a SQL keyword, not a value, so it must never
+        // become a parameter placeholder. The allowlisted switch in TranslateCast
+        // guarantees only known, safe type tokens are interpolated.
+        if (string.Equals(function.FunctionName, "CAST", StringComparison.OrdinalIgnoreCase))
+        {
+            return TranslateCast(function, context);
+        }
+
         var args = function.Arguments.Select(arg => TranslateExpression(arg, context)).ToArray();
         var argString = string.Join(", ", args);
 
@@ -545,7 +554,6 @@ internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBa
             "MAX" => $"MAX({argString})",
 
             // Type conversion
-            "CAST" => TranslateCast(args, function.FunctionName),
 
             _ => throw new NotSupportedException($"Function {function.FunctionName}")
         };
@@ -578,15 +586,25 @@ internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBa
         return $"{postgisName}({string.Join(", ", args)})";
     }
 
-    private static string TranslateCast(string[] args, string functionName)
+    private string TranslateCast(FunctionCall function, FilterTranslationContext context)
     {
-        if (args.Length != 2)
+        if (function.Arguments.Count != 2)
         {
-            throw new ArgumentException($"{functionName} requires two arguments (value, type)");
+            throw new ArgumentException($"{function.FunctionName} requires two arguments (value, type)");
         }
 
-        var value = args[0];
-        var targetType = args[1].Trim('\'', '"').ToUpperInvariant();
+        // The target type must be a literal SQL type token, supplied as a text
+        // literal by the filter parser. Reading it from the AST (instead of the
+        // translated argument) keeps it out of the parameter list while the
+        // allowlist below still rejects anything unknown.
+        if (function.Arguments[1] is not Literal { Type: LiteralType.Text } typeLiteral
+            || typeLiteral.Value is not string targetTypeRaw)
+        {
+            throw new ArgumentException($"{function.FunctionName} target type must be a constant type name.");
+        }
+
+        var value = TranslateExpression(function.Arguments[0], context);
+        var targetType = targetTypeRaw.Trim('\'', '"').ToUpperInvariant();
 
         return targetType switch
         {
