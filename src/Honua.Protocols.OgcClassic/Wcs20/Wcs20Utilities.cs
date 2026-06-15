@@ -87,7 +87,21 @@ internal static class Wcs20Utilities
         internal const string BBoxCrs = "BBOXCRS";
         internal const string RangeSubset = "RANGESUBSET";
         internal const string ScaleSize = "SCALESIZE";
+        internal const string ScaleFactor = "SCALEFACTOR";
+        internal const string ScaleAxes = "SCALEAXES";
+        internal const string ScaleExtent = "SCALEEXTENT";
     }
+
+    /// <summary>
+    /// WCS 2.0 temporal subset axis labels recognised by the
+    /// <c>SUBSET=phenomenonTime(...)</c> form. Matched case-insensitively.
+    /// </summary>
+    internal static readonly ImmutableHashSet<string> TemporalAxisLabels =
+        ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase,
+            "phenomenonTime",
+            "time",
+            "date",
+            "ansi");
 
     internal static class ExceptionCodes
     {

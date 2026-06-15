@@ -52,13 +52,13 @@ internal sealed class Wcs20Handler
         Wcs20Utilities.Parameters.BBoxCrs,
         Wcs20Utilities.Parameters.RangeSubset,
         Wcs20Utilities.Parameters.ScaleSize,
+        Wcs20Utilities.Parameters.ScaleFactor,
+        Wcs20Utilities.Parameters.ScaleAxes,
+        Wcs20Utilities.Parameters.ScaleExtent,
     };
 
     private static readonly HashSet<string> _explicitlyUnsupportedGetCoverageParameters = new(StringComparer.OrdinalIgnoreCase)
     {
-        "SCALEFACTOR",
-        "SCALEAXES",
-        "SCALEEXTENT",
         "SIZE",
         "WIDTH",
         "HEIGHT",
@@ -328,6 +328,12 @@ internal sealed class Wcs20Handler
         {
             Wcs20Log.ValidationFailed(_logger, Wcs20Utilities.Operations.GetCoverage, queryError.Detail);
             return CreateGetCoverageParameterError(queryError);
+        }
+
+        if (!TryApplyTemporalSubset(context.Request.Query, coverage.Coverage.Value.Raster, out var temporalError))
+        {
+            Wcs20Log.ValidationFailed(_logger, Wcs20Utilities.Operations.GetCoverage, temporalError.Detail);
+            return CreateGetCoverageParameterError(temporalError);
         }
 
         telemetry
@@ -937,9 +943,13 @@ internal sealed class Wcs20Handler
 
         rasterQuery = rasterQuery with { OutputSrid = outputSrid };
 
-        var subsetValues = GetQueryValues(query, Wcs20Utilities.Parameters.Subset);
+        // SUBSET carries both spatial trims (x/y axes) and temporal slices
+        // (phenomenonTime). Temporal subsets are validated separately against the
+        // coverage acquisition time, so split them out before spatial parsing.
+        var allSubsetValues = GetQueryValues(query, Wcs20Utilities.Parameters.Subset);
+        var spatialSubsetValues = FilterSpatialSubsets(allSubsetValues);
         var bbox = GetQueryValue(query, Wcs20Utilities.Parameters.BBox);
-        if (subsetValues.Count > 0 && !string.IsNullOrWhiteSpace(bbox))
+        if (spatialSubsetValues.Count > 0 && !string.IsNullOrWhiteSpace(bbox))
         {
             error = new WcsParameterError(
                 Wcs20Utilities.ExceptionCodes.InvalidSubsetting,
@@ -948,14 +958,21 @@ internal sealed class Wcs20Handler
             return false;
         }
 
-        if (subsetValues.Count > 0)
+        // The base grid for the Scaling extension is the source grid after any
+        // SUBSET/BBOX trim. Default to the full native grid and refine it when a
+        // spatial trim in the native CRS is supplied.
+        var baseWidth = Math.Max(raster.Width, 1);
+        var baseHeight = Math.Max(raster.Height, 1);
+
+        if (spatialSubsetValues.Count > 0)
         {
-            if (!TryParseSubsetEnvelope(subsetValues, raster, subsettingCrs, out var envelope, out error))
+            if (!TryParseSubsetEnvelope(spatialSubsetValues, raster, subsettingCrs, out var envelope, out error))
             {
                 return false;
             }
 
             rasterQuery = rasterQuery with { ClipRegion = CreateClipRegion(envelope, subsettingCrs.Srid) };
+            TryRefineBaseGrid(raster, subsettingCrs, envelope, ref baseWidth, ref baseHeight);
         }
         else if (!string.IsNullOrWhiteSpace(bbox))
         {
@@ -965,6 +982,7 @@ internal sealed class Wcs20Handler
             }
 
             rasterQuery = rasterQuery with { ClipRegion = CreateClipRegion(envelope, subsettingCrs.Srid) };
+            TryRefineBaseGrid(raster, subsettingCrs, envelope, ref baseWidth, ref baseHeight);
         }
 
         if (!TryResolveRangeSubset(query, raster, out var bands, out error))
@@ -977,7 +995,7 @@ internal sealed class Wcs20Handler
             rasterQuery = rasterQuery with { Bands = bands };
         }
 
-        if (!TryResolveScaleSize(query, out var width, out var height, out error))
+        if (!TryResolveScaling(query, baseWidth, baseHeight, out var width, out var height, out error))
         {
             return false;
         }
@@ -994,6 +1012,477 @@ internal sealed class Wcs20Handler
 
         return true;
     }
+
+    // Returns the SUBSET values that target spatial axes, dropping temporal
+    // (phenomenonTime/time/date/ansi) slices which are validated separately.
+    private static StringValues FilterSpatialSubsets(StringValues subsetValues)
+    {
+        var spatial = new List<string?>();
+        var anyTemporal = false;
+        foreach (var value in subsetValues)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                spatial.Add(value);
+                continue;
+            }
+
+            if (IsTemporalSubset(value))
+            {
+                anyTemporal = true;
+                continue;
+            }
+
+            spatial.Add(value);
+        }
+
+        return anyTemporal ? new StringValues(spatial.ToArray()) : subsetValues;
+    }
+
+    private static bool IsTemporalSubset(string subsetValue)
+    {
+        var trimmed = subsetValue.Trim();
+        var open = trimmed.IndexOf('(', StringComparison.Ordinal);
+        if (open <= 0)
+        {
+            return false;
+        }
+
+        return Wcs20Utilities.TemporalAxisLabels.Contains(trimmed[..open].Trim());
+    }
+
+    // WCS 2.0 temporal subsetting. The primary raster carries a single effective
+    // acquisition instant (AcquisitionDate, falling back to CreatedAt). A
+    // phenomenonTime slice or trim selects the coverage only when that instant
+    // satisfies the requested window; otherwise the temporal window excludes the
+    // coverage and we surface InvalidSubsetting per the WCS subsetting rules.
+    private static bool TryApplyTemporalSubset(IQueryCollection query, RasterInfo raster, out WcsParameterError error)
+    {
+        error = default;
+
+        var subsetValues = GetQueryValues(query, Wcs20Utilities.Parameters.Subset);
+        var acquisition = raster.AcquisitionDate ?? raster.CreatedAt;
+
+        foreach (var rawValue in subsetValues)
+        {
+            if (string.IsNullOrWhiteSpace(rawValue) || !IsTemporalSubset(rawValue))
+            {
+                continue;
+            }
+
+            if (!TryParseTemporalSubset(rawValue, out var low, out var high))
+            {
+                error = new WcsParameterError(
+                    Wcs20Utilities.ExceptionCodes.InvalidSubsetting,
+                    "Temporal SUBSET must use phenomenonTime(\"instant\") or phenomenonTime(\"start\",\"end\") with ISO 8601 timestamps.",
+                    Wcs20Utilities.Parameters.Subset);
+                return false;
+            }
+
+            if (acquisition < low || acquisition > high)
+            {
+                error = new WcsParameterError(
+                    Wcs20Utilities.ExceptionCodes.InvalidSubsetting,
+                    "The requested phenomenonTime window does not intersect the coverage acquisition time.",
+                    Wcs20Utilities.Parameters.Subset);
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool TryParseTemporalSubset(string subsetValue, out DateTimeOffset low, out DateTimeOffset high)
+    {
+        low = default;
+        high = default;
+
+        var trimmed = subsetValue.Trim();
+        var open = trimmed.IndexOf('(', StringComparison.Ordinal);
+        if (open <= 0 || !trimmed.EndsWith(')'))
+        {
+            return false;
+        }
+
+        var inner = trimmed[(open + 1)..^1];
+        var parts = SplitTopLevel(inner).ToArray();
+        if (parts.Length is < 1 or > 2)
+        {
+            return false;
+        }
+
+        if (!TryParseTemporalBound(parts[0], isLowerBound: true, out low))
+        {
+            return false;
+        }
+
+        if (parts.Length == 1)
+        {
+            // A slice selects the whole calendar resolution supplied (e.g. a bare
+            // date covers the entire UTC day); reuse the upper bound for that span.
+            return TryParseTemporalBound(parts[0], isLowerBound: false, out high) && high >= low;
+        }
+
+        if (!TryParseTemporalBound(parts[1], isLowerBound: false, out high) || high < low)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool TryParseTemporalBound(string token, bool isLowerBound, out DateTimeOffset bound)
+    {
+        bound = default;
+        var value = token.Trim().Trim('"', '\'');
+        if (string.IsNullOrWhiteSpace(value) || string.Equals(value, "*", StringComparison.Ordinal))
+        {
+            // Open-ended bound.
+            bound = isLowerBound ? DateTimeOffset.MinValue : DateTimeOffset.MaxValue;
+            return true;
+        }
+
+        if (DateTimeOffset.TryParse(
+                value,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+                out var parsed))
+        {
+            // A date-only token denotes the whole UTC day: the lower bound is the
+            // start of the day, the upper bound the final instant before the next.
+            if (!isLowerBound && IsDateOnly(value))
+            {
+                bound = parsed.AddDays(1).AddTicks(-1);
+                return true;
+            }
+
+            bound = parsed;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool IsDateOnly(string value)
+        => value.Length == 10 &&
+           value[4] == '-' &&
+           value[7] == '-' &&
+           !value.Contains('T', StringComparison.Ordinal) &&
+           !value.Contains(':', StringComparison.Ordinal);
+
+    // Refines the Scaling-extension base grid to the trimmed pixel dimensions when
+    // the spatial subset is expressed in the coverage native CRS. For non-native
+    // subsetting CRSs the trimmed pixel count is not directly derivable here, so
+    // the full native grid remains the base (scaling still applies uniformly).
+    private static void TryRefineBaseGrid(
+        RasterInfo raster,
+        CrsDefinition subsettingCrs,
+        Envelope clip,
+        ref int baseWidth,
+        ref int baseHeight)
+    {
+        if (!IsNativeSubsettingCrs(raster, subsettingCrs) || !TryResolveExtent(raster, out var extent))
+        {
+            return;
+        }
+
+        var fullWidth = extent.XMax - extent.XMin;
+        var fullHeight = extent.YMax - extent.YMin;
+        if (fullWidth <= 0 || fullHeight <= 0 || raster.Width <= 0 || raster.Height <= 0)
+        {
+            return;
+        }
+
+        var clipWidth = Math.Min(clip.MaxX, extent.XMax) - Math.Max(clip.MinX, extent.XMin);
+        var clipHeight = Math.Min(clip.MaxY, extent.YMax) - Math.Max(clip.MinY, extent.YMin);
+        if (clipWidth <= 0 || clipHeight <= 0)
+        {
+            return;
+        }
+
+        baseWidth = Math.Max(1, (int)Math.Round(raster.Width * (clipWidth / fullWidth), MidpointRounding.AwayFromZero));
+        baseHeight = Math.Max(1, (int)Math.Round(raster.Height * (clipHeight / fullHeight), MidpointRounding.AwayFromZero));
+    }
+
+    // WCS 2.0 Scaling extension coordinator. At most one scaling operator may be
+    // supplied per request (SCALESIZE, SCALEFACTOR, SCALEAXES, or SCALEEXTENT);
+    // each resolves to explicit output width/height in pixels so the shared raster
+    // export pipeline resamples the (possibly subset-trimmed) base grid uniformly.
+    private static bool TryResolveScaling(
+        IQueryCollection query,
+        int baseWidth,
+        int baseHeight,
+        out int? width,
+        out int? height,
+        out WcsParameterError error)
+    {
+        width = null;
+        height = null;
+        error = default;
+
+        var scaleSize = GetQueryValue(query, Wcs20Utilities.Parameters.ScaleSize);
+        var scaleFactor = GetQueryValue(query, Wcs20Utilities.Parameters.ScaleFactor);
+        var scaleAxes = GetQueryValue(query, Wcs20Utilities.Parameters.ScaleAxes);
+        var scaleExtent = GetQueryValue(query, Wcs20Utilities.Parameters.ScaleExtent);
+
+        var supplied = new[] { scaleSize, scaleFactor, scaleAxes, scaleExtent }
+            .Count(value => !string.IsNullOrWhiteSpace(value));
+        if (supplied > 1)
+        {
+            error = new WcsParameterError(
+                Wcs20Utilities.ExceptionCodes.InvalidParameterValue,
+                "Specify at most one of SCALESIZE, SCALEFACTOR, SCALEAXES, or SCALEEXTENT.",
+                Wcs20Utilities.Parameters.ScaleSize);
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(scaleFactor))
+        {
+            return TryResolveScaleFactor(scaleFactor, baseWidth, baseHeight, out width, out height, out error);
+        }
+
+        if (!string.IsNullOrWhiteSpace(scaleAxes))
+        {
+            return TryResolveScaleAxes(scaleAxes, baseWidth, baseHeight, out width, out height, out error);
+        }
+
+        if (!string.IsNullOrWhiteSpace(scaleExtent))
+        {
+            return TryResolveScaleExtent(scaleExtent, baseWidth, baseHeight, out width, out height, out error);
+        }
+
+        return TryResolveScaleSize(query, out width, out height, out error);
+    }
+
+    // WCS 2.0 Scaling extension (SCALEFACTOR): a single positive factor scaling
+    // every spatial axis of the base grid uniformly, e.g. SCALEFACTOR=0.5.
+    private static bool TryResolveScaleFactor(
+        string value,
+        int baseWidth,
+        int baseHeight,
+        out int? width,
+        out int? height,
+        out WcsParameterError error)
+    {
+        width = null;
+        height = null;
+        error = default;
+
+        if (!double.TryParse(value.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var factor) ||
+            !CoverageScaling.TryResolveFactor(baseWidth, baseHeight, factor, out var resolved))
+        {
+            error = new WcsParameterError(
+                Wcs20Utilities.ExceptionCodes.InvalidParameterValue,
+                $"SCALEFACTOR '{value}' must be a positive number.",
+                Wcs20Utilities.Parameters.ScaleFactor);
+            return false;
+        }
+
+        width = resolved.Width;
+        height = resolved.Height;
+        return true;
+    }
+
+    // WCS 2.0 Scaling extension (SCALEAXES): per-axis positive factors, e.g.
+    // SCALEAXES=x(0.5),y(2). Omitted axes keep their base size.
+    private static bool TryResolveScaleAxes(
+        string value,
+        int baseWidth,
+        int baseHeight,
+        out int? width,
+        out int? height,
+        out WcsParameterError error)
+    {
+        width = null;
+        height = null;
+        error = default;
+
+        double? xFactor = null;
+        double? yFactor = null;
+        foreach (var token in value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (!TryParseSingleSubset(token, out var axis, out var factor, out _, out var isSlice) || !isSlice)
+            {
+                error = CreateScaleAxesError(token);
+                return false;
+            }
+
+            if (string.Equals(axis, "x", StringComparison.Ordinal))
+            {
+                if (xFactor.HasValue)
+                {
+                    error = CreateScaleAxesError("duplicate x axis");
+                    return false;
+                }
+
+                xFactor = factor;
+            }
+            else if (string.Equals(axis, "y", StringComparison.Ordinal))
+            {
+                if (yFactor.HasValue)
+                {
+                    error = CreateScaleAxesError("duplicate y axis");
+                    return false;
+                }
+
+                yFactor = factor;
+            }
+            else
+            {
+                error = CreateScaleAxesError(token);
+                return false;
+            }
+        }
+
+        if (!CoverageScaling.TryResolveAxes(baseWidth, baseHeight, xFactor, yFactor, out var resolved))
+        {
+            error = CreateScaleAxesError(value);
+            return false;
+        }
+
+        width = resolved.Width;
+        height = resolved.Height;
+        return true;
+    }
+
+    // WCS 2.0 Scaling extension (SCALEEXTENT): explicit per-axis output grid sizes
+    // using a grid-coordinate interval, e.g. SCALEEXTENT=x(0,511),y(0,255). The
+    // span (high-low+1) becomes the output size for that axis; omitted axes keep
+    // their base size.
+    private static bool TryResolveScaleExtent(
+        string value,
+        int baseWidth,
+        int baseHeight,
+        out int? width,
+        out int? height,
+        out WcsParameterError error)
+    {
+        width = null;
+        height = null;
+        error = default;
+
+        int? xSize = null;
+        int? ySize = null;
+        foreach (var token in SplitTopLevel(value))
+        {
+            if (!TryParseScaleExtentInterval(token, out var axis, out var size))
+            {
+                error = CreateScaleExtentError(token);
+                return false;
+            }
+
+            if (string.Equals(axis, "x", StringComparison.Ordinal))
+            {
+                if (xSize.HasValue)
+                {
+                    error = CreateScaleExtentError("duplicate x axis");
+                    return false;
+                }
+
+                xSize = size;
+            }
+            else if (string.Equals(axis, "y", StringComparison.Ordinal))
+            {
+                if (ySize.HasValue)
+                {
+                    error = CreateScaleExtentError("duplicate y axis");
+                    return false;
+                }
+
+                ySize = size;
+            }
+            else
+            {
+                error = CreateScaleExtentError(token);
+                return false;
+            }
+        }
+
+        if (!CoverageScaling.TryResolveExtent(baseWidth, baseHeight, xSize, ySize, out var resolved))
+        {
+            error = CreateScaleExtentError(value);
+            return false;
+        }
+
+        width = resolved.Width;
+        height = resolved.Height;
+        return true;
+    }
+
+    // SCALEEXTENT uses comma-separated axis(low,high) intervals. The caller
+    // tokenises with SplitTopLevel so the comma inside the (low,high) pair is
+    // preserved and each token is a complete axis interval.
+    private static bool TryParseScaleExtentInterval(string token, out string axis, out int size)
+    {
+        axis = string.Empty;
+        size = 0;
+
+        if (!TryParseSingleSubset(token, out axis, out var low, out var high, out var isSlice) ||
+            isSlice ||
+            low != Math.Floor(low) ||
+            high != Math.Floor(high) ||
+            high < low)
+        {
+            return false;
+        }
+
+        var span = (long)high - (long)low + 1;
+        if (span <= 0 || span > int.MaxValue)
+        {
+            return false;
+        }
+
+        size = (int)span;
+        return true;
+    }
+
+    // Splits on commas that sit outside parentheses so axis intervals such as
+    // x(0,511) survive intact while the axis separator comma still splits.
+    private static IEnumerable<string> SplitTopLevel(string value)
+    {
+        var depth = 0;
+        var start = 0;
+        for (var i = 0; i < value.Length; i++)
+        {
+            var c = value[i];
+            if (c == '(')
+            {
+                depth++;
+            }
+            else if (c == ')')
+            {
+                depth = Math.Max(0, depth - 1);
+            }
+            else if (c == ',' && depth == 0)
+            {
+                var token = value[start..i].Trim();
+                if (token.Length > 0)
+                {
+                    yield return token;
+                }
+
+                start = i + 1;
+            }
+        }
+
+        var last = value[start..].Trim();
+        if (last.Length > 0)
+        {
+            yield return last;
+        }
+    }
+
+    private static WcsParameterError CreateScaleAxesError(string token)
+        => new(
+            Wcs20Utilities.ExceptionCodes.InvalidParameterValue,
+            $"SCALEAXES '{token}' must use axis(factor) with a positive factor on the x/E/Long or y/N/Lat axis.",
+            Wcs20Utilities.Parameters.ScaleAxes);
+
+    private static WcsParameterError CreateScaleExtentError(string token)
+        => new(
+            Wcs20Utilities.ExceptionCodes.InvalidParameterValue,
+            $"SCALEEXTENT '{token}' must use axis(low,high) grid intervals on the x/E/Long or y/N/Lat axis.",
+            Wcs20Utilities.Parameters.ScaleExtent);
 
     // WCS 2.0 Scaling extension (SCALESIZE): sets an explicit output grid size per axis,
     // e.g. SCALESIZE=x(512),y(256). The x/E/Long axis maps to output width and y/N/Lat to
