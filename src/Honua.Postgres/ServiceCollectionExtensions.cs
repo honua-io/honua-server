@@ -301,8 +301,12 @@ internal static class ServiceCollectionExtensions
         // Provider-internal ADO.NET escape hatch (ADR 0046): forwards to whatever
         // IDatabaseConnectionProvider resolves to at runtime so secure-connection
         // decoration (UseSecureConnectionProvider) is honoured transparently.
+        // Uses GetService (nullable) so DB-less / mocked test hosts that strip the
+        // IDatabaseConnectionProvider mapping degrade to a null base provider instead
+        // of throwing while the secure decorator is being constructed.
         services.AddScoped<IAdoNetDatabaseConnectionProvider>(serviceProvider =>
-            (IAdoNetDatabaseConnectionProvider)serviceProvider.GetRequiredService<IDatabaseConnectionProvider>());
+            serviceProvider.GetService<IDatabaseConnectionProvider>() as IAdoNetDatabaseConnectionProvider
+                ?? null!);
 
         // Register the audit-C3 session abstraction alongside the legacy provider.
         // Consumers migrate from IDatabaseConnectionProvider to IDatabaseSessionFactory
