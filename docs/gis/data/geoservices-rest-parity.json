@@ -759,12 +759,13 @@
         "all layers and tables",
         "export",
         "dynamicLayers mapLayer renderer overrides",
+        "dynamicLayers allowlisted workspace (dataLayer) sources",
         "identify",
         "find",
         "legend",
         "queryLegends",
         "query",
-        "dynamicLayer child resource (mapLayer source)",
+        "dynamicLayer child resource (mapLayer + allowlisted dataLayer source)",
         "query domains",
         "generateRenderer (service-level)",
         "generateRenderer (per layer)",
@@ -783,7 +784,7 @@
       "knownGaps": [
         "full Esri tile-package/job exportTiles semantics",
         "queryAnalytic",
-        "workspace dynamic layers, joins, and dynamic tables",
+        "dynamicLayers workspace joins and dynamic query tables (dataSource.type other than table)",
         "image/KML-image/job child resources",
         "additional Esri child resources"
       ],
@@ -842,7 +843,7 @@
               "GET /rest/services/{serviceId}/MapServer/export",
               "POST /rest/services/{serviceId}/MapServer/export"
             ],
-            "notes": "Supports image streaming via f=image and JSON envelope responses via f=json or f=pjson. dynamicLayers supports source.type=mapLayer, request-scoped definitionExpression, and drawingInfo.renderer overrides for simple, unique-value, and class-breaks renderers."
+            "notes": "Supports image streaming via f=image and JSON envelope responses via f=json or f=pjson. dynamicLayers supports source.type=mapLayer and allowlisted source.type=dataLayer workspace data layers, request-scoped definitionExpression, and drawingInfo.renderer overrides for simple, unique-value, and class-breaks renderers."
           },
           {
             "name": "Identify",
@@ -1073,7 +1074,7 @@
             "honuaEndpoints": [
               "GET /rest/services/{serviceId}/MapServer/dynamicLayer"
             ],
-            "notes": "Returns layer metadata for source.type=mapLayer definitions, including request-scoped id, definitionExpression, and drawingInfo. Workspace layers, joins, and dynamic tables remain deferred."
+            "notes": "Returns layer metadata for source.type=mapLayer and allowlisted source.type=dataLayer workspace definitions, including request-scoped id, definitionExpression, and drawingInfo. A dataLayer source resolves a registered workspace (dataSource.workspaceId) and table (dataSource.dataSourceName) to a published resource on that workspace, gated by GeoServices:MapServer:DynamicLayers (WorkspaceLayersEnabled + allowlist). Joins and dynamic query tables remain deferred."
           },
           {
             "name": "WMTS",
@@ -1133,7 +1134,7 @@
           {
             "name": "bbox, size, dpi, format, transparent, layers, bboxSR, imageSR, layerDefs, dynamicLayers, time, timeRelation, layerTimeOptions, backgroundColor",
             "status": "implemented",
-            "notes": "CRS inputs for `bboxSR` and `imageSR` accept numeric WKID, `EPSG:####`, OGC CRS URI/URN, bracket-safe forms (`[EPSG:####]`), and `CRS84` aliases. dynamicLayers supports source.type=mapLayer, definitionExpression, and drawingInfo.renderer overrides for simple, unique-value, and class-breaks renderers."
+            "notes": "CRS inputs for `bboxSR` and `imageSR` accept numeric WKID, `EPSG:####`, OGC CRS URI/URN, bracket-safe forms (`[EPSG:####]`), and `CRS84` aliases. dynamicLayers supports source.type=mapLayer and allowlisted source.type=dataLayer workspace data layers, definitionExpression, and drawingInfo.renderer overrides for simple, unique-value, and class-breaks renderers."
           },
           {
             "name": "f",
@@ -1171,7 +1172,7 @@
         "WMTS support remains WebMercatorQuad-only.",
         "Layer queries inherit the FeatureServer query contract, including its format behavior.",
         "MapServer tile GET storage is a loose-object cache, not an Esri compact cache or tile package.",
-        "dynamicLayers and the dynamicLayer child resource are limited to source.type=mapLayer, definitionExpression, and drawingInfo.renderer overrides; workspace layers, joins, and dynamic tables remain unimplemented.",
+        "dynamicLayers and the dynamicLayer child resource support source.type=mapLayer and allowlisted source.type=dataLayer workspace data layers (resolved to published resources on an allowlisted workspace), definitionExpression, and drawingInfo.renderer overrides; dynamicLayers joins and dynamic query tables remain unimplemented.",
         "Advanced rendering parameters such as maxAllowableOffset and geometryPrecision are accepted but not yet applied."
       ]
     },

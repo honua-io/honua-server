@@ -83,10 +83,11 @@ internal static partial class MapServerEndpoints
         }
 
         var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
-        var knownLayerIds = legendLayerDescriptors
-            .Select(static layer => layer.LayerId)
-            .ToHashSet();
-        if (!TryParseDynamicLayers(context.Request.Query.TryGetValue("dynamicLayers", out var dlValues) ? dlValues.ToString() : null, knownLayerIds, queryValidator, out var dynamicLayers, out var dynamicLayersError))
+        var dynamicLayerResolver = CreateDynamicLayerSourceResolver(
+            context,
+            snapshot,
+            legendLayerDescriptors.Select(static layer => new DynamicLayerCandidate(layer.LayerId, layer.Resource)));
+        if (!TryParseDynamicLayers(context.Request.Query.TryGetValue("dynamicLayers", out var dlValues) ? dlValues.ToString() : null, dynamicLayerResolver, queryValidator, out var dynamicLayers, out var dynamicLayersError))
         {
             return StandardErrorHelpers.CreateBadRequest(context,
                 dynamicLayersError ?? "Invalid dynamicLayers parameter.");
