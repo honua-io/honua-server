@@ -68,10 +68,15 @@ internal static class TileOperationsEndpoints
 
         try
         {
-            var jobId = await jobService.StartAsync(
-                request,
-                context.RequestServices.GetService<ISchemaContext>()?.CurrentSchema,
-                cancellationToken).ConfigureAwait(false);
+            var schemaName = context.RequestServices.GetService<ISchemaContext>()?.CurrentSchema;
+
+            // Config-driven dispatch: when a batch backend is configured (issue #1697)
+            // submit through the execution-job → batch path; otherwise fall back to the
+            // in-process channel worker, preserving the default single-pod behavior.
+            var batchService = context.RequestServices.GetService<ITileCacheJobService>();
+            var jobId = batchService is { IsEnabled: true }
+                ? await batchService.SubmitAsync(request, schemaName, cancellationToken).ConfigureAwait(false)
+                : await jobService.StartAsync(request, schemaName, cancellationToken).ConfigureAwait(false);
             var response = new TileOperationStartResponse
             {
                 JobId = jobId,
@@ -142,7 +147,17 @@ internal static class TileOperationsEndpoints
             return StandardErrorHelpers.CreateNotFound(context, $"Tile job '{jobId}' not found.");
         }
 
-        var cancelled = await jobService.CancelAsync(jobId, cancellationToken).ConfigureAwait(false);
+        // Batch-dispatched jobs are owned by the execution-job substrate, not the
+        // in-process channel; route cancellation through the batch service first when
+        // enabled, then fall back to the in-process token-signal path.
+        var batchService = context.RequestServices.GetService<ITileCacheJobService>();
+        var cancelled = batchService is { IsEnabled: true }
+            && await batchService.CancelAsync(jobId, cancellationToken).ConfigureAwait(false);
+        if (!cancelled)
+        {
+            cancelled = await jobService.CancelAsync(jobId, cancellationToken).ConfigureAwait(false);
+        }
+
         if (!cancelled)
         {
             return StandardErrorHelpers.CreateBadRequest(context, "Tile job cannot be cancelled in its current state.");
