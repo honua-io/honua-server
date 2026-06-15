@@ -44,6 +44,10 @@ internal static class SceneGenerationServiceCollectionExtensions
         services.TryAddScoped<SceneTilesPublishExecutor>();
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IPublishExecutor, SceneTilesPublishExecutor>());
 
+        // CityGML/BIM ingest path (#1207): registered alongside the feature-layer
+        // executor so the Enterprise-gated admin ingest endpoint can resolve it.
+        services.TryAddScoped<CityGmlScenePublishExecutor>();
+
         return services;
     }
 

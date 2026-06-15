@@ -1011,59 +1011,24 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
             : null;
 
     private string ResolveOutputDirectory(SceneGenerationServerOptions serverOptions, string sceneId)
-    {
-        var rooted = Path.IsPathRooted(serverOptions.OutputRoot)
-            ? serverOptions.OutputRoot
-            : Path.Combine(_environment.ContentRootPath, serverOptions.OutputRoot);
-        return Path.GetFullPath(Path.Combine(rooted, sceneId));
-    }
+        => SceneTilesetStaging.ResolveOutputDirectory(_environment.ContentRootPath, serverOptions.OutputRoot, sceneId);
 
     private string ResolveStagingDirectory(SceneGenerationServerOptions serverOptions, string intentId)
-    {
-        var rooted = Path.IsPathRooted(serverOptions.OutputRoot)
-            ? serverOptions.OutputRoot
-            : Path.Combine(_environment.ContentRootPath, serverOptions.OutputRoot);
-        // Prefix with '.' so the directory name cannot collide with any valid
-        // sceneId (the canonical validator forbids leading dots/hyphens).
-        return Path.GetFullPath(Path.Combine(rooted, $".staging-{intentId}"));
-    }
+        => SceneTilesetStaging.ResolveStagingDirectory(_environment.ContentRootPath, serverOptions.OutputRoot, intentId);
 
     private void PromoteStagingToFinal(string stagingDirectory, string finalDirectory)
-    {
-        var parentDir = Path.GetDirectoryName(finalDirectory);
-        if (!string.IsNullOrEmpty(parentDir))
-        {
-            Directory.CreateDirectory(parentDir);
-        }
-        if (Directory.Exists(finalDirectory))
-        {
+        => SceneTilesetStaging.PromoteStagingToFinal(
+            stagingDirectory,
+            finalDirectory,
             // Detritus from a prior partial run that did not register; the
-            // canonical registry now points at the staging contents, so clear
-            // the stale path before the rename.
-            SceneGenerationLog.PromotionOverwroteStaleFinalDir(_logger, finalDirectory);
-            Directory.Delete(finalDirectory, recursive: true);
-        }
-        Directory.Move(stagingDirectory, finalDirectory);
-    }
+            // canonical registry now points at the staging contents, so the
+            // stale path is cleared before the rename. Surface that as a warning.
+            stale => SceneGenerationLog.PromotionOverwroteStaleFinalDir(_logger, stale));
 
     private void TryDeleteStaging(string stagingDirectory)
-    {
-        try
-        {
-            if (Directory.Exists(stagingDirectory))
-            {
-                Directory.Delete(stagingDirectory, recursive: true);
-            }
-        }
-        catch (Exception ex)
-        {
-            // Cleanup is best-effort: a failed delete leaves a hidden staging
-            // dir that is harmless (it never gets served, no registry record
-            // points at it). Log so operators can sweep with a janitor job if
-            // it accumulates.
-            SceneGenerationLog.StagingCleanupFailed(_logger, stagingDirectory, ex);
-        }
-    }
+        => SceneTilesetStaging.TryDeleteStaging(
+            stagingDirectory,
+            ex => SceneGenerationLog.StagingCleanupFailed(_logger, stagingDirectory, ex));
 
     private async Task<Guid?> TryRegisterSceneAsync(
         string sceneId,
