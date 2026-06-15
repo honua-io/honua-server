@@ -114,6 +114,10 @@ internal static class WebAppFixturePostgresWiringMixin
         services.RemoveAll<ITableDiscoveryService>();
         services.RemoveAll<IDatabaseHealthChecker>();
         services.RemoveAll<IDatabaseConnectionProvider>();
+        // IAdoNetDatabaseConnectionProvider (ADR-0046) is a cast-factory forwarding to
+        // IDatabaseConnectionProvider; remove it together so no stale descriptor survives
+        // pointing at a removed dependency.
+        services.RemoveAll<IAdoNetDatabaseConnectionProvider>();
         services.RemoveAll<ICrsDetectionService>();
         services.RemoveAll<IFileImportService>();
         services.RemoveAll<ISqlFilterTranslator>();

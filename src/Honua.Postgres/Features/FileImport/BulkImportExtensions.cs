@@ -82,11 +82,11 @@ internal static class BulkImportExtensions
         {
             var feature = features[index];
 
-            // WKBWriter is not thread-safe; use one per worker iteration.
-            // Use emitZ/emitM so that 3-D geometries (GPX, KML altitudes, 3-D GeoJSON, etc.)
-            // are not silently flattened to 2D. NTS only writes the extra ordinates when the
-            // geometry actually carries them, so 2D output is unaffected.
-            wkbArray[index] = CreateWkb(feature, new WKBWriter(ByteOrder.LittleEndian, handleSRID: false, emitZ: true, emitM: true)) ?? Array.Empty<byte>();
+            // WKBWriter is not thread-safe; use one per worker iteration. Default to a 2-D
+            // writer: forcing emitZ/emitM serializes NaN Z/M ordinates for plain XY coordinates
+            // (the import readers produce 2-D Coordinates whose Z is NaN), and ST_GeomFromWKB
+            // rejects those, silently dropping every 2-D row.
+            wkbArray[index] = CreateWkb(feature, new WKBWriter()) ?? Array.Empty<byte>();
 
             var featureSrid = feature.Geometry?.SRID;
             sridArray[index] = featureSrid is > 0 ? featureSrid.Value : fallbackSourceSrid;

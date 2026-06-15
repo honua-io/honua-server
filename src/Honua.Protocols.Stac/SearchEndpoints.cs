@@ -348,72 +348,60 @@ internal static class SearchEndpoints
                 var projection = layerQueryResult.Projection;
                 var layerId = target.LayerIndex;
 
-                try
+                // A feature-reader/query failure must surface as a 500: it propagates to the outer
+                // catch, which records the exception on the search.work activity and rethrows so the
+                // shared error pipeline maps it to InternalServerError.
+                if (remainingSkip > 0)
                 {
-                    if (remainingSkip > 0)
+                    var layerCount = await featureReader.CountAsync(layerId, query, cancellationToken);
+                    totalMatched += layerCount;
+
+                    if (remainingSkip >= layerCount)
                     {
-                        var layerCount = await featureReader.CountAsync(layerId, query, cancellationToken);
-                        totalMatched += layerCount;
-
-                        if (remainingSkip >= layerCount)
-                        {
-                            remainingSkip -= (int)Math.Min(layerCount, int.MaxValue);
-                            continue;
-                        }
-
-                        var remaining = effectiveLimit - allItems.Count;
-                        query = query with { Offset = remainingSkip, Limit = remaining };
-                        remainingSkip = 0;
-
-                        var result = await featureReader.QueryAsync(layerId, query, cancellationToken);
-                        allItems.AddRange(result.Features
-                            .Select(f => ApplyFieldProjection(
-                                StacMappingService.MapFeatureToItem(
-                                    f,
-                                    target.Resource,
-                                    target.Publication,
-                                    layerId,
-                                    baseUrl,
-                                    projection?.SelectedProperties,
-                                    geometrySrid: Wgs84Srid),
-                                projection)));
+                        remainingSkip -= (int)Math.Min(layerCount, int.MaxValue);
+                        continue;
                     }
-                    else if (allItems.Count < effectiveLimit)
-                    {
-                        var remaining = effectiveLimit - allItems.Count;
-                        query = query with { Limit = remaining };
 
-                        var result = await featureReader.QueryAsync(layerId, query, cancellationToken);
-                        totalMatched += result.TotalCount;
+                    var remaining = effectiveLimit - allItems.Count;
+                    query = query with { Offset = remainingSkip, Limit = remaining };
+                    remainingSkip = 0;
 
-                        allItems.AddRange(result.Features
-                            .Select(f => ApplyFieldProjection(
-                                StacMappingService.MapFeatureToItem(
-                                    f,
-                                    target.Resource,
-                                    target.Publication,
-                                    layerId,
-                                    baseUrl,
-                                    projection?.SelectedProperties,
-                                    geometrySrid: Wgs84Srid),
-                                projection)));
-                    }
-                    else
-                    {
-                        totalMatched += await featureReader.CountAsync(layerId, query, cancellationToken);
-                    }
+                    var result = await featureReader.QueryAsync(layerId, query, cancellationToken);
+                    allItems.AddRange(result.Features
+                        .Select(f => ApplyFieldProjection(
+                            StacMappingService.MapFeatureToItem(
+                                f,
+                                target.Resource,
+                                target.Publication,
+                                layerId,
+                                baseUrl,
+                                projection?.SelectedProperties,
+                                geometrySrid: Wgs84Srid),
+                            projection)));
                 }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                else if (allItems.Count < effectiveLimit)
                 {
-                    throw;
+                    var remaining = effectiveLimit - allItems.Count;
+                    query = query with { Limit = remaining };
+
+                    var result = await featureReader.QueryAsync(layerId, query, cancellationToken);
+                    totalMatched += result.TotalCount;
+
+                    allItems.AddRange(result.Features
+                        .Select(f => ApplyFieldProjection(
+                            StacMappingService.MapFeatureToItem(
+                                f,
+                                target.Resource,
+                                target.Publication,
+                                layerId,
+                                baseUrl,
+                                projection?.SelectedProperties,
+                                geometrySrid: Wgs84Srid),
+                            projection)));
                 }
-                catch (Exception ex)
+                else
                 {
-                    // One failing layer (e.g. CRS transform failure, unreachable federated store)
-                    // must not abort the entire cross-collection search.  Skip this publication and
-                    // continue so other collections still contribute results.
-                    StacLog.SearchPublicationSkipped(logger, layerId, ex);
-                    StacTelemetry.RecordException(activity, ex);
+                    totalMatched += await featureReader.CountAsync(layerId, query, cancellationToken);
                 }
             }
 

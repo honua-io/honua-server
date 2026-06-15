@@ -33,6 +33,7 @@ internal sealed partial class ODataBatchHandler
     private const string NonAtomicGroupKey = "__non-atomic__";
     private const string AtomicGroupPrefix = "atomic:";
     private const int DefaultBatchCollectionTop = 1000;
+    private const string AbsoluteBatchRequestUrlMessage = "Absolute batch request URLs are not supported.";
     private const string ODataProtocol = "OData";
 
     private readonly IFeatureReader _featureReader;

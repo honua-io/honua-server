@@ -331,7 +331,10 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
         content.Should().Contain(OgcFeaturesUtilities.GmlApplicationSchemaPath);
         content.Should().Contain("<app:geometry>");
         content.Should().Contain($"srsName=\"{OgcFeaturesUtilities.Crs84Uri}\"");
-        content.Should().Contain("gml:id=\"geom_");
+        // GML 3.2 (ISO 19136) requires gml:id on every geometry. The PostGIS-backed
+        // store emits it directly via ST_AsGML as "geom.<layerId>.<objectId>"; the
+        // in-memory formatter fallback supplies an equivalent id for non-GML stores.
+        content.Should().MatchRegex("<gml:[A-Za-z]+[^>]*\\sgml:id=\"geom[._]");
     }
 
     [IntegrationTest]

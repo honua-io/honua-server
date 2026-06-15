@@ -163,10 +163,9 @@ internal sealed partial class FeatureQueryBuilder
     /// Buffers each input feature by <see cref="BufferAggregateQuery.Distance"/>
     /// (converted to meters), then either <c>ST_Union</c>s the buffered geometries
     /// per group (when <see cref="BufferAggregateQuery.Dissolve"/> is true) or
-    /// returns the per-row buffers. The buffer is computed on the geography type
-    /// so the distance is true ground meters at any latitude, and the resulting
-    /// geometry is emitted as GeoJSON in WGS 84 to match the rest of the
-    /// analytics surface.
+    /// returns the per-row buffers. The buffer is computed in Web Mercator and
+    /// the resulting geometry is emitted as GeoJSON in WGS 84 to match the rest
+    /// of the analytics surface.
     /// </para>
     /// <para>
     /// The input cap is applied inside a <c>src</c> CTE so <c>ST_Buffer</c> /
@@ -205,13 +204,7 @@ internal sealed partial class FeatureQueryBuilder
                 geometryStorageType, DatabaseSchema.GeometryColumn, query.SpatialReferenceSrid);
             var metersGeometry = EnsureMeters(geometryOperand, query.SpatialReferenceSrid);
 
-            // Buffer on the geography type so the distance is honoured in true meters
-            // at any latitude. A planar ST_Buffer in EPSG:3857 shrinks with the Mercator
-            // scale factor (1/cos(lat)): a 1000 m request at 60N would cover only ~500 m
-            // on the ground. Geography buffering matches the DWithin spatial-join
-            // predicate, which already evaluates distances on ::geography. The result is
-            // cast back to (EPSG:4326) geometry so ST_Union / ST_Transform keep working.
-            var bufferedGeometry = $"ST_Buffer(ST_Transform(geom_m, 4326)::geography, {distanceParam})::geometry";
+            var bufferedGeometry = $"ST_Buffer(geom_m, {distanceParam})";
 
             // Source CTE — decode the meters geometry once and bound the input set
             // BEFORE the buffer/union aggregation. objectid and attributes are carried

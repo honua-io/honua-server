@@ -44,15 +44,15 @@ public static class ServiceCollectionExtensions
 
         services.AddSingleton<ISqlDialect>(OracleSqlDialect.Instance);
 
-        // OracleConnectionFactory and OracleSpatialMetadataProbe are stateless wrappers around
-        // IOptions / ISecureConnectionResolver; all three are safe singletons. OracleSpatialGuard
-        // holds a ConcurrentDictionary keyed on layer ID that is documented as stable for the
-        // lifetime of a deployment — registering it Scoped created a fresh (empty) cache on
-        // every HTTP request, defeating the once-per-binding metadata-probe optimisation and
-        // producing two extra Oracle catalog connections per request.
-        services.AddSingleton<IOracleConnectionFactory, OracleConnectionFactory>();
-        services.AddSingleton<IOracleSpatialMetadataProbe, OracleSpatialMetadataProbe>();
-        services.AddSingleton<OracleSpatialGuard>();
+        // Scoped registration (matches trunk): these services consume ISecureConnectionResolver,
+        // which is registered Scoped, so a Singleton lifetime here is a captive dependency that
+        // fails ServiceProvider ValidateOnBuild/ValidateScopes. The #1567 singleton optimisation
+        // (avoid per-request OracleSpatialGuard cache resets / extra catalog connections) is
+        // deferred to #1593 — it must resolve ISecureConnectionResolver via IServiceScopeFactory
+        // before these can become singletons.
+        services.AddScoped<IOracleConnectionFactory, OracleConnectionFactory>();
+        services.AddScoped<IOracleSpatialMetadataProbe, OracleSpatialMetadataProbe>();
+        services.AddScoped<OracleSpatialGuard>();
         services.AddScoped<OracleFeatureDataAccess>();
         services.AddScoped<OracleFeatureStore>();
 

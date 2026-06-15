@@ -53,7 +53,11 @@ internal sealed partial class StreamingFileImportService
         // unconditionally for the freshly-named staging table.
         await CreateTableAsync(connection, targetSchema, allowedTableName, request.TargetSrid, cancellationToken);
 
-        var wkbWriter = new WKBWriter(ByteOrder.LittleEndian, handleSRID: false, emitZ: true, emitM: true);
+        // Default to a 2-D writer. Forcing emitZ/emitM here serializes NaN Z/M ordinates for
+        // plain XY coordinates (the GeoJSON/CSV/WKT readers produce 2-D Coordinates whose Z is
+        // NaN), which ST_GeomFromWKB rejects — silently dropping every 2-D row. Genuine 3-D
+        // geometries are upgraded per-feature by CreateWkb's HasZ branch, so this default is safe.
+        var wkbWriter = new WKBWriter();
         var batch = new List<IFeature>(_limits.BatchSize);
         var totalImported = 0;
         var totalFailed = 0;

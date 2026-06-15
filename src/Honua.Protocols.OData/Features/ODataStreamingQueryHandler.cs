@@ -498,6 +498,7 @@ internal sealed partial class ODataStreamingQueryHandler(
 
             // Set up streaming response
             context.Response.ContentType = ODataUtilityService.GetODataContentType(context.Request, format);
+            context.Response.Headers["Transfer-Encoding"] = "chunked";
             ODataUtilityService.SetODataHeaders(context);
             if (applyTrackChangesPreference)
             {
@@ -514,7 +515,6 @@ internal sealed partial class ODataStreamingQueryHandler(
                 resource.ReadSrid() ?? 4326,
                 axisOrder,
                 pagination,
-                topValue,
                 selectedFields,
                 filter,
                 select,
@@ -587,7 +587,6 @@ internal sealed partial class ODataStreamingQueryHandler(
         int? layerSrid,
         AxisOrder axisOrder,
         PaginationValues pagination,
-        int? clientTop,
         HashSet<string>? selectedFields,
         string? filter,
         string? select,
@@ -663,12 +662,9 @@ internal sealed partial class ODataStreamingQueryHandler(
         // End value array
         writer.WriteEndArray();
 
-        // When the client specified $top, suppress nextLink once all requested items have been
-        // delivered — OData v4.01 §11.2.6.7: "The final partial set MUST NOT contain a next link."
-        var clientTopSatisfied = clientTop.HasValue && (long)pagination.Offset + streamedCount >= clientTop.Value;
-        var shouldPaginate = !clientTopSatisfied && (totalCount.HasValue
-            ? ODataUtilityService.ShouldPaginate(streamedCount, pagination.Offset, totalCount.Value, pagination.Limit, clientTop)
-            : hasMoreResults);
+        var shouldPaginate = totalCount.HasValue
+            ? ODataUtilityService.ShouldPaginate(streamedCount, pagination.Offset, totalCount.Value, pagination.Limit)
+            : hasMoreResults;
 
         if (shouldPaginate)
         {

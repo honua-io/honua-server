@@ -493,9 +493,15 @@ internal sealed partial class OgcFilterProcessor
             return BboxParseResult.Failure("Bounding box must contain 4 or 6 comma-separated values.");
         }
 
-        // OGC API - Features Part 1 /req/core/fc-bbox-definition allows 4 or 6 values.
-        // A 3D (6-value) bbox is valid; a 2D server must ignore the vertical components
-        // rather than rejecting the request. Drop parts[2] (minZ) and parts[5] (maxZ).
+        // A 3D (6-value) bbox carries vertical (minZ/maxZ) components this 2D feature
+        // surface cannot filter on. Reject it explicitly rather than silently dropping the
+        // Z values so callers learn the vertical constraint was not honored.
+        var hasZ = partCount == 6;
+        if (hasZ)
+        {
+            return BboxParseResult.Failure("3D bounding boxes are not supported.");
+        }
+
         double minX;
         double minY;
         double maxX;
@@ -503,19 +509,19 @@ internal sealed partial class OgcFilterProcessor
 
         if (crsDefinition.AxisOrder == AxisOrder.NorthEast)
         {
-            // NE axis order: lat, lon, [z], lat, lon, [z]  →  lat→Y, lon→X
+            // NE axis order: lat, lon, lat, lon  →  lat→Y, lon→X
             minX = parts[1];
             minY = parts[0];
-            maxX = partCount == 6 ? parts[4] : parts[3];
-            maxY = partCount == 6 ? parts[3] : parts[2];
+            maxX = parts[3];
+            maxY = parts[2];
         }
         else
         {
-            // Default (EastNorth / CRS84): lon, lat, [z], lon, lat, [z]
+            // Default (EastNorth / CRS84): lon, lat, lon, lat
             minX = parts[0];
             minY = parts[1];
-            maxX = partCount == 6 ? parts[3] : parts[2];
-            maxY = partCount == 6 ? parts[4] : parts[3];
+            maxX = parts[2];
+            maxY = parts[3];
         }
 
         if (minY > maxY)
