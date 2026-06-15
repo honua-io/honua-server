@@ -171,4 +171,9 @@ internal static partial class GeoprocessingServiceLog
         string outcome,
         string dimension,
         string policyRef);
+
+    [LoggerMessage(8029, LogLevel.Warning, "Job access denied: JobId={JobId} was requested by a different principal")]
+    public static partial void JobOwnershipDenied(
+        ILogger logger,
+        string jobId);
 }

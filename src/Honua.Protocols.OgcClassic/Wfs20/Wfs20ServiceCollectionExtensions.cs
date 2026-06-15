@@ -4,6 +4,7 @@
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.Query;
 using Honua.Protocols.Ogc.Classic.Wfs20.Services;
+using Honua.Protocols.Ogc.Common;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Protocols.Ogc.Classic.Wfs20;
@@ -25,6 +26,10 @@ internal static class Wfs20ServiceCollectionExtensions
             configuration.GetSection(Wfs20Options.SectionName));
 
         // Register WFS 2.0 core services following established patterns
+        // The shared OGC geometry conversion service lives in Honua.Protocols.Ogc.Shared
+        // and is consumed by both the OGC API Features and WFS 2.0 adapters; register it
+        // here too so WFS works without the OGC API module's registrations.
+        services.TryAddScoped<OgcFeaturesGeometryServices>();
         services.TryAddScoped<IQueryProcessor, QueryProcessor>();
         services.TryAddScoped<IEditProcessor, EditProcessor>();
         services.TryAddScoped<Wfs20QueryParameterAdapter>();

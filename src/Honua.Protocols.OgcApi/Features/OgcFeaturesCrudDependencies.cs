@@ -9,6 +9,7 @@ using Honua.Infrastructure.Events;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Validation;
 using Honua.Protocols.Ogc.Api.Features.Services;
+using Honua.Protocols.Ogc.Common;
 
 namespace Honua.Protocols.Ogc.Api.Features;
 

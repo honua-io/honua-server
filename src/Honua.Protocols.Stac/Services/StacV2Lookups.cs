@@ -84,6 +84,11 @@ internal static class StacV2Lookups
                 continue;
             }
 
+            if (!TenantScopeHelpers.IsPublicationVisible(context, pub, resource, service))
+            {
+                continue;
+            }
+
             if (!AccessPolicyHelpers.IsResourceAccessible(context, resource, service))
             {
                 continue;
@@ -152,6 +157,11 @@ internal static class StacV2Lookups
 
             var resource = snapshot.ResolveResource(pub);
             if (resource is null)
+            {
+                continue;
+            }
+
+            if (!TenantScopeHelpers.IsPublicationVisible(context, pub, resource, service))
             {
                 continue;
             }

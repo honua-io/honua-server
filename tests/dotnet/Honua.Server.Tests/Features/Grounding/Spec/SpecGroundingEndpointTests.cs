@@ -6,10 +6,12 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Grounding.Spec;
 
@@ -29,6 +31,7 @@ public sealed class SpecGroundingEndpointTests : IAsyncLifetime
             SpecGroundingTestSupport.CreateLayer(4, "Zones"));
 
         _fixture = new WebAppFixture()
+            .WithTestLicense(HonuaEdition.Pro)
             .ReplaceService<IMetadataV2GraphProvider>(graphProvider);
     }
 
@@ -262,6 +265,33 @@ public sealed class SpecGroundingEndpointTests : IAsyncLifetime
         clarification.GetProperty("candidates").EnumerateArray()
             .Select(candidate => candidate.GetProperty("unit").GetString())
             .Should().Equal("km", "m", "mi", "ft", "nm");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GroundingMutate)]
+    [Endpoint("POST /v1/grounding/spec/mutate")]
+    public async Task Mutate_WithCommunityLicense_ReturnsPaymentRequired()
+    {
+        var fixture = new WebAppFixture()
+            .WithTestLicense(HonuaEdition.Community);
+        await fixture.InitializeAsync();
+
+        try
+        {
+            var response = await fixture.Client.PostAsJsonAsync("/v1/grounding/spec/mutate", new
+            {
+                spec = SpecGroundingTestSupport.ParseJsonElement("{}"),
+                turn = "use rivers as rivers"
+            });
+
+            response.StatusCode.Should().Be(HttpStatusCode.PaymentRequired);
+            var body = await response.Content.ReadAsStringAsync();
+            body.Should().Contain(FeatureCatalog.AiGroundingKey);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
     }
 
     [IntegrationTest]

@@ -22,6 +22,15 @@ internal static class AccessPolicyHelpers
 {
     internal const string AuthRequiredMessage = "Authentication is required to access this resource.";
     internal const string AccessForbiddenMessage = "Access to this resource is forbidden.";
+
+    /// <summary>
+    /// Internal denial reason recorded when a metadata entity is hidden from the
+    /// request's tenant (#1580). Never surfaced to clients —
+    /// <see cref="CreateAccessDeniedResult"/> maps every forbidden decision to the
+    /// generic <see cref="AccessForbiddenMessage"/> so tenant ownership does not leak.
+    /// </summary>
+    internal const string TenantScopeDeniedReason = "Resource is outside the request tenant scope.";
+
     private static readonly ClaimsPrincipal AnonymousPrincipal = new(new ClaimsIdentity());
 
     /// <summary>
@@ -72,6 +81,11 @@ internal static class AccessPolicyHelpers
         AccessScope scope = AccessScope.Read)
     {
         ArgumentNullException.ThrowIfNull(resource);
+        if (!TenantScopeHelpers.IsTenantVisible(context, resource, service))
+        {
+            return StandardErrorHelpers.CreateForbidden(context, AccessForbiddenMessage);
+        }
+
         return RequireAccess(context, resource.AccessPolicy, service?.AccessPolicy, scope);
     }
 
@@ -126,6 +140,13 @@ internal static class AccessPolicyHelpers
     {
         ArgumentNullException.ThrowIfNull(resource);
 
+        // Tenant scope gates before grant evaluation (#1580): a per-operation grant
+        // must never authorize access to another tenant's resource.
+        if (!TenantScopeHelpers.IsTenantVisible(context, resource, service))
+        {
+            return StandardErrorHelpers.CreateForbidden(context, AccessForbiddenMessage);
+        }
+
         var serviceName = service?.Metadata.Name;
         if (!string.IsNullOrWhiteSpace(serviceName))
         {
@@ -167,6 +188,11 @@ internal static class AccessPolicyHelpers
     {
         ArgumentNullException.ThrowIfNull(service);
 
+        if (!TenantScopeHelpers.IsTenantVisible(context, resource: null, service))
+        {
+            return StandardErrorHelpers.CreateForbidden(context, AccessForbiddenMessage);
+        }
+
         var serviceName = service.Metadata.Name;
         if (!string.IsNullOrWhiteSpace(serviceName))
         {
@@ -207,6 +233,12 @@ internal static class AccessPolicyHelpers
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(resource);
+
+        // Tenant scope gates before grant evaluation (#1580).
+        if (!TenantScopeHelpers.IsTenantVisible(context, resource, service))
+        {
+            return AccessDecision.Forbidden(TenantScopeDeniedReason);
+        }
 
         var serviceName = service?.Metadata.Name;
         if (!string.IsNullOrWhiteSpace(serviceName))
@@ -339,6 +371,11 @@ internal static class AccessPolicyHelpers
         AccessScope scope = AccessScope.Read)
     {
         ArgumentNullException.ThrowIfNull(service);
+        if (!TenantScopeHelpers.IsTenantVisible(context, resource: null, service))
+        {
+            return StandardErrorHelpers.CreateForbidden(context, AccessForbiddenMessage);
+        }
+
         return RequireAccess(context, null, service.AccessPolicy, scope);
     }
 
@@ -347,9 +384,35 @@ internal static class AccessPolicyHelpers
         MetadataV2Resource resource,
         MetadataV2Service? service = null,
         AccessScope scope = AccessScope.Read)
+        => EvaluateResourceAccess(context, resource, service, scope).IsAllowed;
+
+    /// <summary>
+    /// Tenant-aware sibling of <see cref="EvaluateAccess"/> for callers that hold the
+    /// resolved <see cref="MetadataV2Resource"/>/<see cref="MetadataV2Service"/> pair
+    /// (#1580). Resources scoped to another tenant evaluate to a forbidden decision
+    /// before the coarse <see cref="AccessPolicy"/> seam runs, so enumeration surfaces
+    /// (collection lists, capability documents) hide foreign-tenant entries the same
+    /// way the per-item validators do. Prefer this over raw
+    /// <see cref="EvaluateAccess"/> whenever the metadata entities are available.
+    /// </summary>
+    /// <param name="context">The request context.</param>
+    /// <param name="resource">The resource (layer) being accessed.</param>
+    /// <param name="service">The owning service, when known.</param>
+    /// <param name="scope">The requested access scope.</param>
+    /// <returns>The access decision.</returns>
+    public static AccessDecision EvaluateResourceAccess(
+        HttpContext context,
+        MetadataV2Resource resource,
+        MetadataV2Service? service = null,
+        AccessScope scope = AccessScope.Read)
     {
         ArgumentNullException.ThrowIfNull(resource);
-        return EvaluateAccess(context, resource.AccessPolicy, service?.AccessPolicy, scope).IsAllowed;
+        if (!TenantScopeHelpers.IsTenantVisible(context, resource, service))
+        {
+            return AccessDecision.Forbidden(TenantScopeDeniedReason);
+        }
+
+        return EvaluateAccess(context, resource.AccessPolicy, service?.AccessPolicy, scope);
     }
 
     /// <summary>
@@ -385,6 +448,11 @@ internal static class AccessPolicyHelpers
         AccessScope scope = AccessScope.Read)
     {
         ArgumentNullException.ThrowIfNull(resource);
+        if (!TenantScopeHelpers.IsTenantVisible(context, resource, service))
+        {
+            return false;
+        }
+
         var evaluator = context.RequestServices.GetRequiredService<IAccessPolicyEvaluator>();
         return evaluator.Evaluate(AnonymousPrincipal, resource.AccessPolicy, service?.AccessPolicy, scope).IsAllowed;
     }
@@ -395,6 +463,11 @@ internal static class AccessPolicyHelpers
         AccessScope scope = AccessScope.Read)
     {
         ArgumentNullException.ThrowIfNull(service);
+        if (!TenantScopeHelpers.IsTenantVisible(context, resource: null, service))
+        {
+            return false;
+        }
+
         var evaluator = context.RequestServices.GetRequiredService<IAccessPolicyEvaluator>();
         return evaluator.Evaluate(AnonymousPrincipal, null, service.AccessPolicy, scope).IsAllowed;
     }
@@ -411,7 +484,7 @@ internal static class AccessPolicyHelpers
 
         foreach (var resource in resources)
         {
-            var decision = EvaluateAccess(context, resource.AccessPolicy, service?.AccessPolicy, scope);
+            var decision = EvaluateResourceAccess(context, resource, service, scope);
             if (decision.IsAllowed)
             {
                 return null;

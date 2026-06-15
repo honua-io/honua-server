@@ -4,6 +4,7 @@
 using System.IO.Compression;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Observability.Abstractions;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Compression;
 using Honua.Infrastructure.Models;
@@ -77,6 +78,7 @@ internal static class ObservabilityServiceCollectionExtensions
             {
                 policy.AddPolicy<RouteTagOutputCachePolicy>();
                 policy.AddPolicy<AnonymousOnlyOutputCachePolicy>();
+                policy.VaryByValue(static context => ResolveTenantOutputCacheKey(context));
             });
 
             // Service metadata caching policy
@@ -554,6 +556,9 @@ internal static class ObservabilityServiceCollectionExtensions
             });
         }
     }
+
+    private static KeyValuePair<string, string> ResolveTenantOutputCacheKey(HttpContext context)
+        => new("tenant", TenantScopeHelpers.ResolveRequestTenantId(context) ?? "<none>");
 
     // Configure response compression for GeoJSON and JSON responses
     private static void ConfigureResponseCompression(IServiceCollection services)

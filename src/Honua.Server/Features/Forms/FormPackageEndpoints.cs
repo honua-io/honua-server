@@ -4,7 +4,9 @@
 using System.Text.Json;
 using Honua.Ai.FormGeneration;
 using Honua.Core.Features.Forms.Packages;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Licensing;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Forms;
@@ -154,6 +156,15 @@ internal static class FormPackageEndpoints
             return Results.Json(bad, FormGenerationApiJsonContext.Default.FormGenerationResult, statusCode: StatusCodes.Status400BadRequest);
         }
 
+        var entitlementGate = LicenseGate.RequireEntitlement(
+            context,
+            FeatureCatalog.AiWorkflowGenerationKey,
+            "AI form generation");
+        if (entitlementGate is not null)
+        {
+            return entitlementGate;
+        }
+
         var result = await generation.GenerateAsync(
             new FormGenerationRequest
             {
@@ -245,7 +256,15 @@ internal static class FormPackageEndpoints
         [FromServices] FormPackageLifecycleService service,
         string formId,
         [FromQuery] int? clientVersion)
-        => service.GetCompatibilityAsync(context, formId, clientVersion);
+    {
+        var entitlementGate = LicenseGate.RequireEntitlement(
+            context,
+            FeatureCatalog.FieldOpsOfflineSyncKey,
+            "Form offline compatibility");
+        return entitlementGate is not null
+            ? Task.FromResult(entitlementGate)
+            : service.GetCompatibilityAsync(context, formId, clientVersion);
+    }
 
     private static Task<IResult> HandleGetOfflinePolicy(
         HttpContext context,

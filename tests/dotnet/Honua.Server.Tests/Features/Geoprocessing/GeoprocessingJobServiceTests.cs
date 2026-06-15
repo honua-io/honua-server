@@ -482,6 +482,124 @@ public sealed class GeoprocessingJobServiceTests
         await act.Should().ThrowAsync<GeoprocessingValidationException>();
     }
 
+    // -----------------------------------------------------------------------
+    // Job ownership scoping (#1576): a coarse Job-level grant must not expose
+    // another principal's job state, results, or cancellation.
+    // -----------------------------------------------------------------------
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}")]
+    public async Task GetJob_SubmittedByAnotherPrincipal_ThrowsNotFound()
+    {
+        var record = CreateOwnedJobRecord("job-1", ExecutionJobStatus.Running, owner: "other-user");
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(record);
+
+        var act = async () => await _sut.GetJobAsync("job-1", CreatePrincipal());
+
+        // Not-found rather than forbidden so cross-principal probing cannot
+        // confirm that the job identifier exists.
+        await act.Should().ThrowAsync<GeoprocessingNotFoundException>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}")]
+    public async Task GetJob_SubmittedByCaller_ReturnsRecord()
+    {
+        var record = CreateOwnedJobRecord("job-1", ExecutionJobStatus.Running, owner: "test-user");
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(record);
+
+        var result = await _sut.GetJobAsync("job-1", CreatePrincipal());
+
+        result.OperationId.Should().Be("job-1");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}")]
+    public async Task GetJob_SubmittedByAnotherPrincipal_AdminRoleCanRead()
+    {
+        var record = CreateOwnedJobRecord("job-1", ExecutionJobStatus.Running, owner: "other-user");
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(record);
+
+        var admin = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.Name, "ops-admin"), new Claim(ClaimTypes.Role, "admin")], "Test"));
+
+        var result = await _sut.GetJobAsync("job-1", admin);
+
+        result.OperationId.Should().Be("job-1");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}")]
+    public async Task GetJob_WithoutRecordedSubmitter_RemainsAccessible()
+    {
+        // Jobs submitted while authentication is disabled record no owner and
+        // keep the coarse Job-grant behavior.
+        var record = CreateJobRecord("job-1", ExecutionJobStatus.Running);
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(record);
+
+        var result = await _sut.GetJobAsync("job-1", CreatePrincipal());
+
+        result.OperationId.Should().Be("job-1");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/GetJobResult")]
+    public async Task GetJobResults_SubmittedByAnotherPrincipal_ThrowsNotFound()
+    {
+        var record = CreateOwnedJobRecord("job-1", ExecutionJobStatus.Succeeded, owner: "other-user");
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(record);
+
+        var act = async () => await _sut.GetJobResultsAsync("job-1", CreatePrincipal());
+
+        await act.Should().ThrowAsync<GeoprocessingNotFoundException>();
+        await _resultPackageStore.DidNotReceive().GetAsync(
+            Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/GetJobResult")]
+    public async Task GetJobResults_SubmittedByCaller_ReturnsPackage()
+    {
+        var record = CreateOwnedJobRecord("job-1", ExecutionJobStatus.Succeeded, owner: "test-user");
+        var package = AnalysisResultPackage.CreateCompleted(
+            GeoprocessingResultPackageFactory.CreateResultPackageId(record),
+            new ResultSummary { Title = "Owned result" },
+            [],
+            [],
+            new ProvenanceRecord
+            {
+                Sources = [],
+                ProcessDefinitions = ["geometry.buffer"]
+            });
+
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(record);
+        _resultPackageStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(package);
+
+        var result = await _sut.GetJobResultsAsync("job-1", CreatePrincipal());
+
+        result.Should().BeSameAs(package);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Delete)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel")]
+    public async Task CancelJob_SubmittedByAnotherPrincipal_ThrowsNotFound()
+    {
+        var record = CreateOwnedJobRecord("job-1", ExecutionJobStatus.Running, owner: "other-user");
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(record);
+
+        var act = async () => await _sut.CancelJobAsync("job-1", CreatePrincipal());
+
+        await act.Should().ThrowAsync<GeoprocessingNotFoundException>();
+        _cancellationNotifier.DidNotReceive().Cancel(Arg.Any<string>());
+    }
+
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.ProcessService/GetJobResult")]
@@ -2364,6 +2482,15 @@ public sealed class GeoprocessingJobServiceTests
                 Backend = backend,
                 WorkloadName = "test-workload"
             }
+        };
+
+    private static ExecutionJobRecord CreateOwnedJobRecord(
+        string jobId,
+        ExecutionJobStatus status,
+        string owner)
+        => CreateJobRecord(jobId, status) with
+        {
+            Audit = new OperationAuditInfo { RequestedBy = owner }
         };
 
     private static ClaimsPrincipal CreatePrincipal()

@@ -3,6 +3,7 @@
 
 using Honua.Protocols.Ogc.Api.Features.Models;
 using Honua.Protocols.Ogc.Api.Features.Services;
+using Honua.Protocols.Ogc.Common;
 using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.Services;

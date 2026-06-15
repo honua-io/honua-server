@@ -76,6 +76,7 @@ public enum LicenseValidationState
 /// <param name="LicenseId">Stable license identifier when a license is loaded</param>
 /// <param name="IssuedAt">License issue timestamp when a license is loaded</param>
 /// <param name="Entitlements">Known feature entitlements and their active state</param>
+/// <param name="CapacityTerms">Capacity-band terms encoded in the active license</param>
 public sealed record LicenseStatus(
     HonuaEdition Edition,
     bool IsValid,
@@ -84,7 +85,8 @@ public sealed record LicenseStatus(
     LicenseValidationState ValidationState = LicenseValidationState.Valid,
     string? LicenseId = null,
     DateTimeOffset? IssuedAt = null,
-    IReadOnlyList<Entitlement>? Entitlements = null)
+    IReadOnlyList<Entitlement>? Entitlements = null,
+    LicenseCapacityTerms? CapacityTerms = null)
 {
     /// <summary>
     /// Days until license expiry, null if no expiry.
@@ -108,6 +110,7 @@ public sealed record LicenseStatus(
 /// <param name="ActiveEntitlementKeys">Active entitlement keys for O(1) gate checks.</param>
 /// <param name="SnapshotVersion">Monotonic in-process snapshot version.</param>
 /// <param name="KeyId">Trusted signing key identifier when a license is loaded.</param>
+/// <param name="CapacityTerms">Capacity-band terms encoded in the active license.</param>
 public sealed record LicenseSnapshot(
     HonuaEdition Edition,
     bool IsValid,
@@ -119,7 +122,8 @@ public sealed record LicenseSnapshot(
     IReadOnlyList<Entitlement> Entitlements,
     IReadOnlySet<string> ActiveEntitlementKeys,
     long SnapshotVersion,
-    string? KeyId)
+    string? KeyId,
+    LicenseCapacityTerms? CapacityTerms = null)
 {
     /// <summary>
     /// Gets whether the supplied entitlement key is active in this snapshot.

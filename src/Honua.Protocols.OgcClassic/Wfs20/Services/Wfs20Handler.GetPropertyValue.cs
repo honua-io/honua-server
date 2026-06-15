@@ -15,9 +15,6 @@ using Honua.Core.Queries.Filters.Fes20;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Services;
-using Honua.Protocols.Ogc.Api.Features;
-using Honua.Protocols.Ogc.Api.Features.Models;
-using Honua.Protocols.Ogc.Api.Features.Services;
 using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Ogc.Classic.Wfs20.Models;
 using Honua.ServiceDefaults;
@@ -397,7 +394,7 @@ internal sealed partial class Wfs20Handler
             ? MediaTypes.Json
             : MediaTypes.GeoJson;
 
-        return (Results.Json(payload, OgcJsonContext.Default.FeatureCollection, contentType: contentType), features.Count);
+        return (Results.Json(payload, OgcClassicJsonContext.Default.FeatureCollection, contentType: contentType), features.Count);
     }
 
     private static ValueReferenceResolution ResolveValueReference(MetadataV2Resource resource, string valueReference)
@@ -453,7 +450,7 @@ internal sealed partial class Wfs20Handler
                 ? MediaTypes.Json
                 : MediaTypes.GeoJson;
 
-            return Results.Json(payload, OgcJsonContext.Default.FeatureCollection, contentType: contentType);
+            return Results.Json(payload, OgcClassicJsonContext.Default.FeatureCollection, contentType: contentType);
         }
 
         return CreateEmptyValueCollectionXmlResult();

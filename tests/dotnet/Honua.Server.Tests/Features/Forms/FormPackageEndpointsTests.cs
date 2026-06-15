@@ -7,8 +7,10 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Forms.Packages;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Helpers;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 
@@ -18,7 +20,8 @@ namespace Honua.Server.Tests.Features.Forms;
 [Protocol(TestProtocols.Admin)]
 public sealed class FormPackageEndpointsTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = new WebAppFixture()
+        .WithTestLicense(HonuaEdition.Pro);
 
     public async Task InitializeAsync()
     {
@@ -446,6 +449,62 @@ public sealed class FormPackageEndpointsTests : IAsyncLifetime
             JsonContent("{}"));
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Configuration)]
+    [Endpoint("GET /api/v1/forms/packages/{formId}/offline-policy")]
+    [Endpoint("GET /api/v1/forms/packages/{formId}/compatibility")]
+    public async Task OfflineFormRuntime_WithCommunityLicense_ReturnsPaymentRequired()
+    {
+        var fixture = new WebAppFixture()
+            .WithTestLicense(HonuaEdition.Community);
+        await fixture.InitializeAsync();
+
+        try
+        {
+            foreach (var path in new[]
+            {
+                "/api/v1/forms/packages/community-form/offline-policy",
+                "/api/v1/forms/packages/community-form/compatibility"
+            })
+            {
+                var response = await fixture.Client.GetAsync(path);
+
+                response.StatusCode.Should().Be(HttpStatusCode.PaymentRequired);
+                var body = await response.Content.ReadAsStringAsync();
+                body.Should().Contain(FeatureCatalog.FieldOpsOfflineSyncKey);
+            }
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Configuration)]
+    [Endpoint("POST /api/v1/admin/forms/packages/generate")]
+    public async Task GenerateFormPackage_WithCommunityLicense_ReturnsPaymentRequired()
+    {
+        var fixture = new WebAppFixture()
+            .WithTestLicense(HonuaEdition.Community);
+        await fixture.InitializeAsync();
+
+        try
+        {
+            var response = await fixture.Client.PostAsync(
+                "/api/v1/admin/forms/packages/generate",
+                JsonContent("""{"prompt":"Build a simple inspection form"}"""));
+
+            response.StatusCode.Should().Be(HttpStatusCode.PaymentRequired);
+            var body = await response.Content.ReadAsStringAsync();
+            body.Should().Contain(FeatureCatalog.AiWorkflowGenerationKey);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
     }
 
     private async Task<T> GetJsonAsync<T>(string path, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> jsonTypeInfo)

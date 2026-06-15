@@ -6,9 +6,11 @@ using Honua.Ai.AnalysisGeneration;
 using Honua.Ai.QueryGeneration;
 using Honua.Core.Features.AnalysisContent.Abstractions;
 using Honua.Core.Features.AnalysisContent.Domain;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Validation.Contracts;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
 
@@ -129,6 +131,15 @@ internal static partial class AnalysisContentEndpoints
             return Results.Json(bad, AnalysisGenerationApiJsonContext.Default.AnalysisGenerationResult, statusCode: StatusCodes.Status400BadRequest);
         }
 
+        var entitlementGate = LicenseGate.RequireEntitlement(
+            context,
+            FeatureCatalog.AiWorkflowGenerationKey,
+            "AI analysis generation");
+        if (entitlementGate is not null)
+        {
+            return entitlementGate;
+        }
+
         var result = await generation.GenerateAsync(
             new AnalysisGenerationRequest
             {
@@ -166,6 +177,15 @@ internal static partial class AnalysisContentEndpoints
         {
             var bad = new QueryGenerationResult { Status = "error", Rationale = "A non-empty 'prompt' is required." };
             return Results.Json(bad, QueryGenerationApiJsonContext.Default.QueryGenerationResult, statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        var entitlementGate = LicenseGate.RequireEntitlement(
+            context,
+            FeatureCatalog.AiWorkflowGenerationKey,
+            "AI saved-query generation");
+        if (entitlementGate is not null)
+        {
+            return entitlementGate;
         }
 
         var result = await generation.GenerateAsync(

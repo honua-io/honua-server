@@ -6,10 +6,8 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Infrastructure.GeoJson;
-using Honua.Protocols.Ogc.Common;
-using Honua.Protocols.Ogc.Api.Features.Models;
 
-namespace Honua.Protocols.Ogc.Api.Features.Services;
+namespace Honua.Protocols.Ogc.Common;
 
 internal static class OgcGeoJsonFeatureBuilder
 {
