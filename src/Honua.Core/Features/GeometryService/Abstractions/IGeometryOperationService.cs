@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Infrastructure.Crs;
+
 namespace Honua.Core.Features.GeometryService.Abstractions;
 
 /// <summary>
@@ -39,6 +41,35 @@ public interface IGeometryOperationService
     /// <param name="ct">Cancellation token.</param>
     /// <returns>Reprojected geometry in WKB format.</returns>
     Task<byte[]> ProjectAsync(byte[] wkb, int fromSrid, int toSrid, CancellationToken ct = default);
+
+    /// <summary>
+    /// Reprojects a geometry from one spatial reference to another using an explicitly
+    /// selected datum transformation.
+    /// </summary>
+    /// <param name="wkb">Input geometry in WKB format.</param>
+    /// <param name="fromSrid">Source spatial reference ID.</param>
+    /// <param name="toSrid">Target spatial reference ID.</param>
+    /// <param name="selection">
+    /// The resolved datum transformation. When it carries a PROJ pipeline, the
+    /// authoritative 3-argument <c>ST_Transform</c> is used so the result matches the
+    /// selected (Esri-parity) pipeline. When <see langword="null"/>, behaves like the
+    /// SRID-only overload (PROJ chooses its default pipeline).
+    /// </param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>Reprojected geometry in WKB format.</returns>
+    /// <remarks>
+    /// Provided as a default interface method so existing implementations remain
+    /// source-compatible; the default ignores the pipeline and delegates to the
+    /// SRID-only overload. The PostGIS implementation overrides this to honor the
+    /// selected pipeline via 3-argument <c>ST_Transform</c>.
+    /// </remarks>
+    Task<byte[]> ProjectAsync(
+        byte[] wkb,
+        int fromSrid,
+        int toSrid,
+        DatumTransformationSelection? selection,
+        CancellationToken ct = default)
+        => ProjectAsync(wkb, fromSrid, toSrid, ct);
 
     /// <summary>
     /// Makes a geometry topologically valid (fixes self-intersections, ring orientation, etc.).

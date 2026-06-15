@@ -67,6 +67,39 @@ public interface ICoordinateTransformService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Transforms a bounding-box extent using an explicitly selected datum transformation.
+    /// </summary>
+    /// <param name="minX">Minimum X (longitude or easting).</param>
+    /// <param name="minY">Minimum Y (latitude or northing).</param>
+    /// <param name="maxX">Maximum X (longitude or easting).</param>
+    /// <param name="maxY">Maximum Y (latitude or northing).</param>
+    /// <param name="fromSrid">Source EPSG SRID.</param>
+    /// <param name="toSrid">Target EPSG SRID.</param>
+    /// <param name="selection">
+    /// The resolved datum transformation. When it carries a PROJ pipeline, the
+    /// authoritative 3-argument <c>ST_Transform</c> is used so the result matches the
+    /// selected (Esri-parity) pipeline. When <see langword="null"/>, behaves like the
+    /// SRID-only overload.
+    /// </param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>
+    /// Transformed extent as <c>(MinX, MinY, MaxX, MaxY)</c>, or <see langword="null"/>
+    /// when the transform cannot be performed (unknown SRID, missing grid, PostGIS error).
+    /// </returns>
+    /// <remarks>
+    /// Provided as a default interface method so existing implementations remain
+    /// source-compatible; the default ignores the pipeline and delegates to the
+    /// SRID-only overload. The PostGIS implementation overrides this to honor the
+    /// selected pipeline via 3-argument <c>ST_Transform</c>.
+    /// </remarks>
+    ValueTask<(double MinX, double MinY, double MaxX, double MaxY)?> TransformExtentAsync(
+        double minX, double minY, double maxX, double maxY,
+        int fromSrid, int toSrid,
+        DatumTransformationSelection? selection,
+        CancellationToken cancellationToken = default)
+        => TransformExtentAsync(minX, minY, maxX, maxY, fromSrid, toSrid, cancellationToken);
+
+    /// <summary>
     /// Transforms a single point from one SRID to another.
     /// </summary>
     /// <param name="x">X coordinate (longitude or easting).</param>

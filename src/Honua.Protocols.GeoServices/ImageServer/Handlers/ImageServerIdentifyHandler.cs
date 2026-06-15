@@ -91,6 +91,24 @@ internal sealed class ImageServerIdentifyHandler
                 return StandardErrorHelpers.CreateBadRequest(context, timeError ?? "Invalid time parameter.");
             }
 
+            // CONTRACT CHANGE (#1660): when a renderingRule is supplied, identify returns the
+            // RENDERED pixel value (post clip/stretch/colormap), matching Esri ImageServer's
+            // identify-with-renderingRule behaviour, instead of the raw source value. When no
+            // renderingRule is supplied the raw-value contract is preserved unchanged. The same
+            // Stretch/Colormap/Clip the exportImage path executes are applied at the sampled
+            // pixel via the shared raster pipeline; unsupported chains surface 400/501 as in export.
+            RasterIdentifyRendering? rendering = null;
+            if (!string.IsNullOrWhiteSpace(request.RenderingRule))
+            {
+                if (!TryMapRenderingRule(request.RenderingRule, out rendering, out var renderingError, out var notImplemented))
+                {
+                    ImageServerLog.InvalidIdentifyParameters(_logger, layerId, renderingError ?? "Invalid renderingRule");
+                    return notImplemented
+                        ? StandardErrorHelpers.CreateNotImplemented(context, renderingError ?? "renderingRule is not implemented.")
+                        : StandardErrorHelpers.CreateBadRequest(context, renderingError ?? "renderingRule is not supported.");
+                }
+            }
+
             var editionError = ImageServerMosaicHelpers.RequireTemporalMosaicAccess(context, timestamp);
             if (editionError != null)
             {
@@ -141,7 +159,7 @@ internal sealed class ImageServerIdentifyHandler
 
             // Identify pixel values
             var pixelResult = selectedRasters.Length == 1
-                ? await _rasterStore.IdentifyAsync(layerId, selectedRasters[0].Id, x.Value, y.Value, srid, cancellationToken)
+                ? await _rasterStore.IdentifyAsync(layerId, selectedRasters[0].Id, x.Value, y.Value, srid, rendering, cancellationToken)
                 : await _rasterStore.IdentifyMosaicAsync(
                     layerId,
                     selectedRasters.Select(r => r.Id).ToArray(),
@@ -149,6 +167,7 @@ internal sealed class ImageServerIdentifyHandler
                     x.Value,
                     y.Value,
                     srid,
+                    rendering,
                     cancellationToken);
 
             // returnGeometry controls whether catalog item footprints are emitted. ArcGIS
@@ -193,6 +212,47 @@ internal sealed class ImageServerIdentifyHandler
             scope.RecordException(ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while identifying pixel values.");
         }
+    }
+
+    // Translates an Esri renderingRule into the canonical RasterIdentifyRendering threaded
+    // onto the identify call. Reuses the shared raster-function planner so identify honours the
+    // exact same Stretch/Colormap/Clip support matrix (and 400/501 error semantics) as
+    // exportImage and computeClass.
+    private static bool TryMapRenderingRule(
+        string renderingRuleJson,
+        out RasterIdentifyRendering? rendering,
+        out string? error,
+        out bool notImplemented)
+    {
+        rendering = null;
+        error = null;
+        notImplemented = false;
+
+        RasterFunctionDocument document;
+        try
+        {
+            document = JsonSerializer.Deserialize(renderingRuleJson, ImageServerJsonContext.Default.RasterFunctionDocument)
+                ?? throw new JsonException("Empty renderingRule document.");
+        }
+        catch (JsonException)
+        {
+            error = "renderingRule must be a valid raster function document.";
+            return false;
+        }
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+        if (!mapping.Supported)
+        {
+            error = mapping.Reason ?? "renderingRule is not supported on this service.";
+            notImplemented = mapping.IsNotImplemented;
+            return false;
+        }
+
+        // An Identity-only / StretchType=0 chain is an executable no-op: preserve the raw-value
+        // contract by leaving rendering null so the store samples the source pixel.
+        var resolved = new RasterIdentifyRendering(mapping.Stretch, mapping.Colormap, mapping.ClipRegion);
+        rendering = resolved.HasRendering ? resolved : null;
+        return true;
     }
 
     private static bool IsSupportedGeometryType(string geometryType)

@@ -214,33 +214,13 @@ internal sealed class PostgresRasterStore : IRasterStore
         // 1. Clip to region if specified
         if (query.ClipRegion is { } clip)
         {
-            if (clip.Srid.HasValue && clip.Srid.Value > 0)
-            {
-                rasterExpr = $"ST_Clip({rasterExpr}, ST_Transform(ST_GeomFromWKB(@clipGeom, @clipSrid), ST_SRID(raster)))";
-                extraParams.Add(("@clipSrid", clip.Srid.Value));
-            }
-            else
-            {
-                rasterExpr = $"ST_Clip({rasterExpr}, ST_GeomFromWKB(@clipGeom, ST_SRID(raster)))";
-            }
-
-            extraParams.Add(("@clipGeom", clip.Geometry));
+            rasterExpr = BuildClipExpression(rasterExpr, clip, "raster", "@clipGeom", "@clipSrid", extraParams);
         }
 
         // 1a. Second clip from a renderingRule Clip raster function (area-of-interest mask).
         if (query.RenderingClip is { } renderClip)
         {
-            if (renderClip.Srid is > 0)
-            {
-                rasterExpr = $"ST_Clip({rasterExpr}, ST_Transform(ST_GeomFromWKB(@renderClipGeom, @renderClipSrid), ST_SRID(raster)))";
-                extraParams.Add(("@renderClipSrid", renderClip.Srid.Value));
-            }
-            else
-            {
-                rasterExpr = $"ST_Clip({rasterExpr}, ST_GeomFromWKB(@renderClipGeom, ST_SRID(raster)))";
-            }
-
-            extraParams.Add(("@renderClipGeom", renderClip.Geometry));
+            rasterExpr = BuildClipExpression(rasterExpr, renderClip, "raster", "@renderClipGeom", "@renderClipSrid", extraParams);
         }
 
         if (query.Bands is { Length: > 0 } bands)
@@ -503,6 +483,93 @@ internal sealed class PostgresRasterStore : IRasterStore
 
     private static string FormatStretchNumber(double value)
         => value.ToString("G17", CultureInfo.InvariantCulture);
+
+    // ----- Clip execution (export bbox + renderingRule Clip raster function) ---
+    // Builds the ST_Clip wrapper for a clip region, reprojecting the clip geometry into the
+    // raster SRID when a source SRID is supplied. When the region is inverted (Esri Clip
+    // ClippingType=1, "keep outside"), the raster is clipped to the difference between its own
+    // envelope and the clip geometry so pixels inside the geometry are removed and everything
+    // outside is preserved. The geometry parameters are bound by the caller via
+    // <paramref name="geomParam"/>/<paramref name="sridParam"/> so this stays injection-safe.
+
+    /// <summary>
+    /// Wraps <paramref name="rasterExpr"/> in an ST_Clip honouring the clip region's SRID and
+    /// inversion flag. <paramref name="rasterColumnExpr"/> names the underlying raster column
+    /// used to resolve the native SRID and (for inverted clips) the envelope.
+    /// </summary>
+    private static string BuildClipExpression(
+        string rasterExpr,
+        RasterClipRegion clip,
+        string rasterColumnExpr,
+        string geomParam,
+        string sridParam,
+        List<(string Name, object Value)> extraParams)
+    {
+        var sridExpr = $"ST_SRID({rasterColumnExpr})";
+        string clipGeom;
+        if (clip.Srid is > 0)
+        {
+            clipGeom = $"ST_Transform(ST_GeomFromWKB({geomParam}, {sridParam}), {sridExpr})";
+            extraParams.Add((sridParam, clip.Srid!.Value));
+        }
+        else
+        {
+            clipGeom = $"ST_GeomFromWKB({geomParam}, {sridExpr})";
+        }
+
+        extraParams.Add((geomParam, clip.Geometry));
+
+        // Inverted clip ("keep outside"): mask to the raster envelope minus the clip geometry.
+        var maskGeom = clip.Inverted
+            ? $"ST_Difference(ST_Envelope({rasterColumnExpr}), {clipGeom})"
+            : clipGeom;
+
+        return $"ST_Clip({rasterExpr}, {maskGeom})";
+    }
+
+    // ----- renderingRule execution for identify ------------------------------
+    // Reuses the export pipeline's clip/stretch/colormap expression builders so the value
+    // sampled at an identify point matches what exportImage would encode at the same pixel.
+
+    /// <summary>
+    /// Builds the rendered raster expression (clip -> stretch -> colormap) for an identify
+    /// sample over <paramref name="rasterColumnExpr"/>. <paramref name="resolveStretchBounds"/>
+    /// supplies the per-band stretch bounds from persisted statistics for the source raster
+    /// (single raster or mosaic).
+    /// </summary>
+    private static async Task<string> BuildIdentifyRenderingExpressionAsync(
+        RasterIdentifyRendering rendering,
+        string rasterColumnExpr,
+        Func<RasterStretch, Task<IReadOnlyList<StretchBounds>?>> resolveStretchBounds,
+        List<(string Name, object Value)> extraParams,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var rasterExpr = rasterColumnExpr;
+
+        if (rendering.Clip is { } clip)
+        {
+            rasterExpr = BuildClipExpression(
+                rasterExpr, clip, rasterColumnExpr, "@identifyClipGeom", "@identifyClipSrid", extraParams);
+        }
+
+        if (rendering.Stretch is { } stretch)
+        {
+            var bounds = await resolveStretchBounds(stretch).ConfigureAwait(false);
+            if (bounds is { Count: > 0 })
+            {
+                rasterExpr = BuildStretchedRasterExpression(rasterExpr, bounds);
+            }
+        }
+
+        if (rendering.Colormap is { Entries.Count: > 0 } colormap)
+        {
+            rasterExpr = BuildColormapExpression(rasterExpr, colormap);
+        }
+
+        return rasterExpr;
+    }
 
     // ----- Pseudocolour colormap execution (renderingRule Colormap) -----------
     // Maps single-band pixel values to an RGBA image via PostGIS ST_ColorMap,
@@ -786,33 +853,13 @@ internal sealed class PostgresRasterStore : IRasterStore
 
         if (query.ClipRegion is { } clip)
         {
-            if (clip.Srid.HasValue && clip.Srid.Value > 0)
-            {
-                sourceRasterExpr = $"ST_Clip({sourceRasterExpr}, ST_Transform(ST_GeomFromWKB(@clipGeom, @clipSrid), ST_SRID(raster)))";
-                extraParams.Add(("@clipSrid", clip.Srid.Value));
-            }
-            else
-            {
-                sourceRasterExpr = $"ST_Clip({sourceRasterExpr}, ST_GeomFromWKB(@clipGeom, ST_SRID(raster)))";
-            }
-
-            extraParams.Add(("@clipGeom", clip.Geometry));
+            sourceRasterExpr = BuildClipExpression(sourceRasterExpr, clip, "raster", "@clipGeom", "@clipSrid", extraParams);
         }
 
         // Second clip from a renderingRule Clip raster function (area-of-interest mask).
         if (query.RenderingClip is { } renderClip)
         {
-            if (renderClip.Srid is > 0)
-            {
-                sourceRasterExpr = $"ST_Clip({sourceRasterExpr}, ST_Transform(ST_GeomFromWKB(@renderClipGeom, @renderClipSrid), ST_SRID(raster)))";
-                extraParams.Add(("@renderClipSrid", renderClip.Srid.Value));
-            }
-            else
-            {
-                sourceRasterExpr = $"ST_Clip({sourceRasterExpr}, ST_GeomFromWKB(@renderClipGeom, ST_SRID(raster)))";
-            }
-
-            extraParams.Add(("@renderClipGeom", renderClip.Geometry));
+            sourceRasterExpr = BuildClipExpression(sourceRasterExpr, renderClip, "raster", "@renderClipGeom", "@renderClipSrid", extraParams);
         }
 
         // Apply display stretch (renderingRule Stretch) on the merged mosaic bands.
@@ -973,21 +1020,40 @@ internal sealed class PostgresRasterStore : IRasterStore
     }
 
     /// <inheritdoc />
-    public async Task<PixelValueResult> IdentifyAsync(int layerId, long rasterId, double x, double y, int? srid = null, CancellationToken cancellationToken = default)
+    public async Task<PixelValueResult> IdentifyAsync(int layerId, long rasterId, double x, double y, int? srid = null, RasterIdentifyRendering? rendering = null, CancellationToken cancellationToken = default)
     {
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
         var pointSrid = srid ?? 4326;
 
+        // When a renderingRule is supplied the sampled value reflects the rendered output
+        // (clip mask -> display stretch -> colormap), matching the export pipeline, instead of
+        // the raw source pixel. Without a rule the raw "raster" column is sampled (default
+        // contract). Stretch bounds are resolved from the persisted band statistics here so the
+        // sampled value matches what exportImage would encode at the same location.
+        var extraParams = new List<(string Name, object Value)>();
+        var rasterExpr = "raster";
+        if (rendering is { HasRendering: true } rule)
+        {
+            rasterExpr = await BuildIdentifyRenderingExpressionAsync(
+                rule, "raster",
+                stretch => ResolveStretchBoundsAsync(stretch, layerId, rasterId, null, cancellationToken),
+                extraParams, cancellationToken).ConfigureAwait(false);
+        }
+
         await using var command = connection.CreateCommand();
         command.CommandText = $"""
+            WITH rendered AS (
+                SELECT {rasterExpr} AS rast, raster AS src
+                FROM {_rasterDataTable}
+                WHERE layer_id = @layerId AND id = @rasterId
+            )
             SELECT band, val
-            FROM {_rasterDataTable},
-                 LATERAL generate_series(1, ST_NumBands(raster)) AS band,
-                 LATERAL ST_Value(raster, band,
-                    ST_Transform(ST_SetSRID(ST_MakePoint(@x, @y), @pointSrid), ST_SRID(raster))
+            FROM rendered,
+                 LATERAL generate_series(1, ST_NumBands(rast)) AS band,
+                 LATERAL ST_Value(rast, band,
+                    ST_Transform(ST_SetSRID(ST_MakePoint(@x, @y), @pointSrid), ST_SRID(src))
                  ) AS val
-            WHERE layer_id = @layerId AND id = @rasterId
             ORDER BY band
             """;
         AddParameter(command, "@layerId", layerId);
@@ -995,6 +1061,10 @@ internal sealed class PostgresRasterStore : IRasterStore
         AddParameter(command, "@x", x);
         AddParameter(command, "@y", y);
         AddParameter(command, "@pointSrid", pointSrid);
+        foreach (var (name, value) in extraParams)
+        {
+            AddParameter(command, name, value);
+        }
 
         var bandValues = new Dictionary<int, object?>();
         var hasData = false;
@@ -1031,6 +1101,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         double x,
         double y,
         int? srid = null,
+        RasterIdentifyRendering? rendering = null,
         CancellationToken cancellationToken = default)
     {
         if (rasterIds.Length == 0)
@@ -1048,6 +1119,19 @@ internal sealed class PostgresRasterStore : IRasterStore
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
         var pointSrid = srid ?? 4326;
+
+        // Apply the renderingRule (clip -> stretch -> colormap) to the merged mosaic so the
+        // sampled value matches the rendered mosaic export. Without a rule the merged raw
+        // pixel values are returned (default contract).
+        var extraParams = new List<(string Name, object Value)>();
+        var renderedExpr = "rast";
+        if (rendering is { HasRendering: true } rule)
+        {
+            renderedExpr = await BuildIdentifyRenderingExpressionAsync(
+                rule, "rast",
+                stretch => ResolveMosaicStretchBoundsAsync(stretch, layerId, rasterIds, mergeStrategy, cancellationToken),
+                extraParams, cancellationToken).ConfigureAwait(false);
+        }
 
         await using var command = connection.CreateCommand();
         command.CommandText = $"""
@@ -1067,12 +1151,17 @@ internal sealed class PostgresRasterStore : IRasterStore
                 SELECT {CreateMosaicAggregateExpression(mergeStrategy)} AS rast
                 FROM source
                 WHERE rast IS NOT NULL
+            ),
+            rendered AS (
+                SELECT {renderedExpr} AS rast, rast AS src
+                FROM merged
+                WHERE rast IS NOT NULL
             )
             SELECT band, val
-            FROM merged,
+            FROM rendered,
                  LATERAL generate_series(1, ST_NumBands(rast)) AS band,
                  LATERAL ST_Value(rast, band,
-                    ST_Transform(ST_SetSRID(ST_MakePoint(@x, @y), @pointSrid), ST_SRID(rast))
+                    ST_Transform(ST_SetSRID(ST_MakePoint(@x, @y), @pointSrid), ST_SRID(src))
                  ) AS val
             WHERE rast IS NOT NULL
             ORDER BY band
@@ -1082,6 +1171,10 @@ internal sealed class PostgresRasterStore : IRasterStore
         AddParameter(command, "@x", x);
         AddParameter(command, "@y", y);
         AddParameter(command, "@pointSrid", pointSrid);
+        foreach (var (name, value) in extraParams)
+        {
+            AddParameter(command, name, value);
+        }
 
         var bandValues = new Dictionary<int, object?>();
         var hasData = false;

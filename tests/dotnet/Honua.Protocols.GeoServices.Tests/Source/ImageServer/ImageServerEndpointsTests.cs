@@ -124,6 +124,7 @@ public class ImageServerEndpointsTests
                 Arg.Any<double>(),
                 Arg.Any<double>(),
                 Arg.Any<int?>(),
+                Arg.Any<RasterIdentifyRendering?>(),
                 Arg.Any<CancellationToken>())
             .Returns(callInfo => new PixelValueResult
             {
@@ -1398,6 +1399,96 @@ public class ImageServerEndpointsTests
 
             servicePostResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             AssertProjectedOrigin(await servicePostResponse.Content.ReadAsStringAsync());
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/project")]
+    [Endpoint("POST /rest/services/{id}/ImageServer/project")]
+    [Operation(Operations.Project)]
+    public async Task Project_WithDatumTransformationWkid_AppliesSelectedPipeline()
+    {
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            // WKID 108001 (NAD_1983_To_WGS_1984_1) is the catalog default for NAD83 (4269)
+            // -> WGS84 (4326); supplying it must be honored (no longer rejected) and yield
+            // coordinates within datum tolerance of the input.
+            const string geometries = """{"geometryType":"esriGeometryPoint","geometries":[{"x":-100.0,"y":40.0,"spatialReference":{"wkid":4269}}]}""";
+            var encoded = Uri.EscapeDataString(geometries);
+
+            var getResponse = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/project?f=json&inSR=4269&outSR=4326&datumTransformation=108001&geometries={encoded}");
+
+            getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            var json = JsonDocument.Parse(await getResponse.Content.ReadAsStringAsync());
+            var geometry = json.RootElement.GetProperty("geometries")[0];
+            geometry.GetProperty("x").GetDouble().Should().BeApproximately(-100.0, 0.01);
+            geometry.GetProperty("y").GetDouble().Should().BeApproximately(40.0, 0.01);
+
+            var postResponse = await fixture.Client.PostAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/project",
+                new FormUrlEncodedContent(
+                [
+                    new KeyValuePair<string, string>("f", "json"),
+                    new KeyValuePair<string, string>("inSR", "4269"),
+                    new KeyValuePair<string, string>("outSR", "4326"),
+                    new KeyValuePair<string, string>("datumTransformation", "108001"),
+                    new KeyValuePair<string, string>("geometries", geometries),
+                ]));
+
+            postResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/project")]
+    [Operation(Operations.Project)]
+    public async Task Project_WithUnsupportedDatumTransformationWkid_Returns400()
+    {
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            // WKID 108001 does not connect the 4326 -> 3857 pair, so an explicit request
+            // for it must be rejected rather than silently substituted.
+            const string geometries = """{"geometryType":"esriGeometryPoint","geometries":[{"x":0,"y":0,"spatialReference":{"wkid":4326}}]}""";
+            var encoded = Uri.EscapeDataString(geometries);
+
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/project?f=json&inSR=4326&outSR=3857&datumTransformation=108001&geometries={encoded}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/project")]
+    [Operation(Operations.Project)]
+    public async Task Project_WithImageCoordinateSystemTransformation_Returns400()
+    {
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            // The image-coordinate-system `transformation` parameter remains unsupported.
+            const string geometries = """{"geometryType":"esriGeometryPoint","geometries":[{"x":0,"y":0,"spatialReference":{"wkid":4326}}]}""";
+            var encoded = Uri.EscapeDataString(geometries);
+
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/project?f=json&inSR=4326&outSR=3857&transformation=1&geometries={encoded}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
         finally
         {

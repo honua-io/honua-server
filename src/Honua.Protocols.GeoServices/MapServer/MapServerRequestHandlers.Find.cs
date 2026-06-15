@@ -147,10 +147,11 @@ internal static partial class MapServerEndpoints
                     layerDefsError ?? "Invalid layerDefs parameter.");
             }
 
-            var knownLayerIds = publishedLayers
-                .Select(static layer => layer.PublicLayerId)
-                .ToHashSet();
-            if (!TryParseDynamicLayers(GetValue(values, "dynamicLayers"), knownLayerIds, queryValidator, out var dynamicLayers, out var dynamicLayersError))
+            var dynamicLayerResolver = CreateDynamicLayerSourceResolver(
+                context,
+                snapshot,
+                publishedLayers.Select(static layer => new DynamicLayerCandidate(layer.PublicLayerId, layer.Resource)));
+            if (!TryParseDynamicLayers(GetValue(values, "dynamicLayers"), dynamicLayerResolver, queryValidator, out var dynamicLayers, out var dynamicLayersError))
             {
                 return StandardErrorHelpers.CreateBadRequest(context,
                     dynamicLayersError ?? "Invalid dynamicLayers parameter.");

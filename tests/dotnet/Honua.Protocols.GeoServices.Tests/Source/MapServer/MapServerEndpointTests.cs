@@ -161,7 +161,8 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("dynamicLayer must use a mapLayer source.");
+        content.Should().Contain("unsupported source type");
+        content.Should().Contain("workspaceLayer");
         content.Should().NotContain("System.Text.Json");
         content.Should().NotContain("BytePositionInLine");
     }

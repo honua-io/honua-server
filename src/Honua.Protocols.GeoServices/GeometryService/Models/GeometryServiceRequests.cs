@@ -40,6 +40,13 @@ internal sealed class ProjectParameters
     public string? GeometryType { get; init; }
     public int InSR { get; init; }
     public int OutSR { get; init; }
+
+    /// <summary>
+    /// The resolved datum transformation (WKID -> PROJ pipeline) for the
+    /// <see cref="InSR"/> -> <see cref="OutSR"/> reprojection, or <see langword="null"/>
+    /// when no curated transformation applies (PROJ picks its default pipeline).
+    /// </summary>
+    public Core.Features.Infrastructure.Crs.DatumTransformationSelection? DatumTransformation { get; init; }
 }
 
 /// <summary>
