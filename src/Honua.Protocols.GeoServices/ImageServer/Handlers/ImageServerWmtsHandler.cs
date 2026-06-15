@@ -407,7 +407,7 @@ internal sealed class ImageServerWmtsHandler(
             var selected = await rasterStore.QueryRastersAsync(layerId, selectionQuery, cancellationToken).ConfigureAwait(false);
             if (selected.Length == 1)
             {
-                pixel = await rasterStore.IdentifyAsync(layerId, selected[0].Id, worldX, worldY, 3857, cancellationToken).ConfigureAwait(false);
+                pixel = await rasterStore.IdentifyAsync(layerId, selected[0].Id, worldX, worldY, 3857, cancellationToken: cancellationToken).ConfigureAwait(false);
             }
             else if (selected.Length > 1)
             {
@@ -418,7 +418,7 @@ internal sealed class ImageServerWmtsHandler(
                     worldX,
                     worldY,
                     3857,
-                    cancellationToken).ConfigureAwait(false);
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
             }
         }
 

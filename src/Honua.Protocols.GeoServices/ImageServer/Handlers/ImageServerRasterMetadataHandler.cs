@@ -146,8 +146,20 @@ internal sealed class ImageServerRasterMetadataHandler
                 },
                 new RasterFunctionInfoEntry
                 {
+                    Name = "Colormap",
+                    Description = "Maps single-band pixel values to RGBA using an explicit colormap.",
+                    Help = string.Empty,
+                },
+                new RasterFunctionInfoEntry
+                {
                     Name = "Clip",
                     Description = "Clips the raster to a clipping geometry or extent.",
+                    Help = string.Empty,
+                },
+                new RasterFunctionInfoEntry
+                {
+                    Name = "ExtractBand",
+                    Description = "Selects and reorders output bands by 0-based band index (BandIds).",
                     Help = string.Empty,
                 },
             };

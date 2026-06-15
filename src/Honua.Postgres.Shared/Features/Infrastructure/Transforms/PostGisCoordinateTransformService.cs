@@ -43,7 +43,33 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
         }
 
         // Slow path: PostGIS ST_Transform
-        return await TransformExtentWithPostGisAsync(minX, minY, maxX, maxY, fromSrid, toSrid, cancellationToken)
+        return await TransformExtentWithPostGisAsync(minX, minY, maxX, maxY, fromSrid, toSrid, selection: null, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<(double MinX, double MinY, double MaxX, double MaxY)?> TransformExtentAsync(
+        double minX, double minY, double maxX, double maxY,
+        int fromSrid, int toSrid,
+        DatumTransformationSelection? selection,
+        CancellationToken cancellationToken = default)
+    {
+        // When no explicit pipeline is selected, defer to the SRID-only behavior
+        // (identity / in-memory fast paths + 2-argument ST_Transform).
+        if (selection?.ProjPipeline is not { Length: > 0 })
+        {
+            return await TransformExtentAsync(minX, minY, maxX, maxY, fromSrid, toSrid, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        // An explicit pipeline must be honored exactly, so skip the in-memory fast paths
+        // (identity is still a no-op, but a selected pipeline implies a real datum shift).
+        if (IsIdentityTransform(fromSrid, toSrid))
+        {
+            return (minX, minY, maxX, maxY);
+        }
+
+        return await TransformExtentWithPostGisAsync(minX, minY, maxX, maxY, fromSrid, toSrid, selection, cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -253,17 +279,24 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
     private async Task<(double MinX, double MinY, double MaxX, double MaxY)?> TransformExtentWithPostGisAsync(
         double minX, double minY, double maxX, double maxY,
         int fromSrid, int toSrid,
+        DatumTransformationSelection? selection,
         CancellationToken cancellationToken)
     {
         try
         {
             Log.PostGisFallbackExtent(_logger, fromSrid, toSrid);
 
+            // Honor an explicit datum-transformation pipeline via the 3-argument
+            // ST_Transform overload; otherwise let PROJ pick its default pipeline.
+            var transformExpression = selection?.ProjPipeline is { Length: > 0 }
+                ? "ST_Transform(geom, @pipeline, @toSrid)"
+                : "ST_Transform(geom, @toSrid)";
+
             await using var connection = await _connectionProvider
                 .OpenConnectionAsync(cancellationToken)
                 .ConfigureAwait(false);
             await using var command = connection.CreateCommand();
-            command.CommandText = """
+            command.CommandText = $$"""
                 WITH fractions AS (
                     SELECT generate_series(0, @sampleSegments)::double precision / @sampleSegments AS t
                 ),
@@ -310,7 +343,7 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
                         @fromSrid) AS geom
                 ),
                 transformed AS (
-                    SELECT ST_Transform(geom, @toSrid) AS geom
+                    SELECT {{transformExpression}} AS geom
                     FROM points
                 )
                 SELECT MIN(ST_X(geom)) AS xmin,
@@ -327,6 +360,10 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
             AddParameter(command, "@fromSrid", fromSrid);
             AddParameter(command, "@toSrid", toSrid);
             AddParameter(command, "@sampleSegments", ExtentSampleSegmentsPerEdge);
+            if (selection?.ProjPipeline is { Length: > 0 } pipeline)
+            {
+                AddParameter(command, "@pipeline", pipeline);
+            }
 
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))

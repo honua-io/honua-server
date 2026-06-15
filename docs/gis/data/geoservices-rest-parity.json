@@ -598,7 +598,7 @@
           {
             "name": "where",
             "status": "implemented",
-            "notes": "ArcGIS SQL parser."
+            "notes": "ArcGIS SQL parser. Operators: =, <>, >, >=, <, <=, AND/OR/NOT, IS [NOT] NULL, [NOT] LIKE, [NOT] IN, [NOT] BETWEEN, arithmetic (+, -, *, /, %). Functions: string (UPPER, LOWER, LENGTH, CHAR_LENGTH, TRIM/LTRIM/RTRIM, SUBSTRING comma-form and SQL-standard SUBSTRING(x FROM s [FOR n]), SUBSTR, REPLACE, CONCAT, POSITION(sub IN str)), math (ABS, CEIL/CEILING, FLOOR, ROUND, POWER, MOD, SQRT, trig), date/time (CURRENT_DATE/TIMESTAMP/TIME, NOW, YEAR/MONTH/DAY/HOUR/MINUTE/SECOND and the SQL-standard EXTRACT(field FROM source) for those fields), type conversion CAST(value AS type) over an allowlisted type set, and #date#/DATE '...'/TIMESTAMP '...' literals. All values are parameterized; no client SQL is interpolated. Re-deferred: CASE WHEN/THEN/ELSE/END expressions, LIKE ... ESCAPE custom escape chars, EXTRACT fields outside YEAR..SECOND (WEEK/QUARTER/DOW/EPOCH), and subqueries (no AST nodes in the shared filter pipeline)."
           },
           {
             "name": "objectIds",
@@ -759,12 +759,13 @@
         "all layers and tables",
         "export",
         "dynamicLayers mapLayer renderer overrides",
+        "dynamicLayers allowlisted workspace (dataLayer) sources",
         "identify",
         "find",
         "legend",
         "queryLegends",
         "query",
-        "dynamicLayer child resource (mapLayer source)",
+        "dynamicLayer child resource (mapLayer + allowlisted dataLayer source)",
         "query domains",
         "generateRenderer (service-level)",
         "generateRenderer (per layer)",
@@ -772,7 +773,7 @@
         "queryRelatedRecords",
         "feature child resource",
         "tiles with cloud-storage cache",
-        "storage-backed exportTiles",
+        "storage-backed exportTiles (ZIP + Esri exploded-cache TPK)",
         "generateKml",
         "WMS",
         "WMTS",
@@ -781,9 +782,9 @@
         "queryRelatedRecords"
       ],
       "knownGaps": [
-        "full Esri tile-package/job exportTiles semantics",
+        "Esri compact TPKX cache and async exportTiles job child resources",
         "queryAnalytic",
-        "workspace dynamic layers, joins, and dynamic tables",
+        "dynamicLayers workspace joins and dynamic query tables (dataSource.type other than table)",
         "image/KML-image/job child resources",
         "additional Esri child resources"
       ],
@@ -842,7 +843,7 @@
               "GET /rest/services/{serviceId}/MapServer/export",
               "POST /rest/services/{serviceId}/MapServer/export"
             ],
-            "notes": "Supports image streaming via f=image and JSON envelope responses via f=json or f=pjson. dynamicLayers supports source.type=mapLayer, request-scoped definitionExpression, and drawingInfo.renderer overrides for simple, unique-value, and class-breaks renderers."
+            "notes": "Supports image streaming via f=image and JSON envelope responses via f=json or f=pjson. dynamicLayers supports source.type=mapLayer and allowlisted source.type=dataLayer workspace data layers, request-scoped definitionExpression, and drawingInfo.renderer overrides for simple, unique-value, and class-breaks renderers."
           },
           {
             "name": "Identify",
@@ -1049,7 +1050,7 @@
               "GET /rest/services/{serviceId}/MapServer/estimateExportTilesSize",
               "POST /rest/services/{serviceId}/MapServer/estimateExportTilesSize"
             ],
-            "notes": "Estimates bounded WebMercatorQuad ZIP archive size for the current storage-backed exportTiles implementation."
+            "notes": "Estimates bounded WebMercatorQuad tile archive size; reports tilePackage/storageFormat for both ZIP and Esri exploded-cache TPK (storageFormat=tpk)."
           },
           {
             "name": "Export Tiles",
@@ -1062,7 +1063,7 @@
               "GET /rest/services/{serviceId}/MapServer/exportTiles",
               "POST /rest/services/{serviceId}/MapServer/exportTiles"
             ],
-            "notes": "Exports bounded WebMercatorQuad PNG tiles to a ZIP archive in configured cloud file storage. Full Esri TPK/TPKX/compact cache and async job resources are not implemented."
+            "notes": "Exports bounded WebMercatorQuad PNG tiles to configured cloud file storage. storageFormat=zip (default) writes a flat {z}/{x}/{y}.png ZIP; storageFormat=tpk (or tilePackage=true) writes an Esri exploded-cache TPK (v101/<cache>/_alllayers + conf.xml/conf.cdi). Compact TPKX (storageFormat=tpkx/compact) is rejected with 400 and deferred; async exportTiles job child resources (submitJob/jobs/{id}) are deferred."
           },
           {
             "name": "Dynamic Layer or Table resource",
@@ -1073,7 +1074,7 @@
             "honuaEndpoints": [
               "GET /rest/services/{serviceId}/MapServer/dynamicLayer"
             ],
-            "notes": "Returns layer metadata for source.type=mapLayer definitions, including request-scoped id, definitionExpression, and drawingInfo. Workspace layers, joins, and dynamic tables remain deferred."
+            "notes": "Returns layer metadata for source.type=mapLayer and allowlisted source.type=dataLayer workspace definitions, including request-scoped id, definitionExpression, and drawingInfo. A dataLayer source resolves a registered workspace (dataSource.workspaceId) and table (dataSource.dataSourceName) to a published resource on that workspace, gated by GeoServices:MapServer:DynamicLayers (WorkspaceLayersEnabled + allowlist). Joins and dynamic query tables remain deferred."
           },
           {
             "name": "WMTS",
@@ -1133,7 +1134,7 @@
           {
             "name": "bbox, size, dpi, format, transparent, layers, bboxSR, imageSR, layerDefs, dynamicLayers, time, timeRelation, layerTimeOptions, backgroundColor",
             "status": "implemented",
-            "notes": "CRS inputs for `bboxSR` and `imageSR` accept numeric WKID, `EPSG:####`, OGC CRS URI/URN, bracket-safe forms (`[EPSG:####]`), and `CRS84` aliases. dynamicLayers supports source.type=mapLayer, definitionExpression, and drawingInfo.renderer overrides for simple, unique-value, and class-breaks renderers."
+            "notes": "CRS inputs for `bboxSR` and `imageSR` accept numeric WKID, `EPSG:####`, OGC CRS URI/URN, bracket-safe forms (`[EPSG:####]`), and `CRS84` aliases. dynamicLayers supports source.type=mapLayer and allowlisted source.type=dataLayer workspace data layers, definitionExpression, and drawingInfo.renderer overrides for simple, unique-value, and class-breaks renderers."
           },
           {
             "name": "f",
@@ -1171,7 +1172,7 @@
         "WMTS GetTile/GetCapabilities serve the WebMercatorQuad and WorldCRS84Quad gridsets; WMTS GetFeatureInfo remains WebMercatorQuad-only.",
         "Layer queries inherit the FeatureServer query contract, including its format behavior.",
         "MapServer tile GET storage is a loose-object cache, not an Esri compact cache or tile package.",
-        "dynamicLayers and the dynamicLayer child resource are limited to source.type=mapLayer, definitionExpression, and drawingInfo.renderer overrides; workspace layers, joins, and dynamic tables remain unimplemented.",
+        "dynamicLayers and the dynamicLayer child resource support source.type=mapLayer and allowlisted source.type=dataLayer workspace data layers (resolved to published resources on an allowlisted workspace), definitionExpression, and drawingInfo.renderer overrides; dynamicLayers joins and dynamic query tables remain unimplemented.",
         "Advanced rendering parameters such as maxAllowableOffset and geometryPrecision are accepted but not yet applied."
       ]
     },
@@ -1196,11 +1197,15 @@
         "queryBoundary",
         "computePixelLocation",
         "project",
-        "storage-backed exportTiles",
+        "storage-backed exportTiles (ZIP + Esri exploded-cache TPK)",
         "computeCacheInfo (dynamic cache metadata)",
         "legend",
         "computeClass (raster function chain validation)",
         "exportImage Stretch renderingRule (MinMax/StandardDeviation/PercentClip)",
+        "exportImage Colormap renderingRule (explicit [value, r, g, b] stops or named ColorrampName)",
+        "exportImage Clip renderingRule (envelope/polygon, including ClippingType=1 keep-outside)",
+        "exportImage ExtractBand renderingRule (0-based BandIds selection/reorder)",
+        "renderingRule honoured by identify (Stretch + Colormap + Clip; renders the sampled pixel)",
         "auto display stretch for non-8-bit dynamic tiles",
         "keyProperties",
         "multidimensionalInfo",
@@ -1212,14 +1217,17 @@
       ],
       "knownGaps": [
         "sensor/DEM-backed ImageServer height and 3D mensuration",
-        "full Esri tile-package/job exportTiles semantics",
+        "Esri compact TPKX cache and async exportTiles job child resources",
         "Esri compact/generated tile-cache management",
         "catalog mutation",
         "camera/orientation-ranked ImageServer find",
-        "datumTransformation/image coordinate systems for ImageServer project",
+        "image coordinate system (transformation) warps for ImageServer project (datumTransformation is implemented)",
         "spatial WHERE pushdown for query",
         "renderingRule honoured by identify (legend honours an explicit Colormap; exportImage executes Stretch + Colormap)",
-                "multidimensional cube ingestion",
+        "renderingRule honoured by computeStatisticsHistograms",
+        "inline Colorramp object (algorithmic/multipart ramp) resolution for Colormap",
+        "multidimensional cube ingestion",
+        "per-slice pixel subsetting of registered multidimensional cubes (Zarr/HDF5/NetCDF) by multidimensionalDefinition (time/StdZ) in identify/getSamples/exportImage; deferred because those coverages are metadata-only today (no chunk-range pixel subset reader is wired into the read path)",
         "WCS multidimensional slicing beyond a single phenomenonTime axis (RANGESUBSET band selection, SCALESIZE/SCALEFACTOR/SCALEAXES/SCALEEXTENT output sizing, and phenomenonTime temporal subsetting implemented)",
         "full WCS CRS extension advertisement beyond native coverage CRS values",
         "WMTS non-WebMercator matrix sets",
@@ -1417,7 +1425,7 @@
             "honuaEndpoints": [
               "GET /rest/services/{id}/ImageServer/identify"
             ],
-            "notes": "Point-only identify with JSON responses."
+            "notes": "Point/envelope/polygon identify with JSON responses. A renderingRule renders the sampled pixel (post clip/stretch/colormap); raw source values are returned otherwise."
           },
           {
             "name": "Query",
@@ -1553,7 +1561,7 @@
               "GET /rest/services/{serviceId}/ImageServer/project",
               "POST /rest/services/{serviceId}/ImageServer/project"
             ],
-            "notes": "Reprojects Esri JSON geometry arrays between supported spatial references via the shared CRS projection pipeline and returns the Image Service geometries[] response shape. Envelope geometries remain envelope-shaped. datumTransformation/transformation parameters and image coordinate system identifiers are rejected until neutral support is added."
+            "notes": "Reprojects Esri JSON geometry arrays between supported spatial references via the shared CRS projection pipeline and returns the Image Service geometries[] response shape. Envelope geometries remain envelope-shaped. datumTransformation is honored: a client-supplied geotransformation WKID (or composite geoTransforms) is resolved through the shared Esri WKID -> PROJ pipeline catalog and applied via 3-argument ST_Transform, matching the Geometry Service; an unknown/inapplicable WKID returns 400. The image-coordinate-system transformation parameter is still rejected with 400 until neutral support is added."
           },
           {
             "name": "Estimate Export Tiles Size",
@@ -1568,7 +1576,7 @@
               "GET /rest/services/{serviceId}/ImageServer/estimateExportTilesSize",
               "POST /rest/services/{serviceId}/ImageServer/estimateExportTilesSize"
             ],
-            "notes": "Estimates bounded WebMercatorQuad ZIP archive size for the current storage-backed ImageServer exportTiles implementation."
+            "notes": "Estimates bounded WebMercatorQuad tile archive size; reports tilePackage/storageFormat for both ZIP and Esri exploded-cache TPK (storageFormat=tpk)."
           },
           {
             "name": "Export Tiles",
@@ -1583,7 +1591,7 @@
               "GET /rest/services/{serviceId}/ImageServer/exportTiles",
               "POST /rest/services/{serviceId}/ImageServer/exportTiles"
             ],
-            "notes": "Exports bounded WebMercatorQuad image tiles as a ZIP archive written through configured cloud file storage (local, S3, Azure Blob). This supports common storage-backed tile archive workflows; Esri TPK/TPKX/compact cache packages and async job child resources are deferred."
+            "notes": "Exports bounded WebMercatorQuad image tiles to configured cloud file storage (local, S3, Azure Blob). storageFormat=zip (default) writes a flat {z}/{x}/{y}.ext ZIP; storageFormat=tpk (or tilePackage=true) writes an Esri exploded-cache TPK (v101/<cache>/_alllayers + conf.xml/conf.cdi). Compact TPKX (storageFormat=tpkx/compact) is rejected with 400 and deferred; async exportTiles job child resources are deferred."
           }
         ],
         "notImplemented": [
@@ -1642,7 +1650,7 @@
             "GET /rest/services/{id}/ImageServer/computeClass",
             "POST /rest/services/{id}/ImageServer/computeClass"
           ],
-          "notes": "Closest in spirit to Esri's validate operation. Accepts a raster function chain document via renderingRule (or the legacy rasterFunction alias) and returns the planned execution metadata (rasterFunction, chainDepth, executedFunctions[], outputPixelType, status). The MVP planner walks Identity / Stretch / Clip nodes (max chain depth 8) and rejects unknown functions with a 400; exportImage now executes the Stretch portion (MinMax/StandardDeviation/PercentClip), an explicit Colormap, and a Clip (envelope/polygon) raster function; computeStatisticsHistograms wiring remains a follow-on."
+          "notes": "Closest in spirit to Esri's validate operation. Accepts a raster function chain document via renderingRule (or the legacy rasterFunction alias) and returns the planned execution metadata (rasterFunction, chainDepth, executedFunctions[], outputPixelType, status). The planner walks Identity / Stretch / Colormap / Clip / ExtractBand nodes (max chain depth 8) and rejects unknown functions with a 400; exportImage and identify execute the Stretch portion (MinMax/StandardDeviation/PercentClip), a Colormap (explicit stops or named ColorrampName), a Clip (envelope/polygon, including ClippingType=1 keep-outside), and an ExtractBand (0-based BandIds selection) raster function; computeStatisticsHistograms wiring remains a follow-on."
         }
       ],
       "childResources": {
@@ -1766,8 +1774,13 @@
             "notes": "Applied to TIFF output only. Supports None, JPEG, and LZ77; LZ77 maps to GDAL DEFLATE. Ignored for non-TIFF outputs."
           },
           {
-            "name": "bandIds, renderingRule, noData, noDataInterpretation",
-            "status": "ignored"
+            "name": "renderingRule",
+            "status": "implemented",
+            "notes": "Executes a Stretch (MinMax/StandardDeviation/PercentClip, optional per-band Statistics), a Colormap (explicit [value,r,g,b] stops or a named ColorrampName), and a Clip (envelope/polygon, including ClippingType=1 keep-outside). Identity / StretchType=0 are no-ops. Unrecognized stretch/colorramp variants and inline Colorramp objects return 501; unknown functions return 400."
+          },
+          {
+            "name": "bandIds, noData, noDataInterpretation",
+            "status": "implemented"
           },
           {
             "name": "mosaicRule, time",
@@ -1797,7 +1810,12 @@
             "notes": "mosaicRule is applied when the identify point intersects multiple rasters. time accepts a single ISO 8601 instant with the active raster.temporal-mosaic entitlement; Honua selects the newest layer-wide effective acquisition batch (AcquisitionDate, falling back to CreatedAt) at or before the timestamp, then applies the identify point."
           },
           {
-            "name": "renderingRule, pixelSize, returnGeometry",
+            "name": "renderingRule",
+            "status": "implemented",
+            "notes": "When supplied, identify returns the rendered pixel value (post clip/stretch/colormap, matching exportImage) instead of the raw source value; omitting it preserves the raw-value contract. Executes the same Stretch (MinMax/StandardDeviation/PercentClip), Colormap (explicit stops or named ColorrampName), and Clip (envelope/polygon, including ClippingType=1 keep-outside) support as exportImage; unsupported chains return 400/501."
+          },
+          {
+            "name": "pixelSize, returnGeometry",
             "status": "ignored"
           }
         ],
@@ -1902,7 +1920,7 @@
           {
             "name": "renderingRule (or rasterFunction alias)",
             "status": "implemented",
-            "notes": "JSON-encoded raster function chain document. The MVP planner walks Identity / Stretch / Clip nodes (max chain depth 8) and rejects unknown functions with a 400 naming the offending node. Output pixel type defaults to U8 when the chain includes Stretch and F32 otherwise unless the document overrides outputPixelType."
+            "notes": "JSON-encoded raster function chain document. The planner walks Identity / Stretch / Colormap / Clip / ExtractBand nodes (max chain depth 8) and rejects unknown functions with a 400 naming the offending node. Output pixel type defaults to U8 when the chain includes Stretch and F32 otherwise unless the document overrides outputPixelType."
           },
           {
             "name": "f",
@@ -1935,7 +1953,7 @@
         "Temporal mosaic uses newest-batch semantics: a time filter selects rasters from the single most-recent layer-wide effective acquisition batch (AcquisitionDate, falling back to CreatedAt) at or before the requested instant before applying request geometry, so mixed-date scenes can leave spatial coverage gaps until per-pixel temporal mosaicking is implemented.",
         "The query catalog reader applies WHERE/objectIds filters in-memory and reprojects footprint geometry to outSR when a coordinate transform is available.",
         "computeStatisticsHistograms always analyses the full selected raster or mosaic — geometry clipping and renderingRule are not yet honoured.",
-        "exportImage executes the Stretch raster function from renderingRule (MinMax/StandardDeviation/PercentClip, with optional per-band Statistics); exportImage also executes an explicit Colormap and a Clip (envelope/polygon), and the legend honours a Colormap renderingRule; other stretch types, clip-inside, and identify renderingRule are not yet honoured.",
+        "exportImage and identify execute the renderingRule (Stretch MinMax/StandardDeviation/PercentClip with optional per-band Statistics; Colormap by explicit stops or named ColorrampName; Clip envelope/polygon including ClippingType=1 keep-outside; ExtractBand 0-based BandIds selection superseding the bandIds parameter), and the legend honours a Colormap renderingRule; identify with a renderingRule returns the rendered pixel (raw value otherwise); other stretch types, inline Colorramp objects, extract-band-by-name, and computeStatisticsHistograms renderingRule are not yet honoured.",
         "Legend swatches use a fixed 5-class equal-interval ramp; per-layer renderer persistence and renderingRule overrides are not yet wired up.",
         "Service info exposes timeInfo when the layer metadata declares temporal fields or raster catalog items carry acquisition timestamps.",
         "Rendered ImageServer byte output still depends on the PostGIS raster output drivers configured in the database.",
@@ -1948,7 +1966,7 @@
         "ImageServer find filters by raster catalog footprint and returns catalog metadata; true camera/orientation-ranked image selection is deferred until sensor metadata is modeled.",
         "ImageServer measure supports Basic map-space mensuration only; sensor/DEM-backed height and 3D mensuration are not implemented.",
         "ImageServer tile GET storage is a loose-object cache, not an Esri compact cache, tile package, or advertised cacheInfo tile cache.",
-        "ImageServer exportTiles writes ZIP archives to configured cloud file storage; Esri TPK/TPKX/compact cache packages and async job resources are not implemented.",
+        "ImageServer exportTiles writes a flat ZIP (storageFormat=zip) or an Esri exploded-cache TPK (storageFormat=tpk/tilePackage=true) to configured cloud file storage; the compact TPKX bundle form and async job child resources are not implemented.",
         "ImageServer WMTS supports GetCapabilities/GetTile/GetFeatureInfo for WebMercatorQuad image/png, image/jpeg, and image/tiff tiles with a TIME dimension for temporal layers; non-WebMercator matrix sets are deferred."
       ]
     },
@@ -2345,6 +2363,11 @@
             "name": "inSR, outSR",
             "status": "implemented",
             "notes": "Supports numeric WKID, `EPSG:####`, OGC CRS URI/URN, bracket-safe forms (`[EPSG:####]`), `CRS84` aliases, and Esri-style spatial-reference JSON with `wkid`, `latestWkid`, `name`, or `wkt`."
+          },
+          {
+            "name": "datumTransformation",
+            "status": "implemented",
+            "notes": "Accepts a geotransformation WKID or a composite `{ \"geoTransforms\": [...] }` object and resolves it through the shared Esri WKID -> PROJ pipeline catalog, applying the selected pipeline via 3-argument `ST_Transform`; an unknown/inapplicable WKID returns a clear 400. Identity/no-shift WGS84-realization pairs apply the catalog default."
           }
         ],
         "supplemental": [
@@ -2358,7 +2381,7 @@
       "knownLimitations": [
         "Only JSON-style responses are supported (json/pjson); Esri html output is not supported.",
         "clip uses the envelope of the supplied clip geometry, not the full clip shape.",
-        "findTransformations returns an empty transformation list because Honua applies CRS transformations through its PROJ-backed projection pipeline rather than exposing the discrete Esri geographic-transformation catalog; project still performs the correct datum transform.",
+        "findTransformations returns an empty transformation list because Honua applies CRS transformations through its PROJ-backed projection pipeline rather than exposing the discrete Esri geographic-transformation catalog; project still performs the correct datum transform and honors a client-supplied datumTransformation WKID/composite via the shared WKID -> PROJ pipeline catalog.",
         "toGeoCoordinateString / fromGeoCoordinateString support MGRS and USNG; the remaining Esri conversion types (UTM, GARS, GEOREF, DD, DDM, DMS) return a clear 400."
       ]
     },
@@ -2370,10 +2393,10 @@
       "implementedSurface": [
         "PrintingTools Export Web Map Task (service info, sync execute, async submitJob, job status, job result)",
         "PrintingTools Get Layout Templates Info Task (sync execute)",
-        "Generic GPServer adapter (#723): catalog-backed service info, task metadata, async submitJob, job status, job result route, and cancel job over the canonical process runtime using the built-in IProcessCatalog (34 seeded processes across geometry.*, analytics.*, surface.*, raster.*, conversion.*, generalization.*, data-management.*)"
+        "Generic GPServer adapter (#723): catalog-backed service info, task metadata, async submitJob, synchronous execute, job status, job result route, and cancel job over the canonical process runtime using the built-in IProcessCatalog (34 seeded processes across geometry.*, analytics.*, surface.*, raster.*, conversion.*, generalization.*, data-management.*)",
+        "Generic synchronous execute route (#1660): the deterministic single-geometry geometry.* / conversion.geometry-format family runs inline through the same canonical job runtime as submitJob and returns the Esri execute envelope (results + messages); async-only tasks return a 400 capability message pointing at submitJob"
       ],
       "knownGaps": [
-        "generic built-in tasks are async-only and do not publish a generic execute route until synchronous task projection exists",
         "published generic task names currently mirror internal built-in process IDs (for example geometry.buffer)",
         "GP environment controls (env:*) are rejected with 400 until engine support is available; context is preserved as protocol metadata but not interpreted yet",
         "per-parameter result retrieval route registered but actual output retrieval pending execution-engine/result-storage support"
@@ -2385,14 +2408,15 @@
         ],
         "code": [
           "src/Honua.Server/Features/PrintingTools/PrintingToolsEndpoints.cs",
-          "src/Honua.Server/Features/Protocols/GeoServices/GPServer/GPServerEndpoints.cs",
+          "src/Honua.Protocols.GeoServices/GPServer/GPServerEndpoints.cs",
+          "src/Honua.Protocols.GeoServices/GPServer/GPServerExecutionPolicy.cs",
           "src/Honua.Server/EndpointRegistry.cs"
         ],
         "tests": [
           "tests/dotnet/Honua.Server.Tests/Features/PrintingTools/PrintingToolsEndpointTests.cs",
-          "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/GPServer/GPServerEndpointTests.cs",
-          "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/GPServer/GPServerParameterTranslationTests.cs",
-          "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/GPServer/GPServerStatusMappingTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GPServerEndpointTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GPServerParameterTranslationTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GPServerStatusMappingTests.cs",
           "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/GeoprocessingJobServiceTests.cs"
         ]
       },
@@ -2499,21 +2523,23 @@
               "POST"
             ],
             "notes": "Resolves the published task name against the built-in IProcessCatalog, validates inputs, persists GPServer route metadata, and returns an Esri job envelope. Implemented in #723."
-          }
-        ],
-        "not_implemented": [
+          },
           {
             "name": "Execute Task (generic, sync)",
             "esriPath": "/rest/services/{serviceId}/GPServer/{taskName}/execute",
-            "methods": [],
-            "notes": "Not published for the current generic GPServer surface because the built-in tasks are async-only. PrintingTools remains the published synchronous GPServer implementation."
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "notes": "Runs sync-eligible (deterministic single-geometry geometry.* / conversion.geometry-format) tasks inline through the same canonical job runtime as submitJob and returns the Esri execute envelope (results + messages). Async-only tasks return a 400 capability message pointing at submitJob. Honors env:outSR for reprojectable geometry outputs (unlike submitJob, which rejects env:* controls). Implemented in #1660."
           }
-        ]
+        ],
+        "not_implemented": []
       },
       "knownLimitations": [
         "PrintingTools GPServer surface (Export Web Map Task, Get Layout Templates Info Task) is implemented via dedicated endpoints.",
         "Generic GPServer adapter (#723) operates over the canonical process runtime. The built-in IProcessCatalog seeds 34 processes across geometry.*, analytics.*, surface.*, raster.*, conversion.*, generalization.*, and data-management.* families for plan validation (#735, #736, #737); heavyweight surface.* and raster.* workloads remain on the canonical worker/executor boundary (optional #727 executor adapters), and destructive data-management ids (delete-features, calculate-field) route through the operator approval gate before execution. Published task names currently mirror those built-in process IDs.",
-        "Generic built-in tasks are async-only; a generic synchronous execute route is not published until ExecutePlan and synchronous task projection exist.",
+        "Generic synchronous execute route (#1660) is published for the deterministic single-geometry geometry.* / conversion.geometry-format family; those tasks run inline through the canonical job runtime (a protocol projection, not a separate engine). Heavyweight or layer-scoped tasks remain async-only and return a 400 capability message on execute that points at submitJob.",
         "Canonical model and lifecycle state mappings are established in #360."
       ]
     },
@@ -2602,7 +2628,8 @@
           "src/Honua.Server/Features/Geocoding/GeocodingHandler.cs",
           "src/Honua.Server/Features/Geocoding/GeocodingModels.cs",
           "src/Honua.Geocoding/Features/Geocoding/Domain/GeocodeModels.cs",
-          "src/Honua.Geocoding/Features/Geocoding/Providers/NominatimGeocodeProvider.cs"
+          "src/Honua.Geocoding/Features/Geocoding/Providers/NominatimGeocodeProvider.cs",
+          "src/Honua.Geocoding/Features/Geocoding/Providers/AzureMapsGeocodeProvider.cs"
         ],
         "tests": [
           "tests/dotnet/Honua.Server.Tests/Features/Geocoding/GeocodingEndpointTests.cs"
@@ -2651,7 +2678,7 @@
               "POST /rest/services/{locatorName}/GeocodeServer/reverseGeocode",
               "GET /rest/services/GeocodeServer/reverseGeocode"
             ],
-            "notes": "Honors location, outSR (reprojected via the shared transform service), and langCode."
+            "notes": "Honors location, outSR (reprojected via the shared transform service), langCode, and the provider-dependent distance (search radius, meters) and featureTypes (type filter) parameters where a backing provider supports them (Azure Maps radius/entityType)."
           },
           {
             "name": "Suggest",
@@ -2720,7 +2747,7 @@
           {
             "name": "category, magicKey, location, matchOutOfRange, forStorage",
             "status": "notImplemented",
-            "notes": "Accepted but not applied."
+            "notes": "Re-deferred: no backing provider exposes these on the shared geocode interface (forward category/magicKey resolution, out-of-range interpolation, and storage/billing flags are unsupported by Nominatim, Azure Maps, and Amazon Location). Accepted but not applied."
           }
         ],
         "reverseGeocode": [
@@ -2740,8 +2767,14 @@
             "notes": "Forwarded to providers that support localized results."
           },
           {
-            "name": "featureTypes, distance",
-            "status": "notImplemented"
+            "name": "distance",
+            "status": "implemented",
+            "notes": "Positive search radius in meters (non-positive returns 400); forwarded as the canonical request DistanceMeters and honored by providers that bound the reverse search by radius (Azure Maps radius). Nominatim and Amazon Location ignore it."
+          },
+          {
+            "name": "featureTypes",
+            "status": "implemented",
+            "notes": "Comma-delimited Esri feature-type tokens forwarded as the canonical request FeatureTypes and honored by providers that filter reverse matches by type (Azure Maps entityType). Nominatim and Amazon Location ignore it."
           }
         ],
         "suggest": [
@@ -2778,8 +2811,8 @@
       "knownLimitations": [
         "Output is WGS84 (wkid 4326) only; a non-default outSR is rejected rather than reprojected.",
         "Only f=json and f=pjson responses are supported.",
-        "outFields projection and outSR reprojection are implemented; magicKey round-tripping, category filtering, and forStorage/matchOutOfRange are not implemented.",
-        "A parameter is only forwarded when at least one backing provider acts on it (Nominatim honors searchExtent for forward and langCode for reverse; Azure Maps and Amazon Location additionally honor suggestion bounds/bias)."
+        "outFields projection, outSR reprojection, and the provider-dependent reverse distance/featureTypes parameters are implemented; magicKey round-tripping, category filtering, and forStorage/matchOutOfRange are re-deferred (no backing provider).",
+        "A parameter is only forwarded when at least one backing provider acts on it (Nominatim honors searchExtent for forward and langCode for reverse; Azure Maps and Amazon Location additionally honor suggestion bounds/bias; Azure Maps additionally honors reverse distance/featureTypes via radius/entityType)."
       ]
     },
     {

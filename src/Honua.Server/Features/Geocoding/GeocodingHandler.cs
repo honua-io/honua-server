@@ -260,6 +260,13 @@ internal sealed class GeocodingHandler(
             return StandardErrorHelpers.CreateBadRequest(context, "Invalid outSR parameter.");
         }
 
+        if (!TryParseDistanceMeters(GetValue(values, "distance"), out var distanceMeters, out var distanceError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, distanceError ?? "Invalid distance parameter.");
+        }
+
+        var featureTypes = ParseFeatureTypes(GetValue(values, "featureTypes"));
+
         try
         {
             var requestedProviderName = GetValue(values, "provider");
@@ -283,9 +290,14 @@ internal sealed class GeocodingHandler(
             }
 
             var langCode = GetValue(values, "langCode");
-            var providerRequest = new Honua.Geocoding.Features.Geocoding.Domain.ReverseGeocodeRequest(inputPoint.Value.X, inputPoint.Value.Y, _options.DefaultSpatialReferenceWkid)
+            var providerRequest = new Honua.Geocoding.Features.Geocoding.Domain.ReverseGeocodeRequest(
+                inputPoint.Value.X,
+                inputPoint.Value.Y,
+                _options.DefaultSpatialReferenceWkid,
+                distanceMeters)
             {
-                LanguageCode = string.IsNullOrWhiteSpace(langCode) ? null : langCode.Trim()
+                LanguageCode = string.IsNullOrWhiteSpace(langCode) ? null : langCode.Trim(),
+                FeatureTypes = featureTypes
             };
 
             var stopwatch = Stopwatch.StartNew();
@@ -921,6 +933,47 @@ internal sealed class GeocodingHandler(
         }
 
         return true;
+    }
+
+    // Parses the reverseGeocode distance parameter (a positive search radius in
+    // meters). Missing/blank selects the provider default (null). Zero or negative
+    // values are rejected like other GeoServices numeric validation.
+    private static bool TryParseDistanceMeters(string? rawDistance, out double? distanceMeters, out string? error)
+    {
+        distanceMeters = null;
+        error = null;
+
+        if (string.IsNullOrWhiteSpace(rawDistance))
+        {
+            return true;
+        }
+
+        if (!double.TryParse(rawDistance, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) ||
+            double.IsNaN(parsed) || double.IsInfinity(parsed) || parsed <= 0)
+        {
+            error = "distance must be a positive number of meters.";
+            return false;
+        }
+
+        distanceMeters = parsed;
+        return true;
+    }
+
+    // Parses the reverseGeocode featureTypes parameter (a comma-delimited list of
+    // Esri feature-type tokens, e.g. "PointAddress,StreetAddress"). Missing/blank
+    // selects every feature type (null). Empty tokens are ignored rather than
+    // rejected, matching Esri's lenient treatment of this filter.
+    private static string[]? ParseFeatureTypes(string? rawFeatureTypes)
+    {
+        if (string.IsNullOrWhiteSpace(rawFeatureTypes))
+        {
+            return null;
+        }
+
+        var tokens = rawFeatureTypes
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        return tokens.Length == 0 ? null : tokens;
     }
 
     /// <summary>

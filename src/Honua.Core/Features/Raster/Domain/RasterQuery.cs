@@ -129,6 +129,14 @@ public readonly record struct RasterClipRegion
     /// SRID of the clip geometry. If null, assumes the raster's native SRID.
     /// </summary>
     public int? Srid { get; init; }
+
+    /// <summary>
+    /// When <c>true</c>, the clip is inverted: pixels <em>inside</em> the geometry are
+    /// removed and everything outside is kept (Esri <c>Clip</c> raster function with
+    /// <c>ClippingType=1</c>, "clip inside / keep outside"). When <c>false</c> (default)
+    /// the raster is masked to the geometry, keeping pixels inside it.
+    /// </summary>
+    public bool Inverted { get; init; }
 }
 
 /// <summary>

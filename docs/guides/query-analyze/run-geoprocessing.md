@@ -56,7 +56,7 @@ Process discovery is open; execution is always asynchronous (`jobControlOptions:
 
    Catalog processes return document-mode artifact references when the runtime publishes results; `GET /ogc/processes/jobs` lists your recent jobs.
 
-The same catalog is exposed Esri-style for ArcGIS clients: `GET /rest/services/{serviceId}/GPServer` lists tasks, the task name is the process id (`/rest/services/{serviceId}/GPServer/geometry.buffer`), and the standard `submitJob` / `jobs/{jobId}` / `jobs/{jobId}/results/{paramName}` / `jobs/{jobId}/cancel` operations drive the same job runtime.
+The same catalog is exposed Esri-style for ArcGIS clients: `GET /rest/services/{serviceId}/GPServer` lists tasks, the task name is the process id (`/rest/services/{serviceId}/GPServer/geometry.buffer`), and the standard `submitJob` / `jobs/{jobId}` / `jobs/{jobId}/results/{paramName}` / `jobs/{jobId}/cancel` operations drive the same job runtime. Deterministic single-geometry tasks (the `geometry.*` family and `conversion.geometry-format`) also accept the synchronous `execute` route (`POST`/`GET /rest/services/{serviceId}/GPServer/geometry.buffer/execute`), which runs the task inline through that same runtime and returns the Esri execute envelope (`results` + `messages`) on the same request. Async-only tasks reject `execute` with a 400 capability message pointing back at `submitJob`.
 
 ## Verify
 

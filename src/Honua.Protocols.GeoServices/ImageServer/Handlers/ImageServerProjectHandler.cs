@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.GeometryService.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Services;
@@ -26,17 +27,20 @@ internal sealed class ImageServerProjectHandler
 
     private readonly IGeometryOperationService _operationService;
     private readonly SpatialReferenceResolver _spatialReferenceResolver;
+    private readonly IDatumTransformationCatalog _datumTransformationCatalog;
     private readonly ILogger<ImageServerProjectHandler> _logger;
     private readonly ICoordinateTransformService? _transformService;
 
     public ImageServerProjectHandler(
         IGeometryOperationService operationService,
         SpatialReferenceResolver spatialReferenceResolver,
+        IDatumTransformationCatalog datumTransformationCatalog,
         ILogger<ImageServerProjectHandler> logger,
         ICoordinateTransformService? transformService = null)
     {
         _operationService = operationService ?? throw new ArgumentNullException(nameof(operationService));
         _spatialReferenceResolver = spatialReferenceResolver ?? throw new ArgumentNullException(nameof(spatialReferenceResolver));
+        _datumTransformationCatalog = datumTransformationCatalog ?? throw new ArgumentNullException(nameof(datumTransformationCatalog));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _transformService = transformService;
     }
@@ -58,9 +62,12 @@ internal sealed class ImageServerProjectHandler
 
         try
         {
-            if (HasUnsupportedTransformation(values))
+            // The image-coordinate-system `transformation` parameter (sensor/raster image
+            // CS warps) remains a documented gap; only the geographic `datumTransformation`
+            // is honored here, routed through the shared WKID -> PROJ pipeline.
+            if (!string.IsNullOrWhiteSpace(GetString(values, "transformation")))
             {
-                const string error = "datumTransformation and transformation are not yet supported by ImageServer project.";
+                const string error = "The 'transformation' (image coordinate system) parameter is not yet supported by ImageServer project.";
                 ImageServerLog.InvalidProjectParameters(_logger, layerId, error);
                 return StandardErrorHelpers.CreateBadRequest(context, error);
             }
@@ -91,6 +98,19 @@ internal sealed class ImageServerProjectHandler
 
             var sourceSrid = inSrid.Value;
             var targetSrid = outSrid.Value;
+
+            if (!GeoServicesDatumTransformationResolver.TryResolve(
+                    _datumTransformationCatalog,
+                    GetString(values, "datumTransformation"),
+                    sourceSrid,
+                    targetSrid,
+                    out var datumSelection,
+                    out var datumError))
+            {
+                ImageServerLog.InvalidProjectParameters(_logger, layerId, datumError ?? "Invalid datumTransformation.");
+                return StandardErrorHelpers.CreateBadRequest(context, datumError ?? "Invalid datumTransformation.");
+            }
+
             var projectedGeometries = new List<JsonElement>(request.GeometryJsonStrings.Count);
             foreach (var geometryJson in request.GeometryJsonStrings)
             {
@@ -111,6 +131,7 @@ internal sealed class ImageServerProjectHandler
                         envelope,
                         sourceSrid,
                         targetSrid,
+                        datumSelection,
                         cancellationToken).ConfigureAwait(false));
                     continue;
                 }
@@ -125,6 +146,7 @@ internal sealed class ImageServerProjectHandler
                     geometryJson,
                     sourceSrid,
                     targetSrid,
+                    datumSelection,
                     cancellationToken).ConfigureAwait(false));
             }
 
@@ -161,6 +183,7 @@ internal sealed class ImageServerProjectHandler
         string geometryJson,
         int inSrid,
         int outSrid,
+        DatumTransformationSelection? selection,
         CancellationToken cancellationToken)
     {
         var geometry = JsonSerializer.Deserialize(
@@ -173,6 +196,7 @@ internal sealed class ImageServerProjectHandler
             wkb,
             inSrid,
             outSrid,
+            selection,
             cancellationToken).ConfigureAwait(false);
         var outputGeometry = GeoServicesGeometryConverter.ConvertWkbToGeoServicesGeometry(projected, outSrid)
             ?? throw new ArgumentException("Failed to convert projected geometry.");
@@ -184,6 +208,7 @@ internal sealed class ImageServerProjectHandler
         ProjectEnvelope envelope,
         int inSrid,
         int outSrid,
+        DatumTransformationSelection? selection,
         CancellationToken cancellationToken)
     {
         var projected = (XMin: envelope.XMin, YMin: envelope.YMin, XMax: envelope.XMax, YMax: envelope.YMax);
@@ -196,6 +221,7 @@ internal sealed class ImageServerProjectHandler
                 envelope.YMax,
                 inSrid,
                 outSrid,
+                selection,
                 cancellationToken).ConfigureAwait(false);
             if (transformResult is null)
             {
@@ -390,10 +416,6 @@ internal sealed class ImageServerProjectHandler
         value = 0;
         return element.ValueKind == JsonValueKind.Number && element.TryGetDouble(out value);
     }
-
-    private static bool HasUnsupportedTransformation(IReadOnlyDictionary<string, StringValues> values)
-        => !string.IsNullOrWhiteSpace(GetString(values, "datumTransformation")) ||
-           !string.IsNullOrWhiteSpace(GetString(values, "transformation"));
 
     private static string? GetString(IReadOnlyDictionary<string, StringValues> values, string key)
         => values.TryGetValue(key, out var raw) ? raw.ToString() : null;

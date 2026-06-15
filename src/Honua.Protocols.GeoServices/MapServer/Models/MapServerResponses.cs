@@ -191,13 +191,15 @@ internal sealed class ExportTilesEstimateResponse
     public int MaxZoom { get; init; }
 
     /// <summary>
-    /// Whether the output is an Esri tile package. Honua currently returns a ZIP archive.
+    /// Whether the output is an Esri tile package (TPK exploded-cache layout).
+    /// False for the flat ZIP archive form.
     /// </summary>
     [JsonPropertyName("tilePackage")]
     public bool TilePackage { get; init; }
 
     /// <summary>
-    /// Storage archive format produced by the current implementation.
+    /// Storage archive format produced: <c>zip</c> for a flat archive or
+    /// <c>tpk</c> for an Esri exploded-cache tile package.
     /// </summary>
     [JsonPropertyName("storageFormat")]
     public string StorageFormat { get; init; } = "zip";
@@ -251,13 +253,15 @@ internal sealed class ExportTilesResponse
     public int MaxZoom { get; init; }
 
     /// <summary>
-    /// Whether the output is an Esri tile package. Honua currently returns a ZIP archive.
+    /// Whether the output is an Esri tile package (TPK exploded-cache layout).
+    /// False for the flat ZIP archive form.
     /// </summary>
     [JsonPropertyName("tilePackage")]
     public bool TilePackage { get; init; }
 
     /// <summary>
-    /// Storage archive format produced by the current implementation.
+    /// Storage archive format produced: <c>zip</c> for a flat archive or
+    /// <c>tpk</c> for an Esri exploded-cache tile package.
     /// </summary>
     [JsonPropertyName("storageFormat")]
     public string StorageFormat { get; init; } = "zip";

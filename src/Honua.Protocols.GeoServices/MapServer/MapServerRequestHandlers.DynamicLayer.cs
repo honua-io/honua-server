@@ -71,15 +71,18 @@ internal static partial class MapServerEndpoints
             var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
             var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
             var publishedLayers = ResolveMapServerMetadataLayers(snapshot, service);
-            var knownLayerIds = publishedLayers.Select(static layer => layer.PublicLayerId).ToHashSet();
             var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
+            var sourceResolver = CreateDynamicLayerSourceResolver(
+                context,
+                snapshot,
+                publishedLayers.Select(static layer => new DynamicLayerCandidate(layer.PublicLayerId, layer.Resource)));
 
             var layerValue = context.Request.Query.TryGetValue("layer", out var layerValues)
                 ? layerValues.ToString()
                 : null;
             if (!TryParseDynamicLayerResource(
                     layerValue,
-                    knownLayerIds,
+                    sourceResolver,
                     queryValidator,
                     out var dynamicLayer,
                     out var dynamicLayerError))
@@ -139,7 +142,7 @@ internal static partial class MapServerEndpoints
 
     private static bool TryParseDynamicLayerResource(
         string? layerValue,
-        HashSet<int> knownLayerIds,
+        DynamicLayerSourceResolver sourceResolver,
         ICommonQueryValidator queryValidator,
         out DynamicLayerResourceDefinition? dynamicLayer,
         out string? error)
@@ -170,22 +173,8 @@ internal static partial class MapServerEndpoints
                 return false;
             }
 
-            if (!TryGetJsonString(sourceElement, "type", out var sourceType) ||
-                !string.Equals(sourceType, "mapLayer", StringComparison.OrdinalIgnoreCase))
+            if (!sourceResolver.TryResolveMapLayerId(sourceElement, "dynamicLayer", out var mapLayerId, out error))
             {
-                error = "dynamicLayer must use a mapLayer source.";
-                return false;
-            }
-
-            if (!TryGetJsonInt(sourceElement, "mapLayerId", out var mapLayerId))
-            {
-                error = "dynamicLayer must include a mapLayerId.";
-                return false;
-            }
-
-            if (!knownLayerIds.Contains(mapLayerId))
-            {
-                error = $"dynamicLayer references unknown layer '{mapLayerId}'.";
                 return false;
             }
 
