@@ -403,7 +403,25 @@ if (connectedRedis != null)
         builder.Services.AddHostedService<DeployWorkflowReconcilerBackgroundService>();
         builder.Services.AddHostedService<ExecutionJobReconcilerBackgroundService>();
     }
+
+    // Agent-operation approval surface (#1692/#1693): durable proposal store +
+    // shared operation gateway choke point + per-class executors.
+    builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore,
+        Honua.ControlPlane.RedisOperationProposalStore>();
+    builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationGateway,
+        Honua.ControlPlane.OperationGateway>();
+    builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor,
+        Honua.ControlPlane.Executors.DeployOperationExecutor>();
+    builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor,
+        Honua.ControlPlane.Executors.AdminConfigOperationExecutor>();
 }
+
+// Pending-approval notification channel (#1695): emitted from the gateway/store
+// boundary, not per-endpoint. Safe to register regardless of Redis availability.
+builder.Services.TryAddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IProposalNotifier,
+    Honua.Server.Features.Admin.ProposalNotifier>();
+builder.Services.TryAddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IAdminConfigChangeApplier,
+    Honua.ControlPlane.Executors.LoggingAdminConfigChangeApplier>();
 
 // Configure tile options
 InfrastructureCompositionRoot.ConfigureTileOptions(builder.Services, builder.Configuration);
@@ -449,6 +467,19 @@ builder.Services.AddProductionHealthChecks(builder.Configuration);
 // ---- Extracted: licensing + identity-provider HTTP clients (Startup/LicensingRegistration.cs)
 builder.Services.AddHonuaLicensing(builder.Configuration, builder.Environment);
 // ---- End extracted block
+
+// Edition guardrail ladder (#1691): resolves DirectExecute/RequiresApproval/Blocked
+// per (operation class x edition). Fails closed for unknown classes outside dev.
+builder.Services.Configure<Honua.Core.Features.Guardrails.GuardrailLadderOptions>(
+    builder.Configuration.GetSection(Honua.Core.Features.Guardrails.GuardrailLadderOptions.SectionName));
+if (!builder.Environment.IsDevelopment())
+{
+    builder.Services.PostConfigure<Honua.Core.Features.Guardrails.GuardrailLadderOptions>(
+        options => options.FailClosed = true);
+}
+
+builder.Services.AddSingleton<Honua.Core.Features.Guardrails.Abstractions.IGuardrailLadder,
+    Honua.Core.Features.Guardrails.DefaultGuardrailLadder>();
 
 // Register configuration documentation service for self-documenting admin endpoint
 builder.Services.AddScoped<Honua.Server.Features.Admin.Services.ConfigurationDocumentationService>();
@@ -698,6 +729,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Admin.Models.OidcProviderJsonContext.Default,
         Honua.Server.Features.Admin.Models.UserManagementJsonContext.Default,
         Honua.Server.Features.Admin.Models.RoleJsonContext.Default,
+        Honua.Server.Features.Admin.Models.ProposalJsonContext.Default,
         Honua.Server.Features.Console.Models.ConsoleJsonContext.Default,
         Honua.Server.Features.Console.Collaboration.Models.StudioMapCollaborationJsonContext.Default,
         Honua.Server.Features.Studio.Models.StudioApiJsonContext.Default,
@@ -1120,6 +1152,9 @@ app.MapMetadataReleaseEndpoints();
 app.MapMetadataReleaseOperationEndpoints();
 app.MapMetadataPrevalidationEndpoints();
 app.MapDeployControlEndpoints();
+
+// Console approval surface for agent-proposed operations (#1694).
+app.MapProposalEndpoints();
 
 // Configure admin layer style endpoints
 app.MapAdminLayerStyleEndpoints();

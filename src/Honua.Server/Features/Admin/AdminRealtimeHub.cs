@@ -35,6 +35,15 @@ internal static class AdminRealtimeContract
     internal const string HubPath = "/hubs/admin";
     internal const string Protocol = "signalr";
     internal const string StatusChangedEventName = "AdminStatusChanged";
+
+    /// <summary>SignalR group reviewers join to receive operation-proposal events.</summary>
+    internal const string ProposalsGroup = "proposals";
+
+    /// <summary>Event raised when a new proposal is pending human approval.</summary>
+    internal const string ProposalPendingEventName = "ProposalPending";
+
+    /// <summary>Event raised when a proposal is resolved (approved/rejected/terminal).</summary>
+    internal const string ProposalResolvedEventName = "ProposalResolved";
 }
 
 internal sealed class AdminHub(
@@ -53,6 +62,14 @@ internal sealed class AdminHub(
 
     public Task<AdminRealtimeStatus> GetStatus()
         => Task.FromResult(CreateStatus());
+
+    /// <summary>Joins the proposals group so the caller receives proposal events.</summary>
+    public Task SubscribeToProposals()
+        => Groups.AddToGroupAsync(Context.ConnectionId, AdminRealtimeContract.ProposalsGroup);
+
+    /// <summary>Leaves the proposals group.</summary>
+    public Task UnsubscribeFromProposals()
+        => Groups.RemoveFromGroupAsync(Context.ConnectionId, AdminRealtimeContract.ProposalsGroup);
 
     private AdminRealtimeStatus CreateStatus()
         => new(
@@ -82,5 +99,19 @@ internal sealed record AdminRealtimeStatus(
     bool MigrationReady,
     DateTimeOffset GeneratedAt);
 
+/// <summary>
+/// Lightweight proposal event payload pushed to the proposals group. Carries only
+/// fields the dashboard needs (id, kind, status, requester, risk) — never the full
+/// execution payload.
+/// </summary>
+internal sealed record ProposalRealtimeEvent(
+    string ProposalId,
+    string Kind,
+    string Status,
+    string? RequestedBy,
+    string RiskLevel,
+    DateTimeOffset GeneratedAt);
+
 [JsonSerializable(typeof(AdminRealtimeStatus))]
+[JsonSerializable(typeof(ProposalRealtimeEvent))]
 internal sealed partial class AdminRealtimeJsonContext : JsonSerializerContext;

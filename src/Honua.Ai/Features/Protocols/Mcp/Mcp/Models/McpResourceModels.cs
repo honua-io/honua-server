@@ -10,6 +10,55 @@ namespace Honua.Ai.Protocols.Mcp.Models;
 // -----------------------------------------------------------------------
 
 /// <summary>
+/// Response body for reads of <c>honua://proposals/{proposalId}</c>: a readable
+/// view of an operation proposal's status and plan summary for polling (#1696).
+/// </summary>
+internal sealed class McpProposalResource
+{
+    [JsonPropertyName("proposalId")]
+    public string ProposalId { get; set; } = string.Empty;
+
+    [JsonPropertyName("kind")]
+    public string Kind { get; set; } = string.Empty;
+
+    [JsonPropertyName("status")]
+    public string Status { get; set; } = string.Empty;
+
+    [JsonPropertyName("summary")]
+    public string Summary { get; set; } = string.Empty;
+
+    [JsonPropertyName("riskLevel")]
+    public string RiskLevel { get; set; } = string.Empty;
+
+    [JsonPropertyName("diff")]
+    public IReadOnlyList<string> Diff { get; set; } = [];
+
+    [JsonPropertyName("dryRun")]
+    public IReadOnlyList<string> DryRun { get; set; } = [];
+
+    [JsonPropertyName("blockingReasons")]
+    public IReadOnlyList<string> BlockingReasons { get; set; } = [];
+
+    [JsonPropertyName("warnings")]
+    public IReadOnlyList<string> Warnings { get; set; } = [];
+
+    [JsonPropertyName("resolvedBy")]
+    public string? ResolvedBy { get; set; }
+
+    [JsonPropertyName("resolutionReason")]
+    public string? ResolutionReason { get; set; }
+
+    [JsonPropertyName("executionOperationId")]
+    public string? ExecutionOperationId { get; set; }
+
+    [JsonPropertyName("createdAt")]
+    public DateTimeOffset CreatedAt { get; set; }
+
+    [JsonPropertyName("updatedAt")]
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
+/// <summary>
 /// Response body for reads of <c>honua://jobs/{jobId}</c>.
 /// </summary>
 internal sealed class McpJobResource

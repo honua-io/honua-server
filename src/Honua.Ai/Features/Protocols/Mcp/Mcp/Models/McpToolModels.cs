@@ -40,6 +40,50 @@ internal sealed class McpCancelJobArgument
 }
 
 /// <summary>
+/// Arguments for <c>honua_propose_operation</c>: submit an in-scope mutating
+/// control-plane operation through the approval gateway (#1696).
+/// </summary>
+internal sealed class McpProposeOperationArgument
+{
+    [JsonPropertyName("kind")]
+    public string? Kind { get; set; }
+
+    [JsonPropertyName("reason")]
+    public string? Reason { get; set; }
+
+    [JsonPropertyName("executionPayload")]
+    public string? ExecutionPayload { get; set; }
+
+    [JsonPropertyName("idempotencyKey")]
+    public string? IdempotencyKey { get; set; }
+}
+
+/// <summary>
+/// Output for <c>honua_propose_operation</c>. On <c>requiresApproval</c> the
+/// agent polls the <c>resourceUri</c> until the proposal resolves (#1696).
+/// </summary>
+internal sealed class McpProposeOperationOutput
+{
+    [JsonPropertyName("outcome")]
+    public string Outcome { get; set; } = string.Empty;
+
+    [JsonPropertyName("requiresApproval")]
+    public bool RequiresApproval { get; set; }
+
+    [JsonPropertyName("proposalId")]
+    public string? ProposalId { get; set; }
+
+    [JsonPropertyName("resourceUri")]
+    public string? ResourceUri { get; set; }
+
+    [JsonPropertyName("executionOperationId")]
+    public string? ExecutionOperationId { get; set; }
+
+    [JsonPropertyName("message")]
+    public string? Message { get; set; }
+}
+
+/// <summary>
 /// Canonical-object plan wire shape consumed by MCP plan tools.
 /// Maps directly to <see cref="Honua.Core.Features.Geoprocessing.Domain.AnalysisPlan"/>.
 /// </summary>

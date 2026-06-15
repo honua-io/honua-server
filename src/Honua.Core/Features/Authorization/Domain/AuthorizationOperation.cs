@@ -59,6 +59,14 @@ public enum AuthorizationOperation
     /// existing <c>"read"</c> grants (wire name <c>"read"</c>).
     /// </summary>
     Read = 7,
+
+    /// <summary>
+    /// Approve (or reject) a pending agent-proposed operation (wire name
+    /// <c>"approve"</c>). Distinct from <see cref="Admin"/> so approval authority
+    /// can be granted separately from the proposer's grant (separation of duties,
+    /// #1694).
+    /// </summary>
+    Approve = 8,
 }
 
 /// <summary>
@@ -86,6 +94,7 @@ public static class AuthorizationOperationExtensions
         AuthorizationOperation.Metadata => "metadata",
         AuthorizationOperation.Admin => "admin",
         AuthorizationOperation.Read => "read",
+        AuthorizationOperation.Approve => "approve",
         _ => operation.ToString().ToLowerInvariant(),
     };
 

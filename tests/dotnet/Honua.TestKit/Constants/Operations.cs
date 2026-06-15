@@ -73,6 +73,9 @@ public static class Operations
     public const string IdentityManagement = "IdentityManagement";
     public const string RoleManagement = "RoleManagement";
     public const string ApiKeyManagement = "ApiKeyManagement";
+
+    /// <summary>Operation-proposal approval surface management.</summary>
+    public const string ApprovalManagement = "ApprovalManagement";
     public const string RateLimitManagement = "RateLimitManagement";
     public const string License = "License";
     public const string Identity = "Identity";
