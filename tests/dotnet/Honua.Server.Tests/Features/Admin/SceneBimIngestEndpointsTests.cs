@@ -145,6 +145,25 @@ public class SceneBimIngestEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/scenes/ingest/citygml")]
+    public async Task Ingest_LiteralRoute_AcceptsValidUpload()
+    {
+        // Issues the POST against the literal route string so the API-surface
+        // drift scanner (EndpointRegistryDriftTests) can match this method body
+        // to the "POST /api/v1/admin/scenes/ingest/citygml" registry entry; the
+        // other tests in this class reach the route through the IngestUrl
+        // constant, which the source scanner cannot resolve.
+        using var upload = BuildUpload(
+            CityGmlSceneFixtures.SingleBuildingGeographic(),
+            ("sceneId", "bim-ingest-literal"),
+            ("editionGate", "enterprise"));
+
+        var response = await _client.PostAsync("/api/v1/admin/scenes/ingest/citygml", upload);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/scenes/ingest/citygml")]
     public async Task Ingest_NonEnterpriseEdition_Returns402()
     {
         // A fresh fixture without the Enterprise entitlement: the admin operator
