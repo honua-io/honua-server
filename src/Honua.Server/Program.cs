@@ -1318,12 +1318,26 @@ async Task RunDatabaseMigrationsAsync()
         return;
     }
 
+    // The migration runner is provider-specific: only the active durable provider
+    // registers one (Postgres today via AddPostgreSqlServices). It is absent when the
+    // infrastructure composition root is skipped — e.g. the Test environment, where an
+    // external harness/fixture swaps the data providers — and for embedded/read-through
+    // providers that own no migratable schema. Resolve it optionally and skip gracefully,
+    // exactly as RunPostGisPreflightCheckAsync does for IDatabaseCompatibilityChecker,
+    // instead of crashing startup on an unresolved GetRequiredService.
+    var migrationRunner = app.Services.GetService<IDatabaseMigrationRunner>();
+    if (migrationRunner is null)
+    {
+        Honua.Infrastructure.Logging.Log.DatabaseMigrationsSkipped(app.Logger);
+        migrationState.MarkSkipped("No database migration runner registered for the active data provider.");
+        return;
+    }
+
     Honua.Infrastructure.Logging.Log.DatabaseMigrationsStarting(app.Logger);
     migrationState.MarkRunning("Applying database migrations.");
 
     try
     {
-        var migrationRunner = app.Services.GetRequiredService<IDatabaseMigrationRunner>();
         var result = await migrationRunner.RunMigrationsAsync(
             connectionString,
             Assembly.GetExecutingAssembly(),
