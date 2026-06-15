@@ -205,11 +205,13 @@ internal sealed class ImageServerExportHandler
         out RasterStretch? stretch,
         out RasterColormap? colormap,
         out RasterClipRegion? clipRegion,
+        out int[]? bands,
         out ExportParameterParseError error)
     {
         stretch = null;
         colormap = null;
         clipRegion = null;
+        bands = null;
         error = default;
 
         RasterFunctionDocument document;
@@ -236,6 +238,7 @@ internal sealed class ImageServerExportHandler
         stretch = mapping.Stretch;
         colormap = mapping.Colormap;
         clipRegion = mapping.ClipRegion;
+        bands = mapping.Bands;
         return true;
     }
 
@@ -252,8 +255,9 @@ internal sealed class ImageServerExportHandler
             RasterStretch? renderingStretch = null;
             RasterColormap? renderingColormap = null;
             RasterClipRegion? renderingClip = null;
+            int[]? renderingBands = null;
             if (!string.IsNullOrWhiteSpace(request.RenderingRule) &&
-                !TryMapRenderingRule(request.RenderingRule, out renderingStretch, out renderingColormap, out renderingClip, out error))
+                !TryMapRenderingRule(request.RenderingRule, out renderingStretch, out renderingColormap, out renderingClip, out renderingBands, out error))
             {
                 return false;
             }
@@ -320,6 +324,11 @@ internal sealed class ImageServerExportHandler
                 return false;
             }
 
+            // An ExtractBand renderingRule and the bandIds parameter express the same
+            // band-selection intent. When both are present the renderingRule chain wins,
+            // matching ArcGIS clients that author band selection through the function chain.
+            var effectiveBands = renderingBands ?? bands;
+
             query = new RasterQuery
             {
                 OutputFormat = outputFormat,
@@ -328,7 +337,7 @@ internal sealed class ImageServerExportHandler
                 OutputWidth = requestedWidth,
                 OutputHeight = requestedHeight,
                 TiffCompression = tiffCompression,
-                Bands = bands,
+                Bands = effectiveBands,
                 Stretch = renderingStretch,
                 Colormap = renderingColormap,
                 RenderingClip = renderingClip,

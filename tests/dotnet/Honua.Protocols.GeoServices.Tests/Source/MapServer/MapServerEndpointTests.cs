@@ -417,6 +417,78 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/exportTiles")]
+    public async Task MapServer_ExportTiles_WithStorageFormatTpk_WritesExplodedTilePackage()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/exportTiles?f=json&levels=0&exportExtent=-180,-85,180,85&maxTiles=1&storageFormat=tpk");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        var export = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.ExportTilesResponse);
+
+        export.Should().NotBeNull();
+        export!.JobStatus.Should().Be("esriJobSucceeded");
+        export.TilePackage.Should().BeTrue();
+        export.StorageFormat.Should().Be("tpk");
+        export.ArchiveFileId.Should().NotBeNullOrWhiteSpace();
+
+        var fileId = export.ArchiveFileId!;
+        var storage = _fixture.GetService<ICloudFileStorage>();
+        try
+        {
+            var bytes = await storage.DownloadBytesAsync(fileId);
+            bytes.Should().NotBeNull();
+            using var archive = new ZipArchive(new MemoryStream(bytes!), ZipArchiveMode.Read);
+
+            // Esri exploded-cache layout: conf.xml + _alllayers/Lzz/Rrrrrrrrr/Cccccccc.png
+            archive.Entries.Should().Contain(entry => entry.FullName.EndsWith("/conf.xml", StringComparison.Ordinal));
+            archive.Entries.Should().Contain(entry => entry.FullName.EndsWith("/conf.cdi", StringComparison.Ordinal));
+            var tileEntry = archive.Entries.FirstOrDefault(entry =>
+                entry.FullName.Contains("_alllayers/L00/", StringComparison.Ordinal) &&
+                entry.FullName.EndsWith(".png", StringComparison.Ordinal));
+            tileEntry.Should().NotBeNull();
+            tileEntry!.FullName.Should().Contain("R00000000");
+            tileEntry.FullName.Should().Contain("C00000000");
+        }
+        finally
+        {
+            await storage.DeleteAsync(fileId);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/exportTiles")]
+    public async Task MapServer_ExportTiles_WithCompactStorageFormat_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/exportTiles?f=json&levels=0&exportExtent=-180,-85,180,85&maxTiles=1&storageFormat=tpkx");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("compact");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/estimateExportTilesSize")]
+    public async Task MapServer_EstimateExportTilesSize_WithTpk_ReportsTilePackage()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/estimateExportTilesSize?f=json&levels=0&exportExtent=-180,-85,180,85&maxTiles=1&storageFormat=tpk");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        var estimate = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.ExportTilesEstimateResponse);
+
+        estimate.Should().NotBeNull();
+        estimate!.TilePackage.Should().BeTrue();
+        estimate.StorageFormat.Should().Be("tpk");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/generateKml")]
     public async Task MapServer_GenerateKml_ReturnsValidKml_ForPointLineAndPolygonLayers()
     {

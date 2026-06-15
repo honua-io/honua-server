@@ -238,4 +238,77 @@ public sealed class ImageServerRenderingRuleMappingTests
         mapping.Supported.Should().BeFalse();
         mapping.IsNotImplemented.Should().BeFalse();
     }
+
+    [UnitTest]
+    public void MapRenderingRule_ExtractBand_ShiftsToOneBasedBands()
+    {
+        var document = Parse(
+            """{"rasterFunction":"ExtractBand","rasterFunctionArguments":{"BandIds":[2,1,0]}}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeTrue();
+        // 0-based [2,1,0] -> 1-based [3,2,1], order preserved.
+        mapping.Bands.Should().Equal(3, 2, 1);
+    }
+
+    [UnitTest]
+    public void MapRenderingRule_ExtractBandWrappingStretch_ResolvesBoth()
+    {
+        var document = Parse(
+            """{"rasterFunction":"ExtractBand","rasterFunctionArguments":{"BandIds":[0,1,2],"Raster":{"rasterFunction":"Stretch","rasterFunctionArguments":{"StretchType":5}}}}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeTrue();
+        mapping.Bands.Should().Equal(1, 2, 3);
+        mapping.Stretch!.Value.StretchType.Should().Be(RasterStretchType.MinMax);
+    }
+
+    [UnitTest]
+    public void MapRenderingRule_ExtractBandByName_IsNotImplemented()
+    {
+        var document = Parse(
+            """{"rasterFunction":"ExtractBand","rasterFunctionArguments":{"BandNames":["Red","Green"]}}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeFalse();
+        mapping.IsNotImplemented.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void MapRenderingRule_ExtractBandWithEmptyIds_IsInvalid()
+    {
+        var document = Parse(
+            """{"rasterFunction":"ExtractBand","rasterFunctionArguments":{"BandIds":[]}}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeFalse();
+        mapping.IsNotImplemented.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void MapRenderingRule_ExtractBandWithNegativeId_IsInvalid()
+    {
+        var document = Parse(
+            """{"rasterFunction":"ExtractBand","rasterFunctionArguments":{"BandIds":[-1,0]}}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeFalse();
+        mapping.IsNotImplemented.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void MapRenderingRule_ExtractBandWithoutIds_IsInvalid()
+    {
+        var document = Parse("""{"rasterFunction":"ExtractBand","rasterFunctionArguments":{}}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeFalse();
+        mapping.IsNotImplemented.Should().BeFalse();
+    }
 }

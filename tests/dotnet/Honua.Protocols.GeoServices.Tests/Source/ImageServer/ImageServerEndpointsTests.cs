@@ -1546,6 +1546,72 @@ public class ImageServerEndpointsTests
     }
 
     [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/exportTiles")]
+    [Operation(Operations.Export)]
+    public async Task ExportTiles_WithStorageFormatTpk_WritesExplodedTilePackage()
+    {
+        var fixture = await CreateFixtureAsync(CreateTileExportRasterStoreSubstitute());
+        string? fileId = null;
+        try
+        {
+            var query = "f=json&levels=0&exportExtent=-180,-85,180,85&maxTiles=1&storageFormat=tpk";
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/exportTiles?{query}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var export = JsonSerializer.Deserialize(
+                await response.Content.ReadAsStringAsync(),
+                ImageServerJsonContext.Default.ImageServerExportTilesResponse);
+
+            export.Should().NotBeNull();
+            export!.TilePackage.Should().BeTrue();
+            export.StorageFormat.Should().Be("tpk");
+            fileId = export.ArchiveFileId;
+            fileId.Should().NotBeNullOrWhiteSpace();
+
+            var storage = fixture.GetService<ICloudFileStorage>();
+            var bytes = await storage.DownloadBytesAsync(fileId!);
+            bytes.Should().NotBeNull();
+            using var archive = new ZipArchive(new MemoryStream(bytes!), ZipArchiveMode.Read);
+            archive.Entries.Should().Contain(entry => entry.FullName.EndsWith("/conf.xml", StringComparison.Ordinal));
+            archive.Entries.Should().Contain(entry =>
+                entry.FullName.Contains("_alllayers/L00/", StringComparison.Ordinal) &&
+                entry.FullName.EndsWith(".png", StringComparison.Ordinal));
+        }
+        finally
+        {
+            if (!string.IsNullOrWhiteSpace(fileId))
+            {
+                await fixture.GetService<ICloudFileStorage>().DeleteAsync(fileId!);
+            }
+
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/exportTiles")]
+    [Operation(Operations.Export)]
+    public async Task ExportTiles_WithCompactStorageFormat_ReturnsBadRequest()
+    {
+        var fixture = await CreateFixtureAsync(CreateTileExportRasterStoreSubstitute());
+        try
+        {
+            var query = "f=json&levels=0&exportExtent=-180,-85,180,85&maxTiles=1&storageFormat=compact";
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/exportTiles?{query}");
+
+            var content = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+            content.Should().Contain("compact");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /rest/services/{id}/ImageServer/keyProperties")]
     [Operation(Operations.Metadata)]
     public async Task KeyProperties_Get_ReturnsBandProperties()

@@ -46,6 +46,10 @@ internal readonly record struct RasterFunctionPlan(
 /// <param name="Stretch">The resolved display stretch, when one applies.</param>
 /// <param name="Colormap">The resolved pseudocolour colormap, when one applies.</param>
 /// <param name="ClipRegion">The resolved clip area-of-interest, when a <c>Clip</c> applies.</param>
+/// <param name="Bands">
+/// The resolved 1-based band selection/order from an <c>ExtractBand</c> function, when
+/// one applies; <c>null</c> when no band extraction is in the chain.
+/// </param>
 /// <param name="Reason">Explanation surfaced to the client when not supported.</param>
 /// <param name="IsNotImplemented">
 /// When unsupported, distinguishes a recognized-but-unimplemented function/option
@@ -56,20 +60,22 @@ internal readonly record struct RenderingRuleMapping(
     RasterStretch? Stretch,
     RasterColormap? Colormap,
     RasterClipRegion? ClipRegion,
+    int[]? Bands,
     string? Reason,
     bool IsNotImplemented)
 {
     public static RenderingRuleMapping Executable(
         RasterStretch? stretch,
         RasterColormap? colormap = null,
-        RasterClipRegion? clipRegion = null)
-        => new(true, stretch, colormap, clipRegion, null, false);
+        RasterClipRegion? clipRegion = null,
+        int[]? bands = null)
+        => new(true, stretch, colormap, clipRegion, bands, null, false);
 
     public static RenderingRuleMapping Invalid(string reason)
-        => new(false, null, null, null, reason, false);
+        => new(false, null, null, null, null, reason, false);
 
     public static RenderingRuleMapping NotImplemented(string reason)
-        => new(false, null, null, null, reason, true);
+        => new(false, null, null, null, null, reason, true);
 }
 
 /// <summary>
@@ -96,7 +102,9 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
     {
         "Identity",
         "Stretch",
+        "Colormap",
         "Clip",
+        "ExtractBand",
     };
 
     public RasterFunctionPlan Plan(RasterFunctionDocument document)
@@ -128,7 +136,7 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
         if (!SupportedFunctions.Contains(document.RasterFunction))
         {
             throw new ImageServerRasterFunctionException(
-                $"Unsupported raster function '{document.RasterFunction}'. Supported functions: Identity, Stretch, Clip.");
+                $"Unsupported raster function '{document.RasterFunction}'. Supported functions: Identity, Stretch, Colormap, Clip, ExtractBand.");
         }
 
         executed.Add(document.RasterFunction);
@@ -163,9 +171,23 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
             case "CLIP":
                 ValidateClipArguments(arguments);
                 break;
-            case "IDENTITY":
-                // Identity has no required arguments beyond the optional Raster nesting.
+            case "EXTRACTBAND":
+                ValidateExtractBandArguments(arguments);
                 break;
+            case "IDENTITY":
+            case "COLORMAP":
+                // Identity has no required arguments beyond the optional Raster nesting;
+                // Colormap validation is enforced on the executable mapping path.
+                break;
+        }
+    }
+
+    private static void ValidateExtractBandArguments(Dictionary<string, object?> arguments)
+    {
+        if (!arguments.ContainsKey("BandIds") && !arguments.ContainsKey("BandIDs") && !arguments.ContainsKey("BandNames"))
+        {
+            throw new ImageServerRasterFunctionException(
+                "ExtractBand raster function requires a BandIds or BandNames argument.");
         }
     }
 
@@ -263,11 +285,13 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
     private const int StretchTypePercentClip = 6;
 
     /// <summary>
-    /// Translates a validated raster function <paramref name="document"/> into a
-    /// canonical <see cref="RasterStretch"/>. Walks an <c>Identity</c>/<c>Stretch</c>
+    /// Translates a validated raster function <paramref name="document"/> into the
+    /// canonical knobs (<see cref="RasterStretch"/>, <see cref="RasterColormap"/>,
+    /// <see cref="RasterClipRegion"/>, and a band selection) the shared raster export
+    /// pipeline executes. Walks an <c>Identity</c>/<c>Stretch</c>/<c>Colormap</c>/<c>Clip</c>/<c>ExtractBand</c>
     /// chain (nested via the <c>Raster</c> argument); an <c>Identity</c>-only chain is
-    /// an executable no-op. Recognized-but-unimplemented functions/options
-    /// (<c>Clip</c> in a rule, histogram-equalize/sigmoid stretches) return a
+    /// an executable no-op. Recognized-but-unimplemented options
+    /// (clip-inside, histogram-equalize/sigmoid stretches, named colour ramps) return a
     /// not-implemented result; unknown functions return an invalid result.
     /// </summary>
     public static RenderingRuleMapping MapRenderingRule(RasterFunctionDocument document)
@@ -277,6 +301,7 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
         RasterStretch? stretch = null;
         RasterColormap? colormap = null;
         RasterClipRegion? clipRegion = null;
+        int[]? bands = null;
         var current = document;
         for (var depth = 1; ; depth++)
         {
@@ -324,10 +349,21 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
 
                 clipRegion = mapping.ClipRegion ?? clipRegion;
             }
+            else if (string.Equals(current.RasterFunction, "ExtractBand", StringComparison.OrdinalIgnoreCase))
+            {
+                var mapping = MapExtractBandArguments(arguments);
+                if (!mapping.Supported)
+                {
+                    return mapping;
+                }
+
+                // A later (outer) ExtractBand supersedes an inner one.
+                bands = mapping.Bands ?? bands;
+            }
             else if (!string.Equals(current.RasterFunction, "Identity", StringComparison.OrdinalIgnoreCase))
             {
                 return RenderingRuleMapping.Invalid(
-                    $"Unsupported raster function '{current.RasterFunction}'. Supported functions: Identity, Stretch, Colormap, Clip.");
+                    $"Unsupported raster function '{current.RasterFunction}'. Supported functions: Identity, Stretch, Colormap, Clip, ExtractBand.");
             }
 
             if (!TryGetNestedFunction(arguments, "Raster", out var nested))
@@ -338,7 +374,58 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
             current = nested;
         }
 
-        return RenderingRuleMapping.Executable(stretch, colormap, clipRegion);
+        return RenderingRuleMapping.Executable(stretch, colormap, clipRegion, bands);
+    }
+
+    // ExtractBand selects/reorders the output bands. Esri encodes the selection as a
+    // BandIds array of 0-based band indices; the canonical raster pipeline uses 1-based
+    // indices, so each index is shifted by one before being threaded onto RasterQuery.Bands.
+    // Selection by BandNames (string band labels) is recognized but not executable because
+    // the catalog does not carry per-band names, so it surfaces a clean not-implemented result.
+    private static RenderingRuleMapping MapExtractBandArguments(Dictionary<string, object?> arguments)
+    {
+        if (!TryGetBandIdsElement(arguments, out var element))
+        {
+            if (arguments.ContainsKey("BandNames"))
+            {
+                return RenderingRuleMapping.NotImplemented(
+                    "ExtractBand by BandNames is not implemented; supply a BandIds array of 0-based band indices.");
+            }
+
+            return RenderingRuleMapping.Invalid(
+                "ExtractBand raster function requires a BandIds array of 0-based band indices.");
+        }
+
+        if (element.ValueKind != JsonValueKind.Array || element.GetArrayLength() == 0)
+        {
+            return RenderingRuleMapping.Invalid("ExtractBand BandIds must be a non-empty array of 0-based band indices.");
+        }
+
+        var bands = new List<int>(element.GetArrayLength());
+        foreach (var entry in element.EnumerateArray())
+        {
+            if (entry.ValueKind != JsonValueKind.Number || !entry.TryGetInt32(out var zeroBased) || zeroBased < 0)
+            {
+                return RenderingRuleMapping.Invalid("ExtractBand BandIds entries must be non-negative integers.");
+            }
+
+            bands.Add(zeroBased + 1);
+        }
+
+        return RenderingRuleMapping.Executable(null, null, null, bands.ToArray());
+    }
+
+    private static bool TryGetBandIdsElement(Dictionary<string, object?> arguments, out JsonElement element)
+    {
+        element = default;
+        if ((arguments.TryGetValue("BandIds", out var raw) || arguments.TryGetValue("BandIDs", out raw)) &&
+            raw is JsonElement json)
+        {
+            element = json;
+            return true;
+        }
+
+        return false;
     }
 
     private static RenderingRuleMapping MapClipArguments(Dictionary<string, object?> arguments)
