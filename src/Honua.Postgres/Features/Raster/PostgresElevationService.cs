@@ -14,14 +14,14 @@ internal sealed class PostgresElevationService : IElevationService
     private const int DefaultPointSrid = 4326;
     private const int Wgs84Srid = 4326;
 
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly ICrsRegistry _crsRegistry;
     private readonly IRasterStore _rasterStore;
     private readonly ILogger<PostgresElevationService> _logger;
     private readonly string _rasterDataTable;
 
     public PostgresElevationService(
-        IDatabaseConnectionProvider connectionProvider,
+        IAdoNetDatabaseConnectionProvider connectionProvider,
         ICrsRegistry crsRegistry,
         IRasterStore rasterStore,
         ILogger<PostgresElevationService> logger,

@@ -233,7 +233,7 @@ public sealed class GeoservicesRelationshipApplyTests
             httpClient,
             NullLogger<ArcGisRestClient>.Instance,
             (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
-        var connectionProvider = new Mock<IDatabaseConnectionProvider>(MockBehavior.Loose);
+        var connectionProvider = new Mock<IAdoNetDatabaseConnectionProvider>(MockBehavior.Loose);
         connectionProvider.Setup(p => p.GetConnectionString()).Returns("Host=localhost;Database=test");
         var crsRegistry = new Mock<ICrsRegistry>(MockBehavior.Loose);
 

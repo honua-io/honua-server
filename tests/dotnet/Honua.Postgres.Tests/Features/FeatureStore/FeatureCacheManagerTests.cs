@@ -128,7 +128,7 @@ public sealed class FeatureCacheManagerTests
         return (int)field!.GetRawConstantValue()!;
     }
 
-    private sealed class StubDatabaseConnectionProvider : IDatabaseConnectionProvider
+    private sealed class StubDatabaseConnectionProvider : IAdoNetDatabaseConnectionProvider
     {
         public string GetConnectionString()
             => "Host=localhost;Database=test;";

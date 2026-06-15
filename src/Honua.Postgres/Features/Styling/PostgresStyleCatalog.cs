@@ -29,12 +29,12 @@ internal sealed class PostgresStyleCatalog : IStyleCatalog
         change_summary
         """;
 
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly string _stylesTable;
     private readonly string _refsTable;
     private readonly string _layersTable;
 
-    public PostgresStyleCatalog(IDatabaseConnectionProvider connectionProvider, string? schemaName = null)
+    public PostgresStyleCatalog(IAdoNetDatabaseConnectionProvider connectionProvider, string? schemaName = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _stylesTable = Infrastructure.SchemaSearchPath.QualifyTable("styles", schemaName);

@@ -17,10 +17,10 @@ namespace Honua.Postgres.Features.Admin;
 /// </summary>
 internal sealed class PostgresLayerFieldConfigurationStore : ILayerFieldConfigurationStore
 {
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly string _fieldsTable;
 
-    public PostgresLayerFieldConfigurationStore(IDatabaseConnectionProvider connectionProvider, string? schemaName = null)
+    public PostgresLayerFieldConfigurationStore(IAdoNetDatabaseConnectionProvider connectionProvider, string? schemaName = null)
     {
         _connectionProvider = connectionProvider.ThrowIfNull();
         _fieldsTable = Infrastructure.SchemaSearchPath.QualifyTable("layer_fields", schemaName);

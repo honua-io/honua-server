@@ -40,7 +40,7 @@ public static class PreviewImportServiceFactory
 /// Connection provider that throws on any access. Used by preview and format-detection
 /// unit tests where no database interaction should occur.
 /// </summary>
-public sealed class ThrowingConnectionProvider : IDatabaseConnectionProvider
+public sealed class ThrowingConnectionProvider : IAdoNetDatabaseConnectionProvider
 {
     public string GetConnectionString()
         => throw new NotSupportedException("Database access is not expected in preview tests.");

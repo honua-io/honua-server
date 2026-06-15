@@ -338,7 +338,7 @@ public sealed class GeoServerImportWorkspaceScopingTests
             HttpMessageHandler handler,
             ILayerPublishingService layerPublishingService,
             IMigrationCatalogWriter catalogWriter,
-            IDatabaseConnectionProvider connectionProvider)
+            IAdoNetDatabaseConnectionProvider connectionProvider)
         {
             var httpClient = new HttpClient(handler);
             var restClient = new GeoServerRestClient(
@@ -402,7 +402,7 @@ public sealed class GeoServerImportWorkspaceScopingTests
             httpClient,
             NullLogger<GeoServerRestClient>.Instance,
             (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
-        var connectionProvider = new Mock<IDatabaseConnectionProvider>(MockBehavior.Strict);
+        var connectionProvider = new Mock<IAdoNetDatabaseConnectionProvider>(MockBehavior.Strict);
         var crsRegistry = new Mock<ICrsRegistry>(MockBehavior.Strict);
 
         if (layerPublishingService != null || catalogWriter != null)
@@ -624,7 +624,7 @@ public sealed class GeoServerImportWorkspaceScopingTests
         }
     }
 
-    private sealed class FixtureConnectionProvider(PostgresFixture postgresFixture) : IDatabaseConnectionProvider
+    private sealed class FixtureConnectionProvider(PostgresFixture postgresFixture) : IAdoNetDatabaseConnectionProvider
     {
         public string GetConnectionString() => postgresFixture.ConnectionString;
 

@@ -25,21 +25,21 @@ internal static class ServiceCollectionExtensions
         // Register the main raster store implementation
         services.AddScoped<IRasterStore>(provider =>
             new PostgresRasterStore(
-                provider.GetRequiredService<IDatabaseConnectionProvider>(),
+                provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 provider.GetRequiredService<ILogger<PostgresRasterStore>>(),
                 schemaName));
 
         // Register the map renderer implementation
         services.AddScoped<IRasterMapRenderer>(provider =>
             new PostgresRasterMapRenderer(
-                provider.GetRequiredService<IDatabaseConnectionProvider>(),
+                provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 provider.GetRequiredService<ILogger<PostgresRasterMapRenderer>>(),
                 schemaName));
 
         // Register raster import service
         services.AddScoped<IRasterImportService>(provider =>
             new PostgresRasterImportService(
-                provider.GetRequiredService<IDatabaseConnectionProvider>(),
+                provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 provider.GetRequiredService<ICrsDetectionService>(),
                 provider.GetRequiredService<ILogger<PostgresRasterImportService>>(),
                 schemaName));
@@ -47,27 +47,27 @@ internal static class ServiceCollectionExtensions
         // Register COG catalog store
         services.AddScoped<ICogStore>(provider =>
             new PostgresCogStore(
-                provider.GetRequiredService<IDatabaseConnectionProvider>(),
+                provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 provider.GetRequiredService<ILogger<PostgresCogStore>>(),
                 schemaName));
 
         // Register multidimensional coverage catalog store (cloud-optimized HDF5 / NetCDF4)
         services.AddScoped<IMultidimensionalCoverageStore>(provider =>
             new PostgresMultidimensionalCoverageStore(
-                provider.GetRequiredService<IDatabaseConnectionProvider>(),
+                provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 provider.GetRequiredService<ILogger<PostgresMultidimensionalCoverageStore>>(),
                 schemaName));
 
         // Register surface-analysis service
         services.AddScoped<ISurfaceAnalysisService>(provider =>
             new PostgresSurfaceAnalysisService(
-                provider.GetRequiredService<IDatabaseConnectionProvider>(),
+                provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 provider.GetRequiredService<ILogger<PostgresSurfaceAnalysisService>>(),
                 schemaName));
 
         services.AddScoped<ITerrainTileService>(provider =>
             new PostgresTerrainTileService(
-                provider.GetRequiredService<IDatabaseConnectionProvider>(),
+                provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 provider.GetRequiredService<ICrsRegistry>(),
                 provider.GetRequiredService<IRasterStore>(),
                 provider.GetRequiredService<ILogger<PostgresTerrainTileService>>(),
@@ -75,7 +75,7 @@ internal static class ServiceCollectionExtensions
 
         services.AddScoped<IElevationService>(provider =>
             new PostgresElevationService(
-                provider.GetRequiredService<IDatabaseConnectionProvider>(),
+                provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 provider.GetRequiredService<ICrsRegistry>(),
                 provider.GetRequiredService<IRasterStore>(),
                 provider.GetRequiredService<ILogger<PostgresElevationService>>(),

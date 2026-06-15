@@ -35,11 +35,11 @@ internal sealed class PostgresMigrationPerformanceEvidenceStore : IMigrationPerf
     private const int MaxLimit = 200;
     private const int DefaultLimit = 25;
 
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly JsonTypeInfo<MigrationPerformanceEvidenceArtifact> _artifactTypeInfo;
 
     public PostgresMigrationPerformanceEvidenceStore(
-        IDatabaseConnectionProvider connectionProvider,
+        IAdoNetDatabaseConnectionProvider connectionProvider,
         JsonTypeInfo<MigrationPerformanceEvidenceArtifact> artifactTypeInfo)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));

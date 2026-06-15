@@ -11,12 +11,12 @@ namespace Honua.Postgres.Features.Metadata;
 
 internal sealed class PostgresMetadataV2EnvironmentSnapshotReader : IMetadataV2EnvironmentSnapshotReader
 {
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly string _snapshotsTable;
     private readonly string _currentTable;
 
     public PostgresMetadataV2EnvironmentSnapshotReader(
-        IDatabaseConnectionProvider connectionProvider,
+        IAdoNetDatabaseConnectionProvider connectionProvider,
         string? schemaName = null)
     {
         ArgumentNullException.ThrowIfNull(connectionProvider);

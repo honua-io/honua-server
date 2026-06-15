@@ -124,7 +124,7 @@ public sealed class PostgresAnalysisContentStoreTests
 
     private static PostgresAnalysisContentStore CreateStoreWithUnavailableConnection()
     {
-        var provider = Substitute.For<IDatabaseConnectionProvider>();
+        var provider = Substitute.For<IAdoNetDatabaseConnectionProvider>();
         provider.OpenConnectionAsync(Arg.Any<CancellationToken>())
             .Returns(Task.FromException<DbConnection>(
                 new NpgsqlException("Failed to connect to 10.0.0.1:5432")));
@@ -133,7 +133,7 @@ public sealed class PostgresAnalysisContentStoreTests
 
     private static PostgresAnalysisContentStore CreateStoreWithServiceUnavailableConnection()
     {
-        var provider = Substitute.For<IDatabaseConnectionProvider>();
+        var provider = Substitute.For<IAdoNetDatabaseConnectionProvider>();
         provider.OpenConnectionAsync(Arg.Any<CancellationToken>())
             .Returns(Task.FromException<DbConnection>(
                 new ServiceUnavailableException("Database connection failed.")));

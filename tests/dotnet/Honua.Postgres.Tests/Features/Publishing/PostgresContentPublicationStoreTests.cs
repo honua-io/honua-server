@@ -370,7 +370,7 @@ public sealed class PostgresContentPublicationStoreTests(PostgresFixture fixture
         await command.ExecuteNonQueryAsync();
     }
 
-    private sealed class TestConnectionProvider(NpgsqlDataSource dataSource, string schemaName) : IDatabaseConnectionProvider
+    private sealed class TestConnectionProvider(NpgsqlDataSource dataSource, string schemaName) : IAdoNetDatabaseConnectionProvider
     {
         public string GetConnectionString() => dataSource.ConnectionString;
 
@@ -405,7 +405,7 @@ public sealed class PostgresContentPublicationStoreTests(PostgresFixture fixture
         public Task ExecuteWithDeadlockRetryAsync(Func<Task> operation, CancellationToken cancellationToken = default) => operation();
     }
 
-    private sealed class ThrowingConnectionProvider : IDatabaseConnectionProvider
+    private sealed class ThrowingConnectionProvider : IAdoNetDatabaseConnectionProvider
     {
         public string GetConnectionString() => throw new InvalidOperationException("Unexpected database access.");
 

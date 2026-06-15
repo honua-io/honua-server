@@ -30,11 +30,11 @@ namespace Honua.Postgres.Features.Migration;
 /// </summary>
 internal sealed partial class PostgresOgcTileCacheSink : IOgcTileCacheSink
 {
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly ILogger<PostgresOgcTileCacheSink> _logger;
 
     public PostgresOgcTileCacheSink(
-        IDatabaseConnectionProvider connectionProvider,
+        IAdoNetDatabaseConnectionProvider connectionProvider,
         ILogger<PostgresOgcTileCacheSink> logger)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));

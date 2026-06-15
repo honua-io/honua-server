@@ -257,7 +257,7 @@ public sealed class GeoservicesImportServiceScanTests
             httpClient,
             NullLogger<ArcGisRestClient>.Instance,
             (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
-        var connectionProvider = new Mock<IDatabaseConnectionProvider>(MockBehavior.Strict);
+        var connectionProvider = new Mock<IAdoNetDatabaseConnectionProvider>(MockBehavior.Strict);
         var crsRegistry = new Mock<ICrsRegistry>(MockBehavior.Strict);
 
         crsRegistry.Setup(registry => registry.ResolveBySridAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))

@@ -125,9 +125,14 @@ public class OidcAuthenticationTests
                     services.RemoveAll<IDatabaseCompatibilityChecker>();
                     services.AddSingleton<IDatabaseCompatibilityChecker, AlwaysCompatibleDatabaseCompatibilityChecker>();
 
-                    // Remove the real PostgreSQL services
+                    // Remove the real PostgreSQL services. IAdoNetDatabaseConnectionProvider is
+                    // registered (ADR-0046) as a cast-factory that forwards to whatever
+                    // IDatabaseConnectionProvider resolves to, so it must be removed alongside it —
+                    // otherwise it dangles, pointing at a removed dependency, and any boot-time
+                    // resolution (e.g. the Postgres replica/version/session services) throws.
                     services.RemoveAll<Npgsql.NpgsqlDataSource>();
                     services.RemoveAll<IDatabaseConnectionProvider>();
+                    services.RemoveAll<IAdoNetDatabaseConnectionProvider>();
                     services.AddSingleton(_ => NpgsqlDataSource.Create(TestPostgresConnectionString));
 
                     // Add mock implementations

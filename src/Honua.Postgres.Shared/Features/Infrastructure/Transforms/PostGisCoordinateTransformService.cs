@@ -13,11 +13,11 @@ namespace Honua.Postgres.Features.Infrastructure.Transforms;
 /// </summary>
 internal sealed partial class PostGisCoordinateTransformService : ICoordinateTransformService
 {
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly ILogger<PostGisCoordinateTransformService> _logger;
 
     public PostGisCoordinateTransformService(
-        IDatabaseConnectionProvider connectionProvider,
+        IAdoNetDatabaseConnectionProvider connectionProvider,
         ILogger<PostGisCoordinateTransformService> logger)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));

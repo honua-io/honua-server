@@ -107,9 +107,9 @@ internal static class SecurityServiceCollectionExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        // Replace the existing IDatabaseConnectionProvider registration
+        // Replace the existing IAdoNetDatabaseConnectionProvider registration
         // Capture the current provider descriptor so we can wrap it safely.
-        if (services.LastOrDefault(s => s.ServiceType == typeof(IDatabaseConnectionProvider)) is not { } existingDescriptor)
+        if (services.LastOrDefault(s => s.ServiceType == typeof(IAdoNetDatabaseConnectionProvider)) is not { } existingDescriptor)
         {
             throw new InvalidOperationException("No default database connection provider found");
         }
@@ -130,7 +130,7 @@ internal static class SecurityServiceCollectionExtensions
 
         // Register the secure connection-aware provider as a decorator
         services.Add(new ServiceDescriptor(
-            typeof(IDatabaseConnectionProvider),
+            typeof(IAdoNetDatabaseConnectionProvider),
             serviceProvider =>
             {
                 var originalProvider = serviceProvider.GetRequiredService<IPrimaryDatabaseConnectionProvider>();
@@ -158,23 +158,23 @@ internal static class SecurityServiceCollectionExtensions
         return services;
     }
 
-    private static IDatabaseConnectionProvider ResolveOriginalProvider(
+    private static IAdoNetDatabaseConnectionProvider ResolveOriginalProvider(
         ServiceDescriptor descriptor,
         IServiceProvider serviceProvider)
     {
-        if (descriptor.ImplementationInstance is IDatabaseConnectionProvider instance)
+        if (descriptor.ImplementationInstance is IAdoNetDatabaseConnectionProvider instance)
         {
             return instance;
         }
 
         if (descriptor.ImplementationFactory is not null)
         {
-            return (IDatabaseConnectionProvider)descriptor.ImplementationFactory(serviceProvider);
+            return (IAdoNetDatabaseConnectionProvider)descriptor.ImplementationFactory(serviceProvider);
         }
 
         if (descriptor.ImplementationType is not null)
         {
-            return (IDatabaseConnectionProvider)ActivatorUtilities.CreateInstance(
+            return (IAdoNetDatabaseConnectionProvider)ActivatorUtilities.CreateInstance(
                 serviceProvider,
                 descriptor.ImplementationType);
         }
@@ -184,9 +184,9 @@ internal static class SecurityServiceCollectionExtensions
 
     private sealed class PrimaryDatabaseConnectionProviderAdapter : IPrimaryDatabaseConnectionProvider
     {
-        private readonly IDatabaseConnectionProvider _inner;
+        private readonly IAdoNetDatabaseConnectionProvider _inner;
 
-        public PrimaryDatabaseConnectionProviderAdapter(IDatabaseConnectionProvider inner)
+        public PrimaryDatabaseConnectionProviderAdapter(IAdoNetDatabaseConnectionProvider inner)
         {
             _inner = inner ?? throw new ArgumentNullException(nameof(inner));
         }

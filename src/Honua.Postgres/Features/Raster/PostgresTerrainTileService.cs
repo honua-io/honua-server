@@ -29,14 +29,14 @@ internal sealed class PostgresTerrainTileService : ITerrainTileService
         "64BF"
     };
 
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly ICrsRegistry _crsRegistry;
     private readonly IRasterStore _rasterStore;
     private readonly ILogger<PostgresTerrainTileService> _logger;
     private readonly string _rasterDataTable;
 
     public PostgresTerrainTileService(
-        IDatabaseConnectionProvider connectionProvider,
+        IAdoNetDatabaseConnectionProvider connectionProvider,
         ICrsRegistry crsRegistry,
         IRasterStore rasterStore,
         ILogger<PostgresTerrainTileService> logger,

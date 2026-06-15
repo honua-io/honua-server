@@ -132,11 +132,11 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<IInvestigationStore, PostgresInvestigationStore>();
         services.AddScoped<IShareExportStore>(serviceProvider =>
             new PostgresShareExportStore(
-                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 configuration["Database:Schema"]));
         services.AddScoped<IShareTrafficStore>(serviceProvider =>
             new PostgresShareTrafficStore(
-                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 configuration["Database:Schema"]));
 
         // Register database performance metrics provider
@@ -149,7 +149,7 @@ internal static class ServiceCollectionExtensions
         // Register attachment store implementation (metadata tables live in the honua schema)
         services.AddScoped<IAttachmentStore>(serviceProvider =>
             new PostgresAttachmentStore(
-                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 serviceProvider.GetRequiredService<ICloudFileStorage>(),
                 serviceProvider.GetRequiredService<ILogger<PostgresAttachmentStore>>(),
                 schemaName: string.IsNullOrWhiteSpace(configuration["Attachments:Schema"])
@@ -171,39 +171,39 @@ internal static class ServiceCollectionExtensions
         // Register Metadata v2 graph store (Postgres-backed JSONB + sidecar indexes)
         services.AddScoped<IMetadataV2GraphStore>(serviceProvider =>
             new Features.Metadata.PostgresMetadataV2GraphStore(
-                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 configuration["Metadata:Environment"] ?? configuration["Environment"] ?? "default",
                 configuration["Database:Schema"]));
         services.AddScoped<IMetadataV2GraphProvider>(sp => sp.GetRequiredService<IMetadataV2GraphStore>());
         services.AddScoped<IMetadataV2EnvironmentSnapshotReader>(serviceProvider =>
             new Features.Metadata.PostgresMetadataV2EnvironmentSnapshotReader(
-                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 configuration["Database:Schema"]));
         services.AddScoped<IMetadataReleasePackageStore>(serviceProvider =>
             new Features.Metadata.PostgresMetadataReleasePackageStore(
-                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 configuration["Database:Schema"]));
         services.AddScoped<IStudioPackageStore>(serviceProvider =>
             new PostgresStudioPackageStore(
-                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 configuration["Database:Schema"]));
         // Durable Studio map collaboration store (#1278). Overrides the in-memory
         // default registered by AddStudioMapCollaboration when Postgres is active.
         services.AddScoped<Honua.Core.Features.Console.Collaboration.Abstractions.IStudioMapCollaborationStore>(serviceProvider =>
             new Features.Console.Collaboration.PostgresStudioMapCollaborationStore(
-                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 serviceProvider.GetService<TimeProvider>(),
                 configuration["Database:Schema"]));
         services.AddScoped<IAnalysisContentStore>(serviceProvider =>
             new PostgresAnalysisContentStore(
-                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 configuration["Database:Schema"]));
 
         // Register Postgres-backed content publication registry (#1183). Durable storage
         // wins over the in-memory default registered by AddContentPublishingServices.
         services.AddScoped<Honua.Core.Features.Publishing.Content.Abstractions.IContentPublicationStore>(serviceProvider =>
             new Features.Publishing.PostgresContentPublicationStore(
-                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 configuration["Database:Schema"]));
 
         // Register Postgres-backed RBAC role/permission store (#1374). Durable
@@ -212,19 +212,19 @@ internal static class ServiceCollectionExtensions
         // shared across scaled nodes.
         services.AddScoped<Honua.Core.Features.Authorization.Abstractions.IRoleStore>(serviceProvider =>
             new Features.Authorization.PostgresRoleStore(
-                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 configuration["Database:Schema"]));
 
         // Register layer style catalog for MapLibre/GeoServices styling
         services.AddScoped<ILayerStyleCatalog>(serviceProvider =>
             new PostgresLayerStyleCatalog(
-                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 configuration["Database:Schema"]));
 
         // Register the independent, styleId-keyed style catalog (ADR-0048 Phase 2, #1389)
         services.AddScoped<IStyleCatalog>(serviceProvider =>
             new PostgresStyleCatalog(
-                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 configuration["Database:Schema"]));
 
         // Reconciles Type=Style graph resources + StyleResourceIds with the style catalog
@@ -233,7 +233,7 @@ internal static class ServiceCollectionExtensions
         // Register field profiling service for style suggestions (#400)
         services.AddScoped<IFieldProfilingService>(serviceProvider =>
             new PostgresFieldProfilingService(
-                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 serviceProvider.GetRequiredService<ILogger<PostgresFieldProfilingService>>(),
                 configuration["Database:Schema"]));
 
@@ -298,15 +298,23 @@ internal static class ServiceCollectionExtensions
         // Register enhanced database connection provider with prepared statement caching
         services.AddScoped<IDatabaseConnectionProvider, CachingDatabaseConnectionProvider>();
 
+        // Provider-internal ADO.NET escape hatch (ADR 0046): forwards to whatever
+        // IDatabaseConnectionProvider resolves to at runtime so secure-connection
+        // decoration (UseSecureConnectionProvider) is honoured transparently.
+        services.AddScoped<IAdoNetDatabaseConnectionProvider>(serviceProvider =>
+            (IAdoNetDatabaseConnectionProvider)serviceProvider.GetRequiredService<IDatabaseConnectionProvider>());
+
         // Register the audit-C3 session abstraction alongside the legacy provider.
         // Consumers migrate from IDatabaseConnectionProvider to IDatabaseSessionFactory
         // tranche-by-tranche (see ADR 0046).
-        services.AddScoped<IDatabaseSessionFactory, Features.Infrastructure.Session.PostgresDatabaseSessionFactory>();
+        services.AddScoped<IDatabaseSessionFactory>(serviceProvider =>
+            new Features.Infrastructure.Session.PostgresDatabaseSessionFactory(
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>()));
 
         // Register CRS detection service
         services.AddScoped<ICrsDetectionService>(serviceProvider =>
             new CrsDetectionService(
-                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 serviceProvider.GetRequiredService<ILoggerFactory>().CreateLogger<CrsDetectionService>()));
         services.AddScoped<ICrsRegistry, PostgresCrsRegistry>();
         services.AddScoped<ICoordinateTransformService, PostGisCoordinateTransformService>();
@@ -380,7 +388,7 @@ internal static class ServiceCollectionExtensions
             var cloudStorage = serviceProvider.GetService<Honua.Core.Features.Infrastructure.Abstractions.ICloudFileStorage>();
 
             return new StreamingFileImportService(
-                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 serviceProvider.GetRequiredService<ICrsDetectionService>(),
                 serviceProvider.GetRequiredService<IFileFormatDetectionService>(),
                 performanceMonitor,
@@ -466,7 +474,7 @@ internal static class ServiceCollectionExtensions
         services.RemoveAll<IArcGisMigrationEvidenceStore>();
         services.AddScoped<IArcGisMigrationEvidenceStore>(serviceProvider =>
             new PostgresArcGisMigrationEvidenceStore(
-                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 configuration["Database:Schema"]));
 
         // Register migration performance evidence store (#1033 slice 5). Resolved alongside
@@ -527,7 +535,7 @@ internal static class ServiceCollectionExtensions
             var httpClientFactory = serviceProvider.GetRequiredService<IHttpClientFactory>();
             return new OgcWfsImportService(
                 serviceProvider.GetRequiredService<IOgcServiceMigrationScanner>(),
-                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 httpClientFactory.CreateClient(OgcWfsImportService.HttpClientName),
                 serviceProvider.GetRequiredService<ILogger<OgcWfsImportService>>(),
                 serviceProvider.GetService<PostgresSchemaConfiguration>());

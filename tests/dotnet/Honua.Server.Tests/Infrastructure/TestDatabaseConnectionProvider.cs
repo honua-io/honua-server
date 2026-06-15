@@ -11,7 +11,7 @@ namespace Honua.Server.Tests.Infrastructure;
 /// <summary>
 /// Test implementation of database connection provider for unit tests
 /// </summary>
-internal sealed class TestDatabaseConnectionProvider : IDatabaseConnectionProvider
+internal sealed class TestDatabaseConnectionProvider : IAdoNetDatabaseConnectionProvider
 {
     private readonly NpgsqlDataSource _dataSource;
     private readonly Func<string?> _schemaProvider;

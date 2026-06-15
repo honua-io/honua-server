@@ -14,7 +14,7 @@ namespace Honua.Postgres.Features.FeatureStore.Services;
 /// </summary>
 internal sealed partial class PostgresH3CapabilityChecker : IH3CapabilityChecker
 {
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly ILogger<PostgresH3CapabilityChecker> _logger;
 
     // Static cache so the result survives across scoped instances.
@@ -34,7 +34,7 @@ internal sealed partial class PostgresH3CapabilityChecker : IH3CapabilityChecker
     private static readonly long FailureCacheDurationMs = (long)TimeSpan.FromSeconds(60).TotalMilliseconds;
 
     public PostgresH3CapabilityChecker(
-        IDatabaseConnectionProvider connectionProvider,
+        IAdoNetDatabaseConnectionProvider connectionProvider,
         ILogger<PostgresH3CapabilityChecker> logger)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));

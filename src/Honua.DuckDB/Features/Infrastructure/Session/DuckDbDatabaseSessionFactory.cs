@@ -8,14 +8,14 @@ namespace Honua.DuckDB.Features.Infrastructure.Session;
 
 /// <summary>
 /// DuckDB implementation of <see cref="IDatabaseSessionFactory"/>. Wraps the
-/// existing <see cref="IDatabaseConnectionProvider"/> so the spatial-extension
+/// existing <see cref="IAdoNetDatabaseConnectionProvider"/> so the spatial-extension
 /// bootstrap stays inside one place.
 /// </summary>
 internal sealed class DuckDbDatabaseSessionFactory : IDatabaseSessionFactory
 {
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
 
-    public DuckDbDatabaseSessionFactory(IDatabaseConnectionProvider connectionProvider)
+    public DuckDbDatabaseSessionFactory(IAdoNetDatabaseConnectionProvider connectionProvider)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
     }

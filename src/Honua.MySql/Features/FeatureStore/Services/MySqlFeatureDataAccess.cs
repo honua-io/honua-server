@@ -18,7 +18,7 @@ using Microsoft.Extensions.Logging;
 namespace Honua.MySql.Features.FeatureStore.Services;
 
 /// <summary>
-/// Executes MySQL/MariaDB read queries through <see cref="IDatabaseConnectionProvider"/>
+/// Executes MySQL/MariaDB read queries through <see cref="IAdoNetDatabaseConnectionProvider"/>
 /// and materialises feature, count, and extent results. Edits, statistics, MVT, and
 /// other unsupported paths surface <see cref="NotSupportedException"/> consistent with
 /// the provider capability declaration.
@@ -30,14 +30,14 @@ internal sealed class MySqlFeatureDataAccess : IFeatureDataAccess
     /// </summary>
     public static readonly ActivitySource ActivitySource = new("Honua.MySql.FeatureDataAccess");
 
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly MySqlLayerMappingRegistry _layerRegistry;
     private readonly MySqlEngineFlavor _engineFlavor;
     private readonly IPerformanceMonitor? _performanceMonitor;
     private readonly ILogger<MySqlFeatureDataAccess> _logger;
 
     public MySqlFeatureDataAccess(
-        IDatabaseConnectionProvider connectionProvider,
+        IAdoNetDatabaseConnectionProvider connectionProvider,
         MySqlLayerMappingRegistry layerRegistry,
         IPerformanceMonitor? performanceMonitor,
         ILogger<MySqlFeatureDataAccess> logger,

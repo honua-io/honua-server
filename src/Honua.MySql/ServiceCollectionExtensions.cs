@@ -66,11 +66,16 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<IDatabaseConnectionProvider>(sp =>
             new MySqlConnectionProvider(sp.GetRequiredService<MySqlDataSource>()));
 
+        // Provider-internal ADO.NET escape hatch (ADR 0046): forwards to the
+        // registered provider instance.
+        services.AddScoped<IAdoNetDatabaseConnectionProvider>(sp =>
+            (IAdoNetDatabaseConnectionProvider)sp.GetRequiredService<IDatabaseConnectionProvider>());
+
         // Audit-C3 session abstraction registered alongside the legacy provider
         // during the progressive migration (see ADR 0046).
         services.AddScoped<IDatabaseSessionFactory>(sp =>
             new Features.Infrastructure.Session.MySqlDatabaseSessionFactory(
-                sp.GetRequiredService<IDatabaseConnectionProvider>()));
+                sp.GetRequiredService<IAdoNetDatabaseConnectionProvider>()));
 
         services.AddScoped<IFeatureQueryBuilder>(sp =>
             new MySqlFeatureQueryBuilder(
@@ -79,7 +84,7 @@ internal static class ServiceCollectionExtensions
 
         services.AddScoped<IFeatureDataAccess>(sp =>
             new MySqlFeatureDataAccess(
-                sp.GetRequiredService<IDatabaseConnectionProvider>(),
+                sp.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 sp.GetRequiredService<MySqlLayerMappingRegistry>(),
                 sp.GetService<Core.Features.Infrastructure.Monitoring.IPerformanceMonitor>(),
                 sp.GetRequiredService<ILogger<MySqlFeatureDataAccess>>(),

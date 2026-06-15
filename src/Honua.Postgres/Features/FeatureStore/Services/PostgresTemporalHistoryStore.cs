@@ -17,9 +17,9 @@ namespace Honua.Postgres.Features.FeatureStore.Services;
 /// </summary>
 internal sealed class PostgresTemporalHistoryStore : ITemporalHistoryStore
 {
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
 
-    public PostgresTemporalHistoryStore(IDatabaseConnectionProvider connectionProvider)
+    public PostgresTemporalHistoryStore(IAdoNetDatabaseConnectionProvider connectionProvider)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
     }

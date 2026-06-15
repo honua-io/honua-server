@@ -11,9 +11,9 @@ namespace Honua.Postgres.Features.Alerts;
 
 internal sealed class PostgresAlertChangeReader : IAlertChangeReader
 {
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
 
-    public PostgresAlertChangeReader(IDatabaseConnectionProvider connectionProvider)
+    public PostgresAlertChangeReader(IAdoNetDatabaseConnectionProvider connectionProvider)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
     }

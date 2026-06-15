@@ -17,7 +17,7 @@ namespace Honua.Server.Features.Admin.Services;
 
 internal sealed class LayerValidationService(
     ITableDiscoveryService tableDiscoveryService,
-    IDatabaseConnectionProvider connectionProvider,
+    IAdoNetDatabaseConnectionProvider connectionProvider,
     IFilterExpressionService filterExpressionService,
     IMetadataV2GraphProvider metadataV2GraphProvider) : ILayerValidationService
 {

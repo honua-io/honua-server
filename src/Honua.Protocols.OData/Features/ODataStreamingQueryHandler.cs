@@ -548,6 +548,9 @@ internal sealed partial class ODataStreamingQueryHandler(
             HonuaTelemetry.RecordException(featureActivity, ex);
             if (context.Response.HasStarted)
             {
+                // Response streaming has already started; abort the connection so HTTP/1.1
+                // chunked framing terminates abnormally and clients detect truncation.
+                context.Abort();
                 return Results.Empty;
             }
 
@@ -559,6 +562,9 @@ internal sealed partial class ODataStreamingQueryHandler(
             HonuaTelemetry.RecordException(featureActivity, ex);
             if (context.Response.HasStarted)
             {
+                // Response streaming has already started; abort the connection so HTTP/1.1
+                // chunked framing terminates abnormally and clients detect truncation.
+                context.Abort();
                 return Results.Empty;
             }
 
@@ -608,15 +614,16 @@ internal sealed partial class ODataStreamingQueryHandler(
         // Start OData response
         writer.WriteStartObject();
 
-        if (count == true && totalCount.HasValue)
-        {
-            writer.WriteNumber("@odata.count", totalCount.Value);
-        }
-
+        // OData JSON Format v4.01 §4.5.1: @odata.context MUST be the first property.
         var baseUrl = ODataUtilityService.GetBaseUrl(context.Request);
         if (includeContext)
         {
             writer.WriteString("@odata.context", ODataUtilityService.BuildContextUrl(baseUrl, "Features", select: select, expand: expand));
+        }
+
+        if (count == true && totalCount.HasValue)
+        {
+            writer.WriteNumber("@odata.count", totalCount.Value);
         }
 
         // Start value array

@@ -47,14 +47,14 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
     private const int MaxPagesPerFeatureType = 10_000;
 
     private readonly IOgcServiceMigrationScanner _scanner;
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly HttpClient _httpClient;
     private readonly PostgresSchemaConfiguration _schemaConfiguration;
     private readonly ILogger<OgcWfsImportService> _logger;
 
     public OgcWfsImportService(
         IOgcServiceMigrationScanner scanner,
-        IDatabaseConnectionProvider connectionProvider,
+        IAdoNetDatabaseConnectionProvider connectionProvider,
         HttpClient httpClient,
         ILogger<OgcWfsImportService> logger,
         PostgresSchemaConfiguration? schemaConfiguration = null)

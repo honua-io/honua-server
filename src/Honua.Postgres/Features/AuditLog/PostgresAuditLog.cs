@@ -30,12 +30,12 @@ internal sealed class PostgresAuditLog : IAuditLog
     private const int MaxUserAgentLength = 512;
     private const string TruncationMarker = "…";
 
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly ILogger<PostgresAuditLog> _logger;
     private readonly string _table;
 
     public PostgresAuditLog(
-        IDatabaseConnectionProvider connectionProvider,
+        IAdoNetDatabaseConnectionProvider connectionProvider,
         ILogger<PostgresAuditLog> logger,
         string? schemaName = null)
     {

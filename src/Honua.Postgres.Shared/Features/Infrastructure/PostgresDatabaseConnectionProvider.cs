@@ -33,7 +33,7 @@ internal sealed class PostgresDatabaseConnectionProvider(
     NpgsqlDataSource dataSource,
     ILogger<PostgresDatabaseConnectionProvider> logger,
     ISchemaContext? schemaContext = null,
-    IActiveDbConnectionTracker? activeDbConnectionTracker = null) : IDatabaseConnectionProvider
+    IActiveDbConnectionTracker? activeDbConnectionTracker = null) : IAdoNetDatabaseConnectionProvider
 {
     // ActivitySource for tracing connection operations (same name as HonuaTelemetry for correlation)
     private static readonly ActivitySource _activitySource = new("Honua", "1.0.0");

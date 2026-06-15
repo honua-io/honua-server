@@ -258,7 +258,7 @@ public sealed class GeoservicesImportDomainPersistenceTests(PostgresFixture fixt
         }
     }
 
-    private sealed class FixtureConnectionProvider(PostgresFixture postgresFixture) : IDatabaseConnectionProvider
+    private sealed class FixtureConnectionProvider(PostgresFixture postgresFixture) : IAdoNetDatabaseConnectionProvider
     {
         // The publishing service opens a raw connection from this string and references
         // the shared 'features' table unqualified; route the search path to the 'honua'

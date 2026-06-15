@@ -22,10 +22,10 @@ internal sealed class PostgresAuditLogReader : IAuditLogReader
     internal const int MaxPageSize = 200;
     internal const int DefaultPageSize = 50;
 
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly string _table;
 
-    public PostgresAuditLogReader(IDatabaseConnectionProvider connectionProvider, string? schemaName = null)
+    public PostgresAuditLogReader(IAdoNetDatabaseConnectionProvider connectionProvider, string? schemaName = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _table = SchemaSearchPath.QualifyTable("audit_log", schemaName);

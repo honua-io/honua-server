@@ -11,16 +11,16 @@ namespace Honua.MySql.Features.HealthCheck;
 /// MySQL/MariaDB implementation of <see cref="IDatabaseHealthChecker"/>.
 /// </summary>
 /// <remarks>
-/// The provider routes connections through the shared <see cref="IDatabaseConnectionProvider"/>
+/// The provider routes connections through the shared <see cref="IAdoNetDatabaseConnectionProvider"/>
 /// so the readiness probe exercises the same pooled <c>MySqlDataSource</c> the feature store uses.
 /// Mirrors the Postgres implementation: cheap <c>SELECT 1</c> with a 5s command timeout.
 /// </remarks>
 internal sealed partial class MySqlDatabaseHealthChecker(
-    IDatabaseConnectionProvider connectionProvider,
+    IAdoNetDatabaseConnectionProvider connectionProvider,
     ILogger<MySqlDatabaseHealthChecker> logger)
     : IDatabaseHealthChecker
 {
-    private readonly IDatabaseConnectionProvider _connectionProvider =
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider =
         connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
 
     private readonly ILogger<MySqlDatabaseHealthChecker> _logger =
