@@ -117,6 +117,30 @@ internal static class ImportExportTileOperationsRegistration
         services.AddHostedService<TileCacheWarmingHostedService>();
         services.AddHostedService<TileOperationBackgroundService>();
 
+        // Batch-dispatched tile-cache / PMTiles execution jobs (issue #1697).
+        // The worker-side executor is registered unconditionally so any worker host
+        // can claim ExecutionJobKind.TileCache jobs; it is only invoked when the
+        // execution-job substrate routes a tile-cache job to it. The submission
+        // service and its config are bound here too — the admin endpoint consults
+        // ITileCacheJobService only when TileOperations:Batch:Enabled is set,
+        // keeping the in-process channel as the zero-config default.
+        services.Configure<TileCacheBatchOptions>(
+            configuration.GetSection(TileCacheBatchOptions.SectionName));
+        services.TryAddEnumerable(
+            Microsoft.Extensions.DependencyInjection.ServiceDescriptor.Singleton<
+                Honua.Core.Features.ControlPlane.Abstractions.IJobExecutor,
+                TileCacheJobExecutor>());
+
+        // The submission service depends on the durable execution-job store/queue,
+        // which are only present when Redis is configured (mirrors AddGeoprocessing).
+        // Gating registration on Redis keeps GetService<ITileCacheJobService>() from
+        // throwing on a missing dependency in stores-less dev/test profiles; in those
+        // profiles the admin endpoint simply uses the in-process channel path.
+        if (services.Any(d => d.ServiceType == typeof(IConnectionMultiplexer)))
+        {
+            services.TryAddSingleton<ITileCacheJobService, TileCacheJobService>();
+        }
+
         return services;
     }
 }
