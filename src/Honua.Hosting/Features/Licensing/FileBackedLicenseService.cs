@@ -216,6 +216,34 @@ internal sealed class FileBackedLicenseService :
     private async Task LoadConfiguredLicenseAsync(CancellationToken cancellationToken)
     {
         var options = _options.Value;
+
+        // Inline content takes precedence over a file path so the license can be
+        // delivered on a read-only/serverless filesystem (e.g. AWS Lambda), typically
+        // via a Licensing:LicenseContent=aws:secretsmanager:<arn> secret reference.
+        if (!string.IsNullOrWhiteSpace(options.LicenseContent))
+        {
+            try
+            {
+                var inlineData = System.Text.Encoding.UTF8.GetBytes(options.LicenseContent);
+                var inlineResult = ValidateLicenseData(inlineData, options);
+                PublishSnapshot(inlineResult.Snapshot);
+                LogValidationResult(inlineResult);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                var snapshot = CreateCommunitySnapshot(
+                    LicenseValidationState.Malformed,
+                    isValid: false,
+                    NextSnapshotVersion(),
+                    payload: null,
+                    keyId: null);
+                PublishSnapshot(snapshot);
+                LicenseRuntimeLog.LicenseMalformed(_logger, ex.GetType().Name);
+            }
+
+            return;
+        }
+
         if (string.IsNullOrWhiteSpace(options.LicensePath))
         {
             PublishCommunity(LicenseValidationState.NoLicenseConfigured, isValid: true, payload: null, keyId: null);
