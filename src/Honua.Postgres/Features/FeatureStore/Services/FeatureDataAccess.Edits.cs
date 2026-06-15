@@ -14,6 +14,22 @@ using NpgsqlTypes;
 
 namespace Honua.Postgres.Features.FeatureStore.Services;
 
+/// <summary>
+/// Internal signal that a <see cref="FeatureEditPrecondition"/> attached to an edit batch
+/// no longer matched the stored row when re-validated inside the write transaction. The
+/// edit paths translate this into <see cref="EditOperationResult.PreconditionFailed"/>.
+/// </summary>
+internal sealed class FeatureEditPreconditionFailedException : Exception
+{
+    public FeatureEditPreconditionFailedException(long objectId)
+        : base($"Precondition failed for feature {objectId}: the stored row was modified by another writer.")
+    {
+        ObjectId = objectId;
+    }
+
+    public long ObjectId { get; }
+}
+
 internal sealed partial class FeatureDataAccess
 {
     public async Task<Feature> CreateFeatureAsync(int layerId, Feature feature, CancellationToken cancellationToken)
@@ -203,6 +219,8 @@ internal sealed partial class FeatureDataAccess
         var connection = dbConnection.RequireNpgsqlConnection();
         await using var __ = transaction;
 
+        var preconditions = BuildPreconditionMap(editBatch);
+
         try
         {
             if (!editBatch.Operations.IsDefaultOrEmpty)
@@ -212,6 +230,7 @@ internal sealed partial class FeatureDataAccess
                     editBatch,
                     connection,
                     transaction,
+                    preconditions,
                     cancellationToken).ConfigureAwait(false);
             }
 
@@ -227,6 +246,7 @@ internal sealed partial class FeatureDataAccess
                 editBatch.Updates,
                 connection,
                 transaction,
+                preconditions,
                 cancellationToken);
 
             var (deletedCount, deleteResults) = await ProcessDeletesWithResultsAsync(
@@ -234,6 +254,7 @@ internal sealed partial class FeatureDataAccess
                 editBatch.Deletes,
                 connection,
                 transaction,
+                preconditions,
                 cancellationToken);
 
             var hasErrors = System.Linq.Enumerable.Any(createResults, r => !r.IsSuccess) ||
@@ -308,11 +329,83 @@ internal sealed partial class FeatureDataAccess
         }
     }
 
+    /// <summary>
+    /// Builds an object-id keyed lookup of expected state tokens from the batch's
+    /// preconditions. Returns null when the batch carries no preconditions so the hot
+    /// path stays allocation-free.
+    /// </summary>
+    private static Dictionary<long, string>? BuildPreconditionMap(FeatureEditBatch editBatch)
+    {
+        if (editBatch.Preconditions.IsDefaultOrEmpty)
+        {
+            return null;
+        }
+
+        var map = new Dictionary<long, string>(editBatch.Preconditions.Length);
+        foreach (var precondition in editBatch.Preconditions)
+        {
+            if (!string.IsNullOrEmpty(precondition.ExpectedStateToken))
+            {
+                map[precondition.ObjectId] = precondition.ExpectedStateToken;
+            }
+        }
+
+        return map.Count == 0 ? null : map;
+    }
+
+    /// <summary>
+    /// Re-validates an optimistic-concurrency precondition inside the active write
+    /// transaction. Locks the target row with SELECT ... FOR UPDATE (so a concurrent
+    /// writer cannot modify it between this check and the subsequent UPDATE/DELETE),
+    /// recomputes the canonical <see cref="FeatureStateToken"/> from the locked row, and
+    /// throws when the stored state no longer matches the caller's snapshot token.
+    /// </summary>
+    /// <exception cref="ResourceNotFoundException">The row no longer exists.</exception>
+    /// <exception cref="FeatureEditPreconditionFailedException">The stored row state changed since the caller's snapshot.</exception>
+    private async Task EnsurePreconditionSatisfiedAsync(
+        int layerId,
+        long objectId,
+        string expectedStateToken,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
+        var geometrySelect = _geometryProcessor.GetGeometrySelectExpression(geometryStorageType, new FeatureQuery());
+        var sql = $@"
+            SELECT objectid, {geometrySelect}, attributes
+            FROM {_tableName}
+            WHERE layer_id = $1 AND objectid = $2
+            FOR UPDATE";
+
+        Feature current;
+        await using (var command = new NpgsqlCommand(sql, connection) { Transaction = transaction })
+        {
+            ApplyCommandTimeout(command, _queryTimeoutSeconds);
+            command.Parameters.AddWithValue(layerId);
+            command.Parameters.AddWithValue(objectId);
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                throw new ResourceNotFoundException($"Feature with ID {objectId} not found in layer {layerId}");
+            }
+
+            current = await ReadFeatureAsync(reader, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (!string.Equals(FeatureStateToken.Compute(current), expectedStateToken, StringComparison.Ordinal))
+        {
+            throw new FeatureEditPreconditionFailedException(objectId);
+        }
+    }
+
     private async Task<FeatureEditResult> ApplyOrderedEditsAsync(
         int layerId,
         FeatureEditBatch editBatch,
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
+        Dictionary<long, string>? preconditions,
         CancellationToken cancellationToken)
     {
         var createdIds = ImmutableArray.CreateBuilder<long>();
@@ -329,6 +422,7 @@ internal sealed partial class FeatureDataAccess
                 operation,
                 connection,
                 transaction,
+                preconditions,
                 createdIds,
                 createResults,
                 updateResults,
@@ -375,6 +469,7 @@ internal sealed partial class FeatureDataAccess
         FeatureEditOperation operation,
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
+        Dictionary<long, string>? preconditions,
         ImmutableArray<long>.Builder createdIds,
         ImmutableArray<EditOperationResult>.Builder createResults,
         ImmutableArray<EditOperationResult>.Builder updateResults,
@@ -423,6 +518,9 @@ internal sealed partial class FeatureDataAccess
                     var feature = operation.Feature
                         ?? throw new InvalidOperationException("Ordered update operation is missing the feature payload.");
 
+                    string? expectedStateToken = null;
+                    preconditions?.TryGetValue(feature.Id, out expectedStateToken);
+
                     FeatureMutationOutboxScope.Current?.BeginRowAttempt?.Invoke("update");
                     try
                     {
@@ -431,15 +529,27 @@ internal sealed partial class FeatureDataAccess
                             transaction,
                             async (conn, tx, ct) =>
                             {
+                                if (expectedStateToken is not null)
+                                {
+                                    // requireTransaction guarantees tx is non-null here.
+                                    await EnsurePreconditionSatisfiedAsync(layerId, feature.Id, expectedStateToken, conn, tx!, ct).ConfigureAwait(false);
+                                }
+
                                 var u = await UpdateWithConnectionAsync(layerId, feature, conn, tx, ct).ConfigureAwait(false);
                                 await TryWriteOutboxRowForBatchAsync(conn, tx, u.Id, "update", u, ct).ConfigureAwait(false);
                                 return u;
                             },
-                            cancellationToken).ConfigureAwait(false);
+                            cancellationToken,
+                            requireTransaction: expectedStateToken is not null).ConfigureAwait(false);
                         updateResults.Add(EditOperationResult.Success(
                             updated.Id,
                             feature.Attributes.GetValueOrDefault("globalId")?.ToString()));
                         return true;
+                    }
+                    catch (FeatureEditPreconditionFailedException)
+                    {
+                        updateResults.Add(EditOperationResult.PreconditionFailed(feature.Id));
+                        return false;
                     }
                     catch (Exception ex)
                     {
@@ -455,6 +565,9 @@ internal sealed partial class FeatureDataAccess
                     var objectId = operation.ObjectId
                         ?? throw new InvalidOperationException("Ordered delete operation is missing the target object ID.");
 
+                    string? expectedStateToken = null;
+                    preconditions?.TryGetValue(objectId, out expectedStateToken);
+
                     FeatureMutationOutboxScope.Current?.BeginRowAttempt?.Invoke("delete");
                     try
                     {
@@ -463,6 +576,12 @@ internal sealed partial class FeatureDataAccess
                             transaction,
                             async (conn, tx, ct) =>
                             {
+                                if (expectedStateToken is not null)
+                                {
+                                    // requireTransaction guarantees tx is non-null here.
+                                    await EnsurePreconditionSatisfiedAsync(layerId, objectId, expectedStateToken, conn, tx!, ct).ConfigureAwait(false);
+                                }
+
                                 var d = await DeleteWithConnectionAsync(layerId, objectId, conn, tx, ct).ConfigureAwait(false);
                                 if (d.Deleted)
                                 {
@@ -470,7 +589,8 @@ internal sealed partial class FeatureDataAccess
                                 }
                                 return d;
                             },
-                            cancellationToken).ConfigureAwait(false);
+                            cancellationToken,
+                            requireTransaction: expectedStateToken is not null).ConfigureAwait(false);
                         if (deleted.Deleted)
                         {
                             deleteResults.Add(EditOperationResult.Success(objectId));
@@ -478,6 +598,11 @@ internal sealed partial class FeatureDataAccess
                         }
 
                         deleteResults.Add(EditOperationResult.Failure($"Feature {objectId} not found", objectId: objectId));
+                        return false;
+                    }
+                    catch (FeatureEditPreconditionFailedException)
+                    {
+                        deleteResults.Add(EditOperationResult.PreconditionFailed(objectId));
                         return false;
                     }
                     catch (Exception ex)
@@ -979,6 +1104,7 @@ internal sealed partial class FeatureDataAccess
         ImmutableArray<Feature> features,
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
+        Dictionary<long, string>? preconditions,
         CancellationToken cancellationToken)
     {
         if (features.Length == 0)
@@ -991,6 +1117,9 @@ internal sealed partial class FeatureDataAccess
 
         foreach (var feature in features)
         {
+            string? expectedStateToken = null;
+            preconditions?.TryGetValue(feature.Id, out expectedStateToken);
+
             // Advance per-operation outbox metadata once per attempt; failed updates must
             // consume their queued slot so the next successful update gets its own
             // GeometryChanged / requestId rather than the failed row's.
@@ -1002,13 +1131,24 @@ internal sealed partial class FeatureDataAccess
                     transaction,
                     async (conn, tx, ct) =>
                     {
+                        if (expectedStateToken is not null)
+                        {
+                            // requireTransaction guarantees tx is non-null here.
+                            await EnsurePreconditionSatisfiedAsync(layerId, feature.Id, expectedStateToken, conn, tx!, ct).ConfigureAwait(false);
+                        }
+
                         var u = await UpdateWithConnectionAsync(layerId, feature, conn, tx, ct).ConfigureAwait(false);
                         await TryWriteOutboxRowForBatchAsync(conn, tx, u.Id, "update", u, ct).ConfigureAwait(false);
                         return u;
                     },
-                    cancellationToken).ConfigureAwait(false);
+                    cancellationToken,
+                    requireTransaction: expectedStateToken is not null).ConfigureAwait(false);
                 updatedCount++;
                 results.Add(EditOperationResult.Success(updated.Id, feature.Attributes.GetValueOrDefault("globalId")?.ToString()));
+            }
+            catch (FeatureEditPreconditionFailedException)
+            {
+                results.Add(EditOperationResult.PreconditionFailed(feature.Id));
             }
             catch (Exception ex)
             {
@@ -1024,6 +1164,7 @@ internal sealed partial class FeatureDataAccess
         ImmutableArray<long> featureIds,
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
+        Dictionary<long, string>? preconditions,
         CancellationToken cancellationToken)
     {
         if (featureIds.Length == 0)
@@ -1036,6 +1177,9 @@ internal sealed partial class FeatureDataAccess
 
         foreach (var featureId in featureIds)
         {
+            string? expectedStateToken = null;
+            preconditions?.TryGetValue(featureId, out expectedStateToken);
+
             // Advance per-operation outbox metadata once per attempt; rows that throw or
             // miss the snapshot (no RETURNING) must consume their slot so the next
             // successful delete gets its own queued requestId.
@@ -1047,6 +1191,12 @@ internal sealed partial class FeatureDataAccess
                     transaction,
                     async (conn, tx, ct) =>
                     {
+                        if (expectedStateToken is not null)
+                        {
+                            // requireTransaction guarantees tx is non-null here.
+                            await EnsurePreconditionSatisfiedAsync(layerId, featureId, expectedStateToken, conn, tx!, ct).ConfigureAwait(false);
+                        }
+
                         var d = await DeleteWithConnectionAsync(layerId, featureId, conn, tx, ct).ConfigureAwait(false);
                         if (d.Deleted)
                         {
@@ -1054,7 +1204,8 @@ internal sealed partial class FeatureDataAccess
                         }
                         return d;
                     },
-                    cancellationToken).ConfigureAwait(false);
+                    cancellationToken,
+                    requireTransaction: expectedStateToken is not null).ConfigureAwait(false);
                 if (deleted.Deleted)
                 {
                     deletedCount++;
@@ -1064,6 +1215,10 @@ internal sealed partial class FeatureDataAccess
                 {
                     results.Add(EditOperationResult.Failure($"Feature {featureId} not found", objectId: featureId));
                 }
+            }
+            catch (FeatureEditPreconditionFailedException)
+            {
+                results.Add(EditOperationResult.PreconditionFailed(featureId));
             }
             catch (Exception ex)
             {
@@ -1130,14 +1285,19 @@ internal sealed partial class FeatureDataAccess
     /// the connection so the autocommit fast path is preserved. Per-row failures bubble up to
     /// the caller's try/catch and are recorded as edit operation failures while preserving
     /// partial-success semantics.
+    /// Callers enforcing an optimistic-concurrency precondition pass
+    /// <paramref name="requireTransaction"/> so the SELECT ... FOR UPDATE re-validation and
+    /// the row mutation always share a transaction even on the otherwise-autocommit path;
+    /// the row lock would be released immediately without one.
     /// </summary>
     private async Task<TResult> RunRowMutationAtomicallyAsync<TResult>(
         NpgsqlConnection connection,
         NpgsqlTransaction? batchTransaction,
         Func<NpgsqlConnection, NpgsqlTransaction?, CancellationToken, Task<TResult>> mutateAndAppendOutbox,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool requireTransaction = false)
     {
-        if (batchTransaction is not null || !TryUseTransactionalOutbox(out _))
+        if (batchTransaction is not null || (!requireTransaction && !TryUseTransactionalOutbox(out _)))
         {
             return await mutateAndAppendOutbox(connection, batchTransaction, cancellationToken).ConfigureAwait(false);
         }
@@ -1153,6 +1313,7 @@ internal sealed partial class FeatureDataAccess
         return ex switch
         {
             ResourceNotFoundException => "Feature not found.",
+            FeatureEditPreconditionFailedException => "The feature was modified by another writer; the supplied precondition no longer matches.",
             ResourceConflictException => "The operation conflicted with existing data.",
             ValidationException => "Invalid feature data.",
             ArgumentException or InvalidOperationException => "Invalid feature data.",

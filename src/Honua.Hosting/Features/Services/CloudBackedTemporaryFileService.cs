@@ -515,8 +515,19 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
     {
         try
         {
-            cloudObjectKey = Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(publicToken));
-            return !string.IsNullOrWhiteSpace(cloudObjectKey);
+            var decoded = Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(publicToken));
+            // Require that the decoded key is scoped to the temporary-file folder.
+            // Without this check a caller could craft a token for an arbitrary object
+            // key in the storage container and read it via the public /temp/{fileId} endpoint.
+            if (string.IsNullOrWhiteSpace(decoded) ||
+                !decoded.StartsWith(TemporaryFolder + "/", StringComparison.Ordinal))
+            {
+                cloudObjectKey = null;
+                return false;
+            }
+
+            cloudObjectKey = decoded;
+            return true;
         }
         catch (FormatException)
         {

@@ -143,8 +143,24 @@ internal sealed partial class AzureBatchComputeBackend(
         cancellationToken.ThrowIfCancellationRequested();
 
         var parameters = job.Spec.Parameters;
-        var accountUrl = RequireParameter(parameters, ParamAccountUrl);
         var providerJobId = job.ProviderOperationId ?? BuildJobId(job.OperationId);
+
+        // A missing account URL is adapter-surface misconfiguration, not a transient fault: return
+        // a terminal Failed observation (mirroring the Kubernetes backend's classification) so the
+        // reconciler can finalize the job instead of an InvalidOperationException faulting every
+        // reconcile poll and leaving the record non-terminal forever.
+        if (GetParameter(parameters, ParamAccountUrl) is not { } accountUrl)
+        {
+            var missingParameterError = MissingParameterMessage(ParamAccountUrl);
+            Log.JobObservationFailed(logger, job.OperationId, providerJobId, missingParameterError);
+            return new BatchComputeObservation
+            {
+                Status = ExecutionJobStatus.Failed,
+                ProviderOperationId = providerJobId,
+                PercentComplete = 100,
+                Message = missingParameterError
+            };
+        }
 
         try
         {
@@ -172,8 +188,22 @@ internal sealed partial class AzureBatchComputeBackend(
         cancellationToken.ThrowIfCancellationRequested();
 
         var parameters = job.Spec.Parameters;
-        var accountUrl = RequireParameter(parameters, ParamAccountUrl);
         var providerJobId = job.ProviderOperationId ?? BuildJobId(job.OperationId);
+
+        // Terminal misconfiguration: there is no reachable provider job to terminate or drain, so
+        // finalize the cancellation instead of throwing out of the cancellation path.
+        if (GetParameter(parameters, ParamAccountUrl) is not { } accountUrl)
+        {
+            var missingParameterError = MissingParameterMessage(ParamAccountUrl);
+            Log.JobCancellationFailed(logger, job.OperationId, providerJobId, missingParameterError);
+            return new BatchComputeObservation
+            {
+                Status = ExecutionJobStatus.Cancelled,
+                ProviderOperationId = providerJobId,
+                PercentComplete = 100,
+                Message = missingParameterError
+            };
+        }
 
         try
         {
@@ -479,12 +509,14 @@ internal sealed partial class AzureBatchComputeBackend(
         var value = GetParameter(parameters, key);
         if (string.IsNullOrEmpty(value))
         {
-            throw new InvalidOperationException(
-                $"Azure Batch execution workload is missing required parameter '{key}'.");
+            throw new InvalidOperationException(MissingParameterMessage(key));
         }
 
         return value;
     }
+
+    private static string MissingParameterMessage(string key)
+        => $"Azure Batch execution workload is missing required parameter '{key}'.";
 
     private static int ParseIntOrDefault(IReadOnlyDictionary<string, string> parameters, string key, int defaultValue)
     {

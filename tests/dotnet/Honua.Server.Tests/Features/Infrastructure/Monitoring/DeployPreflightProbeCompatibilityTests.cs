@@ -8,6 +8,7 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Server.Features.HealthCheck;
 using Honua.Infrastructure.Monitoring;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 
@@ -40,7 +41,8 @@ public sealed class DeployPreflightProbeCompatibilityTests
             new StubReadinessCheckService(),
             new StubMigrationRunner(),
             migrationState,
-            compatibilityState);
+            compatibilityState,
+            NullLogger<DeployPreflightProbe>.Instance);
 
         var snapshot = await probe.ProbeAsync();
 
@@ -77,7 +79,8 @@ public sealed class DeployPreflightProbeCompatibilityTests
             new StubReadinessCheckService(),
             new StubMigrationRunner(),
             migrationState,
-            compatibilityState);
+            compatibilityState,
+            NullLogger<DeployPreflightProbe>.Instance);
 
         var snapshot = await probe.ProbeAsync();
 
@@ -109,7 +112,8 @@ public sealed class DeployPreflightProbeCompatibilityTests
             new StubReadinessCheckService(),
             new StubMigrationRunner(),
             migrationState,
-            compatibilityState);
+            compatibilityState,
+            NullLogger<DeployPreflightProbe>.Instance);
 
         var snapshot = await probe.ProbeAsync();
 

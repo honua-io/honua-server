@@ -58,4 +58,10 @@ internal static partial class OgcStylesLog
         Level = LogLevel.Information,
         Message = "OGC Style '{StyleId}' deleted")]
     public static partial void StyleDeleted(ILogger logger, string styleId);
+
+    [LoggerMessage(
+        EventId = 5958,
+        Level = LogLevel.Warning,
+        Message = "Failed to evict the 'ogc-styles' output cache after a style mutation; cached styles responses may be stale until the TTL expires")]
+    public static partial void StylesCacheEvictionFailed(ILogger logger, Exception exception);
 }

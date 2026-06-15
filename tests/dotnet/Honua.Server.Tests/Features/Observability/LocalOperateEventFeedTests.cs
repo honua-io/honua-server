@@ -759,6 +759,14 @@ public sealed class LocalOperateEventFeedTests
         public Task SetProgressAsync(string operationId, IOperationProgress progress, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
+        public Task<ProgressCompareAndSetResult> TrySetProgressAsync(
+            string operationId,
+            IOperationProgress progress,
+            OperationStatus expectedStatus,
+            TimeSpan? ttl = null,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
         public Task DeleteProgressAsync(string operationId, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 

@@ -18,6 +18,12 @@ internal static partial class OracleFeatureLog
     public static partial void QueryPrepared(ILogger logger, int parameterCount);
 
     [LoggerMessage(
+        EventId = 7104,
+        Level = LogLevel.Error,
+        Message = "Oracle feature {Operation} query failed for layer {LayerId}.")]
+    public static partial void QueryFailed(ILogger logger, string operation, int layerId, Exception exception);
+
+    [LoggerMessage(
         EventId = 7101,
         Level = LogLevel.Warning,
         Message = "Oracle feature provider rejected unsupported operation '{Operation}' for layer {LayerId}.")]

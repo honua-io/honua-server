@@ -34,6 +34,10 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
     private const string HealthCheckKey = "__health_check__";
     private const string CacheKeyIndexKey = "__cache_key_index__";
     private const int MaxKeyLocks = 1000;
+    // Maximum number of invalidation keys buffered during a Redis outage.  When the
+    // limit is reached, older entries are dropped (FIFO) to bound memory growth; the
+    // worst case is that a small number of stale keys survive in Redis until their TTL.
+    private const int MaxPendingInvalidationKeys = 500;
     private static readonly TimeSpan CacheKeyIndexTtl = TimeSpan.FromDays(30);
     private readonly IDistributedCache? _distributedCache;
     private readonly IConnectionMultiplexer? _redis;
@@ -46,6 +50,10 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _keyLocks = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, CacheWriteInfo> _writeMetadata = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim _distributedIndexLock = new(1, 1);
+    // Bounded set of invalidation keys that failed to reach Redis during an outage and
+    // must be replayed when the connection is restored.
+    private readonly ConcurrentQueue<string> _pendingInvalidationKeys = new();
+    private int _pendingInvalidationKeyCount;
     private readonly Timer _cleanupTimer;
     private readonly string _distributedCacheKeyPrefix;
     private volatile bool _isUsingFallback;
@@ -356,7 +364,17 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
                 catch (Exception ex)
                 {
                     HandleRedisFailure(ex);
+                    // Queue the key so it is deleted from Redis when the connection is
+                    // restored; otherwise the stale Redis entry would be served until TTL.
+                    EnqueuePendingInvalidation(prefixedKey);
+                    RedisCacheServiceLog.InvalidationQueuedForReplay(_logger, GetCacheKeyFamily(key));
                 }
+            }
+            else
+            {
+                // In fallback mode: queue for replay so the key is removed from Redis
+                // once the connection is restored and before _isUsingFallback is cleared.
+                EnqueuePendingInvalidation(prefixedKey);
             }
         }
 
@@ -522,7 +540,26 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         }
         else
         {
-            // Failed to acquire distributed lock, fallback to local lock
+            // The distributed lock is already held by another node (or this node in a
+            // concurrent request). Wait for the lock holder to populate the cache by
+            // polling with short back-off, then use a local lock for same-node
+            // deduplication.  Calling the factory immediately would defeat the
+            // stampede protection and issue duplicate expensive DB/catalog queries.
+            const int MaxRetryMs = 3000;
+            const int RetryIntervalMs = 50;
+            var retryDeadline = DateTime.UtcNow.AddMilliseconds(MaxRetryMs);
+
+            while (!_isUsingFallback && _redis != null && DateTime.UtcNow < retryDeadline)
+            {
+                await Task.Delay(RetryIntervalMs, cancellationToken).ConfigureAwait(false);
+
+                cached = await GetAsync<T>(key, cancellationToken).ConfigureAwait(false);
+                if (cached != null)
+                    return cached;
+            }
+
+            // Distributed lock TTL has likely elapsed or we are in fallback mode;
+            // serialize same-node callers with a local lock before calling the factory.
             await using var keyLock = await AcquireKeyLockAsync(GetPrefixedKey(key), cancellationToken).ConfigureAwait(false);
 
             // Re-check cache after acquiring local lock
@@ -771,6 +808,12 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
             await _redisGetPolicy.ExecuteAsync(
                 ct => _distributedCache.GetAsync(HealthCheckKey, ct),
                 cancellationToken).ConfigureAwait(false);
+
+            // Replay any invalidation keys that failed to reach Redis during the outage
+            // BEFORE clearing the fallback cache and marking Redis as live.  This ensures
+            // stale entries are removed from Redis before we start serving from it again.
+            await ReplayPendingInvalidationsAsync(cancellationToken).ConfigureAwait(false);
+
             if (_isUsingFallback)
             {
                 _fallbackCache.Clear();
@@ -785,6 +828,63 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         {
             Volatile.Write(ref _lastRedisFailureTicks, DateTime.UtcNow.Ticks);
             return false;
+        }
+    }
+
+    private void EnqueuePendingInvalidation(string prefixedKey)
+    {
+        // Bounded FIFO queue: when full, drop the oldest entry to make room.
+        // The dropped entry may remain stale in Redis until its TTL expires.
+        if (Interlocked.Increment(ref _pendingInvalidationKeyCount) > MaxPendingInvalidationKeys)
+        {
+            if (_pendingInvalidationKeys.TryDequeue(out _))
+            {
+                Interlocked.Decrement(ref _pendingInvalidationKeyCount);
+            }
+        }
+
+        _pendingInvalidationKeys.Enqueue(prefixedKey);
+    }
+
+    private async Task ReplayPendingInvalidationsAsync(CancellationToken cancellationToken)
+    {
+        if (_pendingInvalidationKeys.IsEmpty)
+        {
+            return;
+        }
+
+        var replayed = 0;
+        while (_pendingInvalidationKeys.TryDequeue(out var prefixedKey))
+        {
+            Interlocked.Decrement(ref _pendingInvalidationKeyCount);
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                if (_redis != null)
+                {
+                    await RemoveRedisEntryWithIndexAsync(prefixedKey, cancellationToken).ConfigureAwait(false);
+                }
+                else if (_distributedCache != null)
+                {
+                    await _distributedCache.RemoveAsync(prefixedKey, cancellationToken).ConfigureAwait(false);
+                    await RemoveIndexedKeyAsync(prefixedKey, cancellationToken).ConfigureAwait(false);
+                }
+
+                replayed++;
+            }
+            catch (Exception ex)
+            {
+                // If the replay itself fails, re-queue and abort so TryRestoreRedisAsync
+                // keeps _isUsingFallback=true and retries on the next cycle.
+                EnqueuePendingInvalidation(prefixedKey);
+                RedisCacheServiceLog.InvalidationReplayFailed(_logger, GetCacheKeyFamily(prefixedKey), ex);
+                throw;
+            }
+        }
+
+        if (replayed > 0)
+        {
+            RedisCacheServiceLog.InvalidationReplayCompleted(_logger, replayed);
         }
     }
 
@@ -1396,5 +1496,14 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
 
         [LoggerMessage(1007, LogLevel.Warning, "Failed to serialize cache entry {KeyFamily} {KeyHash}")]
         public static partial void CacheEntrySerializationFailed(ILogger logger, string keyFamily, string keyHash, Exception exception);
+
+        [LoggerMessage(1008, LogLevel.Warning, "Cache invalidation queued for replay after Redis reconnect: {KeyFamily}")]
+        public static partial void InvalidationQueuedForReplay(ILogger logger, string keyFamily);
+
+        [LoggerMessage(1009, LogLevel.Warning, "Failed to replay queued cache invalidation {KeyFamily}")]
+        public static partial void InvalidationReplayFailed(ILogger logger, string keyFamily, Exception exception);
+
+        [LoggerMessage(1010, LogLevel.Information, "Replayed {Count} queued cache invalidation(s) after Redis reconnect")]
+        public static partial void InvalidationReplayCompleted(ILogger logger, int count);
     }
 }

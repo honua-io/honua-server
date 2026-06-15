@@ -22,6 +22,15 @@ public sealed class ContentPublicationService : IContentPublicationService
     private const int VersionPageSize = 100;
     private const string RoutePathPrefix = "/api/v1/published/";
 
+    // Client-supplied public-link tokens act as a bearer credential; a short token is
+    // trivially brute-forceable against the unsalted SHA-256 hash if the policy store
+    // ever leaks, so enforce a minimum length at the capture point.
+    private const int MinPublicLinkTokenLength = 16;
+
+    // Links (including revoked ones, kept for audit) are persisted inside the route's
+    // policy document; cap the list so repeated policy updates cannot grow it unbounded.
+    private const int MaxPublicLinksPerRoute = 100;
+
     // Canonical WGS 84 lon/lat (EPSG:4326) and CRS84 identifiers, matched exactly so
     // identifiers that merely contain "4326"/"CRS84" are not mistaken for lon/lat and
     // clamped to [-180, 180] x [-90, 90].
@@ -398,13 +407,37 @@ public sealed class ContentPublicationService : IContentPublicationService
 
         if (request.CreatePublicLink is { } linkRequest)
         {
+            if (links.Count >= MaxPublicLinksPerRoute)
+            {
+                throw new ContentPublicationValidationException(
+                    $"A publication route supports at most {MaxPublicLinksPerRoute} public links (including revoked links).",
+                    code: "publication.publicLink.create.limitExceeded",
+                    path: "/createPublicLink");
+            }
+
+            if (linkRequest.ExpiresAt is { } expiresAt && expiresAt <= now)
+            {
+                throw new ContentPublicationValidationException(
+                    "The public link expiry must be in the future.",
+                    code: "publication.publicLink.create.expiresAt.invalid",
+                    path: "/createPublicLink/expiresAt");
+            }
+
             createdLinkId = Guid.NewGuid().ToString("N");
             string? tokenHash = null;
             string? algorithm = null;
             if (!string.IsNullOrEmpty(linkRequest.Token))
             {
+                if (linkRequest.Token.Length < MinPublicLinkTokenLength)
+                {
+                    throw new ContentPublicationValidationException(
+                        $"Public link tokens must be at least {MinPublicLinkTokenLength} characters.",
+                        code: "publication.publicLink.create.token.tooShort",
+                        path: "/createPublicLink/token");
+                }
+
                 createdRawToken = linkRequest.Token;
-                tokenHash = ContentPublicationCrypto.HashToken(linkRequest.Token!);
+                tokenHash = ContentPublicationCrypto.HashToken(linkRequest.Token);
                 algorithm = ContentPublicationCrypto.TokenHashAlgorithm;
             }
 

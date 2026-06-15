@@ -174,6 +174,27 @@ internal static class SearchEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, "limit must be greater than or equal to 1.");
         }
 
+        // STAC Item Search: supplying both bbox and intersects is invalid regardless of which
+        // collections resolve.  Check up front so an empty-target search still returns 400.
+        if (request.Bbox is { IsDefault: false } && request.Intersects.HasValue)
+        {
+            StacTelemetry.SetFailed(activity, "bbox_and_intersects");
+            return StandardErrorHelpers.CreateBadRequest(
+                context, "Only one of bbox or intersects may be specified.");
+        }
+
+        // Validate datetime syntax once up front, independently of per-resource temporal field
+        // resolution.  ParseDatetime returns null both for invalid syntax AND when the resource has
+        // no temporal field; IsValidDatetimeSyntax separates those two cases so a bad value is
+        // rejected here (400) while a collection that has no temporal field is simply not filtered
+        // (STAC Item Search spec: datetime is a filter, not a hard requirement on the collection).
+        if (!string.IsNullOrWhiteSpace(request.Datetime) &&
+            !StacFilterHelpers.IsValidDatetimeSyntax(request.Datetime))
+        {
+            StacTelemetry.SetFailed(activity, "invalid_datetime");
+            return StandardErrorHelpers.CreateBadRequest(context, "Invalid datetime parameter.");
+        }
+
         var effectiveLimit = Math.Clamp(
             request.Limit ?? StacConstants.DefaultSearchLimit,
             1,
@@ -327,6 +348,9 @@ internal static class SearchEndpoints
                 var projection = layerQueryResult.Projection;
                 var layerId = target.LayerIndex;
 
+                // A feature-reader/query failure must surface as a 500: it propagates to the outer
+                // catch, which records the exception on the search.work activity and rethrows so the
+                // shared error pipeline maps it to InternalServerError.
                 if (remainingSkip > 0)
                 {
                     var layerCount = await featureReader.CountAsync(layerId, query, cancellationToken);
@@ -498,14 +522,15 @@ internal static class SearchEndpoints
 
         if (!string.IsNullOrWhiteSpace(request.Datetime))
         {
+            // ParseDatetime returns null when the resource has no resolvable temporal field.
+            // Syntax has already been validated up front in ExecuteSearchAsync (IsValidDatetimeSyntax),
+            // so null here means this layer simply has no temporal property — skip the filter rather
+            // than rejecting the whole request (STAC spec: datetime is a filter, not a hard requirement).
             var temporalFilter = StacFilterHelpers.ParseDatetime(request.Datetime, resource);
-            if (temporalFilter is null)
+            if (temporalFilter is not null)
             {
-                error = "Invalid datetime parameter.";
-                return (false, query, projection, error);
+                query = query with { TemporalFilter = temporalFilter };
             }
-
-            query = query with { TemporalFilter = temporalFilter };
         }
 
         var filterQueryResult = await TryResolveFilterQuery(
@@ -1142,7 +1167,16 @@ internal static class SearchEndpoints
 
             if (IsPropertiesWildcard(fieldExpression))
             {
-                includeAll = true;
+                // An excluded 'properties'/'properties.*'/'*' must produce an exclusion entry
+                // (matching POST body semantics) rather than setting the include-all flag.
+                if (isExclude)
+                {
+                    excludes.Add("properties");
+                }
+                else
+                {
+                    includeAll = true;
+                }
                 continue;
             }
 

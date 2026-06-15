@@ -318,6 +318,7 @@ public sealed class Cql2Lexer
 
         _position++; // Skip closing quote
 
+        FilterParserGuard.EnsureIdentifierLength(value.Length, "CQL2 quoted identifier");
         _tokens.Add(Cql2Token.Create(Cql2TokenType.Identifier, value.ToString(), start, _position - start));
     }
 
@@ -377,6 +378,7 @@ public sealed class Cql2Lexer
         }
 
         var value = _input[start.._position];
+        FilterParserGuard.EnsureIdentifierLength(value.Length, "CQL2 identifier");
 
         // Check for keywords
         var tokenType = _keywords.TryGetValue(value, out var keywordType)

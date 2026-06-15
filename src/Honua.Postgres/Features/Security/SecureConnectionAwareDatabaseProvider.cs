@@ -28,7 +28,11 @@ namespace Honua.Postgres.Features.Security;
 /// Usage patterns:
 /// 1. Legacy mode: Uses DefaultConnection from configuration (existing behavior)
 /// 2. Secure mode: Uses named connection from secure registry
-/// 3. Mixed mode: Falls back to DefaultConnection if named connection not found
+/// 3. Mixed mode: Falls back to DefaultConnection if named connection not found —
+///    opt-in via Database:SecureConnection:AllowFallback=true. By default a
+///    resolution failure fails closed (503) instead of silently routing queries
+///    to the default database, because resolution failures include security
+///    checks (decryption, secret resolution, SSL-requirement violations).
 /// </remarks>
 internal sealed class SecureConnectionAwareDatabaseProvider : IDatabaseConnectionProvider, IDisposable
 {
@@ -47,6 +51,7 @@ internal sealed class SecureConnectionAwareDatabaseProvider : IDatabaseConnectio
     }
     private readonly QueryConcurrencyGate? _concurrencyGate;
     private readonly string? _namedConnectionToUse;
+    private readonly bool _allowFallbackToDefault;
     private int _acquiredSlots;
 
     // Logger message delegates for performance
@@ -65,6 +70,10 @@ internal sealed class SecureConnectionAwareDatabaseProvider : IDatabaseConnectio
     private static readonly Action<ILogger, string, Exception?> _logSecureConnectionFallback =
         LoggerMessage.Define<string>(LogLevel.Error, new EventId(4, nameof(_logSecureConnectionFallback)),
             "Failed to open secure connection '{ConnectionName}', falling back to default connection");
+
+    private static readonly Action<ILogger, string, Exception?> _logSecureConnectionResolutionFailed =
+        LoggerMessage.Define<string>(LogLevel.Error, new EventId(8, nameof(_logSecureConnectionResolutionFailed)),
+            "Failed to resolve secure connection '{ConnectionName}' and Database:SecureConnection:AllowFallback is disabled — failing closed");
 
     private static readonly Action<ILogger, string, Exception?> _logConnectionHealthTestFailure =
         LoggerMessage.Define<string>(LogLevel.Warning, new EventId(5, nameof(_logConnectionHealthTestFailure)),
@@ -100,6 +109,14 @@ internal sealed class SecureConnectionAwareDatabaseProvider : IDatabaseConnectio
         // Check if a specific named connection should be used
         _namedConnectionToUse = _configuration["Database:SecureConnection:Name"];
 
+        // Falling back to the default connection on resolution failure is opt-in.
+        // Resolution failures include tamper/security checks (decryption failure,
+        // secret-resolution failure, SSL-requirement violations), so the default
+        // is to fail closed rather than silently run queries against a different
+        // database than the operator designated.
+        _allowFallbackToDefault = bool.TryParse(
+            _configuration["Database:SecureConnection:AllowFallback"], out var allowFallback) && allowFallback;
+
         if (!string.IsNullOrWhiteSpace(_namedConnectionToUse))
         {
             _logSecureConnectionConfigured(_logger, _namedConnectionToUse, null);
@@ -131,13 +148,28 @@ internal sealed class SecureConnectionAwareDatabaseProvider : IDatabaseConnectio
             connectionString = await _secureResolver.ResolveConnectionStringAsync(
                 _namedConnectionToUse, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (_allowFallbackToDefault)
         {
             _logSecureConnectionFallback(_logger, _namedConnectionToUse, ex);
 
-            // Fall back to default connection if secure resolution fails.
-            // The default provider acquires its own gate slot.
+            // Mixed mode (explicitly enabled): fall back to the default
+            // connection if secure resolution fails. The default provider
+            // acquires its own gate slot.
             return await _defaultProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logSecureConnectionResolutionFailed(_logger, _namedConnectionToUse, ex);
+
+            // Fail closed: opening the default database instead of the
+            // operator-designated secure database would silently read/write
+            // the wrong store and defeat the security control.
+            throw new ServiceUnavailableException(
+                "The configured secure database connection could not be resolved.");
         }
 
         // Now that the connection string is resolved, acquire the shared gate
@@ -166,7 +198,10 @@ internal sealed class SecureConnectionAwareDatabaseProvider : IDatabaseConnectio
         NpgsqlConnection? connection = null;
         try
         {
-            var dataSource = _dataSourceCache.GetOrCreate(connectionString);
+            // Key the cache by the logical connection name so a rotated secret
+            // (new resolved connection string) replaces — and disposes — the
+            // previous data source instead of leaking its connection pool.
+            var dataSource = _dataSourceCache.GetOrCreate(_namedConnectionToUse, connectionString);
             connection = await dataSource.OpenConnectionWithRetryAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
             await SchemaSearchPath.ApplyAsync(connection, _schemaContext?.CurrentSchema, cancellationToken: cancellationToken).ConfigureAwait(false);
 

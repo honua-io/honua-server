@@ -64,6 +64,7 @@ internal static class GeoprocessingServiceCollectionExtensions
             services.TryAddSingleton<IGeoprocessingResultPackageStore>(sp =>
                 new RedisGeoprocessingResultPackageStore(
                     sp.GetRequiredService<IConnectionMultiplexer>(),
+                    sp.GetRequiredService<IOptionsMonitor<GeoprocessingExecutorOptions>>(),
                     sp.GetRequiredService<ILogger<RedisGeoprocessingResultPackageStore>>()));
         }
 

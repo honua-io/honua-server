@@ -804,6 +804,9 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
 
         [LoggerMessage(8018, LogLevel.Warning, "GeoServer catalog-apply rejected cross-workspace write: {EntryKind} owned by workspace '{WorkspaceName}' is outside the operator's requested scope (issue #1098)")]
         public static partial void WorkspaceWriteRejected(ILogger logger, string entryKind, string workspaceName);
+
+        [LoggerMessage(8019, LogLevel.Error, "GeoServer apply step {Operation} for source '{SourceId}' failed unexpectedly; step marked failed for operator review")]
+        public static partial void ApplyStepFailed(ILogger logger, string operation, string sourceId, Exception exception);
     }
 
 }

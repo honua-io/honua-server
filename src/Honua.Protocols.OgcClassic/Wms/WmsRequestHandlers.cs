@@ -637,7 +637,7 @@ internal static partial class WmsRequestHandlers
         // imagery and GetFeatureInfo can emit a targeted CRS-range exception.
         if (!RasterParsingHelpers.TryParseBoundingBox(
                 bbox,
-                ResolveWmsBboxAxisOrder(normalizedCrs, version, crsDefinition.AxisOrder),
+                ResolveWmsBboxAxisOrder(version, crsDefinition.AxisOrder),
                 isGeographic: false,
                 out var minX,
                 out var minY,
@@ -700,10 +700,12 @@ internal static partial class WmsRequestHandlers
     private static bool IsWms111Version(string? version)
         => string.Equals(version, Wms111Version, StringComparison.OrdinalIgnoreCase);
 
-    private static AxisOrder ResolveWmsBboxAxisOrder(string normalizedCrs, string version, AxisOrder defaultAxisOrder)
+    private static AxisOrder ResolveWmsBboxAxisOrder(string version, AxisOrder defaultAxisOrder)
     {
-        if (IsWms111Version(version) &&
-            string.Equals(normalizedCrs, "EPSG:4326", StringComparison.OrdinalIgnoreCase))
+        // WMS 1.1.1 (OGC 01-068r3 §7.2.3.3) defines BBOX as minx,miny,maxx,maxy in
+        // x,y (east,north) order for ALL SRS; the geographic lat/lon axis flip was
+        // introduced in WMS 1.3.0.
+        if (IsWms111Version(version))
         {
             return AxisOrder.EastNorth;
         }
@@ -965,6 +967,49 @@ internal static partial class WmsRequestHandlers
             switch (c)
             {
                 case '<' when !inTag:
+                    // Skip XML comments <!-- ... --> without incrementing depth.
+                    if (i + 3 < filterParam.Length &&
+                        filterParam[i + 1] == '!' &&
+                        filterParam[i + 2] == '-' &&
+                        filterParam[i + 3] == '-')
+                    {
+                        var commentEnd = filterParam.IndexOf("-->", i + 4, StringComparison.Ordinal);
+                        if (commentEnd >= 0)
+                        {
+                            i = commentEnd + 2; // advance past -->
+                        }
+                        else
+                        {
+                            i = filterParam.Length - 1; // malformed; skip to end
+                        }
+
+                        break;
+                    }
+
+                    // Skip CDATA sections <![CDATA[ ... ]]> without incrementing depth.
+                    if (i + 8 < filterParam.Length &&
+                        filterParam[i + 1] == '!' &&
+                        filterParam[i + 2] == '[' &&
+                        filterParam[i + 3] == 'C' &&
+                        filterParam[i + 4] == 'D' &&
+                        filterParam[i + 5] == 'A' &&
+                        filterParam[i + 6] == 'T' &&
+                        filterParam[i + 7] == 'A' &&
+                        filterParam[i + 8] == '[')
+                    {
+                        var cdataEnd = filterParam.IndexOf("]]>", i + 9, StringComparison.Ordinal);
+                        if (cdataEnd >= 0)
+                        {
+                            i = cdataEnd + 2; // advance past ]]>
+                        }
+                        else
+                        {
+                            i = filterParam.Length - 1; // malformed; skip to end
+                        }
+
+                        break;
+                    }
+
                     inTag = true;
                     isClosingTag = i + 1 < filterParam.Length && filterParam[i + 1] == '/';
                     break;
@@ -1025,6 +1070,13 @@ internal static partial class WmsRequestHandlers
     {
         if (IsWms111Version(version))
         {
+            // WMS 1.1.1 (OGC 01-068r3 Annex A.4) names this exception code InvalidSRS;
+            // InvalidCRS is the WMS 1.3.0 equivalent.
+            if (string.Equals(code, "InvalidCRS", StringComparison.OrdinalIgnoreCase))
+            {
+                code = "InvalidSRS";
+            }
+
             var legacy = new StringBuilder(512);
             legacy.AppendLine("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
             legacy.Append("<!DOCTYPE ServiceExceptionReport SYSTEM \"")

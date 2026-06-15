@@ -67,22 +67,12 @@ public sealed class HttpRequestContext : IRequestContext
     {
         get
         {
-            // Check X-Forwarded-For header first (common in load balancer scenarios)
-            var forwardedFor = _httpContext.Request.Headers["X-Forwarded-For"].FirstOrDefault();
-            if (!string.IsNullOrEmpty(forwardedFor))
-            {
-                // Take the first IP address from the X-Forwarded-For header
-                return forwardedFor.Split(',')[0].Trim();
-            }
-
-            // Check X-Real-IP header (used by some proxies)
-            var realIp = _httpContext.Request.Headers["X-Real-IP"].FirstOrDefault();
-            if (!string.IsNullOrEmpty(realIp))
-            {
-                return realIp;
-            }
-
-            // Fall back to connection remote IP address
+            // Trust the connection IP only — raw X-Forwarded-For / X-Real-IP headers
+            // are client-controlled and trivially spoofable, which would let callers
+            // forge the IP recorded in audit/security telemetry. When forwarded
+            // headers are enabled, the ASP.NET Core forwarded-headers middleware has
+            // already rewritten RemoteIpAddress after validating the proxy against
+            // the known-proxy list (mirrors RateLimitingMiddleware.GetClientIpAddress).
             return _httpContext.Connection.RemoteIpAddress?.ToString();
         }
     }

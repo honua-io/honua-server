@@ -102,6 +102,24 @@ internal sealed class GlobalExceptionMiddleware(
                 _limitsOptions.Value.Connections.RequestTimeout.TotalSeconds);
         }
 
+        // An exception that reaches this middleware is unhandled by definition and may
+        // indicate a server bug (e.g. an internal ArgumentNullException surfacing as a
+        // 400), so fast-path exceptions must still leave a log/correlation trail. Log
+        // at Information so common client-triggered validation noise stays filterable
+        // while keeping the exception type, path, and trace identifier diagnosable.
+        if (_logger.IsEnabled(LogLevel.Information))
+        {
+            var exceptionType = ex.GetType().Name;
+            string requestPath = context.Request.Path;
+            GlobalExceptionLog.FastPathExceptionHandled(
+                _logger,
+                exceptionType,
+                requestPath,
+                context.TraceIdentifier,
+                ex.Message,
+                ex);
+        }
+
         // Preserve protocol-specific error contracts even on the fast path.
         await HandleExceptionAsync(context, ex);
     }
@@ -193,6 +211,24 @@ internal sealed class GlobalExceptionMiddleware(
         // than the hand-rolled Replace chain which missed \b, \f, and C0 controls.
         return System.Text.Json.JsonEncodedText.Encode(input).Value;
     }
+}
+
+/// <summary>
+/// Source-generated logging for <see cref="GlobalExceptionMiddleware"/> fast-path handling.
+/// </summary>
+internal static partial class GlobalExceptionLog
+{
+    [LoggerMessage(
+        EventId = 5020,
+        Level = LogLevel.Information,
+        Message = "Fast-path exception {ExceptionType} handled in {RequestPath} [CorrelationId: {CorrelationId}]: {ErrorMessage}")]
+    public static partial void FastPathExceptionHandled(
+        ILogger logger,
+        string exceptionType,
+        string requestPath,
+        string correlationId,
+        string errorMessage,
+        Exception exception);
 }
 
 /// <summary>

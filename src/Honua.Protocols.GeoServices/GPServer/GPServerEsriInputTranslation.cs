@@ -278,14 +278,20 @@ internal static class GPServerEsriInputTranslation
             return null;
         }
 
-        if (srElement.TryGetProperty("wkid", out var wkid) && wkid.ValueKind == JsonValueKind.Number)
+        // TryGetInt32: a non-integer wkid is treated as an absent/invalid spatial
+        // reference rather than throwing FormatException into a generic 500.
+        if (srElement.TryGetProperty("wkid", out var wkid) &&
+            wkid.ValueKind == JsonValueKind.Number &&
+            wkid.TryGetInt32(out var wkidValue))
         {
-            return wkid.GetInt32();
+            return wkidValue;
         }
 
-        if (srElement.TryGetProperty("latestWkid", out var latest) && latest.ValueKind == JsonValueKind.Number)
+        if (srElement.TryGetProperty("latestWkid", out var latest) &&
+            latest.ValueKind == JsonValueKind.Number &&
+            latest.TryGetInt32(out var latestValue))
         {
-            return latest.GetInt32();
+            return latestValue;
         }
 
         return null;

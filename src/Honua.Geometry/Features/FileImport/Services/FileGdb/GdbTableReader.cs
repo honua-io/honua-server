@@ -72,39 +72,62 @@ internal sealed class GdbTableReader : IDisposable
             throw;
         }
 
-        // Parse file header (40 bytes).
-        Version = _reader.ReadInt32(); // bytes 0-3: signature/version
-        if (Version is not (3 or 4))
+        // Any throw after this point must clean up _reader (which owns the
+        // stream via leaveOpen:false).  Without this guard, caller code in
+        // Open() has no way to Dispose() a half-constructed instance, so the
+        // FileStream would remain open until finalisation.
+        try
         {
-            throw new InvalidDataException($"Unsupported FileGDB table version: {Version}. Expected 3 or 4.");
-        }
-
-        RowCount = _reader.ReadInt32(); // bytes 4-7: numValidRows
-        if (RowCount < 0)
-        {
-            throw new InvalidDataException(
-                $"FileGDB table has an invalid numValidRows value ({RowCount}). The file is malformed.");
-        }
-
-        // Skip bytes 8-31 (header metadata we don't need).
-        _reader.ReadBytes(24);
-
-        var fieldDescOffset = _reader.ReadInt64(); // bytes 32-39
-
-        // Seek to field description section and parse fields.
-        stream.Seek(fieldDescOffset, SeekOrigin.Begin);
-        ParseFieldDescriptions();
-
-        // Compute null bitmap size: count nullable fields.
-        for (var i = 0; i < _fields.Count; i++)
-        {
-            if (_fields[i].IsNullable)
+            // Parse file header (40 bytes).
+            Version = _reader.ReadInt32(); // bytes 0-3: signature/version
+            if (Version is not (3 or 4))
             {
-                _nullableFieldIndices.Add(i);
+                throw new InvalidDataException($"Unsupported FileGDB table version: {Version}. Expected 3 or 4.");
             }
-        }
 
-        _nullBitmapSize = (_nullableFieldIndices.Count + 7) / 8;
+            RowCount = _reader.ReadInt32(); // bytes 4-7: numValidRows
+            if (RowCount < 0)
+            {
+                throw new InvalidDataException(
+                    $"FileGDB table has an invalid numValidRows value ({RowCount}). The file is malformed.");
+            }
+
+            // Skip bytes 8-31 (header metadata we don't need).
+            _reader.ReadBytes(24);
+
+            var fieldDescOffset = _reader.ReadInt64(); // bytes 32-39
+
+            // Guard against a crafted offset that would cause an IOException
+            // (negative seek) or silent seek-past-EOF with a later read throwing
+            // EndOfStreamException — both would otherwise escape the
+            // InvalidDataException-only catches in FileGdbReader.
+            if (fieldDescOffset < 0 || fieldDescOffset >= stream.Length)
+            {
+                throw new InvalidDataException(
+                    $"FileGDB table has an invalid field-description offset ({fieldDescOffset}). " +
+                    "The file is malformed.");
+            }
+
+            // Seek to field description section and parse fields.
+            stream.Seek(fieldDescOffset, SeekOrigin.Begin);
+            ParseFieldDescriptions();
+
+            // Compute null bitmap size: count nullable fields.
+            for (var i = 0; i < _fields.Count; i++)
+            {
+                if (_fields[i].IsNullable)
+                {
+                    _nullableFieldIndices.Add(i);
+                }
+            }
+
+            _nullBitmapSize = (_nullableFieldIndices.Count + 7) / 8;
+        }
+        catch
+        {
+            _reader.Dispose();
+            throw;
+        }
     }
 
     /// <summary>

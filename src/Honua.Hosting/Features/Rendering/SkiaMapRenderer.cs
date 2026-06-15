@@ -673,11 +673,9 @@ internal sealed class SkiaMapRenderer : IDisposable
     private static bool EvaluateFilter(MapLibreExpression filter, ImmutableDictionary<string, object?> properties)
     {
         var result = ExpressionEvaluator.Evaluate(filter, properties);
-        return result switch
-        {
-            bool b => b,
-            _ => true // If filter evaluation fails, include the feature
-        };
+        // MapLibre spec treats non-boolean filter results as falsy (exclude).
+        // Consistent with RasterMapRenderingPipeline.EvaluateFilter.
+        return result is bool b && b;
     }
 
     /// <summary>

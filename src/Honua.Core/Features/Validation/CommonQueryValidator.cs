@@ -276,9 +276,16 @@ public sealed class CommonQueryValidator : ICommonQueryValidator
 
         if (limit.HasValue && limit.Value > _limitsOptions.Query.MaxRecordCount)
         {
-            return ValidationResult<PaginationValues>.Failure(
-                $"{limitName} cannot exceed {_limitsOptions.Query.MaxRecordCount}. " +
-                $"Maximum record count: {_limitsOptions.Query.MaxRecordCount}.");
+            if (!options.ClampLimitToMaximum)
+            {
+                return ValidationResult<PaginationValues>.Failure(
+                    $"{limitName} cannot exceed {_limitsOptions.Query.MaxRecordCount}. " +
+                    $"Maximum record count: {_limitsOptions.Query.MaxRecordCount}.");
+            }
+
+            // OGC API - Features Part 1 /req/core/fc-limit-response-1: an over-maximum limit
+            // SHALL NOT result in an error; the maximum is used as the parameter value instead.
+            limit = _limitsOptions.Query.MaxRecordCount;
         }
 
         var effectiveLimit = limit ?? _limitsOptions.Query.DefaultRecordCount;

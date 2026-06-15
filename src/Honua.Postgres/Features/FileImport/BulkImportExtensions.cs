@@ -82,7 +82,11 @@ internal static class BulkImportExtensions
         {
             var feature = features[index];
 
-            // WKBWriter is not thread-safe; use one per worker iteration.
+            // WKBWriter is not thread-safe; use one per worker iteration. A plain 2-D writer
+            // is used here: forcing emitZ/emitM serializes NaN Z/M ordinates for 2-D coordinates
+            // (the GeoJSON/CSV reader produces plain XY Coordinates whose Z is NaN), which PostGIS
+            // rejects and silently drops the row. The streaming insert path preserves true 3-D
+            // geometries per-feature via CreateWkb's HasZ branch instead.
             wkbArray[index] = CreateWkb(feature, new WKBWriter()) ?? Array.Empty<byte>();
 
             var featureSrid = feature.Geometry?.SRID;

@@ -26,6 +26,15 @@ namespace Honua.Server.Features.Spec;
 /// </summary>
 internal static class SpecEndpoints
 {
+    /// <summary>
+    /// Server-side ceiling on per-run apply parallelism. The orchestrator only
+    /// clamps the lower bound, and the spec surface is anonymous in early access
+    /// (see TODO(#1144) below), so the request value must not be allowed to
+    /// request effectively unlimited intra-run concurrency. Shared with the gRPC
+    /// adapter (<see cref="HonuaSpecService"/>).
+    /// </summary>
+    internal const int MaxApplyConcurrency = 16;
+
     public static IEndpointRouteBuilder MapSpecEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
@@ -33,12 +42,15 @@ internal static class SpecEndpoints
         var group = endpoints.MapGroup("/v1/spec")
             .WithTags("Spec")
             // Spec is a Terraform-style developer-experience surface that is
-            // currently anonymous by design: the apply engine performs its own
-            // operator-scoped authorization for each node, and the public
-            // entry points (validate/plan/apply/cancel/artifact) intentionally
-            // expose the workflow to unauthenticated callers in early access.
-            // Explicit AllowAnonymous documents that decision for
-            // authorization-policy tooling and the audit guard
+            // currently anonymous by design: the public entry points
+            // (validate/plan/apply/cancel/artifact) intentionally expose the
+            // workflow to unauthenticated callers in early access. Note that
+            // there is NO compensating per-node authorization inside the apply
+            // engine today — the compute executor is still a stub (#790) and
+            // SpecApplyOrchestrator performs no caller authorization — so this
+            // surface must be tightened before real process-family execution
+            // lands behind it. Explicit AllowAnonymous documents that decision
+            // for authorization-policy tooling and the audit guard
             // (Honua.Architecture.Tests.EndpointAuthorizationGuardTests).
             // TODO(#1144): tighten to RequireAdminAuthorization once the SDK
             // and test harness route through an authenticated transport.
@@ -301,7 +313,11 @@ internal static class SpecEndpoints
         var options = new SpecApplyOptions
         {
             CacheMode = request.CacheMode ?? SpecCacheMode.ReadWrite,
-            MaxConcurrency = request.MaxConcurrency is int m && m > 0 ? m : 4
+            // Clamp client-controlled parallelism: the orchestrator only enforces
+            // the lower bound (Math.Max(1, MaxConcurrency)).
+            MaxConcurrency = request.MaxConcurrency is int m && m > 0
+                ? Math.Min(m, MaxApplyConcurrency)
+                : 4
         };
 
         SpecApplyHandle handle;

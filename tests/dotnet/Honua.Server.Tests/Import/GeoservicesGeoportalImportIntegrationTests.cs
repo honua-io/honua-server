@@ -8,9 +8,11 @@ using FluentAssertions;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.FileImport.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Import;
 
@@ -31,7 +33,7 @@ public sealed class GeoservicesGeoportalImportIntegrationTests : IAsyncLifetime
         new("https://maps.kauai.gov/server/rest/services/Bridges_with_condition_where_available/FeatureServer", 2, "bridges")
     ];
 
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Enterprise);
     private HttpClient _client = null!;
 
     public async Task InitializeAsync()

@@ -115,6 +115,7 @@ public sealed class OidcPortalCredentialVerifierTests
         return new OidcPortalCredentialVerifier(
             wrapped,
             transformation,
+            new OidcConfigurationManagerCache(),
             NullLogger<OidcPortalCredentialVerifier>.Instance);
     }
 

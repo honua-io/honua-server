@@ -110,6 +110,23 @@ public sealed class ODataSpatialMatrixTests : IAsyncLifetime
         features[0].GetProperty("ObjectId").GetInt64().Should().Be(SanFranciscoId);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.SpatialQuery)]
+    [Endpoint("GET /odata/Features({layerId})?$filter=geo.length(Geometry) lt 1")]
+    public async Task GeoLength_PointGeometries_ReturnsZeroLengthFeatures()
+    {
+        // geo.length over Edm.Geography returns geodesic meters (0 for points);
+        // the null-geometry feature yields SQL NULL and is excluded.
+        var filter = "geo.length(Geometry) lt 1";
+        var response = await _fixture.Client.GetAsync(
+            $"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var features = await ParseFeaturesAsync(response);
+        features.Should().HaveCount(14);
+        features.Should().NotContain(f => f.GetProperty("ObjectId").GetInt64() == VirtualCityId);
+    }
+
     #endregion
 
     #region geo.distance - Distance Filter Tests

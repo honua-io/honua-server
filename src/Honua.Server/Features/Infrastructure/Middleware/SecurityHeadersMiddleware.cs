@@ -30,6 +30,7 @@ internal sealed class SecurityHeadersMiddleware
     private readonly RequestDelegate _next;
     private readonly ILogger<SecurityHeadersMiddleware> _logger;
     private readonly SecurityHeadersOptions _options;
+    private readonly (string headerName, string policy) _defaultCspHeader;
 
     public SecurityHeadersMiddleware(
         RequestDelegate next,
@@ -39,6 +40,11 @@ internal sealed class SecurityHeadersMiddleware
         _next = next ?? throw new ArgumentNullException(nameof(next));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+
+        // Options are fixed for the process lifetime, so build (and validate) the
+        // default CSP once instead of reconstructing the policy builder and logging
+        // identical validation warnings on every request.
+        _defaultCspHeader = BuildContentSecurityPolicy();
     }
 
     public async Task InvokeAsync(HttpContext context)
@@ -93,7 +99,7 @@ internal sealed class SecurityHeadersMiddleware
         if (!skipBodyRelevantHeaders)
         {
             var routeOverride = ResolveRouteOverride(context.Request.Path);
-            var cspHeader = BuildContentSecurityPolicy(routeOverride);
+            var cspHeader = ResolveContentSecurityPolicy(routeOverride);
             if (!string.IsNullOrEmpty(cspHeader.policy))
             {
                 headers[cspHeader.headerName] = cspHeader.policy;
@@ -176,12 +182,13 @@ internal sealed class SecurityHeadersMiddleware
     }
 
     /// <summary>
-    /// Builds the Content Security Policy header based on configuration, optionally
-    /// substituting a route-specific override (e.g. a looser policy for admin/Swagger UI).
+    /// Resolves the Content Security Policy header for a request, substituting a
+    /// route-specific override (e.g. a looser policy for admin/Swagger UI) when one
+    /// applies and otherwise returning the precomputed default policy.
     /// </summary>
     /// <param name="routeOverride">Optional per-route CSP override.</param>
     /// <returns>A tuple containing the header name and policy value</returns>
-    private (string headerName, string policy) BuildContentSecurityPolicy(SecurityHeadersRouteOverride? routeOverride = null)
+    private (string headerName, string policy) ResolveContentSecurityPolicy(SecurityHeadersRouteOverride? routeOverride)
     {
         // Route-level override wins, regardless of global settings, so callers can
         // loosen CSP just for an admin/Swagger sub-tree without rewriting globals.
@@ -193,6 +200,17 @@ internal sealed class SecurityHeadersMiddleware
             return (overrideHeader, routeOverride.ContentSecurityPolicy);
         }
 
+        return _defaultCspHeader;
+    }
+
+    /// <summary>
+    /// Builds the default Content Security Policy header from configuration. Called
+    /// once from the constructor; per-request resolution uses the cached result via
+    /// <see cref="ResolveContentSecurityPolicy"/>.
+    /// </summary>
+    /// <returns>A tuple containing the header name and policy value</returns>
+    private (string headerName, string policy) BuildContentSecurityPolicy()
+    {
         // If CSP config is not provided, use the simple string policy
         if (_options.Csp == null)
         {

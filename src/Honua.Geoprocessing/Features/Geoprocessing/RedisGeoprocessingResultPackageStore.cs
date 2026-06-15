@@ -4,6 +4,7 @@
 using System.Text.Json;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Geoprocessing;
+using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
 namespace Honua.ControlPlane;
@@ -13,9 +14,10 @@ namespace Honua.ControlPlane;
 /// </summary>
 internal sealed partial class RedisGeoprocessingResultPackageStore(
     IConnectionMultiplexer redis,
+    IOptionsMonitor<GeoprocessingExecutorOptions> executorOptions,
     ILogger<RedisGeoprocessingResultPackageStore> logger) : IGeoprocessingResultPackageStore
 {
-    private static readonly TimeSpan DefaultRetention = TimeSpan.FromDays(7);
+    private TimeSpan DefaultRetention => executorOptions.CurrentValue.ResultRetention;
 
     private readonly IDatabase _database = redis.GetDatabase();
 

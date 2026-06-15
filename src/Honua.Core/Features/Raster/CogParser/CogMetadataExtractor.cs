@@ -18,6 +18,14 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
     private const int InitialReadSize = 4096;
     private const int MaxOverviewLevels = 30;
 
+    // Initial per-IFD entry-count estimate; IFDs reporting more entries are re-read at exact size.
+    private const int EstimatedIfdEntries = 100;
+
+    // Ceiling for external IFD array lengths (tile offsets/byte counts). A 1,000,000 x 1,000,000 px
+    // base level with 256 px tiles is ~15.3M tiles; 16M elements comfortably covers legitimate COGs
+    // while rejecting crafted Count values that would otherwise drive multi-GB allocations.
+    private const long MaxExternalArrayElements = 16L * 1024 * 1024;
+
     /// <inheritdoc />
     public async Task<CogMetadata> ReadMetadataAsync(
         ICloudRangeReader reader,
@@ -48,22 +56,34 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
         while (currentOffset > 0 && levelIndex < MaxOverviewLevels)
         {
             // Read the IFD — estimate 100 entries initially
-            var ifdReadSize = parser.CalculateIfdReadSize(100);
+            var ifdReadSize = parser.CalculateIfdReadSize(EstimatedIfdEntries);
             byte[] ifdBytes;
+            int ifdSpanOffset;
             var ifdFileOffset = currentOffset; // preserve actual file offset for metadata
 
             // Check if we already have the data in our initial read
             if (currentOffset < headerBytes.Length && currentOffset + ifdReadSize <= headerBytes.Length)
             {
                 ifdBytes = headerBytes;
+                ifdSpanOffset = (int)currentOffset;
             }
             else
             {
                 ifdBytes = await reader.ReadRangeAsync(bucket, key, currentOffset, ifdReadSize, cancellationToken).ConfigureAwait(false);
-                currentOffset = 0; // ifdBytes is now relative to 0
+                ifdSpanOffset = 0;
             }
 
-            var (entries, nextIfdOffset) = parser.ParseIfd(ifdBytes.AsSpan((int)(currentOffset > 0 ? currentOffset : 0)));
+            // If the IFD declares more entries than estimated, re-read it at the exact size so all
+            // entries and the next-IFD pointer are parsed instead of slicing past a short buffer.
+            var declaredEntryCount = parser.ReadIfdEntryCount(ifdBytes.AsSpan(ifdSpanOffset));
+            if (declaredEntryCount is > EstimatedIfdEntries and <= TiffIfdParser.MaxIfdEntryCount)
+            {
+                ifdBytes = await reader.ReadRangeAsync(
+                    bucket, key, ifdFileOffset, parser.CalculateIfdReadSize(declaredEntryCount), cancellationToken).ConfigureAwait(false);
+                ifdSpanOffset = 0;
+            }
+
+            var (entries, nextIfdOffset) = parser.ParseIfd(ifdBytes.AsSpan(ifdSpanOffset));
 
             // Extract metadata from IFD entries
             int ifdWidth = 0, ifdHeight = 0, ifdTileWidth = 256, ifdTileHeight = 256;
@@ -212,8 +232,7 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
             return parser.ReadInlineLongArray(entry.ValueOrOffset, (int)entry.Count, entry.Type);
         }
 
-        var typeSize = TiffConstants.GetTypeSize(entry.Type);
-        var totalBytes = (int)entry.Count * typeSize;
+        var totalBytes = GetValidatedExternalArrayByteCount(entry);
         var data = await reader.ReadRangeAsync(bucket, key, entry.ValueOrOffset, totalBytes, ct).ConfigureAwait(false);
         return parser.ReadLongArray(data, (int)entry.Count, entry.Type);
     }
@@ -232,10 +251,25 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
             return parser.ReadInlineIntArray(entry.ValueOrOffset, (int)entry.Count, entry.Type);
         }
 
-        var typeSize = TiffConstants.GetTypeSize(entry.Type);
-        var totalBytes = (int)entry.Count * typeSize;
+        var totalBytes = GetValidatedExternalArrayByteCount(entry);
         var data = await reader.ReadRangeAsync(bucket, key, entry.ValueOrOffset, totalBytes, ct).ConfigureAwait(false);
         return parser.ReadIntArray(data, (int)entry.Count, entry.Type);
+    }
+
+    /// <summary>
+    /// Computes the byte size of an external IFD array in overflow-safe arithmetic,
+    /// rejecting file-controlled <see cref="IfdEntry.Count"/> values that would drive
+    /// runaway range reads and allocations.
+    /// </summary>
+    private static int GetValidatedExternalArrayByteCount(IfdEntry entry)
+    {
+        if (entry.Count is <= 0 or > MaxExternalArrayElements)
+        {
+            throw new InvalidDataException(
+                $"TIFF IFD entry (tag {entry.Tag}) declares {entry.Count} external values, outside the supported range of 1-{MaxExternalArrayElements}.");
+        }
+
+        return checked((int)(entry.Count * TiffConstants.GetTypeSize(entry.Type)));
     }
 
     private static async Task<int> ExtractSridFromGeoKeysAsync(
@@ -253,7 +287,7 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
             return 0; // GeoKey directory is always external for meaningful content
         }
 
-        var totalBytes = (int)entry.Count * TiffConstants.GetTypeSize(entry.Type);
+        var totalBytes = GetValidatedExternalArrayByteCount(entry);
         geoKeyData = await reader.ReadRangeAsync(bucket, key, entry.ValueOrOffset, totalBytes, ct).ConfigureAwait(false);
 
         // GeoKey directory: header (4 shorts) + entries (4 shorts each)
@@ -301,7 +335,7 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
             return (0, 0);
         }
 
-        var totalBytes = (int)entry.Count * TiffConstants.GetTypeSize(entry.Type);
+        var totalBytes = GetValidatedExternalArrayByteCount(entry);
         var data = await reader.ReadRangeAsync(bucket, key, entry.ValueOrOffset, totalBytes, ct).ConfigureAwait(false);
 
         // Tiepoint: I, J, K, X, Y, Z — we want X (index 3) and Y (index 4)
@@ -319,7 +353,7 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
             return (1, 1);
         }
 
-        var totalBytes = (int)entry.Count * TiffConstants.GetTypeSize(entry.Type);
+        var totalBytes = GetValidatedExternalArrayByteCount(entry);
         var data = await reader.ReadRangeAsync(bucket, key, entry.ValueOrOffset, totalBytes, ct).ConfigureAwait(false);
 
         var scaleX = ReadDouble(data, 0, parser.IsLittleEndian);

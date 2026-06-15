@@ -213,12 +213,12 @@ public sealed class FeatureServerQueryH3Tests : IAsyncLifetime
                 {
                     new { id = "featureCount", kind = "count", title = "Features" },
                     new { id = "byCategory", kind = "category", field = "category", limit = 5 },
-                    new { id = "valueHistogram", kind = "histogram", field = "value", bins = 2, min = 0, max = 100 },
+                    new { id = "valueHistogram", kind = "histogram", field = "rating", bins = 2, min = 0, max = 100 },
                     new
                     {
                         id = "valueRanges",
                         kind = "range",
-                        field = "value",
+                        field = "rating",
                         ranges = new[]
                         {
                             new { id = "low", label = "Low", min = 0, max = 50, includeMin = true, includeMax = false },
@@ -278,7 +278,7 @@ public sealed class FeatureServerQueryH3Tests : IAsyncLifetime
                 resolution = 7,
                 summaries = new object[]
                 {
-                    new { id = "valueHistogram", kind = "histogram", field = "value", bins = 2 }
+                    new { id = "valueHistogram", kind = "histogram", field = "rating", bins = 2 }
                 },
                 include = new { cells = true, totals = false },
                 f = "json"

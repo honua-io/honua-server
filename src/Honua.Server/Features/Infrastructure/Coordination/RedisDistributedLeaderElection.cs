@@ -51,7 +51,9 @@ internal sealed partial class RedisDistributedLeaderElection : IDistributedLeade
 
     private volatile bool _isLeader;
     private volatile bool _disposed;
-    private DateTime _lastRedisFailure = DateTime.MinValue;
+    // Stored as UTC ticks and accessed via Interlocked so the renewal-timer thread and arbitrary
+    // caller threads observe a consistent failure timestamp for the retry-backoff window.
+    private long _lastRedisFailureTicks = DateTime.MinValue.Ticks;
     private volatile bool _useRedis;
 
     public RedisDistributedLeaderElection(
@@ -307,8 +309,9 @@ internal sealed partial class RedisDistributedLeaderElection : IDistributedLeade
         }
 
         // If we've had recent Redis failures, wait before retrying
-        if (_lastRedisFailure != DateTime.MinValue &&
-            DateTime.UtcNow - _lastRedisFailure < RedisRetryBackoff)
+        var lastRedisFailureTicks = Interlocked.Read(ref _lastRedisFailureTicks);
+        if (lastRedisFailureTicks != DateTime.MinValue.Ticks &&
+            DateTime.UtcNow - new DateTime(lastRedisFailureTicks, DateTimeKind.Utc) < RedisRetryBackoff)
         {
             return false;
         }
@@ -318,7 +321,7 @@ internal sealed partial class RedisDistributedLeaderElection : IDistributedLeade
 
     private void MarkRedisFailure()
     {
-        _lastRedisFailure = DateTime.UtcNow;
+        Interlocked.Exchange(ref _lastRedisFailureTicks, DateTime.UtcNow.Ticks);
     }
 
     public void Dispose()

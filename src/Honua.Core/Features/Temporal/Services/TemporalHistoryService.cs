@@ -174,30 +174,37 @@ public sealed partial class TemporalHistoryService : ITemporalHistoryService
         var limit = request.Limit ?? DefaultLimit;
         limit = Math.Min(limit, MaxLimit);
 
-        var states = ImmutableArray.CreateBuilder<TemporalFeatureState>();
-        foreach (var change in changes)
+        // Bound the page first, then batch-fetch the surviving features' current snapshots with a
+        // single ObjectIds query instead of one feature read per change (avoids up to MaxLimit
+        // sequential round-trips per request).
+        var pageCount = Math.Min(changes.Count, limit);
+        var survivingIds = new HashSet<long>();
+        for (var i = 0; i < pageCount; i++)
         {
-            if (states.Count >= limit)
+            if ((TemporalChangeKind)(short)changes[i].Operation != TemporalChangeKind.Delete)
             {
-                break;
+                survivingIds.Add(changes[i].ObjectId);
             }
+        }
 
+        var attributesById = await FetchAttributesByIdAsync(storageLayerId, survivingIds, cancellationToken)
+            .ConfigureAwait(false);
+
+        var states = ImmutableArray.CreateBuilder<TemporalFeatureState>(pageCount);
+        for (var i = 0; i < pageCount; i++)
+        {
             cancellationToken.ThrowIfCancellationRequested();
 
+            var change = changes[i];
             var kind = (TemporalChangeKind)(short)change.Operation;
-            IReadOnlyDictionary<string, object?>? attributes = null;
 
             // Surviving features (insert/update) expose their current attribute snapshot; deleted
             // features have no retained attribute state in this slice.
-            if (kind != TemporalChangeKind.Delete)
+            IReadOnlyDictionary<string, object?>? attributes = null;
+            if (kind != TemporalChangeKind.Delete
+                && attributesById.TryGetValue(change.ObjectId, out var current))
             {
-                var feature = await _featureReader
-                    .GetAsync(storageLayerId, change.ObjectId, cancellationToken)
-                    .ConfigureAwait(false);
-                if (feature is { } present)
-                {
-                    attributes = present.Attributes;
-                }
+                attributes = current;
             }
 
             states.Add(new TemporalFeatureState(
@@ -214,6 +221,37 @@ public sealed partial class TemporalHistoryService : ITemporalHistoryService
             ResolvedGeneration: resolvedGeneration,
             CurrentGeneration: currentGeneration,
             Features: states.ToImmutable());
+    }
+
+    // Batch-fetches the current attribute snapshots for the supplied object ids with a single
+    // feature query (FeatureQuery.ObjectIds) instead of one GetAsync round-trip per object.
+    private async Task<IReadOnlyDictionary<long, IReadOnlyDictionary<string, object?>>> FetchAttributesByIdAsync(
+        int storageLayerId,
+        HashSet<long> objectIds,
+        CancellationToken cancellationToken)
+    {
+        if (objectIds.Count == 0)
+        {
+            return ImmutableDictionary<long, IReadOnlyDictionary<string, object?>>.Empty;
+        }
+
+        var query = new FeatureQuery
+        {
+            ObjectIds = objectIds.ToImmutableArray(),
+            Limit = objectIds.Count
+        };
+
+        var result = await _featureReader
+            .QueryAsync(storageLayerId, query, cancellationToken)
+            .ConfigureAwait(false);
+
+        var attributesById = new Dictionary<long, IReadOnlyDictionary<string, object?>>(result.Items.Length);
+        foreach (var feature in result.Items)
+        {
+            attributesById[feature.Id] = feature.Attributes;
+        }
+
+        return attributesById;
     }
 
     private async Task<ResolvedLayer> ResolveLayerAsync(

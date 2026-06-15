@@ -42,6 +42,15 @@ public static class ConfigurationFeatureExtensions
                 return enabled;
             }
 
+            var token = rawValue.Trim();
+            if (token.Equals("0", StringComparison.OrdinalIgnoreCase) ||
+                token.Equals("no", StringComparison.OrdinalIgnoreCase) ||
+                token.Equals("off", StringComparison.OrdinalIgnoreCase) ||
+                token.Equals("disabled", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
             return true;
         }
 

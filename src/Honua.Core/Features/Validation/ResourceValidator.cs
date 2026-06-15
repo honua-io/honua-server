@@ -51,8 +51,18 @@ public sealed class ResourceValidator : IResourceValidator
                 continue;
             }
 
+            // Admin-disable flips the publication/resource lifecycle to
+            // MetadataV2LifecycleStatus.Retired — skip them so disabled layers 404 on
+            // every protocol surface that resolves layers by integer id (OGC
+            // collections, Maps, OData), mirroring ValidateServiceLayerV2Async.
+            if (candidate.Status.Lifecycle == MetadataV2LifecycleStatus.Retired)
+            {
+                continue;
+            }
+
             var candidateResource = snapshot.ResolveResource(candidate);
-            if (candidateResource is null)
+            if (candidateResource is null
+                || candidateResource.Status.Lifecycle == MetadataV2LifecycleStatus.Retired)
             {
                 continue;
             }
@@ -87,9 +97,16 @@ public sealed class ResourceValidator : IResourceValidator
 
         var snapshot = await RequireV2SnapshotAsync(cancellationToken).ConfigureAwait(false);
 
-        // Match by resource name (case-insensitive) or resource id.
+        // Match by resource name (case-insensitive) or resource id. Resources retired by
+        // admin-disable are treated as missing so disabled layers 404 on the collection
+        // routes too (the integer fallback below applies the same lifecycle filtering).
         foreach (var resource in snapshot.Graph.Resources)
         {
+            if (resource.Status.Lifecycle == MetadataV2LifecycleStatus.Retired)
+            {
+                continue;
+            }
+
             if (string.Equals(resource.Metadata.Name, collectionId, StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(resource.Metadata.Id, collectionId, StringComparison.Ordinal))
             {

@@ -27,7 +27,11 @@ internal sealed partial class FeatureDataAccess
             command.Parameters.AddWithValue(layerId);
             foreach (var param in query.WhereParameters)
             {
-                command.Parameters.AddWithValue(param);
+                // Normalize like GetExtentAsync/GetMvtTileAsync: statistics/bins/H3
+                // parameter lists can carry DateTimeOffset/DateTime values (date-bin
+                // origins, CQL2 temporal literals) which Npgsql rejects for
+                // timestamptz unless they are UTC.
+                command.Parameters.AddWithValue(NormalizeParameterValue(param));
             }
 
             ApplyCommandTimeout(command, _queryTimeoutSeconds);

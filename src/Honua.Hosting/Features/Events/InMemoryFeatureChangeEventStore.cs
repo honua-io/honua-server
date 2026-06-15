@@ -57,6 +57,12 @@ internal sealed class InMemoryFeatureChangeEventStore(
         if ARGV[15] ~= '' then
             event.GeometrySrid = tonumber(ARGV[15])
         end
+        local minimumCursor = tonumber(ARGV[18])
+        if minimumCursor and cursor <= minimumCursor then
+            cursor = minimumCursor + 1
+            redis.call('SET', KEYS[1], cursor)
+            event.Cursor = cursor
+        end
         local eventKey = ARGV[16] .. cursor
         local eventJson = cjson.encode(event)
         redis.call('SET', eventKey, eventJson, 'EX', tonumber(ARGV[17]))
@@ -73,6 +79,7 @@ internal sealed class InMemoryFeatureChangeEventStore(
     private readonly IDatabase? _redisDb = redis?.GetDatabase();
     private readonly bool _allowInMemoryFallback = allowInMemoryFallback;
     private long _nextCursor = 1;
+    private long _lastObservedRedisCursor;
     private volatile bool _redisUnavailable;
 
     public bool CanPersistEvents => _redisDb is not null
@@ -158,6 +165,16 @@ internal sealed class InMemoryFeatureChangeEventStore(
             if (_eventsById.TryGetValue(normalizedEventId, out var existing))
             {
                 return existing;
+            }
+
+            // When entering fallback after Redis was in use, continue from the highest
+            // cursor observed from Redis. Otherwise fallback events would restart at 1
+            // and be silently filtered out by consumers (webhook dispatcher, replay API)
+            // whose persisted cursor already advanced past them.
+            var observedRedisCursor = Volatile.Read(ref _lastObservedRedisCursor);
+            if (_nextCursor <= observedRedisCursor)
+            {
+                _nextCursor = observedRedisCursor + 1;
             }
 
             created = CreateEvent(
@@ -255,9 +272,13 @@ internal sealed class InMemoryFeatureChangeEventStore(
                     return 0;
                 }
 
-                return long.TryParse(members[0].ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var cursor)
-                    ? cursor
-                    : 0;
+                if (!long.TryParse(members[0].ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var cursor))
+                {
+                    return 0;
+                }
+
+                ObserveRedisCursor(cursor);
+                return cursor;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -298,6 +319,16 @@ internal sealed class InMemoryFeatureChangeEventStore(
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+
+        // Highest cursor this node has handed out (Redis or in-memory fallback). Passing it
+        // to the append script lets Redis skip past cursors assigned while it was down, so
+        // recovered appends never reuse cursor values consumers already advanced beyond.
+        long localCursorFloor;
+        lock (_sync)
+        {
+            localCursorFloor = Math.Max(_nextCursor - 1, Volatile.Read(ref _lastObservedRedisCursor));
+        }
+
         var cursorResult = await _redisDb!.ScriptEvaluateAsync(
                 AppendEventScript,
                 [CursorKey, IndexKey, $"{EventIdKeyPrefix}{eventId}"],
@@ -318,11 +349,13 @@ internal sealed class InMemoryFeatureChangeEventStore(
                     geometryJson ?? string.Empty,
                     geometrySrid.HasValue ? geometrySrid.Value.ToString(CultureInfo.InvariantCulture) : string.Empty,
                     EventKeyPrefix,
-                    (long)Retention.TotalSeconds
+                    (long)Retention.TotalSeconds,
+                    localCursorFloor
                 ])
             .ConfigureAwait(false);
         var resultArray = (RedisResult[])cursorResult!;
         var cursor = long.Parse(resultArray[0].ToString()!, CultureInfo.InvariantCulture);
+        ObserveRedisCursor(cursor);
         var created = await TryGetRedisEventAsync(cursor).ConfigureAwait(false)
             ?? CreateEvent(
                 eventId,
@@ -373,6 +406,7 @@ internal sealed class InMemoryFeatureChangeEventStore(
                 continue;
             }
 
+            ObserveRedisCursor(eventCursor);
             var featureEvent = await TryGetRedisEventAsync(eventCursor).ConfigureAwait(false);
             if (featureEvent == null)
             {
@@ -392,6 +426,19 @@ internal sealed class InMemoryFeatureChangeEventStore(
         }
 
         return results;
+    }
+
+    private void ObserveRedisCursor(long cursor)
+    {
+        while (true)
+        {
+            var current = Volatile.Read(ref _lastObservedRedisCursor);
+            if (cursor <= current ||
+                Interlocked.CompareExchange(ref _lastObservedRedisCursor, cursor, current) == current)
+            {
+                return;
+            }
+        }
     }
 
     private async Task<bool> EnsureRedisAvailableAsync(CancellationToken cancellationToken)

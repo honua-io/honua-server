@@ -22,6 +22,16 @@ internal sealed partial class FeatureServerQueryHandler
     private const int MaxUniqueValueCount = 256;
     private const int MaxUniqueValueFields = 3;
 
+    // Quantile/natural-breaks classification materializes the field values in
+    // memory; bound the scan so a single generateRenderer request cannot pull an
+    // arbitrarily large layer into memory.
+    private const int MaxClassificationValueCount = 100_000;
+
+    // Fisher-Jenks dynamic programming is O(n^2 * breakCount); evenly downsample
+    // the sorted values above this size so the CPU cost stays bounded while the
+    // break boundaries remain a close approximation.
+    private const int MaxNaturalBreaksInputCount = 2_500;
+
     // Categorical color ramp (Esri-style RGBA, alpha 255). The renderer varies
     // the symbol color across this ramp; fills are emitted with a reduced alpha
     // so polygon outlines remain visible.
@@ -396,6 +406,15 @@ internal sealed partial class FeatureServerQueryHandler
             case ClassificationMethod.Quantile:
             case ClassificationMethod.NaturalBreaks:
                 {
+                    // These methods materialize every non-null field value in memory;
+                    // reject oversized layers up front (message is client-safe via
+                    // IsClientSafeInvalidOperation and maps to a 400).
+                    if (count > MaxClassificationValueCount)
+                    {
+                        throw new InvalidOperationException(
+                            $"Quantile and natural-breaks classification does not support layers with more than {MaxClassificationValueCount} features; use esriClassifyEqualInterval or esriClassifyStandardDeviation instead.");
+                    }
+
                     var values = await MaterializeOrderedValuesAsync(queryLayer, classificationField, cancellationToken)
                         .ConfigureAwait(false);
                     if (values.Length == 0)
@@ -423,7 +442,10 @@ internal sealed partial class FeatureServerQueryHandler
         {
             OutFields = [classificationField],
             ExcludeAttributes = false,
-            OrderBy = [new OrderByClause(classificationField, ascending: true)]
+            OrderBy = [new OrderByClause(classificationField, ascending: true)],
+            // Defensive bound; callers reject layers above this size before
+            // materializing, so the limit never truncates in practice.
+            Limit = MaxClassificationValueCount
         };
 
         var result = await _queryExecutor.QueryWithValidationAsync(
@@ -465,7 +487,11 @@ internal sealed partial class FeatureServerQueryHandler
         {
             OutFields = [.. fields],
             Distinct = true,
-            OrderBy = [.. fields.Select(static f => new OrderByClause(f, ascending: true))]
+            OrderBy = [.. fields.Select(static f => new OrderByClause(f, ascending: true))],
+            // Providers that ignore Distinct return raw rows that are deduplicated
+            // below; bound the scan so the request cannot materialize an
+            // arbitrarily large layer in memory.
+            Limit = MaxClassificationValueCount
         };
 
         var result = await _queryExecutor.QueryWithValidationAsync(
@@ -582,6 +608,13 @@ internal sealed partial class FeatureServerQueryHandler
 
     private static double[] BuildNaturalBreaks(double[] sortedValues, int breakCount)
     {
+        if (sortedValues.Length > MaxNaturalBreaksInputCount)
+        {
+            // Evenly downsample the sorted values (keeping the extremes) so the
+            // O(n^2 * breakCount) dynamic program below stays bounded.
+            sortedValues = DownsampleSortedValues(sortedValues, MaxNaturalBreaksInputCount);
+        }
+
         var n = sortedValues.Length;
         if (n <= breakCount)
         {
@@ -659,6 +692,21 @@ internal sealed partial class FeatureServerQueryHandler
         }
 
         return [.. result];
+    }
+
+    private static double[] DownsampleSortedValues(double[] sortedValues, int targetCount)
+    {
+        var n = sortedValues.Length;
+        var sampled = new double[targetCount];
+        for (var i = 0; i < targetCount; i++)
+        {
+            // Evenly spaced indices across the sorted range, pinning the first
+            // and last elements so the min/max boundaries are preserved.
+            var index = (long)i * (n - 1) / (targetCount - 1);
+            sampled[i] = sortedValues[index];
+        }
+
+        return sampled;
     }
 
     private static Dictionary<string, object?>? BuildClassifiedSymbol(MetadataV2GeometryType geometryType, int[] rgb)

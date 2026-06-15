@@ -232,6 +232,24 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
             outFields.HasValue && outFields.Value.Length > 0 ? outFields.Value.ToArray() : null,
             objectIdFieldName);
 
+        // Match the main query path's attribute visibility: declared-but-Hidden fields
+        // must not be served (the top-level fields schema above already drops them), while
+        // undeclared runtime attributes remain visible. Without this, a Hidden (potentially
+        // sensitive) column leaked through queryRelatedRecords per-record attributes.
+        var allDeclaredAttributeFields = relatedResource.SchemaFields
+            .Where(static field => field.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography))
+            .Select(static field => field.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var visibleDeclaredAttributeFields = relatedResource.SchemaFields
+            .Where(static field => !field.Hidden &&
+                                   field.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography))
+            .Select(static field => field.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        // esriFieldTypeDate attributes serialize as epoch-ms integers, matching the main
+        // query path (the serializer downstream has no field-type context).
+        var dateFieldNames = GeoServicesFieldConventions.ResolveDateFieldNames(relatedResource);
+
         // Geometry metadata (geometryType / spatialReference / hasZ / hasM) is emitted
         // once at the response top level per the Esri queryRelatedRecords contract, and
         // only when geometry is actually returned (layers, returnGeometry=true).
@@ -337,6 +355,9 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
                             returnZ,
                             returnM,
                             outFieldSet,
+                            allDeclaredAttributeFields,
+                            visibleDeclaredAttributeFields,
+                            dateFieldNames,
                             effectiveGeometryLimits))
                     ]
                     : []
@@ -390,6 +411,19 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
             hasM);
     }
 
+    /// <summary>
+    /// Mirrors the main query path's attribute visibility (QueryFormatter.FilterAttributes /
+    /// StreamingQueryFormatter.ShouldWriteStreamingAttribute): a declared field is served only
+    /// when it is not Hidden; attributes the schema does not declare (runtime fields such as
+    /// computed distance) remain visible.
+    /// </summary>
+    private static bool IsVisibleRelatedAttribute(
+        string fieldName,
+        IReadOnlySet<string> allDeclaredAttributeFields,
+        IReadOnlySet<string> visibleDeclaredAttributeFields)
+        => visibleDeclaredAttributeFields.Contains(fieldName)
+           || !allDeclaredAttributeFields.Contains(fieldName);
+
     private static void AddToBucket(Dictionary<long, List<Feature>> featuresByOriginId, long originId, Feature feature)
     {
         if (!featuresByOriginId.TryGetValue(originId, out var bucket))
@@ -433,7 +467,10 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
     }
 
     /// <summary>
-    /// Converts a Feature to GeoServicesFeature for API responses.
+    /// Converts a Feature to GeoServicesFeature for API responses. Attribute visibility
+    /// follows the main query path: internal (__-prefixed) attributes and declared-but-
+    /// Hidden schema fields are suppressed, undeclared runtime attributes pass through,
+    /// and esriFieldTypeDate values are coerced to epoch-ms integers.
     /// </summary>
     private static GeoServicesFeature ConvertToGeoServicesFeature(
         Feature feature,
@@ -442,16 +479,18 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
         bool returnZ,
         bool returnM,
         HashSet<string>? outFields,
+        IReadOnlySet<string> allDeclaredAttributeFields,
+        IReadOnlySet<string> visibleDeclaredAttributeFields,
+        IReadOnlyCollection<string> dateFieldNames,
         GeometryLimits geometryLimits)
     {
-        var attributes = outFields == null
-            ? feature.Attributes
-                .Where(kvp => !FeatureAttributeVisibility.IsInternalAttribute(kvp.Key))
-                .ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
-            : feature.Attributes
-                .Where(kvp => outFields.Contains(kvp.Key) &&
-                              !FeatureAttributeVisibility.IsInternalAttribute(kvp.Key))
-                .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+        var attributes = feature.Attributes
+            .Where(kvp => (outFields == null || outFields.Contains(kvp.Key)) &&
+                          !FeatureAttributeVisibility.IsInternalAttribute(kvp.Key) &&
+                          IsVisibleRelatedAttribute(kvp.Key, allDeclaredAttributeFields, visibleDeclaredAttributeFields))
+            .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+
+        GeoServicesFieldConventions.CoerceDateAttributes(attributes, dateFieldNames);
 
         return new GeoServicesFeature
         {

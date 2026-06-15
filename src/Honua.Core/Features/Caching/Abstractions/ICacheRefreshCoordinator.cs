@@ -62,4 +62,26 @@ public interface ICacheRefreshCoordinator
     /// <param name="key">Cache key to claim</param>
     /// <returns>True if the claim succeeded (safe to write), false if invalidated</returns>
     bool TryClaimWriteBack(string key);
+
+    /// <summary>
+    /// Asynchronous variant of <see cref="WasInvalidated"/>. Implementations backed by a
+    /// distributed store (Redis) should use this to avoid blocking a thread-pool thread.
+    /// The default implementation delegates synchronously to <see cref="WasInvalidated"/>.
+    /// </summary>
+    /// <param name="key">Cache key to check</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>True if the key was invalidated after a refresh was enqueued</returns>
+    ValueTask<bool> WasInvalidatedAsync(string key, CancellationToken cancellationToken = default)
+        => new(WasInvalidated(key));
+
+    /// <summary>
+    /// Asynchronous variant of <see cref="TryClaimWriteBack"/>. Implementations backed by a
+    /// distributed store (Redis) should use this to avoid blocking a thread-pool thread.
+    /// The default implementation delegates synchronously to <see cref="TryClaimWriteBack"/>.
+    /// </summary>
+    /// <param name="key">Cache key to claim</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>True if the claim succeeded (safe to write), false if invalidated</returns>
+    ValueTask<bool> TryClaimWriteBackAsync(string key, CancellationToken cancellationToken = default)
+        => new(TryClaimWriteBack(key));
 }

@@ -36,6 +36,7 @@ public sealed class GeoprocessingArtifactPersistenceTests
         services.AddScoped<IAnalysisContentStore>(_ => new RecordingAnalysisContentStore(artifacts));
         services.AddSingleton<ILogger<GeoprocessingJobTerminalCallback>>(
             NullLogger<GeoprocessingJobTerminalCallback>.Instance);
+        services.AddOptions<GeoprocessingExecutorOptions>();
         services.AddSingleton<IJobTerminalCallback, GeoprocessingJobTerminalCallback>();
 
         using var provider = services.BuildServiceProvider(
@@ -104,6 +105,14 @@ public sealed class GeoprocessingArtifactPersistenceTests
             TimeSpan? ttl = null,
             CancellationToken cancellationToken = default)
             => Task.CompletedTask;
+
+        public Task<ProgressCompareAndSetResult> TrySetProgressAsync(
+            string operationId,
+            IOperationProgress progress,
+            OperationStatus expectedStatus,
+            TimeSpan? ttl = null,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(ProgressCompareAndSetResult.NotFound);
 
         public Task<TProgress?> GetProgressAsync<TProgress>(
             string operationId,

@@ -17,6 +17,7 @@ using Honua.ControlPlane;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Options;
 using Honua.TestKit.Helpers;
 using NSubstitute;
 using Proto = Geospatial.V1;
@@ -53,6 +54,7 @@ public sealed class GrpcProcessServiceTests
             _authEvaluator, _approvalEvaluator,
             _processCatalog,
             Microsoft.Extensions.Logging.Abstractions.NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
             _jobStore,
             resultPackageStore: _resultPackageStore);
 
@@ -1003,6 +1005,16 @@ public sealed class GrpcProcessServiceTests
                 WorkloadName = "test-workload"
             }
         };
+    }
+
+    private static readonly IOptionsMonitor<GeoprocessingExecutorOptions> DefaultExecutorOptions =
+        new StaticOptionsMonitor<GeoprocessingExecutorOptions>(new GeoprocessingExecutorOptions());
+
+    private sealed class StaticOptionsMonitor<T>(T value) : IOptionsMonitor<T>
+    {
+        public T CurrentValue => value;
+        public T Get(string? name) => value;
+        public IDisposable? OnChange(Action<T, string?> listener) => null;
     }
 
     private static TestServerCallContext CreateCallContext(CancellationToken cancellationToken = default)

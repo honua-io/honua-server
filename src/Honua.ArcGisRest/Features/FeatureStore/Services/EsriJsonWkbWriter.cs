@@ -19,10 +19,10 @@ namespace Honua.ArcGisRest.Features.FeatureStore.Services;
 /// (rings[][][]). Z and M coordinates are dropped — the read-through provider
 /// projects 2D geometries through Honua's canonical pipeline.</para>
 /// <para>Output uses little-endian WKB encoding to match the convention used by
-/// every other Honua reader. Polygons are emitted with their rings exactly as
-/// supplied by the source — ring orientation/winding fix-up is intentionally not
-/// performed here because the canonical query/render pipeline downstream tolerates
-/// either orientation.</para>
+/// every other Honua reader. Polygons (both single and multi-part) have their rings
+/// classified by signed-area orientation per the Esri convention (clockwise = exterior
+/// shell, counter-clockwise = hole) and are emitted as WKB MultiPolygon when more
+/// than one shell is detected.</para>
 /// </remarks>
 internal static class EsriJsonWkbWriter
 {
@@ -33,6 +33,7 @@ internal static class EsriJsonWkbWriter
     private const uint WkbPolygon = 3;
     private const uint WkbMultiPoint = 4;
     private const uint WkbMultiLineString = 5;
+    private const uint WkbMultiPolygon = 6;
 
     /// <summary>
     /// Converts an Esri JSON geometry element into a WKB byte array.
@@ -57,7 +58,14 @@ internal static class EsriJsonWkbWriter
 
         if (element.TryGetProperty("x", out var xProp) && element.TryGetProperty("y", out var yProp))
         {
-            return WritePoint(xProp.GetDouble(), yProp.GetDouble());
+            // ArcGIS REST represents empty points as {"x":null} or {"x":"NaN"}.
+            // Treat either form as a null geometry (feature retained with attributes).
+            if (!TryReadPointOrdinate(xProp, out var x) || !TryReadPointOrdinate(yProp, out var y))
+            {
+                return null;
+            }
+
+            return WritePoint(x, y);
         }
 
         if (element.TryGetProperty("points", out var pointsArray))
@@ -187,61 +195,270 @@ internal static class EsriJsonWkbWriter
     private static byte[] WriteSinglePolygon(JsonElement rings)
     {
         EnsureRingsShape(rings);
-        return WritePolygonFromRings(rings);
+        // Use the same classified writer so hole-vs-shell ordering is always correct.
+        return WritePolygonRingsClassified(rings);
     }
 
     private static byte[] WriteMultiPolygon(JsonElement rings)
     {
         EnsureRingsShape(rings);
 
-        // ArcGIS encodes multipolygon as a single rings[] array: outer rings are
-        // clockwise, inner (hole) rings are counter-clockwise. Without running
-        // signed-area + point-in-polygon tests, the most interoperable mapping
-        // is to project to a single polygon whose first ring is the exterior
-        // and the rest are interpreted as holes. Downstream callers tolerate
-        // either form when re-projecting through the canonical pipeline.
-        return WritePolygonFromRings(rings);
+        // ArcGIS encodes all parts of a multi-part polygon in one rings[] array:
+        // exterior (shell) rings have clockwise winding; hole rings are counter-clockwise.
+        // Classify by signed area, assign holes to their containing shell via a
+        // point-in-polygon test, then emit WKB Polygon when only one shell is present
+        // and WKB MultiPolygon when two or more shells are detected.
+        return WritePolygonRingsClassified(rings);
     }
 
-    private static byte[] WritePolygonFromRings(JsonElement rings)
+    // Reads all rings from the Esri rings[] array into flat coordinate arrays.
+    // Returns a parallel array of (coords, ringBuffer) tuples together with
+    // a pre-computed signed area for each ring.
+    private readonly struct RingData
     {
-        var ringCount = rings.GetArrayLength();
-        var ringBuffers = new (int Count, byte[] Buffer)[ringCount];
-        var total = 1 + 4 + 4;
-        var i = 0;
+        public readonly (double X, double Y)[] Coords; // always set via constructor; default() is never used
+        public readonly byte[] WkbBuffer; // [pointCount:uint32][x0:f64][y0:f64]...
+
+        public RingData((double X, double Y)[] coords, byte[] wkbBuffer)
+        {
+            Coords = coords;
+            WkbBuffer = wkbBuffer;
+        }
+    }
+
+    private static List<RingData> ReadAllRings(JsonElement rings)
+    {
+        var result = new List<RingData>(rings.GetArrayLength());
         foreach (var ring in rings.EnumerateArray())
         {
-            var ringCountInner = ring.GetArrayLength();
-            var ringBuffer = new byte[4 + (ringCountInner * 16)];
+            var count = ring.GetArrayLength();
+            var coords = new (double X, double Y)[count];
+            var ringBuffer = new byte[4 + (count * 16)];
             var ringSpan = ringBuffer.AsSpan();
-            BinaryPrimitives.WriteUInt32LittleEndian(ringSpan[..4], (uint)ringCountInner);
+            BinaryPrimitives.WriteUInt32LittleEndian(ringSpan[..4], (uint)count);
             var offset = 4;
+            var j = 0;
             foreach (var point in ring.EnumerateArray())
             {
                 ReadXy(point, out var x, out var y);
+                coords[j++] = (x, y);
                 WriteDouble(ringSpan.Slice(offset, 8), x);
                 WriteDouble(ringSpan.Slice(offset + 8, 8), y);
                 offset += 16;
             }
 
-            ringBuffers[i++] = (ringCountInner, ringBuffer);
-            total += ringBuffer.Length;
+            result.Add(new RingData(coords, ringBuffer));
+        }
+
+        return result;
+    }
+
+    // Esri convention: clockwise winding = exterior shell (negative signed area in
+    // standard math convention where Y increases upward). Counter-clockwise = hole.
+    // The signed shoelace area gives the right sign regardless of CRS orientation.
+    private static double SignedArea(ReadOnlySpan<(double X, double Y)> coords)
+    {
+        if (coords.Length < 3)
+        {
+            return 0.0;
+        }
+
+        var area = 0.0;
+        var n = coords.Length;
+        for (var i = 0; i < n; i++)
+        {
+            var j = (i + 1) % n;
+            area += coords[i].X * coords[j].Y;
+            area -= coords[j].X * coords[i].Y;
+        }
+
+        return area / 2.0;
+    }
+
+    // Point-in-polygon ray-casting test (returns true when (px,py) is inside ring).
+    private static bool PointInRing(double px, double py, ReadOnlySpan<(double X, double Y)> ring)
+    {
+        var inside = false;
+        var n = ring.Length;
+        for (int i = 0, j = n - 1; i < n; j = i++)
+        {
+            var (xi, yi) = ring[i];
+            var (xj, yj) = ring[j];
+            if ((yi > py) != (yj > py) &&
+                px < (xj - xi) * (py - yi) / (yj - yi) + xi)
+            {
+                inside = !inside;
+            }
+        }
+
+        return inside;
+    }
+
+    private static byte[] BuildPolygonWkb(List<byte[]> ringBuffers)
+    {
+        var total = 1 + 4 + 4;
+        foreach (var rb in ringBuffers)
+        {
+            total += rb.Length;
         }
 
         var buffer = new byte[total];
         var span = buffer.AsSpan();
-
         WriteHeader(span[..5], WkbPolygon);
-        BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(5, 4), (uint)ringCount);
-
+        BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(5, 4), (uint)ringBuffers.Count);
         var copyOffset = 9;
-        foreach (var (_, ringBuffer) in ringBuffers)
+        foreach (var rb in ringBuffers)
         {
-            ringBuffer.CopyTo(span.Slice(copyOffset, ringBuffer.Length));
-            copyOffset += ringBuffer.Length;
+            rb.CopyTo(span.Slice(copyOffset, rb.Length));
+            copyOffset += rb.Length;
         }
 
         return buffer;
+    }
+
+    private static byte[] WritePolygonRingsClassified(JsonElement rings)
+    {
+        var allRings = ReadAllRings(rings);
+
+        // Separate shells (CW, negative signed area) from holes (CCW, positive signed area).
+        var shells = new List<(int Index, RingData Ring)>();
+        var holes = new List<(int Index, RingData Ring)>();
+        for (var i = 0; i < allRings.Count; i++)
+        {
+            var ring = allRings[i];
+            var area = SignedArea(ring.Coords);
+            // Negative area → CW → exterior shell in Esri convention.
+            // Use <= 0 so that degenerate (zero-area) rings fall into shells.
+            if (area <= 0.0)
+            {
+                shells.Add((i, ring));
+            }
+            else
+            {
+                holes.Add((i, ring));
+            }
+        }
+
+        // If all rings were classified as holes (e.g. a single CCW ring from a non-conformant
+        // source), treat all as shells so we still emit valid geometry.
+        if (shells.Count == 0)
+        {
+            for (var i = 0; i < allRings.Count; i++)
+            {
+                shells.Add((i, allRings[i]));
+            }
+
+            holes.Clear();
+        }
+
+        // Assign each hole to the first shell whose ring contains the hole's first vertex.
+        var holeAssignments = new Dictionary<int, List<byte[]>>();
+        foreach (var (_, holeRing) in holes)
+        {
+            var assigned = -1;
+            if (holeRing.Coords.Length > 0)
+            {
+                var (hx, hy) = holeRing.Coords[0];
+                foreach (var (shellIdx, shellRing) in shells)
+                {
+                    if (PointInRing(hx, hy, shellRing.Coords))
+                    {
+                        assigned = shellIdx;
+                        break;
+                    }
+                }
+            }
+
+            if (assigned < 0 && shells.Count > 0)
+            {
+                // Fall back to the first shell when no containment match is found.
+                assigned = shells[0].Index;
+            }
+
+            if (assigned >= 0)
+            {
+                if (!holeAssignments.TryGetValue(assigned, out var list))
+                {
+                    list = new List<byte[]>();
+                    holeAssignments[assigned] = list;
+                }
+
+                list.Add(holeRing.WkbBuffer);
+            }
+        }
+
+        // Build one WKB Polygon per shell.
+        var polygonBuffers = new List<byte[]>(shells.Count);
+        foreach (var (shellIdx, shellRing) in shells)
+        {
+            holeAssignments.TryGetValue(shellIdx, out var assignedHoles);
+            var ringBuffers = new List<byte[]>(1 + (assignedHoles?.Count ?? 0));
+            ringBuffers.Add(shellRing.WkbBuffer);
+            if (assignedHoles is not null)
+            {
+                ringBuffers.AddRange(assignedHoles);
+            }
+
+            polygonBuffers.Add(BuildPolygonWkb(ringBuffers));
+        }
+
+        if (polygonBuffers.Count == 1)
+        {
+            return polygonBuffers[0];
+        }
+
+        // Multiple shells → emit WKB MultiPolygon.
+        var multiTotal = 1 + 4 + 4;
+        foreach (var poly in polygonBuffers)
+        {
+            multiTotal += poly.Length;
+        }
+
+        var multiBuffer = new byte[multiTotal];
+        var multiSpan = multiBuffer.AsSpan();
+        WriteHeader(multiSpan[..5], WkbMultiPolygon);
+        BinaryPrimitives.WriteUInt32LittleEndian(multiSpan.Slice(5, 4), (uint)polygonBuffers.Count);
+        var multiOffset = 9;
+        foreach (var poly in polygonBuffers)
+        {
+            poly.CopyTo(multiSpan.Slice(multiOffset, poly.Length));
+            multiOffset += poly.Length;
+        }
+
+        return multiBuffer;
+    }
+
+    // Reads an x or y ordinate from a top-level point property.
+    // Returns false (empty geometry) when the value is JSON null, the string "NaN",
+    // or a non-finite double — matching how ArcGIS REST encodes empty points.
+    private static bool TryReadPointOrdinate(JsonElement prop, out double value)
+    {
+        value = 0.0;
+
+        if (prop.ValueKind == JsonValueKind.Null)
+        {
+            return false;
+        }
+
+        if (prop.ValueKind == JsonValueKind.String)
+        {
+            var s = prop.GetString();
+            if (string.Equals(s, "NaN", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            if (!double.TryParse(s, System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture, out value))
+            {
+                return false;
+            }
+
+            return double.IsFinite(value);
+        }
+
+        value = prop.GetDouble();
+        return double.IsFinite(value);
     }
 
     private static void ReadXy(JsonElement point, out double x, out double y)

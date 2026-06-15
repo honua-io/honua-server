@@ -164,33 +164,64 @@ public static class WorkflowDefinitionValidator
 
     private static bool Visit(
         string stepId,
-        IReadOnlyDictionary<string, WorkflowStepDefinition> lookup,
+        Dictionary<string, WorkflowStepDefinition> lookup,
         HashSet<string> unvisited,
         HashSet<string> active)
     {
-        if (!active.Add(stepId))
-        {
-            return true;
-        }
+        // Iterative DFS with an explicit stack: workflow definitions come from external
+        // requests, and a recursive visit would overflow the call stack on a dependency
+        // chain thousands of steps deep (StackOverflowException is not catchable).
+        // Frames with Exit=true unwind a fully explored step.
+        var stack = new Stack<(string StepId, bool Exit)>();
+        stack.Push((stepId, false));
 
-        if (lookup.TryGetValue(stepId, out var step))
+        while (stack.Count > 0)
         {
-            foreach (var dependency in step.DependsOn)
+            var (current, exit) = stack.Pop();
+
+            if (exit)
             {
-                if (!lookup.ContainsKey(dependency))
-                {
-                    continue;
-                }
+                active.Remove(current);
+                unvisited.Remove(current);
+                continue;
+            }
 
-                if (Visit(dependency, lookup, unvisited, active))
+            if (!unvisited.Contains(current))
+            {
+                // Already fully explored via another dependency path; no cycle through this step.
+                continue;
+            }
+
+            if (!active.Add(current))
+            {
+                return true;
+            }
+
+            stack.Push((current, true));
+
+            if (lookup.TryGetValue(current, out var step))
+            {
+                foreach (var dependency in step.DependsOn)
                 {
-                    return true;
+                    if (!lookup.ContainsKey(dependency))
+                    {
+                        continue;
+                    }
+
+                    if (active.Contains(dependency))
+                    {
+                        // Back edge to a step on the current path: dependency cycle.
+                        return true;
+                    }
+
+                    if (unvisited.Contains(dependency))
+                    {
+                        stack.Push((dependency, false));
+                    }
                 }
             }
         }
 
-        active.Remove(stepId);
-        unvisited.Remove(stepId);
         return false;
     }
 }

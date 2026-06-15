@@ -199,6 +199,7 @@ public sealed class EditProcessor : IEditProcessor
 
             var rollbackOnFailure = editRequest.TransactionOptions?.RollbackOnFailure ?? false;
             var useGlobalIds = HasGlobalIds(editRequest);
+            var preconditions = CollectPreconditions(editRequest);
 
             // Handle ordered operations if present
             if (editRequest.Operations?.IsDefaultOrEmpty == false)
@@ -207,7 +208,8 @@ public sealed class EditProcessor : IEditProcessor
                 return FeatureEditBatch.Create(
                     operations: operations,
                     rollbackOnFailure: rollbackOnFailure,
-                    useGlobalIds: useGlobalIds);
+                    useGlobalIds: useGlobalIds,
+                    preconditions: preconditions);
             }
 
             return FeatureEditBatch.Create(
@@ -215,7 +217,8 @@ public sealed class EditProcessor : IEditProcessor
                 updates: updates,
                 deletes: deletes,
                 rollbackOnFailure: rollbackOnFailure,
-                useGlobalIds: useGlobalIds);
+                useGlobalIds: useGlobalIds,
+                preconditions: preconditions);
         }
         catch (Exception ex)
         {
@@ -547,6 +550,72 @@ public sealed class EditProcessor : IEditProcessor
     {
         // Implementation would add hints for query optimization, caching, etc.
         return request;
+    }
+
+    /// <summary>
+    /// Collects optimistic-concurrency preconditions from the request-level
+    /// <see cref="UnifiedEditRequest.Preconditions"/> array and from per-feature
+    /// <see cref="EditConstraints.ExpectedStateToken"/> values on updates (both the
+    /// split Updates array and ordered Operations). First registration per object ID
+    /// wins; request-level preconditions take precedence over per-feature constraints.
+    /// </summary>
+    private static ImmutableArray<FeatureEditPrecondition> CollectPreconditions(UnifiedEditRequest editRequest)
+    {
+        Dictionary<long, FeatureEditPrecondition>? byObjectId = null;
+
+        static void Register(ref Dictionary<long, FeatureEditPrecondition>? map, long objectId, string expectedStateToken)
+        {
+            map ??= new Dictionary<long, FeatureEditPrecondition>();
+            if (!map.ContainsKey(objectId))
+            {
+                map[objectId] = new FeatureEditPrecondition
+                {
+                    ObjectId = objectId,
+                    ExpectedStateToken = expectedStateToken
+                };
+            }
+        }
+
+        if (editRequest.Preconditions is { IsDefaultOrEmpty: false } requestPreconditions)
+        {
+            foreach (var precondition in requestPreconditions)
+            {
+                if (!string.IsNullOrEmpty(precondition.ExpectedStateToken))
+                {
+                    Register(ref byObjectId, precondition.ObjectId, precondition.ExpectedStateToken);
+                }
+            }
+        }
+
+        if (editRequest.Updates is { IsDefaultOrEmpty: false } updates)
+        {
+            foreach (var update in updates)
+            {
+                if (update.ObjectId is { } objectId &&
+                    update.Constraints?.ExpectedStateToken is { Length: > 0 } token)
+                {
+                    Register(ref byObjectId, objectId, token);
+                }
+            }
+        }
+
+        if (editRequest.Operations is { IsDefaultOrEmpty: false } operations)
+        {
+            foreach (var operation in operations)
+            {
+                if (operation.Type == EditOperationType.Update &&
+                    operation.Feature is { } feature &&
+                    feature.ObjectId is { } objectId &&
+                    feature.Constraints?.ExpectedStateToken is { Length: > 0 } token)
+                {
+                    Register(ref byObjectId, objectId, token);
+                }
+            }
+        }
+
+        return byObjectId is null
+            ? ImmutableArray<FeatureEditPrecondition>.Empty
+            : byObjectId.Values.ToImmutableArray();
     }
 
     private static ImmutableArray<Feature> ConvertToFeatures(

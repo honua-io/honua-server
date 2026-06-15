@@ -154,4 +154,14 @@ internal static partial class OidcAuthenticationLog
         Message = "OIDC discovery metadata unavailable for portal credential verification: {Reason}")]
     public static partial void PortalCredentialMetadataUnavailable(ILogger logger, string reason);
 
+    /// <summary>
+    /// Logs when a token is rejected because replay protection is unavailable and
+    /// ReplayProtectionFailClosed is enabled.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4217,
+        Level = LogLevel.Warning,
+        Message = "OIDC token rejected: replay protection cache is unavailable and ReplayProtectionFailClosed is enabled.")]
+    public static partial void TokenReplayProtectionUnavailableFailClosed(ILogger logger);
+
 }

@@ -74,12 +74,22 @@ internal sealed class PostgresAlertDispatchStore : IAlertDispatchStore
         bool excludeChannel,
         CancellationToken cancellationToken)
     {
+        // status IN (0, 3) claims Pending/Failed rows that are due. The extra
+        // status = 1 arm reclaims abandoned in-flight claims: a worker that
+        // crashed (or threw) after claiming leaves rows wedged at Processing
+        // forever, because nothing else ever re-selects status 1. The claim
+        // UPDATE below stamps updated_at, so a Processing row whose updated_at
+        // is older than the claim TTL has no live worker and is safe to
+        // re-claim (poor man's lease, mirroring the feature-change outbox's
+        // claim_expires_at + RecoverExpiredClaimsAsync pattern).
         const string sql = """
             WITH claim AS (
                 SELECT dispatch_id
                 FROM honua.alert_dispatch
-                WHERE status IN (0, 3)
-                  AND next_attempt_at <= @now
+                WHERE (
+                    (status IN (0, 3) AND next_attempt_at <= @now)
+                    OR (status = 1 AND updated_at < @now - INTERVAL '5 minutes')
+                  )
                   AND (
                     @channel_type IS NULL
                     OR (@exclude_channel = true AND channel_type <> @channel_type)

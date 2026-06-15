@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
@@ -11,7 +12,9 @@ using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Raster;
 using Honua.Infrastructure.Validation;
 using Honua.ServiceDefaults;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Protocols.Elevation;
 
@@ -77,6 +80,7 @@ internal static class VisibilityAnalysisEndpoints
         string datasetId,
         HttpContext context,
         IVisibilityAnalysisService visibilityService,
+        [FromServices] IOptions<LimitsOptions> limitsOptions,
         CancellationToken cancellationToken)
     {
         var logger = context.RequestServices.GetService<ILoggerFactory>()?
@@ -127,11 +131,25 @@ internal static class VisibilityAnalysisEndpoints
                 "Height offsets must be finite, non-negative values in meters.");
         }
 
-        if (request.SampleCount is { } sampleCount && sampleCount < 2)
+        if (request.SampleCount is { } sampleCount)
         {
-            return StandardErrorHelpers.CreateUnprocessableEntity(
-                context,
-                "'sampleCount' must be at least 2 when supplied.");
+            if (sampleCount < 2)
+            {
+                return StandardErrorHelpers.CreateUnprocessableEntity(
+                    context,
+                    "'sampleCount' must be at least 2 when supplied.");
+            }
+
+            // Enforce the same configured ceiling as the elevation profile endpoint:
+            // the service forwards the requested count to the sampler, so an
+            // unbounded value would drive unbounded DB sampling and allocation.
+            var maxSampleCount = limitsOptions.Value.Elevation.MaxSampleCount;
+            if (sampleCount > maxSampleCount)
+            {
+                return StandardErrorHelpers.CreateUnprocessableEntity(
+                    context,
+                    $"'sampleCount' ({sampleCount}) exceeds the configured maximum of {maxSampleCount}.");
+            }
         }
 
         if (observerLon == targetLon && observerLat == targetLat)

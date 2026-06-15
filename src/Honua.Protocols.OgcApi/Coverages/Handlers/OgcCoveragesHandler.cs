@@ -1332,6 +1332,19 @@ internal sealed class OgcCoveragesHandler
             return ScalingResult.Successful(query with { OutputWidth = width, OutputHeight = height });
         }
 
+        // No scaling parameters were supplied, so the coverage is exported at native
+        // resolution and fully buffered in memory. Apply the same MaxScaleSize cap as
+        // the scaled paths to a full-extent export so a plain GET of a very large
+        // raster cannot allocate an unbounded encoded image.
+        if (!query.ClipRegion.HasValue &&
+            raster.Width > 0 &&
+            raster.Height > 0 &&
+            (raster.Width > MaxScaleSize || raster.Height > MaxScaleSize))
+        {
+            return ScalingResult.Failure(
+                $"Coverage native size exceeds {MaxScaleSize.ToString(CultureInfo.InvariantCulture)} pixels on an axis. Use subset or bbox to select a smaller area, or resolution, scale-factor, or scale-size to downsample the output.");
+        }
+
         return ScalingResult.Successful(query);
     }
 

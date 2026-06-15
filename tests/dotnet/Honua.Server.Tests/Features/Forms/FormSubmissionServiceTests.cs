@@ -321,6 +321,85 @@ public sealed class FormSubmissionServiceTests
     }
 
     [UnitTest]
+    public async Task SubmitAsync_WhenPostClaimTimeoutOccurs_DeletesClaimAndReturns500WithoutPersistingReplay()
+    {
+        using var requestServices = CreateRequestServices();
+        var store = new FakeFormPackageStore();
+        var writer = new FakeFeatureWriter
+        {
+            OnApplyEdits = () => throw new OperationCanceledException("Post-claim timeout.")
+        };
+        var service = CreateService(store, writer);
+        var context = CreateContext(CreateSubmission("timeout-retry-1", "Create"), requestServices);
+
+        var result = await service.SubmitAsync(context, store.PackageVersion.FormId);
+        await result.ExecuteAsync(context);
+
+        // Client gets a 500 with a fresh response (not a replay)
+        context.Response.StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
+        var body = ReadResponseBody(context);
+        body.Status.Should().Be("failed");
+        body.Retry!.Retryable.Should().BeTrue();
+        body.IdempotentReplay.Should().BeFalse();
+
+        // Claim must be deleted so the same idempotency key can re-execute
+        store.DeleteCalls.Should().Be(1);
+        store.CompleteCalls.Should().Be(0);
+    }
+
+    [UnitTest]
+    public async Task SubmitAsync_WhenUnhandledExceptionOccurs_DeletesClaimAndReturns500WithoutPersistingReplay()
+    {
+        using var requestServices = CreateRequestServices();
+        var store = new FakeFormPackageStore();
+        var writer = new FakeFeatureWriter
+        {
+            OnApplyEdits = () => throw new InvalidOperationException("Simulated server fault.")
+        };
+        var service = CreateService(store, writer);
+        var context = CreateContext(CreateSubmission("fault-retry-1", "Create"), requestServices);
+
+        var result = await service.SubmitAsync(context, store.PackageVersion.FormId);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
+        var body = ReadResponseBody(context);
+        body.Status.Should().Be("failed");
+        body.Retry!.Retryable.Should().BeTrue();
+        body.IdempotentReplay.Should().BeFalse();
+
+        store.DeleteCalls.Should().Be(1);
+        store.CompleteCalls.Should().Be(0);
+    }
+
+    [UnitTest]
+    public async Task SubmitAsync_WhenTransientFailureClaimDeleteFails_StillReturns500WithoutThrowing()
+    {
+        // When DeleteSubmissionAsync itself throws, the service must swallow the error and still
+        // return 500 — the client receives the failure response rather than an unhandled exception.
+        using var requestServices = CreateRequestServices();
+        var store = new FakeFormPackageStore
+        {
+            DeleteShouldThrow = true
+        };
+        var writer = new FakeFeatureWriter
+        {
+            OnApplyEdits = () => throw new InvalidOperationException("Simulated server fault.")
+        };
+        var service = CreateService(store, writer);
+        var context = CreateContext(CreateSubmission("fault-delete-fail-1", "Create"), requestServices);
+
+        var result = await service.SubmitAsync(context, store.PackageVersion.FormId);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
+        var body = ReadResponseBody(context);
+        body.Status.Should().Be("failed");
+        store.DeleteCalls.Should().Be(1);
+        store.CompleteCalls.Should().Be(0);
+    }
+
+    [UnitTest]
     public async Task SubmitAsync_WithDeleteAttachmentDescriptor_ReturnsRejectedWithoutEditing()
     {
         using var requestServices = CreateRequestServices();
@@ -830,6 +909,23 @@ public sealed class FormSubmissionServiceTests
             RecordedAttachmentDescriptors.Add(descriptor);
             RecordedAttachmentOutcomes.Add(outcome);
             return Task.CompletedTask;
+        }
+
+        public int DeleteCalls { get; private set; }
+
+        public bool DeleteShouldThrow { get; init; }
+
+        public Task<bool> DeleteSubmissionAsync(
+            Guid submissionId,
+            CancellationToken cancellationToken = default)
+        {
+            DeleteCalls++;
+            if (DeleteShouldThrow)
+            {
+                throw new InvalidOperationException("Simulated delete failure.");
+            }
+
+            return Task.FromResult(true);
         }
     }
 

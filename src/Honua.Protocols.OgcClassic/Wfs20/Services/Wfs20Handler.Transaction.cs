@@ -181,7 +181,7 @@ internal sealed partial class Wfs20Handler
         }
         catch (Exception ex)
         {
-            Wfs20Log.DatabaseQueryFailed(_logger, Wfs20Utilities.Operations.Transaction, ex.Message);
+            Wfs20Log.DatabaseQueryFailed(_logger, ex, Wfs20Utilities.Operations.Transaction, ex.Message);
             HonuaTelemetry.RecordException(activity, ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "Failed to process Transaction request.");
         }
@@ -1457,7 +1457,7 @@ internal sealed partial class Wfs20Handler
     {
         var ordinates = rawPosList
             .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(value => double.Parse(value, CultureInfo.InvariantCulture))
+            .Select(ParseTransactionOrdinate)
             .ToArray();
 
         if (ordinates.Length < 2 || ordinates.Length % 2 != 0)
@@ -1479,7 +1479,7 @@ internal sealed partial class Wfs20Handler
     {
         var ordinates = rawPosition
             .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(value => double.Parse(value, CultureInfo.InvariantCulture))
+            .Select(ParseTransactionOrdinate)
             .ToArray();
         if (ordinates.Length < 2)
         {
@@ -1487,6 +1487,19 @@ internal sealed partial class Wfs20Handler
         }
 
         return CreateTransactionCoordinate(ordinates[0], ordinates[1], axisOrder);
+    }
+
+
+    private static double ParseTransactionOrdinate(string value)
+    {
+        // Client-supplied coordinate text must surface as InvalidParameterValue (400),
+        // not FormatException/OverflowException falling through to a 500.
+        if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var ordinate))
+        {
+            throw new ArgumentException($"Invalid GML coordinate value '{value}'.");
+        }
+
+        return ordinate;
     }
 
 
@@ -1661,7 +1674,7 @@ internal sealed partial class Wfs20Handler
                 operations
                     .Select(static operation => operation.RequestGeometryChanged)
                     .ToImmutableArray(),
-                rollbackOnFailure: false,
+                rollbackOnFailure,
                 cancellationToken).ConfigureAwait(false);
 
             createdCount += layerResult.CreatedCount;

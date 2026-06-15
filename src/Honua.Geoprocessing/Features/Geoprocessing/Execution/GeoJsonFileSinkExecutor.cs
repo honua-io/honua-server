@@ -20,11 +20,26 @@ namespace Honua.Geoprocessing.Execution;
 /// null geometry are written (GeoJSON permits a null geometry member) but counted as
 /// rejected so the result reflects them.
 /// </summary>
-internal sealed class GeoJsonFileSinkExecutor(IOptionsMonitor<GeoprocessingExecutorOptions> options) : IJobExecutor
+internal sealed partial class GeoJsonFileSinkExecutor : IJobExecutor
 {
     internal const string HandledProcessId = "sink.geojson-file";
 
-    private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _options = options;
+    private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _options;
+    private readonly ILogger<GeoJsonFileSinkExecutor> _logger;
+
+    public GeoJsonFileSinkExecutor(
+        IOptionsMonitor<GeoprocessingExecutorOptions> options,
+        ILogger<GeoJsonFileSinkExecutor> logger)
+    {
+        _options = options;
+        _logger = logger;
+    }
+
+    // Test-friendly overload; production DI always resolves the logger.
+    internal GeoJsonFileSinkExecutor(IOptionsMonitor<GeoprocessingExecutorOptions> options)
+        : this(options, Microsoft.Extensions.Logging.Abstractions.NullLogger<GeoJsonFileSinkExecutor>.Instance)
+    {
+    }
 
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 
@@ -66,7 +81,7 @@ internal sealed class GeoJsonFileSinkExecutor(IOptionsMonitor<GeoprocessingExecu
             return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: {pathResolutionError}");
         }
 
-        if (!FeatureCollectionArtifact.TryParseDataUri(inputUri, out var source, out var parseError))
+        if (!FeatureCollectionArtifact.TryParseDataUri(inputUri, out var source, out var parseError, _options.CurrentValue.MaxArtifactBytes))
         {
             return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: 'input' {parseError}");
         }
@@ -113,16 +128,25 @@ internal sealed class GeoJsonFileSinkExecutor(IOptionsMonitor<GeoprocessingExecu
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
         {
+            Log.SinkWriteFailed(_logger, job.OperationId, HandledProcessId, ex);
             return JobExecutionResult.Failed($"{HandledProcessId} write failed: {ex.GetType().Name}.");
         }
 
         cancellationToken.ThrowIfCancellationRequested();
         await context.PublishArtifactAsync(
-            SinkResultArtifact.Build(HandledProcessId, ("path", resolvedPath), ("featuresWritten", written), ("featuresRejected", rejected)),
+            SinkResultArtifact.Build(HandledProcessId, ("path", path), ("featuresWritten", written), ("featuresRejected", rejected)),
             cancellationToken).ConfigureAwait(false);
         await context.ReportProgressAsync(100, $"{HandledProcessId} completed", cancellationToken).ConfigureAwait(false);
 
         return JobExecutionResult.Succeeded();
+    }
+
+    private static partial class Log
+    {
+        [LoggerMessage(9250, LogLevel.Error,
+            "Sink executor failed job {OperationId} during {ProcessId} write")]
+        public static partial void SinkWriteFailed(
+            ILogger logger, string operationId, string processId, Exception exception);
     }
 }
 

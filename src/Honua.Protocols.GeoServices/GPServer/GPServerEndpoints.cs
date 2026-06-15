@@ -357,6 +357,11 @@ internal static class GPServerEndpoints
 
         var jobService = context.RequestServices.GetRequiredService<IGeoprocessingJobService>();
 
+        // Tracks a successfully submitted job so an abandoned synchronous request
+        // (timeout / client disconnect) can best-effort cancel it instead of leaving
+        // it running with no client left to consume the result.
+        string? submittedJobId = null;
+
         try
         {
             var serviceValidation = await ValidateServiceAsync(context, serviceId, logger, ct);
@@ -431,6 +436,7 @@ internal static class GPServerEndpoints
                 context.User,
                 protocolMetadata,
                 ct);
+            submittedJobId = job.OperationId;
 
             // Synchronous contract: block until the canonical runtime reaches a
             // terminal state, then return results inline. Execution itself flows
@@ -454,15 +460,51 @@ internal static class GPServerEndpoints
         }
         catch (TimeoutException)
         {
+            await TryCancelOrphanedExecuteJobAsync(jobService, submittedJobId, context.User, logger);
             return SetSpanErrorAndReturn(
                 StandardErrorHelpers.CreateRequestTimeout(context,
                     "Synchronous GP execution did not complete within the request timeout. " +
                     "Use submitJob for long-running execution."),
                 "Synchronous execution timed out");
         }
+        catch (OperationCanceledException ex)
+        {
+            // Caller disconnected or the limits timeout token tripped while the
+            // submitted job was still running; cancel the orphan before mapping.
+            await TryCancelOrphanedExecuteJobAsync(jobService, submittedJobId, context.User, logger);
+            return MapExceptionToResult(context, logger, "Execute", ex);
+        }
         catch (Exception ex)
         {
             return MapExceptionToResult(context, logger, "Execute", ex);
+        }
+    }
+
+    /// <summary>
+    /// Best-effort cancellation of a synchronous-execute job whose client is no longer
+    /// waiting (request timeout or disconnect). Runs on a detached token — the request
+    /// token has already tripped — and never throws: the orphaned job consuming worker
+    /// capacity is a resource leak, not a correctness failure of the response.
+    /// </summary>
+    private static async Task TryCancelOrphanedExecuteJobAsync(
+        IGeoprocessingJobService jobService,
+        string? jobId,
+        System.Security.Claims.ClaimsPrincipal user,
+        ILogger logger)
+    {
+        if (string.IsNullOrEmpty(jobId))
+        {
+            return;
+        }
+
+        try
+        {
+            GPServerLog.OrphanedExecuteJobCancelRequested(logger, jobId);
+            await jobService.CancelJobAsync(jobId, user, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            GPServerLog.OrphanedExecuteJobCancelFailed(logger, jobId, ex);
         }
     }
 
@@ -1071,17 +1113,21 @@ internal static class GPServerEndpoints
                 var root = doc.RootElement;
                 if (root.ValueKind == System.Text.Json.JsonValueKind.Object)
                 {
+                    // TryGetInt32: a non-integer number (e.g. {"wkid":3857.5}) is an
+                    // invalid spatial reference (400), not a FormatException-driven 500.
                     if (root.TryGetProperty("wkid", out var wkid) &&
-                        wkid.ValueKind == System.Text.Json.JsonValueKind.Number)
+                        wkid.ValueKind == System.Text.Json.JsonValueKind.Number &&
+                        wkid.TryGetInt32(out var wkidValue))
                     {
-                        srid = wkid.GetInt32();
+                        srid = wkidValue;
                         return true;
                     }
 
                     if (root.TryGetProperty("latestWkid", out var latest) &&
-                        latest.ValueKind == System.Text.Json.JsonValueKind.Number)
+                        latest.ValueKind == System.Text.Json.JsonValueKind.Number &&
+                        latest.TryGetInt32(out var latestValue))
                     {
-                        srid = latest.GetInt32();
+                        srid = latestValue;
                         return true;
                     }
                 }

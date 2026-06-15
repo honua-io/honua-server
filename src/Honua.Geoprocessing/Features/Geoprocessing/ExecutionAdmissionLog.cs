@@ -55,4 +55,8 @@ internal static partial class ExecutionAdmissionLog
     [LoggerMessage(8024, LogLevel.Warning,
         "ExecutionAdmission is enabled but IExecutionJobStore is not registered; backpressure and concurrency gates will skip")]
     public static partial void JobStoreUnavailable(ILogger logger);
+
+    [LoggerMessage(8025, LogLevel.Debug,
+        "Evicted idle rate bucket for principal:kind key '{RateKey}'")]
+    public static partial void RateBucketEvicted(ILogger logger, string rateKey);
 }

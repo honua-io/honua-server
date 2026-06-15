@@ -8,7 +8,6 @@ using Honua.Core.Features.NlQuery.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
 using NetTopologySuite.IO;
-using NtsGeometry = NetTopologySuite.Geometries.Geometry;
 
 namespace Honua.Core.Features.NlQuery.Services;
 
@@ -277,15 +276,17 @@ public static class FilterPlanCompiler
 
         try
         {
-            var reader = new GeoJsonReader();
-            var geom = reader.Read<NtsGeometry>(geoJson)
-                ?? throw new FilterPlanCompilationException("Geometry could not be parsed from GeoJSON.");
+            // Route through the shared geometry guard so that the same
+            // MaxGeometryTextBytes / MaxGeometryVertices limits that protect
+            // the CQL2 and OData filter parsers also apply to NL-query-derived
+            // filter plans.  Direct GeoJsonReader usage would bypass the caps.
+            var geom = FilterParserGeometryGuard.ParseGeoJsonGeometry(
+                geoJson, "Spatial clause geometry");
 
             // GeoJSON without an explicit CRS defaults to WGS 84 (EPSG:4326) per RFC 7946.
             // The downstream filter translator handles ST_Transform to the layer's SRID.
             var srid = geom.SRID > 0 ? geom.SRID : DefaultSrid;
-            var writer = new WKBWriter();
-            var wkb = writer.Write(geom);
+            var wkb = new WKBWriter().Write(geom);
 
             return new GeometryLiteral(wkb, srid, geoJson);
         }
@@ -344,6 +345,7 @@ public static class FilterPlanCompiler
             foreach (var item in element.EnumerateArray())
             {
                 values.Add(ParseLiteralValue(item));
+                FilterParserGuard.EnsureInListSize(values.Count, "FilterPlan");
             }
 
             return new ValueList(values);

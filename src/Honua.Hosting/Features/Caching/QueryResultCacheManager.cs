@@ -130,21 +130,36 @@ public sealed class QueryResultCacheOptions
     /// <summary>
     /// Maximum cache size in bytes.
     /// </summary>
+    /// <remarks>
+    /// Not enforced when <see cref="QueryResultCacheManager"/> uses the shared
+    /// <see cref="Microsoft.Extensions.Caching.Memory.IMemoryCache"/> (the default DI
+    /// registration).  To enforce this limit, register a dedicated
+    /// <see cref="Microsoft.Extensions.Caching.Memory.MemoryCache"/> with
+    /// <c>SizeLimit = MaxCacheSizeBytes</c> and supply it to the manager constructor.
+    /// </remarks>
     public long MaxCacheSizeBytes { get; set; } = 100 * 1024 * 1024; // 100 MB
 
     /// <summary>
     /// Maximum number of cached items.
     /// </summary>
+    /// <remarks>
+    /// Not enforced when <see cref="QueryResultCacheManager"/> uses the shared
+    /// <see cref="Microsoft.Extensions.Caching.Memory.IMemoryCache"/>; entries are
+    /// bounded only by TTL and the underlying <see cref="Microsoft.Extensions.Caching.Memory.IMemoryCache"/>
+    /// compaction policy.
+    /// </remarks>
     public int MaxCachedItems { get; set; } = 10000;
 
     /// <summary>
     /// Whether to enable cache compression.
     /// </summary>
+    /// <remarks>Not implemented; entries are stored as-is.</remarks>
     public bool EnableCompression { get; set; } = true;
 
     /// <summary>
     /// Minimum size for compression in bytes.
     /// </summary>
+    /// <remarks>Not implemented; see <see cref="EnableCompression"/>.</remarks>
     public int CompressionThresholdBytes { get; set; } = 1024;
 
     /// <summary>
@@ -230,15 +245,17 @@ internal sealed partial class QueryResultCacheManager : IQueryResultCacheManager
         var finalCacheKey = BuildFinalCacheKey(cacheKey, options?.KeySuffix);
         var stopwatch = Stopwatch.StartNew();
 
-        // Try to get from cache
-        if (_cache.TryGetValue(finalCacheKey, out var cachedResult))
+        // Try to get from cache; use a pattern-match cast so a key collision (two
+        // call sites using the same key with different T) produces a cache miss rather
+        // than an InvalidCastException on the request path.
+        if (_cache.TryGetValue(finalCacheKey, out var cachedResult) && cachedResult is T typedResult)
         {
             stopwatch.Stop();
             RecordCacheHit(context.QueryType, stopwatch.Elapsed, finalCacheKey);
 
             CacheLog.CacheHit(_logger, finalCacheKey, stopwatch.ElapsedMilliseconds, context.CorrelationId);
 
-            return (T)cachedResult!;
+            return typedResult;
         }
 
         // Cache miss - execute query
@@ -277,10 +294,27 @@ internal sealed partial class QueryResultCacheManager : IQueryResultCacheManager
     {
         if (_disposed) return 0;
 
+        // Tag-based invalidation is not yet implemented; callers passing tags would
+        // receive a silent zero-result, which is incorrect.  Fail fast so callers
+        // discover the gap rather than silently serving stale data.
+        var tagList = tags?.ToList();
+        if (tagList is { Count: > 0 })
+        {
+            throw new NotSupportedException(
+                "Tag-based cache invalidation is not supported by QueryResultCacheManager. " +
+                "Provide a pattern, or use the ICacheService (Redis-backed) for tag invalidation.");
+        }
+
         var invalidatedCount = 0;
 
         if (!string.IsNullOrEmpty(pattern))
         {
+            // Enumerate _keyStatistics for the tracked set; note that entries are
+            // removed from statistics when the cache entry is evicted, so this set
+            // is kept in sync via the post-eviction callback registered in
+            // CreateMemoryCacheEntryOptions.  Do not prune statistics entries on
+            // the 1-hour idle timer while the corresponding cache entry may still
+            // be alive — the eviction callback is the authoritative removal signal.
             var keysToRemove = _keyStatistics.Keys
                 .Where(key => IsPatternMatch(key, pattern))
                 .ToList();
@@ -490,7 +524,9 @@ internal sealed partial class QueryResultCacheManager : IQueryResultCacheManager
             cacheOptions.SlidingExpiration = options.SlidingExpiration;
         }
 
-        // Add eviction callback to track statistics
+        // Add eviction callback to track statistics.  The callback is the authoritative
+        // signal for removing _keyStatistics entries — the idle timer no longer prunes
+        // them so InvalidateAsync sees live keys.
         cacheOptions.RegisterPostEvictionCallback((key, value, reason, state) =>
         {
             Interlocked.Increment(ref _totalEvictions);
@@ -573,26 +609,13 @@ internal sealed partial class QueryResultCacheManager : IQueryResultCacheManager
 
     private void UpdateStatistics(object? state)
     {
+        // Statistics entries are removed authoritatively by the post-eviction callback
+        // registered in CreateMemoryCacheEntryOptions.  Do NOT prune statistics entries
+        // here based on last-access time: a cache entry with a long TTL (longer than 1h)
+        // but low access frequency would have its stats entry swept while the cached value
+        // is still alive, causing InvalidateAsync to miss the key and serve stale data
+        // until the entry TTL expires.
         if (_disposed) return;
-
-        try
-        {
-            // Clean up old statistics entries
-            var cutoff = DateTime.UtcNow.Subtract(TimeSpan.FromHours(1));
-            var expiredKeys = _keyStatistics
-                .Where(kvp => kvp.Value.LastAccessed < cutoff)
-                .Select(kvp => kvp.Key)
-                .ToList();
-
-            foreach (var key in expiredKeys)
-            {
-                _keyStatistics.TryRemove(key, out _);
-            }
-        }
-        catch (Exception ex)
-        {
-            CacheLog.StatisticsUpdateFailed(_logger, ex);
-        }
     }
 
     public void Dispose()

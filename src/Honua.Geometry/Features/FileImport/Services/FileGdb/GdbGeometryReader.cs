@@ -196,10 +196,22 @@ internal sealed class GdbGeometryReader
             var remaining = numPoints;
             for (var p = 0; p < numParts - 1; p++)
             {
-                partPointCounts[p] = (int)GdbVarInt.ReadVarUInt(blob, ref offset);
-                remaining -= partPointCounts[p];
+                var partCount = (int)GdbVarInt.ReadVarUInt(blob, ref offset);
+                // Each part count must be positive and must not exceed the
+                // remaining points budget; a crafted file can otherwise cause
+                // BuildPolygon/BuildPolyline to allocate a multi-GB array.
+                if (partCount <= 0 || partCount > remaining)
+                {
+                    throw new InvalidDataException(
+                        $"FileGDB geometry part {p} has an invalid point count ({partCount}); remaining budget is {remaining}.");
+                }
+
+                partPointCounts[p] = partCount;
+                remaining -= partCount;
             }
 
+            // The last part consumes whatever points are left.  'remaining' is
+            // already guaranteed non-negative by the loop above.
             partPointCounts[numParts - 1] = remaining;
         }
         else

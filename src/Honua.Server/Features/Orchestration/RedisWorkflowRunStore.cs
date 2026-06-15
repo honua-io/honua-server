@@ -18,6 +18,7 @@ internal sealed class RedisWorkflowRunStore(IConnectionMultiplexer redis) : IWor
     private const string ActiveIndexKey = "orchestration:run:active";
     private const string WorkflowIndexPrefix = "orchestration:run:wf:";
     private static readonly TimeSpan DefaultRetention = TimeSpan.FromDays(7);
+    private static readonly TimeSpan WorkflowIndexRetentionSlack = TimeSpan.FromDays(1);
 
     private readonly IDatabase _database = redis.GetDatabase();
 
@@ -195,7 +196,14 @@ internal sealed class RedisWorkflowRunStore(IConnectionMultiplexer redis) : IWor
             ? transaction.SetRemoveAsync(ActiveIndexKey, indexMemberId)
             : transaction.SetAddAsync(ActiveIndexKey, indexMemberId);
 
-        var workflowIndexTask = transaction.SetAddAsync(GetWorkflowIndexKey(run.WorkflowId), indexMemberId);
+        var workflowIndexKey = GetWorkflowIndexKey(run.WorkflowId);
+        var workflowIndexTask = transaction.SetAddAsync(workflowIndexKey, indexMemberId);
+        // Keep the per-workflow index from growing without bound: run payload keys
+        // expire after the retention window, but set members have no TTL of their
+        // own and are only pruned lazily by ListByWorkflowAsync. Refresh a TTL on
+        // the index key slightly beyond the run retention so indexes for workflows
+        // that are never listed (or have been deleted) expire on their own.
+        var workflowIndexTtlTask = transaction.KeyExpireAsync(workflowIndexKey, retention + WorkflowIndexRetentionSlack);
 
         var committed = await transaction.ExecuteAsync().ConfigureAwait(false);
         if (!committed)
@@ -206,6 +214,7 @@ internal sealed class RedisWorkflowRunStore(IConnectionMultiplexer redis) : IWor
         await writeTask.ConfigureAwait(false);
         await activeIndexTask.ConfigureAwait(false);
         await workflowIndexTask.ConfigureAwait(false);
+        await workflowIndexTtlTask.ConfigureAwait(false);
         return true;
     }
 

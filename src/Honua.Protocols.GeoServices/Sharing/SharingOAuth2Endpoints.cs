@@ -94,13 +94,6 @@ internal static class SharingOAuth2Endpoints
         }
 
         var query = context.Request.Query;
-        var responseType = ReadFirst(query["response_type"]);
-        if (responseType is not null && !string.Equals(responseType, "code", StringComparison.Ordinal))
-        {
-            return RedirectError(context, ReadFirst(query["redirect_uri"]), ReadFirst(query["state"]),
-                "unsupported_response_type", "Only response_type=code is supported.");
-        }
-
         var clientId = ReadFirst(query["client_id"]);
         var redirectUri = ReadFirst(query["redirect_uri"]);
         if (string.IsNullOrWhiteSpace(clientId) || string.IsNullOrWhiteSpace(redirectUri))
@@ -121,6 +114,16 @@ internal static class SharingOAuth2Endpoints
         {
             SharingRestLog.OAuthRedirectUriRejected(logger);
             return StandardErrorHelpers.CreateBadRequest(context, "redirect_uri is not registered for this deployment.");
+        }
+
+        // response_type is validated only after the redirect_uri allow-list check so
+        // the error redirect below can never target an unvalidated URI (RFC 6749
+        // §4.1.2.1 requires validating redirect_uri before redirecting errors to it).
+        var responseType = ReadFirst(query["response_type"]);
+        if (responseType is not null && !string.Equals(responseType, "code", StringComparison.Ordinal))
+        {
+            return RedirectError(context, redirectUri, ReadFirst(query["state"]),
+                "unsupported_response_type", "Only response_type=code is supported.");
         }
 
         // Hard PKCE requirement (#1484): when enabled, every authorization-code flow

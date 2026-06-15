@@ -131,7 +131,11 @@ internal sealed partial class PostgresVersionManager
         }
         finally
         {
-            await SetVersionStateAsync(versionId, VersionState.Active, cancellationToken).ConfigureAwait(false);
+            // Restore the state row with CancellationToken.None: when the operation was
+            // cancelled (or the request token timed out), running the reset with the caller's
+            // token would throw immediately on connection open and leave the version wedged
+            // in Reconciling until manual repair.
+            await SetVersionStateAsync(versionId, VersionState.Active, CancellationToken.None).ConfigureAwait(false);
         }
     }
 
@@ -235,7 +239,9 @@ internal sealed partial class PostgresVersionManager
         }
         finally
         {
-            await SetVersionStateAsync(versionId, VersionState.Active, cancellationToken).ConfigureAwait(false);
+            // CancellationToken.None for the same reason as ReconcileAsync: a cancelled
+            // request token must not skip the state reset and leave the version in Posting.
+            await SetVersionStateAsync(versionId, VersionState.Active, CancellationToken.None).ConfigureAwait(false);
         }
     }
 

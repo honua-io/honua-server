@@ -231,12 +231,39 @@ public static class OutboundHttpUrlValidator
         if (address.AddressFamily == AddressFamily.InterNetworkV6)
         {
             var bytes = address.GetAddressBytes();
-            return address.Equals(IPAddress.IPv6None) ||
-                   address.Equals(IPAddress.IPv6Loopback) ||
-                   (bytes[0] == 0xfe && (bytes[1] & 0xc0) == 0x80) ||
-                   (bytes[0] == 0xfe && (bytes[1] & 0xc0) == 0xc0) ||
-                   (bytes[0] & 0xfe) == 0xfc ||
-                   (bytes[0] == 0x20 && bytes[1] == 0x01 && bytes[2] == 0x0d && bytes[3] == 0xb8);
+            if (address.Equals(IPAddress.IPv6None) ||
+                address.Equals(IPAddress.IPv6Loopback) ||
+                bytes[0] == 0xff ||
+                (bytes[0] == 0xfe && (bytes[1] & 0xc0) == 0x80) ||
+                (bytes[0] == 0xfe && (bytes[1] & 0xc0) == 0xc0) ||
+                (bytes[0] & 0xfe) == 0xfc ||
+                (bytes[0] == 0x20 && bytes[1] == 0x01 && bytes[2] == 0x0d && bytes[3] == 0xb8))
+            {
+                return true;
+            }
+
+            // Teredo (2001::/32) tunnels an obfuscated IPv4 endpoint that cannot be vetted
+            // reliably; treat it as reserved for outbound destinations.
+            if (bytes[0] == 0x20 && bytes[1] == 0x01 && bytes[2] == 0x00 && bytes[3] == 0x00)
+            {
+                return true;
+            }
+
+            // 6to4 (2002::/16) embeds an IPv4 address; vet it so 2002:<private-v4>:: cannot
+            // smuggle a reserved destination past the check.
+            if (bytes[0] == 0x20 && bytes[1] == 0x02)
+            {
+                return IsPrivateOrReservedAddress(new IPAddress(bytes.AsSpan(2, 4)));
+            }
+
+            // NAT64 (64:ff9b::/32, covering the well-known 64:ff9b::/96 and local-use
+            // 64:ff9b:1::/48 prefixes) embeds the translated IPv4 in the low 32 bits; vet it.
+            if (bytes[0] == 0x00 && bytes[1] == 0x64 && bytes[2] == 0xff && bytes[3] == 0x9b)
+            {
+                return IsPrivateOrReservedAddress(new IPAddress(bytes.AsSpan(12, 4)));
+            }
+
+            return false;
         }
 
         return false;

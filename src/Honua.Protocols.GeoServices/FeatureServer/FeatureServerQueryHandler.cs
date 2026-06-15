@@ -322,6 +322,7 @@ internal sealed partial class FeatureServerQueryHandler(
                 validatedParams,
                 query.Value,
                 outputSrid,
+                queryLimits,
                 context,
                 cancellationToken).ConfigureAwait(false);
 
@@ -659,7 +660,10 @@ internal sealed partial class FeatureServerQueryHandler(
 
             var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(queryLayer.Resource);
 
-            if (validatedParams.ReturnCountOnly)
+            // Esri parity: returnExtentOnly combined with returnCountOnly must return
+            // {extent, count}, so the extent-only branch (which already emits both)
+            // takes precedence over the count-only branch.
+            if (validatedParams.ReturnCountOnly && !validatedParams.ReturnExtentOnly)
             {
                 var cached = await TryGetCachedResponseAsync();
                 if (cached != null)
@@ -954,8 +958,12 @@ internal sealed partial class FeatureServerQueryHandler(
                     return await CreateCachedMemoryResultAsync(payload, "application/json");
                 }
 
+                // DISTINCT is applied in memory, so bound the source-row scan at the
+                // transfer limit (plus the requested window) instead of materializing
+                // the whole layer; a truncated scan surfaces as exceededTransferLimit.
+                var distinctScanLimit = ComputeDistinctScanLimit(query, queryLimits);
                 var queryForExecution = shouldApplyDistinct
-                    ? query with { Limit = null, Offset = null }
+                    ? query with { Limit = distinctScanLimit, Offset = null }
                     : query;
                 var queryStopwatch = Stopwatch.StartNew();
                 QueryResult<Feature> result = await _queryExecutor.QueryWithValidationAsync(
@@ -971,8 +979,9 @@ internal sealed partial class FeatureServerQueryHandler(
 
                 if (shouldApplyDistinct)
                 {
+                    var distinctScanTruncated = result.HasMoreResults || result.Items.Length >= distinctScanLimit;
                     result = ApplyDistinctValues(result, outFields!);
-                    result = ApplyPaginationWindow(result, query.Offset, query.Limit);
+                    result = ApplyPaginationWindow(result, query.Offset, query.Limit, distinctScanTruncated);
                 }
 
                 (object? formattedResponse, string? contentType) = await _queryServices.FormatQueryResultAsync(
@@ -1580,6 +1589,7 @@ internal sealed partial class FeatureServerQueryHandler(
         QueryParameters validatedParams,
         FeatureQuery query,
         int? outputSrid,
+        QueryLimits queryLimits,
         HttpContext context,
         CancellationToken cancellationToken)
     {
@@ -1737,8 +1747,12 @@ internal sealed partial class FeatureServerQueryHandler(
         }
 
         var shouldApplyDistinct = validatedParams.ReturnDistinctValues && outFields is { Length: > 0 };
+        // DISTINCT is applied in memory, so bound the source-row scan at the
+        // transfer limit (plus the requested window) instead of materializing
+        // the whole layer; a truncated scan surfaces as exceededTransferLimit.
+        var distinctScanLimit = ComputeDistinctScanLimit(query, queryLimits);
         var queryForExecution = shouldApplyDistinct
-            ? query with { Limit = null, Offset = null }
+            ? query with { Limit = distinctScanLimit, Offset = null }
             : query;
         var queryStopwatch = Stopwatch.StartNew();
         QueryResult<Feature> queryResult = await _queryExecutor.QueryWithValidationAsync(
@@ -1753,8 +1767,9 @@ internal sealed partial class FeatureServerQueryHandler(
 
         if (shouldApplyDistinct)
         {
+            var distinctScanTruncated = queryResult.HasMoreResults || queryResult.Items.Length >= distinctScanLimit;
             queryResult = ApplyDistinctValues(queryResult, outFields!);
-            queryResult = ApplyPaginationWindow(queryResult, query.Offset, query.Limit);
+            queryResult = ApplyPaginationWindow(queryResult, query.Offset, query.Limit, distinctScanTruncated);
         }
 
         (object? formattedResponse, _) = await _queryServices.FormatQueryResultAsync(
@@ -2639,21 +2654,31 @@ internal sealed partial class FeatureServerQueryHandler(
             ? HonuaTelemetry.Protocols.MapServer
             : HonuaTelemetry.Protocols.FeatureServer;
 
+    // Computes the bounded number of source rows to scan for an in-memory
+    // returnDistinctValues evaluation: the configured transfer limit (or the
+    // requested window when it is larger) plus one row so a truncated scan can
+    // be detected and reported as exceededTransferLimit.
+    private static int ComputeDistinctScanLimit(FeatureQuery query, QueryLimits queryLimits)
+        => Math.Max(queryLimits.MaxRecordCount, Math.Max(0, query.Offset ?? 0) + Math.Max(0, query.Limit ?? 0)) + 1;
+
     private static QueryResult<Feature> ApplyPaginationWindow(
         QueryResult<Feature> result,
         int? offset,
-        int? limit)
+        int? limit,
+        bool scanTruncated = false)
     {
         if (result.Items.IsDefaultOrEmpty)
         {
-            return result;
+            return scanTruncated
+                ? result with { HasMoreResults = true }
+                : result;
         }
 
         var totalCount = result.Items.Length;
         var effectiveOffset = Math.Max(0, offset ?? 0);
         if (effectiveOffset >= totalCount)
         {
-            return QueryResult<Feature>.Create(totalCount, ImmutableArray<Feature>.Empty, false);
+            return QueryResult<Feature>.Create(totalCount, ImmutableArray<Feature>.Empty, scanTruncated);
         }
 
         var remaining = totalCount - effectiveOffset;
@@ -2665,7 +2690,7 @@ internal sealed partial class FeatureServerQueryHandler(
             .Skip(effectiveOffset)
             .Take(take)
             .ToImmutableArray();
-        var hasMore = effectiveOffset + take < totalCount;
+        var hasMore = scanTruncated || effectiveOffset + take < totalCount;
 
         return QueryResult<Feature>.Create(totalCount, pageItems, hasMore);
     }

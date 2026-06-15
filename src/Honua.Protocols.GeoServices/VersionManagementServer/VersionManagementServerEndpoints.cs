@@ -2,10 +2,12 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Validation.Abstractions;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
 using Honua.Protocols.GeoServices.FeatureServer;
@@ -59,80 +61,100 @@ public static class VersionManagementServerEndpoints
     {
         ArgumentNullException.ThrowIfNull(endpoints);
 
+        // HANDLER-AUTHORIZED (#1144): every route below enforces authorization in its handler —
+        // service read (Query) access for the read surface, plus the Enterprise branch-versioning
+        // entitlement and service write authorization (Update + data-editor RBAC) for lifecycle
+        // operations. Marked AllowAnonymous so the audit architecture guard records the
+        // intentional decision, matching the sibling GeoServices endpoint files.
         endpoints.MapGet(BasePath, HandleServiceInfo)
             .WithName("GetVersionManagementServiceInfo")
             .WithSummary("Get VersionManagementServer service metadata")
-            .WithTags(Tag);
+            .WithTags(Tag)
+            .AllowAnonymous();
 
         endpoints.MapGet($"{BasePath}/versions", HandleListVersions)
             .WithName("ListVersions")
             .WithSummary("List branch versions")
-            .WithTags(Tag);
+            .WithTags(Tag)
+            .AllowAnonymous();
 
         endpoints.MapGet($"{BasePath}/versions/{{versionGuid}}", HandleVersionInfo)
             .WithName("GetVersionInfo")
             .WithSummary("Get a single branch version's metadata")
-            .WithTags(Tag);
+            .WithTags(Tag)
+            .AllowAnonymous();
 
         endpoints.MapPost($"{BasePath}/create", HandleCreate)
             .WithName("CreateVersion")
             .WithSummary("Create a branch version")
-            .WithTags(Tag);
+            .WithTags(Tag)
+            .AllowAnonymous();
 
         endpoints.MapPost($"{BasePath}/versions/{{versionGuid}}/delete", HandleDelete)
             .WithName("DeleteVersion")
             .WithSummary("Delete a branch version")
-            .WithTags(Tag);
+            .WithTags(Tag)
+            .AllowAnonymous();
 
         endpoints.MapPost($"{BasePath}/versions/{{versionGuid}}/alter", HandleAlter)
             .WithName("AlterVersion")
             .WithSummary("Alter a branch version's metadata")
-            .WithTags(Tag);
+            .WithTags(Tag)
+            .AllowAnonymous();
 
         endpoints.MapPost($"{BasePath}/versions/{{versionGuid}}/startReading", HandleStartReading)
             .WithName("StartReadingVersion")
             .WithSummary("Begin a read session against a branch version")
-            .WithTags(Tag);
+            .WithTags(Tag)
+            .AllowAnonymous();
 
         endpoints.MapPost($"{BasePath}/versions/{{versionGuid}}/stopReading", HandleStopReading)
             .WithName("StopReadingVersion")
             .WithSummary("End a read session against a branch version")
-            .WithTags(Tag);
+            .WithTags(Tag)
+            .AllowAnonymous();
 
         endpoints.MapPost($"{BasePath}/versions/{{versionGuid}}/startEditing", HandleStartEditing)
             .WithName("StartEditingVersion")
             .WithSummary("Begin an edit session against a branch version")
-            .WithTags(Tag);
+            .WithTags(Tag)
+            .AllowAnonymous();
 
         endpoints.MapPost($"{BasePath}/versions/{{versionGuid}}/stopEditing", HandleStopEditing)
             .WithName("StopEditingVersion")
             .WithSummary("End an edit session against a branch version")
-            .WithTags(Tag);
+            .WithTags(Tag)
+            .AllowAnonymous();
 
         endpoints.MapPost($"{BasePath}/versions/{{versionGuid}}/reconcile", HandleReconcile)
             .WithName("ReconcileVersion")
             .WithSummary("Reconcile a branch version against DEFAULT")
-            .WithTags(Tag);
+            .WithTags(Tag)
+            .AllowAnonymous();
 
         endpoints.MapGet($"{BasePath}/versions/{{versionGuid}}/inspectConflicts", HandleInspectConflicts)
             .WithName("InspectVersionConflicts")
             .WithSummary("Retrieve the pending conflict set for a branch version")
-            .WithTags(Tag);
+            .WithTags(Tag)
+            .AllowAnonymous();
 
         endpoints.MapPost($"{BasePath}/versions/{{versionGuid}}/resolveConflicts", HandleResolveConflicts)
             .WithName("ResolveVersionConflicts")
             .WithSummary("Submit manual conflict resolutions for a branch version")
-            .WithTags(Tag);
+            .WithTags(Tag)
+            .AllowAnonymous();
 
         endpoints.MapPost($"{BasePath}/versions/{{versionGuid}}/post", HandlePost)
             .WithName("PostVersion")
             .WithSummary("Post a reconciled branch version's changes onto DEFAULT")
-            .WithTags(Tag);
+            .WithTags(Tag)
+            .AllowAnonymous();
 
         endpoints.MapGet($"{BasePath}/versions/{{versionGuid}}/jobs/{{jobId}}", HandleJobStatus)
             .WithName("GetVersionJobStatus")
             .WithSummary("Poll the status of an async reconcile/post job")
-            .WithTags(Tag);
+            .WithTags(Tag)
+            .AllowAnonymous();
 
         return endpoints;
     }
@@ -171,6 +193,13 @@ public static class VersionManagementServerEndpoints
             return problem;
         }
 
+        var entitlementGate = LicenseGate.RequireEntitlement(
+            context, FeatureCatalog.BranchVersioningKey, "Branch versioning");
+        if (entitlementGate is not null)
+        {
+            return entitlementGate;
+        }
+
         var versions = await versionManager.ListAsync(cancellationToken).ConfigureAwait(false);
         var response = new VersionListResponse
         {
@@ -194,6 +223,13 @@ public static class VersionManagementServerEndpoints
         if (problem is not null)
         {
             return problem;
+        }
+
+        var entitlementGate = LicenseGate.RequireEntitlement(
+            context, FeatureCatalog.BranchVersioningKey, "Branch versioning");
+        if (entitlementGate is not null)
+        {
+            return entitlementGate;
         }
 
         if (!Guid.TryParse(versionGuid, out var versionId))
@@ -247,9 +283,12 @@ public static class VersionManagementServerEndpoints
                 VersionManagementJsonContext.Default.CreateVersionResponse,
                 contentType: "application/json");
         }
-        catch (InvalidOperationException ex)
+        catch (DuplicateVersionNameException ex)
         {
-            return StandardErrorHelpers.CreateConflict(context, ex.Message);
+            return StandardErrorHelpers.CreateConflict(
+                context,
+                ex.Message,
+                [$"Version '{ex.VersionName}' already exists. Choose a different name or delete the existing version first."]);
         }
     }
 
@@ -545,6 +584,11 @@ public static class VersionManagementServerEndpoints
                 ["Branch versioning requires a PostgreSQL/PostGIS feature provider."]);
         }
 
+        if (!Guid.TryParse(versionGuid, out var versionId))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, "versionGuid is not a valid GUID.");
+        }
+
         if (!Guid.TryParse(jobId, out var jobGuid))
         {
             return StandardErrorHelpers.CreateBadRequest(context, "jobId is not a valid GUID.");
@@ -552,6 +596,15 @@ public static class VersionManagementServerEndpoints
 
         var job = await jobRunner.GetJobAsync(jobGuid, cancellationToken).ConfigureAwait(false);
         if (job is null)
+        {
+            return StandardErrorHelpers.CreateNotFound(context, $"Version job '{jobId}' was not found.");
+        }
+
+        // Reject jobs that do not belong to the route's service/version (mirrors GPServer's
+        // ValidateJobBinding) so a caller authorized on one service cannot poll another
+        // service's reconcile/post jobs by GUID.
+        if (!string.Equals(job.Service, serviceId, StringComparison.OrdinalIgnoreCase) ||
+            job.VersionId != versionId)
         {
             return StandardErrorHelpers.CreateNotFound(context, $"Version job '{jobId}' was not found.");
         }
@@ -631,7 +684,17 @@ public static class VersionManagementServerEndpoints
     {
         var validation = await FeatureServerResourceValidationHelpers.ValidateServiceV2Async(
             resourceValidator, serviceId, context, logger: null, cancellationToken).ConfigureAwait(false);
-        return validation.IsValid ? null : validation.ErrorResult!;
+        if (!validation.IsValid)
+        {
+            return validation.ErrorResult!;
+        }
+
+        // Read-surface RBAC parity with the sibling FeatureServer/GPServer handlers (#1376): version
+        // metadata (owners, names) and conflict payloads (attribute/geometry images) must not be
+        // readable on a service the caller cannot query. Write operations layer the stricter
+        // Update + data-editor checks on top via VersionManagementAuthorization.
+        return await AccessPolicyHelpers.RequireServiceAccessAsync(
+            context, validation.Service!, AuthorizationOperation.Query, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -835,7 +898,8 @@ public static class VersionManagementServerEndpoints
             var resolutions = new List<VersionConflictResolution>();
             foreach (var element in document.RootElement.EnumerateArray())
             {
-                if (!element.TryGetProperty("layerId", out var layerProp) ||
+                if (element.ValueKind != System.Text.Json.JsonValueKind.Object ||
+                    !element.TryGetProperty("layerId", out var layerProp) ||
                     !element.TryGetProperty("objectId", out var objectProp) ||
                     !element.TryGetProperty("choice", out var choiceProp))
                 {
@@ -843,15 +907,27 @@ public static class VersionManagementServerEndpoints
                         context, "Each conflict resolution requires layerId, objectId, and choice."));
                 }
 
-                if (!TryParseChoice(choiceProp.GetString(), out var choice))
+                if (choiceProp.ValueKind != System.Text.Json.JsonValueKind.String ||
+                    !TryParseChoice(choiceProp.GetString(), out var choice))
                 {
                     return (null, StandardErrorHelpers.CreateBadRequest(
                         context, "Unsupported resolution choice.",
                         ["Supported choices: version, default, base."]));
                 }
 
-                resolutions.Add(new VersionConflictResolution(
-                    layerProp.GetInt32(), objectProp.GetInt64(), choice));
+                // Guard the value kinds before reading: GetInt32/GetInt64 throw
+                // InvalidOperationException (not a JsonException) on non-numeric kinds, which
+                // would surface as a 500 instead of the intended 400.
+                if (layerProp.ValueKind != System.Text.Json.JsonValueKind.Number ||
+                    !layerProp.TryGetInt32(out var layerId) ||
+                    objectProp.ValueKind != System.Text.Json.JsonValueKind.Number ||
+                    !objectProp.TryGetInt64(out var objectId))
+                {
+                    return (null, StandardErrorHelpers.CreateBadRequest(
+                        context, "conflicts contains an invalid layerId/objectId."));
+                }
+
+                resolutions.Add(new VersionConflictResolution(layerId, objectId, choice));
             }
 
             return (resolutions, null);
@@ -859,10 +935,6 @@ public static class VersionManagementServerEndpoints
         catch (System.Text.Json.JsonException)
         {
             return (null, StandardErrorHelpers.CreateBadRequest(context, "conflicts is not valid JSON."));
-        }
-        catch (FormatException)
-        {
-            return (null, StandardErrorHelpers.CreateBadRequest(context, "conflicts contains an invalid layerId/objectId."));
         }
     }
 

@@ -988,11 +988,21 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
 
     private static string ConvertNamedParametersToPositional(string sql, ref int paramIndex)
     {
-        var currentIndex = paramIndex;
-        var result = NamedParameterRegex().Replace(
-            sql,
-            _ => $"${currentIndex++}");
-        paramIndex = currentIndex;
+        // Preserve the original @pN indices so that repeated or out-of-order references
+        // bind to the correct positional slot. Each distinct @pN maps to $(startIndex + N)
+        // and the next paramIndex advances past the highest original index seen.
+        var current = paramIndex;
+        var max = -1;
+        var result = NamedParameterRegex().Replace(sql, m =>
+        {
+            var idx = int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture);
+            if (idx > max)
+            {
+                max = idx;
+            }
+            return $"${current + idx}";
+        });
+        paramIndex = current + max + 1;
         return result;
     }
 
@@ -1127,8 +1137,8 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
             }
             else if (!inQuotes && i + 3 <= whereClause.Length &&
                      whereClause.Substring(i, 3).Equals("AND", StringComparison.OrdinalIgnoreCase) &&
-                     (i == 0 || !char.IsLetterOrDigit(whereClause[i - 1])) &&
-                     (i + 3 >= whereClause.Length || !char.IsLetterOrDigit(whereClause[i + 3])))
+                     (i == 0 || !IsIdentifierChar(whereClause[i - 1])) &&
+                     (i + 3 >= whereClause.Length || !IsIdentifierChar(whereClause[i + 3])))
             {
                 parts.Add(current.ToString());
                 current.Clear();
@@ -1147,6 +1157,12 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
 
         return parts;
     }
+
+    // Identifier-boundary helper used by SplitOnAnd. Mirrors the regex character class
+    // for SQL/column identifiers: letters, digits, and underscore. This prevents splitting
+    // on embedded 'and' inside column names such as 'start_and_end'.
+    private static bool IsIdentifierChar(char c)
+        => char.IsLetterOrDigit(c) || c == '_';
 
     /// <summary>
     /// Builds the SQL expression for a spatial filter geometry parameter, transforming

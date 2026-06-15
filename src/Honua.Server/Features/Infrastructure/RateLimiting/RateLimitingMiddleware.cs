@@ -1,8 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Concurrent;
 using System.Net;
-using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 using System.Text.Json;
@@ -16,12 +16,24 @@ namespace Honua.Infrastructure.RateLimiting;
 /// </summary>
 internal sealed partial class RateLimitingMiddleware
 {
-    private const string ApiKeyKeyFamily = "api_key";
+    private const string UserKeyFamily = "user";
     private const string IpKeyFamily = "ip";
     private const string UnknownKeyFamily = "unknown";
+
+    /// <summary>
+    /// Soft cap on process-local counter entries before stale windows are pruned.
+    /// </summary>
+    private const int MaxMemoryCounterEntries = 10_000;
+
+    /// <summary>
+    /// Process-local fixed-window counters used when Redis is unavailable. Counters
+    /// are mutated under a per-entry lock so concurrent requests for the same key
+    /// cannot lose increments (a get/set round-trip through a cache is not atomic).
+    /// </summary>
+    private static readonly ConcurrentDictionary<string, FixedWindowCounter> _memoryCounters = new();
+
     private readonly RequestDelegate _next;
     private readonly IRateLimitPolicyStore _policyStore;
-    private readonly IDistributedCache _distributedCache;
     private readonly IConnectionMultiplexer? _redis;
     private readonly RateLimitingOptions _options;
     private readonly ILogger<RateLimitingMiddleware> _logger;
@@ -31,21 +43,18 @@ internal sealed partial class RateLimitingMiddleware
     /// </summary>
     /// <param name="next">The next middleware in the pipeline.</param>
     /// <param name="policyStore">Rate limit policy store.</param>
-    /// <param name="distributedCache">Distributed cache for rate limiting counters.</param>
     /// <param name="redis">Redis connection for distributed rate limiting.</param>
     /// <param name="options">Rate limiting options.</param>
     /// <param name="logger">Logger instance.</param>
     public RateLimitingMiddleware(
         RequestDelegate next,
         IRateLimitPolicyStore policyStore,
-        IDistributedCache distributedCache,
         IConnectionMultiplexer? redis,
         IOptions<RateLimitingOptions> options,
         ILogger<RateLimitingMiddleware> logger)
     {
         _next = next;
         _policyStore = policyStore;
-        _distributedCache = distributedCache;
         _redis = redis;
         _options = options.Value;
         _logger = logger;
@@ -109,15 +118,19 @@ internal sealed partial class RateLimitingMiddleware
             return null;
         }
 
-        // Check for API key-based rate limiting
-        var apiKey = ExtractApiKey(context);
-        if (!string.IsNullOrEmpty(apiKey))
+        // Key on the authenticated principal when one is present. Never derive the
+        // bucket from raw, unauthenticated credentials (Authorization header or
+        // ?api_key=): an attacker could mint a fresh bucket per request by sending
+        // a random token, bypassing the IP-based limit entirely, and the raw secret
+        // would be persisted verbatim into the cache/Redis key space.
+        var identity = context.User?.Identity;
+        if (identity?.IsAuthenticated == true && !string.IsNullOrEmpty(identity.Name))
         {
-            return $"api_key:{apiKey}";
+            return $"{UserKeyFamily}:{identity.Name}";
         }
 
-        // Fall back to IP-based rate limiting
-        return $"ip:{clientIp}";
+        // Fall back to IP-based rate limiting for unauthenticated requests
+        return $"{IpKeyFamily}:{clientIp}";
     }
 
     /// <summary>
@@ -137,7 +150,7 @@ internal sealed partial class RateLimitingMiddleware
             }
             else
             {
-                return await CheckRateLimitMemoryAsync(rateLimitKey, context);
+                return CheckRateLimitMemory(rateLimitKey, context);
             }
         }
         catch (Exception ex)
@@ -207,36 +220,35 @@ internal sealed partial class RateLimitingMiddleware
     }
 
     /// <summary>
-    /// Checks rate limit using in-memory cache with fixed window algorithm.
+    /// Checks rate limit using process-local counters with a fixed window algorithm.
+    /// Increments happen under a per-counter lock so concurrent requests for the
+    /// same key are counted exactly (the previous get-increment-set round trip lost
+    /// updates under concurrency, letting clients exceed the limit).
     /// </summary>
     /// <param name="rateLimitKey">The rate limit key.</param>
     /// <param name="context">The HTTP context.</param>
     /// <returns>Rate limit check result.</returns>
-    private async Task<RateLimitResult> CheckRateLimitMemoryAsync(string rateLimitKey, HttpContext context)
+    private RateLimitResult CheckRateLimitMemory(string rateLimitKey, HttpContext context)
     {
         var now = DateTimeOffset.UtcNow;
         var windowStart = new DateTimeOffset(now.Year, now.Month, now.Day, now.Hour, now.Minute, 0, now.Offset);
-        var cacheKey = $"rate_limit:{rateLimitKey}:{windowStart:yyyyMMddHHmm}";
 
-        var counterBytes = await _distributedCache.GetAsync(cacheKey);
-        var currentCount = 0;
-
-        if (counterBytes != null)
+        var counter = _memoryCounters.GetOrAdd(rateLimitKey, static _ => new FixedWindowCounter());
+        int currentCount;
+        lock (counter)
         {
-            currentCount = BitConverter.ToInt32(counterBytes, 0);
+            if (counter.WindowStart != windowStart)
+            {
+                counter.WindowStart = windowStart;
+                counter.Count = 0;
+            }
+
+            currentCount = ++counter.Count;
         }
 
-        currentCount++;
-        var limit = GetRateLimit(context);
+        PruneExpiredMemoryCounters(windowStart);
 
-        // Update counter with sliding expiration
-        await _distributedCache.SetAsync(
-            cacheKey,
-            BitConverter.GetBytes(currentCount),
-            new DistributedCacheEntryOptions
-            {
-                AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(2)
-            });
+        var limit = GetRateLimit(context);
 
         return new RateLimitResult
         {
@@ -246,6 +258,41 @@ internal sealed partial class RateLimitingMiddleware
             RequestCount = currentCount,
             Limit = limit
         };
+    }
+
+    /// <summary>
+    /// Opportunistically removes counters from previous windows once the dictionary
+    /// grows beyond <see cref="MaxMemoryCounterEntries"/>, bounding memory use.
+    /// </summary>
+    private static void PruneExpiredMemoryCounters(DateTimeOffset currentWindowStart)
+    {
+        if (_memoryCounters.Count <= MaxMemoryCounterEntries)
+        {
+            return;
+        }
+
+        foreach (var entry in _memoryCounters)
+        {
+            bool stale;
+            lock (entry.Value)
+            {
+                stale = entry.Value.WindowStart < currentWindowStart;
+            }
+
+            if (stale)
+            {
+                _memoryCounters.TryRemove(entry);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Mutable fixed-window counter state; mutated only under a lock on the instance.
+    /// </summary>
+    private sealed class FixedWindowCounter
+    {
+        public DateTimeOffset WindowStart;
+        public int Count;
     }
 
     /// <summary>
@@ -336,26 +383,8 @@ internal sealed partial class RateLimitingMiddleware
     }
 
     /// <summary>
-    /// Extracts API key from request headers or query parameters.
-    /// </summary>
-    /// <param name="context">The HTTP context.</param>
-    /// <returns>API key if found.</returns>
-    private static string? ExtractApiKey(HttpContext context)
-    {
-        // Check Authorization header for Bearer token
-        var authHeader = context.Request.Headers.Authorization.FirstOrDefault();
-        if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
-        {
-            return authHeader.Substring("Bearer ".Length).Trim();
-        }
-
-        // Check for API key in query parameters
-        return context.Request.Query["api_key"].FirstOrDefault();
-    }
-
-    /// <summary>
     /// Splits a rate-limit key (<c>family:value</c>) into a fixed family label and a short
-    /// correlation hash so neither the bearer token nor the raw IP appears in log output.
+    /// correlation hash so neither the principal name nor the raw IP appears in log output.
     /// </summary>
     private static (string Family, string Hash) SplitRateLimitKey(string? rateLimitKey)
     {
@@ -375,7 +404,7 @@ internal sealed partial class RateLimitingMiddleware
 
         return family switch
         {
-            ApiKeyKeyFamily => (ApiKeyKeyFamily, LogValueRedactor.Hash(value)),
+            UserKeyFamily => (UserKeyFamily, LogValueRedactor.Hash(value)),
             IpKeyFamily => (IpKeyFamily, LogValueRedactor.Hash(value)),
             _ => (UnknownKeyFamily, LogValueRedactor.Hash(value))
         };

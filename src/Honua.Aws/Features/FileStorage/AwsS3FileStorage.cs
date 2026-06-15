@@ -230,8 +230,15 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
         }
         finally
         {
-            UploadCancellationTokens.TryRemove(uploadId, out _);
-            linkedCancellationSource.Dispose();
+            // Only dispose the linked CTS when this code path successfully removes it
+            // from the shared dictionary (transfer of ownership). If the cancel path
+            // already removed it and is between TryRemove and CancelAsync, disposing
+            // here would cause ObjectDisposedException on the cancel path's CancelAsync
+            // call. The cancel path is responsible for disposing when it removes the CTS.
+            if (UploadCancellationTokens.TryRemove(uploadId, out var removedSource))
+            {
+                removedSource.Dispose();
+            }
         }
     }
 
@@ -339,14 +346,30 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
             };
 
             var response = await _client.ListObjectsV2Async(request, cancellationToken);
-            foreach (var item in response.S3Objects)
-            {
-                var metadata = await GetMetadataAsync(item.Key, cancellationToken);
-                if (metadata != null)
+
+            // Fetch per-object metadata (HeadObject) concurrently with a bounded
+            // degree of parallelism to avoid N sequential round trips per page.
+            var pageBatch = new CloudFile?[response.S3Objects.Count];
+            await Parallel.ForEachAsync(
+                response.S3Objects.Select((item, index) => (item, index)),
+                new ParallelOptions { MaxDegreeOfParallelism = 8, CancellationToken = cancellationToken },
+                async (entry, ct) =>
                 {
-                    results.Add(metadata);
+                    var metadata = await GetMetadataAsync(entry.item.Key, ct).ConfigureAwait(false);
+                    if (metadata != null)
+                    {
+                        pageBatch[entry.index] = metadata;
+                    }
+                });
+
+            foreach (var cloudFile in pageBatch)
+            {
+                if (cloudFile is null)
+                {
+                    continue;
                 }
 
+                results.Add(cloudFile);
                 if (results.Count >= maxResults)
                 {
                     return results;

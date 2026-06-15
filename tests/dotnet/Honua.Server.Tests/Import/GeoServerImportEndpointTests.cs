@@ -8,6 +8,7 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Import.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.Import.Domain;
@@ -23,6 +24,7 @@ using Honua.Import.RasterImport;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Helpers;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -49,6 +51,7 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
     public GeoServerImportEndpointTests()
     {
         _fixture = new WebAppFixture()
+            .WithTestLicense(HonuaEdition.Enterprise)
             .ReplaceService<IGeoServerImportService>(_importService);
     }
 
@@ -178,6 +181,7 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
         var distributedCache = new TrackingDistributedCache();
         var isolatedImportService = new TestGeoServerImportService(TimeSpan.FromMilliseconds(25));
         var isolatedFixture = new WebAppFixture()
+            .WithTestLicense(HonuaEdition.Enterprise)
             .ReplaceService<IGeoServerImportService>(isolatedImportService)
             .ConfigureServices(services =>
             {
@@ -270,6 +274,7 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
             .Returns(database);
 
         var isolatedFixture = new WebAppFixture()
+            .WithTestLicense(HonuaEdition.Enterprise)
             .ReplaceService<IGeoServerImportService>(_importService)
             .ConfigureServices(services =>
             {
@@ -353,6 +358,7 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
         // import keeps the job in-flight until the cancel token fires.
         var slowImportService = new TestGeoServerImportService(TimeSpan.FromSeconds(30));
         var fixture = new WebAppFixture()
+            .WithTestLicense(HonuaEdition.Enterprise)
             .ReplaceService<IGeoServerImportService>(slowImportService);
 
         try

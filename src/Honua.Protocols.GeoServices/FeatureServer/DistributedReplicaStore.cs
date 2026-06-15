@@ -14,6 +14,20 @@ internal interface IReplicaStore
 {
     Task SetAsync(ReplicaState replica, TimeSpan? ttl = null, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Conditionally persists a replica's sync state: the write only applies when the stored
+    /// <see cref="ReplicaState.LastSyncGeneration"/> and <see cref="ReplicaState.UploadBaseGeneration"/>
+    /// still match the expected values the caller read before the sync. Returns false when another
+    /// synchronization advanced the cursors concurrently (or the replica no longer exists), so the
+    /// caller can reject the sync instead of clobbering the winner's cursor.
+    /// </summary>
+    Task<bool> TrySetSyncStateAsync(
+        ReplicaState replica,
+        long expectedLastSyncGeneration,
+        long expectedUploadBaseGeneration,
+        TimeSpan? ttl = null,
+        CancellationToken cancellationToken = default);
+
     Task<ReplicaState?> GetAsync(string replicaId, CancellationToken cancellationToken = default);
 
     Task<bool> RemoveAsync(string replicaId, CancellationToken cancellationToken = default);
@@ -70,6 +84,61 @@ internal sealed partial class DistributedReplicaStore : IReplicaStore
                 "Distributed replica state is unavailable while attempting to persist replica state.",
                 ex);
         }
+    }
+
+    public async Task<bool> TrySetSyncStateAsync(
+        ReplicaState replica,
+        long expectedLastSyncGeneration,
+        long expectedUploadBaseGeneration,
+        TimeSpan? ttl = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(replica);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var effectiveTtl = ttl ?? _defaultTtl;
+        var now = DateTimeOffset.UtcNow;
+
+        if (_cache == null)
+        {
+            // In-process fallback: a real compare-and-set loop over the concurrent dictionary.
+            while (true)
+            {
+                if (!_fallback.TryGetValue(replica.ReplicaId, out var entry) || entry.ExpiresAt <= now)
+                {
+                    return false;
+                }
+
+                if (entry.Replica.LastSyncGeneration != expectedLastSyncGeneration ||
+                    entry.Replica.UploadBaseGeneration != expectedUploadBaseGeneration)
+                {
+                    return false;
+                }
+
+                if (_fallback.TryUpdate(
+                        replica.ReplicaId,
+                        new FallbackReplicaEntry(replica, now.Add(effectiveTtl)),
+                        entry))
+                {
+                    CleanupFallback(now, enforceLimit: true);
+                    return true;
+                }
+            }
+        }
+
+        // IDistributedCache exposes no atomic compare-and-set, so the distributed path is a
+        // best-effort read-compare-write. This store is the cache tier only; the authoritative
+        // compare-and-set lives in IReplicaRepository (CachingReplicaStore writes through it).
+        var current = await GetAsync(replica.ReplicaId, cancellationToken).ConfigureAwait(false);
+        if (current is null ||
+            current.LastSyncGeneration != expectedLastSyncGeneration ||
+            current.UploadBaseGeneration != expectedUploadBaseGeneration)
+        {
+            return false;
+        }
+
+        await SetAsync(replica, ttl, cancellationToken).ConfigureAwait(false);
+        return true;
     }
 
     public async Task<ReplicaState?> GetAsync(string replicaId, CancellationToken cancellationToken = default)

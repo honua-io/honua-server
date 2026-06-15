@@ -15,6 +15,7 @@ using Honua.Core.Features.Tiles;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
+using MetadataV2TemporalRange = Honua.Infrastructure.Helpers.TemporalExtentHelpers.MetadataV2TemporalRange;
 using Honua.Infrastructure.Monitoring;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Rendering;
@@ -953,6 +954,13 @@ internal static class WmtsRequestHandlers
                 var isFirstAttribute = true;
                 foreach (var attribute in item.Attributes.OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase))
                 {
+                    // Match the WMS GetFeatureInfo path: hide internal bookkeeping columns
+                    // and normalize values before serializing.
+                    if (FeatureAttributeVisibility.IsInternalAttribute(attribute.Key))
+                    {
+                        continue;
+                    }
+
                     if (!isFirstAttribute)
                     {
                         jsonText.Append(',');
@@ -961,7 +969,7 @@ internal static class WmtsRequestHandlers
                     isFirstAttribute = false;
                     AppendJsonString(jsonText, attribute.Key);
                     jsonText.Append(':');
-                    AppendJsonString(jsonText, FormatFeatureInfoValue(attribute.Value));
+                    AppendJsonString(jsonText, FormatFeatureInfoValue(FeatureAttributeValueNormalizer.Normalize(attribute.Value)));
                 }
 
                 jsonText.Append("}}");
@@ -971,9 +979,16 @@ internal static class WmtsRequestHandlers
             plainText.Append("Layer=").Append(layerName).AppendLine();
             foreach (var attribute in item.Attributes.OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase))
             {
+                // Match the WMS GetFeatureInfo path: hide internal bookkeeping columns
+                // and normalize values before serializing.
+                if (FeatureAttributeVisibility.IsInternalAttribute(attribute.Key))
+                {
+                    continue;
+                }
+
                 plainText.Append(attribute.Key)
                     .Append('=')
-                    .Append(FormatFeatureInfoValue(attribute.Value))
+                    .Append(FormatFeatureInfoValue(FeatureAttributeValueNormalizer.Normalize(attribute.Value)))
                     .AppendLine();
             }
 
@@ -1377,14 +1392,20 @@ internal static class WmtsRequestHandlers
         if (includeContents)
         {
             sb.AppendLine("  <Contents>");
+
+            // Pre-fetch temporal extent ranges for all time-aware layers concurrently so
+            // the capabilities layer loop does not issue a sequential DB round-trip per layer.
+            var wmtsTemporalRanges = await PrefetchWmtsTemporalRangesAsync(
+                visibleLayers, featureReader, cancellationToken).ConfigureAwait(false);
+
             foreach (var layer in visibleLayers)
             {
                 var layerId = layer.Identifier;
                 var isQueryable = IsWmtsLayerQueryable(service, layer);
-                var dimensions = await GetWmtsDimensionDefinitionsAsync(
-                    layer,
-                    featureReader,
-                    cancellationToken).ConfigureAwait(false);
+                MetadataV2TemporalRange? layerTemporalRange = wmtsTemporalRanges.TryGetValue(layer.StorageLayerId, out var fetchedRange)
+                    ? fetchedRange
+                    : null;
+                var dimensions = GetWmtsDimensionDefinitionsFromRange(layer, layerTemporalRange);
                 var dimensionTemplateSuffix = BuildWmtsDimensionTemplateSuffix(
                     dimensions,
                     parameterSeparator: ";",
@@ -1640,6 +1661,106 @@ internal static class WmtsRequestHandlers
         }
 
         return resolved;
+    }
+
+    /// <summary>
+    /// Builds dimension definitions using a pre-fetched <paramref name="temporalRange"/>,
+    /// avoiding an additional database call when ranges are resolved concurrently before the
+    /// capabilities layer loop.
+    /// </summary>
+    private static WmtsDimensionDefinition[] GetWmtsDimensionDefinitionsFromRange(
+        WmtsLayer layer,
+        MetadataV2TemporalRange? temporalRange)
+    {
+        var staticDimensions = GetWmtsDimensionDefinitions(layer);
+        if (staticDimensions.Length == 0)
+        {
+            return staticDimensions;
+        }
+
+        if (temporalRange is not { } range || !range.HasExtent || range.Min is null || range.Max is null)
+        {
+            return staticDimensions;
+        }
+
+        var min = TemporalExtentHelpers.FormatOgcTemporalValue(range.Min.Value);
+        var max = TemporalExtentHelpers.FormatOgcTemporalValue(range.Max.Value);
+        var populated = new WmtsDimensionDefinition(
+            Identifier: "time",
+            Values: [$"{min}/{max}/PT0S"],
+            DefaultValue: max,
+            SupportsCurrent: true,
+            CurrentValue: max);
+
+        var resolved = new WmtsDimensionDefinition[staticDimensions.Length];
+        var replaced = false;
+        for (var i = 0; i < staticDimensions.Length; i++)
+        {
+            if (!replaced && string.Equals(staticDimensions[i].Identifier, "time", StringComparison.OrdinalIgnoreCase))
+            {
+                resolved[i] = populated;
+                replaced = true;
+            }
+            else
+            {
+                resolved[i] = staticDimensions[i];
+            }
+        }
+
+        if (!replaced)
+        {
+            var combined = new WmtsDimensionDefinition[resolved.Length + 1];
+            Array.Copy(resolved, combined, resolved.Length);
+            combined[^1] = populated;
+            return combined;
+        }
+
+        return resolved;
+    }
+
+    /// <summary>
+    /// Pre-fetches temporal extent ranges for all time-aware WMTS layers concurrently.
+    /// Returns a dictionary keyed by <see cref="WmtsLayer.StorageLayerId"/> so the
+    /// capabilities layer loop does not issue a sequential DB round-trip per layer.
+    /// </summary>
+    private static async Task<Dictionary<int, MetadataV2TemporalRange>> PrefetchWmtsTemporalRangesAsync(
+        IReadOnlyList<WmtsLayer> layers,
+        IFeatureReader? featureReader,
+        CancellationToken cancellationToken)
+    {
+        if (featureReader is null)
+        {
+            return [];
+        }
+
+        var temporalLayers = layers
+            .Where(layer => TemporalExtentHelpers.HasOptInTemporalFields(layer.Resource))
+            .ToArray();
+
+        if (temporalLayers.Length == 0)
+        {
+            return [];
+        }
+
+        var tasks = temporalLayers.Select(layer =>
+            TemporalExtentHelpers.TryResolveTemporalRangeV2Async(
+                layer.Resource,
+                layer.StorageLayerId,
+                featureReader,
+                cancellationToken));
+
+        var results = await Task.WhenAll(tasks).ConfigureAwait(false);
+
+        var dict = new Dictionary<int, MetadataV2TemporalRange>(temporalLayers.Length);
+        for (var i = 0; i < temporalLayers.Length; i++)
+        {
+            if (results[i] is { } range)
+            {
+                dict[temporalLayers[i].StorageLayerId] = range;
+            }
+        }
+
+        return dict;
     }
 
     private static string BuildWmtsDimensionTemplateSuffix(

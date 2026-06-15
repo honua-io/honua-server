@@ -85,9 +85,26 @@ internal sealed partial class ODataBatchOperationHandler(
             var handler = new ODataBatchHandler(_batchDependencies, _batchDependencies.ETagService, _logger);
             var response = await handler.ProcessBatchAsync(context, batchRequest, baseUrl, effectiveToken);
 
-            // Handle cache invalidation for successful mutation responses.
-            await InvalidateCacheForBatchAsync(context, batchRequest, response, CancellationToken.None);
-            await PublishBatchFeatureEventsAsync(context, batchRequest, response, effectiveToken);
+            // Handle cache invalidation and event publishing for successful mutation responses.
+            // These are best-effort post-commit side effects; failures (e.g. Redis outage) must
+            // not turn a fully-committed batch into a 500 response for the client.
+            try
+            {
+                await InvalidateCacheForBatchAsync(context, batchRequest, response, CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                Log.BatchPostCommitSideEffectFailed(_logger, "cache invalidation", ex);
+            }
+
+            try
+            {
+                await PublishBatchFeatureEventsAsync(context, batchRequest, response, effectiveToken);
+            }
+            catch (Exception ex)
+            {
+                Log.BatchPostCommitSideEffectFailed(_logger, "event publish", ex);
+            }
 
             ODataUtilityService.SetODataHeaders(context);
             HonuaTelemetry.SetSuccess(activity, batchRequest.Requests.Length);
@@ -613,46 +630,50 @@ internal sealed partial class ODataBatchOperationHandler(
         ODataBatchResponse response,
         CancellationToken cancellationToken)
     {
-        var cacheInvalidator = context.RequestServices.GetService<OutputCacheInvalidationService>();
-        if (cacheInvalidator != null)
+        var requestsById = batchRequest.Requests
+            .GroupBy(static request => request.Id, StringComparer.Ordinal)
+            .ToDictionary(static group => group.Key, static group => group.First(), StringComparer.Ordinal);
+
+        var mutatedLayers = new HashSet<int>();
+        var hasSuccessfulMutationWithoutLayerId = false;
+
+        foreach (var responseItem in response.Responses)
         {
-            var requestsById = batchRequest.Requests
-                .GroupBy(static request => request.Id, StringComparer.Ordinal)
-                .ToDictionary(static group => group.Key, static group => group.First(), StringComparer.Ordinal);
-
-            var mutatedLayers = new HashSet<int>();
-            var hasSuccessfulMutationWithoutLayerId = false;
-
-            foreach (var responseItem in response.Responses)
+            if (responseItem.Status < 200 || responseItem.Status >= 300)
             {
-                if (responseItem.Status < 200 || responseItem.Status >= 300)
-                {
-                    continue;
-                }
-
-                if (!requestsById.TryGetValue(responseItem.Id, out var request) ||
-                    !IsMutationMethod(request.Method))
-                {
-                    continue;
-                }
-
-                if (TryResolveLayerId(request, out var layerId))
-                {
-                    mutatedLayers.Add(layerId);
-                    continue;
-                }
-
-                hasSuccessfulMutationWithoutLayerId = true;
+                continue;
             }
 
-            if (mutatedLayers.Count > 0)
+            if (!requestsById.TryGetValue(responseItem.Id, out var request) ||
+                !IsMutationMethod(request.Method))
             {
-                foreach (var layerId in mutatedLayers)
-                {
-                    await _batchDependencies.MutationEventService.InvalidateLayerAsync(null, layerId, cancellationToken);
-                }
+                continue;
             }
-            else if (hasSuccessfulMutationWithoutLayerId)
+
+            if (TryResolveLayerId(request, out var layerId))
+            {
+                mutatedLayers.Add(layerId);
+                continue;
+            }
+
+            hasSuccessfulMutationWithoutLayerId = true;
+        }
+
+        // MutationEventService.InvalidateLayerAsync does not depend on OutputCacheInvalidationService
+        // and must run regardless of whether response-cache invalidation is registered.
+        if (mutatedLayers.Count > 0)
+        {
+            foreach (var mutatedLayerId in mutatedLayers)
+            {
+                await _batchDependencies.MutationEventService.InvalidateLayerAsync(null, mutatedLayerId, cancellationToken);
+            }
+        }
+
+        // Response-cache invalidation (OGC metadata) requires the optional service.
+        if (hasSuccessfulMutationWithoutLayerId && mutatedLayers.Count == 0)
+        {
+            var cacheInvalidator = context.RequestServices.GetService<OutputCacheInvalidationService>();
+            if (cacheInvalidator != null)
             {
                 await cacheInvalidator.InvalidateOgcMetadataAsync(cancellationToken);
             }
@@ -843,5 +864,8 @@ internal sealed partial class ODataBatchOperationHandler(
 
         [LoggerMessage(EventId = 3022, Level = LogLevel.Error, Message = "OData batch request failed.")]
         public static partial void BatchFailed(ILogger logger, Exception exception);
+
+        [LoggerMessage(EventId = 3023, Level = LogLevel.Warning, Message = "OData batch post-commit side effect '{SideEffect}' failed; batch operations were already committed.")]
+        public static partial void BatchPostCommitSideEffectFailed(ILogger logger, string sideEffect, Exception exception);
     }
 }

@@ -35,7 +35,12 @@ internal sealed partial class FeatureQueryBuilder
     /// When the layer SRID is geographic the geometry is transformed to Web
     /// Mercator (3857) inside the CTE so DBSCAN <c>eps</c> is interpreted in
     /// meters. The transform is paid once per row regardless of the number of
-    /// statistics requested.
+    /// statistics requested. Note that EPSG:3857 distances exceed ground
+    /// distances by the Mercator scale factor (1/cos(lat)), so the effective
+    /// ground <c>eps</c> shrinks at high latitude (~50% at 60N); <c>eps</c>
+    /// cannot be evaluated on the geography type because
+    /// <c>ST_ClusterDBSCAN</c> requires a single planar CRS and a constant
+    /// window argument.
     /// </para>
     /// <para>
     /// The CTE applies <c>LIMIT (maxInputFeatures + 1)</c> so the handler can
@@ -198,6 +203,7 @@ internal sealed partial class FeatureQueryBuilder
             var geometryOperand = _geometryProcessor.GetGeometryOperand(
                 geometryStorageType, DatabaseSchema.GeometryColumn, query.SpatialReferenceSrid);
             var metersGeometry = EnsureMeters(geometryOperand, query.SpatialReferenceSrid);
+
             var bufferedGeometry = $"ST_Buffer(geom_m, {distanceParam})";
 
             // Source CTE — decode the meters geometry once and bound the input set

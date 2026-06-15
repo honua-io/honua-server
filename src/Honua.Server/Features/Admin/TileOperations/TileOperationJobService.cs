@@ -146,7 +146,16 @@ internal sealed partial class TileOperationJobService(
 
         if (_runningTokens.TryGetValue(jobId, out var tokenSource))
         {
-            tokenSource.Cancel();
+            try
+            {
+                tokenSource.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // The worker finished and disposed its linked CTS between our read of
+                // _runningTokens and the Cancel() call. The job is already done — treat
+                // the signal as a no-op rather than failing the cancel request.
+            }
         }
 
         var cancelled = (TileOperationProgress)progress.WithCancellation(DateTimeOffset.UtcNow, "Cancelled by user");
@@ -932,7 +941,17 @@ internal sealed partial class TileOperationJobService(
             MaxZoom = maxZoom
         };
 
-        var archiveStream = new MemoryStream();
+        // Spill the archive to a self-deleting temp file rather than a MemoryStream: archive size
+        // scales with bbox/zoom range (easily hundreds of MB), and holding it on the managed heap
+        // for the duration of the upload — multiplied by concurrent export jobs — is an OOM/LOH
+        // pressure source. DeleteOnClose cleans the file up when the consumer disposes the stream.
+        var archiveStream = new FileStream(
+            Path.Combine(Path.GetTempPath(), $"honua-pmtiles-{Guid.NewGuid():N}.tmp"),
+            FileMode.CreateNew,
+            FileAccess.ReadWrite,
+            FileShare.None,
+            bufferSize: 81920,
+            FileOptions.DeleteOnClose | FileOptions.Asynchronous);
         try
         {
             var archiveSize = await writer.WriteAsync(archiveStream, metadata, cancellationToken).ConfigureAwait(false);
@@ -1470,7 +1489,7 @@ internal sealed partial class TileOperationJobService(
     private sealed record PMTilesBuildResult
     {
         public required TileOperationProgress Progress { get; init; }
-        public MemoryStream? ArchiveStream { get; init; }
+        public Stream? ArchiveStream { get; init; }
         public long ArchiveSize { get; init; }
         public long Failed { get; init; }
         public int MinZoom { get; init; }

@@ -337,6 +337,17 @@ internal sealed class WorkflowPackageService(
             }
         }
 
+        // Enforce process-execute authorization for every run path. The console
+        // endpoint group already requires admin, but the schedule path must not
+        // silently bypass operator-level authorization if the endpoint policy is
+        // ever relaxed (the orchestration engine submits step jobs under a
+        // synthesized system principal).
+        await geoprocessingJobService.EnsureCallerAuthorizedAsync(
+            principal,
+            OperatorResourceType.Process,
+            OperatorOperation.Execute,
+            cancellationToken).ConfigureAwait(false);
+
         if (publication.Target == WorkflowPublicationTarget.Schedule && orchestrationEngine != null)
         {
             var definition = await CompileWorkflowDefinitionAsync(
@@ -367,11 +378,6 @@ internal sealed class WorkflowPackageService(
             };
         }
 
-        await geoprocessingJobService.EnsureCallerAuthorizedAsync(
-            principal,
-            OperatorResourceType.Process,
-            OperatorOperation.Execute,
-            cancellationToken).ConfigureAwait(false);
         var plan = await CompileAnalysisPlanAsync(version, cancellationToken).ConfigureAwait(false);
         var job = await geoprocessingJobService
             .SubmitJobAsync(plan, request.IdempotencyKey, principal, provenance, cancellationToken)

@@ -111,6 +111,7 @@ internal sealed partial class GeoservicesImportService
 
                 var batchInsert = await InsertFeaturesAsync(
                     connection,
+                    transaction,
                     targetSchema,
                     request.TableName,
                     layerInfo,

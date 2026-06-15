@@ -51,8 +51,28 @@ public sealed record MetadataV2SpatialReference
         }
 
         var trimmed = Crs.Trim();
-        var slashIndex = trimmed.LastIndexOf(':');
-        var suffix = slashIndex < 0 ? trimmed : trimmed[(slashIndex + 1)..];
+
+        // Handle OGC CRS84 / WGS84 URIs that have no numeric SRID.
+        if (trimmed.Equals("http://www.opengis.net/def/crs/OGC/1.3/CRS84", StringComparison.OrdinalIgnoreCase) ||
+            trimmed.Equals("urn:ogc:def:crs:OGC:1.3:CRS84", StringComparison.OrdinalIgnoreCase))
+        {
+            return 4326;
+        }
+
+        // Handles all three documented CRS string forms:
+        //   • "EPSG:4326"                                     — colon separator
+        //   • "urn:ogc:def:crs:EPSG::4326"                   — colon separator, last token is the code
+        //   • "http://www.opengis.net/def/crs/EPSG/0/4326"   — slash-separated URI (no trailing colon)
+        var separatorIndex = trimmed.LastIndexOfAny([':', '/']);
+        var suffix = separatorIndex < 0 ? trimmed : trimmed[(separatorIndex + 1)..];
+        if (string.IsNullOrEmpty(suffix) && separatorIndex > 0)
+        {
+            // Trailing separator edge-case: skip back one more token.
+            var inner = trimmed[..separatorIndex];
+            var innerSep = inner.LastIndexOfAny([':', '/']);
+            suffix = innerSep < 0 ? inner : inner[(innerSep + 1)..];
+        }
+
         return int.TryParse(suffix, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
             ? parsed
             : null;

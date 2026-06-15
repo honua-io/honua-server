@@ -331,8 +331,9 @@ internal sealed partial class DatabaseQueryPerformanceMonitor : IDatabaseQueryPe
             if (data.ExecutionTimeMs > _maxExecutionTimeMs)
                 _maxExecutionTimeMs = data.ExecutionTimeMs;
 
-            // Store execution time in circular buffer for percentile calculation
-            var index = Interlocked.Increment(ref _executionTimeIndex) % _executionTimes.Length;
+            // Store execution time in circular buffer for percentile calculation. Mask the sign
+            // bit so the index stays non-negative after the int counter wraps past int.MaxValue.
+            var index = (Interlocked.Increment(ref _executionTimeIndex) & int.MaxValue) % _executionTimes.Length;
             _executionTimes[index] = data.ExecutionTimeMs;
         }
 
