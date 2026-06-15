@@ -273,7 +273,7 @@ internal sealed partial class FeatureServerQueryExecutor
         HttpContext context,
         CancellationToken cancellationToken)
     {
-        var preparedStream = await PrepareFeatureStreamAsync(streamingFeatureStore, layerId, query, cancellationToken);
+        var preparedStream = PrepareFeatureStream(streamingFeatureStore, layerId, query, cancellationToken);
 
         string[]? outFields = string.IsNullOrEmpty(queryParams.OutFields)
             ? null

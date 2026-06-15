@@ -632,7 +632,7 @@ internal sealed class PostgresRasterImportService : IRasterImportService
         {
             // Reuse the shared CRS detection service which handles AUTHORITY tags,
             // well-known names (e.g. ArcGIS GCS_WGS_1984), and WKT fallback.
-            srid = await _crsDetectionService.DetectFromPrjAsync(request.PrjFileContent).ConfigureAwait(false);
+            srid = await _crsDetectionService.DetectFromPrjAsync(request.PrjFileContent, cancellationToken).ConfigureAwait(false);
             if (srid == null)
             {
                 warnings.Add("Could not resolve SRID from .prj file content. Set 'srid' explicitly.");
@@ -720,12 +720,24 @@ internal sealed class PostgresRasterImportService : IRasterImportService
                 // Zoom 0 has exactly one tile (0,0) covering the entire world.
                 // Handle separately because the general formula uses (1 << (zoom-1))
                 // which is undefined for negative shift counts in PostgreSQL.
-                // Reproject to Web Mercator (3857) so tiles match the serving contract.
+                // Build a 256×256 reference raster aligned to the z=0 tile envelope so the
+                // seeded tile covers exactly the world bbox (not just the raster's own extent
+                // stretched to fill the tile, which misregisters partial-world datasets).
                 command.CommandText = $"""
                     INSERT INTO {_rasterTilesTable} (raster_data_id, zoom_level, tile_x, tile_y, tile_data, content_type)
                     SELECT @rasterId, 0, 0, 0,
                         ST_AsGDALRaster(
-                            ST_Resize(ST_Transform(r.raster, 3857), 256, 256),
+                            ST_Resample(
+                                ST_Transform(r.raster, 3857),
+                                ST_MakeEmptyRaster(
+                                    256, 256,
+                                    ST_XMin(ST_TileEnvelope(0, 0, 0)),
+                                    ST_YMax(ST_TileEnvelope(0, 0, 0)),
+                                    (ST_XMax(ST_TileEnvelope(0, 0, 0)) - ST_XMin(ST_TileEnvelope(0, 0, 0))) / 256.0,
+                                    -((ST_YMax(ST_TileEnvelope(0, 0, 0)) - ST_YMin(ST_TileEnvelope(0, 0, 0))) / 256.0),
+                                    0.0, 0.0, 3857
+                                )
+                            ),
                             'PNG'
                         ),
                         'image/png'
@@ -740,18 +752,25 @@ internal sealed class PostgresRasterImportService : IRasterImportService
             else
             {
                 // Generate tiles for this zoom level using ST_TileEnvelope.
-                // Compute which tiles intersect the raster extent, then clip and render each.
-                // Clip in source CRS first (cheap, uses spatial index), then reproject to
-                // Web Mercator (3857) so tiles match the serving contract (Srid = 3857).
+                // Compute which tiles intersect the raster extent, then resample each onto a
+                // 256×256 reference raster aligned exactly to ST_TileEnvelope(z,x,y) in
+                // EPSG:3857. Uncovered pixels become nodata rather than being stretched to fill
+                // the frame — fixing the spatial misregistration the previous ST_Clip+ST_Resize
+                // approach produced for edge tiles and non-3857 source rasters.
                 command.CommandText = $"""
                     INSERT INTO {_rasterTilesTable} (raster_data_id, zoom_level, tile_x, tile_y, tile_data, content_type)
                     SELECT @rasterId, @zoom, t.x, t.y,
                         ST_AsGDALRaster(
-                            ST_Resize(
-                                ST_Transform(
-                                    ST_Clip(r.raster, ST_Transform(ST_TileEnvelope(@zoom, t.x, t.y), ST_SRID(r.raster))),
-                                    3857),
-                                256, 256
+                            ST_Resample(
+                                ST_Transform(r.raster, 3857),
+                                ST_MakeEmptyRaster(
+                                    256, 256,
+                                    ST_XMin(ST_TileEnvelope(@zoom, t.x, t.y)),
+                                    ST_YMax(ST_TileEnvelope(@zoom, t.x, t.y)),
+                                    (ST_XMax(ST_TileEnvelope(@zoom, t.x, t.y)) - ST_XMin(ST_TileEnvelope(@zoom, t.x, t.y))) / 256.0,
+                                    -((ST_YMax(ST_TileEnvelope(@zoom, t.x, t.y)) - ST_YMin(ST_TileEnvelope(@zoom, t.x, t.y))) / 256.0),
+                                    0.0, 0.0, 3857
+                                )
                             ),
                             'PNG'
                         ),

@@ -68,7 +68,11 @@ internal static partial class FeatureServerEndpoints
             // layer/service metadata GET during ServiceFeatureTable.LoadAsync. #1455
             // accepted it on the layer-query endpoint but not here, so LoadAsync
             // returned 400 and the entire .NET FeatureServer client was blocked.
-            "returnAdvancedSymbols"
+            "returnAdvancedSymbols",
+            // ArcGIS portal-token auth passes the token as a query parameter.
+            // Auth middleware consumes it; accept-and-ignore on metadata endpoints
+            // so token-bearing metadata requests are not rejected with 400.
+            "token"
         ];
 
         public static readonly FrozenSet<string> ServiceMetadata =
@@ -170,6 +174,7 @@ internal static partial class FeatureServerEndpoints
                 "returnGeometry",
                 "returnZ",
                 "returnM",
+                "returnCountOnly",
                 "resultOffset",
                 "resultRecordCount",
                 "time",

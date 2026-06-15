@@ -259,7 +259,15 @@ internal sealed class ODataQueryParameterAdapter(
             // Pass the schema-declared field type so the SQL builder emits a typed cast
             // ($orderby=population desc on an integer column must sort numerically, not
             // lexically — otherwise "20" < "3" via the default TEXT-based attribute path).
-            clauses.Add(new OrderByClause(resolvedField, ascending, v2Field?.Type));
+            //
+            // OData v4.01 Protocol §11.2.6.2: null values come before non-null values
+            // when ascending and after them when descending — the inverse of the
+            // PostgreSQL defaults. Request the placement explicitly; other protocol
+            // adapters leave NullOrdering.Default so their ordering is unchanged.
+            clauses.Add(new OrderByClause(resolvedField, ascending, v2Field?.Type)
+            {
+                NullOrdering = ascending ? NullOrdering.NullsFirst : NullOrdering.NullsLast
+            });
         }
 
         return clauses.Count == 0 ? null : clauses.ToImmutableArray();

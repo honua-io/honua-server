@@ -30,6 +30,7 @@ internal sealed class GeometryServiceHandler(
 
     private const int MaxGeometriesPerRequestUpperBound = 1000;
     private const int MaxGeometryJsonLengthUpperBound = 10_000_000;
+    private const int MaxRelationPairsPerRequest = 100_000;
     private const double MeanEarthRadiusMeters = 6_371_000d;
     private const string InvalidGeometryInputMessage = "Invalid geometry input.";
     private const string InvalidSpatialReferenceMessage =
@@ -134,14 +135,28 @@ internal sealed class GeometryServiceHandler(
                 return CreateError(context, 400, "Parameter 'distances' is required and must contain at least one value.");
             }
 
+            // The service descriptor advertises maxBufferCount; enforce it against the
+            // RESULT count (geometries x distances) per Esri semantics, not just each
+            // input list, so one request cannot trigger up to 10^6 buffer operations.
+            if ((long)geomStrings.Length * distances.Length > requestLimits.MaxGeometriesPerRequest)
+            {
+                var bufferCountError =
+                    $"The product of 'geometries' and 'distances' counts exceeds the maximum buffer count of {requestLimits.MaxGeometriesPerRequest}.";
+                GeometryServiceLog.InvalidGeometryInput(_logger, "buffer", bufferCountError);
+                return CreateError(context, 400, bufferCountError);
+            }
+
             var unit = GeometryServiceRequestParser.GetValue(values, "unit");
             var unionResults = GeometryServiceRequestParser.ParseBool(
                 GeometryServiceRequestParser.GetValue(values, "unionResults"));
             var geodesic = GeometryServiceRequestParser.ParseBool(
                 GeometryServiceRequestParser.GetValue(values, "geodesic"));
+            // Esri buffer spec: when 'unit' is omitted the distance units derive from
+            // bufferSR, else inSR — outSR never participates in unit derivation (it
+            // only selects the buffering/output SR below).
             var distanceUnitToMetersFactor = await ResolveDistanceUnitToMetersFactorAsync(
                 context.RequestServices,
-                bufferSr ?? outSr ?? inSr!.Value,
+                bufferSr ?? inSr!.Value,
                 unit,
                 ct).ConfigureAwait(false);
 
@@ -779,6 +794,17 @@ internal sealed class GeometryServiceHandler(
                 return CreateError(context, 400, "Parameters 'geometries1' and 'geometries2' must each contain at least one geometry.");
             }
 
+            // Each list is individually capped, but the operation is pairwise; cap the
+            // product so one request cannot demand up to 10^6 synchronous DE-9IM
+            // evaluations on a request thread.
+            if ((long)geometries1.Length * geometries2.Length > MaxRelationPairsPerRequest)
+            {
+                var pairCountError =
+                    $"The product of 'geometries1' and 'geometries2' counts exceeds the maximum of {MaxRelationPairsPerRequest} pairs.";
+                GeometryServiceLog.InvalidGeometryInput(_logger, "relation", pairCountError);
+                return CreateError(context, 400, pairCountError);
+            }
+
             var (sr, srError) = await ResolveRequiredSpatialReferenceAsync(values, "sr", ct);
             if (srError is not null)
             {
@@ -821,7 +847,7 @@ internal sealed class GeometryServiceHandler(
                 RelationParam = relationParam
             };
 
-            return ExecuteRelation(parameters, scope);
+            return ExecuteRelation(parameters, scope, ct);
         }
         catch (OperationCanceledException)
         {
@@ -895,12 +921,32 @@ internal sealed class GeometryServiceHandler(
                 return CreateError(context, 400, segmentError);
             }
 
+            // Esri densify spec: when geodesic=true, maxSegmentLength is expressed in
+            // lengthUnit (meters when omitted) rather than SR units; when geodesic=false
+            // (or omitted) maxSegmentLength is in SR units and lengthUnit is ignored.
+            // Convert to native SR units so e.g. sr=4326&geodesic=true&maxSegmentLength=1000
+            // means 1000 meters (~0.009 degrees) instead of 1000 degrees, which silently
+            // returned the input undensified. Densification itself remains planar in the
+            // SR; the geodesic conversion uses a mean-earth-radius degree length.
+            var geodesicDensify = GeometryServiceRequestParser.ParseBool(
+                GeometryServiceRequestParser.GetValue(values, "geodesic"));
+            var maxSegmentLengthNative = maxSegmentLength;
+            if (geodesicDensify)
+            {
+                var lengthUnit = GeometryServiceRequestParser.GetValue(values, "lengthUnit");
+                var spatialContext = await ResolveMeasurementSpatialContextAsync(context.RequestServices, sr!.Value, ct)
+                    .ConfigureAwait(false);
+                maxSegmentLengthNative = maxSegmentLength
+                    * GeometryServiceRequestParser.GetUnitMultiplier(lengthUnit)
+                    / spatialContext.MetersPerNativeUnit;
+            }
+
             var parameters = new DensifyParameters
             {
                 GeometryJsonStrings = geomStrings,
                 GeometryType = geomType,
                 SR = sr!.Value,
-                MaxSegmentLength = maxSegmentLength
+                MaxSegmentLength = maxSegmentLengthNative
             };
 
             GeometryServiceLog.RequestParsed(_logger, "densify", parameters.GeometryJsonStrings.Length, parameters.GeometryType);
@@ -1390,13 +1436,29 @@ internal sealed class GeometryServiceHandler(
                 bevelRatio = parsedBevel;
             }
 
+            // Esri offset spec: offsetUnit is the unit OF the supplied distance; when
+            // omitted, units derive from sr. The offset itself is computed in the SR's
+            // native units, so convert supplied-unit -> meters -> native units rather
+            // than feeding a meters value to planar NTS math (100 ft on sr=4326 must
+            // become ~0.00027 degrees, not 30.48 "degrees").
+            var offsetUnit = GeometryServiceRequestParser.GetValue(values, "offsetUnit");
+            var offsetDistanceNative = offsetDistance;
+            if (!string.IsNullOrWhiteSpace(offsetUnit))
+            {
+                var spatialContext = await ResolveMeasurementSpatialContextAsync(context.RequestServices, sr!.Value, ct)
+                    .ConfigureAwait(false);
+                offsetDistanceNative = offsetDistance
+                    * GeometryServiceRequestParser.GetUnitMultiplier(offsetUnit)
+                    / spatialContext.MetersPerNativeUnit;
+            }
+
             var parameters = new OffsetParameters
             {
                 GeometryJsonStrings = geomStrings,
                 GeometryType = geomType,
                 SR = sr!.Value,
-                OffsetDistance = offsetDistance,
-                OffsetUnit = GeometryServiceRequestParser.GetValue(values, "offsetUnit"),
+                OffsetDistance = offsetDistanceNative,
+                OffsetUnit = offsetUnit,
                 OffsetHow = GeometryServiceRequestParser.GetValue(values, "offsetHow"),
                 BevelRatio = bevelRatio
             };
@@ -1654,6 +1716,7 @@ internal sealed class GeometryServiceHandler(
         try
         {
             var (values, parseError) = await GeometryServiceRequestParser.TryReadRequestValuesAsync(context.Request, ct);
+            var requestLimits = ResolveRequestLimits(context);
             if (values is null)
             {
                 GeometryServiceLog.InvalidGeometryInput(_logger, "toGeoCoordinateString", parseError ?? "No parameters");
@@ -1682,7 +1745,8 @@ internal sealed class GeometryServiceHandler(
             }
 
             var (coordinates, coordError) = ParseCoordinatePairs(
-                GeometryServiceRequestParser.GetValue(values, "coordinates"));
+                GeometryServiceRequestParser.GetValue(values, "coordinates"),
+                requestLimits.MaxGeometriesPerRequest);
             if (coordError is not null)
             {
                 GeometryServiceLog.InvalidGeometryInput(_logger, "toGeoCoordinateString", coordError);
@@ -1741,6 +1805,7 @@ internal sealed class GeometryServiceHandler(
         try
         {
             var (values, parseError) = await GeometryServiceRequestParser.TryReadRequestValuesAsync(context.Request, ct);
+            var requestLimits = ResolveRequestLimits(context);
             if (values is null)
             {
                 GeometryServiceLog.InvalidGeometryInput(_logger, "fromGeoCoordinateString", parseError ?? "No parameters");
@@ -1769,7 +1834,8 @@ internal sealed class GeometryServiceHandler(
             }
 
             var (strings, stringsError) = ParseGeoCoordinateStrings(
-                GeometryServiceRequestParser.GetValue(values, "strings"));
+                GeometryServiceRequestParser.GetValue(values, "strings"),
+                requestLimits.MaxGeometriesPerRequest);
             if (stringsError is not null)
             {
                 GeometryServiceLog.InvalidGeometryInput(_logger, "fromGeoCoordinateString", stringsError);
@@ -1796,11 +1862,14 @@ internal sealed class GeometryServiceHandler(
         {
             throw;
         }
-        catch (ArgumentException ex)
+        catch (Exception ex) when (ex is ArgumentException or FormatException or OverflowException)
         {
+            // MgrsConverter.FromMgrs reports malformed grid strings via FormatException
+            // (and pathological numeric tails could overflow); these are client input
+            // errors, not server faults.
             GeometryServiceLog.InvalidGeometryInput(_logger, "fromGeoCoordinateString", ex.Message);
             scope.RecordException(ex);
-            return CreateError(context, 400, InvalidGeometryInputMessage);
+            return CreateError(context, 400, "Invalid grid reference string input.");
         }
         catch (Exception ex)
         {
@@ -1927,7 +1996,7 @@ internal sealed class GeometryServiceHandler(
         return (normalized, $"Parameter 'conversionType' value '{normalized}' is not recognized. Supported types: MGRS, USNG.");
     }
 
-    private static (double[][] Coordinates, string? Error) ParseCoordinatePairs(string? raw)
+    private static (double[][] Coordinates, string? Error) ParseCoordinatePairs(string? raw, int maxCoordinates)
     {
         if (string.IsNullOrWhiteSpace(raw))
         {
@@ -1940,6 +2009,13 @@ internal sealed class GeometryServiceHandler(
             if (doc.RootElement.ValueKind != JsonValueKind.Array)
             {
                 return ([], "Parameter 'coordinates' must be a JSON array of [x, y] pairs.");
+            }
+
+            // Each pair costs a projection round trip on non-4326 SRs; bound the count
+            // like ParseGeometries does for the geometry operations.
+            if (doc.RootElement.GetArrayLength() > maxCoordinates)
+            {
+                return ([], $"Parameter 'coordinates' exceeds the maximum of {maxCoordinates} coordinate pairs.");
             }
 
             var result = new List<double[]>(doc.RootElement.GetArrayLength());
@@ -1966,7 +2042,7 @@ internal sealed class GeometryServiceHandler(
         }
     }
 
-    private static (string[] Strings, string? Error) ParseGeoCoordinateStrings(string? raw)
+    private static (string[] Strings, string? Error) ParseGeoCoordinateStrings(string? raw, int maxStrings)
     {
         if (string.IsNullOrWhiteSpace(raw))
         {
@@ -1982,6 +2058,13 @@ internal sealed class GeometryServiceHandler(
                 if (doc.RootElement.ValueKind != JsonValueKind.Array)
                 {
                     return ([], "Parameter 'strings' must be a JSON array of grid reference strings.");
+                }
+
+                // Each string costs a projection round trip on non-4326 SRs; bound the
+                // count like ParseGeometries does for the geometry operations.
+                if (doc.RootElement.GetArrayLength() > maxStrings)
+                {
+                    return ([], $"Parameter 'strings' exceeds the maximum of {maxStrings} grid reference strings.");
                 }
 
                 var result = new List<string>(doc.RootElement.GetArrayLength());
@@ -2198,8 +2281,9 @@ internal sealed class GeometryServiceHandler(
 
     private IResult ExecuteOffset(OffsetParameters parameters, HonuaTelemetryScope scope)
     {
-        var distance = parameters.OffsetDistance
-            * GeometryServiceRequestParser.GetUnitMultiplier(parameters.OffsetUnit);
+        // OffsetDistance has already been converted to the SR's native units by
+        // HandleOffsetAsync (offsetUnit -> meters -> native units).
+        var distance = parameters.OffsetDistance;
         var results = new List<byte[]>(parameters.GeometryJsonStrings.Length);
         var writer = new WKBWriter();
         var joinStyle = ResolveOffsetJoinStyle(parameters.OffsetHow);
@@ -2413,7 +2497,7 @@ internal sealed class GeometryServiceHandler(
         return Results.Json(response, GeometryServiceJsonContext.Default.GeometryServiceDistanceResponse, contentType: "application/json");
     }
 
-    private IResult ExecuteRelation(RelationParameters parameters, HonuaTelemetryScope scope)
+    private IResult ExecuteRelation(RelationParameters parameters, HonuaTelemetryScope scope, CancellationToken ct)
     {
         var geometries1 = new Geometry[parameters.Geometries1Json.Length];
         for (var i = 0; i < geometries1.Length; i++)
@@ -2430,6 +2514,10 @@ internal sealed class GeometryServiceHandler(
         var matches = new List<GeometryServiceRelationPair>();
         for (var i = 0; i < geometries1.Length; i++)
         {
+            // Synchronous NTS work cannot be interrupted by the limits timeout token on
+            // its own; check per row so the request thread is actually released when the
+            // configured request timeout fires.
+            ct.ThrowIfCancellationRequested();
             for (var j = 0; j < geometries2.Length; j++)
             {
                 if (EvaluateRelation(parameters.Relation, parameters.RelationParam, geometries1[i], geometries2[j]))

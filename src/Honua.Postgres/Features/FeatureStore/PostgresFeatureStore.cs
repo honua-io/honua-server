@@ -18,7 +18,6 @@ using Honua.Core.Queries.Filters;
 using Honua.Postgres.Features.FeatureStore.Services;
 using Microsoft.Extensions.ObjectPool;
 using CoreGeometryStorageType = Honua.Core.Features.FeatureStore.Abstractions.GeometryStorageType;
-using PermanentFilterLanguages = Honua.Core.Features.Metadata.Domain.V2.MetadataV2PermanentFilterLanguages;
 
 namespace Honua.Postgres.Features.FeatureStore;
 
@@ -114,7 +113,19 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
 
     public async Task<Feature?> GetAsync(int layerId, long featureId, CancellationToken cancellationToken = default)
     {
-        return await _dataAccess.GetFeatureAsync(layerId, featureId, cancellationToken);
+        // Enforce the layer's permanent (row-visibility) filter: a row hidden by
+        // the metadata-v2 PermanentFilter must not be readable item-by-id either.
+        var query = await ApplyPermanentFilterAsync(layerId, new FeatureQuery(), cancellationToken).ConfigureAwait(false);
+        if (query.EnforcedSqlFilter is null)
+        {
+            return await _dataAccess.GetFeatureAsync(layerId, featureId, cancellationToken);
+        }
+
+        query = query with { ObjectIds = ImmutableArray.Create(featureId), Limit = 1 };
+        var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
+        var selectQuery = _queryBuilder.BuildSelectQuery(layerId, query, geometryStorageType);
+        var features = await _dataAccess.ExecuteSelectQueryAsync(selectQuery, query, layerId, cancellationToken).ConfigureAwait(false);
+        return features.IsDefaultOrEmpty ? null : features[0];
     }
 
     public async Task<Feature> CreateAsync(int layerId, Feature feature, CancellationToken cancellationToken = default)
@@ -478,7 +489,12 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         TemporalPropertyType propertyType,
         CancellationToken cancellationToken = default)
     {
-        var temporalQuery = _queryBuilder.BuildTemporalExtentQuery(layerId, fieldName, propertyType);
+        // Enforce the layer's permanent (row-visibility) filter so hidden rows do
+        // not leak their min/max temporal values through the extent.
+        var query = await ApplyPermanentFilterAsync(layerId, new FeatureQuery(), cancellationToken).ConfigureAwait(false);
+        var temporalQuery = query.EnforcedSqlFilter is not null && _queryBuilder is FeatureQueryBuilder postgresQueryBuilder
+            ? postgresQueryBuilder.BuildTemporalExtentQuery(layerId, fieldName, propertyType, query)
+            : _queryBuilder.BuildTemporalExtentQuery(layerId, fieldName, propertyType);
         return await _dataAccess.GetTemporalExtentAsync(layerId, temporalQuery, cancellationToken);
     }
 
@@ -581,6 +597,21 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
 
     public async Task<QueryResult<Feature>> QueryRelatedAsync(int layerId, RelatedQuery query, CancellationToken cancellationToken = default)
     {
+        // Enforce permanent (row-visibility) filters on both sides of the
+        // relationship: hidden origin rows must not resolve foreign keys, and
+        // hidden related rows must not be readable through queryRelatedRecords.
+        if (_dataAccess is FeatureDataAccess postgresDataAccess)
+        {
+            var originFilter = await ResolveEnforcedSqlFilterAsync(layerId, cancellationToken).ConfigureAwait(false);
+            var relatedFilter = query.RelatedLayerId is int relatedLayerId
+                ? await ResolveEnforcedSqlFilterAsync(relatedLayerId, cancellationToken).ConfigureAwait(false)
+                : null;
+            if (originFilter is not null || relatedFilter is not null)
+            {
+                return await postgresDataAccess.QueryRelatedAsync(layerId, query, originFilter, relatedFilter, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
         return await _dataAccess.QueryRelatedAsync(layerId, query, cancellationToken);
     }
 
@@ -650,6 +681,26 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         return QueryResult<T>.Create(totalCount, features, false);
     }
 
+    /// <summary>
+    /// Computes the filtered total count for a windowed page that came back empty.
+    /// The optimized single-query path derives TotalCount from a COUNT(*) OVER()
+    /// column on returned rows, so an empty page (e.g. OData $skip beyond the last
+    /// match) would otherwise report TotalCount = 0 even though the filter matches
+    /// rows — breaking $count=true and any client paging on the total count.
+    /// </summary>
+    private async Task<QueryResult<T>> CountEmptyPageAsync<T>(
+        int layerId,
+        FeatureQuery query,
+        CoreGeometryStorageType geometryStorageType,
+        CancellationToken cancellationToken)
+    {
+        var countQuery = _queryBuilder.BuildCountQuery(layerId, query, geometryStorageType);
+        var totalCount = await _dataAccess.ExecuteCountQueryAsync(countQuery, query, layerId, cancellationToken).ConfigureAwait(false);
+        return totalCount == 0
+            ? QueryResult<T>.Empty()
+            : QueryResult<T>.Create(totalCount, ImmutableArray<T>.Empty, totalCount > (query.Offset ?? 0));
+    }
+
     private async Task<QueryResult<Feature>> QueryOptimizedAsync(
         int layerId,
         FeatureQuery query,
@@ -683,7 +734,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
 
         if (features.Count == 0)
         {
-            return QueryResult<Feature>.Empty();
+            return await CountEmptyPageAsync<Feature>(layerId, query, geometryStorageType, cancellationToken).ConfigureAwait(false);
         }
 
         for (var i = 0; i < features.Count; i++)
@@ -729,7 +780,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
 
         if (features.Count == 0)
         {
-            return QueryResult<GmlFeature>.Empty();
+            return await CountEmptyPageAsync<GmlFeature>(layerId, query, geometryStorageType, cancellationToken).ConfigureAwait(false);
         }
 
         for (var i = 0; i < features.Count; i++)
@@ -753,7 +804,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
 
         if (features.Length == 0)
         {
-            return QueryResult<EncodedGeoJsonFeature>.Empty();
+            return await CountEmptyPageAsync<EncodedGeoJsonFeature>(layerId, query, geometryStorageType, cancellationToken).ConfigureAwait(false);
         }
 
         var totalCount = ExtractTotalCount(features[0].Attributes, features.Length);
@@ -774,7 +825,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
 
         if (features.Length == 0)
         {
-            return QueryResult<KmlFeature>.Empty();
+            return await CountEmptyPageAsync<KmlFeature>(layerId, query, geometryStorageType, cancellationToken).ConfigureAwait(false);
         }
 
         var totalCount = ExtractTotalCount(features[0].Attributes, features.Length);
@@ -844,76 +895,23 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         FeatureQuery query,
         CancellationToken cancellationToken)
     {
-        if (query.EnforcedSqlFilter != null || _filterExpressionService == null)
+        if (query.EnforcedSqlFilter != null)
         {
             return query;
         }
 
-        // Resolve the resource via the storageLayerId -> resource index and read
-        // the typed PermanentFilter from the canonical Metadata v2 resource.
-        if (_v2Provider != null)
-        {
-            var snapshot = await _v2Provider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            if (snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out var resource))
-            {
-                var v2Filter = resource.PermanentFilter;
-                if (v2Filter == null || string.IsNullOrWhiteSpace(v2Filter.Expression))
-                {
-                    return query;
-                }
-                if (!TryResolveFilterLanguage(v2Filter.Language, out var v2Language))
-                {
-                    throw new InvalidOperationException(
-                        $"Saved permanent filter for resource '{resource.Metadata.Id}' uses unsupported language '{v2Filter.Language}'.");
-                }
-                var v2ParseAndNormalize = _filterExpressionService.ParseAndNormalize(v2Language, v2Filter.Expression, resource);
-                if (!v2ParseAndNormalize.IsSuccess)
-                {
-                    throw new InvalidOperationException(
-                        $"Saved permanent filter for resource '{resource.Metadata.Id}' is invalid: {v2ParseAndNormalize.ErrorMessage ?? "Invalid filter."}");
-                }
-                if (v2ParseAndNormalize.Expression == null)
-                {
-                    return query;
-                }
-                var v2Translation = _filterExpressionService.Translate(v2ParseAndNormalize.Expression, resource);
-                if (!v2Translation.IsSuccess)
-                {
-                    throw new InvalidOperationException(
-                        $"Saved permanent filter for resource '{resource.Metadata.Id}' failed SQL translation: {v2Translation.ErrorMessage ?? "Invalid filter."}");
-                }
-                return v2Translation.SqlFilter == null ? query : query with { EnforcedSqlFilter = v2Translation.SqlFilter };
-            }
-        }
-
-        return query;
+        var enforcedFilter = await ResolveEnforcedSqlFilterAsync(layerId, cancellationToken).ConfigureAwait(false);
+        return enforcedFilter == null ? query : query with { EnforcedSqlFilter = enforcedFilter };
     }
 
-    private static bool TryResolveFilterLanguage(string? language, out FilterLanguage filterLanguage)
-    {
-        filterLanguage = FilterLanguage.ArcGisSql;
-        var normalized = (language ?? PermanentFilterLanguages.ArcGisSql)
-            .Trim()
-            .ToLowerInvariant();
-
-        switch (normalized)
-        {
-            case PermanentFilterLanguages.ArcGisSql:
-            case "arcgis":
-            case "geoservices-sql":
-                filterLanguage = FilterLanguage.ArcGisSql;
-                return true;
-            case PermanentFilterLanguages.Cql2Text:
-            case "cql2":
-                filterLanguage = FilterLanguage.Cql2Text;
-                return true;
-            case PermanentFilterLanguages.Cql2Json:
-                filterLanguage = FilterLanguage.Cql2Json;
-                return true;
-            default:
-                return false;
-        }
-    }
+    /// <summary>
+    /// Resolves the layer's metadata-v2 permanent (row-visibility) filter to a
+    /// parameterized SQL fragment, or null when the layer has no enforceable filter.
+    /// </summary>
+    private Task<SqlFragment?> ResolveEnforcedSqlFilterAsync(
+        int layerId,
+        CancellationToken cancellationToken)
+        => PermanentFilterResolver.ResolveAsync(_v2Provider, _filterExpressionService, layerId, cancellationToken);
 
     private async Task<MetadataV2Resource> GetMetadataResourceAsync(int layerId, CancellationToken cancellationToken)
     {

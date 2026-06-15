@@ -15,6 +15,7 @@ using Honua.Geoprocessing;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 using Proto = Geospatial.V1;
 
@@ -3204,7 +3205,8 @@ public sealed class ProcessCatalogTests
             authEval,
             approvalEval,
             _catalog,
-            Microsoft.Extensions.Logging.Abstractions.NullLogger<GeoprocessingJobService>.Instance);
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<GeoprocessingJobService>.Instance,
+            new StaticOptionsMonitor<GeoprocessingExecutorOptions>(new GeoprocessingExecutorOptions()));
 
         return new HonuaProcessService(
             jobService,
@@ -3225,6 +3227,13 @@ public sealed class ProcessCatalogTests
         var ctx = new TestServerCallContext();
         ctx.UserState["__HttpContext"] = httpContext;
         return ctx;
+    }
+
+    private sealed class StaticOptionsMonitor<T>(T value) : IOptionsMonitor<T>
+    {
+        public T CurrentValue => value;
+        public T Get(string? name) => value;
+        public IDisposable? OnChange(Action<T, string?> listener) => null;
     }
 
     private sealed class TestServerCallContext : ServerCallContext, IDisposable

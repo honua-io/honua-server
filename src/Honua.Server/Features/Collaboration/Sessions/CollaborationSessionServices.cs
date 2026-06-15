@@ -14,6 +14,9 @@ internal static class CollaborationSessionServices
         services.TryAddSingleton<ICollaborationSessionClock, SystemCollaborationSessionClock>();
         services.TryAddSingleton<ISavedMapCollaborationAuthorizer, FailClosedSavedMapCollaborationAuthorizer>();
         services.TryAddSingleton<InMemoryCollaborationSessionService>();
+        // The transport has no leave/heartbeat HTTP surface yet; the background sweep is what
+        // keeps the singleton presence/outbox state bounded when participants stop polling.
+        services.AddHostedService<CollaborationSessionPruneService>();
         services.AddFeatureLockCollaboration();
         return services;
     }

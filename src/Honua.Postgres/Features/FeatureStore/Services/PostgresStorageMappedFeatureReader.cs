@@ -42,6 +42,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     private readonly int _storageSrid;
     private readonly string? _layerDiscriminatorColumn;
     private readonly int? _layerDiscriminatorValue;
+    private string? _resolvedBoundConnectionString;
 
     public PostgresStorageMappedFeatureReader(
         IDatabaseConnectionProvider connectionProvider,
@@ -814,7 +815,8 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             foreach (var clause in query.OrderBy.Value)
             {
                 var column = ResolveSortColumnExpression(clause.Field);
-                clauses.Add($"{column} {(clause.Ascending ? "ASC" : "DESC")}");
+                clauses.Add(
+                    $"{column} {(clause.Ascending ? "ASC" : "DESC")}{FeatureQueryBuilder.GetNullOrderingSuffix(clause.NullOrdering)}");
             }
 
             sql.Append(CultureInfo.InvariantCulture, $" ORDER BY {string.Join(", ", clauses)}");
@@ -1067,7 +1069,16 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         }
 
         var connection = new NpgsqlConnection(connectionString);
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            await connection.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
+
         return connection;
     }
 
@@ -1078,19 +1089,41 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             return null;
         }
 
+        // Memoized: a KMS/Data-Protection-backed decrypt would otherwise run twice per
+        // read (count + select) on the hot path. Benign race — duplicate resolution is
+        // idempotent and the binding is immutable for the reader instance lifetime.
+        if (_resolvedBoundConnectionString is { } cached)
+        {
+            return cached;
+        }
+
         if (!_connection.IsEncrypted && !string.IsNullOrWhiteSpace(_connection.ConnectionString))
         {
-            return _connection.ConnectionString;
+            return _resolvedBoundConnectionString = _connection.ConnectionString;
         }
 
         if (_connection.EncryptedConnectionString.Length > 0 && _connectionEncryptionService != null)
         {
-            return await _connectionEncryptionService
+            var decrypted = await _connectionEncryptionService
                 .DecryptConnectionStringAsync(_connection.EncryptedConnectionString, _connection.EncryptionKeyVersion)
                 .ConfigureAwait(false);
+            if (!string.IsNullOrWhiteSpace(decrypted))
+            {
+                return _resolvedBoundConnectionString = decrypted;
+            }
         }
 
-        return null;
+        // A resource bound to a specific DataConnection MUST read that source. Falling back
+        // to the default catalog connection would silently query a same-named table in the
+        // wrong database — a tenant/data-source isolation hazard — so fail loudly instead
+        // (e.g. when the connection is encrypted but no IConnectionEncryptionService is
+        // registered, or the binding carries no usable connection string).
+        throw new InvalidOperationException(
+            $"Storage-mapped table '{_qualifiedTableName}' is bound to data connection '{_connection.Id}' "
+            + "but no usable connection string could be resolved for it. "
+            + (_connection.IsEncrypted && _connectionEncryptionService is null
+                ? "The connection is encrypted and no connection encryption service is registered."
+                : "The connection has no plaintext or decryptable connection string."));
     }
 
     private static NpgsqlCommand CreateReadCommand(NpgsqlConnection connection, SqlBuilder sql)

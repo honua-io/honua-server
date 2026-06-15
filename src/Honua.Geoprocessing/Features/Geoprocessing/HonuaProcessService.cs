@@ -13,7 +13,7 @@ namespace Honua.Geoprocessing;
 /// gRPC service implementation for typed geoprocessing execution and job lifecycle management.
 /// Thin proto-to-domain translator that delegates to <see cref="IGeoprocessingJobService"/>.
 /// </summary>
-internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceBase
+internal sealed partial class HonuaProcessService : Proto.ProcessService.ProcessServiceBase
 {
     private readonly IGeoprocessingJobService _jobService;
     private readonly ILogger<HonuaProcessService> _logger;
@@ -260,51 +260,60 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
         return null;
     }
 
-    private static RpcException MapToRpcException(Exception ex) => ex switch
+    private RpcException MapToRpcException(Exception ex)
     {
-        OperationCanceledException => new RpcException(new Status(StatusCode.Cancelled, "The operation was cancelled.")),
+        switch (ex)
+        {
+            case OperationCanceledException:
+                return new RpcException(new Status(StatusCode.Cancelled, "The operation was cancelled."));
 
-        TimeoutException timeoutEx => new RpcException(new Status(
-            StatusCode.DeadlineExceeded,
-            timeoutEx.Message)),
+            case TimeoutException timeoutEx:
+                Log.UnexpectedTimeout(_logger, timeoutEx);
+                return new RpcException(new Status(StatusCode.DeadlineExceeded, "The operation timed out."));
 
-        GeoprocessingAuthorizationException authEx => new RpcException(new Status(
-            authEx.RequiresAuthentication ? StatusCode.Unauthenticated : StatusCode.PermissionDenied,
-            authEx.Message)),
+            case GeoprocessingAuthorizationException authEx:
+                return new RpcException(new Status(
+                    authEx.RequiresAuthentication ? StatusCode.Unauthenticated : StatusCode.PermissionDenied,
+                    authEx.Message));
 
-        GeoprocessingApprovalRequiredException approvalEx => new RpcException(new Status(
-            StatusCode.FailedPrecondition, approvalEx.Message)),
+            case GeoprocessingApprovalRequiredException approvalEx:
+                return new RpcException(new Status(StatusCode.FailedPrecondition, approvalEx.Message));
 
-        GeoprocessingNotFoundException notFoundEx => new RpcException(new Status(
-            StatusCode.NotFound, notFoundEx.Message)),
+            case GeoprocessingNotFoundException notFoundEx:
+                return new RpcException(new Status(StatusCode.NotFound, notFoundEx.Message));
 
-        GeoprocessingPreconditionFailedException preconditionEx => new RpcException(new Status(
-            StatusCode.FailedPrecondition, preconditionEx.Message)),
+            case GeoprocessingPreconditionFailedException preconditionEx:
+                return new RpcException(new Status(StatusCode.FailedPrecondition, preconditionEx.Message));
 
-        GeoprocessingValidationException validationEx => new RpcException(new Status(
-            StatusCode.InvalidArgument, validationEx.Message)),
+            case GeoprocessingValidationException validationEx:
+                return new RpcException(new Status(StatusCode.InvalidArgument, validationEx.Message));
 
-        GeoprocessingStoreUnavailableException storeEx => new RpcException(new Status(
-            StatusCode.Unavailable, storeEx.Message)),
+            case GeoprocessingStoreUnavailableException storeEx:
+                return new RpcException(new Status(StatusCode.Unavailable, storeEx.Message));
 
-        GeoprocessingIdempotencyConflictException conflictEx => new RpcException(new Status(
-            StatusCode.AlreadyExists, conflictEx.Message)),
+            case GeoprocessingIdempotencyConflictException conflictEx:
+                return new RpcException(new Status(StatusCode.AlreadyExists, conflictEx.Message));
 
-        GeoprocessingAdmissionException admissionEx => new RpcException(
-            new Status(StatusCode.ResourceExhausted, admissionEx.Message),
-            new global::Grpc.Core.Metadata
-            {
-                { "honua-admission-outcome", admissionEx.Outcome.ToString() },
-                { "honua-admission-dimension", admissionEx.DenyingDimension.ToString() },
-                { "honua-admission-policy-ref", admissionEx.PolicyRef },
-                { "retry-after", admissionEx.RetryAfterSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture) }
-            }),
+            case GeoprocessingAdmissionException admissionEx:
+                return new RpcException(
+                    new Status(StatusCode.ResourceExhausted, admissionEx.Message),
+                    new global::Grpc.Core.Metadata
+                    {
+                        { "honua-admission-outcome", admissionEx.Outcome.ToString() },
+                        { "honua-admission-dimension", admissionEx.DenyingDimension.ToString() },
+                        { "honua-admission-policy-ref", admissionEx.PolicyRef },
+                        { "retry-after", admissionEx.RetryAfterSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture) }
+                    });
 
-        InvalidOperationException opEx => new RpcException(new Status(
-            StatusCode.Internal, opEx.Message)),
+            case InvalidOperationException opEx:
+                Log.UnexpectedInternalError(_logger, opEx);
+                return new RpcException(new Status(StatusCode.Internal, "An unexpected error occurred."));
 
-        _ => new RpcException(new Status(StatusCode.Internal, "An unexpected error occurred."))
-    };
+            default:
+                Log.UnexpectedInternalError(_logger, ex);
+                return new RpcException(new Status(StatusCode.Internal, "An unexpected error occurred."));
+        }
+    }
 
     private static void EnrichActivity(string operation)
     {
@@ -316,5 +325,16 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
 
         activity.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.Grpc);
         activity.SetTag(HonuaTelemetry.Tags.Operation, operation);
+    }
+
+    private static partial class Log
+    {
+        [LoggerMessage(7900, LogLevel.Error,
+            "Unexpected internal error in geoprocessing gRPC service")]
+        public static partial void UnexpectedInternalError(ILogger logger, Exception exception);
+
+        [LoggerMessage(7901, LogLevel.Warning,
+            "Timeout in geoprocessing gRPC service")]
+        public static partial void UnexpectedTimeout(ILogger logger, Exception exception);
     }
 }

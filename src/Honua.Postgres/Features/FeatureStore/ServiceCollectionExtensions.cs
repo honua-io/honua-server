@@ -110,8 +110,16 @@ internal static class ServiceCollectionExtensions
         // Spatial analytics reader (clustering, spatial join, buffer aggregate, density).
         // Composes the existing query builder + data access pipeline so all observability
         // (slow-query logging, metrics, telemetry) flows through the same code path as
-        // statistics, date bins and H3 aggregation.
-        services.AddScoped<ISpatialAnalyticsReader, PostgresSpatialAnalyticsReader>();
+        // statistics, date bins and H3 aggregation. The optional metadata/filter services
+        // let the reader enforce metadata-v2 permanent (row-visibility) filters like the
+        // main feature store does.
+        services.AddScoped<ISpatialAnalyticsReader>(provider =>
+            new PostgresSpatialAnalyticsReader(
+                provider.GetRequiredService<IFeatureQueryBuilder>(),
+                provider.GetRequiredService<IFeatureDataAccess>(),
+                provider.GetRequiredService<IFeatureCacheManager>(),
+                provider.GetService<IMetadataV2GraphProvider>(),
+                provider.GetService<IFilterExpressionService>()));
 
         // Feature-change transactional outbox (#692). PostgreSQL is the canonical
         // mutation-capable provider so it owns the outbox repository implementation and

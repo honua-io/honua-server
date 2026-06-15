@@ -303,7 +303,7 @@ internal sealed partial class KubernetesArgoRolloutsDeployBackend(
         var target = ResolveTarget(spec);
         EnsureValidTarget(target);
 
-        using var activity = StartActivity(ControlPlaneTelemetry.Activities.BackendObserve, operation, target);
+        using var activity = StartActivity(ControlPlaneTelemetry.Activities.BackendPromote, operation, target);
 
         try
         {

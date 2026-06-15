@@ -26,6 +26,14 @@ internal static partial class FeatureServerEndpoints
         int layerId,
         HttpContext context)
     {
+        var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
+        if (!TryValidateAllowedParameters(context.Request.Query, queryValidator, AllowedQueryParameters.QueryDateBins, out var error))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid query parameters",
+                [error ?? "Invalid query parameter."]);
+        }
+
         var values = ToCaseInsensitiveDictionary(context.Request.Query);
         return await HandleQueryDateBinsCore(serviceId, layerId, values, context);
     }
@@ -47,6 +55,14 @@ internal static partial class FeatureServerEndpoints
             return StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid request body",
                 [readError ?? "Invalid request body."]);
+        }
+
+        var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
+        if (!TryValidateAllowedParameters(values, queryValidator, AllowedQueryParameters.QueryDateBins, out var error))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid query parameters",
+                [error ?? "Invalid query parameter."]);
         }
 
         return await HandleQueryDateBinsCore(serviceId, layerId, values, context);
@@ -105,12 +121,27 @@ internal static partial class FeatureServerEndpoints
             return editionError;
         }
 
+        var requestedFormat = GetValueString(values, "f");
+        if (!TryValidateOutputFormat(requestedFormat, JsonOnlyFormats, out _, out var formatError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid query parameters",
+                [formatError ?? "Output format is not supported."]);
+        }
+
         // Parse required binField
         var binField = GetValueString(values, "binField");
         if (string.IsNullOrWhiteSpace(binField))
         {
             return StandardErrorHelpers.CreateBadRequest(context,
                 "binField parameter is required");
+        }
+
+        if (!IsSchemaField(resource, binField))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid binField parameter",
+                [$"Field '{binField}' does not exist on the layer."]);
         }
 
         // Parse bin JSON parameter
@@ -139,14 +170,23 @@ internal static partial class FeatureServerEndpoints
                     [statsError ?? "outStatistics must be valid JSON."]);
             }
 
+            if (!TryValidateStatisticsFields(resource, outStats, out var statsFieldError))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context,
+                    "Invalid outStatistics parameter",
+                    [statsFieldError ?? "outStatistics references an unknown field."]);
+            }
+
             dateBin = dateBin with { OutStatistics = outStats };
         }
 
-        var query = new FeatureQuery
+        // Translate the where clause through the shared filter pipeline (matching
+        // /query and queryH3) so valid ArcGIS SQL is supported and invalid input
+        // surfaces as a protocol-shaped 400 instead of a provider exception.
+        if (!TryBuildAnalyticsFeatureQuery(context, resource, GetValueString(values, "where"), out var query, out var whereError))
         {
-            Where = GetValueString(values, "where"),
-            SpatialReferenceSrid = resource.ReadSrid()
-        };
+            return whereError!;
+        }
 
         var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
         var rows = await featureReader.QueryDateBinsAsync(storageLayerId.Value, query, dateBin, cancellationToken);

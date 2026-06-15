@@ -98,15 +98,19 @@ public sealed partial class VersionJobRunner : IVersionJobRunner
         activity?.SetTag("honua.version.job_kind", job.Kind.ToString());
         activity?.SetTag("honua.version.policy", job.Policy.ToString());
 
-        await using var scope = _scopeFactory.CreateAsyncScope();
-        var manager = scope.ServiceProvider.GetRequiredService<IVersionManager>();
-        var store = scope.ServiceProvider.GetRequiredService<IVersionJobStore>();
-
         var running = job with { Status = VersionJobStatus.Running, StartedAt = DateTimeOffset.UtcNow };
-        await store.SaveAsync(running, CancellationToken.None).ConfigureAwait(false);
 
+        // The whole body — including scope creation, service resolution, and the Running-state save —
+        // must sit inside the try: this task is detached (fire-and-forget), so an exception escaping
+        // here would be unobserved and the job would sit in Pending forever with no log line.
         try
         {
+            await using var scope = _scopeFactory.CreateAsyncScope();
+            var manager = scope.ServiceProvider.GetRequiredService<IVersionManager>();
+            var store = scope.ServiceProvider.GetRequiredService<IVersionJobStore>();
+
+            await store.SaveAsync(running, CancellationToken.None).ConfigureAwait(false);
+
             VersionJob completed = job.Kind == VersionJobKind.Reconcile
                 ? await RunReconcileAsync(manager, running, CancellationToken.None).ConfigureAwait(false)
                 : await RunPostAsync(manager, running, CancellationToken.None).ConfigureAwait(false);
@@ -129,7 +133,7 @@ public sealed partial class VersionJobRunner : IVersionJobRunner
                 StartedAt = null,
                 CompletedAt = DateTimeOffset.UtcNow,
             };
-            await store.SaveAsync(contended, CancellationToken.None).ConfigureAwait(false);
+            await SaveTerminalStateAsync(contended).ConfigureAwait(false);
             Log.LockContended(_logger, job.Kind.ToString(), job.VersionId, job.JobId, null);
         }
         catch (Exception ex)
@@ -144,7 +148,22 @@ public sealed partial class VersionJobRunner : IVersionJobRunner
                 CompletedAt = DateTimeOffset.UtcNow,
                 ErrorMessage = "The reconcile/post job failed. See server logs for details.",
             };
-            await store.SaveAsync(failed, CancellationToken.None).ConfigureAwait(false);
+            await SaveTerminalStateAsync(failed).ConfigureAwait(false);
+        }
+    }
+
+    // Best-effort: the terminal transition is recorded through the singleton job store (the DI scope
+    // may already be gone when the failure was in the prologue), and a store outage while saving must
+    // not become a second unobserved exception on this detached task.
+    private async Task SaveTerminalStateAsync(VersionJob job)
+    {
+        try
+        {
+            await _jobStore.SaveAsync(job, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Log.TerminalSaveFailed(_logger, job.Kind.ToString(), job.VersionId, job.JobId, ex);
         }
     }
 
@@ -196,5 +215,11 @@ public sealed partial class VersionJobRunner : IVersionJobRunner
             Level = LogLevel.Error,
             Message = "Version {JobKind} job for version {VersionId} (job {JobId}) failed.")]
         public static partial void JobFailed(ILogger logger, string jobKind, Guid versionId, Guid jobId, Exception exception);
+
+        [LoggerMessage(
+            EventId = 7102,
+            Level = LogLevel.Error,
+            Message = "Failed to persist terminal state for version {JobKind} job {JobId} (version {VersionId}); polling clients may see a stale status.")]
+        public static partial void TerminalSaveFailed(ILogger logger, string jobKind, Guid versionId, Guid jobId, Exception exception);
     }
 }

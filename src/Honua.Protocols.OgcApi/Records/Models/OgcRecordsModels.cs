@@ -119,9 +119,12 @@ public sealed record OgcRecordFeature
 
     /// <summary>
     /// Optional GeoJSON geometry. Catalog records are currently extent-backed, so
-    /// this is null and bbox carries the spatial footprint.
+    /// this is null and bbox carries the spatial footprint. RFC 7946 §3.2 requires
+    /// the "geometry" member to be present (with a null value) on every Feature,
+    /// so it must never be omitted from the payload.
     /// </summary>
     [JsonPropertyName("geometry")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public JsonElement? Geometry { get; init; }
 
     /// <summary>

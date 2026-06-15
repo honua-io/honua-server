@@ -199,6 +199,18 @@ public class Cql2ParserTests
     }
 
     [Fact]
+    public void Parse_SpatialIntersects_IsNotGeodesic()
+    {
+        // CQL2 S_INTERSECTS has planar-in-CRS semantics; only the OData parser marks
+        // its geo.intersects predicates geodesic. Keeping the flag false here is what
+        // scopes the geography routing in the SQL translators to OData.
+        var result = _parser.Parse("S_INTERSECTS(geom, POINT(1 2))");
+
+        result.Should().BeOfType<SpatialPredicate>();
+        ((SpatialPredicate)result).Geodesic.Should().BeFalse();
+    }
+
+    [Fact]
     public void Parse_WithNestedParenthesesBeyondLimit_ThrowsArgumentException()
     {
         var cql = string.Concat(Enumerable.Repeat("(", FilterParserGuard.MaxExpressionDepth + 1)) +

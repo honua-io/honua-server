@@ -9,6 +9,7 @@ using Honua.Core.Features.Security.Abstractions;
 using Honua.Server.Features.HealthCheck;
 using Honua.Infrastructure.Monitoring;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 
@@ -33,6 +34,7 @@ public sealed class DeployPreflightProbeTests
             migrationRunner,
             migrationState,
             new DatabaseCompatibilityState(),
+            NullLogger<DeployPreflightProbe>.Instance,
             new StubConnectionSecretResolver("aws:secretsmanager:test-db", "Host=resolved;Database=honua;Username=test;Password=secret"));
 
         var snapshot = await probe.ProbeAsync();
@@ -60,6 +62,7 @@ public sealed class DeployPreflightProbeTests
             new CapturingMigrationRunner(),
             migrationState,
             new DatabaseCompatibilityState(),
+            NullLogger<DeployPreflightProbe>.Instance,
             new ThrowingConnectionSecretResolver());
 
         var snapshot = await probe.ProbeAsync();

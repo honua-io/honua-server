@@ -379,7 +379,8 @@ internal sealed partial class ODataQueryService
 
         if (left is string leftString && right is string rightString)
         {
-            return string.Equals(leftString, rightString, StringComparison.OrdinalIgnoreCase);
+            // OData v4.01 §5.1.1.1.1: Edm.String eq is exact (case-sensitive) match.
+            return string.Equals(leftString, rightString, StringComparison.Ordinal);
         }
 
         if (IsNumber(left) && IsNumber(right))
@@ -414,7 +415,8 @@ internal sealed partial class ODataQueryService
 
         if (left is string leftString && right is string rightString)
         {
-            return string.Compare(leftString, rightString, StringComparison.OrdinalIgnoreCase);
+            // OData v4.01 §13 conformance: operators on Edm.String are case-sensitive.
+            return string.Compare(leftString, rightString, StringComparison.Ordinal);
         }
 
         throw new ArgumentException("Unsupported comparison types in OData filter.");

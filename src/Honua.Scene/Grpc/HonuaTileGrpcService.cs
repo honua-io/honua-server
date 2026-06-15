@@ -8,6 +8,7 @@ using Grpc.Core;
 using Honua.Core.Features.Scene.Abstractions;
 using Honua.Scene.Assets;
 using Honua.ServiceDefaults;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Domain = Honua.Core.Features.Scene.Domain;
 using Proto = Geospatial.V1;
@@ -33,18 +34,25 @@ internal sealed partial class HonuaTileGrpcService : Proto.TileService.TileServi
     private const int CatalogCacheCapacity = 64;
 
     /// <summary>
-    /// Hard ceiling on a single tile content payload (256 MiB). A unary
-    /// <see cref="GetTile"/> response — and each <see cref="StreamTiles"/> tile —
-    /// is fully materialized in memory (read into a managed array, then copied
-    /// again by <see cref="ByteString.CopyFrom(byte[])"/>), so an oversized or
-    /// corrupted on-disk tile would otherwise drive an unbounded ~2x allocation
-    /// spike. The file size is checked cheaply via <see cref="FileInfo"/> before
-    /// reading and a payload above this ceiling is rejected with
-    /// <see cref="StatusCode.ResourceExhausted"/> rather than buffered. The cap is
-    /// also comfortably above the typical few-MiB b3dm/pnts tile while staying
-    /// within a sane gRPC send-message budget for legitimate large tiles.
+    /// Default gRPC send-message limit assumed when no explicit
+    /// <c>Grpc:MaxSendMessageSize</c> is configured — matches the default set by
+    /// <c>AddHonuaGrpc</c>. Used to derive the effective per-tile content cap so
+    /// the <see cref="FileInfo"/> pre-check rejects tiles that the gRPC layer would
+    /// reject anyway, rather than buffering them in full only to fail at send time.
     /// </summary>
-    private const long MaxTileContentBytes = 256L * 1024 * 1024;
+    private const int DefaultGrpcSendMessageSize = 16 * 1024 * 1024;
+
+    /// <summary>
+    /// Absolute hard ceiling on a single tile content payload (256 MiB). The
+    /// effective per-request cap is the minimum of this value and the configured
+    /// <c>Grpc:MaxSendMessageSize</c> (see <see cref="_maxTileContentBytes"/>). A
+    /// unary <see cref="GetTile"/> response — and each <see cref="StreamTiles"/>
+    /// tile — is fully materialized in memory (read into a managed array, then
+    /// copied again by <see cref="ByteString.CopyFrom(byte[])"/>), so an oversized
+    /// or corrupted on-disk tile would otherwise drive an unbounded ~2x allocation
+    /// spike before failing at the gRPC send layer.
+    /// </summary>
+    private const long AbsoluteMaxTileContentBytes = 256L * 1024 * 1024;
 
     /// <summary>
     /// In-process catalog cache keyed by resolved tileset path. Each value pins
@@ -57,15 +65,34 @@ internal sealed partial class HonuaTileGrpcService : Proto.TileService.TileServi
     private readonly ISceneDatasetRegistry _registry;
     private readonly ILogger<HonuaTileGrpcService> _logger;
 
+    /// <summary>
+    /// Effective per-tile content ceiling: the minimum of
+    /// <see cref="AbsoluteMaxTileContentBytes"/> and the configured
+    /// <c>Grpc:MaxSendMessageSize</c>. Kept in an instance field because gRPC
+    /// service instances are scoped/transient and reading from injected
+    /// <see cref="IConfiguration"/> at construction is cheaper than an Options
+    /// wrapper for a single scalar.
+    /// </summary>
+    private readonly long _maxTileContentBytes;
+
     public HonuaTileGrpcService(
         ISceneDatasetRegistry registry,
-        ILogger<HonuaTileGrpcService> logger)
+        ILogger<HonuaTileGrpcService> logger,
+        IConfiguration? configuration = null)
     {
         ArgumentNullException.ThrowIfNull(registry);
         ArgumentNullException.ThrowIfNull(logger);
 
         _registry = registry;
         _logger = logger;
+
+        // Clamp the tile pre-read size check to the actual gRPC send budget so
+        // the FileInfo guard rejects tiles that the gRPC layer would reject
+        // anyway, rather than reading up to ~512 MiB (2x 256 MiB) into managed
+        // memory only to get ResourceExhausted at send time.
+        var configuredSendSize = configuration?.GetValue<int?>("Grpc:MaxSendMessageSize")
+            ?? DefaultGrpcSendMessageSize;
+        _maxTileContentBytes = Math.Min(AbsoluteMaxTileContentBytes, configuredSendSize);
     }
 
     public override async Task<Proto.GetTileResponse> GetTile(
@@ -87,7 +114,7 @@ internal sealed partial class HonuaTileGrpcService : Proto.TileService.TileServi
         activity?.SetTag(SceneGrpcTelemetry.SceneIdTag, request.SceneId);
         activity?.SetTag(SceneGrpcTelemetry.NodeIdTag, request.NodeId);
 
-        var location = await ResolveSceneAsync(request.SceneId, context).ConfigureAwait(false);
+        var location = await ResolveSceneAsync(request.SceneId, SceneGrpcTelemetry.GetTileOperation, context).ConfigureAwait(false);
         SceneAccessGuard.EnforceReadAccess(context, location.AccessPolicy);
         var catalog = await LoadCatalogAsync(location, context.CancellationToken).ConfigureAwait(false);
 
@@ -97,7 +124,7 @@ internal sealed partial class HonuaTileGrpcService : Proto.TileService.TileServi
             throw new RpcException(new Status(StatusCode.NotFound, $"Tile node '{request.NodeId}' was not found in scene '{request.SceneId}'."));
         }
 
-        var tile = await BuildTileAsync(entry, location.AssetRoot, context.CancellationToken).ConfigureAwait(false);
+        var tile = await BuildTileAsync(entry, location.AssetRoot, _maxTileContentBytes, context.CancellationToken).ConfigureAwait(false);
         activity?.SetTag(SceneGrpcTelemetry.TileBytesTag, tile.Content.Length);
         return new Proto.GetTileResponse { Tile = tile };
     }
@@ -128,7 +155,7 @@ internal sealed partial class HonuaTileGrpcService : Proto.TileService.TileServi
         activity?.SetTag(HonuaTelemetry.Tags.Operation, SceneGrpcTelemetry.StreamTilesOperation);
         activity?.SetTag(SceneGrpcTelemetry.SceneIdTag, request.SceneId);
 
-        var location = await ResolveSceneAsync(request.SceneId, context).ConfigureAwait(false);
+        var location = await ResolveSceneAsync(request.SceneId, SceneGrpcTelemetry.StreamTilesOperation, context).ConfigureAwait(false);
         SceneAccessGuard.EnforceReadAccess(context, location.AccessPolicy);
         var catalog = await LoadCatalogAsync(location, context.CancellationToken).ConfigureAwait(false);
 
@@ -164,7 +191,7 @@ internal sealed partial class HonuaTileGrpcService : Proto.TileService.TileServi
                 continue;
             }
 
-            var tile = await BuildTileAsync(entry, location.AssetRoot, context.CancellationToken).ConfigureAwait(false);
+            var tile = await BuildTileAsync(entry, location.AssetRoot, _maxTileContentBytes, context.CancellationToken).ConfigureAwait(false);
             await responseStream.WriteAsync(tile).ConfigureAwait(false);
             streamedTiles++;
             streamedBytes += tile.Content.Length;
@@ -179,6 +206,15 @@ internal sealed partial class HonuaTileGrpcService : Proto.TileService.TileServi
     /// <see cref="Proto.Tile"/>, inferring the content type from the uri
     /// extension.
     /// </summary>
+    /// <param name="entry">The tile catalog entry to serve.</param>
+    /// <param name="assetRoot">Scene asset root directory.</param>
+    /// <param name="maxContentBytes">
+    /// Effective ceiling on the tile payload (bytes). The caller derives this
+    /// from the configured <c>Grpc:MaxSendMessageSize</c> so the
+    /// <see cref="FileInfo"/> pre-check matches the actual gRPC send budget and
+    /// rejects tiles that would fail at send time before reading them.
+    /// </param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <remarks>
     /// External sub-tileset contract: a node whose content uri is an external
     /// <c>.json</c> sub-tileset is streamed as OPAQUE bytes with
@@ -191,7 +227,7 @@ internal sealed partial class HonuaTileGrpcService : Proto.TileService.TileServi
     /// only addressable after the client re-issues requests against that
     /// expanded tree (a tracked follow-up if server-side expansion is needed).
     /// </remarks>
-    private static async Task<Proto.Tile> BuildTileAsync(SceneTileEntry entry, string assetRoot, CancellationToken cancellationToken)
+    private static async Task<Proto.Tile> BuildTileAsync(SceneTileEntry entry, string assetRoot, long maxContentBytes, CancellationToken cancellationToken)
     {
         var tile = new Proto.Tile
         {
@@ -214,27 +250,43 @@ internal sealed partial class HonuaTileGrpcService : Proto.TileService.TileServi
         }
 
         // Stat the file before reading: the whole payload is buffered (and copied
-        // again by ByteString.CopyFrom), so cap it to avoid an unbounded ~2x
-        // allocation from an oversized/corrupted on-disk tile.
+        // again by ByteString.CopyFrom), so cap it to the effective gRPC send
+        // budget to avoid an unbounded ~2x allocation from an oversized or
+        // corrupted on-disk tile that would fail at send time anyway.
         var info = new FileInfo(fullPath);
-        if (info.Exists && info.Length > MaxTileContentBytes)
+        if (info.Exists && info.Length > maxContentBytes)
         {
             throw new RpcException(new Status(
                 StatusCode.ResourceExhausted,
-                $"Tile content '{uri}' for node '{entry.NodeId}' exceeds the maximum tile size of {MaxTileContentBytes} bytes."));
+                $"Tile content '{uri}' for node '{entry.NodeId}' exceeds the maximum tile size of {maxContentBytes} bytes."));
         }
 
-        var bytes = await File.ReadAllBytesAsync(fullPath, cancellationToken).ConfigureAwait(false);
+        byte[] bytes;
+        try
+        {
+            bytes = await File.ReadAllBytesAsync(fullPath, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+        {
+            // The file was removed between the FileInfo stat and the read (e.g.
+            // a publish promotion cleaned up a stale directory). Return NotFound
+            // so the status code matches the resolve-failure path rather than
+            // mapping to an opaque 5xx via the gRPC exception interceptor.
+            throw new RpcException(new Status(
+                StatusCode.NotFound,
+                $"Tile content '{uri}' for node '{entry.NodeId}' was not found."));
+        }
+
         tile.ContentType = SceneTileCatalog.ContentTypeFromUri(uri);
         tile.Content = ByteString.CopyFrom(bytes);
         return tile;
     }
 
-    private async Task<SceneLocation> ResolveSceneAsync(string sceneId, ServerCallContext context)
+    private async Task<SceneLocation> ResolveSceneAsync(string sceneId, string operation, ServerCallContext context)
     {
         if (string.IsNullOrWhiteSpace(sceneId))
         {
-            Log.InvalidArgument(_logger, SceneGrpcTelemetry.GetTileOperation, sceneId, "scene_id is required.");
+            Log.InvalidArgument(_logger, operation, sceneId, "scene_id is required.");
             throw new RpcException(new Status(StatusCode.InvalidArgument, "scene_id is required."));
         }
 
@@ -247,7 +299,7 @@ internal sealed partial class HonuaTileGrpcService : Proto.TileService.TileServi
         var scene = await _registry.FindAsync(sceneId, context.CancellationToken).ConfigureAwait(false);
         if (scene is null)
         {
-            Log.SceneNotFound(_logger, SceneGrpcTelemetry.GetTileOperation, sceneId);
+            Log.SceneNotFound(_logger, operation, sceneId);
             throw new RpcException(new Status(StatusCode.NotFound, $"Scene '{sceneId}' was not found."));
         }
 

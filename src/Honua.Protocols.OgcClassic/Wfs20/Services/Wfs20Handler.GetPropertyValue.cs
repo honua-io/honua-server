@@ -159,7 +159,7 @@ internal sealed partial class Wfs20Handler
         }
         catch (Exception ex)
         {
-            Wfs20Log.DatabaseQueryFailed(_logger, Wfs20Utilities.Operations.GetPropertyValue, ex.Message);
+            Wfs20Log.DatabaseQueryFailed(_logger, ex, Wfs20Utilities.Operations.GetPropertyValue, ex.Message);
             return StandardErrorHelpers.CreateInternalServerError(context, "Failed to process GetPropertyValue request.");
         }
     }
@@ -359,7 +359,9 @@ internal sealed partial class Wfs20Handler
 
         foreach (var plan in planSet.Plans)
         {
-            var axisOrder = plan.Query.OutputAxisOrder ?? AxisOrder.EastNorth;
+            // GeoJSON positions are always longitude,latitude (RFC 7946 §3.1.1);
+            // OutputAxisOrder applies only to GML serialization.
+            const AxisOrder axisOrder = AxisOrder.EastNorth;
             var featureResult = await _featureReader.QueryAsync(plan.Descriptor.StorageLayerId, plan.Query, cancellationToken);
             foreach (var feature in featureResult.Items)
             {

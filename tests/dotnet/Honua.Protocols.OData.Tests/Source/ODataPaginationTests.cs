@@ -579,7 +579,7 @@ public sealed class ODataPaginationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Pagination)]
     [Endpoint("GET /odata/Features({layerId})?$skip=1000&$count=true")]
-    public async Task SkipBeyondResults_WithCount_ReturnsZeroCount()
+    public async Task SkipBeyondResults_WithCount_ReturnsTotalMatchingCount()
     {
         var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$skip=1000&$count=true");
 
@@ -590,8 +590,12 @@ public sealed class ODataPaginationTests : IAsyncLifetime
         var features = document.RootElement.GetProperty("value").EnumerateArray().ToList();
         features.Should().BeEmpty();
 
+        // OData v4.01 §11.2.5.5: $count is the total number of items matching the request's
+        // filter, independent of $skip/$top. Skipping beyond the last match yields an empty
+        // page, but the total is unchanged. The earlier expectation of 0 reflected a
+        // COUNT(*) OVER()-on-returned-rows bug (empty page => count 0) fixed in #1567/#1599.
         document.RootElement.TryGetProperty("@odata.count", out var countElement).Should().BeTrue();
-        countElement.GetInt64().Should().Be(0);
+        countElement.GetInt64().Should().Be(15);
     }
 
     #endregion

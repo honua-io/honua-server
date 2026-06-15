@@ -194,6 +194,9 @@ public static class InMemoryFilterEvaluator
             {
                 DateTimeOffset dto => dto,
                 DateTime dt => new DateTimeOffset(dt, TimeSpan.Zero),
+                // CQL2/GeoServices DATE literals carry DateOnly; normalize to midnight UTC so
+                // temporal comparisons do not fall through to ordinal string comparison.
+                DateOnly d => new DateTimeOffset(d.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero),
                 string s => DateTimeOffset.TryParse(s, CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed)
                     ? parsed
                     : (object?)s,
@@ -227,6 +230,17 @@ public static class InMemoryFilterEvaluator
             return ldt.CompareTo(rdt);
         }
 
+        // Mixed temporal comparison: JSON event properties surface as raw ISO strings while
+        // DATE/TIMESTAMP literals resolve to DateTimeOffset. Coerce the string side so the
+        // comparison stays temporal instead of falling through to an ordinal comparison
+        // against DateTimeOffset.ToString() output (which silently evaluates wrong).
+        if ((left is DateTimeOffset || right is DateTimeOffset)
+            && TryCoerceDateTimeOffset(left, out var lTemporal)
+            && TryCoerceDateTimeOffset(right, out var rTemporal))
+        {
+            return lTemporal.CompareTo(rTemporal);
+        }
+
         // Boolean comparison.
         if (left is bool lb && right is bool rb)
         {
@@ -237,6 +251,29 @@ public static class InMemoryFilterEvaluator
         var ls = left.ToString() ?? string.Empty;
         var rs = right.ToString() ?? string.Empty;
         return string.Compare(ls, rs, StringComparison.Ordinal);
+    }
+
+    private static bool TryCoerceDateTimeOffset(object value, out DateTimeOffset result)
+    {
+        switch (value)
+        {
+            case DateTimeOffset dto:
+                result = dto;
+                return true;
+            case DateOnly d:
+                result = new DateTimeOffset(d.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
+                return true;
+            case string s when DateTimeOffset.TryParse(
+                s,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+                out var parsed):
+                result = parsed;
+                return true;
+            default:
+                result = default;
+                return false;
+        }
     }
 
     private static bool TryGetDouble(object value, out double result)
@@ -447,8 +484,12 @@ public static class InMemoryFilterEvaluator
         return false;
     }
 
-    // Unbounded by design: entries are created per unique LIKE pattern at subscription time
-    // (not per event), so growth is bounded by the number of distinct streaming filter patterns.
+    // LIKE patterns are client-controlled (each streaming subscription supplies its own filter),
+    // so the compiled-regex cache must be bounded: cycling subscriptions with unique patterns
+    // would otherwise pin a compiled Regex per pattern for the process lifetime. Beyond the cap,
+    // patterns are evaluated with uncached interpreted regexes instead of growing the cache.
+    private const int MaxCachedLikePatterns = 1024;
+
     private static readonly ConcurrentDictionary<string, Regex> LikePatternCache = new();
 
     private static bool EvaluateLike(object left, object right)
@@ -457,16 +498,23 @@ public static class InMemoryFilterEvaluator
         var pattern = right.ToString() ?? string.Empty;
 
         // Cache compiled regex per LIKE pattern to avoid per-event allocation on the broadcast hot path.
-        var regex = LikePatternCache.GetOrAdd(pattern, static p =>
+        if (!LikePatternCache.TryGetValue(pattern, out var regex))
         {
-            // Convert SQL LIKE pattern to regex: % → .*, _ → ., escape others.
-            var regexPattern = "^" + Regex.Escape(p)
-                .Replace("%", ".*", StringComparison.Ordinal)
-                .Replace("_", ".", StringComparison.Ordinal) + "$";
-            return new Regex(regexPattern, RegexOptions.Compiled, TimeSpan.FromSeconds(1));
-        });
+            regex = LikePatternCache.Count < MaxCachedLikePatterns
+                ? LikePatternCache.GetOrAdd(pattern, static p => CreateLikeRegex(p, compiled: true))
+                : CreateLikeRegex(pattern, compiled: false);
+        }
 
         return regex.IsMatch(input);
+    }
+
+    private static Regex CreateLikeRegex(string pattern, bool compiled)
+    {
+        // Convert SQL LIKE pattern to regex: % → .*, _ → ., escape others.
+        var regexPattern = "^" + Regex.Escape(pattern)
+            .Replace("%", ".*", StringComparison.Ordinal)
+            .Replace("_", ".", StringComparison.Ordinal) + "$";
+        return new Regex(regexPattern, compiled ? RegexOptions.Compiled : RegexOptions.None, TimeSpan.FromSeconds(1));
     }
 
     /// <summary>

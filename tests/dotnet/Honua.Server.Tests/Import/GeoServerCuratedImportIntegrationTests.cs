@@ -5,6 +5,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Import;
 using Honua.Migration;
 using Honua.Import.FileImport;
@@ -12,6 +13,7 @@ using Honua.Import.RasterImport;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Helpers;
 using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Tests.Import;
@@ -31,6 +33,7 @@ public sealed class GeoServerCuratedImportIntegrationTests : IAsyncLifetime
     public GeoServerCuratedImportIntegrationTests()
     {
         _fixture = new WebAppFixture()
+            .WithTestLicense(HonuaEdition.Enterprise)
             .ConfigureWebHost(builder => builder.ConfigureAppConfiguration((_, configurationBuilder) =>
             {
                 configurationBuilder.AddInMemoryCollection(new Dictionary<string, string?>

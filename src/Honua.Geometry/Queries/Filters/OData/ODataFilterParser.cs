@@ -203,6 +203,21 @@ public sealed class ODataFilterParser
             var value = Previous().Value;
             if (value.Contains('.') || value.Contains('e') || value.Contains('E'))
             {
+                // Use decimal for dot-only literals (no exponent) to preserve
+                // full precision for Edm.Decimal comparisons (e.g. monetary
+                // or high-precision IDs).  Fall back to double only for
+                // scientific-notation forms where Edm.Double semantics apply.
+                if (!value.Contains('e') && !value.Contains('E'))
+                {
+                    if (!decimal.TryParse(value, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint,
+                            CultureInfo.InvariantCulture, out var dec))
+                    {
+                        throw new ODataFilterParseException($"Invalid numeric literal '{value}'", Previous().Position);
+                    }
+
+                    return new Literal(dec, LiteralType.Number);
+                }
+
                 if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var dbl))
                 {
                     throw new ODataFilterParseException($"Invalid numeric literal '{value}'", Previous().Position);
@@ -238,7 +253,14 @@ public sealed class ODataFilterParser
         if (Match(ODataFilterTokenType.DateTimeLiteral))
         {
             var value = Previous().Value;
-            if (!DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var timestamp))
+            // OData ABNF requires an explicit offset or 'Z' on dateTimeOffsetValue.
+            // DateTimeStyles.RoundtripKind silently accepts offset-less strings and
+            // interprets them in the server's local time zone, yielding TZ-dependent
+            // query results.  AssumeUniversal treats offset-less inputs as UTC so
+            // behaviour is at least deterministic, and the resulting DateTimeOffset
+            // always carries a zero offset that round-trips consistently.
+            if (!DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture,
+                    DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var timestamp))
             {
                 throw new ODataFilterParseException($"Invalid datetime literal '{value}'", Previous().Position);
             }
@@ -337,6 +359,7 @@ public sealed class ODataFilterParser
             "minute" => BuildUnaryFunction("MINUTE", args, identifier),
             "second" => BuildUnaryFunction("SECOND", args, identifier),
             "geo.distance" => BuildGeoDistanceExpression(args, identifier),
+            "geo.length" => BuildGeoLengthExpression(args, identifier),
             "geo.intersects" => BuildGeoIntersectsExpression(args, identifier),
             _ => throw new ODataFilterParseException($"Unsupported function '{identifier}'", Previous().Position)
         };
@@ -430,11 +453,125 @@ public sealed class ODataFilterParser
         return new FunctionCall("GEODISTANCE", args);
     }
 
+    private static FunctionCall BuildGeoLengthExpression(IReadOnlyList<FilterExpression> args, string identifier)
+    {
+        // OData v4 geo.length over Edm.Geography returns geodesic length in meters,
+        // mirroring geo.distance. Translators map GEOLENGTH to a geography-based
+        // ST_Length, distinct from the planar CQL2/OGC ST_LENGTH function.
+        EnsureArgumentCount(identifier, args, 1);
+        return new FunctionCall("GEOLENGTH", args);
+    }
+
     private static SpatialPredicate BuildGeoIntersectsExpression(IReadOnlyList<FilterExpression> args, string identifier)
     {
         EnsureArgumentCount(identifier, args, 2);
-        return new SpatialPredicate(SpatialOperator.Intersects, args[0], args[1]);
+
+        // OData geo.intersects over Edm.Geography values has geodesic (ellipsoidal)
+        // semantics, unlike the planar-in-CRS semantics of CQL2 S_INTERSECTS and
+        // FES Intersects. The Geodesic flag is the protocol marker translators use
+        // to route the predicate through geography evaluation on geographic layers
+        // without changing any other protocol's behavior. Literals that a geography
+        // type cannot represent faithfully (pole vertices, 180°/360° longitude edges
+        // — e.g. the common whole-world envelope) stay planar.
+        return new SpatialPredicate(SpatialOperator.Intersects, args[0], args[1])
+        {
+            Geodesic = args.All(IsGeographyCompatible)
+        };
     }
+
+    // PostGIS geography cannot represent edges whose endpoints are 180° (antipodal
+    // ambiguity) or 360° (degenerate same-point edge) of longitude apart, and rings
+    // with pole vertices collapse: the ubiquitous whole-world envelope
+    // POLYGON((-180 -90, 180 -90, 180 90, -180 90, -180 -90)) becomes a zero-area
+    // ring that matches nothing. Such literals keep planar evaluation. Everything
+    // else — including antimeridian-crossing polygons, which geography evaluates
+    // correctly via shortest-path edges — is geodesic-eligible.
+    private static bool IsGeographyCompatible(FilterExpression expression)
+    {
+        if (expression is not GeometryLiteral literal)
+        {
+            // Property references resolve against the layer geometry column; the
+            // translator gates on the layer's geographic context instead.
+            return true;
+        }
+
+        try
+        {
+            var geometry = new WKBReader().Read(literal.Wkb);
+            return IsGeographyCompatible(geometry);
+        }
+        catch (Exception)
+        {
+            // Unreadable literal: fall back to the planar path rather than reject.
+            return false;
+        }
+    }
+
+    private static bool IsGeographyCompatible(Geometry geometry)
+    {
+        switch (geometry)
+        {
+            case Point point:
+                return IsPoleFree(point.Coordinate);
+            case LineString line:
+                return AreEdgesGeographyCompatible(line.Coordinates);
+            case Polygon polygon:
+                if (!AreEdgesGeographyCompatible(polygon.ExteriorRing.Coordinates))
+                {
+                    return false;
+                }
+
+                for (var i = 0; i < polygon.NumInteriorRings; i++)
+                {
+                    if (!AreEdgesGeographyCompatible(polygon.GetInteriorRingN(i).Coordinates))
+                    {
+                        return false;
+                    }
+                }
+
+                return true;
+            case GeometryCollection collection:
+                foreach (var component in collection.Geometries)
+                {
+                    if (!IsGeographyCompatible(component))
+                    {
+                        return false;
+                    }
+                }
+
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private static bool AreEdgesGeographyCompatible(Coordinate[] coordinates)
+    {
+        const double epsilon = 1e-9;
+        for (var i = 0; i < coordinates.Length; i++)
+        {
+            if (!IsPoleFree(coordinates[i]))
+            {
+                return false;
+            }
+
+            if (i == 0)
+            {
+                continue;
+            }
+
+            var longitudeSpan = Math.Abs(coordinates[i].X - coordinates[i - 1].X);
+            if (Math.Abs(longitudeSpan - 180d) < epsilon || Math.Abs(longitudeSpan - 360d) < epsilon)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool IsPoleFree(Coordinate coordinate)
+        => Math.Abs(coordinate.Y) < 90d - 1e-9;
 
     private static void EnsureArgumentCount(string identifier, IReadOnlyList<FilterExpression> args, int expected)
     {
@@ -457,7 +594,8 @@ public sealed class ODataFilterParser
             identifier.Equals("datetimeoffset", StringComparison.OrdinalIgnoreCase))
         {
             var token = Advance();
-            if (!DateTimeOffset.TryParse(token.Value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var timestamp))
+            if (!DateTimeOffset.TryParse(token.Value, CultureInfo.InvariantCulture,
+                    DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var timestamp))
             {
                 throw new ODataFilterParseException($"Invalid datetime literal '{token.Value}'", token.Position);
             }
@@ -590,19 +728,90 @@ public sealed class ODataFilterParser
     {
         if (left is Literal { Type: LiteralType.Null } || right is Literal { Type: LiteralType.Null })
         {
-            if (op is not (BinaryOperator.Equal or BinaryOperator.NotEqual))
+            if (op is BinaryOperator.Equal or BinaryOperator.NotEqual)
             {
-                throw new ODataFilterParseException("Null comparisons require eq or ne", position);
+                var operand = left is Literal { Type: LiteralType.Null } ? right : left;
+                return op == BinaryOperator.Equal
+                    ? new UnaryExpression(UnaryOperator.IsNull, operand)
+                    : new UnaryExpression(UnaryOperator.IsNotNull, operand);
             }
 
-            var operand = left is Literal { Type: LiteralType.Null } ? right : left;
-            return op == BinaryOperator.Equal
-                ? new UnaryExpression(UnaryOperator.IsNull, operand)
-                : new UnaryExpression(UnaryOperator.IsNotNull, operand);
+            // OData v4.01 §5.1.1.1.3–5.1.1.1.6: if any operand of a relational
+            // operator (gt/ge/lt/le) is null, the operator returns false.
+            return new Literal(false, LiteralType.Boolean);
+        }
+
+        // OData v4.01 eq/ne use two-valued logic where "the null value is equal to
+        // itself and not equal to any other value", but SQL '='/'<>' use three-valued
+        // logic where any comparison with NULL is UNKNOWN and the row is filtered out
+        // (e.g. `Status ne 'closed'` must return rows whose Status is null). Rewrite
+        // the comparison here — at the protocol boundary — into null-safe AST shapes
+        // (IS [NOT] DISTINCT FROM semantics built from shared nodes) so the shared SQL
+        // translators keep standard SQL 3VL for CQL2/FES/GeoServices SQL filters.
+        if (op == BinaryOperator.NotEqual)
+        {
+            return BuildNullSafeNotEqual(left, right);
+        }
+
+        if (op == BinaryOperator.Equal && !IsNonNullValue(left) && !IsNonNullValue(right))
+        {
+            // Both operands may evaluate to null (e.g. two nullable properties):
+            // OData requires `null eq null` to be true, SQL '=' yields UNKNOWN.
+            return new BinaryExpression(
+                new BinaryExpression(left, BinaryOperator.Equal, right),
+                BinaryOperator.Or,
+                new BinaryExpression(
+                    new UnaryExpression(UnaryOperator.IsNull, left),
+                    BinaryOperator.And,
+                    new UnaryExpression(UnaryOperator.IsNull, right)));
         }
 
         return new BinaryExpression(left, op, right);
     }
+
+    private static BinaryExpression BuildNullSafeNotEqual(FilterExpression left, FilterExpression right)
+    {
+        var notEqual = new BinaryExpression(left, BinaryOperator.NotEqual, right);
+        var leftNullable = !IsNonNullValue(left);
+        var rightNullable = !IsNonNullValue(right);
+
+        if (!leftNullable && !rightNullable)
+        {
+            return notEqual;
+        }
+
+        if (leftNullable && rightNullable)
+        {
+            // Full IS DISTINCT FROM expansion: true when exactly one side is null,
+            // false when both are null, plain '<>' when both are non-null.
+            return new BinaryExpression(
+                new BinaryExpression(
+                    notEqual,
+                    BinaryOperator.Or,
+                    new BinaryExpression(
+                        new UnaryExpression(UnaryOperator.IsNull, left),
+                        BinaryOperator.And,
+                        new UnaryExpression(UnaryOperator.IsNotNull, right))),
+                BinaryOperator.Or,
+                new BinaryExpression(
+                    new UnaryExpression(UnaryOperator.IsNotNull, left),
+                    BinaryOperator.And,
+                    new UnaryExpression(UnaryOperator.IsNull, right)));
+        }
+
+        // One side is a non-null literal: a null on the other side must satisfy 'ne'.
+        var nullableOperand = leftNullable ? left : right;
+        return new BinaryExpression(
+            notEqual,
+            BinaryOperator.Or,
+            new UnaryExpression(UnaryOperator.IsNull, nullableOperand));
+    }
+
+    // Conservative non-null detection: only literals with a concrete value are known
+    // to never evaluate to null. Properties, functions and arithmetic over them can
+    // all produce SQL NULL at evaluation time.
+    private static bool IsNonNullValue(FilterExpression expression)
+        => expression is Literal { Type: not LiteralType.Null } or GeometryLiteral;
 
     private static BinaryOperator MapComparisonOperator(ODataFilterTokenType tokenType)
     {

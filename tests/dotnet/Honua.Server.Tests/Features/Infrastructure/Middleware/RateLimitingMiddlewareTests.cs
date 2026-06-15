@@ -8,8 +8,6 @@ using Honua.Core.Features.RateLimiting.Abstractions;
 using Honua.Infrastructure.RateLimiting;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Caching.Distributed;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -74,7 +72,6 @@ public sealed class RateLimitingMiddlewareTests
     private static RateLimitingMiddleware CreateMiddleware()
     {
         var policyStore = Substitute.For<IRateLimitPolicyStore>();
-        var cache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
 
         return new RateLimitingMiddleware(
             next: context =>
@@ -83,7 +80,6 @@ public sealed class RateLimitingMiddlewareTests
                 return Task.CompletedTask;
             },
             policyStore,
-            cache,
             redis: null,
             Options.Create(new RateLimitingOptions
             {

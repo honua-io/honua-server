@@ -4,6 +4,7 @@
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
+using Honua.Postgres.Features.Infrastructure;
 using CoreGeometryStorageType = Honua.Core.Features.FeatureStore.Abstractions.GeometryStorageType;
 
 namespace Honua.Postgres.Features.FeatureStore.Services;
@@ -43,7 +44,13 @@ internal sealed class GeometryProcessor : IGeometryProcessor
             baseGeometry = DatumTransformSql.BuildTransformExpression(baseGeometry, query.OutputSrid.Value, query.OutputDatumTransformation);
         }
 
-        return $"ST_AsGML(3, {baseGeometry}, {FeatureQueryEncoding.GeometryTextPrecision}, {GetGmlOptions(query)})";
+        // GML 3.2 (ISO 19136) requires gml:id on every GML object, geometries included;
+        // PostGIS emits it via ST_AsGML's 6th argument. Derive an NCName-safe id that is
+        // unique within a GetFeature document from the feature identity columns, which are
+        // always selected alongside this expression (see FeatureQueryBuilder select clauses).
+        var gmlIdExpression =
+            $"'geom.' || {DatabaseSchema.LayerIdColumn}::text || '.' || {DatabaseSchema.ObjectIdColumn}::text";
+        return $"ST_AsGML(3, {baseGeometry}, {FeatureQueryEncoding.GeometryTextPrecision}, {GetGmlOptions(query)}, NULL, {gmlIdExpression})";
     }
 
     public string GetGeometryGeoJsonExpression(CoreGeometryStorageType storageType, FeatureQuery query)
@@ -56,7 +63,12 @@ internal sealed class GeometryProcessor : IGeometryProcessor
             baseGeometry = DatumTransformSql.BuildTransformExpression(baseGeometry, query.OutputSrid.Value, query.OutputDatumTransformation);
         }
 
-        return $"ST_AsGeoJSON({baseGeometry}, {_geoJsonTextPrecision}, 0)";
+        // RFC 7946 §3.1.6 requires right-hand-rule winding (exterior CCW, holes CW).
+        // Stored data is frequently CW-exterior (Esri applyEdits, shapefile imports), and
+        // the preformatted fast paths pass this text through verbatim, so enforce the
+        // orientation here to match the NTS slow path (which already enforces RFC 7946).
+        // ST_ForcePolygonCCW returns non-polygonal geometries unchanged.
+        return $"ST_AsGeoJSON(ST_ForcePolygonCCW({baseGeometry}), {_geoJsonTextPrecision}, 0)";
     }
 
     public string GetGeometryKmlExpression(CoreGeometryStorageType storageType, FeatureQuery query)

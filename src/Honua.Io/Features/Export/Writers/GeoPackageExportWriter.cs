@@ -32,7 +32,8 @@ internal static class GeoPackageExportWriter
         var connectionString = new SqliteConnectionStringBuilder
         {
             DataSource = gpkgPath,
-            Mode = SqliteOpenMode.ReadWriteCreate
+            Mode = SqliteOpenMode.ReadWriteCreate,
+            Pooling = false
         }.ToString();
 
         await using var connection = new SqliteConnection(connectionString);
@@ -165,7 +166,7 @@ internal static class GeoPackageExportWriter
         {
             var sqliteType = MapSqliteType(field.Type);
             var nullable = field.Nullable ? "" : " NOT NULL";
-            columns.Add($"\"{field.Name}\" {sqliteType}{nullable}");
+            columns.Add($"{QuoteIdentifier(field.Name)} {sqliteType}{nullable}");
         }
 
         await using var cmd = connection.CreateCommand();
@@ -222,7 +223,7 @@ internal static class GeoPackageExportWriter
         var paramNames = new List<string> { "$geom" };
         for (var i = 0; i < fields.Length; i++)
         {
-            fieldNames.Add($"\"{fields[i].Name}\"");
+            fieldNames.Add(QuoteIdentifier(fields[i].Name));
             paramNames.Add($"$f{i}");
         }
 
@@ -401,6 +402,11 @@ internal static class GeoPackageExportWriter
 
         return anyWithoutDimension ? (byte)2 : (byte)1;
     }
+
+    // Wraps an identifier in double-quote delimiters and escapes embedded double-quotes
+    // by doubling them, per the SQL standard and SQLite identifier quoting rules.
+    private static string QuoteIdentifier(string name)
+        => $"\"{name.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
 
     private readonly record struct FeatureInsertSummary(int TotalInserted, GeometryDimensionMetadata Dimensions);
 

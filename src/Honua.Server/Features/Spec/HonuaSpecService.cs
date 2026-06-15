@@ -136,7 +136,11 @@ internal sealed class HonuaSpecService : Proto.SpecService.SpecServiceBase
         var options = new SpecApplyOptions
         {
             CacheMode = SpecProtoMapping.FromProto(request.CacheMode),
-            MaxConcurrency = request.MaxConcurrency > 0 ? (int)request.MaxConcurrency : 4
+            // Clamp client-controlled parallelism to the same server-side ceiling
+            // as the REST adapter; the orchestrator only enforces the lower bound.
+            MaxConcurrency = request.MaxConcurrency > 0
+                ? Math.Min((int)request.MaxConcurrency, SpecEndpoints.MaxApplyConcurrency)
+                : 4
         };
 
         SpecApplyHandle handle;

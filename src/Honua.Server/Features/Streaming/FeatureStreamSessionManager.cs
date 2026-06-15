@@ -19,6 +19,15 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     private static readonly RedisChannel BroadcastChannel = new("featurechange:stream:broadcast", RedisChannel.PatternMode.Literal);
     private static readonly TimeSpan ClusterBroadcastRecoveryInterval = TimeSpan.FromSeconds(5);
     private const int RecentEventIdCapacity = 128;
+
+    /// <summary>
+    /// Upper bound on retained cluster-broadcast payloads while Redis publish is
+    /// failing. Missed live events are recoverable through the durable event store
+    /// and the cross-node poll, so the backlog only needs to smooth short outages;
+    /// beyond the cap the oldest payloads are dropped instead of growing without
+    /// bound under sustained edit traffic.
+    /// </summary>
+    private const int MaxClusterBroadcastBacklog = 1024;
     private readonly ConcurrentDictionary<Guid, SessionEntry> _sessions = new();
     private readonly ConcurrentQueue<string> _clusterBroadcastBacklog = new();
     private readonly object _clusterBroadcastLock = new();
@@ -35,6 +44,9 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     private int _clusterBroadcastUnavailableLogged;
     private int _clusterBroadcastFailedLogged;
     private int _clusterBroadcastRecoveryInProgress;
+    private int _clusterBroadcastBacklogCount;
+    private long _clusterBroadcastBacklogDropped;
+    private bool _clusterBroadcastBacklogDropLogged;
 
     public FeatureStreamSessionManager(
         IOptions<FeatureStreamOptions> options,
@@ -216,6 +228,14 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             return delivered;
         }
 
+        if (_redis is null)
+        {
+            // Single-node mode: there are no cross-node consumers, so skip the
+            // cluster serialization and never accumulate a backlog that nothing
+            // could ever flush.
+            return delivered;
+        }
+
         var payload = JsonSerializer.Serialize(
             new FeatureStreamBroadcastMessage
             {
@@ -237,7 +257,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
                 }
             }
 
-            _clusterBroadcastBacklog.Enqueue(payload);
+            EnqueueClusterBroadcastBacklogLocked(payload);
             TryRecoverClusterBroadcastLocked();
         }
 
@@ -253,13 +273,44 @@ internal sealed class FeatureStreamSessionManager : IDisposable
 
         try
         {
-            _subscriber.Publish(BroadcastChannel, payload);
+            // Fire-and-forget: Broadcast() runs synchronously on the feature-edit
+            // hot path while holding the process-wide cluster lock, so it must not
+            // block on a Redis round trip. Cross-node delivery is best-effort —
+            // missed live events are recovered through the durable event store and
+            // the cross-node poll.
+            _subscriber.Publish(BroadcastChannel, payload, CommandFlags.FireAndForget);
             return true;
         }
         catch (Exception ex)
         {
             LogClusterBroadcastFailedOnce(ex);
             return false;
+        }
+    }
+
+    /// <summary>
+    /// Enqueues a payload for retry while cluster publish is unavailable, dropping
+    /// the oldest entries beyond <see cref="MaxClusterBroadcastBacklog"/>. Callers
+    /// must hold <see cref="_clusterBroadcastLock"/>.
+    /// </summary>
+    private void EnqueueClusterBroadcastBacklogLocked(string payload)
+    {
+        _clusterBroadcastBacklog.Enqueue(payload);
+        _clusterBroadcastBacklogCount++;
+
+        while (_clusterBroadcastBacklogCount > MaxClusterBroadcastBacklog &&
+               _clusterBroadcastBacklog.TryDequeue(out _))
+        {
+            _clusterBroadcastBacklogCount--;
+            _clusterBroadcastBacklogDropped++;
+            if (!_clusterBroadcastBacklogDropLogged)
+            {
+                _clusterBroadcastBacklogDropLogged = true;
+                FeatureStreamLog.ClusterBroadcastBacklogOverflowed(
+                    _logger,
+                    MaxClusterBroadcastBacklog,
+                    _clusterBroadcastBacklogDropped);
+            }
         }
     }
 
@@ -417,6 +468,12 @@ internal sealed class FeatureStreamSessionManager : IDisposable
                 _subscriber ??= _redis.GetSubscriber();
                 _subscriber.Subscribe(BroadcastChannel, HandleClusterBroadcast);
                 _clusterBroadcastEnabled = true;
+
+                // Re-arm the once-per-episode failure logs so the next outage is
+                // visible to operators instead of degrading silently after the
+                // first incident in the process lifetime.
+                Interlocked.Exchange(ref _clusterBroadcastUnavailableLogged, 0);
+                Interlocked.Exchange(ref _clusterBroadcastFailedLogged, 0);
             }
             catch (Exception ex)
             {
@@ -443,8 +500,11 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         {
             try
             {
-                _subscriber.Publish(BroadcastChannel, payload);
-                _clusterBroadcastBacklog.TryDequeue(out _);
+                _subscriber.Publish(BroadcastChannel, payload, CommandFlags.FireAndForget);
+                if (_clusterBroadcastBacklog.TryDequeue(out _))
+                {
+                    _clusterBroadcastBacklogCount--;
+                }
             }
             catch (Exception ex)
             {
@@ -452,6 +512,9 @@ internal sealed class FeatureStreamSessionManager : IDisposable
                 return;
             }
         }
+
+        // Backlog fully drained: re-arm the overflow log for the next episode.
+        _clusterBroadcastBacklogDropLogged = false;
     }
 
     /// <summary>

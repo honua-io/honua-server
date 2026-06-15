@@ -22,6 +22,7 @@ internal sealed partial class GeoservicesImportService
 {
     private async Task<InsertFeaturesResult> InsertFeaturesAsync(
         NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
         string schemaName,
         string tableName,
         GeoservicesLayerInfo layerInfo,
@@ -58,6 +59,7 @@ internal sealed partial class GeoservicesImportService
         // Create the command once, add parameters with placeholder values, and prepare
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = insertSql;
+        cmd.Transaction = transaction;
 
         for (var i = 0; i < fields.Length; i++)
         {
@@ -71,10 +73,19 @@ internal sealed partial class GeoservicesImportService
 
         await cmd.PrepareAsync(cancellationToken);
 
+        // Each feature insert is wrapped in a savepoint so a single malformed row does not
+        // abort the outer transaction (PostgreSQL error code 25P02 "current transaction is
+        // aborted" poisons every subsequent command in the same transaction once any
+        // statement fails). The savepoint rolls back the aborted sub-transaction, leaving
+        // the outer transaction intact for the next feature and the final commit.
+        var savepointName = $"sp_feat_{tableName.GetHashCode():x8}";
+
         foreach (var feature in features)
         {
             try
             {
+                await transaction.SaveAsync(savepointName, cancellationToken).ConfigureAwait(false);
+
                 // Update attribute parameter values
                 for (var i = 0; i < fields.Length; i++)
                 {
@@ -123,6 +134,10 @@ internal sealed partial class GeoservicesImportService
             }
             catch (Exception ex)
             {
+                // Roll back to the savepoint so the outer transaction is not poisoned by the
+                // 25P02 aborted-transaction state. Use CancellationToken.None: if the caller's
+                // token has been cancelled we still need to clean up the transaction state.
+                await transaction.RollbackAsync(savepointName, CancellationToken.None).ConfigureAwait(false);
                 firstError ??= "Feature import failed.";
                 Log.FeatureInsertFailed(_logger, ex.Message);
                 failed++;

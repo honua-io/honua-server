@@ -540,7 +540,9 @@ internal sealed partial class DefaultPerformanceMonitor : IPerformanceMonitor, I
                 Interlocked.Increment(ref _slowRequestCount);
             }
 
-            var index = Interlocked.Increment(ref _latencyIndex);
+            // Mask the sign bit: after ~2.15B requests the int counter wraps negative and a
+            // negative C# '%' result would throw IndexOutOfRangeException on every request.
+            var index = Interlocked.Increment(ref _latencyIndex) & int.MaxValue;
             _latencySamples[index % SampleSize] = durationMs;
         }
 
@@ -622,7 +624,8 @@ internal sealed partial class DefaultPerformanceMonitor : IPerformanceMonitor, I
         {
             lock (_lock)
             {
-                var nextIndex = Interlocked.Increment(ref _index);
+                // Mask the sign bit so the index stays non-negative after the int counter wraps.
+                var nextIndex = Interlocked.Increment(ref _index) & int.MaxValue;
                 _samples[nextIndex % SampleSize] = latencyMs;
             }
         }

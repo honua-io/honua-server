@@ -70,7 +70,20 @@ internal static class GeoServicesRequestValueHelpers
             // The Esri .NET Runtime SDK (ServiceFeatureTable.LoadAsync) sends
             // returnAdvancedSymbols on layer queries; accept-and-ignore so the
             // entire .NET FeatureServer client is not blocked with a 400 (#1455).
-            "returnAdvancedSymbols"
+            "returnAdvancedSymbols",
+            // ArcGIS portal-token auth passes the token as a query parameter.
+            // Auth middleware (PortalTokenAuthenticationHandler) consumes it before
+            // routing; accept-and-ignore here so token-bearing requests are not
+            // rejected with 400 before authentication can run.
+            "token",
+            // ArcGIS JS API 4.x FeatureLayer tile queries include cacheHint and
+            // maxRecordCountFactor alongside the already-accepted tile parameters.
+            "cacheHint",
+            "maxRecordCountFactor",
+            // query.returnQueryGeometry is serialized by some ArcGIS clients.
+            "returnQueryGeometry",
+            // arcgis-python sends timeReferenceUnknownClient on time-aware queries.
+            "timeReferenceUnknownClient"
         }
         .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 

@@ -163,9 +163,16 @@ public static class AttributeRuleExpression
     // TryParse for any token or construct outside the grammar.
     private ref struct Parser(string text, IReadOnlyDictionary<string, object?> attributes)
     {
+        // Each '(' recurses ~6 frames deep (ParseOr -> ... -> ParsePrimary); without a cap a
+        // pathological expression of a few thousand nested parens overflows the stack, which is
+        // an uncatchable process crash. 32 levels is far beyond any legitimate rule expression.
+        // Mirrors FilterParserGuard.EnsureExpressionDepth on the filter parsers.
+        private const int MaxGroupingDepth = 32;
+
         private readonly string _text = text;
         private readonly IReadOnlyDictionary<string, object?> _attributes = attributes;
         private int _pos;
+        private int _depth;
         private bool _failed;
 
         public bool TryParse(out object? value)
@@ -278,8 +285,14 @@ public static class AttributeRuleExpression
             var c = _text[_pos];
             if (c == '(')
             {
+                if (++_depth > MaxGroupingDepth)
+                {
+                    return Fail();
+                }
+
                 _pos++;
                 var inner = ParseOr();
+                _depth--;
                 SkipWhitespace();
                 if (!Match(")"))
                 {

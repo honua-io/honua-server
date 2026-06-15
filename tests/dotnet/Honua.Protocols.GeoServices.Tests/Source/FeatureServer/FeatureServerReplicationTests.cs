@@ -699,6 +699,15 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
             => throw new ServiceUnavailableException(
                 "Distributed replica state is unavailable while attempting to persist replica state.");
 
+        public Task<bool> TrySetSyncStateAsync(
+            ReplicaState replica,
+            long expectedLastSyncGeneration,
+            long expectedUploadBaseGeneration,
+            TimeSpan? ttl = null,
+            CancellationToken cancellationToken = default)
+            => throw new ServiceUnavailableException(
+                "Distributed replica state is unavailable while attempting to persist replica state.");
+
         public Task<ReplicaState?> GetAsync(string replicaId, CancellationToken cancellationToken = default)
             => Task.FromResult<ReplicaState?>(null);
 

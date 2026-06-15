@@ -19,7 +19,8 @@ namespace Honua.Core.Features.Migration.Services;
 
 internal static partial class MigrationInventoryHelpers
 {
-    private const string RedactedValue = "[redacted]";
+    /// <summary>Placeholder substituted for redacted sensitive values.</summary>
+    public const string RedactedValue = "[redacted]";
 
     private static readonly string[] SensitiveMetadataKeys =
     [
@@ -283,7 +284,12 @@ internal static partial class MigrationInventoryHelpers
     private static bool IsIncompatible(string? level)
         => string.Equals(level, "incompatible", StringComparison.OrdinalIgnoreCase);
 
-    private static bool IsSensitiveKey(string key)
+    /// <summary>
+    /// Returns true when a metadata/connection-parameter key looks credential-bearing
+    /// (password, token, API key, ...) and its value must be redacted before the entry
+    /// leaves the capture point.
+    /// </summary>
+    public static bool IsSensitiveKey(string key)
         => SensitiveMetadataKeys.Any(value => key.Contains(value, StringComparison.OrdinalIgnoreCase));
 
     private static string SanitizeMetadataValue(string value)

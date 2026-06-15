@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Buffers;
 using System.Diagnostics.CodeAnalysis;
 using System.Net.Http.Headers;
 using System.Text;
@@ -27,6 +28,13 @@ public sealed partial class OgcCoverageImportService : IOgcCoverageImportService
 {
     private const string GeoTiffFormat = "GeoTIFF";
     private const string CogFormat = "CloudOptimizedGeoTIFF";
+
+    /// <summary>
+    /// Ceiling for a staged GetCoverage download. Classic (non-BigTIFF) GeoTIFF tops out at
+    /// 4 GiB; 8 GiB leaves headroom for BigTIFF COGs while preventing a misbehaving or
+    /// hostile coverage server from streaming until the temp volume fills.
+    /// </summary>
+    private const long MaxCoverageDownloadBytes = 8L * 1024 * 1024 * 1024;
 
     private readonly HttpClient _httpClient;
     private readonly IRasterImportService _rasterImportService;
@@ -56,6 +64,11 @@ public sealed partial class OgcCoverageImportService : IOgcCoverageImportService
         var serviceType = NormalizeServiceType(request.ServiceType);
         var serviceUri = ValidateServiceUri(request.ServiceUrl, request.AllowUnsafeLocalUrls);
         var applyMode = request.ApplyMode && !request.DryRun;
+
+        // The HTTP client is registered with the scanner's pinned-DNS handler, which blocks
+        // loopback/private/reserved addresses at connect time unless this ambient flag is set
+        // for the current async flow (SSRF guard for the operator-supplied service URL).
+        using var unsafeLocalUrlScope = OgcServiceMigrationScanner.CreateUnsafeLocalUrlScope(request.AllowUnsafeLocalUrls);
 
         var inventoryResources = request.Inventory.Resources
             .Where(static resource => string.Equals(resource.Kind, "coverage", StringComparison.Ordinal))
@@ -420,6 +433,12 @@ public sealed partial class OgcCoverageImportService : IOgcCoverageImportService
         string sourceCoverageId,
         CancellationToken cancellationToken)
     {
+        if (response.Content.Headers.ContentLength is { } declaredLength && declaredLength > MaxCoverageDownloadBytes)
+        {
+            throw new InvalidDataException(
+                $"GetCoverage response for {sourceCoverageId} declares {declaredLength} bytes, exceeding the {MaxCoverageDownloadBytes}-byte import limit.");
+        }
+
         var tempDir = Path.Combine(Path.GetTempPath(), "honua-ogc-coverage-import");
         Directory.CreateDirectory(tempDir);
         var path = Path.Combine(tempDir, $"{Guid.NewGuid():N}.tif");
@@ -427,7 +446,32 @@ public sealed partial class OgcCoverageImportService : IOgcCoverageImportService
         {
             await using var source = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
             await using var destination = File.Create(path);
-            await source.CopyToAsync(destination, cancellationToken).ConfigureAwait(false);
+
+            // Copy with an explicit byte ceiling: the response stream is source-controlled
+            // (chunked responses carry no Content-Length), so an unbounded CopyToAsync could
+            // fill the temp volume.
+            var buffer = ArrayPool<byte>.Shared.Rent(81920);
+            try
+            {
+                long totalBytes = 0;
+                int read;
+                while ((read = await source.ReadAsync(buffer.AsMemory(), cancellationToken).ConfigureAwait(false)) > 0)
+                {
+                    totalBytes += read;
+                    if (totalBytes > MaxCoverageDownloadBytes)
+                    {
+                        throw new InvalidDataException(
+                            $"GetCoverage response for {sourceCoverageId} exceeded the {MaxCoverageDownloadBytes}-byte import limit.");
+                    }
+
+                    await destination.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+                }
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buffer);
+            }
+
             await destination.FlushAsync(cancellationToken).ConfigureAwait(false);
             if (destination.Length == 0)
             {

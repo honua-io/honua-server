@@ -237,14 +237,16 @@ public class ODataFilterParserTests
     }
 
     [Fact]
-    public void Parse_DoubleLiteral_StoredAsDouble()
+    public void Parse_DecimalLiteral_StoredAsDecimal()
     {
+        // OData v4 ABNF: a dot-only numeric literal (no exponent) is Edm.Decimal;
+        // only scientific-notation forms carry Edm.Double semantics.
         var result = _parser.Parse("rating eq 42.0");
 
         var binary = (BinaryExpression)result;
         var literal = (Literal)binary.Right;
-        literal.Value.Should().BeOfType<double>();
-        literal.Value.Should().Be(42.0);
+        literal.Value.Should().BeOfType<decimal>();
+        literal.Value.Should().Be(42.0m);
         literal.Type.Should().Be(LiteralType.Number);
     }
 
@@ -345,6 +347,177 @@ public class ODataFilterParserTests
         var unary = (UnaryExpression)result;
         unary.Operator.Should().Be(UnaryOperator.IsNotNull);
         unary.Operand.Should().BeOfType<PropertyReference>();
+    }
+
+    #endregion
+
+    #region OData 2VL eq/ne Rewrites
+
+    [Fact]
+    public void Parse_NotEqualStringLiteral_RewritesToNullSafeComparison()
+    {
+        // OData v4.01: null "is not equal to any value but itself", so
+        // `state ne 'California'` must match rows whose state is null. SQL '<>'
+        // is 3VL and would silently drop them — the parser rewrites at the
+        // protocol boundary so the shared SQL translators stay 3VL for CQL2/FES.
+        var result = _parser.Parse("state ne 'California'");
+
+        result.Should().BeOfType<BinaryExpression>();
+        var or = (BinaryExpression)result;
+        or.Operator.Should().Be(BinaryOperator.Or);
+
+        or.Left.Should().BeOfType<BinaryExpression>();
+        var notEqual = (BinaryExpression)or.Left;
+        notEqual.Operator.Should().Be(BinaryOperator.NotEqual);
+        ((PropertyReference)notEqual.Left).PropertyName.Should().Be("state");
+        ((Literal)notEqual.Right).Value.Should().Be("California");
+
+        or.Right.Should().BeOfType<UnaryExpression>();
+        var isNull = (UnaryExpression)or.Right;
+        isNull.Operator.Should().Be(UnaryOperator.IsNull);
+        ((PropertyReference)isNull.Operand).PropertyName.Should().Be("state");
+    }
+
+    [Fact]
+    public void Parse_NotEqualLiteralOnLeft_RewritesIsNullOnProperty()
+    {
+        var result = _parser.Parse("'California' ne state");
+
+        result.Should().BeOfType<BinaryExpression>();
+        var or = (BinaryExpression)result;
+        or.Operator.Should().Be(BinaryOperator.Or);
+        ((BinaryExpression)or.Left).Operator.Should().Be(BinaryOperator.NotEqual);
+
+        or.Right.Should().BeOfType<UnaryExpression>();
+        var isNull = (UnaryExpression)or.Right;
+        isNull.Operator.Should().Be(UnaryOperator.IsNull);
+        ((PropertyReference)isNull.Operand).PropertyName.Should().Be("state");
+    }
+
+    [Fact]
+    public void Parse_NotEqualTwoProperties_RewritesToIsDistinctFromExpansion()
+    {
+        // ((state <> country) OR (state IS NULL AND country IS NOT NULL))
+        //   OR (state IS NOT NULL AND country IS NULL)
+        var result = _parser.Parse("state ne country");
+
+        result.Should().BeOfType<BinaryExpression>();
+        var outerOr = (BinaryExpression)result;
+        outerOr.Operator.Should().Be(BinaryOperator.Or);
+
+        var innerOr = (BinaryExpression)outerOr.Left;
+        innerOr.Operator.Should().Be(BinaryOperator.Or);
+        ((BinaryExpression)innerOr.Left).Operator.Should().Be(BinaryOperator.NotEqual);
+
+        var leftNullArm = (BinaryExpression)innerOr.Right;
+        leftNullArm.Operator.Should().Be(BinaryOperator.And);
+        ((UnaryExpression)leftNullArm.Left).Operator.Should().Be(UnaryOperator.IsNull);
+        ((UnaryExpression)leftNullArm.Right).Operator.Should().Be(UnaryOperator.IsNotNull);
+
+        var rightNullArm = (BinaryExpression)outerOr.Right;
+        rightNullArm.Operator.Should().Be(BinaryOperator.And);
+        ((UnaryExpression)rightNullArm.Left).Operator.Should().Be(UnaryOperator.IsNotNull);
+        ((UnaryExpression)rightNullArm.Right).Operator.Should().Be(UnaryOperator.IsNull);
+    }
+
+    [Fact]
+    public void Parse_EqualNonNullLiteral_KeepsPlainEquality()
+    {
+        // The common property-vs-literal equality stays a plain '=' — the literal can
+        // never be null, so no null-safe arm is needed.
+        var result = _parser.Parse("state eq 'California'");
+
+        result.Should().BeOfType<BinaryExpression>();
+        var binary = (BinaryExpression)result;
+        binary.Operator.Should().Be(BinaryOperator.Equal);
+        binary.Left.Should().BeOfType<PropertyReference>();
+        binary.Right.Should().BeOfType<Literal>();
+    }
+
+    [Fact]
+    public void Parse_EqualTwoProperties_RewritesToNullSafeEquality()
+    {
+        // OData requires `null eq null` to be true; SQL '=' yields UNKNOWN. Two
+        // nullable operands therefore gain a both-null disjunct.
+        var result = _parser.Parse("state eq country");
+
+        result.Should().BeOfType<BinaryExpression>();
+        var or = (BinaryExpression)result;
+        or.Operator.Should().Be(BinaryOperator.Or);
+        ((BinaryExpression)or.Left).Operator.Should().Be(BinaryOperator.Equal);
+
+        var bothNull = (BinaryExpression)or.Right;
+        bothNull.Operator.Should().Be(BinaryOperator.And);
+        ((UnaryExpression)bothNull.Left).Operator.Should().Be(UnaryOperator.IsNull);
+        ((UnaryExpression)bothNull.Right).Operator.Should().Be(UnaryOperator.IsNull);
+    }
+
+    #endregion
+
+    #region Geo Functions
+
+    [Fact]
+    public void Parse_GeoLength_MapsToGeoLengthFunction()
+    {
+        var result = _parser.Parse("geo.length(Geometry) gt 100");
+
+        result.Should().BeOfType<BinaryExpression>();
+        var binary = (BinaryExpression)result;
+        binary.Operator.Should().Be(BinaryOperator.GreaterThan);
+
+        binary.Left.Should().BeOfType<FunctionCall>();
+        var function = (FunctionCall)binary.Left;
+        function.FunctionName.Should().Be("GEOLENGTH");
+        function.Arguments.Should().HaveCount(1);
+        function.Arguments[0].Should().BeOfType<PropertyReference>();
+    }
+
+    [Fact]
+    public void Parse_GeoLength_WrongArgumentCount_Throws()
+    {
+        var act = () => _parser.Parse("geo.length(Geometry, Geometry) gt 100");
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void Parse_GeoIntersects_MarksPredicateGeodesic()
+    {
+        // OData geo.intersects carries Edm.Geography geodesic semantics. The flag is
+        // the protocol marker SQL translators key on; CQL2/FES parsers never set it,
+        // keeping the divergence protocol-scoped.
+        var result = _parser.Parse("geo.intersects(Geometry, geography'POINT(1 2)')");
+
+        result.Should().BeOfType<SpatialPredicate>();
+        var spatial = (SpatialPredicate)result;
+        spatial.Operator.Should().Be(SpatialOperator.Intersects);
+        spatial.Geodesic.Should().BeTrue();
+        spatial.Right.Should().BeOfType<GeometryLiteral>();
+    }
+
+    [Fact]
+    public void Parse_GeoIntersectsWholeWorldEnvelope_FallsBackToPlanar()
+    {
+        // PostGIS geography collapses the whole-world rectangle (pole vertices and
+        // 360°-longitude edges) into a zero-area ring that matches nothing, so this
+        // ubiquitous "no spatial constraint" envelope must stay on the planar path.
+        var result = _parser.Parse(
+            "geo.intersects(Geometry, geography'POLYGON((-180 -90, 180 -90, 180 90, -180 90, -180 -90))')");
+
+        result.Should().BeOfType<SpatialPredicate>();
+        ((SpatialPredicate)result).Geodesic.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Parse_GeoIntersectsAntimeridianPolygon_StaysGeodesic()
+    {
+        // Dateline-crossing polygons are exactly the case geography evaluates
+        // correctly via shortest-path edges; they remain geodesic-eligible.
+        var result = _parser.Parse(
+            "geo.intersects(Geometry, geography'POLYGON((170 -10, -170 -10, -170 10, 170 10, 170 -10))')");
+
+        result.Should().BeOfType<SpatialPredicate>();
+        ((SpatialPredicate)result).Geodesic.Should().BeTrue();
     }
 
     #endregion

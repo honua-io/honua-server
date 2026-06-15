@@ -111,26 +111,37 @@ internal sealed class PostgresRoleStore : IRoleStore
         DateTimeOffset createdAt;
         bool isBuiltIn;
 
-        await using (var command = new NpgsqlCommand(updateRole, connection.Connection, transaction))
+        try
         {
-            command.Parameters.AddWithValue("role_id", NpgsqlDbType.Uuid, role.RoleId);
-            command.Parameters.AddWithValue("name", NpgsqlDbType.Varchar, role.Name);
-            command.Parameters.AddWithValue("description", NpgsqlDbType.Text, (object?)role.Description ?? DBNull.Value);
-
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-            if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            await using (var command = new NpgsqlCommand(updateRole, connection.Connection, transaction))
             {
-                await reader.DisposeAsync().ConfigureAwait(false);
-                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                return null;
+                command.Parameters.AddWithValue("role_id", NpgsqlDbType.Uuid, role.RoleId);
+                command.Parameters.AddWithValue("name", NpgsqlDbType.Varchar, role.Name);
+                command.Parameters.AddWithValue("description", NpgsqlDbType.Text, (object?)role.Description ?? DBNull.Value);
+
+                await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+                if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    await reader.DisposeAsync().ConfigureAwait(false);
+                    await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return null;
+                }
+
+                createdAt = reader.GetFieldValue<DateTimeOffset>(0);
+                isBuiltIn = reader.GetBoolean(1);
             }
 
-            createdAt = reader.GetFieldValue<DateTimeOffset>(0);
-            isBuiltIn = reader.GetBoolean(1);
+            await ReplacePermissionsAsync(connection.Connection, transaction, role.RoleId, role.Permissions, cancellationToken).ConfigureAwait(false);
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
-
-        await ReplacePermissionsAsync(connection.Connection, transaction, role.RoleId, role.Permissions, cancellationToken).ConfigureAwait(false);
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
+        {
+            // Renaming into an existing role name hits the same unique index as
+            // CreateRoleAsync; translate it the same way instead of leaking a raw
+            // PostgresException (generic 500) to the caller.
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            throw new InvalidOperationException($"Role with ID '{role.RoleId}' or name '{role.Name}' already exists.", ex);
+        }
 
         return new RoleDefinition
         {

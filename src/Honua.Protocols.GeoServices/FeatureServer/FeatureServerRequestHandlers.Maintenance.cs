@@ -56,12 +56,19 @@ internal static partial class FeatureServerEndpoints
                 [readError ?? "Invalid request body."]);
         }
 
-        // Determine target layer from request or default to layer 0
+        // Determine target layer from request or default to layer 0. A malformed
+        // layerId must be rejected rather than silently appending to layer 0.
         var layerIdStr = GetValueString(values, "layerId");
         var layerId = 0;
-        if (!string.IsNullOrWhiteSpace(layerIdStr) &&
-            int.TryParse(layerIdStr, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+        if (!string.IsNullOrWhiteSpace(layerIdStr))
         {
+            if (!int.TryParse(layerIdStr, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context,
+                    "Invalid layerId parameter",
+                    ["layerId must be an integer layer id."]);
+            }
+
             layerId = parsed;
         }
 
@@ -389,7 +396,10 @@ internal static partial class FeatureServerEndpoints
         }
 
         var limitsOptions = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>();
-        query = query with { Limit = limitsOptions.Value.Query.MaxRecordCount };
+        var maxRecordCount = limitsOptions.Value.Query.MaxRecordCount;
+        // Query one row beyond the transfer limit so a truncated match set is
+        // rejected up front instead of silently calculating only the first page.
+        query = query with { Limit = maxRecordCount + 1 };
 
         // Query features to update
         var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
@@ -401,45 +411,85 @@ internal static partial class FeatureServerEndpoints
             return Results.Json(emptyCalcResponse, FeatureServerJsonContext.Default.CalculateResponse, contentType: "application/json");
         }
 
-        // Apply expressions and build update batch
-        var updates = ImmutableArray.CreateBuilder<Feature>(queryResult.Items.Length);
-        foreach (var feature in queryResult.Items)
+        if (queryResult.Items.Length > maxRecordCount || queryResult.HasMoreResults)
         {
-            var newAttrs = feature.Attributes.ToBuilder();
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Too many features match the calculate filter",
+                [$"The where clause matches more than {maxRecordCount} features; narrow the filter and retry."]);
+        }
+
+        // Apply the expressions per feature and route the writes through the shared
+        // FeatureServer edit pipeline (attribute validation, attribute rules, plugin
+        // hooks, mutation events, and output-cache invalidation) instead of writing
+        // directly through IFeatureWriter.
+        var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
+        var updates = new GeoServicesFeature[queryResult.Items.Length];
+        for (var i = 0; i < queryResult.Items.Length; i++)
+        {
+            var feature = queryResult.Items[i];
+            var attributes = new Dictionary<string, object?>(parsedExpressions.Count + 1, StringComparer.OrdinalIgnoreCase)
+            {
+                [objectIdFieldName] = feature.Attributes.TryGetValue(objectIdFieldName, out var objectIdValue) && objectIdValue is not null
+                    ? objectIdValue
+                    : feature.Id
+            };
+
             foreach (var (field, value, isFieldRef) in parsedExpressions)
             {
                 if (isFieldRef)
                 {
                     var refField = (string)value!;
-                    newAttrs[field] = feature.Attributes.TryGetValue(refField, out var refValue) ? refValue : null;
+                    attributes[field] = feature.Attributes.TryGetValue(refField, out var refValue) ? refValue : null;
                 }
                 else
                 {
-                    newAttrs[field] = value;
+                    attributes[field] = value;
                 }
             }
 
-            updates.Add(Feature.Create(feature.Id, feature.Geometry, newAttrs.ToImmutable()));
+            updates[i] = new GeoServicesFeature { Attributes = attributes };
         }
 
-        var editBatch = FeatureEditBatch.Create(updates: updates.ToImmutable());
-        var featureWriter = context.RequestServices.GetRequiredService<IFeatureWriter>();
-        var editResult = await featureWriter.ApplyEditsAsync(storageLayerId.Value, editBatch, cancellationToken);
+        var editsHandler = context.RequestServices.GetRequiredService<FeatureServerEditsHandler>();
+        var editLimits = limitsOptions.Value.Edits;
+        var batchSize = Math.Max(1, Math.Min(editLimits.MaxFeaturesPerEdit, editLimits.MaxEditsPerTransaction));
+        var updatedCount = 0;
+        var allSucceeded = true;
 
-        // Invalidate output cache after successful mutations
-        if (!editResult.HasErrors && editResult.UpdatedCount > 0)
+        for (var offset = 0; offset < updates.Length; offset += batchSize)
         {
-            var cacheInvalidator = context.RequestServices.GetService<OutputCacheInvalidationService>();
-            if (cacheInvalidator != null)
+            var batch = updates[offset..Math.Min(offset + batchSize, updates.Length)];
+            var applyRequest = new ApplyEditsRequest { Updates = batch, RollbackOnFailure = true };
+            var batchResult = await editsHandler.HandleApplyEditsAsync(
+                serviceId, layerId, applyRequest, editLimits, cancellationToken);
+
+            if (batchResult is not Microsoft.AspNetCore.Http.HttpResults.JsonHttpResult<ApplyEditsResponse> jsonResult ||
+                jsonResult.Value is null)
             {
-                await cacheInvalidator.InvalidateLayerAsync(serviceId, layerId, cancellationToken);
+                // A protocol-level error (e.g. license/validation). Surface it directly
+                // when nothing has been written yet; otherwise report a partial result.
+                if (updatedCount == 0)
+                {
+                    return batchResult;
+                }
+
+                allSucceeded = false;
+                break;
+            }
+
+            var batchResponse = jsonResult.Value;
+            updatedCount += batchResponse.UpdateResults?.Count(static r => r.Success) ?? 0;
+            if (!batchResponse.Success)
+            {
+                allSucceeded = false;
+                break;
             }
         }
 
         var calcResponse = new CalculateResponse
         {
-            Success = !editResult.HasErrors,
-            UpdatedFeatureCount = editResult.UpdatedCount
+            Success = allSucceeded,
+            UpdatedFeatureCount = updatedCount
         };
 
         return Results.Json(calcResponse, FeatureServerJsonContext.Default.CalculateResponse, contentType: "application/json");

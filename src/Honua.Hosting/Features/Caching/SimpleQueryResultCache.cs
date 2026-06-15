@@ -24,7 +24,13 @@ internal sealed class SimpleQueryResultCache : IQueryResultCache
     {
         try
         {
-            // Use the cache manager's GetOrExecuteAsync with a task that returns default
+            // Routing through GetOrExecuteAsync with a factory that returns default(T)
+            // would poison the cache: for non-nullable value types the boxed default is
+            // non-null, ShouldCacheResult returns true, and the placeholder gets stored.
+            // Use InvalidateAsync first (a no-op when the key does not exist) to force
+            // a miss path on every read, relying on the manager returning the cached
+            // value when present.  The manager's TryGetValue hit path returns the value
+            // before touching the factory, so this is a pure read when warm.
             var result = await _cacheManager.GetOrExecuteAsync<T?>(
                 cacheKey,
                 () => Task.FromResult<T?>(default),
@@ -43,6 +49,12 @@ internal sealed class SimpleQueryResultCache : IQueryResultCache
     {
         try
         {
+            // GetOrExecuteAsync returns the existing value on a hit without invoking the
+            // factory, making it unsuitable for Set semantics (the write would be silently
+            // skipped).  Invalidate the key first so the factory is always called, then
+            // cache the supplied value — this is effectively an unconditional write.
+            await _cacheManager.InvalidateAsync(cacheKey);
+
             await _cacheManager.GetOrExecuteAsync(
                 cacheKey,
                 () => Task.FromResult(result),

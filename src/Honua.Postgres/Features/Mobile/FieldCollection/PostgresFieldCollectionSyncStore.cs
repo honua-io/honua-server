@@ -118,6 +118,20 @@ internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncSto
     private const string AcquireChangeIdLockSql =
         "SELECT pg_advisory_xact_lock(@namespace, hashtext(@change_id))";
 
+    // Generation-allocation advisory lock. nextval('honua.sync_generation') runs inside the
+    // push transaction, so without serialization two concurrent pushes to DIFFERENT features
+    // can commit in inverted generation order: a pull then observes the higher generation as
+    // the committed MAX(generation) watermark, the client acks it, and the lower-generation
+    // change that commits afterwards falls permanently below the cursor — silent data loss.
+    // Taking this transaction-scoped lock immediately before nextval and holding it through
+    // commit makes generation order equal commit order for fieldcollection_changes writers,
+    // so the committed-MAX watermark can never skip an in-flight lower generation. The lock
+    // is acquired AFTER the changeId/feature locks (never the reverse), so no cycle exists.
+    private const int FieldCollectionGenerationLockNamespace = 0x0894_FC60;
+
+    private const string AcquireGenerationLockSql =
+        "SELECT pg_advisory_xact_lock(@namespace, 0)";
+
     private const string AcquireFeatureLockSql =
         "SELECT pg_advisory_xact_lock(@namespace, hashtext(@feature_lock_key))";
 
@@ -333,6 +347,9 @@ internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncSto
 
             if (result.Outcome == FieldCollectionPushOutcome.Applied)
             {
+                // Hold the generation-allocation lock from nextval through commit so generation
+                // order equals commit order; see FieldCollectionGenerationLockNamespace.
+                await AcquireGenerationLockAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
                 var generation = await NextGenerationAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
                 var payloadJson = request.Operation == FieldCollectionChangeOperation.Delete ? null : request.FeaturePayloadJson;
 
@@ -695,6 +712,16 @@ internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncSto
         await using var command = new NpgsqlCommand(AcquireFeatureLockSql, connection, transaction);
         command.Parameters.AddWithValue("namespace", NpgsqlDbType.Integer, FieldCollectionFeatureLockNamespace);
         command.Parameters.AddWithValue("feature_lock_key", NpgsqlDbType.Text, lockKey);
+        _ = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task AcquireGenerationLockAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand(AcquireGenerationLockSql, connection, transaction);
+        command.Parameters.AddWithValue("namespace", NpgsqlDbType.Integer, FieldCollectionGenerationLockNamespace);
         _ = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
     }
 

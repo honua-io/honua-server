@@ -225,13 +225,25 @@ internal static partial class OracleFeatureQueryBuilder
         }
 
         var filter = query.SpatialFilter.Value;
+
+        // Reject cross-SRID filters: SDO_UTIL.FROM_WKBGEOMETRY has no SRID injection point here
+        // and Oracle would silently treat the filter coordinates as if they were in the layer CRS,
+        // producing wrong (usually empty or ORA-13xxx) results. Requiring matching SRIDs is
+        // consistent with the MySQL provider (which throws) and safer than silent misinterpretation.
+        if (filter.Srid.HasValue && mapping.Srid.HasValue && filter.Srid.Value != mapping.Srid.Value)
+        {
+            throw new NotSupportedException(
+                $"Oracle provider cannot apply a spatial filter in SRID {filter.Srid.Value} against " +
+                $"layer {mapping.LayerId} stored in SRID {mapping.Srid.Value}. " +
+                "Reproject the filter geometry to the layer CRS before querying.");
+        }
+
         var geomCol = mapping.QuotedGeometryColumn!;
         var wkbParam = ":p" + parameters.Count.ToString(CultureInfo.InvariantCulture);
         parameters.Add(filter.Geometry);
 
-        // SDO_UTIL.FROM_WKBGEOMETRY produces a 2D SDO_GEOMETRY in the layer's CRS. Oracle
-        // applies the layer SRID from the spatial index/metadata; the filter's SRID is not
-        // injected into the SDO_GEOMETRY constructor here.
+        // SDO_UTIL.FROM_WKBGEOMETRY produces a 2D SDO_GEOMETRY; Oracle applies the SRID from
+        // the spatial index/metadata. Both SRIDs are either matching or unspecified at this point.
         var filterExpr = $"SDO_UTIL.FROM_WKBGEOMETRY({wkbParam})";
 
         var clause = filter.SpatialRelationship switch
@@ -380,8 +392,8 @@ internal static partial class OracleFeatureQueryBuilder
             }
             else if (!inQuotes && i + 3 <= whereClause.Length &&
                      whereClause.Substring(i, 3).Equals("AND", StringComparison.OrdinalIgnoreCase) &&
-                     (i == 0 || !char.IsLetterOrDigit(whereClause[i - 1])) &&
-                     (i + 3 >= whereClause.Length || !char.IsLetterOrDigit(whereClause[i + 3])))
+                     (i == 0 || !IsIdentifierChar(whereClause[i - 1])) &&
+                     (i + 3 >= whereClause.Length || !IsIdentifierChar(whereClause[i + 3])))
             {
                 parts.Add(current.ToString());
                 current.Clear();
@@ -400,6 +412,10 @@ internal static partial class OracleFeatureQueryBuilder
 
         return parts;
     }
+
+    // Treat underscore as an identifier character so that column names like "start_and_end"
+    // are not split at the embedded "and" token. Mirrors MySqlFeatureQueryBuilder.IsIdentifierChar.
+    private static bool IsIdentifierChar(char c) => char.IsLetterOrDigit(c) || c == '_';
 
     private static string NormalizeOperator(string op) => op.Trim().ToUpperInvariant() switch
     {

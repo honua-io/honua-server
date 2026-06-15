@@ -140,7 +140,9 @@ internal static partial class SqlServerFeatureQueryBuilder
             return "CAST(NULL AS varbinary(max))";
         }
 
-        // Both geometry and geography expose STAsBinary for OGC WKB output.
+        // STAsBinary() emits OGC 2D WKB; any Z/M ordinates on the source geometry are dropped
+        // (documented limitation matching other providers — see OracleFeatureQueryBuilder.cs).
+        // Use AsBinaryZM() instead if 3D/measured geometry support is required in a future slice.
         return $"{mapping.QuotedGeometryColumn}.STAsBinary()";
     }
 
@@ -179,18 +181,22 @@ internal static partial class SqlServerFeatureQueryBuilder
             return;
         }
 
-        if (query.SqlFilter is { } sqlFilter)
+        if (query.SqlFilter is not null)
         {
-            // Direct programmatic callers may construct a SqlFragment without a canonical Where; in
-            // that case we trust the fragment is SQL Server-styled. Caller-provided fragments are
-            // expected to use @p0, @p1, ... placeholders; re-bind them to the next available index
-            // range so they line up with the rest of the query parameters.
-            var rebound = RebindNamedParameters(sqlFilter.Sql, parameters.Count);
-            sb.Append(" AND (").Append(rebound).Append(')');
-            foreach (var param in sqlFilter.Parameters)
-            {
-                parameters.Add(param ?? DBNull.Value);
-            }
+            // The shared ISqlFilterTranslator pipeline registers a PostgreSQL translator; the
+            // SqlFilter produced by it contains Postgres-specific SQL (JSONB ->> operators,
+            // ::casts, ST_* functions, double-quoted identifiers) that is not valid T-SQL. The
+            // Oracle provider documents and enforces the same restriction (OracleFeatureQueryBuilder.cs).
+            // Passing a Postgres-flavored fragment through here would produce an opaque SqlException
+            // rather than a clear, actionable error, so we reject it here instead.
+            // Callers that need SQL-Server-specific filtered queries should populate the canonical
+            // FeatureQuery.Where text (e.g. via the FeatureServer 'where' parameter), which is
+            // re-parsed by this provider's own T-SQL-aware parser.
+            throw new NotSupportedException(
+                "Translated FeatureQuery.SqlFilter fragments are not executable against the SQL Server provider. " +
+                "The shared ISqlFilterTranslator pipeline emits Postgres-flavored SQL which is not valid T-SQL. " +
+                "Route the request through a protocol path that populates the canonical Where text (FeatureServer 'where'), " +
+                "or restrict CQL2/FES/OData $filter usage to providers that register their own ISqlFilterTranslator.");
         }
     }
 
@@ -260,6 +266,19 @@ internal static partial class SqlServerFeatureQueryBuilder
 
     private static string BuildFilterGeometryExpression(SpatialFilter filter, SqlServerLayerMapping mapping, List<object> parameters)
     {
+        // SQL Server spatial methods (STIntersects, STWithin, …) return NULL when the two
+        // operands have different SRIDs, causing the predicate to evaluate as NOT 1=1 and the
+        // query to silently return zero rows. The MySQL provider throws NotSupportedException for
+        // cross-SRID filters. Mirror that contract here so callers receive a clear error instead
+        // of an empty result set.
+        if (filter.Srid is > 0 && mapping.Srid.HasValue && filter.Srid.Value != mapping.Srid.Value)
+        {
+            throw new NotSupportedException(
+                $"Cross-SRID spatial filter is not supported by the SQL Server provider: " +
+                $"filter SRID {filter.Srid.Value} differs from layer SRID {mapping.Srid.Value}. " +
+                $"Pre-project the filter geometry to SRID {mapping.Srid.Value} before submitting the request.");
+        }
+
         var wkbParam = "@p" + parameters.Count.ToString(CultureInfo.InvariantCulture);
         parameters.Add(filter.Geometry);
 
@@ -315,12 +334,6 @@ internal static partial class SqlServerFeatureQueryBuilder
             sb.Append(" FETCH NEXT @p").Append(parameters.Count.ToString(CultureInfo.InvariantCulture)).Append(" ROWS ONLY");
             parameters.Add(query.Limit.Value);
         }
-    }
-
-    private static string RebindNamedParameters(string sql, int startIndex)
-    {
-        var current = startIndex;
-        return NamedParameterRegex().Replace(sql, _ => "@p" + (current++).ToString(CultureInfo.InvariantCulture));
     }
 
     private static string ParseAndParameterizeWhereClause(string whereClause, List<object> parameters)
@@ -407,8 +420,8 @@ internal static partial class SqlServerFeatureQueryBuilder
             }
             else if (!inQuotes && i + 3 <= whereClause.Length &&
                      whereClause.Substring(i, 3).Equals("AND", StringComparison.OrdinalIgnoreCase) &&
-                     (i == 0 || !char.IsLetterOrDigit(whereClause[i - 1])) &&
-                     (i + 3 >= whereClause.Length || !char.IsLetterOrDigit(whereClause[i + 3])))
+                     (i == 0 || !IsIdentifierChar(whereClause[i - 1])) &&
+                     (i + 3 >= whereClause.Length || !IsIdentifierChar(whereClause[i + 3])))
             {
                 parts.Add(current.ToString());
                 current.Clear();
@@ -427,6 +440,14 @@ internal static partial class SqlServerFeatureQueryBuilder
 
         return parts;
     }
+
+    // Identifier-boundary helper used by SplitOnAnd. Mirrors the regex character class
+    // [a-zA-Z0-9_] used by ComparisonRegex / NullCheckRegex so column names that contain
+    // or begin with "and" (e.g. start_and_end, and_flag) are not falsely split as
+    // logical AND boundaries. Underscore is a legal T-SQL identifier character and must
+    // not separate tokens.
+    private static bool IsIdentifierChar(char c)
+        => char.IsLetterOrDigit(c) || c == '_';
 
     private static string NormalizeOperator(string op) => op.Trim().ToUpperInvariant() switch
     {
@@ -466,6 +487,4 @@ internal static partial class SqlServerFeatureQueryBuilder
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex NullCheckRegex();
 
-    [GeneratedRegex(@"@p(\d+)", RegexOptions.CultureInvariant)]
-    private static partial Regex NamedParameterRegex();
 }

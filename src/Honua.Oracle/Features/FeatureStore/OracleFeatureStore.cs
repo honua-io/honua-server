@@ -141,7 +141,7 @@ internal sealed class OracleFeatureStore : IFeatureDataProvider, IFeatureReader,
     {
         var (mapping, _) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
         var sql = OracleFeatureQueryBuilder.BuildObjectIdsQuery(mapping, query);
-        return await _dataAccess.ExecuteObjectIdsAsync(sql, _boundConnection, cancellationToken).ConfigureAwait(false);
+        return await _dataAccess.ExecuteObjectIdsAsync(mapping, sql, _boundConnection, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />

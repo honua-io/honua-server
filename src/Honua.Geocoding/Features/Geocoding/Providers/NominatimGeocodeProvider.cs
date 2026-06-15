@@ -288,7 +288,11 @@ internal sealed class NominatimGeocodeProvider : BaseGeocodeProvider
 
         if (request.SearchBounds != null)
         {
-            url += $"&viewbox={request.SearchBounds.XMin:F6},{request.SearchBounds.YMax:F6},{request.SearchBounds.XMax:F6},{request.SearchBounds.YMin:F6}";
+            url += "&viewbox=" +
+                   request.SearchBounds.XMin.ToString("F6", CultureInfo.InvariantCulture) + "," +
+                   request.SearchBounds.YMax.ToString("F6", CultureInfo.InvariantCulture) + "," +
+                   request.SearchBounds.XMax.ToString("F6", CultureInfo.InvariantCulture) + "," +
+                   request.SearchBounds.YMin.ToString("F6", CultureInfo.InvariantCulture);
             url += "&bounded=1";
         }
 

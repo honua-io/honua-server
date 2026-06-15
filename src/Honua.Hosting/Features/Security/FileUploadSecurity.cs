@@ -378,7 +378,9 @@ internal static class FileUploadSecurity
                 ArrayPool<byte>.Shared.Return(buffer, clearArray: true);
             }
 
-            // Additional content validation for text files
+            // Additional content validation for text files. The deep dangerous-pattern scan reads
+            // the full stream (not the binary-signature scan prefix) so that malicious script
+            // content placed beyond the configured security-scan limit is still detected.
             var extension = Path.GetExtension(fileName).ToLowerInvariant();
             if (IsTextFile(extension))
             {
@@ -505,98 +507,6 @@ internal static class FileUploadSecurity
         }
 
         return Math.Min(fileLength, limit);
-    }
-
-    private sealed class LimitedReadStream : Stream
-    {
-        private readonly Stream _inner;
-        private long _remaining;
-
-        public LimitedReadStream(Stream inner, long maxBytes)
-        {
-            _inner = inner ?? throw new ArgumentNullException(nameof(inner));
-            _remaining = maxBytes;
-        }
-
-        public override bool CanRead => _inner.CanRead;
-        public override bool CanSeek => false;
-        public override bool CanWrite => false;
-        public override long Length => _remaining;
-
-        public override long Position
-        {
-            get => _inner.Position;
-            set => throw new NotSupportedException();
-        }
-
-        public override int Read(byte[] buffer, int offset, int count)
-        {
-            if (_remaining <= 0)
-            {
-                return 0;
-            }
-
-            var toRead = (int)Math.Min(count, _remaining);
-            var read = _inner.Read(buffer, offset, toRead);
-            _remaining -= read;
-            return read;
-        }
-
-        public override int Read(Span<byte> buffer)
-        {
-            if (_remaining <= 0)
-            {
-                return 0;
-            }
-
-            var toRead = (int)Math.Min(buffer.Length, _remaining);
-            var read = _inner.Read(buffer[..toRead]);
-            _remaining -= read;
-            return read;
-        }
-
-        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
-        {
-            if (_remaining <= 0)
-            {
-                return 0;
-            }
-
-            var toRead = (int)Math.Min(buffer.Length, _remaining);
-            var read = await _inner.ReadAsync(buffer[..toRead], cancellationToken);
-            _remaining -= read;
-            return read;
-        }
-
-        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
-        {
-            return ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
-        }
-
-        public override void Flush()
-        {
-            _inner.Flush();
-        }
-
-        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
-        public override void SetLength(long value) => throw new NotSupportedException();
-        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
-
-        protected override void Dispose(bool disposing)
-        {
-            if (disposing)
-            {
-                _inner.Dispose();
-            }
-
-            base.Dispose(disposing);
-        }
-
-        public override async ValueTask DisposeAsync()
-        {
-            await _inner.DisposeAsync();
-            await base.DisposeAsync();
-        }
     }
 
     /// <summary>

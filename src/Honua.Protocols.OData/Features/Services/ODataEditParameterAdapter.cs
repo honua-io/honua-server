@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using Honua.Core.Features.Edit;
+using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Protocols.OData.Services;
@@ -23,6 +24,15 @@ internal sealed record ODataEditRequest
     public string? IfMatch { get; init; }
 
     public string? IfNoneMatch { get; init; }
+
+    /// <summary>
+    /// Canonical <see cref="Honua.Core.Features.FeatureStore.Domain.FeatureStateToken"/>
+    /// computed from the snapshot the caller validated If-Match against. When set, the
+    /// unified edit pipeline re-validates the stored row against this token inside the
+    /// writer's transaction so a concurrent commit between the ETag check and the write
+    /// surfaces as a typed precondition failure (412) instead of a lost update.
+    /// </summary>
+    public string? ExpectedStateToken { get; init; }
 }
 
 /// <summary>
@@ -86,6 +96,21 @@ internal sealed class ODataEditParameterAdapter(
                     protocolRequest.ObjectId ?? throw new InvalidOperationException("Object ID is required for delete operations."))),
                 _ => throw new InvalidOperationException($"Unsupported OData operation {protocolRequest.Operation}.")
             };
+
+            // Carry the snapshot state token through to the writer so the If-Match
+            // precondition is re-validated atomically inside the write transaction.
+            if (!string.IsNullOrEmpty(protocolRequest.ExpectedStateToken) &&
+                protocolRequest.ObjectId is { } preconditionObjectId)
+            {
+                editRequest = editRequest with
+                {
+                    Preconditions = ImmutableArray.Create(new FeatureEditPrecondition
+                    {
+                        ObjectId = preconditionObjectId,
+                        ExpectedStateToken = protocolRequest.ExpectedStateToken!
+                    })
+                };
+            }
 
             var transaction = EditTransaction.Create(
                 Guid.NewGuid().ToString(),

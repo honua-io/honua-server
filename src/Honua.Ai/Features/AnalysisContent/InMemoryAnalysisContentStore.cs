@@ -14,6 +14,12 @@ internal sealed class InMemoryAnalysisContentStore : IAnalysisContentStore
         new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, ResultArtifactRecord> _artifacts = new(StringComparer.Ordinal);
     private readonly object _gate = new();
+    private readonly TimeProvider _timeProvider;
+
+    public InMemoryAnalysisContentStore(TimeProvider timeProvider)
+    {
+        _timeProvider = timeProvider;
+    }
 
     public Task<AnalysisContentItem> CreateItemAsync(
         AnalysisContentItem item,
@@ -90,7 +96,7 @@ internal sealed class InMemoryAnalysisContentStore : IAnalysisContentStore
         int? version = null,
         CancellationToken cancellationToken = default)
     {
-        if (!_versions.TryGetValue(itemId, out var versions) || versions.Count == 0)
+        if (!_versions.TryGetValue(itemId, out var versions))
         {
             return Task.FromResult<AnalysisContentVersion?>(null);
         }
@@ -98,6 +104,11 @@ internal sealed class InMemoryAnalysisContentStore : IAnalysisContentStore
         AnalysisContentVersion? resolved;
         lock (_gate)
         {
+            if (versions.Count == 0)
+            {
+                return Task.FromResult<AnalysisContentVersion?>(null);
+            }
+
             resolved = version.HasValue
                 ? versions.GetValueOrDefault(version.Value)
                 : versions.LastOrDefault().Value;
@@ -162,6 +173,20 @@ internal sealed class InMemoryAnalysisContentStore : IAnalysisContentStore
     {
         ArgumentNullException.ThrowIfNull(artifact);
         _artifacts[artifact.ArtifactId] = artifact;
+
+        // Opportunistic sweep: remove entries whose ExpiresAt has passed so the
+        // dictionary does not grow without bound across preview calls.
+        var now = _timeProvider.GetUtcNow();
+        foreach (var key in _artifacts.Keys)
+        {
+            if (_artifacts.TryGetValue(key, out var candidate)
+                && candidate.ExpiresAt.HasValue
+                && candidate.ExpiresAt.Value <= now)
+            {
+                _artifacts.TryRemove(key, out _);
+            }
+        }
+
         return Task.FromResult(artifact);
     }
 
@@ -169,8 +194,19 @@ internal sealed class InMemoryAnalysisContentStore : IAnalysisContentStore
         string artifactId,
         CancellationToken cancellationToken = default)
     {
-        _artifacts.TryGetValue(artifactId, out var artifact);
-        return Task.FromResult(artifact);
+        if (!_artifacts.TryGetValue(artifactId, out var artifact))
+        {
+            return Task.FromResult<ResultArtifactRecord?>(null);
+        }
+
+        // Honor the expiry: treat an expired artifact as not-found.
+        if (artifact.ExpiresAt.HasValue && artifact.ExpiresAt.Value <= _timeProvider.GetUtcNow())
+        {
+            _artifacts.TryRemove(artifactId, out _);
+            return Task.FromResult<ResultArtifactRecord?>(null);
+        }
+
+        return Task.FromResult<ResultArtifactRecord?>(artifact);
     }
 
     public Task<IReadOnlyList<ResultArtifactRecord>> ListArtifactsForJobAsync(

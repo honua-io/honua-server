@@ -420,6 +420,8 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
             snapshot = existingFeatures.ToList();
         }
 
+        var preconditions = BuildPreconditionMap(editBatch);
+
         var createdIds = new List<long>();
         var createResults = new List<EditOperationResult>();
         var updateResults = new List<EditOperationResult>();
@@ -439,16 +441,18 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
                         createdIds,
                         createResults,
                         cancellationToken),
-                    FeatureEditOperationKind.Update => await ApplyOrderedUpdateAsync(
-                        layerId,
-                        operation,
-                        updateResults,
-                        cancellationToken),
-                    FeatureEditOperationKind.Delete => await ApplyOrderedDeleteAsync(
-                        layerId,
-                        operation,
-                        deleteResults,
-                        cancellationToken),
+                    FeatureEditOperationKind.Update => CheckPrecondition(layerId, operation.Feature?.Id, preconditions, updateResults)
+                        && await ApplyOrderedUpdateAsync(
+                            layerId,
+                            operation,
+                            updateResults,
+                            cancellationToken),
+                    FeatureEditOperationKind.Delete => CheckPrecondition(layerId, operation.ObjectId, preconditions, deleteResults)
+                        && await ApplyOrderedDeleteAsync(
+                            layerId,
+                            operation,
+                            deleteResults,
+                            cancellationToken),
                     _ => throw new InvalidOperationException($"Unsupported ordered edit operation kind '{operation.Kind}'.")
                 };
 
@@ -497,6 +501,11 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
         var updatedCount = 0;
         foreach (var feature in editBatch.Updates)
         {
+            if (!CheckPrecondition(layerId, feature.Id, preconditions, updateResults))
+            {
+                continue;
+            }
+
             try
             {
                 var updated = await UpdateAsync(layerId, feature, cancellationToken);
@@ -513,6 +522,11 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
         var deletedCount = 0;
         foreach (var featureId in editBatch.Deletes)
         {
+            if (!CheckPrecondition(layerId, featureId, preconditions, deleteResults))
+            {
+                continue;
+            }
+
             try
             {
                 var deleted = await DeleteAsync(layerId, featureId, cancellationToken);
@@ -559,6 +573,68 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
             createResults: createResults.ToImmutableArray(),
             updateResults: updateResults.ToImmutableArray(),
             deleteResults: deleteResults.ToImmutableArray());
+    }
+
+    private static Dictionary<long, string>? BuildPreconditionMap(FeatureEditBatch editBatch)
+    {
+        if (editBatch.Preconditions.IsDefaultOrEmpty)
+        {
+            return null;
+        }
+
+        var map = new Dictionary<long, string>(editBatch.Preconditions.Length);
+        foreach (var precondition in editBatch.Preconditions)
+        {
+            if (!string.IsNullOrEmpty(precondition.ExpectedStateToken))
+            {
+                map[precondition.ObjectId] = precondition.ExpectedStateToken;
+            }
+        }
+
+        return map.Count == 0 ? null : map;
+    }
+
+    /// <summary>
+    /// In-memory analogue of the provider's transactional precondition enforcement
+    /// (compare-in-the-UPDATE's-WHERE-clause / affected-rows semantics): when the batch
+    /// carries a precondition for the target object ID and the stored feature's canonical
+    /// <see cref="FeatureStateToken"/> no longer matches, the operation is rejected with a
+    /// typed <see cref="EditOperationResult.PreconditionFailed"/> result and the write is
+    /// not applied. The check and the subsequent write happen within the store's single
+    /// synchronous mutation flow, so no concurrent writer can interleave between them.
+    /// </summary>
+    private bool CheckPrecondition(
+        int layerId,
+        long? objectId,
+        Dictionary<long, string>? preconditions,
+        List<EditOperationResult> results)
+    {
+        if (preconditions is null ||
+            objectId is not { } id ||
+            !preconditions.TryGetValue(id, out var expectedStateToken))
+        {
+            return true;
+        }
+
+        if (!_layerFeatures.TryGetValue(layerId, out var features))
+        {
+            return true;
+        }
+
+        var index = features.FindIndex(f => f.Id == id);
+        if (index == -1)
+        {
+            // Missing rows surface as the regular not-found failure from the write path.
+            return true;
+        }
+
+        if (string.Equals(FeatureStateToken.Compute(features[index]), expectedStateToken, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        results.Add(EditOperationResult.PreconditionFailed(id));
+        return false;
     }
 
     private async Task<bool> ApplyOrderedCreateAsync(

@@ -188,17 +188,27 @@ public readonly record struct BoundingBox
     /// <returns>New bounding box that encompasses both</returns>
     public readonly BoundingBox Union(BoundingBox other)
     {
+        var srid = SpatialReferenceId ?? other.SpatialReferenceId;
         var minY = Math.Min(MinY, other.MinY);
         var maxY = Math.Max(MaxY, other.MaxY);
+
+        // Only apply antimeridian / degree-domain longitude normalization for geographic
+        // (lat/lon) CRSes. Projected CRSes carry metric or other non-degree coordinates
+        // where the modulo-360 normalization produces completely wrong results.
+        if (!IsGeographicSrid(srid))
+        {
+            return Create(Math.Min(MinX, other.MinX), minY, Math.Max(MaxX, other.MaxX), maxY, srid);
+        }
+
         var mergedRanges = MergeRanges(GetLongitudeRanges().Concat(other.GetLongitudeRanges()));
 
         if (mergedRanges.Count == 0)
         {
-            return Create(MinX, minY, MaxX, maxY, SpatialReferenceId ?? other.SpatialReferenceId);
+            return Create(MinX, minY, MaxX, maxY, srid);
         }
 
         var (minX, maxX) = ResolveMinimalLongitudeSpan(mergedRanges);
-        return Create(minX, minY, maxX, maxY, SpatialReferenceId ?? other.SpatialReferenceId);
+        return Create(minX, minY, maxX, maxY, srid);
     }
 
     /// <summary>
@@ -208,12 +218,23 @@ public readonly record struct BoundingBox
     /// <returns>Intersection bounding box, or null if they don't intersect</returns>
     public readonly BoundingBox? Intersection(BoundingBox other)
     {
+        var srid = SpatialReferenceId ?? other.SpatialReferenceId;
         var minY = Math.Max(MinY, other.MinY);
         var maxY = Math.Min(MaxY, other.MaxY);
 
         if (minY > maxY)
         {
             return null;
+        }
+
+        // Only apply antimeridian / degree-domain longitude normalization for geographic
+        // (lat/lon) CRSes. Projected CRSes carry metric or other non-degree coordinates
+        // where the modulo-360 normalization produces completely wrong results.
+        if (!IsGeographicSrid(srid))
+        {
+            var projMinX = Math.Max(MinX, other.MinX);
+            var projMaxX = Math.Min(MaxX, other.MaxX);
+            return projMinX <= projMaxX ? Create(projMinX, minY, projMaxX, maxY, srid) : null;
         }
 
         var intersections = IntersectRanges(GetLongitudeRanges(), other.GetLongitudeRanges());
@@ -223,7 +244,7 @@ public readonly record struct BoundingBox
         }
 
         var (minX, maxX) = ResolveMinimalLongitudeSpan(intersections);
-        return Create(minX, minY, maxX, maxY, SpatialReferenceId ?? other.SpatialReferenceId);
+        return Create(minX, minY, maxX, maxY, srid);
     }
 
     /// <summary>
@@ -435,6 +456,28 @@ public readonly record struct BoundingBox
 
         return normalized;
     }
+
+    /// <summary>
+    /// Returns true when <paramref name="srid"/> is a known geographic (lat/lon) CRS.
+    /// Only applied when no WKT is available; keeps the check narrow to confirmed
+    /// geographic 2D codes so projected CRSes are never mis-classified.
+    /// </summary>
+    private static bool IsGeographicSrid(int? srid)
+        => srid is null
+           || srid == 4326 || srid == 4979                       // WGS 84
+           || srid == 4258                                        // ETRS89
+           || srid == 4230                                        // ED50
+           || srid == 4267 || srid == 4269                       // NAD27 / NAD83
+           || srid == 4277                                        // OSGB 1936
+           || srid == 4283 || srid == 7844                       // GDA94 / GDA2020
+           || srid == 4490                                        // CGCS2000
+           || srid == 4171                                        // RGF93
+           || srid == 4167                                        // NZGD2000
+           || srid == 6668 || srid == 4612                       // JGD2011 / JGD2000
+           || srid == 4674 || srid == 4618                       // SIRGAS2000 / SAD69
+           || srid == 4617                                        // NAD83(CSRS)
+           || srid == 4275                                        // NTF
+           || srid == 4149;                                       // CH1903
 
     private static double NormalizeLongitude(double value)
     {

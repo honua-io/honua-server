@@ -15,7 +15,7 @@ namespace Honua.Ai.WorkflowGeneration;
 ///   (for example <c>HONUA_WORKFLOWGEN_OPENAI_API_KEY</c>).</item>
 /// </list>
 /// </summary>
-internal sealed class WorkflowGenerationApiKeyResolver
+public sealed class WorkflowGenerationApiKeyResolver
 {
     private readonly ISecretProvider? _secretProvider;
 

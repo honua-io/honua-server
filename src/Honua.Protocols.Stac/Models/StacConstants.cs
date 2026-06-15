@@ -40,6 +40,17 @@ internal static class StacConstants
         public const string FieldsExtension = "https://api.stacspec.org/v1.0.0/item-search#fields";
         public const string SortExtension = "https://api.stacspec.org/v1.0.0/item-search#sort";
         public const string FilterExtension = "https://api.stacspec.org/v1.0.0/item-search#filter";
+
+        // OGC API - Features Part 1 conformance URIs required by STAC API - Features.
+        public const string OgcFeaturesCore = "http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/core";
+        public const string OgcFeaturesOas30 = "http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/oas30";
+        public const string OgcFeaturesGeoJson = "http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/geojson";
+
+        // OGC API - Features Part 3 / CQL2 conformance URIs required by the Filter Extension.
+        public const string OgcFeaturesFilter = "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/filter";
+        public const string Cql2BasicCql2 = "http://www.opengis.net/spec/cql2/1.0/conf/basic-cql2";
+        public const string Cql2Text = "http://www.opengis.net/spec/cql2/1.0/conf/cql2-text";
+        public const string Cql2Json = "http://www.opengis.net/spec/cql2/1.0/conf/cql2-json";
     }
 
     /// <summary>

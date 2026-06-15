@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using System.Globalization;
 using System.Text;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Queries.Filters;
 using Honua.Postgres.Features.Infrastructure;
 using Npgsql;
 
@@ -12,7 +13,21 @@ namespace Honua.Postgres.Features.FeatureStore.Services;
 
 internal sealed partial class FeatureDataAccess
 {
-    public async Task<QueryResult<Feature>> QueryRelatedAsync(int layerId, RelatedQuery query, CancellationToken cancellationToken)
+    public Task<QueryResult<Feature>> QueryRelatedAsync(int layerId, RelatedQuery query, CancellationToken cancellationToken)
+        => QueryRelatedAsync(layerId, query, originEnforcedFilter: null, relatedEnforcedFilter: null, cancellationToken);
+
+    /// <summary>
+    /// Postgres-specific overload that enforces permanent (row-visibility) filters
+    /// on both the origin layer (foreign-key resolution) and the related layer
+    /// (returned rows), so queryRelatedRecords cannot read rows the layers'
+    /// metadata-v2 PermanentFilter hides from direct queries.
+    /// </summary>
+    public async Task<QueryResult<Feature>> QueryRelatedAsync(
+        int layerId,
+        RelatedQuery query,
+        SqlFragment? originEnforcedFilter,
+        SqlFragment? relatedEnforcedFilter,
+        CancellationToken cancellationToken)
     {
         if (query.ObjectIds.Length == 0)
         {
@@ -46,6 +61,7 @@ internal sealed partial class FeatureDataAccess
             layerId,
             query,
             originForeignKeyField,
+            originEnforcedFilter,
             cancellationToken).ConfigureAwait(false);
         if (originObjectIdsByForeignKey.Count == 0)
         {
@@ -73,6 +89,20 @@ internal sealed partial class FeatureDataAccess
         };
 
         var paramIndex = 4;
+
+        // The related layer's permanent filter is enforced first, independently of
+        // any caller-supplied filter, mirroring EnforcedSqlFilter in AppendWhereClause.
+        if (relatedEnforcedFilter != null)
+        {
+            var enforcedSql = FeatureQueryBuilder.ConvertNamedParametersToPositional(relatedEnforcedFilter.Sql, ref paramIndex);
+            sql.Append(CultureInfo.InvariantCulture, $" AND ({enforcedSql})");
+
+            foreach (var param in relatedEnforcedFilter.Parameters)
+            {
+                parameters.Add(param ?? DBNull.Value);
+            }
+        }
+
         if (query.SqlFilter != null)
         {
             var sqlFragment = query.SqlFilter;
@@ -157,6 +187,7 @@ internal sealed partial class FeatureDataAccess
         int layerId,
         RelatedQuery query,
         string originForeignKeyField,
+        SqlFragment? originEnforcedFilter,
         CancellationToken cancellationToken)
     {
         // Return the foreign-key value alongside the origin object id so callers can
@@ -186,12 +217,32 @@ internal sealed partial class FeatureDataAccess
             WHERE layer_id = $1 AND objectid = ANY($2)
               AND {fkValueExpression} IS NOT NULL";
 
+        // Enforce the origin layer's permanent (row-visibility) filter so hidden
+        // origin rows do not resolve foreign keys into the related layer.
+        var enforcedParameters = new List<object>();
+        if (originEnforcedFilter != null)
+        {
+            var paramIndex = originKeyIsObjectId ? 3 : 4;
+            var enforcedSql = FeatureQueryBuilder.ConvertNamedParametersToPositional(originEnforcedFilter.Sql, ref paramIndex);
+            sql += FormattableString.Invariant($" AND ({enforcedSql})");
+
+            foreach (var param in originEnforcedFilter.Parameters)
+            {
+                enforcedParameters.Add(param ?? DBNull.Value);
+            }
+        }
+
         await using var command = CreateSafeCommand(connection, sql);
         command.Parameters.AddWithValue(layerId);
         command.Parameters.AddWithValue(query.ObjectIds);
         if (!originKeyIsObjectId)
         {
             command.Parameters.AddWithValue(originForeignKeyField);
+        }
+
+        foreach (var parameter in enforcedParameters)
+        {
+            command.Parameters.AddWithValue(parameter);
         }
 
         ApplyCommandTimeout(command, _queryTimeoutSeconds);

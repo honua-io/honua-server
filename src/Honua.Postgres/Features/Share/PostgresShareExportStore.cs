@@ -494,7 +494,7 @@ internal sealed class PostgresShareExportStore : IShareExportStore
         {
             throw new ShareExportStoreUnavailableException("Share export store is unavailable.", ex);
         }
-        catch (NpgsqlException ex)
+        catch (NpgsqlException ex) when (IsStoreUnavailable(ex))
         {
             throw new ShareExportStoreUnavailableException("Share export store is unavailable.", ex);
         }
@@ -502,5 +502,23 @@ internal sealed class PostgresShareExportStore : IShareExportStore
         {
             throw new ShareExportStoreUnavailableException("Share export store is unavailable.", ex);
         }
+    }
+
+    // Only connectivity/capacity/auth SQLSTATE classes (and transient errors) count as
+    // "store unavailable"; other PostgresExceptions (constraint violations, SQL defects)
+    // propagate so they surface as server errors instead of retryable outages. Mirrors
+    // PostgresShareTrafficStore.IsStoreUnavailable.
+    private static bool IsStoreUnavailable(NpgsqlException exception)
+    {
+        if (exception is not PostgresException postgres)
+        {
+            return true;
+        }
+
+        return postgres.IsTransient
+            || postgres.SqlState.StartsWith("08", StringComparison.Ordinal)
+            || postgres.SqlState.StartsWith("53", StringComparison.Ordinal)
+            || postgres.SqlState.StartsWith("57", StringComparison.Ordinal)
+            || postgres.SqlState.StartsWith("28", StringComparison.Ordinal);
     }
 }

@@ -259,20 +259,24 @@ internal sealed class FormSubmissionService
         catch (OperationCanceledException ex)
         {
             FormSubmissionLog.SubmissionFailed(_logger, ex, packageVersion.FormId, packageVersion.Version, submissionId);
-            var response = BuildFailedResponse(submissionId, packageVersion, request, "The server could not complete the submission before the post-claim timeout.");
-            await CompleteSubmissionAsync(submissionId, response, "failed").ConfigureAwait(false);
+            // Transient timeout: delete the idempotency claim so the same key can re-execute.
+            // Do NOT persist a terminal failed record; replaying it would block the client forever.
+            await DeleteSubmissionForRetryAsync(submissionId).ConfigureAwait(false);
             await RecordAuditAsync(context, "forms.submission.create", packageVersion.FormId, AuditOutcome.Failure, $"{{\"version\":{packageVersion.Version},\"timeout\":true}}", CancellationToken.None)
                 .ConfigureAwait(false);
-            return Results.Json(response, FormPackageJsonContext.Default.FormSubmissionResponse, statusCode: StatusCodes.Status500InternalServerError);
+            var timeoutResponse = BuildFailedResponse(submissionId, packageVersion, request, "The server could not complete the submission before the post-claim timeout.");
+            return Results.Json(timeoutResponse, FormPackageJsonContext.Default.FormSubmissionResponse, statusCode: StatusCodes.Status500InternalServerError);
         }
         catch (Exception ex)
         {
             FormSubmissionLog.SubmissionFailed(_logger, ex, packageVersion.FormId, packageVersion.Version, submissionId);
-            var response = BuildFailedResponse(submissionId, packageVersion, request, "The server could not complete the submission.");
-            await CompleteSubmissionAsync(submissionId, response, "failed").ConfigureAwait(false);
+            // Transient server error: delete the idempotency claim so the same key can re-execute.
+            // Do NOT persist a terminal failed record; replaying it would block the client forever.
+            await DeleteSubmissionForRetryAsync(submissionId).ConfigureAwait(false);
             await RecordAuditAsync(context, "forms.submission.create", packageVersion.FormId, AuditOutcome.Failure, $"{{\"version\":{packageVersion.Version}}}", CancellationToken.None)
                 .ConfigureAwait(false);
-            return Results.Json(response, FormPackageJsonContext.Default.FormSubmissionResponse, statusCode: StatusCodes.Status500InternalServerError);
+            var errorResponse = BuildFailedResponse(submissionId, packageVersion, request, "The server could not complete the submission.");
+            return Results.Json(errorResponse, FormPackageJsonContext.Default.FormSubmissionResponse, statusCode: StatusCodes.Status500InternalServerError);
         }
     }
 
@@ -369,6 +373,21 @@ internal sealed class FormSubmissionService
     {
         using var completionCts = new CancellationTokenSource(_terminalPersistenceTimeout);
         await _store.CompleteSubmissionAsync(submissionId, response, status, completionCts.Token).ConfigureAwait(false);
+    }
+
+    private async Task DeleteSubmissionForRetryAsync(Guid submissionId)
+    {
+        using var deleteCts = new CancellationTokenSource(_terminalPersistenceTimeout);
+        try
+        {
+            await _store.DeleteSubmissionAsync(submissionId, deleteCts.Token).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // Best-effort: if the delete fails the claim remains and the client will get a 409
+            // on next retry, which is better than a permanently cached "failed" replay.
+            FormSubmissionLog.SubmissionClaimDeleteFailed(_logger, ex, submissionId);
+        }
     }
 
     private static async Task<SubmissionParseResult> ReadSubmissionAsync(HttpContext context)
@@ -513,6 +532,18 @@ internal sealed class FormSubmissionService
             if (!AttachmentContentTypeAllowed(policy, fieldPolicy, file.ContentType))
             {
                 AddAttachmentIssue(issues, outcomes, descriptor, "attachmentContentTypeNotAllowed", $"Attachment content type '{file.ContentType}' is not allowed.");
+                continue;
+            }
+
+            // UploadAttachmentsAsync persists the client-declared descriptor content type when one
+            // is present, so validate that effective value against the same allowlists: otherwise a
+            // blocked type (e.g. text/html) could be smuggled past the policy behind an innocuous
+            // multipart part content type and later be served for the stored attachment.
+            var effectiveContentType = GetEffectiveContentType(descriptor, file);
+            if (!string.Equals(effectiveContentType, file.ContentType, StringComparison.OrdinalIgnoreCase) &&
+                !AttachmentContentTypeAllowed(policy, fieldPolicy, effectiveContentType))
+            {
+                AddAttachmentIssue(issues, outcomes, descriptor, "attachmentContentTypeNotAllowed", $"Attachment content type '{effectiveContentType}' is not allowed.");
                 continue;
             }
 
@@ -766,7 +797,7 @@ internal sealed class FormSubmissionService
                     storageLayerId,
                     targetFeatureId.Value,
                     FileUploadSecurity.SanitizeFileName(GetEffectiveFileName(descriptor, file)),
-                    descriptor.ContentType ?? file.ContentType,
+                    GetEffectiveContentType(descriptor, file),
                     stream,
                     descriptor.FieldId,
                     cancellationToken).ConfigureAwait(false);
@@ -947,6 +978,14 @@ internal sealed class FormSubmissionService
     private static string GetEffectiveFileName(FormSubmissionAttachmentDescriptor descriptor, IFormFile file)
         => string.IsNullOrWhiteSpace(descriptor.Filename) ? file.FileName : descriptor.Filename!;
 
+    /// <summary>
+    /// The content type that is persisted for an attachment: the client-declared descriptor value
+    /// when present, otherwise the multipart part's content type. Validation and upload must agree
+    /// on this value so the allowlist checks cover what is actually stored.
+    /// </summary>
+    private static string GetEffectiveContentType(FormSubmissionAttachmentDescriptor descriptor, IFormFile file)
+        => string.IsNullOrWhiteSpace(descriptor.ContentType) ? file.ContentType : descriptor.ContentType!;
+
     private static (Dictionary<string, IFormFile> ByPartName, HashSet<string> DuplicatePartNames) BuildFilePartLookup(
         IFormFileCollection files)
     {
@@ -1084,4 +1123,7 @@ internal static partial class FormSubmissionLog
 
     [LoggerMessage(EventId = 118444, Level = LogLevel.Warning, Message = "Form submission {SubmissionId} for {FormId} version {Version} failed during edit application; operation={Operation}.")]
     public static partial void SubmissionEditFailed(ILogger logger, string formId, int version, Guid submissionId, string operation);
+
+    [LoggerMessage(EventId = 118445, Level = LogLevel.Warning, Message = "Could not delete transient-failure idempotency claim for submission {SubmissionId}; claim may persist until manual cleanup.")]
+    public static partial void SubmissionClaimDeleteFailed(ILogger logger, Exception exception, Guid submissionId);
 }

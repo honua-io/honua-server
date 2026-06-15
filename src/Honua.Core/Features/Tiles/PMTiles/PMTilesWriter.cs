@@ -56,6 +56,11 @@ public sealed class PMTilesWriter
     /// <summary>
     /// Writes the complete PMTiles v3 archive to the output stream.
     /// </summary>
+    /// <remarks>
+    /// The writer releases each tile's source buffer as it is copied into the archive to keep
+    /// peak memory at roughly one archive instead of two; a writer instance can therefore be
+    /// written only once.
+    /// </remarks>
     /// <param name="output">The stream to write the archive to.</param>
     /// <param name="metadata">Archive metadata (bounds, zoom, attribution).</param>
     /// <param name="cancellationToken">Cancellation token.</param>
@@ -73,10 +78,11 @@ public sealed class PMTilesWriter
         var entries = new List<PMTilesEntry>(_tiles.Count);
         var uniqueContents = new HashSet<int>();
 
-        foreach (var tile in _tiles)
+        for (var i = 0; i < _tiles.Count; i++)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
+            var tile = _tiles[i];
             var tileBytes = _tileCompression != PMTilesCompression.None
                 ? PMTilesDirectory.Compress(tile.Data, _tileCompression)
                 : tile.Data;
@@ -90,6 +96,11 @@ public sealed class PMTilesWriter
                 Offset: offset,
                 Length: (uint)tileBytes.Length,
                 RunLength: 1));
+
+            // Release the source buffer once it has been copied into the archive stream so
+            // large publish jobs do not hold every tile payload alive twice (the entry keeps
+            // the tile id for the header counts).
+            _tiles[i] = new TileEntry(tile.TileId, []);
         }
 
         // Phase 2: Build JSON metadata

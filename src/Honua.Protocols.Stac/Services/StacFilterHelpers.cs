@@ -204,20 +204,33 @@ internal static class StacFilterHelpers
     }
 
     /// <summary>
-    /// Parses an RFC 3339 datetime or interval into a <see cref="TemporalFilter"/>.
-    /// Supports: instant, ../end, start/.., start/end.
+    /// Validates the syntax of an RFC 3339 datetime or interval string without requiring a
+    /// temporal field on the resource.  Returns <see langword="true"/> when the value is
+    /// syntactically valid; <see langword="false"/> when the format is wrong.
     /// </summary>
+    public static bool IsValidDatetimeSyntax(string datetime)
+        => ParseDatetimeWithField(datetime, "_syntax_check_") is not null;
+
     /// <summary>
-    /// Reads the configured temporal field name from <see cref="MetadataV2Resource.Temporal"/>; falls
-    /// back to checking <see cref="MetadataV2Resource.SchemaFields"/> for canonical
-    /// date/datetime field names.
+    /// Parses an RFC 3339 datetime or interval into a <see cref="TemporalFilter"/> bound to the
+    /// resource's temporal field.  Returns <see langword="null"/> when the resource has no
+    /// resolvable temporal field (the caller should skip the temporal filter for that layer rather
+    /// than treating this as a request error).
     /// </summary>
+    /// <remarks>
+    /// Use <see cref="IsValidDatetimeSyntax"/> to validate syntax independently of per-resource
+    /// field resolution so that a syntactically invalid value can be rejected up front (400) while
+    /// a resource without a temporal field is simply not filtered rather than causing a 400 for the
+    /// entire search.
+    /// </remarks>
     public static TemporalFilter? ParseDatetime(string datetime, MetadataV2Resource resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
         var timeField = ResolveTemporalField(resource);
         if (string.IsNullOrWhiteSpace(timeField))
         {
+            // The resource has no resolvable temporal field: the caller must skip the
+            // temporal filter for this layer (not return 400).
             return null;
         }
 

@@ -146,6 +146,11 @@ public static partial class HttpClientResilienceExtensions
                     RecordCircuitBreakerMetrics(meter, serviceType, state);
                 });
 
+            // Attach the context to the request: PolicyHttpMessageHandler executes the policy with
+            // the request's own context, so without this the retry/circuit-breaker callbacks above
+            // are never invoked and resilience events go unlogged.
+            request.SetPolicyExecutionContext(context);
+
             return policy;
         });
     }

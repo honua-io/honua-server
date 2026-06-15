@@ -409,6 +409,18 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
     }
 
     public CoreParameterizedQuery BuildTemporalExtentQuery(int layerId, string fieldName, TemporalPropertyType propertyType)
+        => BuildTemporalExtentQuery(layerId, fieldName, propertyType, query: null);
+
+    /// <summary>
+    /// Postgres-specific overload that also applies the supplied query's filters
+    /// (notably the enforced permanent filter) so hidden rows do not leak their
+    /// min/max temporal values through the extent.
+    /// </summary>
+    public CoreParameterizedQuery BuildTemporalExtentQuery(
+        int layerId,
+        string fieldName,
+        TemporalPropertyType propertyType,
+        FeatureQuery? query)
     {
         if (!IsValidFieldName(fieldName))
         {
@@ -436,6 +448,11 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
             FROM {_tableName}
             WHERE {DatabaseSchema.LayerIdColumn} = $1
               AND {fieldExpression} IS NOT NULL");
+
+            if (query.HasValue)
+            {
+                AppendWhereClause(sql, query.Value, ref paramIndex, parameters);
+            }
 
             return new CoreParameterizedQuery(sql.ToString(), parameters);
         }
@@ -479,13 +496,17 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
             var tileEnvelope = isGeographicTile
                 ? BuildGeographicTileEnvelope(tileBounds)
                 : "ST_TileEnvelope($2, $3, $4)";
-            // Clip the buffered Web Mercator tile envelope to the valid extent. At low zoom
-            // (z=1, z=2) the buffer pushes the envelope past +/-20037508 m; transforming that
-            // out-of-range box to a geographic layer CRS yields non-finite latitudes and
-            // silently drops features (empty MVT at z=1/z=2). ST_TileEnvelope(0,0,0) is the
-            // full valid EPSG:3857 extent. The geographic-tile path is already in-range.
+            // Clip the buffered tile envelope to the valid extent of its CRS. At low zoom
+            // (z=1, z=2) the buffer pushes the Web Mercator envelope past +/-20037508 m;
+            // transforming that out-of-range box to a geographic layer CRS yields non-finite
+            // latitudes and silently drops features (empty MVT at z=1/z=2).
+            // ST_TileEnvelope(0,0,0) is the full valid EPSG:3857 extent. The geographic
+            // (WorldCRS84Quad) path needs the same guard: with default buffer/extent the
+            // expanded envelope exceeds +/-90 latitude at low zooms (11.25 deg at z0), and
+            // ST_Transform to a projected layer CRS then fails with "latitude or longitude
+            // exceeded limits", so clamp to the valid WGS 84 envelope first.
             var tileEnvelopeWithBuffer = isGeographicTile
-                ? $"ST_Expand({tileEnvelope}, $5)"
+                ? $"ST_Intersection(ST_Expand({tileEnvelope}, $5), ST_MakeEnvelope(-180, -90, 180, 90, 4326))"
                 : $"ST_Intersection(ST_Expand({tileEnvelope}, $5), ST_TileEnvelope(0, 0, 0))";
 
             parameters.Add(layerId);

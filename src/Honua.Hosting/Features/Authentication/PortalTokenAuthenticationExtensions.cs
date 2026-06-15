@@ -100,6 +100,7 @@ public static class PortalTokenAuthenticationExtensions
         // and community option. The OIDC-backed verifier is opt-in and, when
         // enabled, may fall back to the admin verifier so admin/API-key access
         // keeps working alongside named-user login.
+        services.TryAddSingleton<OidcConfigurationManagerCache>();
         services.AddScoped<AdminPortalCredentialVerifier>();
         services.AddScoped<OidcPortalCredentialVerifier>();
         services.AddScoped<IPortalCredentialVerifier>(static provider =>

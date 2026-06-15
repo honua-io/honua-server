@@ -347,6 +347,15 @@ internal static partial class FeatureServerEndpoints
                     return false;
                 }
 
+                if (!string.IsNullOrWhiteSpace(field) && !IsSchemaField(resource, field))
+                {
+                    error = StandardErrorHelpers.CreateBadRequest(
+                        context,
+                        "Invalid summaries parameter",
+                        [$"Summary field '{field}' does not exist on the layer."]);
+                    return false;
+                }
+
                 if (!TryReadPositiveInt(element, "limit", out var limit) ||
                     !TryReadPositiveInt(element, "bins", out var bins) ||
                     !TryReadOptionalDouble(element, "min", out var min) ||
@@ -563,7 +572,7 @@ internal static partial class FeatureServerEndpoints
                         cancellationToken);
                     break;
                 case SpatialAggregationSummaryKind.Range:
-                    totals[summary.Id] = await BuildRangeTotalAsync(featureReader, resource, storageLayerId, featureQuery, summary, context, cancellationToken);
+                    totals[summary.Id] = await BuildRangeTotalAsync(featureReader, resource, storageLayerId, featureQuery, summary, degraded, sourceId, context, cancellationToken);
                     break;
                 default:
                     throw new ArgumentOutOfRangeException(nameof(summaries), summary.Kind, "Unsupported summary kind.");
@@ -660,12 +669,16 @@ internal static partial class FeatureServerEndpoints
         var maxValue = max.GetValueOrDefault();
         var bins = summary.HistogramBins.GetValueOrDefault(DefaultHistogramBins);
         var width = (maxValue - minValue) / bins;
-        var buckets = new SpatialAggregationBucketValueResponse[bins];
+
+        // Build all bin definitions upfront and fan the COUNT queries out concurrently
+        // (one DB round-trip per bin) rather than sequentially, reducing total latency
+        // from O(bins) sequential round-trips to one parallel wave.
+        var binRanges = new SpatialAggregationRangeBucketDefinition[bins];
         for (var i = 0; i < bins; i++)
         {
             var lower = minValue + (width * i);
             var upper = i == bins - 1 ? maxValue : minValue + (width * (i + 1));
-            var range = new SpatialAggregationRangeBucketDefinition
+            binRanges[i] = new SpatialAggregationRangeBucketDefinition
             {
                 Id = i.ToString(CultureInfo.InvariantCulture),
                 Min = lower,
@@ -673,14 +686,32 @@ internal static partial class FeatureServerEndpoints
                 IncludeMin = true,
                 IncludeMax = i == bins - 1
             };
+        }
+
+        var countTasks = binRanges.Select(
+            r => CountRangeAsync(featureReader, resource, storageLayerId, featureQuery, summary.Field!, r, context, cancellationToken));
+        var counts = await Task.WhenAll(countTasks).ConfigureAwait(false);
+
+        var buckets = new SpatialAggregationBucketValueResponse[bins];
+        var hasUnevaluatedBuckets = false;
+        for (var i = 0; i < bins; i++)
+        {
+            hasUnevaluatedBuckets |= counts[i] is null;
             buckets[i] = new SpatialAggregationBucketValueResponse
             {
-                Min = lower,
-                Max = upper,
-                Count = await CountRangeAsync(featureReader, resource, storageLayerId, featureQuery, summary.Field!, range, context, cancellationToken),
-                IncludeMin = true,
-                IncludeMax = i == bins - 1
+                Min = binRanges[i].Min,
+                Max = binRanges[i].Max,
+                Count = counts[i] ?? 0,
+                IncludeMin = binRanges[i].IncludeMin.GetValueOrDefault(true),
+                IncludeMax = binRanges[i].IncludeMax.GetValueOrDefault(false)
             };
+        }
+
+        if (hasUnevaluatedBuckets)
+        {
+            degraded.Add(CreateDegraded(
+                sourceId,
+                $"Histogram summary '{summary.Id}' could not evaluate one or more bucket filters; the affected bucket counts were reported as 0."));
         }
 
         return new SpatialAggregationSummaryValueResponse
@@ -745,14 +776,25 @@ internal static partial class FeatureServerEndpoints
         int storageLayerId,
         FeatureQuery featureQuery,
         SpatialAggregationSummaryDefinition summary,
+        List<SpatialAggregationDegradedReasonResponse> degraded,
+        string sourceId,
         HttpContext context,
         CancellationToken cancellationToken)
     {
         var ranges = summary.Ranges.GetValueOrDefault();
+
+        // Fan the COUNT queries out concurrently rather than sequentially to reduce
+        // total latency from O(ranges) serial round-trips to one parallel wave.
+        var countTasks = ranges.Select(
+            r => CountRangeAsync(featureReader, resource, storageLayerId, featureQuery, summary.Field!, r, context, cancellationToken));
+        var counts = await Task.WhenAll(countTasks).ConfigureAwait(false);
+
         var buckets = new SpatialAggregationBucketValueResponse[ranges.Length];
+        var hasUnevaluatedBuckets = false;
         for (var i = 0; i < ranges.Length; i++)
         {
             var range = ranges[i];
+            hasUnevaluatedBuckets |= counts[i] is null;
             buckets[i] = new SpatialAggregationBucketValueResponse
             {
                 Id = range.Id,
@@ -761,8 +803,15 @@ internal static partial class FeatureServerEndpoints
                 Max = range.Max,
                 IncludeMin = range.IncludeMin.GetValueOrDefault(true),
                 IncludeMax = range.IncludeMax.GetValueOrDefault(false),
-                Count = await CountRangeAsync(featureReader, resource, storageLayerId, featureQuery, summary.Field!, range, context, cancellationToken)
+                Count = counts[i] ?? 0
             };
+        }
+
+        if (hasUnevaluatedBuckets)
+        {
+            degraded.Add(CreateDegraded(
+                sourceId,
+                $"Range summary '{summary.Id}' could not evaluate one or more bucket filters; the affected bucket counts were reported as 0."));
         }
 
         return new SpatialAggregationSummaryValueResponse
@@ -772,7 +821,13 @@ internal static partial class FeatureServerEndpoints
         };
     }
 
-    private static async Task<long> CountRangeAsync(
+    /// <summary>
+    /// Counts the features matching the base query plus the bucket's range filter.
+    /// Returns <see langword="null"/> when the bucket filter could not be translated
+    /// (missing filter service/resource or translation failure) so callers can report
+    /// a degraded reason instead of presenting a fabricated 0 as a legitimate count.
+    /// </summary>
+    private static async Task<long?> CountRangeAsync(
         IFeatureReader featureReader,
         MetadataV2Resource? resource,
         int storageLayerId,
@@ -791,12 +846,12 @@ internal static partial class FeatureServerEndpoints
         var filterService = context?.RequestServices.GetService<IFilterExpressionService>();
         if (filterService == null || resource is null)
         {
-            return 0;
+            return null;
         }
         var translationResult = filterService.Translate(rangeExpression, resource);
         if (!translationResult.IsSuccess || translationResult.SqlFilter == null)
         {
-            return 0;
+            return null;
         }
 
         var combinedFilter = CombineSqlFragments(featureQuery.SqlFilter, translationResult.SqlFilter);

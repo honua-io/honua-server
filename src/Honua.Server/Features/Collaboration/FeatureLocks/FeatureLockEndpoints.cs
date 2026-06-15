@@ -10,6 +10,12 @@ namespace Honua.Server.Features.Collaboration.FeatureLocks;
 
 internal static class FeatureLockEndpoints
 {
+    // Lease bounds enforced at the endpoint: non-positive leases are rejected by the lock service
+    // with an ArgumentOutOfRangeException (which would surface as a 500), and an unbounded lease
+    // (e.g. int.MaxValue seconds) would make a lock effectively permanent in the in-memory store.
+    private const int MinLeaseSeconds = 1;
+    private const int MaxLeaseSeconds = 3600;
+
     public static void MapFeatureLockEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/saved-maps/{mapId}/collaboration/feature-locks")
@@ -26,6 +32,7 @@ internal static class FeatureLockEndpoints
             .WithMetadata(new HttpMethodMetadata([HttpMethods.Post]))
             .Produces<ApiResponse<FeatureLockClaimResponse>>()
             .Produces<ApiResponse<FeatureLockClaimResponse>>(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status403Forbidden);
 
@@ -35,6 +42,7 @@ internal static class FeatureLockEndpoints
             .Produces<ApiResponse<FeatureLockRenewResponse>>()
             .Produces<ApiResponse<FeatureLockRenewResponse>>(StatusCodes.Status404NotFound)
             .Produces<ApiResponse<FeatureLockRenewResponse>>(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status403Forbidden);
 
@@ -55,6 +63,11 @@ internal static class FeatureLockEndpoints
         [FromServices] IFeatureLockAuthorizer authorizer,
         HttpContext context)
     {
+        if (ValidateLeaseSeconds(request, context) is { } leaseValidationFailure)
+        {
+            return leaseValidationFailure;
+        }
+
         var auth = await AuthorizeAsync(mapId, request, authorizer, context, "claim").ConfigureAwait(false);
         if (!auth.Authorized)
         {
@@ -86,6 +99,11 @@ internal static class FeatureLockEndpoints
         [FromServices] IFeatureLockAuthorizer authorizer,
         HttpContext context)
     {
+        if (ValidateLeaseSeconds(request, context) is { } leaseValidationFailure)
+        {
+            return leaseValidationFailure;
+        }
+
         var auth = await AuthorizeAsync(mapId, request, authorizer, context, "renew").ConfigureAwait(false);
         if (!auth.Authorized)
         {
@@ -145,6 +163,13 @@ internal static class FeatureLockEndpoints
             _ => JsonRelease(ApiResponse<FeatureLockReleaseResponse>.CreateSuccess(result))
         };
     }
+
+    private static IResult? ValidateLeaseSeconds(FeatureLockMutationRequest request, HttpContext context) =>
+        request.LeaseSeconds is >= MinLeaseSeconds and <= MaxLeaseSeconds
+            ? null
+            : StandardErrorHelpers.CreateBadRequest(
+                context,
+                $"leaseSeconds must be between {MinLeaseSeconds} and {MaxLeaseSeconds}.");
 
     private static ValueTask<FeatureLockAuthorizationResult> AuthorizeAsync(
         string mapId,

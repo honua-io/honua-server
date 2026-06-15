@@ -26,6 +26,17 @@ internal sealed partial class PostgreSqlLayerPublishingService
     {
         try
         {
+            // Prefer the targeted single-table lookup: resolving one table through
+            // full-catalog discovery costs ~4N+2 catalog queries on a database with
+            // N spatial tables (row-count estimate + column introspection per table),
+            // and PublishLayerAsync resolves twice (validation + publish).
+            if (_tableDiscoveryService is PostgreSqlTableDiscoveryService postgresDiscovery)
+            {
+                return await postgresDiscovery
+                    .DiscoverPostGisTableAsync(connectionString, schema, table, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
             var tables = await _tableDiscoveryService
                 .DiscoverPostGisTablesAsync(connectionString, cancellationToken)
                 .ConfigureAwait(false);

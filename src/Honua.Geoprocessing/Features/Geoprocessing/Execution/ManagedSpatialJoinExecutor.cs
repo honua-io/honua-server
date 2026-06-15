@@ -54,7 +54,7 @@ internal sealed class ManagedSpatialJoinExecutor(
         var stats = ReadStatistics(inputs);
 
         var joinUri = inputs.Require("join");
-        if (!FeatureCollectionArtifact.TryParseDataUri(joinUri, out var joinFeatures, out var joinError))
+        if (!FeatureCollectionArtifact.TryParseDataUri(joinUri, out var joinFeatures, out var joinError, _options.CurrentValue.MaxArtifactBytes))
         {
             throw new TransformInputException($"'join' {joinError}");
         }

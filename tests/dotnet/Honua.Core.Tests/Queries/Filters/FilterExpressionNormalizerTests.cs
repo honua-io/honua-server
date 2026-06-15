@@ -42,6 +42,37 @@ public sealed class FilterExpressionNormalizerTests
     }
 
     [UnitTest]
+    public void Normalize_GeodesicSpatialPredicate_PreservesGeodesicFlag()
+    {
+        // The OData parser marks geo.intersects predicates Geodesic; normalization
+        // rebuilds the node and must not reset the protocol marker, otherwise the
+        // SQL translator would silently fall back to planar semantics.
+        var resource = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "res-spatial", Name = "Spatial Layer" },
+            Type = MetadataV2ResourceType.FeatureDataset,
+            SchemaFields =
+            [
+                new MetadataV2Field { Name = FieldNames.ObjectId, Type = MetadataV2FieldType.Integer, Nullable = false },
+                new MetadataV2Field { Name = "geom", Type = MetadataV2FieldType.Geometry },
+            ],
+        };
+
+        var expression = new SpatialPredicate(
+            SpatialOperator.Intersects,
+            new PropertyReference("geom"),
+            new GeometryLiteral([1, 2, 3, 4], 4326, "POINT(1 2)"))
+        {
+            Geodesic = true
+        };
+
+        var normalized = FilterExpressionNormalizer.Normalize(expression, resource);
+
+        var spatial = normalized.Should().BeOfType<SpatialPredicate>().Subject;
+        spatial.Geodesic.Should().BeTrue();
+    }
+
+    [UnitTest]
     public void Normalize_DeeplyNestedExpression_ThrowsArgumentException()
     {
         var resource = new MetadataV2Resource

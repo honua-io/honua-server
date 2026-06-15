@@ -179,6 +179,119 @@ internal sealed class PostgreSqlTableDiscoveryService(
     }
 
     /// <summary>
+    /// Targeted single-table variant of <see cref="DiscoverPostGisTablesAsync(string, CancellationToken)"/>
+    /// using the same schema-exclusion rules. Resolving one table through the
+    /// full-catalog discovery issues row-count and column-introspection queries
+    /// for EVERY spatial table in the database; this looks up just the requested
+    /// schema.table with a constant number of queries.
+    /// </summary>
+    internal async Task<TableInfo?> DiscoverPostGisTableAsync(
+        string connectionString,
+        string schema,
+        string table,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(connectionString);
+
+        try
+        {
+            await using var connection = new NpgsqlConnection(connectionString);
+            await connection.OpenAsync(cancellationToken);
+
+            await SchemaSearchPath.ApplyAsync(connection, _schemaContext?.CurrentSchema, cancellationToken: cancellationToken).ConfigureAwait(false);
+
+            var discoverySchemas = _schemaConfiguration.ResolveDiscoverySchemas(_schemaContext?.CurrentSchema);
+            const string sql = """
+                SELECT
+                    f_table_schema as schema,
+                    f_table_name as table_name,
+                    f_geometry_column as geometry_column,
+                    type as geometry_type,
+                    srid
+                FROM geometry_columns
+                WHERE lower(f_table_schema) = lower(@schema)
+                  AND lower(f_table_name) = lower(@table)
+                  AND f_table_schema <> ALL(@metadataSchemas)
+                  AND (
+                      f_table_schema = ANY(@discoverySchemas)
+                      OR (
+                          f_table_schema <> 'information_schema'
+                          AND f_table_schema !~ '^pg_'
+                      )
+                  )
+
+                UNION ALL
+
+                SELECT
+                    f_table_schema as schema,
+                    f_table_name as table_name,
+                    f_geography_column as geometry_column,
+                    type as geometry_type,
+                    srid
+                FROM geography_columns
+                WHERE lower(f_table_schema) = lower(@schema)
+                  AND lower(f_table_name) = lower(@table)
+                  AND f_table_schema <> ALL(@metadataSchemas)
+                  AND (
+                      f_table_schema = ANY(@discoverySchemas)
+                      OR (
+                          f_table_schema <> 'information_schema'
+                          AND f_table_schema !~ '^pg_'
+                      )
+                  )
+
+                LIMIT 1
+                """;
+
+            string resolvedSchema;
+            string resolvedTable;
+            string geometryColumn;
+            string geometryType;
+            int srid;
+
+            await using (var command = new NpgsqlCommand(sql, connection))
+            {
+                _ = command.Parameters.AddWithValue("schema", schema);
+                _ = command.Parameters.AddWithValue("table", table);
+                command.Parameters.Add("discoverySchemas", NpgsqlDbType.Array | NpgsqlDbType.Text).Value = discoverySchemas.ToArray();
+                command.Parameters.Add("metadataSchemas", NpgsqlDbType.Array | NpgsqlDbType.Text).Value = _schemaConfiguration.MetadataSchemas.ToArray();
+
+                await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+                if (!await reader.ReadAsync(cancellationToken))
+                {
+                    return null;
+                }
+
+                resolvedSchema = reader.GetString(0);
+                resolvedTable = reader.GetString(1);
+                geometryColumn = reader.GetString(2);
+                geometryType = reader.GetString(3);
+                srid = reader.GetInt32(4);
+            }
+
+            return new TableInfo
+            {
+                Schema = resolvedSchema,
+                Table = resolvedTable,
+                GeometryColumn = geometryColumn,
+                GeometryType = geometryType,
+                Srid = srid,
+                EstimatedRows = await GetEstimatedRowCountAsync(connection, resolvedSchema, resolvedTable, cancellationToken),
+                Columns = await GetTableColumnsAsync(connection, resolvedSchema, resolvedTable, cancellationToken)
+            };
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            TableDiscoveryLog.PostGisDiscoveryError(_logger, ex);
+            throw;
+        }
+    }
+
+    /// <summary>
     /// Get estimated row count for a table using PostgreSQL statistics.
     /// </summary>
     private async Task<long?> GetEstimatedRowCountAsync(

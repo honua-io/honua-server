@@ -213,6 +213,85 @@ internal ref struct ProtobufWriter
         _position += value.Length;
     }
 
+    // ── Oneof member writers (explicit presence) ─────────────
+    //
+    // proto3 oneof members carry explicit presence: the serialized member is what
+    // selects the oneof arm, so a member set to its default value (0, 0.0, false,
+    // "") MUST still be emitted. The default-skipping writers above are correct for
+    // ordinary proto3 fields but would silently turn such values into "no member
+    // set" (decoded as null). Use these variants for oneof members.
+
+    /// <summary>Writes a uint32 oneof member unconditionally (wire type 0).</summary>
+    public void WriteUInt32Always(int fieldNumber, uint value)
+    {
+        WriteTag(fieldNumber, 0);
+        WriteRawVarint(value);
+    }
+
+    /// <summary>Writes an int64 oneof member unconditionally (wire type 0).</summary>
+    public void WriteInt64Always(int fieldNumber, long value)
+    {
+        WriteTag(fieldNumber, 0);
+        WriteRawVarint((ulong)value);
+    }
+
+    /// <summary>Writes a uint64 oneof member unconditionally (wire type 0).</summary>
+    public void WriteUInt64Always(int fieldNumber, ulong value)
+    {
+        WriteTag(fieldNumber, 0);
+        WriteRawVarint(value);
+    }
+
+    /// <summary>Writes a zigzag-encoded sint32 oneof member unconditionally (wire type 0).</summary>
+    public void WriteSInt32Always(int fieldNumber, int value)
+    {
+        WriteTag(fieldNumber, 0);
+        WriteRawVarint(ZigZagEncode32(value));
+    }
+
+    /// <summary>Writes a bool oneof member unconditionally (wire type 0).</summary>
+    public void WriteBoolAlways(int fieldNumber, bool value)
+    {
+        WriteTag(fieldNumber, 0);
+        EnsureCapacity(1);
+        _buffer[_position++] = value ? (byte)1 : (byte)0;
+    }
+
+    /// <summary>Writes a double oneof member unconditionally (wire type 1).</summary>
+    public void WriteDoubleAlways(int fieldNumber, double value)
+    {
+        WriteTag(fieldNumber, 1);
+        EnsureCapacity(8);
+        BinaryPrimitives.WriteDoubleLittleEndian(_buffer.AsSpan(_position), value);
+        _position += 8;
+    }
+
+    /// <summary>Writes a float oneof member unconditionally (wire type 5).</summary>
+    public void WriteFloatAlways(int fieldNumber, float value)
+    {
+        WriteTag(fieldNumber, 5);
+        EnsureCapacity(4);
+        BinaryPrimitives.WriteSingleLittleEndian(_buffer.AsSpan(_position), value);
+        _position += 4;
+    }
+
+    /// <summary>Writes a string oneof member unconditionally (wire type 2; null writes an empty string).</summary>
+    public void WriteStringAlways(int fieldNumber, string? value)
+    {
+        WriteTag(fieldNumber, 2);
+        if (string.IsNullOrEmpty(value))
+        {
+            WriteRawVarint(0u);
+            return;
+        }
+
+        int byteCount = Encoding.UTF8.GetByteCount(value);
+        WriteRawVarint((uint)byteCount);
+        EnsureCapacity(byteCount);
+        Encoding.UTF8.GetBytes(value, _buffer.AsSpan(_position));
+        _position += byteCount;
+    }
+
     // ── Packed repeated fields ────────────────────────────────
 
     /// <summary>Writes a packed repeated uint32 field.</summary>

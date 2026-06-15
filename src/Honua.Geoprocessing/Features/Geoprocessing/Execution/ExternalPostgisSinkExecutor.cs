@@ -41,21 +41,26 @@ internal sealed partial class ExternalPostgisSinkExecutor : IJobExecutor
     private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _options;
     private readonly IServiceScopeFactory? _serviceScopeFactory;
     private readonly ISecureConnectionResolver? _secureConnectionResolver;
+    private readonly ILogger<ExternalPostgisSinkExecutor> _logger;
 
     [ActivatorUtilitiesConstructor]
     public ExternalPostgisSinkExecutor(
         IOptionsMonitor<GeoprocessingExecutorOptions> options,
-        IServiceScopeFactory serviceScopeFactory)
+        IServiceScopeFactory serviceScopeFactory,
+        ILogger<ExternalPostgisSinkExecutor> logger)
     {
         _options = options;
         _serviceScopeFactory = serviceScopeFactory;
+        _logger = logger;
     }
 
     internal ExternalPostgisSinkExecutor(
         IOptionsMonitor<GeoprocessingExecutorOptions> options,
-        ISecureConnectionResolver? secureConnectionResolver = null)
+        ISecureConnectionResolver? secureConnectionResolver = null,
+        ILogger<ExternalPostgisSinkExecutor>? logger = null)
     {
         _options = options;
+        _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<ExternalPostgisSinkExecutor>.Instance;
         _secureConnectionResolver = secureConnectionResolver;
     }
 
@@ -86,7 +91,7 @@ internal sealed partial class ExternalPostgisSinkExecutor : IJobExecutor
             return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: {inputError}");
         }
 
-        if (!FeatureCollectionArtifact.TryParseDataUri(inputUri, out var source, out var parseError))
+        if (!FeatureCollectionArtifact.TryParseDataUri(inputUri, out var source, out var parseError, _options.CurrentValue.MaxArtifactBytes))
         {
             return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: 'input' {parseError}");
         }
@@ -168,6 +173,31 @@ internal sealed partial class ExternalPostgisSinkExecutor : IJobExecutor
         }
         catch (NpgsqlException ex)
         {
+            Log.SinkWriteFailed(_logger, job.OperationId, HandledProcessId, ex);
+            // Publish partial progress so operators can use batchId for soft-delete rollback
+            // even when the full load did not complete.
+            if (written > 0 || rejected > 0)
+            {
+                try
+                {
+                    await context.PublishArtifactAsync(
+                        SinkResultArtifact.Build(
+                            HandledProcessId,
+                            ("schema", schema),
+                            ("table", table),
+                            ("batchId", batchId),
+                            ("featuresWritten", written),
+                            ("featuresRejected", rejected),
+                            ("partial", true)),
+                        cancellationToken).ConfigureAwait(false);
+                }
+                catch
+                {
+                    // Best-effort: if artifact publish fails during failure handling, suppress
+                    // so the original failure is returned.
+                }
+            }
+
             return JobExecutionResult.Failed($"{HandledProcessId} write failed: {ex.GetType().Name}.");
         }
 
@@ -453,4 +483,12 @@ internal sealed partial class ExternalPostgisSinkExecutor : IJobExecutor
 
     [GeneratedRegex("^[A-Za-z_][A-Za-z0-9_]*$")]
     private static partial Regex IdentifierRegex();
+
+    private static partial class Log
+    {
+        [LoggerMessage(9260, LogLevel.Error,
+            "Sink executor failed job {OperationId} during {ProcessId} write")]
+        public static partial void SinkWriteFailed(
+            ILogger logger, string operationId, string processId, Exception exception);
+    }
 }

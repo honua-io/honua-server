@@ -102,13 +102,23 @@ internal static class ServiceDataEditorAuthorization
 
         if (service is null)
         {
-            // No service context — evaluate just the resource policy with the request
-            // principal via the access evaluator (used by anonymous-allowed write paths).
+            // No service context — fall back to the same global role gate used for
+            // service-scoped checks (admin or global data-editor role).  Returning null
+            // for any authenticated principal would allow a principal with only the
+            // default OIDC role to mutate any service-less resource, bypassing RBAC.
             if (context.User?.Identity?.IsAuthenticated != true)
             {
                 return CreateDecisionResult(context, AccessDecision.RequiresAuth("Authentication is required."));
             }
-            return null;
+
+            var options = context.RequestServices.GetRequiredService<IOptions<RbacOptions>>().Value;
+            var user = context.User!; // non-null: authenticated guard above
+            if (IsAdmin(user, options) || HasGlobalDataEditorRole(user, options))
+            {
+                return null;
+            }
+
+            return CreateDecisionResult(context, AccessDecision.Forbidden("User does not have the required data editor role."));
         }
 
         var decision = await EvaluateServiceAccessAsync(context, service.Metadata.Name, cancellationToken).ConfigureAwait(false);

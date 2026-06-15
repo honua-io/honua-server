@@ -29,7 +29,13 @@ public static class AdminServiceCollectionExtensions
         {
             client.DefaultRequestHeaders.UserAgent.ParseAdd("HonuaServer/1.0");
             client.Timeout = TimeSpan.FromMinutes(2);
-        });
+            // Bounds buffered (ResponseContentRead) requests such as token POSTs; the streaming JSON
+            // discovery path applies the same bound explicitly.
+            client.MaxResponseContentBufferSize = ExternalServiceDiscoveryService.MaxJsonResponseBytes;
+        })
+        // SSRF hardening: never follow redirects and pin connections to guard-validated resolved
+        // addresses (DNS-rebinding defense). See ExternalServiceDiscoveryService.CreatePinnedDnsHttpMessageHandler.
+        .ConfigurePrimaryHttpMessageHandler(ExternalServiceDiscoveryService.CreatePinnedDnsHttpMessageHandler);
         services.AddHttpClient(StartupConnectivityTestService.HttpClientName, client =>
         {
             client.DefaultRequestHeaders.UserAgent.ParseAdd("HonuaServer/1.0");

@@ -127,12 +127,20 @@ internal static class CatalogEndpoints
                 type: MediaTypes.Json,
                 title: "Collections"));
 
-            // Search
+            // Search — STAC API spec requires one rel=search link per supported HTTP method so
+            // that clients know both GET and POST are available on /stac/search.
             links.Add(Link.Create(
                 href: $"{stacBase}/search",
                 rel: StacConstants.StacRelations.Search,
                 type: MediaTypes.GeoJson,
-                title: "STAC Search"));
+                title: "STAC Search (GET)",
+                method: "GET"));
+            links.Add(Link.Create(
+                href: $"{stacBase}/search",
+                rel: StacConstants.StacRelations.Search,
+                type: MediaTypes.Json,
+                title: "STAC Search (POST)",
+                method: "POST"));
 
             // Child collection links
             foreach (var resolved in visible)
@@ -320,6 +328,36 @@ internal static class CatalogEndpoints
                     }
                   }
                 },
+                "/stac/queryables": {
+                  "get": {
+                    "summary": "STAC catalog queryables",
+                    "responses": {
+                      "200": {
+                        "description": "Queryables JSON Schema"
+                      }
+                    }
+                  }
+                },
+                "/stac/collections/{collectionId}/queryables": {
+                  "get": {
+                    "summary": "STAC collection queryables",
+                    "parameters": [
+                      {
+                        "name": "collectionId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                          "type": "string"
+                        }
+                      }
+                    ],
+                    "responses": {
+                      "200": {
+                        "description": "Queryables JSON Schema"
+                      }
+                    }
+                  }
+                },
                 "/stac/search": {
                   "get": {
                     "summary": "STAC item search",
@@ -363,5 +401,14 @@ internal static class CatalogEndpoints
             StacConstants.Conformance.Collections,
             StacConstants.Conformance.FieldsExtension,
             StacConstants.Conformance.SortExtension,
-            StacConstants.Conformance.FilterExtension);
+            StacConstants.Conformance.FilterExtension,
+            // OGC API - Features Part 1 URIs required by STAC API - Features.
+            StacConstants.Conformance.OgcFeaturesCore,
+            StacConstants.Conformance.OgcFeaturesOas30,
+            StacConstants.Conformance.OgcFeaturesGeoJson,
+            // OGC API - Features Part 3 / CQL2 URIs required by the Filter Extension.
+            StacConstants.Conformance.OgcFeaturesFilter,
+            StacConstants.Conformance.Cql2BasicCql2,
+            StacConstants.Conformance.Cql2Text,
+            StacConstants.Conformance.Cql2Json);
 }

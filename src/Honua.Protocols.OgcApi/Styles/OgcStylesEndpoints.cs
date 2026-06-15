@@ -12,6 +12,8 @@ using Honua.Protocols.Ogc.Api.Styles.Handlers;
 using Honua.Protocols.Ogc.Api.Styles.Models;
 using Honua.Protocols.Ogc.Common;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.OutputCaching;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
@@ -369,6 +371,7 @@ public static class OgcStylesEndpoints
         {
             case OgcStyleUpdateStatus.Updated:
                 OgcStylesLog.StyleUpdated(logger, styleId);
+                await EvictStylesOutputCacheAsync(context, logger).ConfigureAwait(false);
                 // Surface lossy-conversion warnings non-blockingly so the client can show them (the canonical
                 // MapLibre was still stored). Mirrors the unsupportedSymbolizers[] contract.
                 if (result.UnsupportedSymbolizers is { Count: > 0 })
@@ -445,6 +448,7 @@ public static class OgcStylesEndpoints
             case OgcStyleCreateStatus.Created:
                 var styleId = result.StyleId!;
                 OgcStylesLog.StyleCreated(logger, styleId);
+                await EvictStylesOutputCacheAsync(context, logger).ConfigureAwait(false);
                 var baseUrl = BaseUrlResolver.GetBaseUrl(context);
                 var location = $"{baseUrl}/ogc/styles/{Uri.EscapeDataString(styleId)}";
                 context.Response.Headers.Location = location;
@@ -485,12 +489,37 @@ public static class OgcStylesEndpoints
         {
             case OgcStyleDeleteStatus.Deleted:
                 OgcStylesLog.StyleDeleted(logger, styleId);
+                await EvictStylesOutputCacheAsync(context, logger).ConfigureAwait(false);
                 return Results.NoContent();
             case OgcStyleDeleteStatus.Forbidden:
-                return StandardErrorHelpers.CreateBadRequest(context, result.ErrorMessage ?? $"Style '{styleId}' cannot be deleted through this surface.");
+                return StandardErrorHelpers.CreateForbidden(context, result.ErrorMessage ?? $"Style '{styleId}' cannot be deleted through this surface.");
             default:
                 OgcStylesLog.StyleNotFound(logger, styleId);
                 return StandardErrorHelpers.CreateNotFound(context, result.ErrorMessage ?? $"Style '{styleId}' not found.");
+        }
+    }
+
+    /// <summary>
+    /// Evicts the output-cached styles surfaces (styles list, stylesheets, metadata —
+    /// all tagged 'ogc-styles') after a successful mutation so anonymous clients do
+    /// not keep receiving stale stylesheets until the cache TTL expires. Best-effort:
+    /// the mutation has already been committed, so eviction failures only log.
+    /// </summary>
+    private static async Task EvictStylesOutputCacheAsync(HttpContext context, ILogger logger)
+    {
+        var cacheStore = context.RequestServices.GetService<IOutputCacheStore>();
+        if (cacheStore is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await cacheStore.EvictByTagAsync("ogc-styles", CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            OgcStylesLog.StylesCacheEvictionFailed(logger, ex);
         }
     }
 
