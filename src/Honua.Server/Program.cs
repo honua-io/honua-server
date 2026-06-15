@@ -954,12 +954,56 @@ else
 // Map interactive API explorer (Scalar) at /docs when enabled
 if (serveApiDocs)
 {
+    // Protocol-overview document so the explorer represents Honua's FULL protocol
+    // surface. Scalar can only list protocols that publish an OpenAPI description
+    // (the OGC API family + STAC + Admin); the standards that self-describe through
+    // their own discovery documents (Esri GeoServices, OData, WFS/WMS/WMTS) would
+    // otherwise be invisible here, making the switcher read as the complete set —
+    // which it is not. This default landing lists every supported protocol and
+    // links the self-describing ones to their native discovery endpoints.
+    var protocolsOverviewDescription = """
+        # Honua speaks many protocols
+
+        Honua serves **one dataset through many open geospatial protocols** — use the one your client already speaks. This reference documents the protocols that publish an **OpenAPI** description; the standards below describe themselves through their **own** discovery documents (by design — they are spec-compliant), so each links out to its native endpoint.
+
+        ## Explore in this reference (OpenAPI)
+        Use the document switcher (top-left) to open any of these:
+        - **OGC API — Features**, **Tiles**, **Maps**, **Coverages**, **Styles**, **Processes**
+        - **STAC API**
+        - **Admin API**
+
+        ## Also supported — standards-native discovery
+        Fully supported; each describes itself through its own standard endpoint:
+        - **Esri GeoServices REST** — FeatureServer · MapServer · ImageServer · GeocodeServer · GPServer → [`/rest/services`](/rest/services?f=json)
+        - **OData v4** → [`/odata/$metadata`](/odata/$metadata)
+        - **OGC WFS 2.0** → [`GetCapabilities`](/wfs?service=WFS&request=GetCapabilities)
+        - **OGC WMS** → [`GetCapabilities`](/wms?service=WMS&request=GetCapabilities)
+        - **OGC WMTS** → [`GetCapabilities`](/wmts?service=WMTS&request=GetCapabilities)
+
+        Plus **MapLibre-native** vector/raster/GeoJSON sources composed client-side by the Honua SDK.
+
+        > This is the full protocol surface. The document switcher only lists the OpenAPI-described protocols; the standards above are reached through their own discovery documents.
+        """;
+    var protocolsOverviewDoc = new
+    {
+        openapi = "3.0.3",
+        info = new
+        {
+            title = "Honua — supported protocols",
+            version = "1.0.0",
+            description = protocolsOverviewDescription,
+        },
+        paths = new Dictionary<string, object>(),
+    };
+    app.MapGet("/docs/protocols.openapi.json", () => Results.Json(protocolsOverviewDoc));
+
     app.MapScalarApiReference("/docs", options =>
     {
         options
             .WithTitle("Honua API Explorer")
             .WithTheme(ScalarTheme.BluePlanet)
-            .AddDocument("features", "OGC API Features", "/openapi.json", isDefault: true)
+            .AddDocument("overview", "All protocols", "/docs/protocols.openapi.json", isDefault: true)
+            .AddDocument("features", "OGC API Features", "/openapi.json")
             .AddDocument("coverages", "OGC API Coverages", "/ogc/coverages/openapi.json")
             .AddDocument("tiles", "OGC API Tiles", "/ogc/tiles/openapi.json")
             .AddDocument("maps", "OGC API Maps", "/ogc/maps/openapi.json")
