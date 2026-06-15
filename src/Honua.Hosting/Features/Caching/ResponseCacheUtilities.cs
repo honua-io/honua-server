@@ -8,6 +8,7 @@ using System.Text;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Queries.Filters;
+using Honua.Infrastructure.Authentication;
 using Microsoft.AspNetCore.Http;
 
 namespace Honua.Infrastructure.Caching;
@@ -138,6 +139,7 @@ internal static class ResponseCacheUtilities
         var canonicalQuery = BuildCanonicalQueryString(request.Query);
         var accept = request.Headers.Accept.ToString();
         var prefer = request.Headers["Prefer"].ToString();
+        var tenant = TenantScopeHelpers.ResolveRequestTenantId(request.HttpContext) ?? "<none>";
         var keyMaterial = string.Concat(
             request.Method, '|',
             request.Scheme, '|',
@@ -146,7 +148,8 @@ internal static class ResponseCacheUtilities
             request.Path.Value ?? string.Empty, '|',
             canonicalQuery, '|',
             accept, '|',
-            prefer);
+            prefer, '|',
+            tenant);
 
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(keyMaterial)))
             .ToLowerInvariant();
