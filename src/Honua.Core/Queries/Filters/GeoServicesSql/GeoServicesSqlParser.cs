@@ -15,6 +15,19 @@ public sealed class GeoServicesSqlParser
     private int _current;
     private int _expressionDepth;
 
+    // ANSI date/time fields the shared SQL translator already exposes as single-argument
+    // functions (EXTRACT(YEAR FROM d) -> YEAR(d), etc.). Restricting to this allowlist keeps
+    // unknown EXTRACT fields from ever reaching the SQL layer.
+    private static readonly HashSet<string> _extractFields = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "YEAR",
+        "MONTH",
+        "DAY",
+        "HOUR",
+        "MINUTE",
+        "SECOND"
+    };
+
     /// <summary>
     /// Parses a GeoServices SQL WHERE expression into a filter AST.
     /// </summary>
@@ -293,6 +306,31 @@ public sealed class GeoServicesSqlParser
     {
         if (Match(TokenType.LeftParen))
         {
+            // ArcGIS / SQL-92 standard functions accept keyword-delimited argument
+            // syntax (e.g. CAST(x AS INTEGER), EXTRACT(YEAR FROM d)) rather than the
+            // comma-delimited form. These are translated into the canonical FunctionCall
+            // shape the shared SQL translator already understands, so no client SQL is
+            // interpolated into a query string.
+            if (IsKeyword(identifier, "CAST"))
+            {
+                return ParseCastFunction();
+            }
+
+            if (IsKeyword(identifier, "EXTRACT"))
+            {
+                return ParseExtractFunction();
+            }
+
+            if (IsKeyword(identifier, "SUBSTRING") && LooksLikeSqlStandardSubstring())
+            {
+                return ParseSqlStandardSubstring();
+            }
+
+            if (IsKeyword(identifier, "POSITION") && LooksLikeSqlStandardPosition())
+            {
+                return ParseSqlStandardPosition();
+            }
+
             var args = new List<FilterExpression>();
             if (!Check(TokenType.RightParen))
             {
@@ -315,6 +353,169 @@ public sealed class GeoServicesSqlParser
         }
 
         return new PropertyReference(identifier);
+    }
+
+    // CAST(value AS type) -> FunctionCall("CAST", [value, Literal(type)]) which the shared
+    // SQL translator maps to a parameter-safe `(value)::type` cast over an allowlisted type set.
+    private FilterExpression ParseCastFunction()
+    {
+        var value = ParseExpression();
+        ConsumeKeyword("AS", "Expected 'AS' in CAST expression.");
+        var typeName = ParseTypeName();
+        Consume(TokenType.RightParen, "Expected ')' after CAST type.");
+        return new FunctionCall("CAST", new FilterExpression[] { value, new Literal(typeName, LiteralType.Text) });
+    }
+
+    // EXTRACT(field FROM source) -> FunctionCall("<FIELD>", [source]). Only the ANSI date/time
+    // fields the translator already supports as EXTRACT(... FROM ...) are accepted; anything
+    // else is rejected so unknown fields never reach the SQL layer.
+    private FilterExpression ParseExtractFunction()
+    {
+        var field = ConsumeIdentifier("Expected a date/time field in EXTRACT expression.")
+            .ToUpperInvariant();
+        if (!_extractFields.Contains(field))
+        {
+            throw Error($"Unsupported EXTRACT field '{field}'. Supported fields: {string.Join(", ", _extractFields)}.");
+        }
+
+        ConsumeKeyword("FROM", "Expected 'FROM' in EXTRACT expression.");
+        var source = ParseExpression();
+        Consume(TokenType.RightParen, "Expected ')' after EXTRACT source.");
+        return new FunctionCall(field, new[] { source });
+    }
+
+    // SUBSTRING(value FROM start [FOR length]) -> FunctionCall("SUBSTRING", [value, start (, length)])
+    // matching the comma-delimited form the translator already supports.
+    private FilterExpression ParseSqlStandardSubstring()
+    {
+        var value = ParseExpression();
+        ConsumeKeyword("FROM", "Expected 'FROM' in SUBSTRING expression.");
+        var start = ParseExpression();
+
+        var args = new List<FilterExpression> { value, start };
+        if (TryMatchKeyword("FOR"))
+        {
+            args.Add(ParseExpression());
+        }
+
+        Consume(TokenType.RightParen, "Expected ')' after SUBSTRING arguments.");
+        return new FunctionCall("SUBSTRING", args);
+    }
+
+    // POSITION(substring IN value) -> FunctionCall("POSITION", [substring, value]) which the
+    // translator already emits as POSITION(a IN b).
+    private FilterExpression ParseSqlStandardPosition()
+    {
+        var needle = ParseAdditive();
+        Consume(TokenType.In, "Expected 'IN' in POSITION expression.");
+        var haystack = ParseExpression();
+        Consume(TokenType.RightParen, "Expected ')' after POSITION arguments.");
+        return new FunctionCall("POSITION", new[] { needle, haystack });
+    }
+
+    // SUBSTRING uses the SQL-standard form only when the keyword `FROM` appears before any comma.
+    private bool LooksLikeSqlStandardSubstring()
+        => ContainsKeywordBeforeComma("FROM");
+
+    // POSITION uses the SQL-standard form only when the `IN` keyword appears before any comma.
+    private bool LooksLikeSqlStandardPosition()
+    {
+        var depth = 0;
+        for (var index = _current; index < _tokens.Count; index++)
+        {
+            var token = _tokens[index];
+            switch (token.Type)
+            {
+                case TokenType.LeftParen:
+                    depth++;
+                    break;
+                case TokenType.RightParen:
+                    if (depth == 0)
+                    {
+                        return false;
+                    }
+
+                    depth--;
+                    break;
+                case TokenType.Comma when depth == 0:
+                    return false;
+                case TokenType.In when depth == 0:
+                    return true;
+                case TokenType.EndOfFile:
+                    return false;
+            }
+        }
+
+        return false;
+    }
+
+    private bool ContainsKeywordBeforeComma(string keyword)
+    {
+        var depth = 0;
+        for (var index = _current; index < _tokens.Count; index++)
+        {
+            var token = _tokens[index];
+            switch (token.Type)
+            {
+                case TokenType.LeftParen:
+                    depth++;
+                    break;
+                case TokenType.RightParen:
+                    if (depth == 0)
+                    {
+                        return false;
+                    }
+
+                    depth--;
+                    break;
+                case TokenType.Comma when depth == 0:
+                    return false;
+                case TokenType.Identifier when depth == 0
+                    && string.Equals(token.Lexeme, keyword, StringComparison.OrdinalIgnoreCase):
+                    return true;
+                case TokenType.EndOfFile:
+                    return false;
+            }
+        }
+
+        return false;
+    }
+
+    private string ParseTypeName()
+    {
+        var name = ConsumeIdentifier("Expected a type name.");
+
+        // Support two-word ANSI types (e.g. DOUBLE PRECISION) that the translator accepts.
+        if (Check(TokenType.Identifier))
+        {
+            name = $"{name} {Advance().Lexeme}";
+        }
+
+        FilterParserGuard.EnsureIdentifierLength(name.Length, "GeoServicesSQL CAST type");
+        return name;
+    }
+
+    private static bool IsKeyword(string identifier, string keyword)
+        => string.Equals(identifier, keyword, StringComparison.OrdinalIgnoreCase);
+
+    private void ConsumeKeyword(string keyword, string message)
+    {
+        if (!TryMatchKeyword(keyword))
+        {
+            throw Error(message);
+        }
+    }
+
+    private bool TryMatchKeyword(string keyword)
+    {
+        if (Check(TokenType.Identifier)
+            && string.Equals(Current().Lexeme, keyword, StringComparison.OrdinalIgnoreCase))
+        {
+            Advance();
+            return true;
+        }
+
+        return false;
     }
 
     private string ConsumeIdentifier(string message)
