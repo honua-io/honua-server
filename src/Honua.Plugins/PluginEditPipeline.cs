@@ -20,6 +20,11 @@ namespace Honua.Plugins;
 /// </summary>
 internal sealed partial class PluginEditPipeline : IPluginEditPipeline
 {
+    private const string ValidateExtensionPoint = "validate";
+    private const string FieldValidateExtensionPoint = "validate-field";
+    private const string BeforeHookExtensionPoint = "before-hook";
+    private const string AfterHookExtensionPoint = "after-hook";
+
     private readonly IFeatureValidator[] _validators;
     private readonly IFieldValidator[] _fieldValidators;
     private readonly IEditHook[] _hooks;
@@ -27,6 +32,7 @@ internal sealed partial class PluginEditPipeline : IPluginEditPipeline
     private readonly IAuditLog _auditLog;
     private readonly ILogger<PluginEditPipeline> _logger;
     private readonly bool _enabledByConfig;
+    private readonly PluginCircuitBreaker _afterHookBreaker = new();
     private int _unlicensedLogged;
 
     public PluginEditPipeline(
@@ -86,8 +92,19 @@ internal sealed partial class PluginEditPipeline : IPluginEditPipeline
             foreach (var validator in _validators)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var result = await validator.ValidateAsync(item.Feature, validationContext, cancellationToken)
-                    .ConfigureAwait(false);
+                using var measure = PluginMetrics.Measure(PluginIdOf(validator), ValidateExtensionPoint);
+                PluginValidationResult result;
+                try
+                {
+                    result = await validator.ValidateAsync(item.Feature, validationContext, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch
+                {
+                    measure.MarkFailed();
+                    throw;
+                }
+
                 if (!result.IsValid)
                 {
                     rejections.Add(new PluginEditRejection(
@@ -111,9 +128,20 @@ internal sealed partial class PluginEditPipeline : IPluginEditPipeline
                     }
 
                     cancellationToken.ThrowIfCancellationRequested();
-                    var result = await fieldValidator
-                        .ValidateFieldAsync(value, item.Feature, validationContext, cancellationToken)
-                        .ConfigureAwait(false);
+                    using var measure = PluginMetrics.Measure(PluginIdOf(fieldValidator), FieldValidateExtensionPoint);
+                    PluginValidationResult result;
+                    try
+                    {
+                        result = await fieldValidator
+                            .ValidateFieldAsync(value, item.Feature, validationContext, cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                        measure.MarkFailed();
+                        throw;
+                    }
+
                     if (!result.IsValid)
                     {
                         rejections.Add(new PluginEditRejection(
@@ -131,7 +159,20 @@ internal sealed partial class PluginEditPipeline : IPluginEditPipeline
         foreach (var hook in _hooks)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var hookResult = await hook.OnBeforeEditAsync(context, cancellationToken).ConfigureAwait(false);
+            EditHookResult hookResult;
+            using (var measure = PluginMetrics.Measure(PluginIdOf(hook), BeforeHookExtensionPoint))
+            {
+                try
+                {
+                    hookResult = await hook.OnBeforeEditAsync(context, cancellationToken).ConfigureAwait(false);
+                }
+                catch
+                {
+                    measure.MarkFailed();
+                    throw;
+                }
+            }
+
             if (hookResult.IsRejected)
             {
                 await AuditRejectionAsync(context, objectId: null, hookResult.Reason!, cancellationToken)
@@ -163,9 +204,27 @@ internal sealed partial class PluginEditPipeline : IPluginEditPipeline
 
         foreach (var hook in _hooks)
         {
+            var pluginId = PluginIdOf(hook);
+
+            // Skip after-hooks whose breaker is tripped open: a repeatedly-faulting after-hook is
+            // parked (auto-disabled) until the cooldown allows a half-open retry, so a misbehaving
+            // hook stops being invoked on every committed edit.
+            if (!_afterHookBreaker.IsAllowed(pluginId))
+            {
+                continue;
+            }
+
+            using var measure = PluginMetrics.Measure(pluginId, AfterHookExtensionPoint);
             try
             {
                 await hook.OnAfterEditAsync(context, cancellationToken).ConfigureAwait(false);
+                if (_afterHookBreaker.RecordSuccess(pluginId))
+                {
+                    Log.AfterHookRecovered(_logger, pluginId);
+                    await PluginExecutionAudit
+                        .RecordRecoveredAsync(_auditLog, pluginId, AfterHookExtensionPoint, cancellationToken)
+                        .ConfigureAwait(false);
+                }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -174,7 +233,15 @@ internal sealed partial class PluginEditPipeline : IPluginEditPipeline
             catch (Exception ex)
             {
                 // After-hooks are best-effort: the edit is already committed. Never propagate.
-                Log.AfterHookFailed(_logger, PluginIdOf(hook), context.ServiceId, context.LayerId, ex);
+                measure.MarkFailed();
+                Log.AfterHookFailed(_logger, pluginId, context.ServiceId, context.LayerId, ex);
+                if (_afterHookBreaker.RecordFailure(pluginId))
+                {
+                    Log.AfterHookAutoDisabled(_logger, pluginId);
+                    await PluginExecutionAudit
+                        .RecordAutoDisabledAsync(_auditLog, pluginId, AfterHookExtensionPoint, cancellationToken)
+                        .ConfigureAwait(false);
+                }
             }
         }
     }
@@ -263,5 +330,13 @@ internal sealed partial class PluginEditPipeline : IPluginEditPipeline
         [LoggerMessage(EventId = 9301, Level = LogLevel.Error,
             Message = "Plugin after-edit hook '{PluginId}' failed for service {ServiceId} layer {LayerId}; edit already committed.")]
         public static partial void AfterHookFailed(ILogger logger, string pluginId, string serviceId, int layerId, Exception exception);
+
+        [LoggerMessage(EventId = 9302, Level = LogLevel.Warning,
+            Message = "Plugin after-edit hook '{PluginId}' auto-disabled after repeated failures; it will be retried after a cooldown.")]
+        public static partial void AfterHookAutoDisabled(ILogger logger, string pluginId);
+
+        [LoggerMessage(EventId = 9303, Level = LogLevel.Information,
+            Message = "Plugin after-edit hook '{PluginId}' recovered and was re-enabled.")]
+        public static partial void AfterHookRecovered(ILogger logger, string pluginId);
     }
 }

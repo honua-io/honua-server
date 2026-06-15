@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -937,8 +938,21 @@ internal static partial class FeatureServerEndpoints
                 if (!report.Conflicts.IsDefaultOrEmpty)
                 {
                     var conflictRepository = context.RequestServices.GetRequiredService<IReplicaConflictRepository>();
-                    await AttachConflictStatesAsync(
+                    var refinedTypes = await AttachConflictStatesAsync(
                         conflictRepository, report.Conflicts, layerEdits, serverConflictStates, cancellationToken);
+
+                    // Mirror the refined classification onto the transient synchronize response so the
+                    // wire hint matches the durable conflict record the review API returns (#1287).
+                    if (conflicts is not null && refinedTypes.Count > 0)
+                    {
+                        foreach (var wireConflict in conflicts)
+                        {
+                            if (refinedTypes.TryGetValue((wireConflict.LayerId, wireConflict.ObjectId), out var refined))
+                            {
+                                wireConflict.ConflictType = (int)refined;
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1030,9 +1044,10 @@ internal static partial class FeatureServerEndpoints
 
     /// <summary>
     /// Reads the current server state of every uploaded update/delete target, keyed by
-    /// (public layer id, object id), as a <c>{"attributes": {...}}</c> envelope. Must run before the
-    /// edits are applied so the captured server side is the pre-conflict state, not the just-applied
-    /// client value (#1287). A target the server has already deleted yields no entry.
+    /// (public layer id, object id), as a <c>{"attributes": {...}, "geometry": ...}</c> envelope. Must
+    /// run before the edits are applied so the captured server side is the pre-conflict state, not the
+    /// just-applied client value (#1287). The geometry is converted to GeoServices (Esri) JSON so it is
+    /// comparable to the uploaded client geometry. A target the server has already deleted yields no entry.
     /// </summary>
     private static async Task<Dictionary<(int PublicLayerId, long ObjectId), string>> CaptureServerConflictStatesAsync(
         IFeatureReader featureReader,
@@ -1061,7 +1076,11 @@ internal static partial class FeatureServerEndpoints
                     .ConfigureAwait(false);
                 if (feature is { } found)
                 {
-                    states[key] = SerializeStateEnvelope(found.Attributes);
+                    // Match the Z/M handling ConvertFeatureToGeoServices uses elsewhere so the captured
+                    // server geometry is the same shape the rest of the GeoServices surface emits.
+                    var geometry = GeoServicesGeometryConverter.ConvertWkbToGeoServicesGeometry(
+                        found.Geometry, srid: null, geometryLimits: null, includeZ: false, includeM: false);
+                    states[key] = SerializeStateEnvelope(found.Attributes, geometry);
                 }
             }
         }
@@ -1072,16 +1091,21 @@ internal static partial class FeatureServerEndpoints
     /// <summary>
     /// Updates the durable conflict records written by the sync service with the client (uploaded) and
     /// pre-apply server state snapshots, so the conflict-review detail API can compute the field- and
-    /// geometry-level comparison (#1287). Conflicts whose record cannot be loaded, or for which neither
-    /// side has a captured state (e.g. delete-vs-delete), are left unchanged.
+    /// geometry-level comparison (#1287). Now that both states are captured, the coarse detection-time
+    /// classification is also refined (a geometry-only divergence becomes a geometry conflict). Returns
+    /// the refined classification for each conflict whose type changed, keyed by (public layer id,
+    /// object id), so the caller can mirror it onto the transient synchronize response. Conflicts whose
+    /// record cannot be loaded, or for which neither side has a captured state (e.g. delete-vs-delete),
+    /// are left unchanged.
     /// </summary>
-    private static async Task AttachConflictStatesAsync(
+    private static async Task<Dictionary<(int PublicLayerId, long ObjectId), ReplicaConflictType>> AttachConflictStatesAsync(
         IReplicaConflictRepository conflictRepository,
         ImmutableArray<ReplicaSyncConflict> conflicts,
         ImmutableArray<ReplicaUploadLayerEdits> layerEdits,
         Dictionary<(int PublicLayerId, long ObjectId), string> serverStates,
         CancellationToken cancellationToken)
     {
+        var refinedTypes = new Dictionary<(int PublicLayerId, long ObjectId), ReplicaConflictType>();
         var clientStates = BuildClientConflictStates(layerEdits);
         foreach (var conflict in conflicts)
         {
@@ -1104,10 +1128,25 @@ internal static partial class FeatureServerEndpoints
                 continue;
             }
 
+            // Refine the sync service's operation-only classification now that the geometry/attribute
+            // values are available: attributes-agree + geometry-differs is a geometry conflict (#1287).
+            var refinedType = ReplicaConflictClassifier.Refine(existing.ConflictType, clientState, serverState);
+            if (refinedType != existing.ConflictType)
+            {
+                refinedTypes[key] = refinedType;
+            }
+
             await conflictRepository.UpsertAsync(
-                existing with { ClientStateJson = clientState, ServerStateJson = serverState },
+                existing with
+                {
+                    ConflictType = refinedType,
+                    ClientStateJson = clientState,
+                    ServerStateJson = serverState,
+                },
                 cancellationToken).ConfigureAwait(false);
         }
+
+        return refinedTypes;
     }
 
     /// <summary>
@@ -1125,7 +1164,8 @@ internal static partial class FeatureServerEndpoints
             {
                 if (edit.ObjectId is { } objectId && edit.Payload is GeoServicesFeature feature)
                 {
-                    states[(layer.PublicLayerId, objectId)] = SerializeStateEnvelope(feature.Attributes);
+                    states[(layer.PublicLayerId, objectId)] =
+                        SerializeStateEnvelope(feature.Attributes, feature.Geometry);
                 }
             }
         }
@@ -1134,16 +1174,27 @@ internal static partial class FeatureServerEndpoints
     }
 
     /// <summary>
-    /// Serializes a feature's attributes into the conflict-state envelope
-    /// <c>{"attributes": {...}}</c> consumed by the conflict-review diff, AOT-safely via the
-    /// source-generated dictionary serializer.
+    /// Serializes a feature's attributes and (when present) geometry into the conflict-state envelope
+    /// <c>{"attributes": {...}, "geometry": ...}</c> consumed by the conflict-review diff and the
+    /// geometry-conflict classifier, AOT-safely via the source-generated serializers. The geometry is
+    /// emitted as GeoServices (Esri) JSON on both the client and server sides so the two are directly
+    /// comparable (#1287); it is omitted entirely when the feature has no geometry.
     /// </summary>
-    private static string SerializeStateEnvelope(IReadOnlyDictionary<string, object?> attributes)
+    private static string SerializeStateEnvelope(
+        IReadOnlyDictionary<string, object?> attributes,
+        GeoServicesGeometry? geometry)
     {
         var attributeMap = attributes as Dictionary<string, object?> ?? new Dictionary<string, object?>(attributes);
         var attributesJson = System.Text.Json.JsonSerializer.Serialize(
             attributeMap, FeatureServerJsonContext.Default.DictionaryStringObject);
-        return $"{{\"attributes\":{attributesJson}}}";
+        if (geometry is null)
+        {
+            return $"{{\"attributes\":{attributesJson}}}";
+        }
+
+        var geometryJson = System.Text.Json.JsonSerializer.Serialize(
+            geometry, FeatureServerJsonContext.Default.GeoServicesGeometry);
+        return $"{{\"attributes\":{attributesJson},\"geometry\":{geometryJson}}}";
     }
 
     /// <summary>
