@@ -186,9 +186,12 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
         {
             (FeatureEditOperationKind.Delete, FeatureChangeOperation.Update) => ReplicaConflictType.DeleteUpdate,
             (FeatureEditOperationKind.Update, FeatureChangeOperation.Delete) => ReplicaConflictType.UpdateDelete,
-            // Update vs concurrent server insert/update: an attribute-level conflict. Geometry-only
-            // classification requires a field-level diff that is owned by the conflict-resolution
-            // surface (#1287); the upload path records the coarser Attribute classification.
+            // Update vs concurrent server insert/update: the coarse attribute classification. The sync
+            // service sees only operation kinds, not values, so it cannot distinguish a geometry-only
+            // conflict here. The protocol adapter refines this to ReplicaConflictType.Geometry once it
+            // has captured the client/server states (ReplicaConflictClassifier, #1287). DuplicateInsert,
+            // Attachment, and Relationship remain undetected: inserts use server-assigned ids, and the
+            // replica upload model carries no attachment/related-record inputs to detect them.
             _ => ReplicaConflictType.Attribute,
         };
 

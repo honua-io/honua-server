@@ -41,6 +41,7 @@ internal sealed class PostgresReplicaConflictRepository : IReplicaConflictReposi
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
             ON CONFLICT (conflict_id) DO UPDATE SET
                 status = EXCLUDED.status,
+                conflict_type = EXCLUDED.conflict_type,
                 base_state_json = EXCLUDED.base_state_json,
                 client_state_json = EXCLUDED.client_state_json,
                 server_state_json = EXCLUDED.server_state_json,
