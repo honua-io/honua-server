@@ -1227,7 +1227,7 @@
         "inline Colorramp object (algorithmic/multipart ramp) resolution for Colormap",
         "multidimensional cube ingestion",
         "per-slice pixel subsetting of registered multidimensional cubes (Zarr/HDF5/NetCDF) by multidimensionalDefinition (time/StdZ) in identify/getSamples/exportImage; deferred because those coverages are metadata-only today (no chunk-range pixel subset reader is wired into the read path)",
-        "WCS SCALEFACTOR/SCALEAXES/SCALEEXTENT and temporal extensions (RANGESUBSET band selection and SCALESIZE output sizing implemented)",
+        "WCS multidimensional slicing beyond a single phenomenonTime axis (RANGESUBSET band selection, SCALESIZE/SCALEFACTOR/SCALEAXES/SCALEEXTENT output sizing, and phenomenonTime temporal subsetting implemented)",
         "full WCS CRS extension advertisement beyond native coverage CRS values",
         "WMTS non-WebMercator matrix sets",
         "richer image child resources"
@@ -1727,7 +1727,7 @@
               "GET /rest/services/{id}/ImageServer/WCS",
               "GET /ogc/services/{serviceId}/wcs"
             ],
-            "notes": "WCS 2.0.1 KVP adapter for WCS-enabled raster layers. Supports GetCapabilities, DescribeCoverage, and GetCoverage over the primary raster with image/tiff, image/png, image/jpeg, SUBSET/BBOX spatial trim, SUBSETTINGCRS/BBOXCRS, optional OUTPUTCRS, RANGESUBSET band selection (band1..bandN, comma list and band1:bandN intervals), and SCALESIZE explicit per-axis output sizing (x(w),y(h)). Capabilities advertise native CRSs for visible coverages; one-axis SUBSET is native-CRS only. The range-subsetting and scaling extension conformance classes are not advertised pending CITE validation. SCALEFACTOR/SCALEAXES/SCALEEXTENT, temporal/multidimensional slicing, NetCDF, XML POST, and WCS-specific mosaic selection are deferred."
+            "notes": "WCS 2.0.1 KVP adapter for WCS-enabled raster layers. Supports GetCapabilities, DescribeCoverage, and GetCoverage over the primary raster with image/tiff, image/png, image/jpeg, SUBSET/BBOX spatial trim, SUBSETTINGCRS/BBOXCRS, optional OUTPUTCRS, RANGESUBSET band selection (band1..bandN, comma list and band1:bandN intervals), the full Scaling extension (SCALESIZE explicit per-axis sizing x(w),y(h); SCALEFACTOR uniform factor; SCALEAXES per-axis factors x(f),y(f); SCALEEXTENT per-axis grid intervals x(low,high),y(low,high) - at most one scaling operator per request, resolved against the subset-trimmed base grid), and phenomenonTime temporal subsetting (SUBSET=phenomenonTime(\"instant\") or (\"start\",\"end\"); the request must intersect the coverage acquisition time, else InvalidSubsetting). Capabilities advertise native CRSs for visible coverages; one-axis SUBSET is native-CRS only. The range-subsetting and scaling extension conformance classes are not advertised pending CITE validation. Multidimensional slicing beyond phenomenonTime, NetCDF, XML POST, and WCS-specific mosaic selection are deferred."
           }
         ],
         "notImplemented": [
@@ -1941,7 +1941,7 @@
           {
             "name": "GetCoverage",
             "status": "partial",
-            "notes": "Accepts exactly one bare integer COVERAGEID. Supports image/tiff, image/png, image/jpeg, SUBSET/BBOX spatial trim, SUBSETTINGCRS/BBOXCRS, and OUTPUTCRS over the primary raster. Single-axis SUBSET fills the omitted axis from the stored raster extent only when the subsetting CRS is native; non-native SUBSETTINGCRS/BBOXCRS callers must supply both axes or use BBOX. Known unsupported WCS extensions return 501 OWS ExceptionReport XML; unknown GetCoverage parameters return 400."
+            "notes": "Accepts exactly one bare integer COVERAGEID. Supports image/tiff, image/png, image/jpeg, SUBSET/BBOX spatial trim, SUBSETTINGCRS/BBOXCRS, and OUTPUTCRS over the primary raster, plus RANGESUBSET band selection, the Scaling extension (SCALESIZE, SCALEFACTOR, SCALEAXES, SCALEEXTENT - at most one operator per request, applied to the subset-trimmed base grid), and phenomenonTime temporal subsetting (slice or trim against the coverage acquisition time; non-intersecting windows return InvalidSubsetting). Single-axis SUBSET fills the omitted axis from the stored raster extent only when the subsetting CRS is native; non-native SUBSETTINGCRS/BBOXCRS callers must supply both axes or use BBOX. Known unsupported WCS extensions return 501 OWS ExceptionReport XML; unknown GetCoverage parameters return 400."
           }
         ]
       },
@@ -1959,6 +1959,8 @@
         "WCS GetCoverage uses the selected layer's primary raster and opts out of exact response output caching for ad hoc coverage trims.",
         "WCS GetCapabilities advertises native CRS values for visible coverages, not every transformable output CRS.",
         "WCS single-axis SUBSET fills the omitted axis from the stored raster extent only for native-CRS subsets; callers using a non-native SUBSETTINGCRS/BBOXCRS must supply both axes or use BBOX.",
+        "WCS Scaling extension factors (SCALEFACTOR/SCALEAXES) resolve against the subset-trimmed base grid in the coverage native CRS; for a non-native SUBSETTINGCRS/BBOXCRS the full native grid is used as the scaling base since the trimmed pixel span is not derivable in the adapter.",
+        "WCS phenomenonTime subsetting filters the primary raster's single acquisition instant (AcquisitionDate, falling back to CreatedAt); per-slice multidimensional temporal coverages are not modeled.",
         "hasMultidimensions is always false until cube ingestion ships; multidimensionalInfo remains absent.",
         "ImageServer find filters by raster catalog footprint and returns catalog metadata; true camera/orientation-ranked image selection is deferred until sensor metadata is modeled.",
         "ImageServer measure supports Basic map-space mensuration only; sensor/DEM-backed height and 3D mensuration are not implemented.",

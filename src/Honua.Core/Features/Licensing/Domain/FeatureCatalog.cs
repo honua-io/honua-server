@@ -64,6 +64,9 @@ public static class FeatureCatalog
         /// <summary>Real-time feature streaming and subscriptions.</summary>
         public const string Streaming = "Streaming";
 
+        /// <summary>3D scene features — CityGML/BIM ingest and Building Scene Layer publishing.</summary>
+        public const string Scene = "Scene";
+
         /// <summary>Temporal animation, time-aware filtering, and time-series tile features.</summary>
         public const string Temporal = "Temporal";
 
@@ -178,6 +181,15 @@ public static class FeatureCatalog
     /// governance; default role assignment for basic single-provider OIDC remains Pro.
     /// </summary>
     public const string OidcClaimsMappingKey = "identity.claims-mapping";
+
+    /// <summary>
+    /// Entitlement key for CityGML/BIM ingest into a servable Building Scene
+    /// Layer 3D Tiles tileset (#1207). Enterprise-only: gates the admin
+    /// <c>POST /api/v1/admin/scenes/ingest/citygml</c> surface that parses a
+    /// CityGML document and publishes a deterministic tileset with per-feature
+    /// discipline / sub-layer semantics. Postgres-only (registration-backed).
+    /// </summary>
+    public const string SceneBimIngestKey = "scene.bim-ingest";
 
     /// <summary>
     /// All edition-gated features in the platform.
@@ -348,6 +360,10 @@ public static class FeatureCatalog
             HonuaEdition.Pro, "Ground natural-language turns into validated spec mutation plans."),
         new(AiWorkflowGenerationKey, "AI Workflow and Content Generation", Categories.Ai,
             HonuaEdition.Pro, "Generate or refine workflows, maps, apps, forms, reports, dashboards, saved queries, and analysis packages from natural-language prompts."),
+
+        // Scene — Enterprise (CityGML/BIM ingest + Building Scene Layer publishing)
+        new(SceneBimIngestKey, "CityGML/BIM Scene Ingest", Categories.Scene,
+            HonuaEdition.Enterprise, "Ingest CityGML building models into a servable Building Scene Layer 3D Tiles tileset with per-feature discipline / sub-layer semantics."),
 
         // Extensibility — Enterprise (plugin/extension SDK)
         new(PluginSdkKey, "Plugin/Extension SDK", Categories.Extensibility,
