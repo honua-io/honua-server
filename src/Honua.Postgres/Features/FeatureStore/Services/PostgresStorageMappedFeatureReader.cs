@@ -692,7 +692,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
                 return sql.AddParameter(sqlFilter.Parameters[index]);
             });
 
-        converted = RewriteAttributeTextAccessExpressions(converted, ResolveColumnExpression);
+        converted = RewriteAttributeTextAccessExpressions(converted, ResolveColumnExpression, TryResolveFieldType);
 
         return QuotedIdentifierRegex().Replace(
             converted,
@@ -705,14 +705,49 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
     internal static string RewriteAttributeTextAccessExpressions(
         string sql,
-        Func<string, string> resolveColumnExpression)
+        Func<string, string> resolveColumnExpression,
+        Func<string, MetadataV2FieldType?>? resolveFieldType = null)
         => AttributeTextAccessRegex().Replace(
             sql,
             match =>
             {
                 var fieldName = match.Groups["field"].Value.Replace("''", "'", StringComparison.Ordinal);
-                return $"NULLIF(({resolveColumnExpression(fieldName)})::text, '')";
+                var column = $"({resolveColumnExpression(fieldName)})::text";
+
+                // The translator emits `attributes ->> 'field'` text accessors for filter
+                // operands. For numeric/temporal/boolean/uuid fields the empty-string-to-NULL
+                // coercion is required so a downstream `::numeric`/`::timestamptz` cast does
+                // not choke on empty text (and so Esri's "empty numeric == null" semantics
+                // hold). For text/string fields it must NOT be applied: Esri and PostgreSQL
+                // treat an empty string as a non-NULL value, so wrapping a string column in
+                // NULLIF(..., '') would make `field IS NOT NULL` (and `field = ''`) silently
+                // drop empty-string rows, diverging from the source service (#1703).
+                var fieldType = resolveFieldType?.Invoke(fieldName);
+                if (PreservesEmptyString(fieldType))
+                {
+                    return column;
+                }
+
+                return $"NULLIF({column}, '')";
             });
+
+    // String-like fields whose empty-string values must survive filter translation as a
+    // non-NULL value. Null (unresolved) field type keeps the legacy NULLIF behavior so the
+    // change is scoped to fields whose type is known to be textual.
+    private static bool PreservesEmptyString(MetadataV2FieldType? fieldType)
+        => fieldType is MetadataV2FieldType.String or MetadataV2FieldType.Uuid;
+
+    private MetadataV2FieldType? TryResolveFieldType(string fieldName)
+    {
+        if (fieldName.Equals("objectid", StringComparison.OrdinalIgnoreCase) ||
+            fieldName.Equals("object_id", StringComparison.OrdinalIgnoreCase))
+        {
+            return MetadataV2FieldType.BigInteger;
+        }
+
+        return _resource.SchemaFields.FirstOrDefault(candidate =>
+            candidate.Name.Equals(fieldName, StringComparison.OrdinalIgnoreCase))?.Type;
+    }
 
     private string BuildSpatialFilter(SpatialFilter filter, SqlBuilder sql)
     {
