@@ -79,7 +79,7 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
     }
 
     /// <inheritdoc />
-    public async Task<int?> DetectFromPrjAsync(string prjContent)
+    public async Task<int?> DetectFromPrjAsync(string prjContent, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(prjContent))
             return null;
@@ -91,7 +91,7 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
         var epsgMatch = _epsgCodeRegex.Match(cleanedContent);
         if (epsgMatch.Success && int.TryParse(epsgMatch.Groups[1].Value, out var epsgCode))
         {
-            if (await ValidateSridAsync(epsgCode))
+            if (await ValidateSridAsync(epsgCode, cancellationToken))
                 return epsgCode;
         }
 
@@ -107,18 +107,18 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
             {
                 if (cleanedContent.Contains(kvp.Key, StringComparison.OrdinalIgnoreCase))
                 {
-                    if (await ValidateSridAsync(kvp.Value))
+                    if (await ValidateSridAsync(kvp.Value, cancellationToken))
                         return kvp.Value;
                 }
             }
         }
 
         // Fall back to WKT parsing
-        return await DetectFromWktAsync(cleanedContent);
+        return await DetectFromWktAsync(cleanedContent, cancellationToken);
     }
 
     /// <inheritdoc />
-    public async Task<int?> DetectFromWktAsync(string wktContent)
+    public async Task<int?> DetectFromWktAsync(string wktContent, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(wktContent))
             return null;
@@ -129,7 +129,7 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
         var epsgMatch = _epsgCodeRegex.Match(cleanedContent);
         if (epsgMatch.Success && int.TryParse(epsgMatch.Groups[1].Value, out var epsgCode))
         {
-            if (await ValidateSridAsync(epsgCode))
+            if (await ValidateSridAsync(epsgCode, cancellationToken))
                 return epsgCode;
         }
 
@@ -144,14 +144,14 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
             {
                 if (cleanedContent.Contains(kvp.Key, StringComparison.OrdinalIgnoreCase))
                 {
-                    if (await ValidateSridAsync(kvp.Value))
+                    if (await ValidateSridAsync(kvp.Value, cancellationToken))
                         return kvp.Value;
                 }
             }
         }
 
         // Try to match against PostGIS spatial_ref_sys by WKT comparison
-        return await FindSridByWktMatchAsync(cleanedContent);
+        return await FindSridByWktMatchAsync(cleanedContent, cancellationToken);
     }
 
     /// <inheritdoc />
@@ -176,7 +176,7 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
     }
 
     /// <inheritdoc />
-    public async Task<int?> DetectFromGeoJsonCrsAsync(string crsObject)
+    public async Task<int?> DetectFromGeoJsonCrsAsync(string crsObject, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(crsObject))
             return null;
@@ -219,7 +219,7 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
     }
 
     /// <inheritdoc />
-    public async Task<int?> DetectFromShapefilePrjAsync(string shapefilePath)
+    public async Task<int?> DetectFromShapefilePrjAsync(string shapefilePath, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(shapefilePath))
             return null;
@@ -237,8 +237,8 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
 
         try
         {
-            var prjContent = await File.ReadAllTextAsync(prjPath);
-            return await DetectFromPrjAsync(prjContent);
+            var prjContent = await File.ReadAllTextAsync(prjPath, cancellationToken);
+            return await DetectFromPrjAsync(prjContent, cancellationToken);
         }
         catch (IOException)
         {
@@ -248,19 +248,23 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
     }
 
     /// <inheritdoc />
-    public async Task<bool> ValidateSridAsync(int srid)
+    public async Task<bool> ValidateSridAsync(int srid, CancellationToken cancellationToken = default)
     {
         try
         {
-            await using var connection = await OpenConnectionAsync();
+            await using var connection = await OpenConnectionAsync(cancellationToken);
 
             using var command = new NpgsqlCommand(
                 "SELECT 1 FROM spatial_ref_sys WHERE srid = @srid LIMIT 1",
                 connection);
             command.Parameters.AddWithValue("@srid", srid);
 
-            var result = await command.ExecuteScalarAsync();
+            var result = await command.ExecuteScalarAsync(cancellationToken);
             return result != null;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -273,13 +277,13 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
     }
 
     /// <summary>
-    /// Attempt to find SRID by matching WKT against PostGIS spatial_ref_sys table
+    /// Attempt to find SRID by matching WKT against PostGIS spatial_ref_sys table.
     /// </summary>
-    private async Task<int?> FindSridByWktMatchAsync(string wktContent)
+    private async Task<int?> FindSridByWktMatchAsync(string wktContent, CancellationToken cancellationToken)
     {
         try
         {
-            await using var connection = await OpenConnectionAsync();
+            await using var connection = await OpenConnectionAsync(cancellationToken);
 
             // Fail closed on WKT matching. Compare normalized WKT text only; do not use
             // prefix/substring heuristics that can map one projected CRS to another.
@@ -292,8 +296,12 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
 
             command.Parameters.AddWithValue("@wkt", wktContent);
 
-            var result = await command.ExecuteScalarAsync();
+            var result = await command.ExecuteScalarAsync(cancellationToken);
             return result as int?;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -303,8 +311,8 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
         }
     }
 
-    private Task<NpgsqlConnectionLease> OpenConnectionAsync()
-        => _connectionProvider.OpenNpgsqlConnectionAsync();
+    private Task<NpgsqlConnectionLease> OpenConnectionAsync(CancellationToken cancellationToken = default)
+        => _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken);
 
     private static partial class CrsLog
     {

@@ -33,14 +33,21 @@ internal sealed class PostgresChangeTracker : IChangeTracker
         return result is long gen ? gen : 0;
     }
 
+    public Task<IReadOnlyList<FeatureChange>> GetChangesSinceAsync(
+        long sinceGeneration,
+        int[] layerIds,
+        CancellationToken cancellationToken = default)
+        => GetChangesSinceAsync(sinceGeneration, layerIds, objectIds: null, cancellationToken);
+
     public async Task<IReadOnlyList<FeatureChange>> GetChangesSinceAsync(
         long sinceGeneration,
         int[] layerIds,
+        IReadOnlySet<long>? objectIds,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(layerIds);
 
-        if (layerIds.Length == 0)
+        if (layerIds.Length == 0 || objectIds is { Count: 0 })
         {
             return [];
         }
@@ -49,6 +56,9 @@ internal sealed class PostgresChangeTracker : IChangeTracker
         //   - First op Insert + last op anything → if last is Delete, omit (no-op); else Insert
         //   - First op Update/Delete + last op Delete → Delete
         //   - First op Update + last op Update → Update
+        // The optional objectid filter is pushed into the change-log scan so a probe restricted to
+        // a small set of uploaded ids (replica-sync conflict detection) does not materialize the
+        // entire change history since the base generation.
         const string sql = """
             WITH ranked AS (
                 SELECT change_id, generation, layer_id, objectid, operation, changed_at,
@@ -60,6 +70,7 @@ internal sealed class PostgresChangeTracker : IChangeTracker
                 FROM honua.feature_changes
                 WHERE generation > $1
                   AND layer_id = ANY($2)
+                  AND ($3::bigint[] IS NULL OR objectid = ANY($3))
             )
             SELECT change_id, max_gen AS generation, layer_id, objectid,
                    CASE
@@ -85,6 +96,11 @@ internal sealed class PostgresChangeTracker : IChangeTracker
 
         command.Parameters.AddWithValue(NpgsqlDbType.Bigint, sinceGeneration);
         command.Parameters.Add(new NpgsqlParameter { Value = layerIds, NpgsqlDbType = NpgsqlDbType.Array | NpgsqlDbType.Integer });
+        command.Parameters.Add(new NpgsqlParameter
+        {
+            Value = objectIds is null ? DBNull.Value : (object)objectIds.ToArray(),
+            NpgsqlDbType = NpgsqlDbType.Array | NpgsqlDbType.Bigint
+        });
 
         var changes = new List<FeatureChange>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);

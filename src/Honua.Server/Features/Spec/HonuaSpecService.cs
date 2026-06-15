@@ -3,8 +3,10 @@
 
 using System.Globalization;
 using Grpc.Core;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Spec.Abstractions;
 using Honua.Core.Features.Spec.Domain;
+using Honua.Infrastructure.Licensing;
 using Proto = Geospatial.V1;
 
 namespace Honua.Server.Features.Spec;
@@ -18,13 +20,16 @@ internal sealed class HonuaSpecService : Proto.SpecService.SpecServiceBase
 {
     private readonly ISpecPlanner _planner;
     private readonly ISpecApplyEngine _applyEngine;
+    private readonly IServiceProvider _services;
 
-    public HonuaSpecService(ISpecPlanner planner, ISpecApplyEngine applyEngine)
+    public HonuaSpecService(ISpecPlanner planner, ISpecApplyEngine applyEngine, IServiceProvider services)
     {
         ArgumentNullException.ThrowIfNull(planner);
         ArgumentNullException.ThrowIfNull(applyEngine);
+        ArgumentNullException.ThrowIfNull(services);
         _planner = planner;
         _applyEngine = applyEngine;
+        _services = services;
     }
 
     public override async Task<Proto.PlanSpecResponse> PlanSpec(
@@ -109,6 +114,23 @@ internal sealed class HonuaSpecService : Proto.SpecService.SpecServiceBase
             throw new RpcException(new Status(
                 StatusCode.InvalidArgument,
                 $"{SpecDiagnosticCodes.UnknownCacheMode}: cache_mode '{((int)request.CacheMode).ToString(CultureInfo.InvariantCulture)}' is not a defined SpecCacheMode value."));
+        }
+
+        var plan = await _planner.PlanAsync(document, context.CancellationToken).ConfigureAwait(false);
+        foreach (var warning in plan.Warnings)
+        {
+            if (warning.Severity == SpecDiagnosticSeverity.Error)
+            {
+                throw new RpcException(new Status(
+                    StatusCode.InvalidArgument,
+                    $"{warning.Code}: {warning.Message}"));
+            }
+        }
+
+        var requestServices = context.GetHttpContext()?.RequestServices ?? _services;
+        if (!LicenseGate.IsEntitlementActive(requestServices, FeatureCatalog.AiSpecApplyKey))
+        {
+            throw LicenseGate.CreateFailedPreconditionRpcException(requestServices, FeatureCatalog.AiSpecApplyKey);
         }
 
         var options = new SpecApplyOptions

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json.Serialization;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Models;
 
 namespace Honua.Server.Features.Admin.Models;
@@ -16,10 +17,15 @@ namespace Honua.Server.Features.Admin.Models;
 [JsonSerializable(typeof(ApiResponse<LicenseStatusResponse>))]
 [JsonSerializable(typeof(ApiResponse<LicenseEntitlementsResponse>))]
 [JsonSerializable(typeof(ApiResponse<LicenseUploadResponse>))]
+[JsonSerializable(typeof(ApiResponse<LicenseCapacityState>))]
 [JsonSerializable(typeof(ApiResponse<object>))]
 [JsonSerializable(typeof(LicenseStatusResponse))]
 [JsonSerializable(typeof(LicenseEntitlementsResponse))]
 [JsonSerializable(typeof(LicenseUploadResponse))]
+[JsonSerializable(typeof(LicenseSurgeModeRequest))]
+[JsonSerializable(typeof(LicenseCapacityState))]
+[JsonSerializable(typeof(LicenseCapacityTerms))]
+[JsonSerializable(typeof(LicenseSurgeModeState))]
 [JsonSerializable(typeof(FeatureEntitlementItem))]
 [JsonSerializable(typeof(FeatureEntitlementItem[]))]
 internal sealed partial class LicenseAdminJsonContext : JsonSerializerContext

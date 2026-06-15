@@ -2071,6 +2071,27 @@ public sealed class ExecutionJobReconcilerTests
             return Task.CompletedTask;
         }
 
+        public Task<ProgressCompareAndSetResult> TrySetProgressAsync(
+            string operationId,
+            IOperationProgress progress,
+            OperationStatus expectedStatus,
+            TimeSpan? ttl = null,
+            CancellationToken cancellationToken = default)
+        {
+            if (!_progress.TryGetValue(operationId, out var current))
+            {
+                return Task.FromResult(ProgressCompareAndSetResult.NotFound);
+            }
+
+            if (current.Status != expectedStatus)
+            {
+                return Task.FromResult(ProgressCompareAndSetResult.StatusMismatch(current));
+            }
+
+            _progress[operationId] = progress;
+            return Task.FromResult(ProgressCompareAndSetResult.Updated);
+        }
+
         public Task<TProgress?> GetProgressAsync<TProgress>(string operationId, CancellationToken cancellationToken = default)
             where TProgress : class, IOperationProgress
             => Task.FromResult(_progress.TryGetValue(operationId, out var progress) ? progress as TProgress : null);

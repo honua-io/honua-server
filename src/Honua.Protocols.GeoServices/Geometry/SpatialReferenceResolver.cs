@@ -96,7 +96,7 @@ internal class SpatialReferenceResolver
 
         if (LooksLikeWkt(trimmed))
         {
-            return await _crsDetectionService.DetectFromWktAsync(trimmed).ConfigureAwait(false);
+            return await _crsDetectionService.DetectFromWktAsync(trimmed, cancellationToken).ConfigureAwait(false);
         }
 
         return null;
@@ -118,7 +118,7 @@ internal class SpatialReferenceResolver
 
         if (!string.IsNullOrWhiteSpace(spatialRef.Wkt))
         {
-            return await _crsDetectionService.DetectFromWktAsync(spatialRef.Wkt).ConfigureAwait(false);
+            return await _crsDetectionService.DetectFromWktAsync(spatialRef.Wkt, cancellationToken).ConfigureAwait(false);
         }
 
         return null;
@@ -148,7 +148,7 @@ internal class SpatialReferenceResolver
 
         if (!string.IsNullOrWhiteSpace(parseResult.Wkt))
         {
-            return await _crsDetectionService.DetectFromWktAsync(parseResult.Wkt).ConfigureAwait(false);
+            return await _crsDetectionService.DetectFromWktAsync(parseResult.Wkt, cancellationToken).ConfigureAwait(false);
         }
 
         return null;

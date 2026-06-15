@@ -134,7 +134,7 @@ internal sealed partial class GeoJsonFileSinkExecutor : IJobExecutor
 
         cancellationToken.ThrowIfCancellationRequested();
         await context.PublishArtifactAsync(
-            SinkResultArtifact.Build(HandledProcessId, ("path", resolvedPath), ("featuresWritten", written), ("featuresRejected", rejected)),
+            SinkResultArtifact.Build(HandledProcessId, ("path", path), ("featuresWritten", written), ("featuresRejected", rejected)),
             cancellationToken).ConfigureAwait(false);
         await context.ReportProgressAsync(100, $"{HandledProcessId} completed", cancellationToken).ConfigureAwait(false);
 

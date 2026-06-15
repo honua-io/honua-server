@@ -42,9 +42,6 @@ namespace Honua.Server.Tests.Import;
 [Operation(Operations.Import)]
 public class GeoservicesImportEndpointTests : IAsyncLifetime
 {
-    // The geoservices import endpoints are gated behind the Enterprise "import.geoservices"
-    // entitlement (FeatureCatalog), so the test host must present an Enterprise license or every
-    // discover/start request short-circuits to 402 before reaching the assertions under test.
     private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Enterprise);
     private HttpClient _client = null!;
 

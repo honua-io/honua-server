@@ -356,9 +356,10 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
         var features = document.RootElement.GetProperty("value").EnumerateArray().ToArray();
         features.Length.Should().Be(2);
 
-        // Arizona cities ordered by population: Phoenix then Tucson
-        features[0].GetProperty("ObjectId").GetInt64().Should().Be(10);
-        features[1].GetProperty("ObjectId").GetInt64().Should().Be(12);
+        // OData v4.01 §11.2.6.2: nulls sort before non-null values when ascending, so
+        // the null-state feature (Virtual City) leads, then Arizona's largest city.
+        features[0].GetProperty("ObjectId").GetInt64().Should().Be(13);
+        features[1].GetProperty("ObjectId").GetInt64().Should().Be(10);
     }
 
     #endregion

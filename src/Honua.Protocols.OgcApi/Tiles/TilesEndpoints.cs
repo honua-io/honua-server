@@ -1097,6 +1097,10 @@ internal static partial class TilesEndpoints
                 {
                     continue;
                 }
+                if (!TenantScopeHelpers.IsPublicationVisible(context, publication, resource, service))
+                {
+                    continue;
+                }
 
                 // Tiles are a read surface: consult the per-operation resolver for
                 // the query grant first (#1376), matching ResolveCollectionLayer so
@@ -1219,10 +1223,10 @@ internal static partial class TilesEndpoints
         bool missingCollectionIsBadRequest,
         CancellationToken cancellationToken)
     {
-        var publication = FindCollectionPublication(snapshot, collectionId, requireProtocol: true, out var service);
+        var publication = FindCollectionPublication(context, snapshot, collectionId, requireProtocol: true, out var service);
         if (publication is null || service is null)
         {
-            var existsWithoutProtocol = FindCollectionPublication(snapshot, collectionId, requireProtocol: false, out _) is not null;
+            var existsWithoutProtocol = FindCollectionPublication(context, snapshot, collectionId, requireProtocol: false, out _) is not null;
             var error = existsWithoutProtocol || !missingCollectionIsBadRequest
                 ? StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.")
                 : StandardErrorHelpers.CreateBadRequest(context, $"Collection '{collectionId}' not found.");
@@ -1261,6 +1265,7 @@ internal static partial class TilesEndpoints
     }
 
     private static MetadataV2Publication? FindCollectionPublication(
+        HttpContext context,
         MetadataV2GraphSnapshot snapshot,
         string collectionId,
         bool requireProtocol,
@@ -1281,6 +1286,12 @@ internal static partial class TilesEndpoints
 
             if (requireProtocol &&
                 !MetadataV2ServiceProtocols.IsProtocolEnabled(candidateService, OgcApiTilesProtocol))
+            {
+                continue;
+            }
+
+            var resource = snapshot.ResolveResource(publication);
+            if (!TenantScopeHelpers.IsPublicationVisible(context, publication, resource, candidateService))
             {
                 continue;
             }
@@ -1599,7 +1610,7 @@ internal static partial class TilesEndpoints
 
         error = StandardErrorHelpers.CreateForbidden(
             context,
-            "Tenant context is required to access collection tiles.");
+            "Tenant context is required to access tiles.");
         return false;
     }
 

@@ -98,6 +98,38 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
         creationDate.GetInt64().Should().BeGreaterThan(0);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.CreateReplica)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
+    public async Task CreateReplica_WithCommunityLicense_ReturnsPaymentRequired()
+    {
+        var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Community);
+        await fixture.InitializeAsync();
+
+        try
+        {
+            var payload = JsonSerializer.Serialize(new
+            {
+                replicaName = "CommunityReplica",
+                layers = "0",
+                syncModel = "perReplica",
+                f = "json"
+            });
+
+            var response = await fixture.Client.PostAsync(
+                $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica",
+                new StringContent(payload, Encoding.UTF8, "application/json"));
+
+            response.StatusCode.Should().Be(HttpStatusCode.PaymentRequired);
+            var body = await response.Content.ReadAsStringAsync();
+            body.Should().Contain(FeatureCatalog.FieldOpsOfflineSyncKey);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
     // The ArcGIS API for Python (FeatureLayerCollection.create_replica /
     // extract_changes) sends the `layers` parameter as the Esri JSON-array form
     // (layers=[0] / layers=[0,1]) rather than the comma-separated form. Both forms
@@ -664,6 +696,15 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
     private sealed class ThrowingReplicaStore : IReplicaStore
     {
         public Task SetAsync(ReplicaState replica, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
+            => throw new ServiceUnavailableException(
+                "Distributed replica state is unavailable while attempting to persist replica state.");
+
+        public Task<bool> TrySetSyncStateAsync(
+            ReplicaState replica,
+            long expectedLastSyncGeneration,
+            long expectedUploadBaseGeneration,
+            TimeSpan? ttl = null,
+            CancellationToken cancellationToken = default)
             => throw new ServiceUnavailableException(
                 "Distributed replica state is unavailable while attempting to persist replica state.");
 

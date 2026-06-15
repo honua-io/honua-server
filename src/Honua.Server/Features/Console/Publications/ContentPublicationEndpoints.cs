@@ -5,11 +5,13 @@ using System.Text.Json;
 using Honua.Ai.DashboardGeneration;
 using Honua.Ai.ReportGeneration;
 using Honua.Core.Features.AuditLog.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Publishing.Content;
 using Honua.Core.Features.Publishing.Content.Abstractions;
 using Honua.Core.Features.Publishing.Content.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
+using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
@@ -151,6 +153,15 @@ internal static class ContentPublicationEndpoints
             return Results.Json(bad, ReportGenerationApiJsonContext.Default.ReportGenerationResult, statusCode: StatusCodes.Status400BadRequest);
         }
 
+        var entitlementGate = LicenseGate.RequireEntitlement(
+            context,
+            FeatureCatalog.AiWorkflowGenerationKey,
+            "AI report generation");
+        if (entitlementGate is not null)
+        {
+            return entitlementGate;
+        }
+
         var result = await generation.GenerateAsync(
             new ReportGenerationRequest
             {
@@ -188,6 +199,15 @@ internal static class ContentPublicationEndpoints
         {
             var bad = new DashboardGenerationResult { Status = "error", Rationale = "A non-empty 'prompt' is required." };
             return Results.Json(bad, DashboardGenerationApiJsonContext.Default.DashboardGenerationResult, statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        var entitlementGate = LicenseGate.RequireEntitlement(
+            context,
+            FeatureCatalog.AiWorkflowGenerationKey,
+            "AI dashboard generation");
+        if (entitlementGate is not null)
+        {
+            return entitlementGate;
         }
 
         var result = await generation.GenerateAsync(

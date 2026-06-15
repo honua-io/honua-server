@@ -12,6 +12,11 @@ namespace Honua.TestKit.Helpers;
 
 public static class LicenseTestSupport
 {
+    private static readonly JsonSerializerOptions PayloadJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    };
+
     private static readonly byte[] SigningSeed =
     [
         0x10, 0x42, 0x9A, 0xC1, 0x7E, 0x6D, 0x55, 0x3A,
@@ -27,20 +32,24 @@ public static class LicenseTestSupport
         DateTimeOffset? expiresAt = null,
         string[]? entitlements = null,
         string? keyId = null,
-        bool tamperSignature = false)
+        bool tamperSignature = false,
+        LicenseCapacityTerms? capacity = null)
     {
         var privateKey = new Ed25519PrivateKeyParameters(SigningSeed, 0);
         var publicKey = privateKey.GeneratePublicKey().GetEncoded();
-        var payload = JsonSerializer.Serialize(new
-        {
-            schema = "honua.license/v1",
-            licenseId = "lic-test-338",
-            licensedTo = "Honua Test Operator",
-            edition = edition.ToString(),
-            issuedAt = DateTimeOffset.UtcNow.AddDays(-1),
-            expiresAt,
-            entitlements = entitlements ?? ActiveEntitlementsFor(edition)
-        });
+        var payload = JsonSerializer.Serialize(
+            new
+            {
+                schema = "honua.license/v1",
+                licenseId = "lic-test-338",
+                licensedTo = "Honua Test Operator",
+                edition = edition.ToString(),
+                issuedAt = DateTimeOffset.UtcNow.AddDays(-1),
+                expiresAt,
+                entitlements = entitlements ?? ActiveEntitlementsFor(edition),
+                capacity
+            },
+            PayloadJsonOptions);
         var payloadBytes = Encoding.UTF8.GetBytes(payload);
 
         var signer = new Ed25519Signer();
@@ -74,7 +83,8 @@ public static class LicenseTestSupport
     public static LicenseSnapshot CreateSnapshot(
         HonuaEdition edition,
         LicenseValidationState validationState = LicenseValidationState.Valid,
-        string[]? entitlements = null)
+        string[]? entitlements = null,
+        LicenseCapacityTerms? capacityTerms = null)
     {
         var activeKeys = (entitlements ?? ActiveEntitlementsFor(edition))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -98,7 +108,8 @@ public static class LicenseTestSupport
             catalogEntitlements,
             activeKeys,
             SnapshotVersion: 1,
-            KeyId: KeyId);
+            KeyId: KeyId,
+            CapacityTerms: capacityTerms);
     }
 
     public static string Base64Url(byte[] bytes)
@@ -129,9 +140,10 @@ public sealed class TestLicenseEntitlementService : ILicenseEntitlementService, 
     public TestLicenseEntitlementService(
         HonuaEdition edition,
         LicenseValidationState validationState = LicenseValidationState.Valid,
-        string[]? entitlements = null)
+        string[]? entitlements = null,
+        LicenseCapacityTerms? capacityTerms = null)
     {
-        _snapshot = LicenseTestSupport.CreateSnapshot(edition, validationState, entitlements);
+        _snapshot = LicenseTestSupport.CreateSnapshot(edition, validationState, entitlements, capacityTerms);
     }
 
     public LicenseSnapshot GetSnapshot() => _snapshot;
@@ -145,7 +157,8 @@ public sealed class TestLicenseEntitlementService : ILicenseEntitlementService, 
             _snapshot.ValidationState,
             _snapshot.LicenseId,
             _snapshot.IssuedAt,
-            _snapshot.Entitlements);
+            _snapshot.Entitlements,
+            _snapshot.CapacityTerms);
 
     public Task<LicenseUploadResult> UploadLicenseAsync(
         Stream licenseStream,

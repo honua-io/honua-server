@@ -10,9 +10,11 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Helpers;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -41,6 +43,7 @@ public sealed class WorkflowPackageEndpointsTests : IAsyncLifetime
     public WorkflowPackageEndpointsTests()
     {
         _fixture = new WebAppFixture()
+            .WithTestLicense(HonuaEdition.Pro)
             .ConfigureServices(services =>
             {
                 services.RemoveAll<IExecutionJobStore>();
@@ -170,6 +173,32 @@ public sealed class WorkflowPackageEndpointsTests : IAsyncLifetime
             JsonOptions);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/console/workflow-packages/generate")]
+    public async Task GenerateWorkflow_WithCommunityLicense_ReturnsPaymentRequired()
+    {
+        var fixture = new WebAppFixture()
+            .WithTestLicense(HonuaEdition.Community);
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            var response = await client.PostAsJsonAsync(
+                "/api/v1/console/workflow-packages/generate",
+                new { prompt = "Generate a parcel review workflow." },
+                JsonOptions);
+
+            response.StatusCode.Should().Be(HttpStatusCode.PaymentRequired);
+            var body = await response.Content.ReadAsStringAsync();
+            body.Should().Contain(FeatureCatalog.AiWorkflowGenerationKey);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
     }
 
     [IntegrationTest]
@@ -678,6 +707,27 @@ public sealed class WorkflowPackageEndpointsTests : IAsyncLifetime
         {
             _progress[operationId] = progress;
             return Task.CompletedTask;
+        }
+
+        public Task<ProgressCompareAndSetResult> TrySetProgressAsync(
+            string operationId,
+            IOperationProgress progress,
+            OperationStatus expectedStatus,
+            TimeSpan? ttl = null,
+            CancellationToken cancellationToken = default)
+        {
+            if (!_progress.TryGetValue(operationId, out var current))
+            {
+                return Task.FromResult(ProgressCompareAndSetResult.NotFound);
+            }
+
+            if (current.Status != expectedStatus)
+            {
+                return Task.FromResult(ProgressCompareAndSetResult.StatusMismatch(current));
+            }
+
+            _progress[operationId] = progress;
+            return Task.FromResult(ProgressCompareAndSetResult.Updated);
         }
 
         public Task<TProgress?> GetProgressAsync<TProgress>(

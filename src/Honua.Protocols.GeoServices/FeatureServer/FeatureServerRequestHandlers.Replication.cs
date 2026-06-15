@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
@@ -10,6 +11,7 @@ using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Configuration;
 using System.Collections.Immutable;
+using Honua.Infrastructure.Licensing;
 using Honua.Protocols.GeoServices;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Protocols.GeoServices.FeatureServer.Services;
@@ -27,12 +29,24 @@ namespace Honua.Protocols.GeoServices.FeatureServer;
 
 internal static partial class FeatureServerEndpoints
 {
+    private static IResult? RequireOfflineSyncEntitlement(HttpContext context)
+        => LicenseGate.RequireEntitlement(
+            context,
+            FeatureCatalog.FieldOpsOfflineSyncKey,
+            "GeoServices offline sync");
+
     private static async Task<IResult> HandleReplicas(
         string serviceId,
         HttpContext context)
     {
         using var activity = HonuaTelemetry.ActivitySource.StartActivity("featureserver.replicas");
         activity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
+
+        var entitlementGate = RequireOfflineSyncEntitlement(context);
+        if (entitlementGate is not null)
+        {
+            return entitlementGate;
+        }
 
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
         var serviceValidationResult = await ValidateReplicationServiceV2Async(serviceId, context, cancellationToken);
@@ -96,6 +110,12 @@ internal static partial class FeatureServerEndpoints
         using var activity = HonuaTelemetry.ActivitySource.StartActivity("featureserver.replicaInfo");
         activity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
         activity?.SetTag("honua.replicaId", replicaId);
+
+        var entitlementGate = RequireOfflineSyncEntitlement(context);
+        if (entitlementGate is not null)
+        {
+            return entitlementGate;
+        }
 
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
         var serviceValidationResult = await ValidateReplicationServiceV2Async(serviceId, context, cancellationToken);
@@ -171,6 +191,12 @@ internal static partial class FeatureServerEndpoints
     {
         using var activity = HonuaTelemetry.ActivitySource.StartActivity("featureserver.createReplica");
         activity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
+
+        var entitlementGate = RequireOfflineSyncEntitlement(context);
+        if (entitlementGate is not null)
+        {
+            return entitlementGate;
+        }
 
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
         var serviceValidationResult = await ValidateReplicationServiceV2Async(serviceId, context, cancellationToken);
@@ -285,6 +311,12 @@ internal static partial class FeatureServerEndpoints
     {
         using var activity = HonuaTelemetry.ActivitySource.StartActivity("featureserver.extractChanges");
         activity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
+
+        var entitlementGate = RequireOfflineSyncEntitlement(context);
+        if (entitlementGate is not null)
+        {
+            return entitlementGate;
+        }
 
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
         var serviceValidationResult = await ValidateReplicationServiceV2Async(serviceId, context, cancellationToken);
@@ -731,6 +763,12 @@ internal static partial class FeatureServerEndpoints
         using var activity = HonuaTelemetry.ActivitySource.StartActivity("featureserver.synchronizeReplica");
         activity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
 
+        var entitlementGate = RequireOfflineSyncEntitlement(context);
+        if (entitlementGate is not null)
+        {
+            return entitlementGate;
+        }
+
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
         var serviceValidationResult = await ValidateReplicationServiceV2Async(serviceId, context, cancellationToken);
         if (serviceValidationResult.ErrorResult is not null)
@@ -930,7 +968,22 @@ internal static partial class FeatureServerEndpoints
             LastSyncGeneration = currentGen,
             UploadBaseGeneration = didUpload ? currentGen : replica.UploadBaseGeneration
         };
-        await replicaStore.SetAsync(updated, cancellationToken: cancellationToken);
+
+        // Compare-and-set against the cursors read at the top of the handler: a concurrent
+        // synchronizeReplica of the same replica (retrying mobile clients) that committed first
+        // wins, and this request is rejected instead of regressing the winner's cursor — which
+        // would make the replica re-download its own uploaded edits or skip server changes.
+        var syncStateUpdated = await replicaStore.TrySetSyncStateAsync(
+            updated,
+            replica.LastSyncGeneration,
+            replica.UploadBaseGeneration,
+            cancellationToken: cancellationToken);
+        if (!syncStateUpdated)
+        {
+            return StandardErrorHelpers.CreateConflict(
+                context,
+                $"Replica '{replicaId}' was synchronized by a concurrent request. Re-run extractChanges and retry the synchronization from the new server generation.");
+        }
 
         var response = new SynchronizeReplicaResponse
         {
@@ -1252,6 +1305,12 @@ internal static partial class FeatureServerEndpoints
     {
         using var activity = HonuaTelemetry.ActivitySource.StartActivity("featureserver.unRegisterReplica");
         activity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
+
+        var entitlementGate = RequireOfflineSyncEntitlement(context);
+        if (entitlementGate is not null)
+        {
+            return entitlementGate;
+        }
 
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
         var serviceValidationResult = await ValidateReplicationServiceV2Async(serviceId, context, cancellationToken);

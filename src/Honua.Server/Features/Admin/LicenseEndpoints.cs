@@ -72,6 +72,7 @@ internal static partial class LicenseEndpoints
     private static async Task<Results<Ok<ApiResponse<LicenseStatusResponse>>, ProblemHttpResult>>
         HandleGetLicenseStatus(
             [FromServices] ILicenseManager licenseManager,
+            [FromServices] ILicenseCapacityMeter capacityMeter,
             [FromServices] IOptions<LicenseOptions> licenseOptions,
             [FromServices] ILogger<LicenseEndpointsLog> logger,
             HttpContext context)
@@ -79,8 +80,12 @@ internal static partial class LicenseEndpoints
         try
         {
             var info = await licenseManager.GetLicenseInfoAsync(context.RequestAborted);
+            var capacity = await capacityMeter.GetCapacityStateAsync(context.RequestAborted);
 
-            var response = LicenseStatusResponseMapper.FromInfo(info, licenseOptions.Value.ExpiryWarningDays);
+            var response = LicenseStatusResponseMapper.FromInfo(
+                info,
+                licenseOptions.Value.ExpiryWarningDays,
+                capacity);
 
             LicenseLog.LicenseStatusQueried(logger, info.Edition, info.IsValid);
             return TypedResults.Ok(ApiResponse<LicenseStatusResponse>.CreateSuccess(response));
@@ -98,6 +103,7 @@ internal static partial class LicenseEndpoints
     private static async Task<Results<Ok<ApiResponse<LicenseStatusResponse>>, BadRequest<ApiResponse<object>>, ProblemHttpResult>>
         HandleUploadLicense(
             [FromServices] ILicenseStatusProvider licenseProvider,
+            [FromServices] ILicenseCapacityMeter capacityMeter,
             [FromServices] IOptions<LicenseOptions> licenseOptions,
             [FromServices] ILogger<LicenseEndpointsLog> logger,
             HttpContext context)
@@ -112,7 +118,11 @@ internal static partial class LicenseEndpoints
             }
 
             var status = licenseProvider.GetCurrentStatus();
-            var response = LicenseStatusResponseMapper.FromStatus(status, licenseOptions.Value.ExpiryWarningDays);
+            var capacity = await capacityMeter.GetCapacityStateAsync(context.RequestAborted);
+            var response = LicenseStatusResponseMapper.FromStatus(
+                status,
+                licenseOptions.Value.ExpiryWarningDays,
+                capacity);
 
             LicenseLog.LicenseUploaded(logger, response.Edition);
             return TypedResults.Ok(ApiResponse<LicenseStatusResponse>.CreateSuccess(response));

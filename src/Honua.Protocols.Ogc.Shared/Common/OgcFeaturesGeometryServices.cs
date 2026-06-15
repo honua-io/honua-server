@@ -9,13 +9,12 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Infrastructure.Geometries;
 using Honua.Infrastructure.Services;
-using Honua.Protocols.Ogc.Api.Features.Models;
 using Microsoft.Extensions.Options;
 using NetTopologySuite;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
-namespace Honua.Protocols.Ogc.Api.Features.Services;
+namespace Honua.Protocols.Ogc.Common;
 
 /// <summary>
 /// Provides geometry processing, conversion, and validation services for OGC Features.
@@ -587,21 +586,37 @@ internal sealed partial class OgcFeaturesGeometryServices
         int toSrid,
         CancellationToken cancellationToken)
     {
-        for (var index = 0; index < sequence.Count; index++)
+        var count = sequence.Count;
+        if (count > 0)
         {
-            var transformed = await _coordinateTransformService.TransformPointAsync(
-                sequence.GetX(index),
-                sequence.GetY(index),
+            // Transform the whole sequence in a single batched call instead of awaiting
+            // TransformPointAsync per vertex: for SRID pairs without an in-memory fast
+            // path the PostGIS-backed service would otherwise issue one database round
+            // trip per coordinate on the mutation path (#1593).
+            var xs = new double[count];
+            var ys = new double[count];
+            for (var index = 0; index < count; index++)
+            {
+                xs[index] = sequence.GetX(index);
+                ys[index] = sequence.GetY(index);
+            }
+
+            var transformed = await _coordinateTransformService.TransformPointsAsync(
+                xs,
+                ys,
                 fromSrid,
                 toSrid,
                 cancellationToken).ConfigureAwait(false);
-            if (!transformed.HasValue)
+            if (!transformed)
             {
                 return false;
             }
 
-            sequence.SetX(index, transformed.Value.X);
-            sequence.SetY(index, transformed.Value.Y);
+            for (var index = 0; index < count; index++)
+            {
+                sequence.SetX(index, xs[index]);
+                sequence.SetY(index, ys[index]);
+            }
         }
 
         geometry.SRID = toSrid;

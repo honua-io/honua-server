@@ -35,7 +35,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
-using OgcGeoJsonFeature = Honua.Protocols.Ogc.Api.Features.Models.GeoJsonFeature;
+using OgcGeoJsonFeature = Honua.Protocols.Ogc.Common.GeoJsonFeature;
 
 namespace Honua.TestKit.Helpers;
 

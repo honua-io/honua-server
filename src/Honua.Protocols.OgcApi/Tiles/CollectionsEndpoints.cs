@@ -97,11 +97,12 @@ internal static class CollectionsEndpoints
                 {
                     continue;
                 }
+                if (!TenantScopeHelpers.IsPublicationVisible(context, publication, resource, service))
+                {
+                    continue;
+                }
 
-                var decision = AccessPolicyHelpers.EvaluateAccess(
-                    context,
-                    resource.AccessPolicy,
-                    service.AccessPolicy);
+                var decision = AccessPolicyHelpers.EvaluateResourceAccess(context, resource, service);
 
                 if (decision.IsAllowed)
                 {

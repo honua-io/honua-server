@@ -54,6 +54,8 @@ public sealed class FeatureCatalogTests
         categories.Should().Contain(FeatureCatalog.Categories.Analytics);
         categories.Should().Contain(FeatureCatalog.Categories.Streaming);
         categories.Should().Contain(FeatureCatalog.Categories.Temporal);
+        categories.Should().Contain(FeatureCatalog.Categories.FieldOps);
+        categories.Should().Contain(FeatureCatalog.Categories.Ai);
     }
 
     [Theory]
@@ -121,6 +123,36 @@ public sealed class FeatureCatalogTests
         feature.Description.Should().NotContain("WFS-T");
         feature.Description.Should().NotContain("OData");
         feature.Description.Should().NotContain("gRPC");
+    }
+
+    [Fact]
+    public void All_OfflineFieldSyncIsProTier()
+    {
+        // Ticket #1592: disconnected sync and field offline policy discovery
+        // are Pro entitlements; online form reads/submissions remain Community.
+        var feature = FeatureCatalog.All.SingleOrDefault(f => f.Key == FeatureCatalog.FieldOpsOfflineSyncKey);
+
+        feature.Should().NotBeNull("feature catalog must define offline field sync for ticket #1592");
+        feature!.Key.Should().Be("fieldops.offline-sync");
+        feature.Category.Should().Be(FeatureCatalog.Categories.FieldOps);
+        feature.MinimumEdition.Should().Be(HonuaEdition.Pro);
+    }
+
+    [Theory]
+    [InlineData(FeatureCatalog.AiSpecApplyKey, "ai.spec-apply")]
+    [InlineData(FeatureCatalog.AiGroundingKey, "ai.grounding")]
+    [InlineData(FeatureCatalog.AiWorkflowGenerationKey, "ai.workflow-generation")]
+    public void All_AgenticAiOperationsAreProTier(string key, string expectedKey)
+    {
+        // Ticket #1592: AI operations that mutate, generate, or submit
+        // execution work are Pro entitlements. Discovery/query/read surfaces
+        // stay Community and are not represented by these keys.
+        var feature = FeatureCatalog.All.SingleOrDefault(f => f.Key == key);
+
+        feature.Should().NotBeNull($"feature catalog must define '{expectedKey}' for ticket #1592");
+        feature!.Key.Should().Be(expectedKey);
+        feature.Category.Should().Be(FeatureCatalog.Categories.Ai);
+        feature.MinimumEdition.Should().Be(HonuaEdition.Pro);
     }
 
     [Fact]

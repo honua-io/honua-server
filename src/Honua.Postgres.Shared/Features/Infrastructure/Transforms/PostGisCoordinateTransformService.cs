@@ -95,6 +95,54 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
             .ConfigureAwait(false);
     }
 
+    /// <inheritdoc />
+    public async ValueTask<bool> TransformPointsAsync(
+        double[] xs,
+        double[] ys,
+        int fromSrid,
+        int toSrid,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(xs);
+        ArgumentNullException.ThrowIfNull(ys);
+        if (xs.Length != ys.Length)
+        {
+            throw new ArgumentException("Coordinate arrays must have the same length.", nameof(ys));
+        }
+
+        // Fast path: identity or Web Mercator alias — nothing to rewrite.
+        if (xs.Length == 0 || IsIdentityTransform(fromSrid, toSrid))
+        {
+            return true;
+        }
+
+        // Fast path: in-memory WGS84 ↔ Web Mercator — CPU-only math, so run the whole
+        // batch synchronously without per-point async overhead.
+        if (IsWgs84Srid(fromSrid) && IsWebMercatorSrid(toSrid))
+        {
+            for (var index = 0; index < xs.Length; index++)
+            {
+                (xs[index], ys[index]) = LonLatToWebMercator(xs[index], ys[index]);
+            }
+
+            return true;
+        }
+
+        if (IsWebMercatorSrid(fromSrid) && IsWgs84Srid(toSrid))
+        {
+            for (var index = 0; index < xs.Length; index++)
+            {
+                (xs[index], ys[index]) = WebMercatorToLonLat(xs[index], ys[index]);
+            }
+
+            return true;
+        }
+
+        // Slow path: one PostGIS ST_Transform round trip for the entire batch.
+        return await TransformPointsWithPostGisAsync(xs, ys, fromSrid, toSrid, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     private static bool IsIdentityTransform(int fromSrid, int toSrid)
         => fromSrid == toSrid || (IsWebMercatorSrid(fromSrid) && IsWebMercatorSrid(toSrid));
 
@@ -365,6 +413,63 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
         }
     }
 
+    private async Task<bool> TransformPointsWithPostGisAsync(
+        double[] xs,
+        double[] ys,
+        int fromSrid,
+        int toSrid,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            Log.PostGisFallbackPoints(_logger, xs.Length, fromSrid, toSrid);
+
+            await using var connection = await _connectionProvider
+                .OpenConnectionAsync(cancellationToken)
+                .ConfigureAwait(false);
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT ST_X(t.geom) AS x, ST_Y(t.geom) AS y
+                FROM (
+                    SELECT ST_Transform(ST_SetSRID(ST_MakePoint(p.x, p.y), @fromSrid), @toSrid) AS geom,
+                           p.ord
+                    FROM unnest(@xs, @ys) WITH ORDINALITY AS p(x, y, ord)
+                ) t
+                ORDER BY t.ord
+                """;
+
+            AddParameter(command, "@xs", xs);
+            AddParameter(command, "@ys", ys);
+            AddParameter(command, "@fromSrid", fromSrid);
+            AddParameter(command, "@toSrid", toSrid);
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            var index = 0;
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                if (index >= xs.Length || reader.IsDBNull(0) || reader.IsDBNull(1))
+                {
+                    return false;
+                }
+
+                xs[index] = reader.GetDouble(0);
+                ys[index] = reader.GetDouble(1);
+                index++;
+            }
+
+            return index == xs.Length;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Log.PostGisTransformFailed(_logger, fromSrid, toSrid, ex);
+            return false;
+        }
+    }
+
     private static void AddParameter(System.Data.Common.DbCommand command, string name, object value)
     {
         var parameter = command.CreateParameter();
@@ -392,5 +497,11 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
             Level = LogLevel.Warning,
             Message = "PostGIS coordinate transform failed from SRID {FromSrid} to {ToSrid}")]
         public static partial void PostGisTransformFailed(ILogger logger, int fromSrid, int toSrid, Exception exception);
+
+        [LoggerMessage(
+            EventId = 7303,
+            Level = LogLevel.Debug,
+            Message = "Falling back to PostGIS ST_Transform for {PointCount} points: SRID {FromSrid} → {ToSrid}")]
+        public static partial void PostGisFallbackPoints(ILogger logger, int pointCount, int fromSrid, int toSrid);
     }
 }

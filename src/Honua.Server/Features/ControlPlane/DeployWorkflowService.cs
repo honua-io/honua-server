@@ -253,7 +253,7 @@ internal sealed partial class DeployWorkflowService
                         UpdatedAt = DateTimeOffset.UtcNow,
                         CompletedAt = DateTimeOffset.UtcNow,
                         CurrentPhase = "Backend submission failed.",
-                        ErrorMessage = "Backend submission failed."
+                        ErrorMessage = $"Backend submission failed ({ex.GetType().Name})."
                     };
                 }
 
@@ -341,7 +341,7 @@ internal sealed partial class DeployWorkflowService
                 UpdatedAt = DateTimeOffset.UtcNow,
                 CompletedAt = DateTimeOffset.UtcNow,
                 CurrentPhase = "Backend submission failed.",
-                ErrorMessage = "Backend submission failed.",
+                ErrorMessage = $"Backend submission failed ({ex.GetType().Name}).",
                 Audit = MergeSubmissionAudit(operation.Audit, requestedBy, reason)
             };
 

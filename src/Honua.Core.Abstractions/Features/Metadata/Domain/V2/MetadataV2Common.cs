@@ -59,6 +59,18 @@ public sealed record MetadataV2ObjectMetadata
     public string? Namespace { get; init; }
 
     /// <summary>
+    /// Owning tenant identifier for tenant-scoped deployments (#1580). When set, the
+    /// entity is only visible to requests whose resolved tenant context (issue #1144)
+    /// carries the same tenant id; the shared metadata lookup helpers treat a mismatch
+    /// as "not found" so a tenant cannot discover another tenant's collections, items,
+    /// or tiles. When <see langword="null"/> or empty the entity is unscoped and
+    /// visible to every tenant (single-tenant backwards compatibility). Visibility
+    /// rules live in <see cref="MetadataV2TenantVisibility"/>.
+    /// </summary>
+    [JsonPropertyName("tenant")]
+    public string? Tenant { get; init; }
+
+    /// <summary>
     /// Human-readable display title.
     /// </summary>
     [JsonPropertyName("title")]

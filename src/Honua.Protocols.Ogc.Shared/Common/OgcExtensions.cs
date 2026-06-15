@@ -5,9 +5,8 @@ using System.Collections.Immutable;
 using System.Linq;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
-using Honua.Protocols.Ogc.Common;
 
-namespace Honua.Protocols.Ogc.Api.Features.Models;
+namespace Honua.Protocols.Ogc.Common;
 
 /// <summary>
 /// Extension methods for converting between OGC models and shared components
@@ -141,5 +140,4 @@ public static class OgcExtensions
     /// <returns>Shared paged response base</returns>
     public static PagedResponseBase ToPagedResponseBase(long? numberMatched, int numberReturned)
         => PagedResponseBase.Create(numberReturned, numberMatched);
-
 }

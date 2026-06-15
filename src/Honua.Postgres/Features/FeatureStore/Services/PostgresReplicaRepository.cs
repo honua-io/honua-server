@@ -52,6 +52,39 @@ internal sealed class PostgresReplicaRepository : IReplicaRepository
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<bool> TryUpdateSyncStateAsync(
+        ReplicaRecord record,
+        long expectedLastSyncGeneration,
+        long expectedUploadBaseGeneration,
+        CancellationToken cancellationToken = default)
+    {
+        // Compare-and-set on the sync cursors: the UPDATE only applies when the persisted
+        // generations still match the values the caller read before the sync, so a concurrent
+        // synchronizeReplica of the same replica cannot regress the winner's cursor.
+        const string sql = """
+            UPDATE honua.replicas
+            SET last_sync_time = $2,
+                last_sync_generation = $3,
+                upload_base_generation = $4
+            WHERE replica_id = $1
+              AND last_sync_generation = $5
+              AND upload_base_generation = $6
+            """;
+
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection);
+
+        command.Parameters.AddWithValue(NpgsqlDbType.Text, record.ReplicaId);
+        command.Parameters.AddWithValue(NpgsqlDbType.TimestampTz, record.LastSyncTime);
+        command.Parameters.AddWithValue(NpgsqlDbType.Bigint, record.LastSyncGeneration);
+        command.Parameters.AddWithValue(NpgsqlDbType.Bigint, record.UploadBaseGeneration);
+        command.Parameters.AddWithValue(NpgsqlDbType.Bigint, expectedLastSyncGeneration);
+        command.Parameters.AddWithValue(NpgsqlDbType.Bigint, expectedUploadBaseGeneration);
+
+        var rowsAffected = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        return rowsAffected > 0;
+    }
+
     public async Task<ReplicaRecord?> GetAsync(string replicaId, CancellationToken cancellationToken = default)
     {
         const string sql = """

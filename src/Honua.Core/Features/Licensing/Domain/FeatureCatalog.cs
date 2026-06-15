@@ -73,11 +73,14 @@ public static class FeatureCatalog
         /// <summary>Editing features — branch versioning, reconcile/post, multi-user editing.</summary>
         public const string Editing = "Editing";
 
+        /// <summary>Offline field operations and disconnected sync features.</summary>
+        public const string FieldOps = "FieldOps";
+
+        /// <summary>Agentic AI operations — MCP discovery/query, spec plan/apply, grounding, workflow generation, and the agent-operations guardrail ladder.</summary>
+        public const string Ai = "AI";
+
         /// <summary>Server extensibility features — plugin/extension SDK.</summary>
         public const string Extensibility = "Extensibility";
-
-        /// <summary>Agentic AI operations — MCP, spec plan/apply, grounding, workflow generation, guardrails.</summary>
-        public const string Ai = "AI";
     }
 
     /// <summary>
@@ -123,6 +126,32 @@ public static class FeatureCatalog
     /// (<c>editing.branch-versioning</c>) is a separate entitlement.
     /// </summary>
     public const string FeatureServerEditsKey = "editing.featureserver-edits";
+
+    /// <summary>
+    /// Entitlement key for disconnected field operations — form offline policy discovery,
+    /// FieldCollection cursor/change sync, and GeoServices replica/GeoPackage delta sync.
+    /// Online form package reads and submissions remain Community surfaces.
+    /// </summary>
+    public const string FieldOpsOfflineSyncKey = "fieldops.offline-sync";
+
+    /// <summary>
+    /// Entitlement key for applying executable spec plans and MCP execution tools that submit
+    /// server-side agentic work. Spec validation, planning, discovery, and read/query paths stay
+    /// Community.
+    /// </summary>
+    public const string AiSpecApplyKey = "ai.spec-apply";
+
+    /// <summary>
+    /// Entitlement key for natural-language spec mutation grounding. Deterministic summaries and
+    /// discovery paths remain Community.
+    /// </summary>
+    public const string AiGroundingKey = "ai.grounding";
+
+    /// <summary>
+    /// Entitlement key for natural-language generation of workflows, maps, apps, forms, reports,
+    /// dashboards, saved queries, and analysis packages.
+    /// </summary>
+    public const string AiWorkflowGenerationKey = "ai.workflow-generation";
 
     /// <summary>
     /// Entitlement key for the server plugin/extension SDK (custom feature validators and edit
@@ -233,6 +262,10 @@ public static class FeatureCatalog
         new("streaming.feature-subscriptions", "Real-Time Feature Streams", Categories.Streaming,
             HonuaEdition.Pro, "Subscribe to WebSocket and SSE feature-change streams with filters and replay cursors."),
 
+        // Field operations — Pro (disconnected/offline sync; online collection remains Community)
+        new(FieldOpsOfflineSyncKey, "Offline/Field Sync", Categories.FieldOps,
+            HonuaEdition.Pro, "Use disconnected field sync, form offline policy discovery, GeoServices replica/GeoPackage delta sync, and FieldCollection cursor/change exchange."),
+
         // Import — Enterprise
         new("import.geoservices", "GeoServices Import", Categories.Import,
             HonuaEdition.Enterprise, "Import layers from ArcGIS REST services."),
@@ -307,6 +340,14 @@ public static class FeatureCatalog
         // Editing — Enterprise (Esri-style branch versioning; Postgres-only)
         new(BranchVersioningKey, "Branch Versioning", Categories.Editing,
             HonuaEdition.Enterprise, "Named gdb versions with isolated edits, reconcile/post back to DEFAULT, and gdbVersion-scoped editing/querying over the GeoServices VersionManagementServer."),
+
+        // AI operations — Pro (read/discovery/query surfaces remain Community)
+        new(AiSpecApplyKey, "Spec Apply Execution", Categories.Ai,
+            HonuaEdition.Pro, "Apply executable specs and submit MCP plan execution jobs from agentic tooling."),
+        new(AiGroundingKey, "Spec Grounding Mutations", Categories.Ai,
+            HonuaEdition.Pro, "Ground natural-language turns into validated spec mutation plans."),
+        new(AiWorkflowGenerationKey, "AI Workflow and Content Generation", Categories.Ai,
+            HonuaEdition.Pro, "Generate or refine workflows, maps, apps, forms, reports, dashboards, saved queries, and analysis packages from natural-language prompts."),
 
         // Extensibility — Enterprise (plugin/extension SDK)
         new(PluginSdkKey, "Plugin/Extension SDK", Categories.Extensibility,

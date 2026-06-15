@@ -131,7 +131,7 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
             NumericField: "pop2000")
     ];
 
-    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Enterprise);
     private readonly HttpClient _sourceClient = new() { Timeout = TimeSpan.FromMinutes(2) };
     private readonly List<string> _importedTables = [];
     private readonly List<ParityScorecardEntry> _scorecardEntries = [];

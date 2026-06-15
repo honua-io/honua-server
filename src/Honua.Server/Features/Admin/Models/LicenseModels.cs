@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Licensing.Domain;
+
 namespace Honua.Server.Features.Admin.Models;
 
 /// <summary>
@@ -57,6 +59,11 @@ public sealed class LicenseStatusResponse
     /// Entitlements granted by this license.
     /// </summary>
     public IReadOnlyList<EntitlementResponse> Entitlements { get; init; } = [];
+
+    /// <summary>
+    /// Capacity-band terms and current meter state used by license admission.
+    /// </summary>
+    public LicenseCapacityState? Capacity { get; init; }
 }
 
 /// <summary>

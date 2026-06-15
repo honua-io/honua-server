@@ -159,6 +159,8 @@ public static class EndpointRegistry
         new("GET", "/api/v1/admin/license"),
         new("POST", "/api/v1/admin/license"),
         new("GET", "/api/v1/admin/license/entitlements"),
+        new("GET", "/api/v1/admin/license/capacity"),
+        new("POST", "/api/v1/admin/license/capacity/surge"),
 
         // v1 platform admin endpoints (#513)
         new("GET", "/api/v1/admin/license/status"),

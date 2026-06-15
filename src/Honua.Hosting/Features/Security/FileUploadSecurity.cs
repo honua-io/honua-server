@@ -378,10 +378,9 @@ internal static class FileUploadSecurity
                 ArrayPool<byte>.Shared.Return(buffer, clearArray: true);
             }
 
-            // Additional content validation for text files. The deep text scan must read past
-            // the binary-signature scan prefix: malicious script content (e.g. "<script>") is
-            // frequently placed beyond the first KB to evade prefix-only scanners, so this pass
-            // intentionally streams the full file rather than capping at the binary-scan limit.
+            // Additional content validation for text files. The deep dangerous-pattern scan reads
+            // the full stream (not the binary-signature scan prefix) so that malicious script
+            // content placed beyond the configured security-scan limit is still detected.
             var extension = Path.GetExtension(fileName).ToLowerInvariant();
             if (IsTextFile(extension))
             {

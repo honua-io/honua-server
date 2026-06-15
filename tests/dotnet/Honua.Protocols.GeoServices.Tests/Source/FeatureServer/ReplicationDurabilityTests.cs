@@ -230,6 +230,42 @@ public sealed class ReplicationDurabilityTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.SynchronizeReplica)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
+    public async Task TryUpdateSyncState_StaleExpectedCursors_DoesNotClobberConcurrentSync()
+    {
+        var replicaId = await CreateReplicaAsync("SyncStateCasTest");
+        var repo = _fixture.GetService<IReplicaRepository>();
+        var original = (await repo.GetAsync(replicaId))!.Value;
+
+        // First (winning) sync advances the cursors via compare-and-set on the original read.
+        var winner = original with
+        {
+            LastSyncTime = DateTimeOffset.UtcNow,
+            LastSyncGeneration = original.LastSyncGeneration + 5,
+            UploadBaseGeneration = original.UploadBaseGeneration + 5
+        };
+        var winnerApplied = await repo.TryUpdateSyncStateAsync(
+            winner, original.LastSyncGeneration, original.UploadBaseGeneration);
+        winnerApplied.Should().BeTrue();
+
+        // A concurrent sync that also read the original cursors must lose the compare-and-set
+        // instead of regressing the winner's cursor (the #1593 last-write-wins hazard).
+        var loser = original with
+        {
+            LastSyncTime = DateTimeOffset.UtcNow,
+            LastSyncGeneration = original.LastSyncGeneration + 1
+        };
+        var loserApplied = await repo.TryUpdateSyncStateAsync(
+            loser, original.LastSyncGeneration, original.UploadBaseGeneration);
+        loserApplied.Should().BeFalse();
+
+        var persisted = (await repo.GetAsync(replicaId))!.Value;
+        persisted.LastSyncGeneration.Should().Be(winner.LastSyncGeneration);
+        persisted.UploadBaseGeneration.Should().Be(winner.UploadBaseGeneration);
+    }
+
+    [IntegrationTest]
     [Operation(Operations.ExtractChanges)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/extractChanges")]
     public async Task ExtractChanges_GenerationIncrementsMonotonically()

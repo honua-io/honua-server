@@ -148,6 +148,10 @@ internal static class CollectionsEndpoints
                 {
                     continue;
                 }
+                if (!TenantScopeHelpers.IsPublicationVisible(context, publication, resource, service))
+                {
+                    continue;
+                }
                 canonicalByResource[resource.Metadata.Id] = (publication, service);
             }
 
@@ -164,6 +168,10 @@ internal static class CollectionsEndpoints
                 }
                 var resource = snapshot.ResolveResource(publication);
                 if (resource is null)
+                {
+                    continue;
+                }
+                if (!TenantScopeHelpers.IsPublicationVisible(context, publication, resource, service))
                 {
                     continue;
                 }

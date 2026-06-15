@@ -815,7 +815,8 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             foreach (var clause in query.OrderBy.Value)
             {
                 var column = ResolveSortColumnExpression(clause.Field);
-                clauses.Add($"{column} {(clause.Ascending ? "ASC" : "DESC")}");
+                clauses.Add(
+                    $"{column} {(clause.Ascending ? "ASC" : "DESC")}{FeatureQueryBuilder.GetNullOrderingSuffix(clause.NullOrdering)}");
             }
 
             sql.Append(CultureInfo.InvariantCulture, $" ORDER BY {string.Join(", ", clauses)}");

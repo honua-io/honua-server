@@ -1,7 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Forms.Packages;
+using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
 using Honua.ServiceDefaults;
 
@@ -25,6 +27,15 @@ internal sealed class FormOfflinePolicyService
         activity?.SetTag("honua.protocol", "forms");
         activity?.SetTag("honua.operation", "offline-policy");
         activity?.SetTag("honua.forms.form_id", formId);
+
+        var entitlementGate = LicenseGate.RequireEntitlement(
+            context,
+            FeatureCatalog.FieldOpsOfflineSyncKey,
+            "Form offline policy");
+        if (entitlementGate is not null)
+        {
+            return entitlementGate;
+        }
 
         var packageVersion = await _store.GetCurrentVersionAsync(formId, FormPackageStatus.Published, context.RequestAborted)
             .ConfigureAwait(false);

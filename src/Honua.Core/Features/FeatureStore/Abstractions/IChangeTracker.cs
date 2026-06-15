@@ -31,4 +31,49 @@ public interface IChangeTracker
         long sinceGeneration,
         int[] layerIds,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets collapsed changes since a given generation for the specified layers, restricted to a
+    /// set of object ids. Used by the replica-sync conflict probe so a long-offline replica's
+    /// upload only materializes the change history of the uploaded features rather than the entire
+    /// change log since its base generation. The default implementation filters client-side over
+    /// <see cref="GetChangesSinceAsync(long, int[], CancellationToken)"/>; providers that can push
+    /// the filter into the store (e.g. SQL) should override it.
+    /// </summary>
+    /// <param name="sinceGeneration">Generation number to start from (exclusive)</param>
+    /// <param name="layerIds">Layer IDs to filter changes for</param>
+    /// <param name="objectIds">
+    /// Object ids to restrict the feed to. <c>null</c> applies no object-id filter; an empty set
+    /// yields an empty result.
+    /// </param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Collapsed change feed ordered by generation</returns>
+    async Task<IReadOnlyList<FeatureChange>> GetChangesSinceAsync(
+        long sinceGeneration,
+        int[] layerIds,
+        IReadOnlySet<long>? objectIds,
+        CancellationToken cancellationToken = default)
+    {
+        if (objectIds is null)
+        {
+            return await GetChangesSinceAsync(sinceGeneration, layerIds, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (objectIds.Count == 0)
+        {
+            return [];
+        }
+
+        var changes = await GetChangesSinceAsync(sinceGeneration, layerIds, cancellationToken).ConfigureAwait(false);
+        var filtered = new List<FeatureChange>();
+        foreach (var change in changes)
+        {
+            if (objectIds.Contains(change.ObjectId))
+            {
+                filtered.Add(change);
+            }
+        }
+
+        return filtered;
+    }
 }

@@ -4,6 +4,7 @@
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
+using Honua.Protocols.Ogc.Api.Coverages.Services;
 
 namespace Honua.Protocols.Ogc.Api.Coverages;
 
@@ -13,16 +14,19 @@ internal sealed class OgcCoveragesDependencies
         IMetadataV2GraphProvider graphProvider,
         IRasterStore rasterStore,
         ICoordinateTransformService coordinateTransformService,
-        ICrsRegistry crsRegistry)
+        ICrsRegistry crsRegistry,
+        ZarrCoverageService zarrCoverages)
     {
         GraphProvider = graphProvider ?? throw new ArgumentNullException(nameof(graphProvider));
         RasterStore = rasterStore ?? throw new ArgumentNullException(nameof(rasterStore));
         CoordinateTransformService = coordinateTransformService ?? throw new ArgumentNullException(nameof(coordinateTransformService));
         CrsRegistry = crsRegistry ?? throw new ArgumentNullException(nameof(crsRegistry));
+        ZarrCoverages = zarrCoverages ?? throw new ArgumentNullException(nameof(zarrCoverages));
     }
 
     public IMetadataV2GraphProvider GraphProvider { get; }
     public IRasterStore RasterStore { get; }
     public ICoordinateTransformService CoordinateTransformService { get; }
     public ICrsRegistry CrsRegistry { get; }
+    public ZarrCoverageService ZarrCoverages { get; }
 }

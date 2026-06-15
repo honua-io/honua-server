@@ -123,12 +123,12 @@ public sealed class TestFileFormatDetectionService : IFileFormatDetectionService
 /// </summary>
 public sealed class NoopCrsDetectionService : ICrsDetectionService
 {
-    public Task<int?> DetectFromPrjAsync(string prjContent) => Task.FromResult<int?>(null);
-    public Task<int?> DetectFromWktAsync(string wktContent) => Task.FromResult<int?>(null);
+    public Task<int?> DetectFromPrjAsync(string prjContent, CancellationToken cancellationToken = default) => Task.FromResult<int?>(null);
+    public Task<int?> DetectFromWktAsync(string wktContent, CancellationToken cancellationToken = default) => Task.FromResult<int?>(null);
     public int? DetectFromEpsgCode(string epsgCode) => null;
-    public Task<int?> DetectFromGeoJsonCrsAsync(string crsObject) => Task.FromResult<int?>(null);
-    public Task<int?> DetectFromShapefilePrjAsync(string shapefilePath) => Task.FromResult<int?>(null);
-    public Task<bool> ValidateSridAsync(int srid) => Task.FromResult(false);
+    public Task<int?> DetectFromGeoJsonCrsAsync(string crsObject, CancellationToken cancellationToken = default) => Task.FromResult<int?>(null);
+    public Task<int?> DetectFromShapefilePrjAsync(string shapefilePath, CancellationToken cancellationToken = default) => Task.FromResult<int?>(null);
+    public Task<bool> ValidateSridAsync(int srid, CancellationToken cancellationToken = default) => Task.FromResult(false);
 }
 
 /// <summary>

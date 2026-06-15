@@ -10,7 +10,7 @@ using Honua.Infrastructure.Helpers;
 using MetadataV2TemporalRange = Honua.Infrastructure.Helpers.TemporalExtentHelpers.MetadataV2TemporalRange;
 using Honua.Infrastructure.Rendering;
 using Honua.Infrastructure.Services;
-using Honua.Protocols.Ogc.Api.Features;
+using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Ogc.Classic;
 using Microsoft.Extensions.DependencyInjection;
 using static Honua.Infrastructure.Rendering.RasterMapRenderingPipeline;

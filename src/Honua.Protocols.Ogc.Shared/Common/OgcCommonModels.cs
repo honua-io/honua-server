@@ -97,15 +97,24 @@ public sealed record Link : ILink
     public string? Title { get; init; }
 
     /// <summary>
+    /// HTTP method to use when following the link (e.g. "GET" or "POST").
+    /// When omitted, the default is "GET". Only serialized when set.
+    /// </summary>
+    [JsonPropertyName("method")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Method { get; init; }
+
+    /// <summary>
     /// Creates a link with required properties.
     /// </summary>
     /// <param name="href">The URI of the linked resource.</param>
     /// <param name="rel">Relation type.</param>
     /// <param name="type">MIME type.</param>
     /// <param name="title">Human-readable title.</param>
+    /// <param name="method">Optional HTTP method (e.g. "GET" or "POST"). Omit for the default GET.</param>
     /// <returns>New link instance.</returns>
-    public static Link Create(string href, string? rel = null, string? type = null, string? title = null)
-        => new() { Href = href, Rel = rel, Type = type, Title = title };
+    public static Link Create(string href, string? rel = null, string? type = null, string? title = null, string? method = null)
+        => new() { Href = href, Rel = rel, Type = type, Title = title, Method = method };
 }
 
 /// <summary>

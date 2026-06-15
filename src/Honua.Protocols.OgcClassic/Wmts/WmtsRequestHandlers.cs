@@ -18,7 +18,6 @@ using Honua.Infrastructure.Helpers;
 using MetadataV2TemporalRange = Honua.Infrastructure.Helpers.TemporalExtentHelpers.MetadataV2TemporalRange;
 using Honua.Infrastructure.Monitoring;
 using Honua.Infrastructure.Models;
-using Honua.Protocols.Ogc.Api.Features;
 using Honua.Infrastructure.Rendering;
 using Honua.Protocols.Ogc.Classic;
 using Honua.Protocols.Ogc.Common;

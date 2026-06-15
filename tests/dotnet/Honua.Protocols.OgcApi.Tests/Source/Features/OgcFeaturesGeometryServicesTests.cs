@@ -10,6 +10,7 @@ using Honua.Core.Features.Shared.Models;
 using Honua.Infrastructure.Services;
 using Honua.Protocols.Ogc.Api.Features.Models;
 using Honua.Protocols.Ogc.Api.Features.Services;
+using Honua.Protocols.Ogc.Common;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
