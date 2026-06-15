@@ -5,11 +5,13 @@ using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 using Honua.Ai.AppGeneration;
 using Honua.Ai.MapGeneration;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
 using Honua.Server.Features.Console;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
 using Honua.Server.Features.Studio.Models;
 using Microsoft.AspNetCore.Mvc;
@@ -131,6 +133,15 @@ internal static class StudioPackageEndpoints
             return Results.Json(bad, AppGenerationApiJsonContext.Default.AppGenerationResult, statusCode: StatusCodes.Status400BadRequest);
         }
 
+        var entitlementGate = LicenseGate.RequireEntitlement(
+            context,
+            FeatureCatalog.AiWorkflowGenerationKey,
+            "AI app generation");
+        if (entitlementGate is not null)
+        {
+            return entitlementGate;
+        }
+
         var result = await generation.GenerateAsync(
             new AppGenerationRequest
             {
@@ -168,6 +179,15 @@ internal static class StudioPackageEndpoints
         {
             var bad = new MapGenerationResult { Status = "error", Rationale = "A non-empty 'prompt' is required." };
             return Results.Json(bad, MapGenerationApiJsonContext.Default.MapGenerationResult, statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        var entitlementGate = LicenseGate.RequireEntitlement(
+            context,
+            FeatureCatalog.AiWorkflowGenerationKey,
+            "AI map generation");
+        if (entitlementGate is not null)
+        {
+            return entitlementGate;
         }
 
         var result = await generation.GenerateAsync(

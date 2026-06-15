@@ -6,9 +6,11 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Helpers;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
@@ -30,7 +32,8 @@ public sealed class FieldCollectionSyncEndpointsTests : IAsyncLifetime
     private const string SyncCursorPath = "/api/v1/fieldcollection/sync-cursor";
     private const string ChangesPath = "/api/v1/fieldcollection/changes";
 
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = new WebAppFixture()
+        .WithTestLicense(HonuaEdition.Pro);
     private HttpClient _client = null!;
 
     public async Task InitializeAsync()
@@ -831,6 +834,68 @@ public sealed class FieldCollectionSyncEndpointsTests : IAsyncLifetime
             collectedAt = DateTimeOffset.UtcNow,
         },
     };
+}
+
+/// <summary>
+/// Verifies FieldCollection disconnected sync is licensed separately from
+/// basic online form collection (#1592).
+/// </summary>
+[Collection("Database")]
+[Protocol(TestProtocols.Admin)]
+[Operation(Operations.Features)]
+public sealed class FieldCollectionSyncLicenseGateTests : IAsyncLifetime
+{
+    private readonly WebAppFixture _fixture = new WebAppFixture()
+        .WithTestLicense(HonuaEdition.Community);
+    private HttpClient _client = null!;
+
+    public async Task InitializeAsync()
+    {
+        await _fixture.InitializeAsync();
+        _client = _fixture.Client;
+    }
+
+    public Task DisposeAsync() => _fixture.DisposeAsync();
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/fieldcollection/generation")]
+    [Endpoint("GET /api/v1/fieldcollection/sync-cursor")]
+    [Endpoint("POST /api/v1/fieldcollection/sync-cursor")]
+    [Endpoint("GET /api/v1/fieldcollection/changes")]
+    [Endpoint("POST /api/v1/fieldcollection/changes")]
+    public async Task FieldCollectionSync_WithCommunityLicense_ReturnsPaymentRequired()
+    {
+        var requests = new Func<HttpRequestMessage>[]
+        {
+            static () => new HttpRequestMessage(HttpMethod.Get, "/api/v1/fieldcollection/generation"),
+            static () => new HttpRequestMessage(HttpMethod.Get, "/api/v1/fieldcollection/sync-cursor"),
+            static () => new HttpRequestMessage(HttpMethod.Post, "/api/v1/fieldcollection/sync-cursor")
+            {
+                Content = JsonContent.Create(new { lastSyncGeneration = 0L }),
+            },
+            static () => new HttpRequestMessage(HttpMethod.Get, "/api/v1/fieldcollection/changes"),
+            static () => new HttpRequestMessage(HttpMethod.Post, "/api/v1/fieldcollection/changes")
+            {
+                Content = JsonContent.Create(new
+                {
+                    changeId = Guid.NewGuid().ToString("N"),
+                    featureId = $"feat-{Guid.NewGuid():N}",
+                    layerId = 1,
+                    operation = "insert",
+                }),
+            },
+        };
+
+        foreach (var createRequest in requests)
+        {
+            using var request = createRequest();
+            using var response = await _client.SendAsync(request);
+
+            response.StatusCode.Should().Be(HttpStatusCode.PaymentRequired);
+            var body = await response.Content.ReadAsStringAsync();
+            body.Should().Contain(FeatureCatalog.FieldOpsOfflineSyncKey);
+        }
+    }
 }
 
 /// <summary>

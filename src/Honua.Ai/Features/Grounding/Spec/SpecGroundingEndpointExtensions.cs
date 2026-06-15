@@ -4,9 +4,11 @@
 using System.Collections.Immutable;
 using System.Text.Json;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Spec.Canonical;
 using Honua.Core.Features.Spec.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Licensing;
 
 namespace Honua.Ai.Grounding.Spec;
 
@@ -63,6 +65,15 @@ internal static class SpecGroundingEndpointExtensions
         if (!TryMapClarificationAnswer(request.ClarificationAnswer, out var clarificationAnswer, out var clarificationError))
         {
             return InvalidRequest(clarificationError);
+        }
+
+        var entitlementGate = LicenseGate.RequireEntitlement(
+            httpContext,
+            FeatureCatalog.AiGroundingKey,
+            "Spec grounding mutations");
+        if (entitlementGate is not null)
+        {
+            return entitlementGate;
         }
 
         var result = await groundingService.MutateAsync(

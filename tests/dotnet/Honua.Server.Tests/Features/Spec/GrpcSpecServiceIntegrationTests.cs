@@ -5,9 +5,16 @@ using FluentAssertions;
 using Grpc.Core;
 using Grpc.Net.Client;
 using Grpc.Net.Client.Web;
+using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Helpers;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Proto = Geospatial.V1;
 
 namespace Honua.Server.Tests.Features.Spec;
@@ -21,19 +28,14 @@ namespace Honua.Server.Tests.Features.Spec;
 [Protocol(TestProtocols.Grpc)]
 public sealed class GrpcSpecServiceIntegrationTests : IDisposable
 {
-    private readonly TestWebApplicationFactory _factory;
+    private readonly WebApplicationFactory<Program> _factory;
     private readonly GrpcChannel _channel;
     private readonly Proto.SpecService.SpecServiceClient _client;
 
     public GrpcSpecServiceIntegrationTests()
     {
-        _factory = new TestWebApplicationFactory();
-        var testServerHandler = _factory.Server.CreateHandler();
-        var grpcWebHandler = new GrpcWebHandler(GrpcWebMode.GrpcWeb, testServerHandler);
-        _channel = GrpcChannel.ForAddress("http://localhost", new GrpcChannelOptions
-        {
-            HttpHandler = grpcWebHandler
-        });
+        _factory = CreateLicensedFactory(HonuaEdition.Pro);
+        _channel = CreateChannel(_factory);
         _client = new Proto.SpecService.SpecServiceClient(_channel);
     }
 
@@ -505,6 +507,34 @@ public sealed class GrpcSpecServiceIntegrationTests : IDisposable
     }
 
     [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /geospatial.v1.SpecService/ApplySpec")]
+    public async Task ApplySpec_WithCommunityLicense_RaisesFailedPreconditionBeforeStream()
+    {
+        using var factory = CreateLicensedFactory(HonuaEdition.Community);
+        using var channel = CreateChannel(factory);
+        var client = new Proto.SpecService.SpecServiceClient(channel);
+        var request = new Proto.ApplySpecRequest
+        {
+            Document = BuildDocument("node-a"),
+            CacheMode = Proto.SpecCacheMode.ReadWrite,
+            MaxConcurrency = 1
+        };
+
+        var act = async () =>
+        {
+            using var call = client.ApplySpec(request);
+            await foreach (var _ in call.ResponseStream.ReadAllAsync())
+            {
+            }
+        };
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.FailedPrecondition);
+        ex.Which.Status.Detail.Should().Contain(FeatureCatalog.AiSpecApplyKey);
+    }
+
+    [IntegrationTest]
     [Operation(Operations.JobDismiss)]
     [Endpoint("POST /geospatial.v1.SpecService/CancelApply")]
     [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.SpecService/CancelApply")]
@@ -544,5 +574,29 @@ public sealed class GrpcSpecServiceIntegrationTests : IDisposable
             Op = "compute.noop"
         });
         return document;
+    }
+
+    private static WebApplicationFactory<Program> CreateLicensedFactory(HonuaEdition edition)
+    {
+        var license = new TestLicenseEntitlementService(edition);
+        return new TestWebApplicationFactory()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.ConfigureServices(services =>
+                {
+                    services.Replace(ServiceDescriptor.Singleton<ILicenseEntitlementService>(license));
+                    services.Replace(ServiceDescriptor.Singleton<ILicenseStatusProvider>(license));
+                });
+            });
+    }
+
+    private static GrpcChannel CreateChannel(WebApplicationFactory<Program> factory)
+    {
+        var testServerHandler = factory.Server.CreateHandler();
+        var grpcWebHandler = new GrpcWebHandler(GrpcWebMode.GrpcWeb, testServerHandler);
+        return GrpcChannel.ForAddress("http://localhost", new GrpcChannelOptions
+        {
+            HttpHandler = grpcWebHandler
+        });
     }
 }

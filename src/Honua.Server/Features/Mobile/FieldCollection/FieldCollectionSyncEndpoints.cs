@@ -3,9 +3,11 @@
 
 using System.Diagnostics;
 using System.Globalization;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Mobile.FieldCollection.Abstractions;
 using Honua.Core.Features.Mobile.FieldCollection.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
@@ -90,6 +92,12 @@ internal static class FieldCollectionSyncEndpoints
         activity?.SetTag("honua.operation", "generation");
         var logger = loggerFactory.CreateLogger(typeof(FieldCollectionSyncEndpoints));
 
+        var entitlementGate = RequireOfflineSyncEntitlement(context);
+        if (entitlementGate is not null)
+        {
+            return entitlementGate;
+        }
+
         var serverGeneration = await store.GetCurrentGenerationAsync(context.RequestAborted).ConfigureAwait(false);
         activity?.SetTag("honua.fieldcollection.server_generation", serverGeneration);
         FieldCollectionSyncLog.GenerationServed(logger, serverGeneration);
@@ -109,6 +117,12 @@ internal static class FieldCollectionSyncEndpoints
         activity?.SetTag("honua.protocol", ProtocolTag);
         activity?.SetTag("honua.operation", "sync-cursor");
         var logger = loggerFactory.CreateLogger(typeof(FieldCollectionSyncEndpoints));
+
+        var entitlementGate = RequireOfflineSyncEntitlement(context);
+        if (entitlementGate is not null)
+        {
+            return entitlementGate;
+        }
 
         var clientId = ResolveClientId(context);
         activity?.SetTag("honua.fieldcollection.client_id", clientId);
@@ -136,6 +150,12 @@ internal static class FieldCollectionSyncEndpoints
         activity?.SetTag("honua.protocol", ProtocolTag);
         activity?.SetTag("honua.operation", "sync-cursor-ack");
         var logger = loggerFactory.CreateLogger(typeof(FieldCollectionSyncEndpoints));
+
+        var entitlementGate = RequireOfflineSyncEntitlement(context);
+        if (entitlementGate is not null)
+        {
+            return entitlementGate;
+        }
 
         if (body?.LastSyncGeneration is not long lastSyncGeneration)
         {
@@ -196,6 +216,12 @@ internal static class FieldCollectionSyncEndpoints
         activity?.SetTag("honua.protocol", ProtocolTag);
         activity?.SetTag("honua.operation", "pull");
         var logger = loggerFactory.CreateLogger(typeof(FieldCollectionSyncEndpoints));
+
+        var entitlementGate = RequireOfflineSyncEntitlement(context);
+        if (entitlementGate is not null)
+        {
+            return entitlementGate;
+        }
 
         var since = sinceGeneration ?? 0L;
         if (since < 0)
@@ -273,6 +299,12 @@ internal static class FieldCollectionSyncEndpoints
         activity?.SetTag("honua.protocol", ProtocolTag);
         activity?.SetTag("honua.operation", "push");
         var logger = loggerFactory.CreateLogger(typeof(FieldCollectionSyncEndpoints));
+
+        var entitlementGate = RequireOfflineSyncEntitlement(context);
+        if (entitlementGate is not null)
+        {
+            return entitlementGate;
+        }
 
         if (body is null)
         {
@@ -487,4 +519,10 @@ internal static class FieldCollectionSyncEndpoints
         // must not cache stale data on intermediate proxies.
         response.Headers.CacheControl = "no-store";
     }
+
+    private static IResult? RequireOfflineSyncEntitlement(HttpContext context)
+        => LicenseGate.RequireEntitlement(
+            context,
+            FeatureCatalog.FieldOpsOfflineSyncKey,
+            "Offline field sync");
 }
