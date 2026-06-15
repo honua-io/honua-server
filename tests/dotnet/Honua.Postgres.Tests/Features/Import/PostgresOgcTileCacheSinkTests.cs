@@ -168,7 +168,7 @@ public sealed class PostgresOgcTileCacheSinkTests(PostgresFixture fixture)
         return (reader.GetInt32(0), reader.GetInt32(1));
     }
 
-    private sealed class FixtureConnectionProvider(PostgresFixture postgresFixture) : IDatabaseConnectionProvider
+    private sealed class FixtureConnectionProvider(PostgresFixture postgresFixture) : IAdoNetDatabaseConnectionProvider
     {
         public string GetConnectionString() => postgresFixture.ConnectionString;
 

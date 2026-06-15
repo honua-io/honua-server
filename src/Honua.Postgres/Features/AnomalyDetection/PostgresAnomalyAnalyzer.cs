@@ -18,7 +18,7 @@ namespace Honua.Postgres.Features.AnomalyDetection;
 /// Detects geometry and attribute anomalies using SQL-based statistical analysis.
 /// </summary>
 internal sealed partial class PostgresAnomalyAnalyzer(
-    IDatabaseConnectionProvider connectionProvider,
+    IAdoNetDatabaseConnectionProvider connectionProvider,
     ILogger<PostgresAnomalyAnalyzer> logger) : IAnomalyAnalyzer
 {
     // ActivitySource for tracing (same name as HonuaTelemetry for correlation)

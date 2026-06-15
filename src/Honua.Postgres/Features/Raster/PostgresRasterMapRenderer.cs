@@ -21,12 +21,12 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
 {
     private static readonly FrozenSet<string> _allowedOutputFormats = new[] { "GTiff", "PNG", "JPEG" }.ToFrozenSet(StringComparer.Ordinal);
 
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly ILogger<PostgresRasterMapRenderer> _logger;
     private readonly string _rasterDataTable;
 
     public PostgresRasterMapRenderer(
-        IDatabaseConnectionProvider connectionProvider,
+        IAdoNetDatabaseConnectionProvider connectionProvider,
         ILogger<PostgresRasterMapRenderer> logger,
         string? schemaName = null)
     {

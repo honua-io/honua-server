@@ -30,7 +30,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         "WHERE clause format not supported for source-backed PostGIS layers.";
     private const int MaxJsonbBuildObjectPairs = 50;
 
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly ObjectPool<Dictionary<string, object?>> _dictionaryPool;
     private readonly MetadataV2Resource _resource;
     private readonly FeatureStorageMapping _mapping;
@@ -45,7 +45,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     private string? _resolvedBoundConnectionString;
 
     public PostgresStorageMappedFeatureReader(
-        IDatabaseConnectionProvider connectionProvider,
+        IAdoNetDatabaseConnectionProvider connectionProvider,
         ObjectPool<Dictionary<string, object?>> dictionaryPool,
         MetadataV2Resource resource,
         FeatureStorageMapping mapping,

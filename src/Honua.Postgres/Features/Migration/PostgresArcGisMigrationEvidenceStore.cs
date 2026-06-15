@@ -37,11 +37,11 @@ internal sealed class PostgresArcGisMigrationEvidenceStore : IArcGisMigrationEvi
 {
     private static readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web);
 
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly string _table;
 
     public PostgresArcGisMigrationEvidenceStore(
-        IDatabaseConnectionProvider connectionProvider,
+        IAdoNetDatabaseConnectionProvider connectionProvider,
         string? schemaName = null)
     {
         ArgumentNullException.ThrowIfNull(connectionProvider);

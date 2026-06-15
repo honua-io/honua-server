@@ -13,6 +13,12 @@ namespace Honua.Infrastructure.Authentication;
 /// Evaluates operator-scoped resource authorization using convention mapping from
 /// the existing <see cref="IRoleStore"/> permission grants.
 /// </summary>
+/// <remarks>
+/// Registered as a singleton. <see cref="IRoleStore"/> is resolved per call via
+/// <see cref="IServiceScopeFactory"/> so that a scoped store implementation
+/// (e.g. PostgresRoleStore, which captures a scoped
+/// <c>IDatabaseConnectionProvider</c>) works correctly once durable RBAC lands.
+/// </remarks>
 internal sealed class OperatorAuthorizationEvaluator(
     IServiceScopeFactory scopeFactory,
     IOptions<RbacOptions> rbacOptions,

@@ -12,9 +12,9 @@ namespace Honua.Postgres.Features.Alerts;
 
 internal sealed class PostgresAlertAdminStore : IAlertAdminStore
 {
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
 
-    public PostgresAlertAdminStore(IDatabaseConnectionProvider connectionProvider)
+    public PostgresAlertAdminStore(IAdoNetDatabaseConnectionProvider connectionProvider)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
     }

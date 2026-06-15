@@ -50,6 +50,9 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
 
     public GeoServerImportEndpointTests()
     {
+        // The geoserver import endpoints are gated behind the Enterprise "import.geoserver"
+        // entitlement (FeatureCatalog); without an Enterprise license every discover/start
+        // request short-circuits to 402 before reaching the behavior under test.
         _fixture = new WebAppFixture()
             .WithTestLicense(HonuaEdition.Enterprise)
             .ReplaceService<IGeoServerImportService>(_importService);

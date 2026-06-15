@@ -16,7 +16,7 @@ using Npgsql;
 namespace Honua.Postgres.Features.FeatureStore.Services;
 
 internal sealed record FeatureDataAccessDependencies(
-    IDatabaseConnectionProvider ConnectionProvider,
+    IAdoNetDatabaseConnectionProvider ConnectionProvider,
     IGeometryProcessor GeometryProcessor,
     IFeatureCacheManager CacheManager,
     ObjectPool<Dictionary<string, object?>> DictionaryPool,
@@ -33,7 +33,7 @@ internal sealed record FeatureDataAccessDependencies(
 /// </summary>
 internal sealed partial class FeatureDataAccess : IFeatureDataAccess
 {
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly IGeometryProcessor _geometryProcessor;
     private readonly IFeatureCacheManager _cacheManager;
     private readonly ObjectPool<Dictionary<string, object?>> _dictionaryPool;

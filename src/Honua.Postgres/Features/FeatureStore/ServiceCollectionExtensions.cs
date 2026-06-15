@@ -53,7 +53,7 @@ internal static class ServiceCollectionExtensions
 
         services.AddScoped<IFeatureCacheManager>(provider =>
         {
-            var connectionProvider = provider.GetRequiredService<IDatabaseConnectionProvider>();
+            var connectionProvider = provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>();
             var logger = provider.GetRequiredService<ILogger<FeatureCacheManager>>();
             return new FeatureCacheManager(connectionProvider, logger, schemaName);
         });
@@ -68,7 +68,7 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<IFeatureDataAccess>(provider =>
         {
             var dependencies = new FeatureDataAccessDependencies(
-                provider.GetRequiredService<IDatabaseConnectionProvider>(),
+                provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 provider.GetRequiredService<IGeometryProcessor>(),
                 provider.GetRequiredService<IFeatureCacheManager>(),
                 provider.GetRequiredService<ObjectPool<Dictionary<string, object?>>>(),
@@ -89,7 +89,7 @@ internal static class ServiceCollectionExtensions
                 provider.GetRequiredService<IFeatureQueryBuilder>(),
                 provider.GetRequiredService<IFeatureDataAccess>(),
                 provider.GetRequiredService<IFeatureCacheManager>(),
-                provider.GetRequiredService<IDatabaseConnectionProvider>(),
+                provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 provider.GetRequiredService<ObjectPool<Dictionary<string, object?>>>(),
                 provider.GetService<IConnectionEncryptionService>(),
                 provider.GetService<IFilterExpressionService>(),

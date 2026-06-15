@@ -82,6 +82,44 @@ public interface IDatabaseSession : IAsyncDisposable
     IAsyncEnumerable<T> QueryAsync<T>(string sql, object? parameters = null, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Executes a query and materialises the first row via <paramref name="rowMapper"/>,
+    /// or returns <c>default</c> when the query yields no rows.
+    /// </summary>
+    /// <typeparam name="T">Materialised result type.</typeparam>
+    /// <param name="sql">The SQL command text.</param>
+    /// <param name="rowMapper">
+    /// Maps the current <see cref="IDatabaseRow"/> to <typeparamref name="T"/>. The row view is
+    /// only valid inside the callback — materialise values, do not capture the row.
+    /// </param>
+    /// <param name="parameters">Optional parameter object (see <see cref="ExecuteAsync"/>).</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The mapped first row, or <c>default</c> when no row was returned.</returns>
+    Task<T?> QuerySingleOrDefaultAsync<T>(
+        string sql,
+        Func<IDatabaseRow, T> rowMapper,
+        object? parameters = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Streams the results of a multi-column query, materialising each row via
+    /// <paramref name="rowMapper"/>.
+    /// </summary>
+    /// <typeparam name="T">Materialised result type.</typeparam>
+    /// <param name="sql">The SQL command text.</param>
+    /// <param name="rowMapper">
+    /// Maps the current <see cref="IDatabaseRow"/> to <typeparamref name="T"/>. The row view is
+    /// only valid inside the callback — materialise values, do not capture the row.
+    /// </param>
+    /// <param name="parameters">Optional parameter object (see <see cref="ExecuteAsync"/>).</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>An async stream of mapped rows.</returns>
+    IAsyncEnumerable<T> QueryAsync<T>(
+        string sql,
+        Func<IDatabaseRow, T> rowMapper,
+        object? parameters = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Begins a new transactional session nested on top of this session's connection.
     /// </summary>
     /// <param name="isolationLevel">Transaction isolation level. Defaults to <see cref="IsolationLevel.RepeatableRead"/>.</param>

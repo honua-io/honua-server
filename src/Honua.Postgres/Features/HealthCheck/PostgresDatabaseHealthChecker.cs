@@ -15,11 +15,11 @@ namespace Honua.Postgres.Features.HealthCheck;
 /// outside the Infrastructure layer (Clean Architecture principle).
 /// </remarks>
 internal sealed partial class PostgresDatabaseHealthChecker(
-    IDatabaseConnectionProvider connectionProvider,
+    IAdoNetDatabaseConnectionProvider connectionProvider,
     ILogger<PostgresDatabaseHealthChecker> logger)
     : IDatabaseHealthChecker
 {
-    private readonly IDatabaseConnectionProvider _connectionProvider =
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider =
         connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
 
     private readonly ILogger<PostgresDatabaseHealthChecker> _logger =

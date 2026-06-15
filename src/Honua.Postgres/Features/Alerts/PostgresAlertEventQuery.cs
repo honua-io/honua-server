@@ -21,12 +21,12 @@ internal sealed class PostgresAlertEventQuery : IAlertEventQuery
     internal const int MaxPageSize = 200;
     internal const int DefaultPageSize = 50;
 
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly string _eventsTable;
     private readonly string _lifecycleTable;
     private readonly string _rulesTable;
 
-    public PostgresAlertEventQuery(IDatabaseConnectionProvider connectionProvider, string? schemaName = null)
+    public PostgresAlertEventQuery(IAdoNetDatabaseConnectionProvider connectionProvider, string? schemaName = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _eventsTable = SchemaSearchPath.QualifyTable("alert_events", schemaName);

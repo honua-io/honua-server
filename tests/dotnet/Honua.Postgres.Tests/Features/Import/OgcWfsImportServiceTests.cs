@@ -574,7 +574,7 @@ public sealed class OgcWfsImportServiceTests(PostgresFixture fixture)
         }
     }
 
-    private sealed class FixtureConnectionProvider(PostgresFixture postgresFixture) : IDatabaseConnectionProvider
+    private sealed class FixtureConnectionProvider(PostgresFixture postgresFixture) : IAdoNetDatabaseConnectionProvider
     {
         public string GetConnectionString() => postgresFixture.ConnectionString;
 

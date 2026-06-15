@@ -15,12 +15,12 @@ namespace Honua.Postgres.Features.Raster;
 /// </summary>
 internal sealed class PostgresSurfaceAnalysisService : ISurfaceAnalysisService
 {
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly ILogger<PostgresSurfaceAnalysisService> _logger;
     private readonly string _rasterDataTable;
 
     public PostgresSurfaceAnalysisService(
-        IDatabaseConnectionProvider connectionProvider,
+        IAdoNetDatabaseConnectionProvider connectionProvider,
         ILogger<PostgresSurfaceAnalysisService> logger,
         string? schemaName = null)
     {

@@ -60,9 +60,10 @@ public sealed class NAServerPgRoutingEndToEndTests : IClassFixture<PgRoutingFixt
             {
                 services.RemoveAll<IRoutingProvider>();
                 services.AddScoped<IRoutingProvider>(_ => new PgRoutingProvider(
-                    new FixtureDatabaseConnectionProvider(
-                        routingFixture.DataSource,
-                        routingFixture.ConnectionString),
+                    new FixtureDatabaseSessionFactory(
+                        new FixtureDatabaseConnectionProvider(
+                            routingFixture.DataSource,
+                            routingFixture.ConnectionString)),
                     NullLogger<PgRoutingProvider>.Instance));
             });
     }

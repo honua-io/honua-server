@@ -274,7 +274,7 @@ public sealed class PostgresRasterStoreStatisticsTests(PostgresFixture fixture)
         await command.ExecuteNonQueryAsync();
     }
 
-    private sealed class FixtureConnectionProvider(NpgsqlDataSource dataSource) : IDatabaseConnectionProvider
+    private sealed class FixtureConnectionProvider(NpgsqlDataSource dataSource) : IAdoNetDatabaseConnectionProvider
     {
         public string GetConnectionString() => dataSource.ConnectionString;
 

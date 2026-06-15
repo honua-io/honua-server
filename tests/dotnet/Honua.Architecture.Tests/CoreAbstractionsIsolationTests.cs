@@ -78,14 +78,11 @@ public sealed class CoreAbstractionsIsolationTests
     /// <c>System.Data.Common.DbTransaction</c> through its public surface.
     /// </summary>
     /// <remarks>
-    /// Currently skipped. The session abstraction (<c>IDatabaseSession</c> /
-    /// <c>IDatabaseSessionFactory</c>) ships side-by-side with the legacy
-    /// provider; the leaky members will be removed once the follow-on
-    /// row-mapping / typed-parameter / bulk-load facilities land. Remove
-    /// the <c>Skip</c> and update the implementations in lockstep at that
-    /// point. See ADR-0046 for the migration plan and triage rationale.
+    /// Provider-internal raw ADO.NET access is available through
+    /// <c>IAdoNetDatabaseConnectionProvider</c> in <c>Honua.Core</c>; the
+    /// public abstractions contract remains provider-neutral.
     /// </remarks>
-    [Fact(Skip = "Audit C3 deferred — see ADR-0046. Unskip when the leaky members are removed.")]
+    [Fact]
     [Trait("Category", "Architecture")]
     public void DatabaseConnectionProvider_ShouldNotLeak_AdoNetTypes()
     {

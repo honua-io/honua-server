@@ -15,11 +15,11 @@ namespace Honua.Postgres.Features.Alerts;
 /// </summary>
 internal sealed class PostgresAlertLifecycleStore : IAlertLifecycleStore
 {
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly string _lifecycleTable;
     private readonly string _eventsTable;
 
-    public PostgresAlertLifecycleStore(IDatabaseConnectionProvider connectionProvider, string? schemaName = null)
+    public PostgresAlertLifecycleStore(IAdoNetDatabaseConnectionProvider connectionProvider, string? schemaName = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _lifecycleTable = SchemaSearchPath.QualifyTable("alert_event_lifecycle", schemaName);

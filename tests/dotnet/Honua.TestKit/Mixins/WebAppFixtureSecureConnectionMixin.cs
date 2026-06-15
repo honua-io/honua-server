@@ -77,7 +77,7 @@ internal static class WebAppFixtureSecureConnectionMixin
         }
 
         var services = scope.ServiceProvider;
-        var connectionProvider = services.GetRequiredService<IDatabaseConnectionProvider>();
+        var connectionProvider = services.GetRequiredService<IAdoNetDatabaseConnectionProvider>();
 
         if (!await SecureConnectionTablesAvailableAsync(connectionProvider).ConfigureAwait(false))
         {
@@ -146,7 +146,7 @@ internal static class WebAppFixtureSecureConnectionMixin
         }
     }
 
-    private static async Task<bool> SecureConnectionTablesAvailableAsync(IDatabaseConnectionProvider connectionProvider)
+    private static async Task<bool> SecureConnectionTablesAvailableAsync(IAdoNetDatabaseConnectionProvider connectionProvider)
     {
         const string sql = """
             SELECT 1
@@ -184,7 +184,7 @@ internal static class WebAppFixtureSecureConnectionMixin
         return false;
     }
 
-    private static async Task EnsureSecureConnectionProviderColumnAsync(IDatabaseConnectionProvider connectionProvider)
+    private static async Task EnsureSecureConnectionProviderColumnAsync(IAdoNetDatabaseConnectionProvider connectionProvider)
     {
         const string sql = """
             ALTER TABLE IF EXISTS honua.data_connections

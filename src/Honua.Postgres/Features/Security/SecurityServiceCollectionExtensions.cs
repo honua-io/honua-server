@@ -107,9 +107,9 @@ internal static class SecurityServiceCollectionExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        // Replace the existing IDatabaseConnectionProvider registration
+        // Replace the existing IAdoNetDatabaseConnectionProvider registration
         // Capture the current provider descriptor so we can wrap it safely.
-        if (services.LastOrDefault(s => s.ServiceType == typeof(IDatabaseConnectionProvider)) is not { } existingDescriptor)
+        if (services.LastOrDefault(s => s.ServiceType == typeof(IAdoNetDatabaseConnectionProvider)) is not { } existingDescriptor)
         {
             throw new InvalidOperationException("No default database connection provider found");
         }
@@ -117,11 +117,21 @@ internal static class SecurityServiceCollectionExtensions
         services.Remove(existingDescriptor);
 
         // Register the original provider under a stable service type to avoid circular dependencies.
+        // The base descriptor may resolve to nothing when the database layer is intentionally
+        // unwired (e.g. DB-less / mocked test hosts that strip IDatabaseConnectionProvider and
+        // NpgsqlDataSource). In that case the primary provider degrades to null so the secure
+        // decorator below can also degrade to null and callers using GetService(...) see the
+        // "no database wired" contract instead of a hard resolution failure.
         services.Add(new ServiceDescriptor(
             typeof(IPrimaryDatabaseConnectionProvider),
             serviceProvider =>
             {
                 var provider = ResolveOriginalProvider(existingDescriptor, serviceProvider);
+                if (provider is null)
+                {
+                    return null!;
+                }
+
                 return provider is IPrimaryDatabaseConnectionProvider primary
                     ? primary
                     : new PrimaryDatabaseConnectionProviderAdapter(provider);
@@ -130,10 +140,18 @@ internal static class SecurityServiceCollectionExtensions
 
         // Register the secure connection-aware provider as a decorator
         services.Add(new ServiceDescriptor(
-            typeof(IDatabaseConnectionProvider),
+            typeof(IAdoNetDatabaseConnectionProvider),
             serviceProvider =>
             {
-                var originalProvider = serviceProvider.GetRequiredService<IPrimaryDatabaseConnectionProvider>();
+                var originalProvider = serviceProvider.GetService<IPrimaryDatabaseConnectionProvider>();
+                if (originalProvider is null)
+                {
+                    // No base provider — the database layer is unwired. Degrade to null so
+                    // GetService<IAdoNetDatabaseConnectionProvider>() returns null rather than
+                    // throwing while constructing the decorator.
+                    return null!;
+                }
+
                 var secureResolver = serviceProvider.GetRequiredService<ISecureConnectionResolver>();
                 var dataSourceCache = serviceProvider.GetRequiredService<SecureConnectionDataSourceCache>();
                 var logger = serviceProvider.GetRequiredService<ILogger<SecureConnectionAwareDatabaseProvider>>();
@@ -158,23 +176,29 @@ internal static class SecurityServiceCollectionExtensions
         return services;
     }
 
-    private static IDatabaseConnectionProvider ResolveOriginalProvider(
+    private static IAdoNetDatabaseConnectionProvider? ResolveOriginalProvider(
         ServiceDescriptor descriptor,
         IServiceProvider serviceProvider)
     {
-        if (descriptor.ImplementationInstance is IDatabaseConnectionProvider instance)
+        if (descriptor.ImplementationInstance is IAdoNetDatabaseConnectionProvider instance)
         {
             return instance;
         }
 
         if (descriptor.ImplementationFactory is not null)
         {
-            return (IDatabaseConnectionProvider)descriptor.ImplementationFactory(serviceProvider);
+            // The captured base descriptor (ADR-0046 escape hatch) is a forwarding factory
+            // that resolves IDatabaseConnectionProvider. In DB-less / mocked test hosts that
+            // service mapping is stripped, so the factory yields null. Treat a missing base
+            // mapping as "no database wired" and degrade to null; when the base IS present
+            // keep the original hard cast so the real DB path is unchanged.
+            var resolved = descriptor.ImplementationFactory(serviceProvider);
+            return resolved is null ? null : (IAdoNetDatabaseConnectionProvider)resolved;
         }
 
         if (descriptor.ImplementationType is not null)
         {
-            return (IDatabaseConnectionProvider)ActivatorUtilities.CreateInstance(
+            return (IAdoNetDatabaseConnectionProvider)ActivatorUtilities.CreateInstance(
                 serviceProvider,
                 descriptor.ImplementationType);
         }
@@ -184,9 +208,9 @@ internal static class SecurityServiceCollectionExtensions
 
     private sealed class PrimaryDatabaseConnectionProviderAdapter : IPrimaryDatabaseConnectionProvider
     {
-        private readonly IDatabaseConnectionProvider _inner;
+        private readonly IAdoNetDatabaseConnectionProvider _inner;
 
-        public PrimaryDatabaseConnectionProviderAdapter(IDatabaseConnectionProvider inner)
+        public PrimaryDatabaseConnectionProviderAdapter(IAdoNetDatabaseConnectionProvider inner)
         {
             _inner = inner ?? throw new ArgumentNullException(nameof(inner));
         }

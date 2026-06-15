@@ -16,7 +16,7 @@ internal static class DatabaseConnectionProviderExtensions
     /// concurrency gate slot release in <see cref="SemaphoreReleasingConnection"/>).
     /// </summary>
     public static async Task<NpgsqlConnectionLease> OpenNpgsqlConnectionAsync(
-        this IDatabaseConnectionProvider connectionProvider,
+        this IAdoNetDatabaseConnectionProvider connectionProvider,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(connectionProvider);

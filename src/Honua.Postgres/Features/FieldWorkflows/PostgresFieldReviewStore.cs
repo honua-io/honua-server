@@ -23,13 +23,13 @@ internal sealed class PostgresFieldReviewStore : IFieldReviewStore
 {
     private const int MaxLimit = 500;
 
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly string _submissionsTable;
     private readonly string _attachmentsTable;
     private readonly string _reviewsTable;
     private readonly string _commentsTable;
 
-    public PostgresFieldReviewStore(IDatabaseConnectionProvider connectionProvider)
+    public PostgresFieldReviewStore(IAdoNetDatabaseConnectionProvider connectionProvider)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _submissionsTable = SchemaSearchPath.QualifyTable("form_submissions", "honua");

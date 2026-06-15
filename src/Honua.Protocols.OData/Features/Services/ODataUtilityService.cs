@@ -468,6 +468,10 @@ internal static class ODataUtilityService
     /// <summary>
     /// Checks if pagination should be applied based on result size and current parameters.
     /// </summary>
+    /// <param name="resultCount">Number of items returned in this page.</param>
+    /// <param name="currentSkip">Current offset into the full result set.</param>
+    /// <param name="totalCount">Total number of items matching the query.</param>
+    /// <param name="top">Effective server page size (may be server-capped).</param>
     public static bool ShouldPaginate(int resultCount, int currentSkip, long totalCount, int? top)
     {
         return (long)currentSkip + resultCount < totalCount;

@@ -26,12 +26,12 @@ internal sealed class PostgresInvestigationStore : IInvestigationStore
 
     private static readonly SearchValues<char> _likeMetacharacters = SearchValues.Create("\\%_");
 
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly string _investigationsTable;
     private readonly string _pinsTable;
     private readonly string _linksTable;
 
-    public PostgresInvestigationStore(IDatabaseConnectionProvider connectionProvider, string? schemaName = null)
+    public PostgresInvestigationStore(IAdoNetDatabaseConnectionProvider connectionProvider, string? schemaName = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _investigationsTable = SchemaSearchPath.QualifyTable("investigations", schemaName);

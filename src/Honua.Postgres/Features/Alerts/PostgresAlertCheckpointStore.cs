@@ -11,9 +11,9 @@ namespace Honua.Postgres.Features.Alerts;
 
 internal sealed class PostgresAlertCheckpointStore : IAlertCheckpointStore
 {
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
 
-    public PostgresAlertCheckpointStore(IDatabaseConnectionProvider connectionProvider)
+    public PostgresAlertCheckpointStore(IAdoNetDatabaseConnectionProvider connectionProvider)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
     }

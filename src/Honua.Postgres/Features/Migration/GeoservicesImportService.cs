@@ -36,7 +36,7 @@ namespace Honua.Postgres.Features.Migration;
 internal sealed partial class GeoservicesImportService : IGeoservicesImportService
 {
     private readonly ArcGisRestClient _restClient;
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly ICrsRegistry _crsRegistry;
     private readonly IEsriConstructCapabilityRegistry _constructCapabilityRegistry;
     private readonly ILayerPublishingService? _layerPublishingService;
@@ -51,7 +51,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
 
     public GeoservicesImportService(
         ArcGisRestClient restClient,
-        IDatabaseConnectionProvider connectionProvider,
+        IAdoNetDatabaseConnectionProvider connectionProvider,
         ICrsRegistry crsRegistry,
         IEsriConstructCapabilityRegistry constructCapabilityRegistry,
         ILogger<GeoservicesImportService> logger,

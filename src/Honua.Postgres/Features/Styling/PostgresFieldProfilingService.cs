@@ -30,12 +30,12 @@ internal sealed partial class PostgresFieldProfilingService : IFieldProfilingSer
     /// </summary>
     private const string JsonbNumberType = "'number'";
 
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly ILogger<PostgresFieldProfilingService> _logger;
     private readonly string _featuresTable;
 
     public PostgresFieldProfilingService(
-        IDatabaseConnectionProvider connectionProvider,
+        IAdoNetDatabaseConnectionProvider connectionProvider,
         ILogger<PostgresFieldProfilingService> logger,
         string? schemaName = null)
     {

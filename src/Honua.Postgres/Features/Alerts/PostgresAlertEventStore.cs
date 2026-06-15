@@ -11,9 +11,9 @@ namespace Honua.Postgres.Features.Alerts;
 
 internal sealed class PostgresAlertEventStore : IAlertEventStore
 {
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
 
-    public PostgresAlertEventStore(IDatabaseConnectionProvider connectionProvider)
+    public PostgresAlertEventStore(IAdoNetDatabaseConnectionProvider connectionProvider)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
     }

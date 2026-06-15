@@ -100,6 +100,49 @@ public class AdoNetDatabaseSession : IDatabaseSession
     }
 
     /// <inheritdoc />
+    public async Task<T?> QuerySingleOrDefaultAsync<T>(
+        string sql,
+        Func<IDatabaseRow, T> rowMapper,
+        object? parameters = null,
+        CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        ArgumentException.ThrowIfNullOrWhiteSpace(sql);
+        ArgumentNullException.ThrowIfNull(rowMapper);
+
+        await using var command = CreateCommand(sql, parameters);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return default;
+        }
+
+        return rowMapper(new DataReaderRow(reader));
+    }
+
+    /// <inheritdoc />
+    public async IAsyncEnumerable<T> QueryAsync<T>(
+        string sql,
+        Func<IDatabaseRow, T> rowMapper,
+        object? parameters = null,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        ArgumentException.ThrowIfNullOrWhiteSpace(sql);
+        ArgumentNullException.ThrowIfNull(rowMapper);
+
+        await using var command = CreateCommand(sql, parameters);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+
+        var row = new DataReaderRow(reader);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            yield return rowMapper(row);
+        }
+    }
+
+    /// <inheritdoc />
     public async Task<IDatabaseSession> BeginTransactionAsync(
         IsolationLevel isolationLevel = IsolationLevel.RepeatableRead,
         CancellationToken cancellationToken = default)
@@ -211,6 +254,22 @@ public class AdoNetDatabaseSession : IDatabaseSession
 
         var targetType = Nullable.GetUnderlyingType(typeof(T)) ?? typeof(T);
         return (T)Convert.ChangeType(value, targetType, System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>
+    /// <see cref="IDatabaseRow"/> adapter over the live <see cref="DbDataReader"/>.
+    /// A single instance is reused across rows of one enumeration; mappers must
+    /// materialise values inside the callback (see <see cref="IDatabaseRow"/> remarks).
+    /// </summary>
+    private sealed class DataReaderRow(DbDataReader reader) : IDatabaseRow
+    {
+        public int FieldCount => reader.FieldCount;
+
+        public bool IsNull(int ordinal) => reader.IsDBNull(ordinal);
+
+        public T GetFieldValue<T>(int ordinal) => reader.GetFieldValue<T>(ordinal);
+
+        public int GetOrdinal(string name) => reader.GetOrdinal(name);
     }
 }
 

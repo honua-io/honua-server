@@ -19,7 +19,7 @@ namespace Honua.Postgres.Features.Authorization;
 /// </summary>
 internal sealed class PostgresRoleStore : IRoleStore
 {
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly string _rolesTable;
     private readonly string _permissionsTable;
 
@@ -29,7 +29,7 @@ internal sealed class PostgresRoleStore : IRoleStore
     /// <param name="connectionProvider">The database connection provider.</param>
     /// <param name="schemaName">Optional schema override (used by tests for
     /// isolated schemas); defaults to the application schema.</param>
-    public PostgresRoleStore(IDatabaseConnectionProvider connectionProvider, string? schemaName = null)
+    public PostgresRoleStore(IAdoNetDatabaseConnectionProvider connectionProvider, string? schemaName = null)
     {
         ArgumentNullException.ThrowIfNull(connectionProvider);
         _connectionProvider = connectionProvider;

@@ -13,10 +13,10 @@ namespace Honua.Postgres.Features.Share;
 
 internal sealed class PostgresShareTrafficStore : IShareTrafficStore
 {
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly string _trafficTable;
 
-    public PostgresShareTrafficStore(IDatabaseConnectionProvider connectionProvider, string? schemaName = null)
+    public PostgresShareTrafficStore(IAdoNetDatabaseConnectionProvider connectionProvider, string? schemaName = null)
     {
         ArgumentNullException.ThrowIfNull(connectionProvider);
         _connectionProvider = connectionProvider;

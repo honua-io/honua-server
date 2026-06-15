@@ -15,13 +15,13 @@ namespace Honua.Postgres.Features.AnalysisContent;
 
 internal sealed class PostgresAnalysisContentStore : IAnalysisContentStore
 {
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly string _itemsTable;
     private readonly string _versionsTable;
     private readonly string _artifactsTable;
 
     public PostgresAnalysisContentStore(
-        IDatabaseConnectionProvider connectionProvider,
+        IAdoNetDatabaseConnectionProvider connectionProvider,
         string? schemaName = null)
     {
         ArgumentNullException.ThrowIfNull(connectionProvider);

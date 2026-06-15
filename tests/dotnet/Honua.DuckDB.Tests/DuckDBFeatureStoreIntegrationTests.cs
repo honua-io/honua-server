@@ -350,7 +350,7 @@ public class DuckDBFeatureStoreIntegrationTests : IAsyncLifetime
     /// Opens a fresh DuckDB connection to the temp-file database for each call,
     /// ensuring the spatial extension is loaded on each connection.
     /// </summary>
-    private sealed class FileDuckDBConnectionProvider : Core.Features.Infrastructure.Abstractions.IDatabaseConnectionProvider
+    private sealed class FileDuckDBConnectionProvider : Core.Features.Infrastructure.Abstractions.IAdoNetDatabaseConnectionProvider
     {
         private readonly string _connectionString;
         private readonly DuckDBSpatialBootstrap _spatialBootstrap;

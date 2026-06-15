@@ -34,9 +34,9 @@ namespace Honua.Postgres.Features.Security;
 ///    to the default database, because resolution failures include security
 ///    checks (decryption, secret resolution, SSL-requirement violations).
 /// </remarks>
-internal sealed class SecureConnectionAwareDatabaseProvider : IDatabaseConnectionProvider, IDisposable
+internal sealed class SecureConnectionAwareDatabaseProvider : IAdoNetDatabaseConnectionProvider, IDisposable
 {
-    private readonly IDatabaseConnectionProvider _defaultProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _defaultProvider;
     private readonly ISecureConnectionResolver _secureResolver;
     private readonly SecureConnectionDataSourceCache _dataSourceCache;
     private readonly IConfiguration _configuration;
@@ -88,7 +88,7 @@ internal sealed class SecureConnectionAwareDatabaseProvider : IDatabaseConnectio
             "Secure connection acquisition timed out — server is under heavy load");
 
     public SecureConnectionAwareDatabaseProvider(
-        IDatabaseConnectionProvider defaultProvider,
+        IAdoNetDatabaseConnectionProvider defaultProvider,
         ISecureConnectionResolver secureResolver,
         SecureConnectionDataSourceCache dataSourceCache,
         IConfiguration configuration,

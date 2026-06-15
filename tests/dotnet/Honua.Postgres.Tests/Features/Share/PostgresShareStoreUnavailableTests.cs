@@ -64,9 +64,9 @@ public sealed class PostgresShareStoreUnavailableTests
     private static PostgresShareTrafficStore CreateTrafficStore(Exception exception)
         => new(CreateConnectionProvider(exception));
 
-    private static IDatabaseConnectionProvider CreateConnectionProvider(Exception exception)
+    private static IAdoNetDatabaseConnectionProvider CreateConnectionProvider(Exception exception)
     {
-        var provider = Substitute.For<IDatabaseConnectionProvider>();
+        var provider = Substitute.For<IAdoNetDatabaseConnectionProvider>();
         provider.OpenConnectionAsync(Arg.Any<CancellationToken>())
             .Returns(Task.FromException<DbConnection>(exception));
         return provider;

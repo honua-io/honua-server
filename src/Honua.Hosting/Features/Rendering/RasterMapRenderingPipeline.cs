@@ -1092,7 +1092,7 @@ internal static class RasterMapRenderingPipeline
                 }
             }
 
-            var connectionProvider = context.RequestServices.GetService<IDatabaseConnectionProvider>();
+            var connectionProvider = context.RequestServices.GetService<IAdoNetDatabaseConnectionProvider>();
             if (connectionProvider == null)
             {
                 return ExtentTransformResult.Failure(InvalidSpatialReferenceMessage);
@@ -1115,7 +1115,7 @@ internal static class RasterMapRenderingPipeline
     }
 
     private static async Task<SkiaMapRenderer.RenderExtent?> TryTransformExtentWithPostGisAsync(
-        IDatabaseConnectionProvider connectionProvider,
+        IAdoNetDatabaseConnectionProvider connectionProvider,
         ILogger logger,
         SkiaMapRenderer.RenderExtent extent,
         int fromSrid,

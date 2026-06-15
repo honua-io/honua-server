@@ -28,7 +28,7 @@ namespace Honua.Postgres.Features.FileImport;
 /// </summary>
 internal sealed partial class CrsDetectionService : ICrsDetectionService
 {
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly ILogger<CrsDetectionService> _logger;
 
     /// <summary>
@@ -72,7 +72,7 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
         @"(?:EPSG:|AUTHORITY\[""EPSG"",""?)(\d{3,6})(?:""|])?",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    public CrsDetectionService(IDatabaseConnectionProvider connectionProvider, ILogger<CrsDetectionService> logger)
+    public CrsDetectionService(IAdoNetDatabaseConnectionProvider connectionProvider, ILogger<CrsDetectionService> logger)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));

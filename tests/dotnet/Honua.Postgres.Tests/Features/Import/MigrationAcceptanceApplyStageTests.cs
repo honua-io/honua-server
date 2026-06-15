@@ -361,7 +361,7 @@ public sealed class MigrationAcceptanceApplyStageTests
             httpClient,
             NullLogger<ArcGisRestClient>.Instance,
             (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
-        var connectionProvider = new Mock<IDatabaseConnectionProvider>(MockBehavior.Strict);
+        var connectionProvider = new Mock<IAdoNetDatabaseConnectionProvider>(MockBehavior.Strict);
         var crsRegistry = CreateCrsRegistry();
 
         return new GeoservicesImportService(
@@ -379,7 +379,7 @@ public sealed class MigrationAcceptanceApplyStageTests
             httpClient,
             NullLogger<GeoServerRestClient>.Instance,
             (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
-        var connectionProvider = new Mock<IDatabaseConnectionProvider>(MockBehavior.Strict);
+        var connectionProvider = new Mock<IAdoNetDatabaseConnectionProvider>(MockBehavior.Strict);
         var crsRegistry = CreateCrsRegistry();
 
         return new GeoServerImportService(
