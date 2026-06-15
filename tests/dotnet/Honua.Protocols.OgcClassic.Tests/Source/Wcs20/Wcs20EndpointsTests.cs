@@ -173,6 +173,149 @@ public sealed class Wcs20EndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.Export)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    public async Task Wcs_GetCoverage_PlainRequest_ReturnsRasterWithoutScalingOrSubset()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0&FORMAT=image/tiff");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        _exportQueries.Should().ContainSingle();
+        var query = _exportQueries.Single();
+        query.OutputFormat.Should().Be(RasterFormat.TIFF);
+        query.ClipRegion.Should().BeNull();
+        query.OutputWidth.Should().BeNull();
+        query.OutputHeight.Should().BeNull();
+        query.Bands.Should().BeNull();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    public async Task Wcs_GetCoverage_WithScaleFactor_HalvesOutputDimensions()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0&FORMAT=image/tiff&SCALEFACTOR=0.5");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        _exportQueries.Should().ContainSingle();
+        var query = _exportQueries.Single();
+        // Native grid is 64x64; SCALEFACTOR=0.5 -> 32x32.
+        query.OutputWidth.Should().Be(32);
+        query.OutputHeight.Should().Be(32);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    public async Task Wcs_GetCoverage_WithScaleAxes_ScalesEachAxisIndependently()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0&FORMAT=image/tiff&SCALEAXES=x(0.5),y(2)");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        _exportQueries.Should().ContainSingle();
+        var query = _exportQueries.Single();
+        // Native grid 64x64 -> x*0.5=32, y*2=128.
+        query.OutputWidth.Should().Be(32);
+        query.OutputHeight.Should().Be(128);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    public async Task Wcs_GetCoverage_WithScaleExtent_SetsOutputGridSpan()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0&FORMAT=image/tiff&SCALEEXTENT=x(0,99),y(0,199)");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        _exportQueries.Should().ContainSingle();
+        var query = _exportQueries.Single();
+        // Interval span high-low+1 => 100x200.
+        query.OutputWidth.Should().Be(100);
+        query.OutputHeight.Should().Be(200);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    public async Task Wcs_GetCoverage_WithMatchingPhenomenonTime_ReturnsCoverage()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0&FORMAT=image/tiff&SUBSET=phenomenonTime(\"2023-12-01T00:00:00Z\",\"2024-02-01T00:00:00Z\")");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        _exportQueries.Should().ContainSingle();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    public async Task Wcs_GetCoverage_WithMatchingPhenomenonTimeAndSpatialSubset_ReturnsCoverage()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0&FORMAT=image/png&SUBSET=Long(-122.4,-122.3)&SUBSET=Lat(37.7,37.8)&SUBSET=phenomenonTime(\"2024-01-01T00:00:00Z\")");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        _exportQueries.Should().ContainSingle();
+        _exportQueries.Single().ClipRegion.Should().NotBeNull();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    public async Task Wcs_GetCoverage_WithNonIntersectingPhenomenonTime_ReturnsInvalidSubsetting()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0&FORMAT=image/tiff&SUBSET=phenomenonTime(\"2030-01-01T00:00:00Z\")");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound, content);
+        content.Should().Contain("exceptionCode=\"InvalidSubsetting\"");
+        content.Should().Contain("locator=\"SUBSET\"");
+        _exportQueries.Should().BeEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    public async Task Wcs_GetCoverage_WithInvalidScaleFactor_ReturnsException()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0&FORMAT=image/tiff&SCALEFACTOR=0");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("locator=\"SCALEFACTOR\"");
+        _exportQueries.Should().BeEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    public async Task Wcs_GetCoverage_WithConflictingScalingOperators_ReturnsException()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0&FORMAT=image/tiff&SCALEFACTOR=0.5&SCALESIZE=x(10)");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
+        _exportQueries.Should().BeEmpty();
+    }
+
+    [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
     [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
     [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
