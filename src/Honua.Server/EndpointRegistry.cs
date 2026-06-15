@@ -761,6 +761,9 @@ public static class EndpointRegistry
         // 3D Tiles generation admin endpoint (#842).
         new("POST", "/api/v1/admin/scenes/generate"),
 
+        // CityGML/BIM scene ingest admin endpoint (#1207).
+        new("POST", "/api/v1/admin/scenes/ingest/citygml"),
+
         new("GET", "/elevation/{datasetId}/value"),
         new("GET", "/elevation/{datasetId}/profile"),
 
