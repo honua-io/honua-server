@@ -88,7 +88,7 @@ public sealed class GeoServicesSqlParser
 
     private FilterExpression ParseComparison()
     {
-        var left = ParseAdditive();
+        var left = ParseConcat();
 
         if (Match(TokenType.Is))
         {
@@ -101,7 +101,7 @@ public sealed class GeoServicesSqlParser
         {
             if (Match(TokenType.Like))
             {
-                return new BinaryExpression(left, BinaryOperator.NotLike, ParseAdditive());
+                return new BinaryExpression(left, BinaryOperator.NotLike, ParseConcat());
             }
 
             if (Match(TokenType.In))
@@ -111,9 +111,9 @@ public sealed class GeoServicesSqlParser
 
             if (Match(TokenType.Between))
             {
-                var lower = ParseAdditive();
+                var lower = ParseConcat();
                 Consume(TokenType.And, "Expected AND in BETWEEN expression.");
-                var upper = ParseAdditive();
+                var upper = ParseConcat();
                 return FilterExpressionHelpers.BuildBetweenExpression(left, lower, upper, negate: true);
             }
 
@@ -122,7 +122,7 @@ public sealed class GeoServicesSqlParser
 
         if (Match(TokenType.Like))
         {
-            return new BinaryExpression(left, BinaryOperator.Like, ParseAdditive());
+            return new BinaryExpression(left, BinaryOperator.Like, ParseConcat());
         }
 
         if (Match(TokenType.In))
@@ -132,43 +132,65 @@ public sealed class GeoServicesSqlParser
 
         if (Match(TokenType.Between))
         {
-            var lower = ParseAdditive();
+            var lower = ParseConcat();
             Consume(TokenType.And, "Expected AND in BETWEEN expression.");
-            var upper = ParseAdditive();
+            var upper = ParseConcat();
             return FilterExpressionHelpers.BuildBetweenExpression(left, lower, upper, negate: false);
         }
 
         if (Match(TokenType.Equal))
         {
-            return new BinaryExpression(left, BinaryOperator.Equal, ParseAdditive());
+            return new BinaryExpression(left, BinaryOperator.Equal, ParseConcat());
         }
 
         if (Match(TokenType.NotEqual))
         {
-            return new BinaryExpression(left, BinaryOperator.NotEqual, ParseAdditive());
+            return new BinaryExpression(left, BinaryOperator.NotEqual, ParseConcat());
         }
 
         if (Match(TokenType.GreaterEqual))
         {
-            return new BinaryExpression(left, BinaryOperator.GreaterThanOrEqual, ParseAdditive());
+            return new BinaryExpression(left, BinaryOperator.GreaterThanOrEqual, ParseConcat());
         }
 
         if (Match(TokenType.Greater))
         {
-            return new BinaryExpression(left, BinaryOperator.GreaterThan, ParseAdditive());
+            return new BinaryExpression(left, BinaryOperator.GreaterThan, ParseConcat());
         }
 
         if (Match(TokenType.LessEqual))
         {
-            return new BinaryExpression(left, BinaryOperator.LessThanOrEqual, ParseAdditive());
+            return new BinaryExpression(left, BinaryOperator.LessThanOrEqual, ParseConcat());
         }
 
         if (Match(TokenType.Less))
         {
-            return new BinaryExpression(left, BinaryOperator.LessThan, ParseAdditive());
+            return new BinaryExpression(left, BinaryOperator.LessThan, ParseConcat());
         }
 
         return left;
+    }
+
+    // SQL string concatenation (a || b || c). Chained operands are flattened into a single
+    // CONCAT(...) FunctionCall, which the shared SQL translator already emits with each literal
+    // operand bound as a parameter. Concatenation binds tighter than comparison but looser than
+    // additive arithmetic, matching ANSI SQL precedence.
+    private FilterExpression ParseConcat()
+    {
+        var expression = ParseAdditive();
+        if (!Check(TokenType.Concat))
+        {
+            return expression;
+        }
+
+        var operands = new List<FilterExpression> { expression };
+        while (Match(TokenType.Concat))
+        {
+            operands.Add(ParseAdditive());
+            FilterParserGuard.EnsureInListSize(operands.Count, "GeoServicesSQL concatenation");
+        }
+
+        return new FunctionCall("CONCAT", operands);
     }
 
     private FilterExpression ParseAdditive()
@@ -678,6 +700,7 @@ public sealed class GeoServicesSqlParser
         Star,
         Slash,
         Percent,
+        Concat,
         Equal,
         NotEqual,
         Less,
@@ -788,6 +811,13 @@ public sealed class GeoServicesSqlParser
                 case '%':
                     AddToken(TokenType.Percent);
                     return;
+                case '|':
+                    if (Match('|'))
+                    {
+                        AddToken(TokenType.Concat);
+                        return;
+                    }
+                    throw new ArgumentException("Unexpected '|'.");
                 case '=':
                     AddToken(TokenType.Equal);
                     return;
