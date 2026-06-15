@@ -31,6 +31,37 @@ The output is byte-stable: features keep document order, BSL attribute columns
 are emitted in a fixed schema order, and the GLB/tileset writers are
 deterministic, so identical input produces identical bytes across runs.
 
+## Wired ingest endpoint (Enterprise)
+
+The reader + builder are wired behind an admin ingest endpoint so an operator can
+upload a CityGML document and get back a servable scene:
+
+```
+POST /api/v1/admin/scenes/ingest/citygml      (multipart/form-data, admin auth)
+```
+
+| Form field | Required | Meaning |
+| --- | --- | --- |
+| `file` | yes | The CityGML document (UTF-8 XML), up to 64 MiB |
+| `sceneId` | no | Explicit scene slug; derived from the first building when omitted |
+| `displayName` | no | Display name; derived from the first building when omitted |
+| `description` | no | Human-readable description |
+| `editionGate` | no | Edition gate slug recorded on the dataset |
+| `cacheMaxAgeSeconds` | no | Cache `max-age`; defaults to 3600 |
+| `requiresAuth` | no | `true` registers a protected (auth-required) scene instead of public |
+
+The endpoint is **Enterprise-gated** through the `scene.bim-ingest` entitlement
+(`FeatureCatalog.SceneBimIngestKey`): an authenticated non-Enterprise operator
+receives `402 Payment Required` with an upgrade message. On success it returns
+`201 Created` with the `sceneId`, the routable `tilesetUrl`, building/surface/tile
+counts, the distinct disciplines, and the bounding region. The
+`CityGmlScenePublishExecutor` stages the generated `tileset.json` + GLB, registers
+the dataset (the canonical collision authority — duplicate ids return `409`), then
+atomically promotes the staged bytes, so the standard scene serving path
+(`GET /scenes/{sceneId}/tileset.json`) streams them immediately. The endpoint and
+executor are registered only on Postgres profiles (registration-backed), matching
+the feature-layer scene generation surface.
+
 ## Supported CityGML subset
 
 | Aspect | Supported in this slice |
@@ -70,19 +101,17 @@ emitted as a dedicated `bsl_*` metadata property on every feature.
   feature-layer scene path).
 - **No textures/appearances.** CityGML `app:Appearance` (textures, materials) is
   not read.
-- **No in-reader CRS transform.** A projected-CRS document needs the caller to
-  supply an inverse-projection geo-transform; geographic documents pass through.
-- **No ingest endpoint yet.** This slice ships the reader + builder library and
-  unit tests. Wiring it behind an admin ingest executor + endpoint (mirroring
-  the feature-layer publish executor) is a tracked follow-up so it lands with the
-  full endpoint/operation registry + proof-ledger gates.
+- **Geographic source CRS only.** The wired ingest path projects geographic
+  documents (EPSG:4326 / EPSG:4979 / OGC CRS84, in either axis order) straight to
+  the ellipsoid. A projected-CRS document is rejected with
+  `SCENE_LAYER_CRS_UNKNOWN` (`400`); inverse-projection of projected coordinates
+  is a follow-up.
 
 ## Deferred follow-ups
 
 - **IFC / native BIM reader** — `.ifc` STEP parsing and property-set mapping.
-- **Ingest executor + admin endpoint** — `POST` ingest path that streams an
-  uploaded CityGML document through the reader/builder, registers the resulting
-  tileset in the scene dataset registry, and gates on the Enterprise edition.
+- **Projected-CRS reprojection** — accept projected source documents by
+  inverse-projecting through the shared coordinate-transform service.
 - **Storey decomposition** — derive real storeys from `bldg:Room` /
   `bldg:storey` so the BSL level sub-layer reflects the model.
 - **Interior rings + robust triangulation** — honour holes and use a proper
