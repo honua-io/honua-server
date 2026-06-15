@@ -69,8 +69,20 @@ internal sealed partial class MigrationBatchBackgroundService : BackgroundServic
     private async Task AdvanceActiveBatchesAsync(CancellationToken cancellationToken)
     {
         await using var scope = _scopeFactory.CreateAsyncScope();
-        var catalog = scope.ServiceProvider.GetRequiredService<IMigrationBatchRunCatalog>();
-        var orchestrator = scope.ServiceProvider.GetRequiredService<IMigrationBatchOrchestrator>();
+
+        // The batch run catalog and orchestrator are provider-specific services
+        // registered only by the infrastructure composition root (e.g. the Postgres
+        // extension). That root is skipped in the Test environment — where the
+        // published image boots so a fixture/harness can swap data providers — and
+        // by primary providers that own no batch-run schema. Resolve them optionally
+        // and no-op when absent so this hosted loop does not crash with an
+        // unregistered-service error every tick (mirrors #1687's startup guard).
+        var catalog = scope.ServiceProvider.GetService<IMigrationBatchRunCatalog>();
+        var orchestrator = scope.ServiceProvider.GetService<IMigrationBatchOrchestrator>();
+        if (catalog is null || orchestrator is null)
+        {
+            return;
+        }
 
         var activeIds = await catalog.GetActiveBatchIdsAsync(cancellationToken).ConfigureAwait(false);
         foreach (var batchId in activeIds)
