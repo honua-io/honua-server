@@ -39,16 +39,18 @@ internal sealed class HonuaPluginBuilder(IServiceCollection services) : IHonuaPl
         var providesEditHook = typeof(IEditHook).IsAssignableFrom(type);
         var providesComputedField = typeof(IComputedFieldProvider).IsAssignableFrom(type);
         var providesBackgroundService = typeof(IPluginBackgroundService).IsAssignableFrom(type);
+        var providesCustomEndpoint = typeof(ICustomEndpoint).IsAssignableFrom(type);
 
         if (!providesValidator && !providesFieldValidator && !providesEditHook
-            && !providesComputedField && !providesBackgroundService)
+            && !providesComputedField && !providesBackgroundService && !providesCustomEndpoint)
         {
             throw new InvalidOperationException(
                 $"Plugin '{manifest.Id}' ({type.FullName}) must implement at least one extension point "
-                + "(IFeatureValidator, IFieldValidator, IEditHook, IComputedFieldProvider, or IPluginBackgroundService).");
+                + "(IFeatureValidator, IFieldValidator, IEditHook, IComputedFieldProvider, "
+                + "IPluginBackgroundService, or ICustomEndpoint).");
         }
 
-        EnforceCapabilities(manifest, providesBackgroundService);
+        EnforceCapabilities(manifest, providesBackgroundService, providesCustomEndpoint);
 
         if (_registrations.Exists(r => string.Equals(r.Id, manifest.Id, StringComparison.OrdinalIgnoreCase)))
         {
@@ -82,6 +84,11 @@ internal sealed class HonuaPluginBuilder(IServiceCollection services) : IHonuaPl
             _services.AddSingleton<IPluginBackgroundService>(sp => (IPluginBackgroundService)sp.GetRequiredService<TPlugin>());
         }
 
+        if (providesCustomEndpoint)
+        {
+            _services.AddSingleton<ICustomEndpoint>(sp => (ICustomEndpoint)sp.GetRequiredService<TPlugin>());
+        }
+
         _registrations.Add(new PluginRegistration(
             manifest,
             type,
@@ -89,12 +96,16 @@ internal sealed class HonuaPluginBuilder(IServiceCollection services) : IHonuaPl
             providesFieldValidator,
             providesEditHook,
             providesComputedField,
-            providesBackgroundService));
+            providesBackgroundService,
+            providesCustomEndpoint));
 
         return this;
     }
 
-    private static void EnforceCapabilities(PluginManifest manifest, bool providesBackgroundService)
+    private static void EnforceCapabilities(
+        PluginManifest manifest,
+        bool providesBackgroundService,
+        bool providesCustomEndpoint)
     {
         if (providesBackgroundService
             && !manifest.Capabilities.HasFlag(PluginCapability.BackgroundExecution))
@@ -102,6 +113,15 @@ internal sealed class HonuaPluginBuilder(IServiceCollection services) : IHonuaPl
             throw new InvalidOperationException(
                 $"Plugin '{manifest.Id}' implements IPluginBackgroundService but does not declare the "
                 + "BackgroundExecution capability. Add Capabilities = PluginCapability.BackgroundExecution "
+                + "to its [Plugin] attribute.");
+        }
+
+        if (providesCustomEndpoint
+            && !manifest.Capabilities.HasFlag(PluginCapability.CustomEndpoints))
+        {
+            throw new InvalidOperationException(
+                $"Plugin '{manifest.Id}' implements ICustomEndpoint but does not declare the "
+                + "CustomEndpoints capability. Add Capabilities = PluginCapability.CustomEndpoints "
                 + "to its [Plugin] attribute.");
         }
     }

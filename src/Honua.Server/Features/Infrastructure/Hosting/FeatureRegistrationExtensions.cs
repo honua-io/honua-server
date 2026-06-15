@@ -39,6 +39,7 @@ using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.NlQuery;
 using Honua.Ai.WorkflowGeneration;
 using Honua.Plugins;
+using Honua.Server.Features.Plugins;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Honua.Protocols.OData;
 using Honua.Protocols.Ogc.Api.Coverages;
@@ -239,6 +240,10 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapMcpOperatorSurface();
         endpoints.MapSpecGroundingEndpoints();
         endpoints.MapSpecEndpoints();
+        // Plugin-contributed REST routes (ICustomEndpoint, #1562). A no-op unless a custom build
+        // compiled in a plugin that contributes endpoints; gated per request behind the Enterprise
+        // plugin.sdk entitlement and the operator kill-switch.
+        endpoints.MapHonuaPluginEndpoints();
 
         return endpoints;
     }
