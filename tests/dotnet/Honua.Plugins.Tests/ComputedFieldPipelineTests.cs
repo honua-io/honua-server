@@ -86,6 +86,24 @@ public sealed class ComputedFieldPipelineTests
     }
 
     [Fact]
+    public async Task RepeatedlyFaultingProvider_IsAutoDisabled_AfterThreshold()
+    {
+        var faulting = new CountingThrowingProvider();
+        var pipeline = CreatePipeline(providers: [faulting]);
+
+        // Default circuit-breaker threshold is 3 consecutive failures; afterwards the provider is
+        // parked and no longer invoked on subsequent features.
+        for (var i = 0; i < 6; i++)
+        {
+            await pipeline.ProjectAsync(FeatureWith(("X", (double)i)), Context(), CancellationToken.None);
+        }
+
+        faulting.Calls.Should().Be(
+            PluginCircuitBreaker.DefaultFailureThreshold,
+            "once the breaker trips open the faulting computed field is no longer computed");
+    }
+
+    [Fact]
     public async Task Providers_RunInPluginIdOrder_LastWinsForSameField()
     {
         // "aaa-first" sets Tag=first; "zzz-second" sets Tag=second; ordered by id, second wins.
@@ -115,6 +133,20 @@ public sealed class ComputedFieldPipelineTests
 
         public ValueTask<object?> ComputeAsync(Feature feature, ComputedFieldContext context, CancellationToken cancellationToken)
             => throw new InvalidOperationException("compute failed");
+    }
+
+    [Plugin("counting-boom", "1.0.0")]
+    private sealed class CountingThrowingProvider : IComputedFieldProvider
+    {
+        public int Calls { get; private set; }
+
+        public string FieldName => "Boom";
+
+        public ValueTask<object?> ComputeAsync(Feature feature, ComputedFieldContext context, CancellationToken cancellationToken)
+        {
+            Calls++;
+            throw new InvalidOperationException("compute failed");
+        }
     }
 
     [Plugin("aaa-first", "1.0.0")]

@@ -2,9 +2,11 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Plugins.Abstractions;
 using Honua.TestKit.Helpers;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Xunit;
@@ -13,13 +15,22 @@ namespace Honua.Plugins.Tests;
 
 public sealed class PluginBackgroundServiceHostTests
 {
+    private static IServiceScopeFactory ScopeFactory(IAuditLog? auditLog = null)
+    {
+        var services = new ServiceCollection();
+        services.AddScoped(_ => auditLog ?? new RecordingAuditLog());
+        return services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
+    }
+
     private static PluginBackgroundServiceHost CreateHost(
         IEnumerable<IPluginBackgroundService> services,
         HonuaEdition edition = HonuaEdition.Enterprise,
-        bool enabled = true)
+        bool enabled = true,
+        IAuditLog? auditLog = null)
         => new(
             services,
             new TestLicenseEntitlementService(edition),
+            ScopeFactory(auditLog),
             Options.Create(new PluginOptions { Enabled = enabled }),
             NullLogger<PluginBackgroundServiceHost>.Instance);
 

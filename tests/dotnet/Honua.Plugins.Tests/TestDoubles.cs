@@ -65,6 +65,22 @@ internal sealed class CountingValidator : IFeatureValidator
     }
 }
 
+/// <summary>After-hook that throws on every after-edit invocation, counting attempts.</summary>
+[Plugin("faulting-after-hook", "1.0.0")]
+internal sealed class FaultingAfterHook : IEditHook
+{
+    public int AfterAttempts { get; private set; }
+
+    public ValueTask<EditHookResult> OnBeforeEditAsync(EditHookContext context, CancellationToken cancellationToken)
+        => ValueTask.FromResult(EditHookResult.Continue());
+
+    public ValueTask OnAfterEditAsync(EditHookContext context, CancellationToken cancellationToken)
+    {
+        AfterAttempts++;
+        throw new InvalidOperationException("after-hook boom");
+    }
+}
+
 /// <summary>Edit hook that records before/after invocations and can reject the batch.</summary>
 [Plugin("hook", "1.0.0")]
 internal sealed class RecordingEditHook(bool rejectBatch = false) : IEditHook

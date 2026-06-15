@@ -36,6 +36,10 @@
     <ProjectReference Include="..\..\..\src\Honua.Server\Honua.Server.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.Postgres\Honua.Postgres.csproj" />
     <ProjectReference Include="..\Honua.TestKit\Honua.TestKit.csproj" />
+    <!-- Sample plugins exercised by the plugin custom-endpoint integration tests (#1562).
+         The default host does not compile in plugins, so the contributed routes are only
+         present in a test host that explicitly registers a sample plugin. -->
+    <ProjectReference Include="..\..\..\samples\plugins\Honua.Sample.UtilityValidationPlugin\Honua.Sample.UtilityValidationPlugin.csproj" />
     <!-- Referenced solely so the Comprehensive ContractCoverageMatrixTests can
          reflect over the GeometryService scenario tests that moved into the
          extracted Honua.Protocols.GeoServices.Tests project. xUnit does not run
