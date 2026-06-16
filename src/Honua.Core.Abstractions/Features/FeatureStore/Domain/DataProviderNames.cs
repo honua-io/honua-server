@@ -46,6 +46,13 @@ public static class DataProviderNames
     public const string Oracle = "oracle";
 
     /// <summary>
+    /// Canonical Databricks provider name. Bound to secure-connection records whose
+    /// backing storage is a Databricks SQL Warehouse reached over the Statement
+    /// Execution REST API.
+    /// </summary>
+    public const string Databricks = "databricks";
+
+    /// <summary>
     /// Normalizes a provider name or alias into the canonical provider identifier.
     /// Unknown non-empty provider names are lower-cased so external provider registrations
     /// can participate without changing the core model.
@@ -83,6 +90,9 @@ public static class DataProviderNames
             "featureserver" => ArcGisRest,
             "oracle" => Oracle,
             "oracledb" => Oracle,
+            "databricks" => Databricks,
+            "databrickssql" => Databricks,
+            "dbsql" => Databricks,
             _ => normalized
         };
     }

@@ -11,6 +11,7 @@ Honua serves data from one primary provider (PostgreSQL/PostGIS by default) plus
 | [SQL Server](sql-server.md) | Read/query only (additional) | Layer connection resolves to `sqlserver`/`mssql` | `geometry`/`geography` tables; no edits, native MVT, encoded exports, or statistics. |
 | [Oracle](oracle.md) | Read/query only (additional) | Layer connection resolves to `oracle`/`oracledb` | Standard `SDO_GEOMETRY` only; ArcSDE `ST_Geometry` and versioned tables are refused. Not Native AOT compatible. |
 | [MySQL/MariaDB](mysql-mariadb.md) | Read/query only (primary) | `DataSource__Provider=mysql` | MySQL 8.0.11+ / MariaDB 10.6+; no edits, statistics, encoded exports, streaming GeoJSON, KNN, temporal filters, or cross-SRID transforms. |
+| [Databricks](databricks.md) | Read/query only (additional, best-effort) | Layer connection resolves to `databricks`/`databrickssql`/`dbsql` | HTTP read-through over the SQL Statement Execution REST API against a SQL Warehouse; no native driver. No edits/statistics/encoded exports; spatial functions depend on the DBSQL/runtime. |
 
 Provider selection variables are listed in the [environment variable reference](../environment-variables.md#database-and-providers).
 
@@ -34,6 +35,7 @@ CI uses `postgis/postgis` Docker images as version-level proxies for managed-ser
 | Oracle | See [Oracle provider](oracle.md). |
 | MySQL/MariaDB | MySQL 8.0.11+, MariaDB 10.6+ — see [MySQL/MariaDB provider](mysql-mariadb.md). |
 | DuckDB | Embedded; bundled with the server — see [DuckDB provider](duckdb.md). |
+| Databricks | Any SQL Warehouse reachable over the Statement Execution REST API — see [Databricks provider](databricks.md). |
 
 ## PostGIS requirements and managed-Postgres setup
 
