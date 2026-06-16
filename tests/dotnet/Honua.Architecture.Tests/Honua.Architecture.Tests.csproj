@@ -16,6 +16,7 @@
     <ProjectReference Include="..\..\..\src\Honua.MySql\Honua.MySql.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.SqlServer\Honua.SqlServer.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.Oracle\Honua.Oracle.csproj" />
+    <ProjectReference Include="..\..\..\src\Honua.Snowflake\Honua.Snowflake.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.DuckDB\Honua.DuckDB.csproj" />
     <ProjectReference Include="..\Honua.Server.Tests\Honua.Server.Tests.csproj" />
     <ProjectReference Include="..\Honua.TestKit\Honua.TestKit.csproj" />

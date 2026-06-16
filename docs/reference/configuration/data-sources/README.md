@@ -11,6 +11,7 @@ Honua serves data from one primary provider (PostgreSQL/PostGIS by default) plus
 | [SQL Server](sql-server.md) | Read/query only (additional) | Layer connection resolves to `sqlserver`/`mssql` | `geometry`/`geography` tables; no edits, native MVT, encoded exports, or statistics. |
 | [Oracle](oracle.md) | Read/query only (additional) | Layer connection resolves to `oracle`/`oracledb` | Standard `SDO_GEOMETRY` only; ArcSDE `ST_Geometry` and versioned tables are refused. Not Native AOT compatible. |
 | [MySQL/MariaDB](mysql-mariadb.md) | Read/query only (primary) | `DataSource__Provider=mysql` | MySQL 8.0.11+ / MariaDB 10.6+; no edits, statistics, encoded exports, streaming GeoJSON, KNN, temporal filters, or cross-SRID transforms. |
+| [Snowflake](snowflake.md) | Read/query only (additional) | Layer connection resolves to `snowflake`/`snowflakedb` | Native `GEOGRAPHY`/`GEOMETRY` tables; no edits, statistics, native MVT/encoded exports, distance/KNN, temporal filters, or cross-SRID transforms. Not Native AOT compatible. |
 
 Provider selection variables are listed in the [environment variable reference](../environment-variables.md#database-and-providers).
 
@@ -33,6 +34,7 @@ CI uses `postgis/postgis` Docker images as version-level proxies for managed-ser
 | SQL Server | See [SQL Server provider](sql-server.md#supported-versions). |
 | Oracle | See [Oracle provider](oracle.md). |
 | MySQL/MariaDB | MySQL 8.0.11+, MariaDB 10.6+ — see [MySQL/MariaDB provider](mysql-mariadb.md). |
+| Snowflake | See [Snowflake provider](snowflake.md). |
 | DuckDB | Embedded; bundled with the server — see [DuckDB provider](duckdb.md). |
 
 ## PostGIS requirements and managed-Postgres setup
