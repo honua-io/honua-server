@@ -52,6 +52,11 @@ public static class DataProviderNames
     public const string Redshift = "redshift";
 
     /// <summary>
+    /// Canonical Snowflake provider name.
+    /// </summary>
+    public const string Snowflake = "snowflake";
+
+    /// <summary>
     /// Normalizes a provider name or alias into the canonical provider identifier.
     /// Unknown non-empty provider names are lower-cased so external provider registrations
     /// can participate without changing the core model.
@@ -95,6 +100,8 @@ public static class DataProviderNames
             "redshiftdb" => Redshift,
             "aws-redshift" => Redshift,
             "awsredshift" => Redshift,
+            "snowflake" => Snowflake,
+            "snowflakedb" => Snowflake,
             _ => normalized
         };
     }

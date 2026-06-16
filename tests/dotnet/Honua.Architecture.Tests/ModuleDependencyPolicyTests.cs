@@ -78,6 +78,7 @@ public sealed class ModuleDependencyPolicyTests
         ArcGisRest,
         Oracle,
         Redshift,
+        Snowflake,
         Protocols,
         PluginsAbstractions,
         Plugins,
@@ -165,6 +166,12 @@ public sealed class ModuleDependencyPolicyTests
         // canonical Feature/WKB seam so no NTS bindings are required.
         (ModuleRole.Redshift,  ModuleRole.Abstractions),
         (ModuleRole.Redshift,  ModuleRole.Core),
+        // Snowflake read-only warehouse provider (#1713): consumes Abstractions +
+        // Core. Geometry is permitted in case future spatial bindings need NTS,
+        // matching the other relational providers.
+        (ModuleRole.Snowflake, ModuleRole.Abstractions),
+        (ModuleRole.Snowflake, ModuleRole.Core),
+        (ModuleRole.Snowflake, ModuleRole.Geometry),
 
         // Protocol modules: Abstractions + Core + Geometry + Hosting +
         // ServiceDefaults. They may also reference Jobs + Geoprocessing: the OGC
@@ -312,6 +319,7 @@ public sealed class ModuleDependencyPolicyTests
         (ModuleRole.Server, ModuleRole.ArcGisRest),
         (ModuleRole.Server, ModuleRole.Oracle),
         (ModuleRole.Server, ModuleRole.Redshift),
+        (ModuleRole.Server, ModuleRole.Snowflake),
         (ModuleRole.Server, ModuleRole.Protocols),
         (ModuleRole.Server, ModuleRole.Plugins),
         (ModuleRole.Server, ModuleRole.ServiceDefaults),
@@ -686,6 +694,10 @@ public sealed class ModuleDependencyPolicyTests
         if (projectName.Equals("Honua.Redshift", StringComparison.Ordinal))
         {
             return ModuleRole.Redshift;
+        }
+        if (projectName.Equals("Honua.Snowflake", StringComparison.Ordinal))
+        {
+            return ModuleRole.Snowflake;
         }
 
         // Tier 6: Protocol modules.

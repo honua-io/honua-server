@@ -104,6 +104,21 @@ internal static class InfrastructureCompositionRoot
         }
 #endif
 
+        // Register the Snowflake spatial provider as an additional read-only feature backend (#1713).
+        // Metadata v2 publications whose connection resolves to provider 'snowflake'/'snowflakedb' are routed
+        // here through the shared FeatureProviderQueryRouter. Disabled when Snowflake:Enabled is explicitly false.
+        // Snowflake.Data uses internal reflection and is not Native AOT-compatible; operators publishing
+        // trimmed/AOT artifacts should leave the provider disabled. The AOT-verification publish
+        // (HonuaSkipSnowflakeForAotVerification) drops the Honua.Snowflake ProjectReference and defines
+        // HONUA_SKIP_SNOWFLAKE, so this registration is compiled out and the non-single-file-safe driver is
+        // never linked into the AOT image.
+#if !HONUA_SKIP_SNOWFLAKE
+        if (configuration.GetValue("Snowflake:Enabled", true))
+        {
+            Honua.Snowflake.ServiceCollectionExtensions.AddSnowflakeFeatureProvider(services, configuration);
+        }
+#endif
+
         services.TryAddScoped<IFeatureDataProviderRegistry>(serviceProvider =>
             new FeatureDataProviderRegistry(serviceProvider.GetServices<IFeatureDataProvider>()));
         services.TryAddScoped(serviceProvider =>
