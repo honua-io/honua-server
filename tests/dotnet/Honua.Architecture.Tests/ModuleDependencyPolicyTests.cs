@@ -77,6 +77,7 @@ public sealed class ModuleDependencyPolicyTests
         SqlServer,
         ArcGisRest,
         Oracle,
+        Redshift,
         Protocols,
         PluginsAbstractions,
         Plugins,
@@ -159,6 +160,11 @@ public sealed class ModuleDependencyPolicyTests
         (ModuleRole.Oracle,    ModuleRole.Abstractions),
         (ModuleRole.Oracle,    ModuleRole.Core),
         (ModuleRole.Oracle,    ModuleRole.Geometry),
+        // Amazon Redshift read-only provider (#1712): consumes Abstractions + Core. Connectivity
+        // uses Npgsql (Redshift is PostgreSQL-wire-compatible); spatial conversion stays on the
+        // canonical Feature/WKB seam so no NTS bindings are required.
+        (ModuleRole.Redshift,  ModuleRole.Abstractions),
+        (ModuleRole.Redshift,  ModuleRole.Core),
 
         // Protocol modules: Abstractions + Core + Geometry + Hosting +
         // ServiceDefaults. They may also reference Jobs + Geoprocessing: the OGC
@@ -305,6 +311,7 @@ public sealed class ModuleDependencyPolicyTests
         (ModuleRole.Server, ModuleRole.SqlServer),
         (ModuleRole.Server, ModuleRole.ArcGisRest),
         (ModuleRole.Server, ModuleRole.Oracle),
+        (ModuleRole.Server, ModuleRole.Redshift),
         (ModuleRole.Server, ModuleRole.Protocols),
         (ModuleRole.Server, ModuleRole.Plugins),
         (ModuleRole.Server, ModuleRole.ServiceDefaults),
@@ -675,6 +682,10 @@ public sealed class ModuleDependencyPolicyTests
         if (projectName.Equals("Honua.Oracle", StringComparison.Ordinal))
         {
             return ModuleRole.Oracle;
+        }
+        if (projectName.Equals("Honua.Redshift", StringComparison.Ordinal))
+        {
+            return ModuleRole.Redshift;
         }
 
         // Tier 6: Protocol modules.

@@ -71,6 +71,15 @@ internal static class InfrastructureCompositionRoot
             Honua.SqlServer.ServiceCollectionExtensions.AddSqlServerFeatureProvider(services, configuration);
         }
 
+        // Register the Amazon Redshift spatial provider as an additional read-only feature backend (#1712).
+        // Metadata v2 publications whose connection resolves to provider 'redshift' are routed here through
+        // the shared FeatureProviderQueryRouter. Disabled when Redshift:Enabled is explicitly false. Redshift
+        // speaks the PostgreSQL wire protocol (Npgsql) and is AOT-friendly, so it needs no AOT carve-out.
+        if (configuration.GetValue("Redshift:Enabled", true))
+        {
+            Honua.Redshift.ServiceCollectionExtensions.AddRedshiftFeatureProvider(services, configuration);
+        }
+
         // Register the federated ArcGIS REST read-through provider (#1251). Metadata v2 publications whose
         // backing connection resolves to provider 'arcgis-rest' are routed here so customers can register a
         // live ArcGIS FeatureServer/MapServer as a Honua layer on day one without copying data. Disabled

@@ -292,6 +292,7 @@ if (!isTestEnvironment || registerInfrastructureInTestEnvironment)
 Honua.Postgres.Features.Security.PostgresConnectionDriverServiceCollectionExtensions.AddPostgresConnectionDriver(builder.Services);
 Honua.MySql.Features.Security.MySqlConnectionDriverServiceCollectionExtensions.AddMySqlConnectionDriver(builder.Services);
 Honua.SqlServer.Features.Security.SqlServerConnectionDriverServiceCollectionExtensions.AddSqlServerConnectionDriver(builder.Services);
+Honua.Redshift.Features.Security.RedshiftConnectionDriverServiceCollectionExtensions.AddRedshiftConnectionDriver(builder.Services);
 #if !HONUA_SKIP_ORACLE
 // The Native AOT publish (HonuaSkipOracleForAotVerification) drops the Honua.Oracle
 // ProjectReference and defines HONUA_SKIP_ORACLE, so this registration is compiled out
