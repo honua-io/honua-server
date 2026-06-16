@@ -336,15 +336,21 @@ BEGIN
            e->'metadata'->>'id', e->>'resourceId', e->>'connectionId', e->>'storageType', e->>'locator'
       FROM jsonb_array_elements(v_doc->'storageBindings') e;
 
+    -- Index every publication (layer_index stays NULL for non-numeric identifiers),
+    -- matching the server's snapshot writer so pre-existing publications carried over
+    -- from the prior revision are not dropped from the sidecar on the new revision.
     INSERT INTO metadata_v2_publications_idx
         (environment, revision, publication_id, service_id, resource_id, storage_binding_id,
          publication_type, path, layer_index, service_local_id)
     SELECT v_env, v_revision,
            e->'metadata'->>'id', e->>'serviceId', e->>'resourceId', e->>'storageBindingId',
-           e->>'publicationType', e->'identifier'->>'pathOverride',
-           NULLIF(e->'identifier'->>'value','')::int, e->'identifier'->>'value'
-      FROM jsonb_array_elements(v_doc->'publications') e
-     WHERE (e->'identifier'->>'isNumeric')::boolean IS TRUE;
+           e->>'publicationType',
+           coalesce(e->>'path', e->'identifier'->>'pathOverride'),
+           CASE WHEN (e->'identifier'->>'isNumeric')::boolean IS TRUE
+                THEN NULLIF(e->'identifier'->>'value','')::int
+                ELSE NULLIF(e->>'layerIndex','')::int END,
+           coalesce(e->>'serviceLocalId', NULLIF(e->'identifier'->>'value',''))
+      FROM jsonb_array_elements(v_doc->'publications') e;
 
     INSERT INTO metadata_v2_connections_idx
         (environment, revision, connection_id, name, type, provider)
