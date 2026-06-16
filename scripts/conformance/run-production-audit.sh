@@ -247,8 +247,12 @@ run_geodesy_agent() {
         run_check "geodesy" "1" "postgres-crs-transform-tests" "required" \
             "dotnet test tests/dotnet/Honua.Postgres.Tests/Honua.Postgres.Tests.csproj --configuration Release --filter 'FullyQualifiedName~Crs|FullyQualifiedName~SpatialReference|FullyQualifiedName~Wkt|FullyQualifiedName~Wkb|FullyQualifiedName~Transform' --logger \"trx;LogFileName=geodesy-postgres.trx\"" || return $?
 
+        # Run against the solution so the filter also covers OGC/MVT/CRS tests that the
+        # protocol seam split relocated out of Honua.Server.Tests into the protocol test
+        # projects (Wmts/OgcCrsResolver -> OgcApi/OgcClassic, Mvt -> GeoServices). Targeting
+        # only Honua.Server.Tests silently matched 0 of those and under-audited geodesy.
         run_check "geodesy" "1" "server-spatial-query-tests" "required" \
-            "dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj --configuration Release --filter 'FullyQualifiedName~AdvancedSpatialQuery|FullyQualifiedName~SpatialReference|FullyQualifiedName~OgcCrsResolver|FullyQualifiedName~Wms|FullyQualifiedName~Wmts|FullyQualifiedName~Mvt' --logger \"trx;LogFileName=geodesy-server.trx\"" || return $?
+            "dotnet test Honua.sln --configuration Release --filter 'FullyQualifiedName~AdvancedSpatialQuery|FullyQualifiedName~SpatialReference|FullyQualifiedName~OgcCrsResolver|FullyQualifiedName~Wms|FullyQualifiedName~Wmts|FullyQualifiedName~Mvt' --logger \"trx;LogFileName=geodesy-server.trx\"" || return $?
 
         run_check "geodesy" "1" "core-bbox-tiling-tests" "required" \
             "dotnet test tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj --configuration Release --filter 'FullyQualifiedName~BoundingBox|FullyQualifiedName~TileMath|FullyQualifiedName~Cql2' --logger \"trx;LogFileName=geodesy-core.trx\"" || return $?
@@ -318,8 +322,12 @@ run_protocol_agent() {
     fi
 
     if phase_selected "3"; then
+        # Run against the solution so the filter also covers OData/MapServer/FeatureServer
+        # tests the protocol seam split relocated into the protocol test projects
+        # (Honua.Protocols.OData.Tests / Honua.Protocols.GeoServices.Tests). Targeting only
+        # Honua.Server.Tests silently skipped the relocated protocol coverage.
         run_check "protocol" "3" "integration-protocol-tests" "required" \
-            "dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj --configuration Release --filter 'FullyQualifiedName~OgcFeaturesEndpointTests|FullyQualifiedName~OData|FullyQualifiedName~MapServer|FullyQualifiedName~FeatureServer|FullyQualifiedName~ApiSurfaceComplianceTests'" || return $?
+            "dotnet test Honua.sln --configuration Release --filter 'FullyQualifiedName~OgcFeaturesEndpointTests|FullyQualifiedName~OData|FullyQualifiedName~MapServer|FullyQualifiedName~FeatureServer|FullyQualifiedName~ApiSurfaceComplianceTests'" || return $?
 
         record_skip "protocol" "3" "desktop-gis-client-validation" "optional" \
             "manual validation required with QGIS, ArcGIS Pro, and web clients"
