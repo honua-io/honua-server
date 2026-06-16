@@ -14,21 +14,27 @@ internal static class DatabricksOptionsValidator
 {
     /// <summary>
     /// Throws <see cref="InvalidOperationException"/> when the options are invalid.
-    /// Only validates when the provider is enabled; a disabled provider skips
-    /// connection validation so a deployment can keep the section partially filled.
+    /// Only validates when the provider is enabled <em>and</em> actually configured:
+    /// like the other optional read-through providers (SQL Server, Oracle, Redshift),
+    /// Databricks is enabled by default but stays dormant until an operator supplies a
+    /// <c>Databricks:Host</c>. An enabled-but-unconfigured section therefore does not
+    /// fail host startup; once a host is supplied, the remaining connection details are
+    /// enforced fail-fast so misconfiguration never surfaces as opaque runtime HTTP errors.
     /// </summary>
     /// <param name="options">Bound options.</param>
     public static void ThrowIfInvalid(DatabricksOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
 
-        if (!options.Enabled)
+        // Dormant when disabled, or when enabled but no host has been configured at all
+        // (the operator has not opted this backend in). Matches the secondary-provider
+        // contract: an unconfigured optional provider must not block startup.
+        if (!options.Enabled || string.IsNullOrWhiteSpace(options.Host))
         {
             return;
         }
 
-        if (string.IsNullOrWhiteSpace(options.Host)
-            || !Uri.TryCreate(options.Host, UriKind.Absolute, out var host)
+        if (!Uri.TryCreate(options.Host, UriKind.Absolute, out var host)
             || host.Scheme != Uri.UriSchemeHttps)
         {
             throw new InvalidOperationException(

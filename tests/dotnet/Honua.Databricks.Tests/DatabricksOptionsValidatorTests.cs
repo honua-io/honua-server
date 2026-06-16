@@ -26,7 +26,6 @@ public class DatabricksOptionsValidatorTests
     }
 
     [Theory]
-    [InlineData("")]
     [InlineData("ftp://nope")]
     [InlineData("http://insecure.example.com")]
     public void ThrowIfInvalid_NonHttpsHost_Throws(string host)
@@ -34,6 +33,19 @@ public class DatabricksOptionsValidatorTests
         var options = Valid();
         options.Host = host;
         Assert.Throws<InvalidOperationException>(() => DatabricksOptionsValidator.ThrowIfInvalid(options));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData(null)]
+    public void ThrowIfInvalid_EnabledButNoHost_StaysDormant(string? host)
+    {
+        // An optional read-through provider is enabled by default but must stay dormant
+        // (and never block host startup) until an operator supplies Databricks:Host —
+        // matching the SQL Server / Oracle / Redshift secondary-provider contract.
+        var options = new DatabricksOptions { Enabled = true, Host = host! };
+        DatabricksOptionsValidator.ThrowIfInvalid(options);
     }
 
     [Fact]
