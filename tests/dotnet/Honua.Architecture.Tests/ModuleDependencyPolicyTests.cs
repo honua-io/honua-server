@@ -79,6 +79,7 @@ public sealed class ModuleDependencyPolicyTests
         Oracle,
         Redshift,
         Snowflake,
+        Databricks,
         Protocols,
         PluginsAbstractions,
         Plugins,
@@ -172,6 +173,12 @@ public sealed class ModuleDependencyPolicyTests
         (ModuleRole.Snowflake, ModuleRole.Abstractions),
         (ModuleRole.Snowflake, ModuleRole.Core),
         (ModuleRole.Snowflake, ModuleRole.Geometry),
+
+        // Databricks read-only HTTP read-through provider (#1714): consumes
+        // Abstractions + Core; like ArcGisRest it needs no NTS bindings because all
+        // geometry conversion happens inline against the canonical Feature/WKB seam.
+        (ModuleRole.Databricks, ModuleRole.Abstractions),
+        (ModuleRole.Databricks, ModuleRole.Core),
 
         // Protocol modules: Abstractions + Core + Geometry + Hosting +
         // ServiceDefaults. They may also reference Jobs + Geoprocessing: the OGC
@@ -320,6 +327,7 @@ public sealed class ModuleDependencyPolicyTests
         (ModuleRole.Server, ModuleRole.Oracle),
         (ModuleRole.Server, ModuleRole.Redshift),
         (ModuleRole.Server, ModuleRole.Snowflake),
+        (ModuleRole.Server, ModuleRole.Databricks),
         (ModuleRole.Server, ModuleRole.Protocols),
         (ModuleRole.Server, ModuleRole.Plugins),
         (ModuleRole.Server, ModuleRole.ServiceDefaults),
@@ -698,6 +706,10 @@ public sealed class ModuleDependencyPolicyTests
         if (projectName.Equals("Honua.Snowflake", StringComparison.Ordinal))
         {
             return ModuleRole.Snowflake;
+        }
+        if (projectName.Equals("Honua.Databricks", StringComparison.Ordinal))
+        {
+            return ModuleRole.Databricks;
         }
 
         // Tier 6: Protocol modules.

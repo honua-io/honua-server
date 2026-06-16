@@ -119,6 +119,17 @@ internal static class InfrastructureCompositionRoot
         }
 #endif
 
+        // Register the read-only Databricks read-through provider (#1714). Layers whose
+        // backing connection resolves to provider 'databricks' (aliases 'databrickssql',
+        // 'dbsql') are routed here. Databricks has no first-class .NET driver, so the
+        // provider is a best-effort HTTP adapter over the SQL Statement Execution REST API
+        // against a SQL Warehouse. It is pure-HTTP and AOT-friendly. Disabled when
+        // Databricks:Enabled is explicitly false.
+        if (configuration.GetValue("Databricks:Enabled", true))
+        {
+            Honua.Databricks.ServiceCollectionExtensions.AddDatabricksFeatureProvider(services, configuration);
+        }
+
         services.TryAddScoped<IFeatureDataProviderRegistry>(serviceProvider =>
             new FeatureDataProviderRegistry(serviceProvider.GetServices<IFeatureDataProvider>()));
         services.TryAddScoped(serviceProvider =>

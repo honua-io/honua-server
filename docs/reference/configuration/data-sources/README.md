@@ -13,6 +13,7 @@ Honua serves data from one primary provider (PostgreSQL/PostGIS by default) plus
 | [MySQL/MariaDB](mysql-mariadb.md) | Read/query only (primary) | `DataSource__Provider=mysql` | MySQL 8.0.11+ / MariaDB 10.6+; no edits, statistics, encoded exports, streaming GeoJSON, KNN, temporal filters, or cross-SRID transforms. |
 | [Amazon Redshift](redshift.md) | Read/query only (additional) | Layer connection resolves to `redshift` | Native `GEOMETRY`/`GEOGRAPHY` (not PostGIS) over the PostgreSQL wire protocol via Npgsql; no edits, native MVT, encoded exports, statistics, distance/KNN, or temporal filters. |
 | [Snowflake](snowflake.md) | Read/query only (additional) | Layer connection resolves to `snowflake`/`snowflakedb` | Native `GEOGRAPHY`/`GEOMETRY` tables; no edits, statistics, native MVT/encoded exports, distance/KNN, temporal filters, or cross-SRID transforms. Not Native AOT compatible. |
+| [Databricks](databricks.md) | Read/query only (additional, best-effort) | Layer connection resolves to `databricks`/`databrickssql`/`dbsql` | HTTP read-through over the SQL Statement Execution REST API against a SQL Warehouse; no native driver. No edits/statistics/encoded exports; spatial functions depend on the DBSQL/runtime. |
 
 Provider selection variables are listed in the [environment variable reference](../environment-variables.md#database-and-providers).
 
@@ -38,6 +39,7 @@ CI uses `postgis/postgis` Docker images as version-level proxies for managed-ser
 | Amazon Redshift | PostgreSQL-wire-compatible; native Redshift spatial layer — see [Amazon Redshift provider](redshift.md). |
 | Snowflake | See [Snowflake provider](snowflake.md). |
 | DuckDB | Embedded; bundled with the server — see [DuckDB provider](duckdb.md). |
+| Databricks | Any SQL Warehouse reachable over the Statement Execution REST API — see [Databricks provider](databricks.md). |
 
 ## PostGIS requirements and managed-Postgres setup
 
