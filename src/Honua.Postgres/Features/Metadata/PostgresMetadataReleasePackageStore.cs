@@ -161,9 +161,23 @@ internal sealed class PostgresMetadataReleasePackageStore : IMetadataReleasePack
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue("@source_environment", (object?)NullIfBlank(filter.SourceEnvironment) ?? DBNull.Value);
-        command.Parameters.AddWithValue("@target_environment", (object?)NullIfBlank(filter.TargetEnvironment) ?? DBNull.Value);
-        command.Parameters.AddWithValue("@status", (object?)(filter.Status is { } status ? ToDbStatus(status) : null) ?? DBNull.Value);
+        // These filter parameters are nullable and are wrapped in LOWER(...) inside the SQL. Npgsql infers
+        // no type for an untyped DBNull, so PostgreSQL cannot resolve LOWER(@param) on a NULL and fails with
+        // 42P08 ("could not determine data type of parameter $1"). Binding them as explicit text gives the
+        // NULL a type even when the filter value is absent (an unfiltered list query, which is the common case
+        // for GitOps/console discovery via GET /api/v1/admin/metadata/release-packages).
+        command.Parameters.Add(new NpgsqlParameter("@source_environment", NpgsqlDbType.Text)
+        {
+            Value = (object?)NullIfBlank(filter.SourceEnvironment) ?? DBNull.Value,
+        });
+        command.Parameters.Add(new NpgsqlParameter("@target_environment", NpgsqlDbType.Text)
+        {
+            Value = (object?)NullIfBlank(filter.TargetEnvironment) ?? DBNull.Value,
+        });
+        command.Parameters.Add(new NpgsqlParameter("@status", NpgsqlDbType.Text)
+        {
+            Value = (object?)(filter.Status is { } status ? ToDbStatus(status) : null) ?? DBNull.Value,
+        });
         command.Parameters.AddWithValue("@limit", limit);
         command.Parameters.AddWithValue("@offset", offset);
 
