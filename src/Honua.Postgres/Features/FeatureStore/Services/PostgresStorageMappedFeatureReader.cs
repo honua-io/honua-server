@@ -16,6 +16,8 @@ using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
 using Honua.Postgres.Features.Infrastructure;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.ObjectPool;
 using Npgsql;
 
@@ -36,6 +38,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     private readonly FeatureStorageMapping _mapping;
     private readonly DataConnection? _connection;
     private readonly IConnectionEncryptionService? _connectionEncryptionService;
+    private readonly ILogger _logger;
     private readonly string _qualifiedTableName;
     private readonly string _primaryKeyColumn;
     private readonly string? _geometryColumn;
@@ -50,7 +53,8 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         MetadataV2Resource resource,
         FeatureStorageMapping mapping,
         DataConnection? connection,
-        IConnectionEncryptionService? connectionEncryptionService)
+        IConnectionEncryptionService? connectionEncryptionService,
+        ILogger? logger = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _dictionaryPool = dictionaryPool ?? throw new ArgumentNullException(nameof(dictionaryPool));
@@ -58,6 +62,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         _mapping = mapping ?? throw new ArgumentNullException(nameof(mapping));
         _connection = connection;
         _connectionEncryptionService = connectionEncryptionService;
+        _logger = logger ?? NullLogger.Instance;
         _qualifiedTableName = QuoteQualifiedTableName(_mapping);
         _primaryKeyColumn = ValidateAndQuoteIdentifier(_mapping.PrimaryKeyColumn);
         _geometryColumn = string.IsNullOrWhiteSpace(_mapping.GeometryColumn)
@@ -1148,17 +1153,76 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             }
         }
 
-        // A resource bound to a specific DataConnection MUST read that source. Falling back
-        // to the default catalog connection would silently query a same-named table in the
-        // wrong database — a tenant/data-source isolation hazard — so fail loudly instead
-        // (e.g. when the connection is encrypted but no IConnectionEncryptionService is
-        // registered, or the binding carries no usable connection string).
-        throw new InvalidOperationException(
-            $"Storage-mapped table '{_qualifiedTableName}' is bound to data connection '{_connection.Id}' "
-            + "but no usable connection string could be resolved for it. "
-            + (_connection.IsEncrypted && _connectionEncryptionService is null
-                ? "The connection is encrypted and no connection encryption service is registered."
-                : "The connection has no plaintext or decryptable connection string."));
+        // No bound connection string could be resolved. Decide whether to fall back to the
+        // default catalog connection (the same source render + OGC reads use) or to fail
+        // loudly. The single-DB / default-connection deployment is the common case: a layer
+        // is bound to a placeholder connection that carries no distinct connection-string
+        // material at all, which means "read from the default database". Falling back there
+        // is correct and restores the pre-#1662 behavior (the resolver returned null, and
+        // OpenConnectionAsync opened the default connection).
+        //
+        // When the binding *does* carry connection-string material that we simply cannot
+        // unlock (encrypted bytes with no/failed decryption service, or an external secret
+        // reference), the resource genuinely points at a specific, distinct source. Falling
+        // back would silently query a same-named table in the wrong database — a tenant /
+        // data-source isolation hazard — so fail loudly instead.
+        if (ShouldFailInsteadOfDefaultFallback(_connection, _connectionEncryptionService))
+        {
+            throw new InvalidOperationException(
+                $"Storage-mapped table '{_qualifiedTableName}' is bound to data connection '{_connection.Id}' "
+                + "but no usable connection string could be resolved for it. "
+                + (_connection.IsEncrypted && _connection.EncryptedConnectionString.Length > 0 && _connectionEncryptionService is null
+                    ? "The connection is encrypted and no connection encryption service is registered."
+                    : "The connection has encrypted or externally referenced credentials that could not be decrypted."));
+        }
+
+        // Empty/placeholder binding — use the default connection (single-DB deployment).
+        LogDefaultConnectionFallback(_logger, _qualifiedTableName, _connection.Id);
+        return null;
+    }
+
+    [LoggerMessage(
+        EventId = 7110,
+        Level = LogLevel.Warning,
+        Message = "Storage-mapped table {Table} is bound to data connection '{ConnectionId}' which carries no "
+            + "connection-string material; falling back to the default database connection.")]
+    private static partial void LogDefaultConnectionFallback(ILogger logger, string table, string connectionId);
+
+    /// <summary>
+    /// Decides whether an unresolved bound connection represents a genuine misconfiguration
+    /// (a layer pinned to a distinct source whose credentials we cannot unlock) that must fail
+    /// loudly, versus an empty/placeholder binding that means "use the default connection".
+    /// </summary>
+    /// <remarks>
+    /// Only reached when no plaintext string was present and no encrypted string could be
+    /// decrypted. A binding with encrypted bytes (regardless of whether a decryption service is
+    /// available) or an external secret reference is pointing at a specific source, so we must
+    /// not silently read from the default database. A binding with none of that material is a
+    /// placeholder for the default connection.
+    /// </remarks>
+    internal static bool ShouldFailInsteadOfDefaultFallback(
+        DataConnection connection,
+        IConnectionEncryptionService? connectionEncryptionService)
+    {
+        ArgumentNullException.ThrowIfNull(connection);
+
+        if (connection.EncryptedConnectionString.Length > 0)
+        {
+            // Encrypted credentials exist but could not be turned into a usable string
+            // (no service, or decryption returned empty) — a real, distinct source we
+            // cannot reach. Fail rather than fall back to the wrong database.
+            return true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(connection.SecretRef))
+        {
+            // Credentials live in an external secret store the runtime did not resolve.
+            return true;
+        }
+
+        // No connection-string material of any kind: an empty/placeholder binding standing
+        // in for the default connection. Safe to fall back.
+        return false;
     }
 
     private static NpgsqlCommand CreateReadCommand(NpgsqlConnection connection, SqlBuilder sql)
