@@ -111,7 +111,12 @@ COPY --from=build /app ${LAMBDA_TASK_ROOT}
 # Microsoft.Data.SqlClient and Oracle.ManagedDataAccess throw
 # "Globalization Invariant Mode is not supported" at connect time without ICU.
 # See honua-server#1369.
-RUN yum install -y krb5-libs libicu && \
+#
+# fontconfig + freetype are required by SkiaSharp.NativeAssets.Linux: libSkiaSharp.so
+# is dynamically linked against libfontconfig.so.1 / libfreetype.so.6, so the first
+# Skia P/Invoke (any map render: MapServer export, OGC API Maps, WMS GetMap) fails to
+# dlopen the native lib and surfaces as a generic 500 without them.
+RUN yum install -y krb5-libs libicu fontconfig freetype && \
     yum clean all && \
     chmod +x ${LAMBDA_TASK_ROOT}/Honua.Server
 
