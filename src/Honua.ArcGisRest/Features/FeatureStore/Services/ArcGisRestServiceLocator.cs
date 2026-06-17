@@ -88,11 +88,14 @@ internal static class ArcGisRestServiceLocator
             return null;
         }
 
-        return raw switch
-        {
-            string s => string.IsNullOrWhiteSpace(s) ? null : s,
-            _ => raw.ToString()
-        };
+        // Only accept genuine string values. Coercing an arbitrary object via
+        // ToString() (e.g. a JsonElement, number, or bool) would yield a
+        // surprising value — for a token that means a header like "Bearer
+        // System.Text.Json.JsonElement" rather than a clear failure. Returning
+        // null for a non-string keeps misconfiguration diagnosable: a non-string
+        // token degrades to "no token" and a non-string serviceUrl falls through
+        // to the missing-URL error in Resolve.
+        return raw is string s && !string.IsNullOrWhiteSpace(s) ? s : null;
     }
 }
 

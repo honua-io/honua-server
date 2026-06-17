@@ -41,17 +41,22 @@ internal static class GdalJobInputReader
     }
 
     /// <summary>
-    /// Reads a required step-input string value.
+    /// Reads a step-input string value, reporting presence based purely on whether
+    /// the canonical key exists in the durable spec. A present-but-empty value
+    /// (the submit path persists empty inputs as <c>string.Empty</c>) is returned
+    /// as-is and reported as present — a legitimately-empty parameter (empty WHERE/SQL
+    /// filter, empty name prefix, empty output-name override) must not be silently
+    /// dropped. Callers that genuinely require a non-empty value are responsible for
+    /// their own emptiness check on the returned value.
     /// </summary>
     public static bool TryGetInput(
         IReadOnlyDictionary<string, string> parameters,
         string name,
         out string value)
     {
-        if (parameters.TryGetValue(GdalWorkerParameterKeys.StepInputPrefix + name, out var raw)
-            && !string.IsNullOrWhiteSpace(raw))
+        if (parameters.TryGetValue(GdalWorkerParameterKeys.StepInputPrefix + name, out var raw))
         {
-            value = raw;
+            value = raw ?? "";
             return true;
         }
 

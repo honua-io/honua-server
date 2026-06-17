@@ -540,5 +540,13 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         [LoggerMessage(7841, LogLevel.Warning,
             "Reconciliation gate could not run for table {TableName}; import completed without a reconciliation verdict")]
         public static partial void ReconciliationGateUnavailable(ILogger logger, string tableName, Exception exception);
+
+        [LoggerMessage(7842, LogLevel.Warning,
+            "Feature paging for table {TableName} hit the {MaxPages}-page safety cap; import may be incomplete")]
+        public static partial void FeaturePagingCapReached(ILogger logger, string tableName, int maxPages);
+
+        [LoggerMessage(7843, LogLevel.Warning,
+            "Feature paging for table {TableName} stopped at batch {BatchNumber}: source returned a repeated page (ignores resultOffset)")]
+        public static partial void FeaturePagingNotAdvancing(ILogger logger, string tableName, int batchNumber);
     }
 }

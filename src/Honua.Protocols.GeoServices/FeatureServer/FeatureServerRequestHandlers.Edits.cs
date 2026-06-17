@@ -668,9 +668,9 @@ internal static partial class FeatureServerEndpoints
                 results[i] = new ServiceLayerEditResult
                 {
                     Id = entry.Id,
-                    AddResults = BuildLayerFailureResults(entry.Adds?.Length ?? 0, description),
-                    UpdateResults = BuildLayerFailureResults(entry.Updates?.Length ?? 0, description),
-                    DeleteResults = BuildLayerFailureResults(entry.Deletes?.Length ?? 0, description)
+                    AddResults = BuildAddFailureResults(entry.Adds, description),
+                    UpdateResults = BuildFeatureFailureResults(entry.Updates, description),
+                    DeleteResults = BuildDeleteFailureResults(entry.Deletes, description)
                 };
             }
         }
@@ -680,27 +680,99 @@ internal static partial class FeatureServerEndpoints
     }
 
     /// <summary>
-    /// Builds per-slot failure entries for a layer whose applyEdits call returned a
-    /// non-JSON protocol error after earlier layers had already committed.
+    /// Builds per-slot add failure entries for a layer whose applyEdits call returned a
+    /// non-JSON protocol error after earlier layers had already committed. Adds have no
+    /// client-supplied objectId (the server assigns it), so the objectId stays null.
     /// </summary>
-    private static EditResult[]? BuildLayerFailureResults(int count, string description)
+    private static EditResult[]? BuildAddFailureResults(GeoServicesFeature[]? adds, string description)
     {
-        if (count == 0)
+        if (adds is not { Length: > 0 })
         {
             return null;
         }
 
-        var failures = new EditResult[count];
-        for (var i = 0; i < count; i++)
+        var failures = new EditResult[adds.Length];
+        for (var i = 0; i < adds.Length; i++)
         {
-            failures[i] = new EditResult
-            {
-                Success = false,
-                Error = new EditError { Code = 1000, Description = description }
-            };
+            failures[i] = CreateLayerFailureResult(objectId: null, description);
         }
 
         return failures;
+    }
+
+    /// <summary>
+    /// Builds per-slot update failure entries, preserving the objectId the client sent in
+    /// each feature's attributes so clients matching results by objectId still work. The
+    /// objectId field name is not resolvable at the service level (no per-layer resource is
+    /// loaded here), so fall back to the canonical OBJECTID attribute key.
+    /// </summary>
+    private static EditResult[]? BuildFeatureFailureResults(GeoServicesFeature[]? features, string description)
+    {
+        if (features is not { Length: > 0 })
+        {
+            return null;
+        }
+
+        var failures = new EditResult[features.Length];
+        for (var i = 0; i < features.Length; i++)
+        {
+            failures[i] = CreateLayerFailureResult(TryGetSubmittedObjectId(features[i]), description);
+        }
+
+        return failures;
+    }
+
+    /// <summary>
+    /// Builds per-slot delete failure entries, preserving the submitted objectId (the deletes
+    /// array carries objectIds directly).
+    /// </summary>
+    private static EditResult[]? BuildDeleteFailureResults(object[]? deletes, string description)
+    {
+        if (deletes is not { Length: > 0 })
+        {
+            return null;
+        }
+
+        var failures = new EditResult[deletes.Length];
+        for (var i = 0; i < deletes.Length; i++)
+        {
+            var objectId = FeatureServerValueParser.TryConvertToLong(deletes[i], out var parsed)
+                ? parsed
+                : (long?)null;
+            failures[i] = CreateLayerFailureResult(objectId, description);
+        }
+
+        return failures;
+    }
+
+    private static EditResult CreateLayerFailureResult(long? objectId, string description)
+        => new()
+        {
+            ObjectId = objectId,
+            Success = false,
+            Error = new EditError { Code = 1000, Description = description }
+        };
+
+    // Best-effort objectId extraction from a submitted feature's attributes. The service-level
+    // applyEdits handler does not resolve the per-layer resource, so the canonical OBJECTID
+    // field name is used (matching Esri's default objectIdField).
+    private static long? TryGetSubmittedObjectId(GeoServicesFeature feature)
+    {
+        if (feature.Attributes is not { Count: > 0 } attributes)
+        {
+            return null;
+        }
+
+        foreach (var entry in attributes)
+        {
+            if (string.Equals(entry.Key, FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase) &&
+                FeatureServerValueParser.TryConvertToLong(entry.Value, out var objectId))
+            {
+                return objectId;
+            }
+        }
+
+        return null;
     }
 
     private static GeoServicesFeature[]? ConcatFeatures(GeoServicesFeature[]? first, GeoServicesFeature[]? second)

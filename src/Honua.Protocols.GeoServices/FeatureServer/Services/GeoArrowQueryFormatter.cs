@@ -328,9 +328,12 @@ internal sealed class GeoArrowQueryFormatter
             {
                 builder.Append(converted.Value);
             }
-            else if (isObjectIdField)
+            else if (isObjectIdField && features[i].Id >= int.MinValue && features[i].Id <= int.MaxValue)
             {
-                builder.Append(Convert.ToInt32(features[i].Id, CultureInfo.InvariantCulture));
+                // OID fallback. When an Integer-typed OID column holds a 64-bit value
+                // outside Int32 range the column type is too narrow; degrade to null
+                // rather than throwing OverflowException (consistent with GeoParquet).
+                builder.Append((int)features[i].Id);
             }
             else
             {
@@ -567,15 +570,21 @@ internal sealed class GeoArrowQueryFormatter
 
     private static int? TryConvertInt32(object? value)
     {
+        // Out-of-range narrowing degrades to null (no value emitted) to match the
+        // GeoParquet writer, which catches OverflowException and appends null. Range
+        // tests avoid throwing on the hot path instead of relying on try/catch.
         return value switch
         {
             null => null,
             int intValue => intValue,
-            long longValue => Convert.ToInt32(longValue, CultureInfo.InvariantCulture),
+            long longValue when longValue >= int.MinValue && longValue <= int.MaxValue => (int)longValue,
+            long => null,
             short shortValue => shortValue,
             byte byteValue => byteValue,
-            double doubleValue => Convert.ToInt32(doubleValue, CultureInfo.InvariantCulture),
-            decimal decimalValue => Convert.ToInt32(decimalValue, CultureInfo.InvariantCulture),
+            double doubleValue when doubleValue >= int.MinValue && doubleValue <= int.MaxValue => (int)Math.Round(doubleValue, MidpointRounding.ToEven),
+            double => null,
+            decimal decimalValue when decimalValue >= int.MinValue && decimalValue <= int.MaxValue => (int)Math.Round(decimalValue, MidpointRounding.ToEven),
+            decimal => null,
             JsonElement element when element.ValueKind == JsonValueKind.Number && element.TryGetInt32(out var jsonInt) => jsonInt,
             string stringValue when int.TryParse(stringValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) => parsed,
             _ => null

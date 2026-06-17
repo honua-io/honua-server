@@ -346,6 +346,13 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
     {
         var providers = new List<IGeocodeProvider>();
 
+        // The total number of providers attempted is capped at MaxFailoverAttempts. The preferred
+        // provider is always tried first; the default provider and any additional failover providers
+        // are only added while there is remaining budget, so the overall attempt count never exceeds
+        // the configured cap (MaxFailoverAttempts is validated to be greater than zero, so the
+        // preferred provider always fits).
+        var maxProviders = Math.Max(1, _configuration.MaxFailoverAttempts);
+
         // Add preferred provider first if specified and available
         if (!string.IsNullOrWhiteSpace(preferredProviderName))
         {
@@ -360,8 +367,11 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
             }
         }
 
-        // Add default provider if not already added
-        if (providers.Count == 0 || !providers.Any(p => p.Name.Equals(_configuration.DefaultProvider, StringComparison.OrdinalIgnoreCase)))
+        // Add default provider if not already added and there is remaining budget. This addition
+        // counts against MaxFailoverAttempts so a distinct preferred + default pair cannot push the
+        // total beyond the cap.
+        if (providers.Count < maxProviders &&
+            (providers.Count == 0 || !providers.Any(p => p.Name.Equals(_configuration.DefaultProvider, StringComparison.OrdinalIgnoreCase))))
         {
             var defaultProvider = _providerRegistry.GetProvider(_configuration.DefaultProvider);
             if (defaultProvider != null)
@@ -371,12 +381,12 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
         }
 
         // Add other providers for failover if enabled
-        if (_configuration.EnableFailover && providers.Count < _configuration.MaxFailoverAttempts)
+        if (_configuration.EnableFailover && providers.Count < maxProviders)
         {
             var allProviders = _providerRegistry.GetAllProviders();
             var additionalProviders = allProviders
                 .Where(p => !providers.Any(existing => existing.Name.Equals(p.Name, StringComparison.OrdinalIgnoreCase)))
-                .Take(_configuration.MaxFailoverAttempts - providers.Count);
+                .Take(maxProviders - providers.Count);
 
             providers.AddRange(additionalProviders);
         }
@@ -439,7 +449,17 @@ internal sealed class GeocodeProviderCoordinator : IGeocodeProviderCoordinator
         CancellationToken cancellationToken = default)
     {
         var result = await _coordinatorService.ForwardGeocodeAsync(request, providerName, cancellationToken).ConfigureAwait(false);
-        return result.IsSuccess ? result.Data : [];
+
+        // A successful result with zero candidates is a genuine "no match" and is
+        // returned as an empty list. A failure means every attempted provider errored
+        // (401/429/timeout/etc.); surfacing that as an empty list would be
+        // indistinguishable from a real no-match, so throw instead.
+        if (!result.IsSuccess)
+        {
+            throw CreateProviderFailure(result, "forward geocoding");
+        }
+
+        return result.Data;
     }
 
     public async Task<ReverseGeocodeMatch?> ReverseGeocodeAsync(
@@ -448,7 +468,31 @@ internal sealed class GeocodeProviderCoordinator : IGeocodeProviderCoordinator
         CancellationToken cancellationToken = default)
     {
         var result = await _coordinatorService.ReverseGeocodeAsync(request, providerName, cancellationToken).ConfigureAwait(false);
-        return result.IsSuccess ? result.Data : null;
+
+        // A successful result with a null match is a genuine "no match". A failure means
+        // every attempted provider errored, which must not be collapsed into null (that
+        // would let callers persist NULL coordinates as if the location were genuinely
+        // ungeocodable), so throw instead.
+        if (!result.IsSuccess)
+        {
+            throw CreateProviderFailure(result, "reverse geocoding");
+        }
+
+        return result.Data;
+    }
+
+    private static GeocodeProviderException CreateProviderFailure<T>(GeocodeResult<T> result, string operation)
+    {
+        var baseMessage = result.ErrorMessage ?? $"All geocoding providers failed during {operation}.";
+        var message = result.AttemptedProviders is { Count: > 0 } attempted
+            ? $"{baseMessage} (attempted providers: {string.Join(", ", attempted)})"
+            : baseMessage;
+
+        return new GeocodeProviderException(message)
+        {
+            ProviderName = result.ProviderName,
+            ErrorCode = GeocodeErrorCodes.ServiceUnavailable,
+        };
     }
 
     public async Task<IReadOnlyList<GeocodeProviderHealth>> CheckAllProvidersHealthAsync(CancellationToken cancellationToken = default)

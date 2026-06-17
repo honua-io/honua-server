@@ -465,7 +465,21 @@ internal static partial class AttachmentHandler
             .Select(t => t.Trim().ToLowerInvariant())
             .ToArray();
 
-        var normalizedContentType = contentType.ToLowerInvariant();
+        // Uploaded Content-Type values may carry parameters (e.g. "text/csv; charset=utf-8").
+        // Strip everything from the first ';' so the bare media type is what gets matched
+        // against the allowlist.
+        var normalizedContentType = contentType;
+        var parameterSeparator = normalizedContentType.IndexOf(';');
+        if (parameterSeparator >= 0)
+        {
+            normalizedContentType = normalizedContentType[..parameterSeparator];
+        }
+
+        normalizedContentType = normalizedContentType.Trim().ToLowerInvariant();
+        if (normalizedContentType.Length == 0)
+        {
+            return false;
+        }
 
         foreach (var allowedType in allowedTypes)
         {

@@ -50,7 +50,7 @@ internal sealed partial class GeoservicesImportService
         var parameterPlaceholders = string.Join(", ", fields.Select((_, i) => $"@p{i}"));
         if (hasGeometry)
         {
-            parameterPlaceholders += $", {BuildGeometryInsertExpression(layerInfo.GeometryType, targetSrid)}";
+            parameterPlaceholders += $", {BuildGeometryInsertExpression(layerInfo.GeometryType, targetSrid, layerInfo.HasZ)}";
         }
 
         var insertSql =
@@ -103,7 +103,10 @@ internal sealed partial class GeoservicesImportService
                 // Update geometry parameter value
                 if (hasGeometry && feature.Geometry.HasValue)
                 {
-                    if (HasHigherDimensionCoordinates(feature.Geometry.Value))
+                    // Only count higher-dimension geometry as "dropped" when the target column is
+                    // 2D. For hasZ layers the column is Z-aware and the Z ordinate is preserved
+                    // through ConvertEsriGeometryToGeoJson, so no data is lost.
+                    if (!layerInfo.HasZ && HasHigherDimensionCoordinates(feature.Geometry.Value))
                     {
                         higherDimensionCount++;
                     }
@@ -212,15 +215,20 @@ internal sealed partial class GeoservicesImportService
         int Failed,
         Dictionary<long, long> ObjectIdMap);
 
-    private static string BuildGeometryInsertExpression(string? geometryType, int targetSrid)
+    private static string BuildGeometryInsertExpression(string? geometryType, int targetSrid, bool hasZ = false)
     {
         var geometry = $"ST_SetSRID(ST_GeomFromGeoJSON(@geom), {targetSrid})";
-        return geometryType?.ToUpperInvariant() switch
+        var expression = geometryType?.ToUpperInvariant() switch
         {
             "ESRIGEOMETRYPOLYGON" => $"ST_Multi(ST_CollectionExtract(ST_MakeValid({geometry}), 3))",
             "ESRIGEOMETRYPOLYLINE" => $"ST_Multi(ST_CollectionExtract(ST_MakeValid({geometry}), 2))",
             _ => geometry
         };
+
+        // When the target column is Z-aware (source hasZ), force every inserted geometry to 3D
+        // so features that happen to omit Z still satisfy the POINTZ/LINESTRINGZ/... typmod
+        // (ST_Force3D adds Z=0 where missing and is a no-op for geometries that already carry Z).
+        return hasZ ? $"ST_Force3D({expression})" : expression;
     }
 
     private static object? ConvertJsonValue(JsonElement element, string esriType)
@@ -230,8 +238,15 @@ internal sealed partial class GeoservicesImportService
 
         return esriType.ToUpperInvariant() switch
         {
+            // Read OID/Integer/SmallInteger as 64-bit. GetInt32 throws OverflowException for
+            // BigInteger fields or OIDs greater than Int32.MaxValue, and the per-feature catch
+            // would then silently drop the whole row. The target columns are mapped to BIGINT,
+            // so a long carries every supported value. Degrade to null (rather than throwing)
+            // when the JSON number is not a whole integer.
             "ESRIFIELDTYPEOID" or "ESRIFIELDTYPEINTEGER" or "ESRIFIELDTYPESMALLINTEGER" =>
-                element.ValueKind == JsonValueKind.Number ? element.GetInt32() : null,
+                element.ValueKind == JsonValueKind.Number
+                    ? (element.TryGetInt64(out var int64Value) ? int64Value : (object?)null)
+                    : null,
 
             "ESRIFIELDTYPEDOUBLE" or "ESRIFIELDTYPESINGLE" =>
                 element.ValueKind == JsonValueKind.Number ? element.GetDouble() : null,

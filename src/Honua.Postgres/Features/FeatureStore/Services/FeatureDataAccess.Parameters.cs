@@ -30,10 +30,7 @@ internal sealed partial class FeatureDataAccess
 
             AddKnnParameters(command, filter, query, ref parameterIndex, includeDistanceGeometry: false);
 
-            if (query.Offset.HasValue)
-            {
-                AddParameterValue(command, ref parameterIndex, query.Offset.Value);
-            }
+            AddOffsetParameterIfEmitted(command, query, ref parameterIndex);
 
             return;
         }
@@ -48,7 +45,18 @@ internal sealed partial class FeatureDataAccess
 
         AddRegularPaginationParameters(command, query, ref parameterIndex);
 
-        if (query.Offset.HasValue)
+        AddOffsetParameterIfEmitted(command, query, ref parameterIndex);
+    }
+
+    // Bind the OFFSET value only when the emitted SQL actually contains an OFFSET placeholder.
+    // Most builders append " OFFSET $n" whenever query.Offset is set, but some shapes (e.g.
+    // BuildProjectedPointQuery) emit a LIMIT placeholder and no OFFSET clause, so always binding
+    // Offset would push the bound-parameter count past the placeholder count and fail with a
+    // bind-count mismatch (500). Gating on the emitted SQL keeps every shape self-consistent.
+    private static void AddOffsetParameterIfEmitted(NpgsqlCommand command, FeatureQuery query, ref int parameterIndex)
+    {
+        if (query.Offset.HasValue &&
+            command.CommandText.Contains("OFFSET", StringComparison.Ordinal))
         {
             AddParameterValue(command, ref parameterIndex, query.Offset.Value);
         }

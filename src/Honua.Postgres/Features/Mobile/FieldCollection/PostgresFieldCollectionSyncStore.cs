@@ -61,7 +61,7 @@ internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncSto
     private const string LookupIdempotencyResponseSql = """
         SELECT response_payload
         FROM honua.fieldcollection_pushed_changes
-        WHERE change_id = @change_id
+        WHERE client_id = @client_id AND change_id = @change_id
         """;
 
     private const string SelectFeatureSql = """
@@ -93,16 +93,19 @@ internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncSto
 
     private const string InsertIdempotencyRecordSql = """
         INSERT INTO honua.fieldcollection_pushed_changes (
-            change_id, feature_id, layer_id, operation, outcome, response_payload, pushed_at)
+            client_id, change_id, feature_id, layer_id, operation, outcome, response_payload, pushed_at)
         VALUES (
-            @change_id, @feature_id, @layer_id, @operation, @outcome, @response_payload, now())
+            @client_id, @change_id, @feature_id, @layer_id, @operation, @outcome, @response_payload, now())
         """;
 
-    // Two-key advisory lock keyed by (namespace, hashtext(change_id)). pg_advisory_xact_lock
-    // serializes concurrent pushes that share a change_id; the lock is released on commit
-    // or rollback so we never leak it across requests. The namespace constant keeps this
-    // lock space distinct from other features (e.g. raster import) that also use advisory
-    // locks. The literal mirrors ticket #894 to make grep-by-ticket easy.
+    // Two-key advisory lock keyed by (namespace, hashtext("<client_id>:<change_id>")).
+    // pg_advisory_xact_lock serializes concurrent pushes that share a (client_id, change_id)
+    // idempotency key; the lock is released on commit or rollback so we never leak it across
+    // requests. The key is scoped by client_id to match the (client_id, change_id) idempotency
+    // PK — two devices sharing one API key but minting the same change_id are distinct
+    // idempotency keys and must not serialize against (or dedup as) each other. The namespace
+    // constant keeps this lock space distinct from other features (e.g. raster import) that
+    // also use advisory locks. The literal mirrors ticket #894 to make grep-by-ticket easy.
     private const int FieldCollectionPushLockNamespace = 0x0894_FC5C;
 
     // Feature-identity advisory lock keyed by (namespace, hashtext("<layer_id>:<feature_id>")).
@@ -116,7 +119,7 @@ internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncSto
     private const int FieldCollectionFeatureLockNamespace = 0x0894_FC5F;
 
     private const string AcquireChangeIdLockSql =
-        "SELECT pg_advisory_xact_lock(@namespace, hashtext(@change_id))";
+        "SELECT pg_advisory_xact_lock(@namespace, hashtext(@change_lock_key))";
 
     // Generation-allocation advisory lock. nextval('honua.sync_generation') runs inside the
     // push transaction, so without serialization two concurrent pushes to DIFFERENT features
@@ -293,17 +296,21 @@ internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncSto
     }
 
     public async Task<FieldCollectionPushResult> PushChangeAsync(
+        string clientId,
         FieldCollectionPushRequest request,
         CancellationToken cancellationToken = default)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(clientId);
         ArgumentNullException.ThrowIfNull(request);
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
 
-        // Fast path: a previous request with this change_id committed an idempotency
-        // record outside any transaction, so we can return it without taking the
-        // advisory lock or starting a transaction.
-        var existing = await TryReadIdempotencyResponseAsync(connection, request.ChangeId, cancellationToken).ConfigureAwait(false);
+        // Fast path: a previous request with this (client_id, change_id) committed an
+        // idempotency record outside any transaction, so we can return it without
+        // taking the advisory lock or starting a transaction. Scoping by client_id is
+        // required so that two devices sharing one API key but minting the same
+        // change_id are not deduped against each other.
+        var existing = await TryReadIdempotencyResponseAsync(connection, clientId, request.ChangeId, cancellationToken).ConfigureAwait(false);
         if (existing is not null)
         {
             return existing;
@@ -325,9 +332,9 @@ internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncSto
             // advisory lock guarantees the loser waits until the winner commits its
             // idempotency row, then the post-lock read returns the stored response —
             // never a unique-violation surfaced as a 5xx.
-            await AcquireChangeIdLockAsync(connection, transaction, request.ChangeId, cancellationToken).ConfigureAwait(false);
+            await AcquireChangeIdLockAsync(connection, transaction, clientId, request.ChangeId, cancellationToken).ConfigureAwait(false);
 
-            existing = await TryReadIdempotencyResponseAsync(connection, request.ChangeId, transaction, cancellationToken).ConfigureAwait(false);
+            existing = await TryReadIdempotencyResponseAsync(connection, clientId, request.ChangeId, transaction, cancellationToken).ConfigureAwait(false);
             if (existing is not null)
             {
                 await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
@@ -383,7 +390,7 @@ internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncSto
                 result = result with { ServerGeneration = currentGeneration };
             }
 
-            await WriteIdempotencyRecordAsync(connection, transaction, request, result, cancellationToken).ConfigureAwait(false);
+            await WriteIdempotencyRecordAsync(connection, transaction, clientId, request, result, cancellationToken).ConfigureAwait(false);
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
         catch
@@ -666,6 +673,7 @@ internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncSto
     private static async Task WriteIdempotencyRecordAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
+        string clientId,
         FieldCollectionPushRequest request,
         FieldCollectionPushResult result,
         CancellationToken cancellationToken)
@@ -673,6 +681,7 @@ internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncSto
         var serializedResponse = JsonSerializer.Serialize(result, FieldCollectionSyncStoreJsonContext.Default.FieldCollectionPushResult);
 
         await using var command = new NpgsqlCommand(InsertIdempotencyRecordSql, connection, transaction);
+        command.Parameters.AddWithValue("client_id", NpgsqlDbType.Text, clientId);
         command.Parameters.AddWithValue("change_id", NpgsqlDbType.Text, request.ChangeId);
         command.Parameters.AddWithValue("feature_id", NpgsqlDbType.Text, request.FeatureId);
         command.Parameters.AddWithValue("layer_id", NpgsqlDbType.Integer, request.LayerId);
@@ -685,12 +694,23 @@ internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncSto
     private static async Task AcquireChangeIdLockAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
+        string clientId,
         string changeId,
         CancellationToken cancellationToken)
     {
+        // Composite key uses a colon separator between client_id and change_id so
+        // that "<a>" + "<b...>" cannot alias a different "<ab>" + "<...>" pair, and
+        // so the lock partitions on the same (client_id, change_id) key the
+        // idempotency table is now keyed by. hashtext collisions remain possible —
+        // they only cause unnecessary serialization between unrelated keys, never
+        // correctness regressions.
+        var lockKey = string.Create(
+            CultureInfo.InvariantCulture,
+            $"{clientId}:{changeId}");
+
         await using var command = new NpgsqlCommand(AcquireChangeIdLockSql, connection, transaction);
         command.Parameters.AddWithValue("namespace", NpgsqlDbType.Integer, FieldCollectionPushLockNamespace);
-        command.Parameters.AddWithValue("change_id", NpgsqlDbType.Text, changeId);
+        command.Parameters.AddWithValue("change_lock_key", NpgsqlDbType.Text, lockKey);
         _ = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -727,17 +747,20 @@ internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncSto
 
     private static Task<FieldCollectionPushResult?> TryReadIdempotencyResponseAsync(
         NpgsqlConnection connection,
+        string clientId,
         string changeId,
         CancellationToken cancellationToken)
-        => TryReadIdempotencyResponseAsync(connection, changeId, transaction: null, cancellationToken);
+        => TryReadIdempotencyResponseAsync(connection, clientId, changeId, transaction: null, cancellationToken);
 
     private static async Task<FieldCollectionPushResult?> TryReadIdempotencyResponseAsync(
         NpgsqlConnection connection,
+        string clientId,
         string changeId,
         NpgsqlTransaction? transaction,
         CancellationToken cancellationToken)
     {
         await using var command = new NpgsqlCommand(LookupIdempotencyResponseSql, connection, transaction);
+        command.Parameters.AddWithValue("client_id", NpgsqlDbType.Text, clientId);
         command.Parameters.AddWithValue("change_id", NpgsqlDbType.Text, changeId);
 
         var raw = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);

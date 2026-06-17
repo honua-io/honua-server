@@ -205,11 +205,20 @@ internal sealed record GeocodeAddressesResponse
 
 internal sealed record GeocodeAddressLocation
 {
+    // Esri geocodeAddresses reports a ResultID on every location that correlates it back to
+    // the submitted record (the OBJECTID/ResultID supplied in the request). Honua assigns the
+    // zero-based input index so clients can map each location to its input even when an input
+    // produced no match. Emitted first to mirror the Esri response field ordering.
+    [JsonPropertyName("resultId")]
+    public required int ResultId { get; init; }
+
     [JsonPropertyName("address")]
     public required string Address { get; init; }
 
+    // Null for unmatched records (blank or zero-candidate inputs). The slot is still emitted so
+    // the locations array stays 1:1 and in order with the submitted records.
     [JsonPropertyName("location")]
-    public required GeocodePoint Location { get; init; }
+    public required GeocodePoint? Location { get; init; }
 
     [JsonPropertyName("score")]
     public required double Score { get; init; }

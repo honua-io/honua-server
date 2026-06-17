@@ -17,7 +17,12 @@ internal sealed class NoOpDistributedLeaderElection : IDistributedLeaderElection
 
     public NoOpDistributedLeaderElection(string key)
     {
-        _instanceId = Environment.MachineName + "_" + Environment.ProcessId;
+        // Incorporate the election key into the instance identity so that distinct
+        // no-op coordinators (one per key) remain distinguishable in logs/metrics
+        // rather than silently collapsing to a single machine/process identity.
+        _instanceId = string.IsNullOrEmpty(key)
+            ? Environment.MachineName + "_" + Environment.ProcessId
+            : key + "_" + Environment.MachineName + "_" + Environment.ProcessId;
     }
 
     /// <inheritdoc />

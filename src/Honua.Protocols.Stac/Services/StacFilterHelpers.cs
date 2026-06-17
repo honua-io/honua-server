@@ -226,7 +226,7 @@ internal static class StacFilterHelpers
     public static TemporalFilter? ParseDatetime(string datetime, MetadataV2Resource resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
-        var timeField = ResolveTemporalField(resource);
+        var timeField = ResolveTemporalField(resource, out var endTimeField);
         if (string.IsNullOrWhiteSpace(timeField))
         {
             // The resource has no resolvable temporal field: the caller must skip the
@@ -234,14 +234,35 @@ internal static class StacFilterHelpers
             return null;
         }
 
-        return ParseDatetimeWithField(datetime, timeField);
+        return ParseDatetimeWithField(datetime, timeField, endTimeField);
     }
 
-    private static string? ResolveTemporalField(MetadataV2Resource resource)
+    /// <summary>
+    /// Resolves the start temporal field for the resource and, when present, a distinct end
+    /// temporal field via <paramref name="endTimeField"/>.  When the resource declares an
+    /// explicit start time field the configured end time field is propagated (matching the
+    /// OGC/GeoServices construction) so interval rows are filtered as
+    /// <c>[start, end]</c> rather than as instants.  The fallback schema scan resolves only a
+    /// single (instant) field and leaves <paramref name="endTimeField"/> null.
+    /// </summary>
+    private static string? ResolveTemporalField(MetadataV2Resource resource, out string? endTimeField)
     {
-        var configured = resource.ReadTemporalFields().StartTimeField;
+        endTimeField = null;
+
+        var temporal = resource.ReadTemporalFields();
+        var configured = temporal.StartTimeField;
         if (!string.IsNullOrWhiteSpace(configured))
         {
+            // Propagate a distinct configured end field so the shared filter pipeline applies
+            // interval-intersection semantics ([start, COALESCE(end, start)]). Ignore an end
+            // field that matches the start field to preserve instant semantics.
+            var configuredEnd = temporal.EndTimeField;
+            if (!string.IsNullOrWhiteSpace(configuredEnd) &&
+                !string.Equals(configuredEnd, configured, StringComparison.OrdinalIgnoreCase))
+            {
+                endTimeField = configuredEnd;
+            }
+
             return configured;
         }
 
@@ -269,7 +290,7 @@ internal static class StacFilterHelpers
         return null;
     }
 
-    private static TemporalFilter? ParseDatetimeWithField(string datetime, string timeField)
+    private static TemporalFilter? ParseDatetimeWithField(string datetime, string timeField, string? endTimeField = null)
     {
         var parts = datetime.Split('/');
         DateTimeOffset? start = null;
@@ -324,6 +345,7 @@ internal static class StacFilterHelpers
         {
             PropertyName = timeField,
             PropertyType = TemporalPropertyType.DateTime,
+            EndPropertyName = endTimeField,
             Start = start,
             End = end,
         };

@@ -187,20 +187,33 @@ internal sealed class AzureManagementContainerAppsRevisionClient(IHttpClientFact
 
         var traffic = ParseTrafficWeights(appDoc.RootElement);
 
-        using var revisionsRequest = await CreateRequestAsync(
-                HttpMethod.Get,
-                BuildRevisionsListUrl(subscriptionId, resourceGroupName, appName),
-                null,
-                cancellationToken)
-            .ConfigureAwait(false);
+        var revisions = new List<AzureContainerAppsRevisionSummary>();
 
-        using var revisionsResponse = await client.SendAsync(revisionsRequest, cancellationToken).ConfigureAwait(false);
-        await EnsureSuccessAsync(revisionsResponse, cancellationToken).ConfigureAwait(false);
+        // The ARM revisions list is paginated: each page returns a "value" array and an
+        // optional "nextLink" pointing to the next page. Follow nextLink until it is absent
+        // so revisions beyond the first page are not dropped.
+        var revisionsUrl = BuildRevisionsListUrl(subscriptionId, resourceGroupName, appName);
+        while (!string.IsNullOrEmpty(revisionsUrl))
+        {
+            using var revisionsRequest = await CreateRequestAsync(
+                    HttpMethod.Get,
+                    revisionsUrl,
+                    null,
+                    cancellationToken)
+                .ConfigureAwait(false);
 
-        await using var revisionsStream = await revisionsResponse.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-        using var revisionsDoc = await JsonDocument.ParseAsync(revisionsStream, cancellationToken: cancellationToken).ConfigureAwait(false);
+            using var revisionsResponse = await client.SendAsync(revisionsRequest, cancellationToken).ConfigureAwait(false);
+            await EnsureSuccessAsync(revisionsResponse, cancellationToken).ConfigureAwait(false);
 
-        var revisions = ParseRevisionSummaries(revisionsDoc.RootElement, traffic);
+            await using var revisionsStream = await revisionsResponse.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            using var revisionsDoc = await JsonDocument.ParseAsync(revisionsStream, cancellationToken: cancellationToken).ConfigureAwait(false);
+
+            ParseRevisionSummaries(revisionsDoc.RootElement, traffic, revisions);
+
+            revisionsUrl = revisionsDoc.RootElement.TryGetProperty("nextLink", out var nextLink)
+                ? nextLink.GetString()
+                : null;
+        }
 
         return new AzureContainerAppsTrafficState
         {
@@ -350,14 +363,14 @@ internal sealed class AzureManagementContainerAppsRevisionClient(IHttpClientFact
         return weights;
     }
 
-    private static List<AzureContainerAppsRevisionSummary> ParseRevisionSummaries(
+    private static void ParseRevisionSummaries(
         JsonElement root,
-        List<AzureContainerAppsTrafficWeight> trafficWeights)
+        List<AzureContainerAppsTrafficWeight> trafficWeights,
+        List<AzureContainerAppsRevisionSummary> revisions)
     {
-        var revisions = new List<AzureContainerAppsRevisionSummary>();
         if (!root.TryGetProperty("value", out var value) || value.ValueKind != JsonValueKind.Array)
         {
-            return revisions;
+            return;
         }
 
         foreach (var entry in value.EnumerateArray())
@@ -388,8 +401,6 @@ internal sealed class AzureManagementContainerAppsRevisionClient(IHttpClientFact
                 TrafficWeight = weight
             });
         }
-
-        return revisions;
     }
 
     private static AzureContainerAppsRevisionState ParseRevisionState(JsonElement root)

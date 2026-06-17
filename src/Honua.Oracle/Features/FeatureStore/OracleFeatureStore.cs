@@ -111,8 +111,14 @@ internal sealed class OracleFeatureStore : IFeatureDataProvider, IFeatureReader,
         // Probe one extra row when a Limit is requested so HasMoreResults is reported correctly
         // without paying for a separate COUNT query. The probe row is trimmed before returning.
         var requestedLimit = query.Limit;
-        var probeQuery = requestedLimit.HasValue
-            ? query with { Limit = requestedLimit.Value + 1 }
+
+        // Probe with Limit + 1 to detect more rows, but only when below int.MaxValue:
+        // adding to int.MaxValue overflows to a negative value, which Oracle rejects as a
+        // bad FETCH NEXT count (ORA error / 500). At int.MaxValue there is effectively no
+        // further page to probe, so issue the query unchanged.
+        var canProbe = requestedLimit.HasValue && requestedLimit.Value < int.MaxValue;
+        var probeQuery = canProbe
+            ? query with { Limit = requestedLimit!.Value + 1 }
             : query;
 
         var sql = OracleFeatureQueryBuilder.BuildSelectQuery(mapping, probeQuery, attributeColumns);

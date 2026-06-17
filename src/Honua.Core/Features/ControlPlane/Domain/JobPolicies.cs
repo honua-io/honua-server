@@ -90,11 +90,31 @@ public sealed record JobRetryPolicy
         {
             BackoffStrategy.Fixed => BaseDelay,
             BackoffStrategy.Linear => TimeSpan.FromTicks(BaseDelay.Ticks * (retryIndex + 1)),
-            BackoffStrategy.Exponential => TimeSpan.FromTicks(BaseDelay.Ticks * (1L << retryIndex)),
+            BackoffStrategy.Exponential => ComputeExponentialDelay(retryIndex),
             _ => BaseDelay
         };
 
         return delay > MaxDelay ? MaxDelay : delay;
+    }
+
+    private TimeSpan ComputeExponentialDelay(int retryIndex)
+    {
+        // Cap the shift exponent: 1L << retryIndex masks the count to (count & 63) once
+        // retryIndex >= 64, wrapping the multiplier back toward 1 and collapsing the delay
+        // to BaseDelay instead of saturating. Clamp the exponent to 62 (the largest safe
+        // shift for a long) so high MaxAttempts policies stay monotonic. Anything that
+        // overflows TimeSpan.Ticks is treated as saturated at MaxDelay.
+        var shift = Math.Min(retryIndex, 62);
+        var multiplier = 1L << shift;
+
+        try
+        {
+            return checked(TimeSpan.FromTicks(BaseDelay.Ticks * multiplier));
+        }
+        catch (OverflowException)
+        {
+            return MaxDelay;
+        }
     }
 
     /// <summary>

@@ -574,21 +574,30 @@ internal sealed class GeocodingHandler(
                 return MapCoordinatorErrorToResult(context, errorMessage, "Batch geocoding service error");
             }
 
+            // The coordinator returns one candidate slot per submitted record, in request order,
+            // including explicit "no match" slots (NaN coordinates) for blank or zero-candidate
+            // inputs. We emit one location per candidate so the locations array stays 1:1 and in
+            // order with the input records, and stamp each with a ResultID derived from the
+            // candidate's correlation attribute (falling back to its positional index) so clients
+            // can map results back to inputs even when an input produced no match.
             var candidates = result.Data ?? [];
             var reprojectedLocations = new List<GeocodeAddressLocation>(candidates.Count);
-            foreach (var candidate in candidates)
+            for (var index = 0; index < candidates.Count; index++)
             {
-                var projected = await TryReprojectGeocodePointAsync(context, candidate.X, candidate.Y, outSrid, cancellationToken).ConfigureAwait(false);
-                if (projected is null)
-                {
-                    return CreateUnsupportedOutSrResult(context, outSrid);
-                }
+                var candidate = candidates[index];
+                var resultId = ResolveResultId(candidate, index);
 
-                reprojectedLocations.Add(new GeocodeAddressLocation
+                var isMatch = !double.IsNaN(candidate.X) && !double.IsNaN(candidate.Y);
+                GeocodePoint? location = null;
+                if (isMatch)
                 {
-                    Address = candidate.Address,
-                    Score = candidate.Score,
-                    Location = new GeocodePoint
+                    var projected = await TryReprojectGeocodePointAsync(context, candidate.X, candidate.Y, outSrid, cancellationToken).ConfigureAwait(false);
+                    if (projected is null)
+                    {
+                        return CreateUnsupportedOutSrResult(context, outSrid);
+                    }
+
+                    location = new GeocodePoint
                     {
                         X = projected.Value.X,
                         Y = projected.Value.Y,
@@ -597,7 +606,15 @@ internal sealed class GeocodingHandler(
                             Wkid = outSrid,
                             LatestWkid = outSrid
                         }
-                    },
+                    };
+                }
+
+                reprojectedLocations.Add(new GeocodeAddressLocation
+                {
+                    ResultId = resultId,
+                    Address = candidate.Address,
+                    Score = candidate.Score,
+                    Location = location,
                     Attributes = ProjectAttributes(candidate.Attributes, outFields)
                 });
             }
@@ -1051,6 +1068,22 @@ internal sealed class GeocodingHandler(
 
         fields = [.. selected];
         return true;
+    }
+
+    // Resolves the ResultID that correlates a batch candidate back to its submitted record.
+    // Providers stamp the originating input index into the candidate's ResultID attribute; this
+    // value is authoritative. When it is missing or unparseable we fall back to the candidate's
+    // positional index, which is also the input index because batch results are 1:1 and ordered.
+    private static int ResolveResultId(Honua.Geocoding.Features.Geocoding.Domain.GeocodeCandidate candidate, int positionalIndex)
+    {
+        if (candidate.Attributes.TryGetValue(Honua.Geocoding.Features.Geocoding.Domain.GeocodeCandidate.ResultIdAttribute, out var raw) &&
+            !string.IsNullOrWhiteSpace(raw) &&
+            int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+        {
+            return parsed;
+        }
+
+        return positionalIndex;
     }
 
     // Projects a provider attribute bag down to the requested outFields, matching

@@ -31,7 +31,7 @@ internal sealed class SpatialFilterTransformExecutor(
         CancellationToken cancellationToken)
     {
         var region = ReadRegion(inputs);
-        var within = string.Equals(inputs.GetOrDefault("predicate", "intersects"), "within", StringComparison.OrdinalIgnoreCase);
+        var predicate = ReadPredicate(inputs);
 
         var output = new List<IFeature>(source.Count);
         foreach (var feature in source)
@@ -44,14 +44,43 @@ internal sealed class SpatialFilterTransformExecutor(
                 continue;
             }
 
-            var keep = within ? geometry.Within(region) : geometry.Intersects(region);
-            if (keep)
+            if (Matches(geometry, region, predicate))
             {
                 output.Add(feature);
             }
         }
 
         return output;
+    }
+
+    private static bool Matches(NtsGeometry geometry, NtsGeometry region, SpatialPredicate predicate) =>
+        predicate switch
+        {
+            // within: the feature geometry lies inside the region.
+            SpatialPredicate.Within => geometry.Within(region),
+            // contains: the feature geometry contains the region.
+            SpatialPredicate.Contains => geometry.Contains(region),
+            _ => geometry.Intersects(region),
+        };
+
+    private static SpatialPredicate ReadPredicate(StepInputReader inputs)
+    {
+        var raw = inputs.GetOrDefault("predicate", "intersects");
+        return raw.Trim().ToLowerInvariant() switch
+        {
+            "intersects" => SpatialPredicate.Intersects,
+            "contains" => SpatialPredicate.Contains,
+            "within" => SpatialPredicate.Within,
+            _ => throw new TransformInputException(
+                $"predicate '{raw}' is not supported (allowed: intersects, contains, within)"),
+        };
+    }
+
+    private enum SpatialPredicate
+    {
+        Intersects,
+        Contains,
+        Within,
     }
 
     internal static NtsGeometry ReadRegion(StepInputReader inputs)

@@ -55,11 +55,16 @@ public interface IFieldCollectionSyncStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Applies a single mobile-pushed change. Repeated calls with the same
-    /// <see cref="FieldCollectionPushRequest.ChangeId"/> return the previously
-    /// stored outcome without re-applying.
+    /// Applies a single mobile-pushed change for the given client. Idempotency is
+    /// scoped by <paramref name="clientId"/> together with
+    /// <see cref="FieldCollectionPushRequest.ChangeId"/>: repeated calls with the
+    /// same (clientId, changeId) return the previously stored outcome without
+    /// re-applying. The client scope is required because field devices that share
+    /// one API key can mint colliding change ids; without it, the second device's
+    /// edit would be silently dropped as a duplicate of the first.
     /// </summary>
     Task<FieldCollectionPushResult> PushChangeAsync(
+        string clientId,
         FieldCollectionPushRequest request,
         CancellationToken cancellationToken = default);
 }

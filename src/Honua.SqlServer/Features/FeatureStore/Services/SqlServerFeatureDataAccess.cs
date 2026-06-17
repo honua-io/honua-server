@@ -55,18 +55,24 @@ internal sealed class SqlServerFeatureDataAccess
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
-                var id = reader.IsDBNull(0) ? 0L : Convert.ToInt64(reader.GetValue(0), CultureInfo.InvariantCulture);
+                if (reader.IsDBNull(0))
+                {
+                    // objectid is a stable, non-null key contract. A NULL key would silently collapse
+                    // distinct rows, so fail loud (mirrors MySQL/Postgres which read it with GetInt64).
+                    throw new InvalidOperationException(
+                        $"SQL Server select for layer {mapping.LayerId} returned a NULL object id (column '{mapping.PrimaryKeyColumn}'); object id must be a non-null key.");
+                }
+
+                var id = Convert.ToInt64(reader.GetValue(0), CultureInfo.InvariantCulture);
                 byte[]? wkb = reader.IsDBNull(1) ? null : (byte[])reader.GetValue(1);
 
                 var attrs = ImmutableDictionary<string, object?>.Empty.ToBuilder();
                 for (var i = 2; i < reader.FieldCount; i++)
                 {
+                    // Map each attribute by its ACTUAL reader column name. The query builder may emit
+                    // only the OutFields subset, so positional indexing against the full attributeColumns
+                    // list would mislabel values (mirrors MySqlFeatureDataAccess.ReadAttributes).
                     var name = reader.GetName(i);
-                    if (i - 2 < attributeColumns.Count)
-                    {
-                        name = attributeColumns[i - 2];
-                    }
-
                     attrs[name] = reader.IsDBNull(i) ? null : reader.GetValue(i);
                 }
 

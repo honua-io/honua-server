@@ -81,7 +81,12 @@ internal static partial class WmsRequestHandlers
             return CreateWmsServiceException(context, "InvalidParameterValue", "Invalid BBOX parameter. Expected format: xmin,ymin,xmax,ymax.");
         }
 
-        var bboxOutsideCrsBounds = !IsExtentWithinCrsBounds(requestedExtent, normalizedCrs);
+        // Only short-circuit to a blank image when the requested bbox does NOT
+        // intersect the CRS bounds at all. A partial overlap (e.g. a longitude
+        // range that extends past ±180) still renders: the feature query filters
+        // to in-bounds geometry and the canvas is georeferenced to the full
+        // requested bbox, so the out-of-bounds margin simply paints as background.
+        var bboxOutsideCrsBounds = !DoesExtentIntersectCrsBounds(requestedExtent, normalizedCrs);
 
         if (!TryGetRequiredQueryValue(query, "WIDTH", out var widthValue) ||
             !int.TryParse(widthValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var imageWidth) ||

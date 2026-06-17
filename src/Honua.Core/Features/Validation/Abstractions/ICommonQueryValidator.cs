@@ -50,10 +50,19 @@ public interface ICommonQueryValidator
     ValidationResult<BoundingBox> ValidateBbox(string? bboxValue, int targetSrid);
 
     /// <summary>
-    /// Validates where clause for basic SQL injection patterns.
+    /// Performs a coarse pre-filter of a WHERE clause for obviously dangerous SQL
+    /// patterns (stacked statements, comment sequences, tautologies, UNION).
     /// </summary>
+    /// <remarks>
+    /// This is layered defense-in-depth only, not the authoritative injection control.
+    /// It is a regex denylist applied after masking quoted literals, so it is inherently
+    /// incomplete (vendor-specific syntax, alternate encodings) and may both miss exotic
+    /// attacks and false-reject legitimate clauses. The real protection is structural:
+    /// callers MUST still validate the clause through the SQL parser AST and/or bind values
+    /// as parameters; never concatenate a "passing" clause directly into executed SQL.
+    /// </remarks>
     /// <param name="whereClause">WHERE clause string</param>
-    /// <returns>Validation result indicating security compliance</returns>
+    /// <returns>Failure when an obviously dangerous pattern is detected; success otherwise.</returns>
     ValidationResult ValidateWhereClause(string? whereClause);
 
     /// <summary>

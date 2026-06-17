@@ -94,46 +94,64 @@ internal sealed partial class QuarantineSinkExecutor : IJobExecutor
         await context.ReportProgressAsync(50, "Writing quarantine artifact", cancellationToken).ConfigureAwait(false);
 
         long quarantined = 0;
+        // Write to a sibling temp file first and atomically move it onto the destination
+        // only after a fully successful write. A failed or cancelled run therefore never
+        // truncates an existing valid output and never leaves a partial file behind.
+        var tempPath = resolvedPath + ".tmp-" + Guid.NewGuid().ToString("N");
+        var committed = false;
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(resolvedPath)!);
             var geoJsonWriter = new GeoJsonWriter();
-            await using var stream = new FileStream(
-                resolvedPath, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: 65536, useAsync: true);
-            await using var textWriter = new StreamWriter(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
-            using var jsonWriter = new JsonTextWriter(textWriter);
-
-            await jsonWriter.WriteStartObjectAsync(cancellationToken).ConfigureAwait(false);
-            await jsonWriter.WritePropertyNameAsync("type", cancellationToken).ConfigureAwait(false);
-            await jsonWriter.WriteValueAsync("FeatureCollection", cancellationToken).ConfigureAwait(false);
-            await jsonWriter.WritePropertyNameAsync("features", cancellationToken).ConfigureAwait(false);
-            await jsonWriter.WriteStartArrayAsync(cancellationToken).ConfigureAwait(false);
-
-            foreach (var feature in source)
+            await using (var stream = new FileStream(
+                tempPath, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: 65536, useAsync: true))
+            await using (var textWriter = new StreamWriter(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false)))
+            using (var jsonWriter = new JsonTextWriter(textWriter))
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                var tagged = Tag(feature, batchId, reasonField);
-                try
+                await jsonWriter.WriteStartObjectAsync(cancellationToken).ConfigureAwait(false);
+                await jsonWriter.WritePropertyNameAsync("type", cancellationToken).ConfigureAwait(false);
+                await jsonWriter.WriteValueAsync("FeatureCollection", cancellationToken).ConfigureAwait(false);
+                await jsonWriter.WritePropertyNameAsync("features", cancellationToken).ConfigureAwait(false);
+                await jsonWriter.WriteStartArrayAsync(cancellationToken).ConfigureAwait(false);
+
+                foreach (var feature in source)
                 {
-                    geoJsonWriter.Write(tagged, jsonWriter);
-                }
-                catch (Exception ex) when (ex is JsonException or ArgumentException or InvalidOperationException)
-                {
-                    // Even the dead-letter write must not abort the job — record a placeholder.
-                    geoJsonWriter.Write(Placeholder(batchId, reasonField, "Feature could not be serialized."), jsonWriter);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var tagged = Tag(feature, batchId, reasonField);
+                    try
+                    {
+                        geoJsonWriter.Write(tagged, jsonWriter);
+                    }
+                    catch (Exception ex) when (ex is JsonException or ArgumentException or InvalidOperationException)
+                    {
+                        // Even the dead-letter write must not abort the job — record a placeholder.
+                        geoJsonWriter.Write(Placeholder(batchId, reasonField, "Feature could not be serialized."), jsonWriter);
+                    }
+
+                    quarantined++;
                 }
 
-                quarantined++;
+                await jsonWriter.WriteEndArrayAsync(cancellationToken).ConfigureAwait(false);
+                await jsonWriter.WriteEndObjectAsync(cancellationToken).ConfigureAwait(false);
+                await jsonWriter.FlushAsync(cancellationToken).ConfigureAwait(false);
             }
 
-            await jsonWriter.WriteEndArrayAsync(cancellationToken).ConfigureAwait(false);
-            await jsonWriter.WriteEndObjectAsync(cancellationToken).ConfigureAwait(false);
-            await jsonWriter.FlushAsync(cancellationToken).ConfigureAwait(false);
+            File.Move(tempPath, resolvedPath, overwrite: true);
+            committed = true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
         {
             Log.SinkWriteFailed(_logger, job.OperationId, HandledProcessId, ex);
             return JobExecutionResult.Failed($"{HandledProcessId} write failed: {ex.GetType().Name}.");
+        }
+        finally
+        {
+            // Clean up the partial temp file on any non-committed exit (failure or
+            // cancellation). Cancellation still propagates as OperationCanceledException.
+            if (!committed)
+            {
+                TryDeleteTempFile(tempPath);
+            }
         }
 
         cancellationToken.ThrowIfCancellationRequested();
@@ -177,6 +195,21 @@ internal sealed partial class QuarantineSinkExecutor : IJobExecutor
             { reasonField, $"serialization-failed: {detail}" }
         };
         return new Feature(null, attributes);
+    }
+
+    private static void TryDeleteTempFile(string tempPath)
+    {
+        try
+        {
+            if (File.Exists(tempPath))
+            {
+                File.Delete(tempPath);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            // Best-effort cleanup; never mask the original failure/cancellation.
+        }
     }
 
     private static partial class Log

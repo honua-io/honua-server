@@ -134,11 +134,10 @@ public sealed class CommonQueryValidator : ICommonQueryValidator
         var count = 0;
         foreach (var range in bboxSpan.Split(','))
         {
+            // Do not skip empty tokens: an empty token (e.g. "1,,2,3,4") is a malformed
+            // coordinate, not an absent value. Count every comma-separated token so the
+            // exactly-4-values check below rejects the malformed input.
             var token = bboxSpan[range].Trim();
-            if (token.IsEmpty)
-            {
-                continue;
-            }
 
             if (count >= coords.Length)
             {
@@ -188,6 +187,12 @@ public sealed class CommonQueryValidator : ICommonQueryValidator
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// Coarse, best-effort denylist pre-filter only. A "success" result is NOT a
+    /// guarantee that the clause is injection-safe — denylists cannot be complete.
+    /// The authoritative defenses are the SQL parser AST validation and parameter
+    /// binding; this method exists purely to reject the most blatant payloads early.
+    /// </remarks>
     public ValidationResult ValidateWhereClause(string? whereClause)
     {
         if (string.IsNullOrWhiteSpace(whereClause))

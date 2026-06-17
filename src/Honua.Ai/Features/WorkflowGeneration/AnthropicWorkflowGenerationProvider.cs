@@ -98,7 +98,6 @@ internal sealed class AnthropicWorkflowGenerationProvider : IWorkflowGenerationP
             {
                 Model = model,
                 MaxTokens = options.MaxTokens,
-                Temperature = 0.0,
                 System = WorkflowGenerationPrompt.BuildSystem(request),
                 Messages =
                 [
@@ -141,6 +140,23 @@ internal sealed class AnthropicWorkflowGenerationProvider : IWorkflowGenerationP
             var messagesResponse = JsonSerializer.Deserialize(
                 responseJson, WorkflowGenerationJsonContext.Default.AnthropicMessagesResponse);
 
+            // Distinguish provider-side stop reasons so callers get an actionable message
+            // instead of the generic "did not return the expected tool output".
+            var stopReason = messagesResponse?.StopReason;
+            if (string.Equals(stopReason, "refusal", StringComparison.Ordinal))
+            {
+                const string Reason = "Provider declined the request (refusal).";
+                WorkflowGenerationLog.GenerationFailed(_logger, _providerId, Reason);
+                return WorkflowGenerationProposal.Error(Reason, _providerId, model);
+            }
+
+            if (string.Equals(stopReason, "max_tokens", StringComparison.Ordinal))
+            {
+                const string Reason = "Provider response was truncated (max_tokens reached); try a higher MaxTokens.";
+                WorkflowGenerationLog.GenerationFailed(_logger, _providerId, Reason);
+                return WorkflowGenerationProposal.Error(Reason, _providerId, model);
+            }
+
             // Find the forced tool_use block and read its input as the proposal.
             var toolInput = messagesResponse?.Content?
                 .FirstOrDefault(block => string.Equals(block.Type, "tool_use", StringComparison.Ordinal)
@@ -177,14 +193,18 @@ internal sealed class AnthropicWorkflowGenerationProvider : IWorkflowGenerationP
             activity?.SetTag("workflowgen.status", proposal.Status.ToString());
             return proposal;
         }
-        catch (TaskCanceledException ex) when (ex.InnerException is TimeoutException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            WorkflowGenerationLog.GenerationFailed(_logger, _providerId, "Request timed out.");
-            return WorkflowGenerationProposal.Error("Provider request timed out.", _providerId, model);
+            // The caller's token fired — genuine cancellation, propagate it.
+            throw;
         }
         catch (OperationCanceledException)
         {
-            throw;
+            // The caller's token did not fire, so this is a provider-side timeout (the
+            // TaskCanceledException-with-or-without-inner-TimeoutException that HttpClient.Timeout
+            // raises), not caller cancellation. Surface it as a timeout.
+            WorkflowGenerationLog.GenerationFailed(_logger, _providerId, "Request timed out.");
+            return WorkflowGenerationProposal.Error("Provider request timed out.", _providerId, model);
         }
         catch (HttpRequestException ex)
         {

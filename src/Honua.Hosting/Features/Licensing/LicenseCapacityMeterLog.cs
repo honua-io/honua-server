@@ -32,6 +32,12 @@ internal static partial class LicenseCapacityMeterLog
     public static partial void RedisMeteringGap(ILogger logger, string errorType);
 
     [LoggerMessage(
+        EventId = 10024,
+        Level = LogLevel.Error,
+        Message = "Serving instance registration was refused by license capacity band at startup; the instance continues without a coordinated registration. reason={Reason}")]
+    public static partial void RegistrationStartupRefused(ILogger logger, string reason);
+
+    [LoggerMessage(
         EventId = 10023,
         Level = LogLevel.Information,
         Message = "License capacity surge mode changed. enabled={Enabled} reason={Reason}")]

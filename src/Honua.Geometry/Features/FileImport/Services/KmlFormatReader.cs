@@ -51,7 +51,17 @@ internal static class KmlFormatReader
 
             if (reader.NodeType == XmlNodeType.Element && reader.LocalName == "Placemark")
             {
-                var feature = await ParsePlacemarkAsync(reader, geometryFactory, cancellationToken);
+                IFeature? feature = null;
+                try
+                {
+                    feature = await ParsePlacemarkAsync(reader, geometryFactory, cancellationToken);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // Skip a single malformed placemark rather than aborting the whole
+                    // import stream, consistent with WktFormatReader/CsvFormatReader.
+                }
+
                 if (feature != null)
                     yield return feature;
             }
@@ -329,12 +339,31 @@ internal static class KmlFormatReader
             if (reader.NodeType == XmlNodeType.Element && reader.LocalName == "coordinates")
             {
                 var coords = await reader.ReadElementContentAsStringAsync();
-                var coordinates = ParseCoordinates(coords);
+                var coordinates = EnsureClosedRing(ParseCoordinates(coords));
                 if (coordinates.Length >= 4)
                     return factory.CreateLinearRing(coordinates);
             }
         }
         return null;
+    }
+
+    /// <summary>
+    /// Ensures a ring's coordinates form a closed loop. NTS <c>CreateLinearRing</c>
+    /// throws if the first and last coordinates differ, which would otherwise abort
+    /// the entire import stream for a single malformed ring. Mirrors the closure
+    /// logic in <c>GdbGeometryReader.BuildPolygon</c>.
+    /// </summary>
+    private static Coordinate[] EnsureClosedRing(Coordinate[] coordinates)
+    {
+        if (coordinates.Length < 2 || coordinates[0].Equals2D(coordinates[^1]))
+        {
+            return coordinates;
+        }
+
+        var closed = new Coordinate[coordinates.Length + 1];
+        Array.Copy(coordinates, closed, coordinates.Length);
+        closed[coordinates.Length] = coordinates[0].Copy();
+        return closed;
     }
 
     private static Coordinate[] ParseCoordinates(string coordsString)

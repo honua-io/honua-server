@@ -106,6 +106,9 @@ internal static class ArcGisRestQueryParameters
         builder.Append(serviceUrl).Append('/').Append(layerId).Append("/query?f=json&returnIdsOnly=true");
         AppendCommonQueryParameters(builder, query);
         AppendOrderBy(builder, query);
+        // ArcGIS honors resultOffset/resultRecordCount on returnIdsOnly requests,
+        // so paging must be applied here to match the feature-query path.
+        AppendPaging(builder, query);
         return builder.ToString();
     }
 
@@ -236,6 +239,20 @@ internal static class ArcGisRestQueryParameters
         if (query.OrderBy is not { Length: > 0 } orderBy)
         {
             return;
+        }
+
+        // OrderBy field identifiers must remain SQL identifiers and cannot be
+        // URL-escaped into safety, so a blank field would emit a malformed
+        // " ASC" token that the upstream server rejects with an opaque 400.
+        // Reject it here with a clear message, mirroring the explicit validation
+        // applied to spatial filters and distinct.
+        foreach (var clause in orderBy)
+        {
+            if (string.IsNullOrWhiteSpace(clause.Field))
+            {
+                throw new NotSupportedException(
+                    "ArcGIS REST provider cannot forward an order-by clause with an empty or whitespace field name.");
+            }
         }
 
         var clauses = string.Join(',', orderBy.Select(c => $"{c.Field} {(c.Ascending ? "ASC" : "DESC")}"));

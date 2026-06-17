@@ -49,7 +49,10 @@ internal sealed class AzureBlobRangeReader : ICloudRangeReader
             new BlobDownloadOptions { Range = range },
             cancellationToken).ConfigureAwait(false);
 
-        return response.Value.Content;
+        // Wrap the streaming result so disposing the returned stream also disposes the
+        // owning BlobDownloadStreamingResult. Disposing the content stream alone does NOT
+        // release the underlying HTTP response/network resources held by the result.
+        return new BlobDownloadStream(response.Value);
     }
 
     /// <inheritdoc />

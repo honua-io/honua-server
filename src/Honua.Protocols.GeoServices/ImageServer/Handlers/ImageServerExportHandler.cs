@@ -153,23 +153,16 @@ internal sealed class ImageServerExportHandler
                 extent = await _rasterStore.GetExtentAsync(layerId, selectedRasters[0].Id, cancellationToken);
             }
 
+            // Esri exportImage is expected to echo the export extent. When the raster store
+            // returns no real extent, fall back to the requested bbox (what callers asked to
+            // render) rather than emitting a fabricated [0,0,1,1] box. If neither is available,
+            // omit the extent entirely instead of inventing a 1×1 envelope.
             var exportResponse = new ExportImageResponse
             {
                 Href = imageUrl,
                 Width = result.Width,
                 Height = result.Height,
-                Extent = new ImageServerExtent
-                {
-                    XMin = extent?.XMin ?? 0,
-                    YMin = extent?.YMin ?? 0,
-                    XMax = extent?.XMax ?? 1,
-                    YMax = extent?.YMax ?? 1,
-                    SpatialReference = new SpatialReference
-                    {
-                        Wkid = extent?.Srid ?? result.Srid ?? 4326,
-                        LatestWkid = extent?.Srid ?? result.Srid ?? 4326,
-                    },
-                },
+                Extent = BuildExtent(extent, request.Bbox, bboxSrid: SpatialReferenceHelpers.TryParseSrid(request.BboxSr), result.Srid),
             };
 
             ImageServerLog.ExportImageCompleted(_logger, layerId, result.Data.Length);
@@ -195,6 +188,52 @@ internal sealed class ImageServerExportHandler
             scope.RecordException(ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while exporting the image.");
         }
+    }
+
+    // Builds the export response extent. Prefers a real extent from the raster store; when
+    // none is available falls back to the requested bbox (which Esri exportImage is expected
+    // to echo). Returns null when neither is available so callers can omit the property rather
+    // than emit a fabricated [0,0,1,1] envelope.
+    private static ImageServerExtent? BuildExtent(
+        RasterExtent? extent,
+        string? requestedBbox,
+        int? bboxSrid,
+        int? resultSrid)
+    {
+        if (extent is { } realExtent)
+        {
+            return new ImageServerExtent
+            {
+                XMin = realExtent.XMin,
+                YMin = realExtent.YMin,
+                XMax = realExtent.XMax,
+                YMax = realExtent.YMax,
+                SpatialReference = new SpatialReference
+                {
+                    Wkid = realExtent.Srid ?? resultSrid ?? 4326,
+                    LatestWkid = realExtent.Srid ?? resultSrid ?? 4326,
+                },
+            };
+        }
+
+        if (!string.IsNullOrEmpty(requestedBbox) &&
+            RasterParsingHelpers.TryParseBoundingBox(requestedBbox, out var minX, out var minY, out var maxX, out var maxY))
+        {
+            return new ImageServerExtent
+            {
+                XMin = minX,
+                YMin = minY,
+                XMax = maxX,
+                YMax = maxY,
+                SpatialReference = new SpatialReference
+                {
+                    Wkid = bboxSrid ?? resultSrid ?? 4326,
+                    LatestWkid = bboxSrid ?? resultSrid ?? 4326,
+                },
+            };
+        }
+
+        return null;
     }
 
     // Translates an Esri renderingRule (Identity/Stretch chain) into the canonical

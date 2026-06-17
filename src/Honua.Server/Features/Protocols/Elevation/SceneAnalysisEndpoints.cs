@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
@@ -11,7 +12,9 @@ using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Raster;
 using Honua.Infrastructure.Validation;
 using Honua.ServiceDefaults;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Protocols.Elevation;
 
@@ -79,6 +82,7 @@ internal static class SceneAnalysisEndpoints
         string datasetId,
         HttpContext context,
         ISceneAnalysisService sceneService,
+        [FromServices] IOptions<LimitsOptions> limitsOptions,
         CancellationToken cancellationToken)
     {
         var logger = context.RequestServices.GetService<ILoggerFactory>()?
@@ -136,11 +140,25 @@ internal static class SceneAnalysisEndpoints
                 "'maxShadowLengthMeters' is required and must be a positive finite distance in meters.");
         }
 
-        if (request.SampleCount is { } sampleCount && sampleCount < 2)
+        if (request.SampleCount is { } sampleCount)
         {
-            return StandardErrorHelpers.CreateUnprocessableEntity(
-                context,
-                "'sampleCount' must be at least 2 when supplied.");
+            if (sampleCount < 2)
+            {
+                return StandardErrorHelpers.CreateUnprocessableEntity(
+                    context,
+                    "'sampleCount' must be at least 2 when supplied.");
+            }
+
+            // Enforce the same configured ceiling as the elevation profile endpoint:
+            // the service forwards the requested count to the sampler, so an
+            // unbounded value would drive unbounded DB sampling and allocation.
+            var maxSampleCount = limitsOptions.Value.Elevation.MaxSampleCount;
+            if (sampleCount > maxSampleCount)
+            {
+                return StandardErrorHelpers.CreateUnprocessableEntity(
+                    context,
+                    $"'sampleCount' ({sampleCount}) exceeds the configured maximum of {maxSampleCount}.");
+            }
         }
 
         var validation = await ValidateDatasetAsync(context, datasetId, cancellationToken);
@@ -190,6 +208,7 @@ internal static class SceneAnalysisEndpoints
         string datasetId,
         HttpContext context,
         ISceneAnalysisService sceneService,
+        [FromServices] IOptions<LimitsOptions> limitsOptions,
         CancellationToken cancellationToken)
     {
         var logger = context.RequestServices.GetService<ILoggerFactory>()?
@@ -232,11 +251,25 @@ internal static class SceneAnalysisEndpoints
                 "Slice 'endLon' and 'endLat' are required and must be finite WGS 84 coordinates within longitude [-180, 180] and latitude [-90, 90].");
         }
 
-        if (request.SampleCount is { } sampleCount && sampleCount < 2)
+        if (request.SampleCount is { } sampleCount)
         {
-            return StandardErrorHelpers.CreateUnprocessableEntity(
-                context,
-                "'sampleCount' must be at least 2 when supplied.");
+            if (sampleCount < 2)
+            {
+                return StandardErrorHelpers.CreateUnprocessableEntity(
+                    context,
+                    "'sampleCount' must be at least 2 when supplied.");
+            }
+
+            // Enforce the same configured ceiling as the elevation profile endpoint:
+            // the service forwards the requested count to the sampler, so an
+            // unbounded value would drive unbounded DB sampling and allocation.
+            var maxSampleCount = limitsOptions.Value.Elevation.MaxSampleCount;
+            if (sampleCount > maxSampleCount)
+            {
+                return StandardErrorHelpers.CreateUnprocessableEntity(
+                    context,
+                    $"'sampleCount' ({sampleCount}) exceeds the configured maximum of {maxSampleCount}.");
+            }
         }
 
         if (startLon == endLon && startLat == endLat)

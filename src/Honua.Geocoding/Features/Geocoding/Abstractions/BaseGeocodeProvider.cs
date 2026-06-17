@@ -111,10 +111,16 @@ internal abstract class BaseGeocodeProvider : IGeocodeProvider
     /// </summary>
     /// <remarks>
     /// The default implementation fans the batch out to <see cref="ForwardGeocodeAsync"/>,
-    /// returning the best candidate for each input address in request order. Providers with a
-    /// native batch endpoint should override this for efficiency. This keeps the Esri
-    /// <c>geocodeAddresses</c> operation working for providers (such as Nominatim) that only
-    /// expose a single-address forward-geocode API.
+    /// returning exactly one candidate slot for every input address in request order. Inputs
+    /// that are blank or that the forward geocoder cannot match still occupy a slot, emitted as
+    /// an explicit "no match" candidate (see <see cref="GeocodeCandidate.CreateNoMatch"/>), so
+    /// the returned list stays 1:1 with <see cref="BatchGeocodeRequest.Queries"/> and positional
+    /// alignment is preserved end-to-end. Each emitted candidate also carries a stable
+    /// <see cref="GeocodeCandidate.ResultIdAttribute"/> entry equal to its zero-based input index,
+    /// matching the Esri <c>geocodeAddresses</c> contract where every location reports a
+    /// <c>ResultID</c> that correlates it back to the submitted record. Providers with a native
+    /// batch endpoint should override this for efficiency, but must preserve the same 1:1 ordering
+    /// and <c>ResultID</c> guarantees.
     /// </remarks>
     /// <param name="request">Batch geocoding request</param>
     /// <param name="cancellationToken">Cancellation token</param>
@@ -127,12 +133,15 @@ internal abstract class BaseGeocodeProvider : IGeocodeProvider
 
         var results = new List<GeocodeCandidate>(request.Queries.Count);
 
-        foreach (var query in request.Queries)
+        for (var index = 0; index < request.Queries.Count; index++)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
+            var query = request.Queries[index];
+
             if (string.IsNullOrWhiteSpace(query))
             {
+                results.Add(GeocodeCandidate.CreateNoMatch(index, request.SpatialReferenceWkid));
                 continue;
             }
 
@@ -143,10 +152,9 @@ internal abstract class BaseGeocodeProvider : IGeocodeProvider
                 CountryCodes: request.CountryCodes);
 
             var candidates = await ForwardGeocodeAsync(forwardRequest, cancellationToken).ConfigureAwait(false);
-            if (candidates.Count > 0)
-            {
-                results.Add(candidates[0]);
-            }
+            results.Add(candidates.Count > 0
+                ? candidates[0].WithResultId(index)
+                : GeocodeCandidate.CreateNoMatch(index, request.SpatialReferenceWkid));
         }
 
         return results;

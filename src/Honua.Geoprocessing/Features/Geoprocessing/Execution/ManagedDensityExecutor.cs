@@ -113,8 +113,36 @@ internal sealed class ManagedDensityExecutor(
         return output;
     }
 
+    // Cell indices are stored and emitted as int (CELL_COL / CELL_ROW). Bounding
+    // their magnitude well inside int range guards against overflow when a large
+    // coordinate (e.g. Web Mercator X up to ~2.0037e7) is divided by a small
+    // cellSize, which would otherwise wrap a double cell index into a bogus int
+    // and silently bin features into the wrong cell.
+    private const long MaxCellIndexMagnitude = int.MaxValue - 1;
+
     private static (int Col, int Row) AssignSquare(double x, double y, double cellSize)
-        => ((int)Math.Floor(x / cellSize), (int)Math.Floor(y / cellSize));
+        => (CheckedIndex(Math.Floor(x / cellSize), x, y, cellSize),
+            CheckedIndex(Math.Floor(y / cellSize), x, y, cellSize));
+
+    /// <summary>
+    /// Validates that a fractional cell index is finite and within a bounded
+    /// range before casting to <see cref="int"/>, throwing the same input
+    /// exception used elsewhere in this executor when it is not. This prevents a
+    /// silent <see cref="int"/> overflow for large coordinate / small cellSize
+    /// combinations.
+    /// </summary>
+    private static int CheckedIndex(double index, double x, double y, double cellSize)
+    {
+        if (!double.IsFinite(index) || Math.Abs(index) > MaxCellIndexMagnitude)
+        {
+            throw new TransformInputException(
+                $"coordinate ({x.ToString(CultureInfo.InvariantCulture)}, " +
+                $"{y.ToString(CultureInfo.InvariantCulture)}) with cellSize " +
+                $"{cellSize.ToString(CultureInfo.InvariantCulture)} produces an out-of-range cell index");
+        }
+
+        return (int)index;
+    }
 
     private static Polygon BuildSquareCell(GeometryFactory factory, int col, int row, double cellSize)
     {
@@ -143,7 +171,7 @@ internal sealed class ManagedDensityExecutor(
         // Axial coordinates (q, r) for a pointy-top hex grid.
         var q = ((Math.Sqrt(3.0) / 3.0 * x) - (1.0 / 3.0 * y)) / cellSize;
         var r = (2.0 / 3.0 * y) / cellSize;
-        return RoundAxial(q, r);
+        return RoundAxial(q, r, x, y, cellSize);
     }
 
     private static Polygon BuildHexCell(GeometryFactory factory, int q, int r, double cellSize)
@@ -170,7 +198,7 @@ internal sealed class ManagedDensityExecutor(
     /// Rounds fractional axial coordinates (q, r) to the nearest hex centre.
     /// Cube-coordinate rounding correction keeps q + r + s = 0 after the round.
     /// </summary>
-    private static (int Col, int Row) RoundAxial(double q, double r)
+    private static (int Col, int Row) RoundAxial(double q, double r, double x, double y, double cellSize)
     {
         var s = -q - r;
         var rq = Math.Round(q);
@@ -190,7 +218,7 @@ internal sealed class ManagedDensityExecutor(
             rr = -rq - rs;
         }
 
-        return ((int)rq, (int)rr);
+        return (CheckedIndex(rq, x, y, cellSize), CheckedIndex(rr, x, y, cellSize));
     }
 
     private static bool TryReadNumeric(IFeature feature, string field, out double value)

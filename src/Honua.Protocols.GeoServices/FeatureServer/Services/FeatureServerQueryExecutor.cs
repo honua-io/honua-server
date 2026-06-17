@@ -134,6 +134,7 @@ internal sealed partial class FeatureServerQueryExecutor
         var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
         var queryFields = QueryFormatter.BuildQueryFields(resource, outFields: null, objectIdFieldName);
         var allowedAttributeNames = queryFields.Select(field => field.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var dateFieldNames = GeoServicesFieldConventions.ResolveDateFieldNames(resource);
         var displayFieldName = QueryFormatter.ResolveDisplayFieldName(resource, queryFields, objectIdFieldName);
         var srid = outputSrid ?? resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
         var buffer = new ArrayBufferWriter<byte>(EstimateRawGeoServicesPointPayloadCapacity(result, queryFields));
@@ -156,7 +157,7 @@ internal sealed partial class FeatureServerQueryExecutor
         {
             writer.WriteStartObject();
             writer.WritePropertyName("attributes");
-            WriteRawGeoServicesAttributes(writer, feature, allowedAttributeNames, objectIdFieldName);
+            WriteRawGeoServicesAttributes(writer, feature, allowedAttributeNames, dateFieldNames, objectIdFieldName);
 
             if (returnGeometry)
             {
@@ -193,12 +194,13 @@ internal sealed partial class FeatureServerQueryExecutor
         Utf8JsonWriter writer,
         RawGeoServicesFeature feature,
         IReadOnlySet<string> allowedAttributeNames,
+        IReadOnlySet<string> dateFieldNames,
         string objectIdFieldName)
     {
         writer.WriteStartObject();
         if (!string.IsNullOrWhiteSpace(feature.AttributesJson))
         {
-            WriteDeclaredRawAttributes(writer, feature.AttributesJson, allowedAttributeNames, objectIdFieldName);
+            WriteDeclaredRawAttributes(writer, feature.AttributesJson, allowedAttributeNames, dateFieldNames, objectIdFieldName);
         }
 
         writer.WritePropertyName(objectIdFieldName);
@@ -210,6 +212,7 @@ internal sealed partial class FeatureServerQueryExecutor
         Utf8JsonWriter writer,
         string attributesJson,
         IReadOnlySet<string> allowedAttributeNames,
+        IReadOnlySet<string> dateFieldNames,
         string objectIdFieldName)
     {
         using var document = JsonDocument.Parse(attributesJson);
@@ -226,6 +229,19 @@ internal sealed partial class FeatureServerQueryExecutor
             }
 
             writer.WritePropertyName(property.Name);
+
+            // esriFieldTypeDate attributes must serialize as epoch-ms integers to match every
+            // other f=json path. The raw fast-path emits stored JSON verbatim, so coerce date
+            // fields here. A null/empty date stays null; unconvertible values fall through to the
+            // verbatim write.
+            if (property.Value.ValueKind is not JsonValueKind.Null
+                && dateFieldNames.Contains(property.Name)
+                && GeoServicesFieldConventions.TryConvertToEpochMilliseconds(property.Value, out var epochMs))
+            {
+                writer.WriteNumberValue(epochMs);
+                continue;
+            }
+
             property.Value.WriteTo(writer);
         }
     }

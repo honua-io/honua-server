@@ -39,28 +39,40 @@ internal sealed partial class MigrationBatchBackgroundService : BackgroundServic
     {
         Log.ServiceStarting(_logger, _jobManager.LeaderElection.InstanceId);
 
-        while (!stoppingToken.IsCancellationRequested)
+        try
         {
-            try
+            while (!stoppingToken.IsCancellationRequested)
             {
-                await Task.Delay(_pollInterval, stoppingToken).ConfigureAwait(false);
-
-                var isLeader = await _jobManager.LeaderElection.TryAcquireLeadershipAsync(stoppingToken).ConfigureAwait(false);
-                if (!isLeader)
+                try
                 {
-                    continue;
-                }
+                    await Task.Delay(_pollInterval, stoppingToken).ConfigureAwait(false);
 
-                await AdvanceActiveBatchesAsync(stoppingToken).ConfigureAwait(false);
+                    var isLeader = await _jobManager.LeaderElection.TryAcquireLeadershipAsync(stoppingToken).ConfigureAwait(false);
+                    if (!isLeader)
+                    {
+                        continue;
+                    }
+
+                    await AdvanceActiveBatchesAsync(stoppingToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    Log.AdvanceLoopError(_logger, ex);
+                }
             }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                break;
-            }
-            catch (Exception ex)
-            {
-                Log.AdvanceLoopError(_logger, ex);
-            }
+        }
+        finally
+        {
+            // Release leadership on every exit path for symmetry with
+            // ImportBackgroundServiceCoordinator. This service shares the import leader
+            // election instance, so releasing here removes the implicit dependency on the
+            // import worker coordinator releasing the lease and lets a successor take over
+            // without waiting for the Redis lease TTL to expire.
+            await _jobManager.LeaderElection.ReleaseLeadershipAsync(CancellationToken.None).ConfigureAwait(false);
         }
 
         Log.ServiceStopped(_logger, _jobManager.LeaderElection.InstanceId);
