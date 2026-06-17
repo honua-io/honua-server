@@ -23,15 +23,6 @@ namespace Honua.Postgres.Features.Migration;
 
 internal sealed partial class GeoservicesImportService
 {
-    /// <summary>
-    /// Safety cap on the number of feature-query pages fetched per layer. Mirrors the WFS path's
-    /// <c>MaxPagesPerFeatureType</c>. Prevents an infinite loop (and unbounded duplicate inserts)
-    /// against an ArcGIS source that ignores <c>resultOffset</c> and returns the same page on
-    /// every request, which would otherwise keep <c>ExceededTransferLimit</c>/full-batch true
-    /// forever.
-    /// </summary>
-    private const int MaxPagesPerLayer = 10_000;
-
     /// <inheritdoc />
     public async Task<GeoservicesImportResult> ImportLayerAsync(
         GeoservicesImportRequest request,
@@ -87,30 +78,8 @@ internal sealed partial class GeoservicesImportService
             var hasMore = true;
             var objectIdMap = new Dictionary<long, long>();
 
-            // resultOffset/resultRecordCount paging requires a stable, explicit sort or the
-            // service may return rows in an undefined order, dropping or duplicating records
-            // across pages. Sort by the layer's ObjectID field (unique and immutable).
-            var orderByField = layerInfo.Fields.FirstOrDefault(f => f.IsObjectId)?.Name;
-
-            // Non-advancing-server guard (mirrors the WFS path's repeated-first-feature check):
-            // a source that ignores resultOffset returns the same page on every request, which
-            // would loop forever re-inserting duplicates. Track the first ObjectId of the
-            // previous page; if two consecutive pages start with the same ObjectId the server is
-            // not honouring the offset and we stop rather than duplicate.
-            long? previousFirstObjectId = null;
-
             while (hasMore && !cancellationToken.IsCancellationRequested)
             {
-                if (batchNumber >= MaxPagesPerLayer)
-                {
-                    warnings.Add(
-                        $"Feature paging stopped after {MaxPagesPerLayer} pages. The source returned more " +
-                        "pages than expected or ignored resultOffset; import may be incomplete. Re-run with a " +
-                        "where-clause filter or a smaller range if needed.");
-                    Log.FeaturePagingCapReached(_logger, request.TableName, MaxPagesPerLayer);
-                    break;
-                }
-
                 batchNumber++;
                 ReportProgress(progress, jobId, startedAt, GeoservicesImportStatus.RetrievingFeatures, request,
                     $"Retrieving batch {batchNumber}", featuresProcessed, totalFeatures, layerInfo.Name);
@@ -127,32 +96,12 @@ internal sealed partial class GeoservicesImportService
                     request.RequestTimeoutSeconds,
                     request.MaxRetries,
                     cancellationToken,
-                    request.Credentials,
-                    orderByField);
+                    request.Credentials);
 
                 if (queryResult.Features.Length == 0)
                 {
                     hasMore = false;
                     break;
-                }
-
-                // Detect a server that ignores resultOffset by comparing the first ObjectId of
-                // this page against the previous page. If they match, the server is returning the
-                // same page regardless of offset; stop to avoid an infinite duplicate-insert loop.
-                if (orderByField is not null
-                    && TryReadFirstObjectId(queryResult.Features, orderByField, out var currentFirstObjectId))
-                {
-                    if (previousFirstObjectId == currentFirstObjectId)
-                    {
-                        warnings.Add(
-                            "Feature paging stopped: the source returned the same page twice (it appears to " +
-                            "ignore resultOffset). Import may be incomplete. Use a resultOffset-capable source " +
-                            "or import with a where-clause filter to retrieve specific feature ranges.");
-                        Log.FeaturePagingNotAdvancing(_logger, request.TableName, batchNumber);
-                        break;
-                    }
-
-                    previousFirstObjectId = currentFirstObjectId;
                 }
 
                 // Insert features into PostGIS
@@ -403,17 +352,10 @@ internal sealed partial class GeoservicesImportService
             columns.Add($"\"{field.Name.SanitizeFieldName()}\" {pgType}");
         }
 
-        // Add geometry column if the layer has geometry. When the source advertises Z
-        // (hasZ), the column is created Z-aware (e.g. POINTZ) so preserved elevation
-        // ordinates persist instead of being silently dropped to 2D.
+        // Add geometry column if the layer has geometry
         if (!string.IsNullOrEmpty(layerInfo.GeometryType))
         {
             var pgGeomType = MapEsriGeometryType(layerInfo.GeometryType);
-            if (layerInfo.HasZ)
-            {
-                pgGeomType += "Z";
-            }
-
             columns.Add($"geom geometry({pgGeomType}, {targetSrid})");
         }
 
@@ -451,18 +393,4 @@ internal sealed partial class GeoservicesImportService
 
     private static bool IsGeometryField(GeoservicesFieldInfo field)
         => field.Type.Equals("esriFieldTypeGeometry", StringComparison.OrdinalIgnoreCase);
-
-    /// <summary>
-    /// Reads the source ObjectId of the first feature in a page, used by the non-advancing-server
-    /// guard to detect a source that returns the same page for every <c>resultOffset</c>.
-    /// </summary>
-    private static bool TryReadFirstObjectId(
-        ArcGisFeature[] features,
-        string sourceObjectIdField,
-        out long firstObjectId)
-    {
-        firstObjectId = 0;
-        return features.Length > 0
-            && TryReadSourceObjectId(features[0], sourceObjectIdField, out firstObjectId);
-    }
 }

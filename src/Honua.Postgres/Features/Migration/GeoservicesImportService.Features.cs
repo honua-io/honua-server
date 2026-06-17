@@ -50,7 +50,7 @@ internal sealed partial class GeoservicesImportService
         var parameterPlaceholders = string.Join(", ", fields.Select((_, i) => $"@p{i}"));
         if (hasGeometry)
         {
-            parameterPlaceholders += $", {BuildGeometryInsertExpression(layerInfo.GeometryType, targetSrid, layerInfo.HasZ)}";
+            parameterPlaceholders += $", {BuildGeometryInsertExpression(layerInfo.GeometryType, targetSrid)}";
         }
 
         var insertSql =
@@ -103,10 +103,7 @@ internal sealed partial class GeoservicesImportService
                 // Update geometry parameter value
                 if (hasGeometry && feature.Geometry.HasValue)
                 {
-                    // Only count higher-dimension geometry as "dropped" when the target column is
-                    // 2D. For hasZ layers the column is Z-aware and the Z ordinate is preserved
-                    // through ConvertEsriGeometryToGeoJson, so no data is lost.
-                    if (!layerInfo.HasZ && HasHigherDimensionCoordinates(feature.Geometry.Value))
+                    if (HasHigherDimensionCoordinates(feature.Geometry.Value))
                     {
                         higherDimensionCount++;
                     }
@@ -215,20 +212,15 @@ internal sealed partial class GeoservicesImportService
         int Failed,
         Dictionary<long, long> ObjectIdMap);
 
-    private static string BuildGeometryInsertExpression(string? geometryType, int targetSrid, bool hasZ = false)
+    private static string BuildGeometryInsertExpression(string? geometryType, int targetSrid)
     {
         var geometry = $"ST_SetSRID(ST_GeomFromGeoJSON(@geom), {targetSrid})";
-        var expression = geometryType?.ToUpperInvariant() switch
+        return geometryType?.ToUpperInvariant() switch
         {
             "ESRIGEOMETRYPOLYGON" => $"ST_Multi(ST_CollectionExtract(ST_MakeValid({geometry}), 3))",
             "ESRIGEOMETRYPOLYLINE" => $"ST_Multi(ST_CollectionExtract(ST_MakeValid({geometry}), 2))",
             _ => geometry
         };
-
-        // When the target column is Z-aware (source hasZ), force every inserted geometry to 3D
-        // so features that happen to omit Z still satisfy the POINTZ/LINESTRINGZ/... typmod
-        // (ST_Force3D adds Z=0 where missing and is a no-op for geometries that already carry Z).
-        return hasZ ? $"ST_Force3D({expression})" : expression;
     }
 
     private static object? ConvertJsonValue(JsonElement element, string esriType)
@@ -238,22 +230,8 @@ internal sealed partial class GeoservicesImportService
 
         return esriType.ToUpperInvariant() switch
         {
-            // OID columns are created as BIGINT (see FieldDefinitionExtensions.ToPostgresType),
-            // so read OIDs as 64-bit: GetInt32 throws OverflowException for OIDs greater than
-            // Int32.MaxValue, and the per-feature catch would then silently drop the whole row.
-            "ESRIFIELDTYPEOID" =>
-                element.ValueKind == JsonValueKind.Number
-                    ? (element.TryGetInt64(out var oidValue) ? oidValue : (object?)null)
-                    : null,
-
-            // Integer/SmallInteger columns are created as INTEGER (int4), so bind an Int32 — an
-            // Int64 parameter into an int4 column fails the insert with "column is of type integer
-            // but expression is of type bigint", and the per-feature catch then drops the row.
-            // Degrade to null (rather than throwing) when the JSON number is not a 32-bit integer.
-            "ESRIFIELDTYPEINTEGER" or "ESRIFIELDTYPESMALLINTEGER" =>
-                element.ValueKind == JsonValueKind.Number
-                    ? (element.TryGetInt32(out var int32Value) ? int32Value : (object?)null)
-                    : null,
+            "ESRIFIELDTYPEOID" or "ESRIFIELDTYPEINTEGER" or "ESRIFIELDTYPESMALLINTEGER" =>
+                element.ValueKind == JsonValueKind.Number ? element.GetInt32() : null,
 
             "ESRIFIELDTYPEDOUBLE" or "ESRIFIELDTYPESINGLE" =>
                 element.ValueKind == JsonValueKind.Number ? element.GetDouble() : null,

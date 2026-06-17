@@ -105,7 +105,7 @@ public sealed class GeoservicesImportServiceSqlTests
 
         method.Should().NotBeNull();
 
-        var expression = (string)method!.Invoke(null, ["esriGeometryPolygon", 4326, false])!;
+        var expression = (string)method!.Invoke(null, ["esriGeometryPolygon", 4326])!;
 
         expression.Should().Contain("ST_MakeValid");
         expression.Should().Contain("ST_CollectionExtract");

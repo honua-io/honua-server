@@ -27,13 +27,8 @@ internal sealed partial class GeoservicesImportService
         {
             if (geometry.TryGetProperty("x", out var x) && geometry.TryGetProperty("y", out var y))
             {
-                // Point. Carry the Z ordinate through when the source geometry advertises one
-                // (Esri places Z on a sibling "z" property for points) so 3D point layers are
-                // not silently flattened to 2D. M is not preserved (see ReadCoordinate).
-                double? z = geometry.TryGetProperty("z", out var zElement) && zElement.ValueKind == JsonValueKind.Number
-                    ? zElement.GetDouble()
-                    : null;
-                return BuildPointGeoJson(x.GetDouble(), y.GetDouble(), z);
+                // Point
+                return BuildPointGeoJson(x.GetDouble(), y.GetDouble());
             }
 
             if (geometry.TryGetProperty("rings", out var rings))
@@ -42,7 +37,7 @@ internal sealed partial class GeoservicesImportService
                 var ringCoordinates = rings.EnumerateArray()
                     .Select(ring => ring.EnumerateArray()
                         .Where(coord => coord.GetArrayLength() >= 2)
-                        .Select(ReadCoordinate)
+                        .Select(coord => new[] { coord[0].GetDouble(), coord[1].GetDouble() })
                         .ToArray())
                     .Select(EnsureClosedRing)
                     .Where(ring => ring.Length >= 4)
@@ -61,7 +56,7 @@ internal sealed partial class GeoservicesImportService
                 var coordinates = paths.EnumerateArray()
                     .Select(path => path.EnumerateArray()
                         .Where(coord => coord.GetArrayLength() >= 2)
-                        .Select(ReadCoordinate)
+                        .Select(coord => new[] { coord[0].GetDouble(), coord[1].GetDouble() })
                         .ToArray())
                     .Where(path => path.Length >= 2)
                     .ToArray();
@@ -77,7 +72,7 @@ internal sealed partial class GeoservicesImportService
                 // Multipoint
                 var coordinates = points.EnumerateArray()
                     .Where(p => p.GetArrayLength() >= 2)
-                    .Select(ReadCoordinate)
+                    .Select(p => new[] { p[0].GetDouble(), p[1].GetDouble() })
                     .ToArray();
 
                 if (coordinates.Length == 0)
@@ -135,24 +130,7 @@ internal sealed partial class GeoservicesImportService
         }
     }
 
-    /// <summary>
-    /// Reads an Esri coordinate array into [x, y] or [x, y, z]. The Z ordinate (3rd element)
-    /// is preserved when present so 3D source geometry is not flattened to 2D; the M ordinate
-    /// (4th element, when a layer is also hasM) is intentionally not carried through because
-    /// GeoJSON has no standard place for measure values.
-    /// </summary>
-    private static double[] ReadCoordinate(JsonElement coord)
-    {
-        var length = coord.GetArrayLength();
-        if (length >= 3 && coord[2].ValueKind == JsonValueKind.Number)
-        {
-            return [coord[0].GetDouble(), coord[1].GetDouble(), coord[2].GetDouble()];
-        }
-
-        return [coord[0].GetDouble(), coord[1].GetDouble()];
-    }
-
-    private static string BuildPointGeoJson(double x, double y, double? z = null)
+    private static string BuildPointGeoJson(double x, double y)
         => BuildGeoJson(writer =>
         {
             writer.WriteStartObject();
@@ -161,10 +139,6 @@ internal sealed partial class GeoservicesImportService
             writer.WriteStartArray();
             writer.WriteNumberValue(x);
             writer.WriteNumberValue(y);
-            if (z.HasValue)
-            {
-                writer.WriteNumberValue(z.Value);
-            }
             writer.WriteEndArray();
             writer.WriteEndObject();
         });
@@ -185,9 +159,7 @@ internal sealed partial class GeoservicesImportService
 
         var closed = new double[ring.Length + 1][];
         Array.Copy(ring, closed, ring.Length);
-        // Close the ring with a copy of the first vertex, preserving its full dimensionality
-        // (including Z) so a 3D ring's closing point matches its start point.
-        closed[^1] = (double[])first.Clone();
+        closed[^1] = [first[0], first[1]];
         return closed;
     }
 
@@ -330,9 +302,8 @@ internal sealed partial class GeoservicesImportService
 
     private static double[][] ReverseRing(double[][] ring)
     {
-        // Preserve each vertex's full dimensionality (including Z) when reversing winding order.
         var reversed = ring.Reverse()
-            .Select(coord => (double[])coord.Clone())
+            .Select(coord => new[] { coord[0], coord[1] })
             .ToArray();
         return EnsureClosedRing(reversed);
     }
@@ -368,7 +339,10 @@ internal sealed partial class GeoservicesImportService
                     writer.WriteStartArray();
                     foreach (var coord in ring)
                     {
-                        WriteCoordinate(writer, coord);
+                        writer.WriteStartArray();
+                        writer.WriteNumberValue(coord[0]);
+                        writer.WriteNumberValue(coord[1]);
+                        writer.WriteEndArray();
                     }
                     writer.WriteEndArray();
                 }
@@ -390,7 +364,10 @@ internal sealed partial class GeoservicesImportService
                 writer.WriteStartArray();
                 foreach (var coord in line)
                 {
-                    WriteCoordinate(writer, coord);
+                    writer.WriteStartArray();
+                    writer.WriteNumberValue(coord[0]);
+                    writer.WriteNumberValue(coord[1]);
+                    writer.WriteEndArray();
                 }
                 writer.WriteEndArray();
             }
@@ -407,27 +384,14 @@ internal sealed partial class GeoservicesImportService
             writer.WriteStartArray();
             foreach (var point in points)
             {
-                WriteCoordinate(writer, point);
+                writer.WriteStartArray();
+                writer.WriteNumberValue(point[0]);
+                writer.WriteNumberValue(point[1]);
+                writer.WriteEndArray();
             }
             writer.WriteEndArray();
             writer.WriteEndObject();
         });
-
-    /// <summary>
-    /// Writes a single coordinate as a GeoJSON array, emitting the Z ordinate when the source
-    /// coordinate carries one so 3D geometry survives the conversion.
-    /// </summary>
-    private static void WriteCoordinate(Utf8JsonWriter writer, double[] coord)
-    {
-        writer.WriteStartArray();
-        writer.WriteNumberValue(coord[0]);
-        writer.WriteNumberValue(coord[1]);
-        if (coord.Length >= 3)
-        {
-            writer.WriteNumberValue(coord[2]);
-        }
-        writer.WriteEndArray();
-    }
 
     private static string BuildGeoJson(Action<Utf8JsonWriter> write)
     {

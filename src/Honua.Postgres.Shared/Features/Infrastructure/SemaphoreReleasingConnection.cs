@@ -85,20 +85,13 @@ internal sealed class SemaphoreReleasingConnection : DbConnection
             _disposed = true;
             if (disposing)
             {
-                // Unsubscribe the relay BEFORE disposing the inner connection
-                // so a subscriber throwing on the relayed StateChange(Closed)
-                // cannot unwind out of Dispose and leak the gate slot. The
-                // try/finally then guarantees _releaseAction runs exactly once
-                // even if _inner.Dispose() itself throws.
+                // Dispose the inner connection FIRST so its final
+                // StateChange(Closed) event can relay through the wrapper,
+                // then unsubscribe to avoid rooting the wrapper from the
+                // pooled connection's event list.
+                _inner.Dispose();
                 _inner.StateChange -= OnInnerStateChange;
-                try
-                {
-                    _inner.Dispose();
-                }
-                finally
-                {
-                    _releaseAction();
-                }
+                _releaseAction();
             }
         }
 
@@ -110,20 +103,9 @@ internal sealed class SemaphoreReleasingConnection : DbConnection
         if (!_disposed)
         {
             _disposed = true;
-            // Unsubscribe the relay BEFORE disposing the inner connection so a
-            // subscriber throwing on the relayed StateChange(Closed) cannot
-            // unwind out of DisposeAsync and leak the gate slot. The
-            // try/finally then guarantees _releaseAction runs exactly once even
-            // if _inner.DisposeAsync() itself throws.
+            await _inner.DisposeAsync().ConfigureAwait(false);
             _inner.StateChange -= OnInnerStateChange;
-            try
-            {
-                await _inner.DisposeAsync().ConfigureAwait(false);
-            }
-            finally
-            {
-                _releaseAction();
-            }
+            _releaseAction();
         }
 
         await base.DisposeAsync().ConfigureAwait(false);

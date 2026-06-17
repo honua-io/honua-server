@@ -172,7 +172,6 @@ internal sealed partial class ArcGisRestClient
             Name = layerResponse.Name ?? $"Layer {layerResponse.Id}",
             Description = layerResponse.Description,
             GeometryType = layerResponse.GeometryType,
-            HasZ = layerResponse.HasZ,
             SpatialReferenceWkid = layerResponse.Extent?.SpatialReference?.Wkid,
             MaxRecordCount = layerResponse.MaxRecordCount,
             Fields = ParseFields(layerResponse.Fields),
@@ -307,11 +306,10 @@ internal sealed partial class ArcGisRestClient
         int timeoutSeconds,
         int maxRetries,
         CancellationToken cancellationToken,
-        GeoservicesCredentialDescriptor? credentials = null,
-        string? orderByField = null)
+        GeoservicesCredentialDescriptor? credentials = null)
     {
         var normalizedUrl = NormalizeServiceUrl(serviceUrl);
-        var queryUrl = BuildQueryUrl(normalizedUrl, layerId, offset, batchSize, whereClause, outFields, outSrid, orderByField);
+        var queryUrl = BuildQueryUrl(normalizedUrl, layerId, offset, batchSize, whereClause, outFields, outSrid);
 
         Log.QueryingFeatures(_logger, layerId, offset, batchSize);
 
@@ -344,8 +342,7 @@ internal sealed partial class ArcGisRestClient
         int batchSize,
         string? whereClause,
         string[]? outFields,
-        int? outSrid,
-        string? orderByField = null)
+        int? outSrid)
     {
         var query = new List<string>
         {
@@ -356,15 +353,6 @@ internal sealed partial class ArcGisRestClient
             $"resultOffset={offset}",
             $"resultRecordCount={batchSize}"
         };
-
-        // resultOffset/resultRecordCount paging is only stable when the service applies a
-        // deterministic sort: without an explicit orderByFields the row order is undefined, so
-        // offsets drift and records are dropped or duplicated across pages. Sort by the layer's
-        // ObjectID (unique, immutable) which every ArcGIS layer supports.
-        if (!string.IsNullOrWhiteSpace(orderByField))
-        {
-            query.Add($"orderByFields={Uri.EscapeDataString($"{orderByField} ASC")}");
-        }
 
         if (outSrid.HasValue)
         {
@@ -1074,9 +1062,6 @@ internal sealed record ArcGisLayerResponse
 
     [JsonPropertyName("geometryType")]
     public string? GeometryType { get; init; }
-
-    [JsonPropertyName("hasZ")]
-    public bool HasZ { get; init; }
 
     [JsonPropertyName("maxRecordCount")]
     public int? MaxRecordCount { get; init; }
