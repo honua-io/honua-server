@@ -1176,6 +1176,19 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
                     : "The connection has encrypted or externally referenced credentials that could not be decrypted."));
         }
 
+        // An empty/whitespace connection ID is the "use the default connection" sentinel
+        // (the pre-#1662 behavior). When such a binding also carries leftover credential
+        // material we could not unlock — e.g. stale encrypted bytes that won't decrypt with
+        // the current master key — we still fall back to the default connection, but log a
+        // Warning so a genuine misconfiguration (an empty ID that was meant to be a real,
+        // distinct source) remains visible in operations.
+        if (string.IsNullOrWhiteSpace(_connection.Id)
+            && (_connection.EncryptedConnectionString.Length > 0 || !string.IsNullOrWhiteSpace(_connection.SecretRef)))
+        {
+            LogEmptyIdFallbackPastUnresolvedCredentials(_logger, _qualifiedTableName);
+            return null;
+        }
+
         // Empty/placeholder binding — use the default connection (single-DB deployment).
         LogDefaultConnectionFallback(_logger, _qualifiedTableName, _connection.Id);
         return null;
@@ -1188,6 +1201,15 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             + "connection-string material; falling back to the default database connection.")]
     private static partial void LogDefaultConnectionFallback(ILogger logger, string table, string connectionId);
 
+    [LoggerMessage(
+        EventId = 7111,
+        Level = LogLevel.Warning,
+        Message = "Storage-mapped table {Table} is bound to a data connection with an empty ID (the "
+            + "default-connection sentinel) that still carries unresolved encrypted or externally "
+            + "referenced credentials. Falling back to the default database connection; if this binding "
+            + "was meant to target a distinct source, give it a non-empty connection ID.")]
+    private static partial void LogEmptyIdFallbackPastUnresolvedCredentials(ILogger logger, string table);
+
     /// <summary>
     /// Decides whether an unresolved bound connection represents a genuine misconfiguration
     /// (a layer pinned to a distinct source whose credentials we cannot unlock) that must fail
@@ -1195,16 +1217,28 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     /// </summary>
     /// <remarks>
     /// Only reached when no plaintext string was present and no encrypted string could be
-    /// decrypted. A binding with encrypted bytes (regardless of whether a decryption service is
-    /// available) or an external secret reference is pointing at a specific source, so we must
-    /// not silently read from the default database. A binding with none of that material is a
-    /// placeholder for the default connection.
+    /// decrypted. An empty/whitespace connection ID is the "use the default connection"
+    /// sentinel: such a binding always falls back to the default database regardless of any
+    /// leftover (and unresolvable) credential material, because it never identified a distinct
+    /// source. A binding with a *non-empty* ID and encrypted bytes (regardless of whether a
+    /// decryption service is available) or an external secret reference is pointing at a
+    /// specific source, so we must not silently read from the default database. A binding with
+    /// none of that material is a placeholder for the default connection.
     /// </remarks>
     internal static bool ShouldFailInsteadOfDefaultFallback(
         DataConnection connection,
         IConnectionEncryptionService? connectionEncryptionService)
     {
         ArgumentNullException.ThrowIfNull(connection);
+
+        if (string.IsNullOrWhiteSpace(connection.Id))
+        {
+            // Empty/whitespace ID is the default-connection sentinel — it never named a
+            // distinct source, so fall back to the default database even if stale encrypted
+            // bytes or a secret reference linger on the record. (ResolveBoundConnectionStringAsync
+            // logs a Warning for that case so a real misconfiguration stays visible.)
+            return false;
+        }
 
         if (connection.EncryptedConnectionString.Length > 0)
         {

@@ -51,6 +51,52 @@ public sealed class PostgresStorageMappedFeatureReaderConnectionTests
     }
 
     [Fact]
+    public async Task ResolveBoundConnectionString_EmptyIdWithUndecryptableEncryptedBytes_FallsBackToDefaultConnection()
+    {
+        // The exact demo.honua.io situation: the maui layers are bound to a connection whose
+        // ID is empty ('' — the default-connection sentinel) but which still carries stale
+        // encrypted credentials that won't decrypt with the current master key. An empty ID
+        // means "use the default connection", so it must fall back regardless of the leftover
+        // (and unusable) encrypted bytes rather than failing the FeatureServer / OGC query.
+        var connection = new DataConnection
+        {
+            Id = string.Empty,
+            IsEncrypted = true,
+            EncryptedConnectionString = Encoding.UTF8.GetBytes("stale-cipher-text"),
+            EncryptionKeyVersion = 1,
+        };
+
+        // Encryption service present but unable to unlock the stale bytes (wrong master key).
+        var encryptionService = Substitute.For<IConnectionEncryptionService>();
+        encryptionService
+            .DecryptConnectionStringAsync(Arg.Any<byte[]>(), Arg.Any<int>())
+            .Returns(Task.FromResult(string.Empty));
+
+        var resolved = await ResolveBoundConnectionStringAsync(connection, encryptionService);
+
+        // null is the "use the default connection provider" signal honored by
+        // OpenConnectionAsync, restoring the pre-#1662 behavior for the empty-ID sentinel.
+        resolved.Should().BeNull();
+    }
+
+    [Fact]
+    public void ShouldFailInsteadOfDefaultFallback_EmptyIdWithEncryptedBytes_AllowsFallback()
+    {
+        // Empty/whitespace ID is the default-connection sentinel — fall back even when stale
+        // encrypted bytes linger on the record (the precise demo.honua.io misconfiguration).
+        var connection = new DataConnection
+        {
+            Id = string.Empty,
+            IsEncrypted = true,
+            EncryptedConnectionString = Encoding.UTF8.GetBytes("stale-cipher-text"),
+        };
+
+        PostgresStorageMappedFeatureReader
+            .ShouldFailInsteadOfDefaultFallback(connection, connectionEncryptionService: null)
+            .Should().BeFalse();
+    }
+
+    [Fact]
     public async Task ResolveBoundConnectionString_RealEncryptedConnection_UsesThatSource()
     {
         const string decryptedConnectionString =
