@@ -91,45 +91,63 @@ internal sealed partial class GeoJsonFileSinkExecutor : IJobExecutor
 
         long written = 0;
         long rejected = 0;
+        // Write to a sibling temp file first and atomically move it onto the destination
+        // only after a fully successful write. A failed or cancelled run therefore never
+        // truncates an existing valid output and never leaves a partial file behind.
+        var tempPath = resolvedPath + ".tmp-" + Guid.NewGuid().ToString("N");
+        var committed = false;
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(resolvedPath)!);
             var geoJsonWriter = new GeoJsonWriter();
-            await using var stream = new FileStream(
-                resolvedPath, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: 65536, useAsync: true);
-            await using var textWriter = new StreamWriter(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
-            using var jsonWriter = new Newtonsoft.Json.JsonTextWriter(textWriter);
-
-            await jsonWriter.WriteStartObjectAsync(cancellationToken).ConfigureAwait(false);
-            await jsonWriter.WritePropertyNameAsync("type", cancellationToken).ConfigureAwait(false);
-            await jsonWriter.WriteValueAsync("FeatureCollection", cancellationToken).ConfigureAwait(false);
-            await jsonWriter.WritePropertyNameAsync("features", cancellationToken).ConfigureAwait(false);
-            await jsonWriter.WriteStartArrayAsync(cancellationToken).ConfigureAwait(false);
-
-            foreach (var feature in source)
+            await using (var stream = new FileStream(
+                tempPath, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: 65536, useAsync: true))
+            await using (var textWriter = new StreamWriter(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false)))
+            using (var jsonWriter = new Newtonsoft.Json.JsonTextWriter(textWriter))
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                var concrete = feature as Feature ?? new Feature(feature.Geometry, feature.Attributes);
-                geoJsonWriter.Write(concrete, jsonWriter);
+                await jsonWriter.WriteStartObjectAsync(cancellationToken).ConfigureAwait(false);
+                await jsonWriter.WritePropertyNameAsync("type", cancellationToken).ConfigureAwait(false);
+                await jsonWriter.WriteValueAsync("FeatureCollection", cancellationToken).ConfigureAwait(false);
+                await jsonWriter.WritePropertyNameAsync("features", cancellationToken).ConfigureAwait(false);
+                await jsonWriter.WriteStartArrayAsync(cancellationToken).ConfigureAwait(false);
 
-                if (feature.Geometry is null)
+                foreach (var feature in source)
                 {
-                    rejected++;
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var concrete = feature as Feature ?? new Feature(feature.Geometry, feature.Attributes);
+                    geoJsonWriter.Write(concrete, jsonWriter);
+
+                    if (feature.Geometry is null)
+                    {
+                        rejected++;
+                    }
+                    else
+                    {
+                        written++;
+                    }
                 }
-                else
-                {
-                    written++;
-                }
+
+                await jsonWriter.WriteEndArrayAsync(cancellationToken).ConfigureAwait(false);
+                await jsonWriter.WriteEndObjectAsync(cancellationToken).ConfigureAwait(false);
+                await jsonWriter.FlushAsync(cancellationToken).ConfigureAwait(false);
             }
 
-            await jsonWriter.WriteEndArrayAsync(cancellationToken).ConfigureAwait(false);
-            await jsonWriter.WriteEndObjectAsync(cancellationToken).ConfigureAwait(false);
-            await jsonWriter.FlushAsync(cancellationToken).ConfigureAwait(false);
+            File.Move(tempPath, resolvedPath, overwrite: true);
+            committed = true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
         {
             Log.SinkWriteFailed(_logger, job.OperationId, HandledProcessId, ex);
             return JobExecutionResult.Failed($"{HandledProcessId} write failed: {ex.GetType().Name}.");
+        }
+        finally
+        {
+            // Clean up the partial temp file on any non-committed exit (failure or
+            // cancellation). Cancellation still propagates as OperationCanceledException.
+            if (!committed)
+            {
+                TryDeleteTempFile(tempPath);
+            }
         }
 
         cancellationToken.ThrowIfCancellationRequested();
@@ -139,6 +157,21 @@ internal sealed partial class GeoJsonFileSinkExecutor : IJobExecutor
         await context.ReportProgressAsync(100, $"{HandledProcessId} completed", cancellationToken).ConfigureAwait(false);
 
         return JobExecutionResult.Succeeded();
+    }
+
+    private static void TryDeleteTempFile(string tempPath)
+    {
+        try
+        {
+            if (File.Exists(tempPath))
+            {
+                File.Delete(tempPath);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            // Best-effort cleanup; never mask the original failure/cancellation.
+        }
     }
 
     private static partial class Log

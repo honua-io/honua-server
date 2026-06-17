@@ -22,18 +22,14 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.NAServer;
 /// </summary>
 [Collection("Database.GeoServicesCatalog")]
 [Protocol(TestProtocols.NAServer)]
-public sealed class NAServerEndpointTests : IAsyncLifetime
+public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsFixture>
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture()
-        .ConfigureServices(services =>
-        {
-            services.RemoveAll<IRoutingProvider>();
-            services.AddScoped<IRoutingProvider, TestRoutingProvider>();
-        });
+    private readonly WebAppFixture _fixture;
 
-    public Task InitializeAsync() => _fixture.InitializeAsync();
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public NAServerEndpointTests(NAServerEndpointTestsFixture wrapper)
+    {
+        _fixture = wrapper.App;
+    }
 
     [IntegrationTest]
     [Operation(Operations.Directions)]
@@ -285,4 +281,24 @@ public sealed class NAServerEndpointTests : IAsyncLifetime
             .GetProperty("summary").GetProperty("routeName").GetString().Should().Be("Incident - Facility A");
         document.RootElement.GetProperty("routes").GetProperty("features").GetArrayLength().Should().BeGreaterThan(0);
     }
+}
+
+/// <summary>
+/// Per-class wrapper fixture that builds a single <see cref="WebAppFixture"/> with the
+/// deterministic <see cref="TestRoutingProvider"/> registered, so the shared-fixture tests
+/// in <see cref="NAServerEndpointTests"/> initialize the host once per class instead of once
+/// per test method. <see cref="WebAppFixture"/> is sealed, so it is wrapped rather than subclassed.
+/// </summary>
+public sealed class NAServerEndpointTestsFixture : IAsyncLifetime
+{
+    public WebAppFixture App { get; } = new WebAppFixture()
+        .ConfigureServices(services =>
+        {
+            services.RemoveAll<IRoutingProvider>();
+            services.AddScoped<IRoutingProvider, TestRoutingProvider>();
+        });
+
+    public Task InitializeAsync() => App.InitializeAsync();
+
+    public Task DisposeAsync() => App.DisposeAsync();
 }

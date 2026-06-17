@@ -158,12 +158,24 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
 
             return srid;
         }
+        catch (OperationCanceledException)
+        {
+            // Cancellation is not "no SRID": never cache a null for it and let the caller observe the
+            // cancellation. Matches IsLayerCatalogAvailableInternalAsync, which also rethrows cancellation.
+            stopwatch.Stop();
+            throw;
+        }
         catch (Exception ex)
         {
+            // A failed lookup (transient/unknown DB error) is not the same as a layer with no SRID, and
+            // the success path above is the only place a result is cached. Do NOT swallow-and-return-null
+            // here: that would conflate failure with "no SRID" and (via the caller) risk caching a wrong
+            // null for 24h. Record the error metric, log, and let the exception propagate so the caller
+            // can retry rather than cache a bogus result.
             stopwatch.Stop();
             PerformanceMetrics.RecordQueryExecution("srid_lookup_error", stopwatch.ElapsedMilliseconds);
             MonitoredFeatureStoreLog.SridLookupFailed(_logger, layerId, ex);
-            return null;
+            throw;
         }
     }
 
@@ -325,9 +337,10 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
             return;
         }
 
+        // Only remove the layer-scoped entry. The geometry-storage-type and layer-catalog-availability
+        // caches are keyed by schema identity (not layerId) and reflect schema/DDL state, not per-layer
+        // row state, so a single-layer invalidation must not clear them for the whole schema.
         _layerSridCache.TryRemove((_cacheIdentity, layerId), out _);
-        _geometryStorageTypeCache.TryRemove(_cacheIdentity, out _);
-        _hasLayerCatalogCache.TryRemove(_cacheIdentity, out _);
     }
 
     private static bool IsLayerSridCacheExpired(Internal.LayerSridCacheEntry entry, DateTimeOffset now)

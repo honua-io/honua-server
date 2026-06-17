@@ -35,7 +35,18 @@ public static class ServiceCollectionExtensions
         // Typed-HttpClient registration: lets host applications attach resilience
         // / retry / telemetry handlers via the same well-known name without
         // taking a hard dependency on this provider's internals.
-        services.AddHttpClient<IArcGisRestFeatureClient, ArcGisRestFeatureClient>(ArcGisRestServiceClientName.Default);
+        //
+        // The primary handler MUST be the SSRF-hardened pinned-DNS handler:
+        // it disables automatic redirects (so a remote 3xx cannot bounce a
+        // validated public request to an internal address) and re-validates the
+        // resolved IP at connect time against private/loopback/link-local/CGNAT/
+        // ULA/reserved ranges (incl. 169.254.169.254 cloud metadata). Without
+        // this, the federated client would follow redirects and apply no IP
+        // filtering at runtime — a full SSRF + DNS-rebinding exposure.
+        services
+            .AddHttpClient<IArcGisRestFeatureClient, ArcGisRestFeatureClient>(ArcGisRestServiceClientName.Default)
+            .ConfigurePrimaryHttpMessageHandler(
+                static () => ArcGisRestOutboundGuard.CreatePinnedDnsHttpMessageHandler());
 
         services.AddScoped<ArcGisRestFeatureStore>();
         services.AddScoped<IFeatureDataProvider>(sp => sp.GetRequiredService<ArcGisRestFeatureStore>());

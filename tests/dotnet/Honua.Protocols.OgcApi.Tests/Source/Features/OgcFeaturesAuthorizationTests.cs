@@ -16,21 +16,17 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 
-[Collection("Database")]
 [Protocol(TestProtocols.OgcApiFeatures)]
-public sealed class OgcFeaturesAuthorizationTests : IAsyncLifetime
+[Collection("Database")]
+public sealed class OgcFeaturesAuthorizationTests : IClassFixture<OgcFeaturesAuthorizationTestsFixture>
 {
     private const string AdminApiKey = "test-ogc-admin-key";
-    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
-        .ConfigureWebHost(builder =>
-        {
-            builder.UseSetting("HONUA_DEV_AUTH", "false");
-            builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminApiKey);
-        });
+    private readonly WebAppFixture _fixture;
 
-    public async Task InitializeAsync() => await _fixture.InitializeAsync();
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public OgcFeaturesAuthorizationTests(OgcFeaturesAuthorizationTestsFixture fixture)
+    {
+        _fixture = fixture.App;
+    }
 
     [IntegrationTest]
     [Operation(Operations.Create)]
@@ -131,4 +127,20 @@ public sealed class OgcFeaturesAuthorizationTests : IAsyncLifetime
             }
         };
     }
+}
+
+public sealed class OgcFeaturesAuthorizationTestsFixture : IAsyncLifetime
+{
+    private const string AdminApiKey = "test-ogc-admin-key";
+
+    public WebAppFixture App { get; } = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
+        .ConfigureWebHost(builder =>
+        {
+            builder.UseSetting("HONUA_DEV_AUTH", "false");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminApiKey);
+        });
+
+    public Task InitializeAsync() => App.InitializeAsync();
+
+    public Task DisposeAsync() => App.DisposeAsync();
 }

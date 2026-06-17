@@ -11,19 +11,33 @@ using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Features.Protocols.Stac;
 
-[Collection("Database")]
-[Protocol(TestProtocols.Stac)]
-public sealed class StacProjectedGeometryTests : IAsyncLifetime
+/// <summary>
+/// Per-class fixture that configures the spatial-reference seed once for the whole
+/// <see cref="StacProjectedGeometryTests"/> class. <see cref="WebAppFixture"/> is sealed, so we
+/// wrap (not subclass) it and delegate the async lifecycle to it.
+/// </summary>
+public sealed class StacProjectedGeometryTestsFixture : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    public WebAppFixture App { get; }
 
-    public async Task InitializeAsync()
+    public StacProjectedGeometryTestsFixture()
     {
-        _fixture.UseSeed(Path.Combine("tests", "seed", "spatial-reference.yaml"));
-        await _fixture.InitializeAsync();
+        App = new WebAppFixture()
+            .UseSeed(Path.Combine("tests", "seed", "spatial-reference.yaml"));
     }
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public Task InitializeAsync() => App.InitializeAsync();
+
+    public Task DisposeAsync() => App.DisposeAsync();
+}
+
+[Protocol(TestProtocols.Stac)]
+[Collection("Database")]
+public sealed class StacProjectedGeometryTests : IClassFixture<StacProjectedGeometryTestsFixture>
+{
+    private readonly WebAppFixture _fixture;
+
+    public StacProjectedGeometryTests(StacProjectedGeometryTestsFixture fixture) => _fixture = fixture.App;
 
     [IntegrationTest]
     [Operation(Operations.GetById)]

@@ -16,13 +16,11 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.Catalog;
 
 [Collection("Database.GeoServicesCatalog")]
 [Protocol(TestProtocols.GeoservicesCatalog)]
-public sealed class GeoservicesCatalogEndpointTests : IAsyncLifetime
+public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixture>
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture;
 
-    public async Task InitializeAsync() => await _fixture.InitializeAsync();
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public GeoservicesCatalogEndpointTests(WebAppFixture fixture) => _fixture = fixture;
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]

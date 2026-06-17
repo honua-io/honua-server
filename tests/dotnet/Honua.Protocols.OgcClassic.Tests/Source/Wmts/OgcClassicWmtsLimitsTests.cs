@@ -11,13 +11,17 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts;
 
-[Collection("Database")]
-[Protocol(TestProtocols.Wmts10)]
-public sealed class OgcClassicWmtsLimitsTests : IAsyncLifetime
+/// <summary>
+/// Per-class fixture wrapper that owns a <see cref="WebAppFixture"/> whose
+/// <see cref="LimitsOptions"/> is replaced with a fixed instance raising MaxTileZoom to 24.
+/// Created once per test class via <see cref="IClassFixture{TFixture}"/> so the isolated
+/// schema + host build (including the service replacement) happen once rather than once per
+/// test method. The replaced options is a single shared immutable instance and both tests only
+/// issue read-only GetTile/GetCapabilities requests, so sharing one schema/server is safe.
+/// </summary>
+public sealed class OgcClassicWmtsLimitsTestsFixture : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
-
-    private readonly LimitsOptions _limits = new()
+    private static readonly LimitsOptions Limits = new()
     {
         Tiles = new TileLimits
         {
@@ -25,13 +29,24 @@ public sealed class OgcClassicWmtsLimitsTests : IAsyncLifetime
         }
     };
 
-    public async Task InitializeAsync()
-    {
-        _fixture.ReplaceService<IOptions<LimitsOptions>>(Options.Create(_limits));
-        await _fixture.InitializeAsync();
-    }
+    public WebAppFixture App { get; } = new WebAppFixture()
+        .ReplaceService<IOptions<LimitsOptions>>(Options.Create(Limits));
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public Task InitializeAsync() => App.InitializeAsync();
+
+    public Task DisposeAsync() => App.DisposeAsync();
+}
+
+[Protocol(TestProtocols.Wmts10)]
+[Collection("Database")]
+public sealed class OgcClassicWmtsLimitsTests : IClassFixture<OgcClassicWmtsLimitsTestsFixture>
+{
+    private readonly WebAppFixture _fixture;
+
+    public OgcClassicWmtsLimitsTests(OgcClassicWmtsLimitsTestsFixture fixture)
+    {
+        _fixture = fixture.App;
+    }
 
     [IntegrationTest]
     [Operation(Operations.Wmts)]

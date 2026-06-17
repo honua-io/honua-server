@@ -251,32 +251,30 @@ internal sealed partial class LicenseCapacityMeter : BackgroundService, ILicense
         return await GetCapacityStateAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    public override async Task StartAsync(CancellationToken cancellationToken)
-    {
-        if (!_options.Value.RegistrationEnabled)
-        {
-            await base.StartAsync(cancellationToken).ConfigureAwait(false);
-            return;
-        }
-
-        var registration = await RegisterInstanceAsync(BuildLocalRequest(isRefresh: false), cancellationToken)
-            .ConfigureAwait(false);
-        if (!registration.IsAccepted)
-        {
-            throw new InvalidOperationException(registration.Reason);
-        }
-
-        _registeredSelf = true;
-        await RecordSampleAsync(registration.State, cancellationToken).ConfigureAwait(false);
-        await base.StartAsync(cancellationToken).ConfigureAwait(false);
-    }
-
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (!_options.Value.RegistrationEnabled)
         {
             return;
         }
+
+        // Perform the initial registration here rather than in StartAsync so that a
+        // slow/unreachable Redis cannot stall host startup before the web server begins
+        // listening. RegisterInstanceAsync already falls back to local metering on Redis
+        // failures (see UpsertHeartbeatAsync); a genuine capacity-band refusal is surfaced
+        // here instead of aborting host startup.
+        var registration = await RegisterInstanceAsync(BuildLocalRequest(isRefresh: false), stoppingToken)
+            .ConfigureAwait(false);
+        if (!registration.IsAccepted)
+        {
+            LicenseCapacityMeterLog.RegistrationStartupRefused(_logger, registration.Reason);
+        }
+        else
+        {
+            _registeredSelf = true;
+        }
+
+        await RecordSampleAsync(registration.State, stoppingToken).ConfigureAwait(false);
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -331,12 +329,20 @@ internal sealed partial class LicenseCapacityMeter : BackgroundService, ILicense
                 },
                 CommandFlags.DemandMaster).ConfigureAwait(false);
 
-            _meteringGap = false;
             if (result is null || result.Length == 0)
             {
-                return false;
+                // An absent/empty reply (e.g. NOSCRIPT, partial-cluster, or a replica
+                // read) is not a capacity decision. Fail open exactly like a thrown
+                // Redis error rather than surfacing a spurious band-ceiling refusal:
+                // mark a metering gap and accept locally. A genuine refusal can only
+                // come from a non-empty reply that explicitly reports the ceiling was
+                // exceeded (handled below).
+                MarkMeteringGap(new RedisException("Registration script returned no result; failing open."));
+                UpsertLocalInstance(instance);
+                return true;
             }
 
+            _meteringGap = false;
             return (int)result[0] == 1;
         }
         catch (Exception ex) when (IsRedisException(ex))

@@ -242,14 +242,14 @@ internal static partial class RasterImportEndpoints
                     if (extension is ".pgw" or ".jgw" or ".tfw" or ".wld")
                     {
                         worldFileContent = await MultipartParsingHelpers.ReadBoundedSectionStringAsync(
-                            section, MaxSidecarFileSizeBytes, cancellationToken);
+                            section, MaxSidecarFileSizeBytes, cancellationToken, "Sidecar file");
                         continue;
                     }
 
                     if (extension == ".prj")
                     {
                         prjFileContent = await MultipartParsingHelpers.ReadBoundedSectionStringAsync(
-                            section, MaxSidecarFileSizeBytes, cancellationToken);
+                            section, MaxSidecarFileSizeBytes, cancellationToken, "Sidecar file");
                         continue;
                     }
 
@@ -277,7 +277,7 @@ internal static partial class RasterImportEndpoints
                 {
                     if (!string.IsNullOrWhiteSpace(fieldName))
                     {
-                        fields[fieldName] = await MultipartParsingHelpers.ReadSectionStringAsync(section, cancellationToken);
+                        fields[fieldName] = await MultipartParsingHelpers.ReadFormFieldStringAsync(section, cancellationToken);
                     }
                 }
             }

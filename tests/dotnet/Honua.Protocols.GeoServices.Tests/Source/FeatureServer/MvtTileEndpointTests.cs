@@ -9,19 +9,18 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-[Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
 [Operation(Operations.GetTile)]
-public class MvtTileEndpointTests : IAsyncLifetime
+[Collection("Database")]
+public class MvtTileEndpointTests : IClassFixture<WebAppFixture>
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture;
     private const int TestLayerId = 0; // Use existing test layer
 
-    public async Task InitializeAsync()
+    public MvtTileEndpointTests(WebAppFixture fixture)
     {
-        await _fixture.InitializeAsync();
+        _fixture = fixture;
     }
-    public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTest]
     [Endpoint("GET /tiles/{layerId}/{z}/{x}/{y}.mvt")]

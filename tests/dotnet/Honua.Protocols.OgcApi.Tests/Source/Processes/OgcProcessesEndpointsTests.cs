@@ -23,14 +23,13 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes;
 /// </summary>
 [Collection("Database.OgcApiData")]
 [Protocol(TestProtocols.OgcApiProcesses)]
-public sealed class OgcProcessesEndpointsTests : IAsyncLifetime
+public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
 {
     private const string PointWkbBase64 = "AQEAAAAAAAAAAAAAAAAAAAAAAAAA";
 
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture;
 
-    public async Task InitializeAsync() => await _fixture.InitializeAsync();
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public OgcProcessesEndpointsTests(WebAppFixture fixture) => _fixture = fixture;
 
     // -----------------------------------------------------------------------
     // Landing page

@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Buffers;
 using System.Collections.Frozen;
 using System.Globalization;
 using System.Runtime.CompilerServices;
@@ -487,19 +488,37 @@ internal static class CsvFormatReader
             return string.Empty;
         }
 
-        Span<char> buffer = stackalloc char[value.Length];
-        var count = 0;
-        foreach (var ch in value)
+        // Only stack-allocate for small inputs. A pathologically long header cell
+        // is untrusted and could otherwise overflow the stack, so fall back to the
+        // shared array pool for large values.
+        const int StackAllocThreshold = 256;
+        char[]? rented = null;
+        Span<char> buffer = value.Length <= StackAllocThreshold
+            ? stackalloc char[StackAllocThreshold]
+            : (rented = ArrayPool<char>.Shared.Rent(value.Length));
+
+        try
         {
-            if (ch is '_' or '-' or ' ' or '\t' or '\r' or '\n')
+            var count = 0;
+            foreach (var ch in value)
             {
-                continue;
+                if (ch is '_' or '-' or ' ' or '\t' or '\r' or '\n')
+                {
+                    continue;
+                }
+
+                buffer[count++] = char.ToLowerInvariant(ch);
             }
 
-            buffer[count++] = char.ToLowerInvariant(ch);
+            return new string(buffer[..count]);
         }
-
-        return new string(buffer[..count]);
+        finally
+        {
+            if (rented != null)
+            {
+                ArrayPool<char>.Shared.Return(rented);
+            }
+        }
     }
 
     private readonly record struct CsvColumnMapping(

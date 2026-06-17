@@ -60,13 +60,22 @@ internal static class MultipartParsingHelpers
     }
 
     /// <summary>
-    /// Reads the content of a multipart section as a UTF-8 string.
+    /// Maximum size, in bytes, of a non-file multipart form-data field (e.g. TableName,
+    /// TargetSchema, layerId, name). These manual <see cref="MultipartReader"/> parsers do
+    /// not run through <c>ReadFormAsync</c>, so Kestrel's MultipartBodyLengthLimit does not
+    /// apply; this cap bounds the managed allocation for scalar fields to defend against a
+    /// malicious client streaming a multi-gigabyte form-field section into memory.
     /// </summary>
-    public static async Task<string> ReadSectionStringAsync(MultipartSection section, CancellationToken cancellationToken)
-    {
-        using var reader = new StreamReader(section.Body, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, leaveOpen: true);
-        return await reader.ReadToEndAsync(cancellationToken);
-    }
+    public const int MaxFormFieldBytes = 64 * 1024;
+
+    /// <summary>
+    /// Reads the content of a non-file multipart form-data field as a UTF-8 string, rejecting
+    /// sections that exceed <see cref="MaxFormFieldBytes"/>. Form fields in these parsers carry
+    /// short scalar values, so an oversized section indicates abuse and is surfaced as an
+    /// <see cref="InvalidDataException"/> (which the endpoint catch blocks translate to a 400).
+    /// </summary>
+    public static Task<string> ReadFormFieldStringAsync(MultipartSection section, CancellationToken cancellationToken)
+        => ReadBoundedSectionStringAsync(section, MaxFormFieldBytes, cancellationToken, "Form field");
 
     /// <summary>
     /// Resolves the filename from a content disposition header, preferring FileNameStar over FileName.
@@ -84,11 +93,16 @@ internal static class MultipartParsingHelpers
 
     /// <summary>
     /// Reads the content of a multipart section as a UTF-8 string, rejecting sections that
-    /// exceed <paramref name="maxBytes"/>. Use for sidecar files (world files, .prj) where
-    /// the expected payload is small and unbounded reads would be a resource risk.
+    /// exceed <paramref name="maxBytes"/>. Use for sidecar files (world files, .prj) and for
+    /// scalar form fields where the expected payload is small and unbounded reads would be a
+    /// resource risk. <paramref name="sectionDescription"/> names the section in the error so
+    /// the resulting <see cref="InvalidDataException"/> is actionable.
     /// </summary>
     public static async Task<string> ReadBoundedSectionStringAsync(
-        MultipartSection section, int maxBytes, CancellationToken cancellationToken)
+        MultipartSection section,
+        int maxBytes,
+        CancellationToken cancellationToken,
+        string sectionDescription = "Section")
     {
         using var ms = new MemoryStream(Math.Min(maxBytes, 4096));
         var buffer = new byte[4096];
@@ -97,7 +111,7 @@ internal static class MultipartParsingHelpers
         {
             if (ms.Length + bytesRead > maxBytes)
             {
-                throw new InvalidDataException($"Sidecar file exceeds maximum allowed size of {maxBytes:N0} bytes.");
+                throw new InvalidDataException($"{sectionDescription} exceeds maximum allowed size of {maxBytes:N0} bytes.");
             }
 
             ms.Write(buffer, 0, bytesRead);

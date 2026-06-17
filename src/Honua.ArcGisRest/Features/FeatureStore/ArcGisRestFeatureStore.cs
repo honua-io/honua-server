@@ -332,6 +332,22 @@ internal sealed class ArcGisRestFeatureStore : IFeatureDataProvider, IFeatureRea
         return Feature.Create(id, wkb, attributes);
     }
 
+    /// <summary>
+    /// Resolves the canonical <see cref="Feature"/> id from the upstream object-id
+    /// attribute.
+    /// </summary>
+    /// <remarks>
+    /// Returns <c>0</c> when the object-id field is unknown, absent, or carries a
+    /// value that is not an integer (or integer-formatted string). The canonical
+    /// <see cref="Feature"/> id is a <see cref="long"/>, so a non-integer upstream id
+    /// (e.g. a GUID GlobalId) cannot be preserved verbatim and collapses to the
+    /// <c>0</c> fallback. Multiple unresolvable features in a page therefore share id
+    /// <c>0</c>, which can confuse id-based consumers and <see cref="GetAsync"/>-by-id
+    /// semantics. This is acceptable for a read-through provider whose canonical
+    /// access path is the WHERE/paging query rather than id lookup, but the
+    /// collision is intentional and silent — publications relying on stable feature
+    /// ids must expose an integer object-id field.
+    /// </remarks>
     private static long ResolveObjectId(IReadOnlyDictionary<string, JsonElement>? attributes, string? objectIdFieldName)
     {
         if (attributes is null || string.IsNullOrWhiteSpace(objectIdFieldName))

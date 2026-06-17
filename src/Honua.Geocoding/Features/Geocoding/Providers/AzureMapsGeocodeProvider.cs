@@ -102,7 +102,7 @@ internal sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
         try
         {
             var url = BuildSearchUrl(request);
-            var response = await _httpClient.GetAsync(url, cancellationToken).ConfigureAwait(false);
+            using var response = await _httpClient.GetAsync(url, cancellationToken).ConfigureAwait(false);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -164,7 +164,7 @@ internal sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
         try
         {
             var url = BuildReverseUrl(request);
-            var response = await _httpClient.GetAsync(url, cancellationToken).ConfigureAwait(false);
+            using var response = await _httpClient.GetAsync(url, cancellationToken).ConfigureAwait(false);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -223,7 +223,7 @@ internal sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
         try
         {
             var url = BuildSuggestUrl(request);
-            var response = await _httpClient.GetAsync(url, cancellationToken).ConfigureAwait(false);
+            using var response = await _httpClient.GetAsync(url, cancellationToken).ConfigureAwait(false);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -278,7 +278,7 @@ internal sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
                       "&query=1%20Microsoft%20Way%2C%20Redmond%2C%20WA" +
                       "&limit=1";
 
-            var response = await _httpClient.GetAsync(url, cancellationToken).ConfigureAwait(false);
+            using var response = await _httpClient.GetAsync(url, cancellationToken).ConfigureAwait(false);
 
             if (!response.IsSuccessStatusCode)
             {

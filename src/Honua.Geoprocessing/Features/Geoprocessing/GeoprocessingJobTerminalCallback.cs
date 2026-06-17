@@ -37,6 +37,12 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
             return;
         }
 
+        // Tracks whether persisting analysis-content artifacts failed. A successful job
+        // must not be reported as Completed when its referenced artifacts are missing from
+        // the content store, otherwise GetJobResultsAsync returns dangling references with
+        // no retry. When this is set we conservatively fail the terminal-success transition.
+        string? artifactPersistenceError = null;
+
         try
         {
             AnalysisResultPackage? package = null;
@@ -46,6 +52,28 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
                 package = GeoprocessingResultPackageFactory.Create(job, processCatalog);
             }
 
+            // Persist the artifacts to the content store BEFORE writing the result package,
+            // so that a Completed result package can never reference artifacts that were
+            // never persisted. If artifact persistence fails we skip the result-package
+            // write and gate the terminal-success transition below to Failed.
+            if (hasAnalysisContentSource && package != null)
+            {
+                try
+                {
+                    await PersistAnalysisContentArtifactsWithScopedStoreAsync(job, package, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    artifactPersistenceError =
+                        "Failed to persist analysis-content artifacts; results would be incomplete.";
+                    Log.ArtifactPersistenceFailed(logger, job.OperationId, ex);
+                    // Skip the result-package write so we never publish a package whose
+                    // artifacts are absent from the content store.
+                    package = null;
+                }
+            }
+
             if (resultPackageStore != null && package != null)
             {
                 await resultPackageStore.SetAsync(
@@ -53,12 +81,6 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
                     package,
                     ProgressRetention,
                     cancellationToken).ConfigureAwait(false);
-            }
-
-            if (hasAnalysisContentSource && package != null)
-            {
-                await PersistAnalysisContentArtifactsWithScopedStoreAsync(job, package, cancellationToken)
-                    .ConfigureAwait(false);
             }
         }
         catch (Exception ex)
@@ -82,7 +104,13 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
 
             var completedAt = job.CompletedAt ?? DateTimeOffset.UtcNow;
 
-            GeoprocessingProgress? updated = job.Status switch
+            // A job that otherwise succeeded but whose artifacts failed to persist must not
+            // report Completed-with-success; mark it Failed instead (conservative behavior).
+            var effectiveStatus = job.Status == ExecutionJobStatus.Succeeded && artifactPersistenceError != null
+                ? ExecutionJobStatus.Failed
+                : job.Status;
+
+            GeoprocessingProgress? updated = effectiveStatus switch
             {
                 ExecutionJobStatus.Succeeded => progress with
                 {
@@ -96,7 +124,7 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
                     WorkflowStatus = GeoprocessingWorkflowStatus.Failed,
                     CurrentStageStatus = GeoprocessingStageStatus.Failed,
                     CompletedAt = completedAt,
-                    ErrorMessage = job.ErrorMessage,
+                    ErrorMessage = job.ErrorMessage ?? artifactPersistenceError,
                     CurrentPhase = "Failed"
                 },
                 ExecutionJobStatus.Cancelled => (GeoprocessingProgress)progress.WithCancellation(
@@ -228,6 +256,9 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
     {
         [LoggerMessage(8019, LogLevel.Warning, "Failed to persist result package for terminal job {OperationId}; job results will be synthesized on demand")]
         public static partial void ResultPackageSyncFailed(ILogger logger, string operationId, Exception exception);
+
+        [LoggerMessage(8021, LogLevel.Error, "Failed to persist analysis-content artifacts for terminal job {OperationId}; the job will be marked Failed to avoid reporting Completed with missing artifacts")]
+        public static partial void ArtifactPersistenceFailed(ILogger logger, string operationId, Exception exception);
 
         [LoggerMessage(8020, LogLevel.Warning, "Failed to synchronize admin progress for terminal job {OperationId}; admin view may be stale until TTL expiry")]
         public static partial void ProgressSyncFailed(ILogger logger, string operationId, Exception exception);

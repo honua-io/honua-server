@@ -183,7 +183,10 @@ internal sealed class InMemoryAnalysisContentStore : IAnalysisContentStore
                 && candidate.ExpiresAt.HasValue
                 && candidate.ExpiresAt.Value <= now)
             {
-                _artifacts.TryRemove(key, out _);
+                // Value-conditional remove: only drop the exact stale entry we just
+                // inspected, so a concurrent refresh between the check and the remove
+                // is not lost.
+                _artifacts.TryRemove(new KeyValuePair<string, ResultArtifactRecord>(key, candidate));
             }
         }
 

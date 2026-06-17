@@ -13,14 +13,13 @@ namespace Honua.Server.Tests.Features.Protocols.Stac;
 /// <summary>
 /// Integration tests for the hosted STAC operations demo shell.
 /// </summary>
-[Collection("Database")]
 [Protocol(TestProtocols.Stac)]
-public sealed class StacOpsDemoEndpointTests : IAsyncLifetime
+[Collection("Database")]
+public sealed class StacOpsDemoEndpointTests : IClassFixture<WebAppFixture>
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture;
 
-    public async Task InitializeAsync() => await _fixture.InitializeAsync();
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public StacOpsDemoEndpointTests(WebAppFixture fixture) => _fixture = fixture;
 
     [IntegrationTest]
     [Operation(Operations.StacCatalog)]

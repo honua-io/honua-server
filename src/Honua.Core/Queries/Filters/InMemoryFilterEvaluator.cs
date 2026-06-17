@@ -80,15 +80,13 @@ public static class InMemoryFilterEvaluator
         var left = ResolveValue(bin.Left, props);
         var right = ResolveValue(bin.Right, props);
 
-        // Null comparisons: only Equal/NotEqual are meaningful.
+        // SQL three-valued logic: any comparison (including =, <>, <, <=, >, >=) with a
+        // null operand evaluates to UNKNOWN, which excludes the row. Return false for every
+        // operator so streaming filters match the equivalent stored SQL query. Explicit
+        // null tests use the IS NULL / IS NOT NULL unary operators (see EvaluateUnary).
         if (left is null || right is null)
         {
-            return bin.Operator switch
-            {
-                BinaryOperator.Equal => left is null && right is null,
-                BinaryOperator.NotEqual => !(left is null && right is null),
-                _ => false
-            };
+            return false;
         }
 
         return bin.Operator switch

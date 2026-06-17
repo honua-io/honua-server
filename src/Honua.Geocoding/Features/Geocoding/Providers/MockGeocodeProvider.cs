@@ -273,7 +273,11 @@ internal sealed class MockGeocodeProvider : BaseGeocodeProvider
                 additionalAttributes: new Dictionary<string, string?>
                 {
                     ["Match_addr"] = $"{query} (Batch Result)",
-                    ["BatchIndex"] = queryIndex.ToString(CultureInfo.InvariantCulture)
+                    ["BatchIndex"] = queryIndex.ToString(CultureInfo.InvariantCulture),
+                    // Stamp the ResultID correlation attribute so positional alignment survives
+                    // even when callers reorder or filter the locations array (matches the Esri
+                    // geocodeAddresses contract and the BaseGeocodeProvider fan-out behaviour).
+                    [GeocodeCandidate.ResultIdAttribute] = queryIndex.ToString(CultureInfo.InvariantCulture)
                 });
 
             results.Add(new GeocodeCandidate(

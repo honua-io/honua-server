@@ -519,6 +519,12 @@ internal sealed partial class AwsEcsAlbDeployBackend(
 
         using var activity = StartActivity(ControlPlaneTelemetry.Activities.BackendStart, operation, target);
 
+        // Captured before the ALB weight shift so the failure path can restore the
+        // listener rule to its pre-deploy split. Null until the snapshot succeeds;
+        // a restore is only attempted once we actually mutated the rule.
+        AwsAlbListenerRuleState? originalRuleState = null;
+        var albWeightsShifted = false;
+
         try
         {
             var canaryServiceState = await ecsClient.DescribeServiceAsync(
@@ -528,6 +534,16 @@ internal sealed partial class AwsEcsAlbDeployBackend(
                     cancellationToken)
                 .ConfigureAwait(false);
             var observedTaskDefinition = canaryServiceState.TaskDefinitionArn;
+
+            // Snapshot the existing listener-rule weights before mutating them so a
+            // mid-deploy failure (most importantly the ECS update below) can restore
+            // the rule to the share it carried on entry rather than leaving traffic
+            // pinned to a target group backed by a half-migrated task set.
+            originalRuleState = await albClient.GetListenerRuleWeightsAsync(
+                    target.ListenerRuleArn!,
+                    target.Region,
+                    cancellationToken)
+                .ConfigureAwait(false);
 
             // Write ALB weights first so the listener rule reflects the desired
             // canary share before the ECS service starts rolling to the new task
@@ -543,6 +559,7 @@ internal sealed partial class AwsEcsAlbDeployBackend(
                     target.Region,
                     cancellationToken)
                 .ConfigureAwait(false);
+            albWeightsShifted = true;
 
             await ecsClient.UpdateServiceTaskDefinitionAsync(
                     target.Cluster!,
@@ -574,6 +591,30 @@ internal sealed partial class AwsEcsAlbDeployBackend(
             // never carries raw provider detail.
             Log.SubmissionFailed(logger, operation.OperationId, spec.TargetId, ex.Message);
             activity?.SetStatus(ActivityStatusCode.Error);
+
+            // Compensate a non-atomic deploy: if the listener-rule weights were already
+            // shifted before the failure (e.g. the ECS task-definition update threw),
+            // restore the pre-deploy split so production traffic is not left pointed at a
+            // target group backed only by the old/half-migrated task set. Best-effort —
+            // the restore itself can fail, in which case we log and still return Failed.
+            if (albWeightsShifted && originalRuleState is not null)
+            {
+                try
+                {
+                    await albClient.UpdateListenerRuleWeightsAsync(
+                            target.ListenerRuleArn!,
+                            originalRuleState.TargetGroupWeights,
+                            target.Region,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    Log.AlbWeightsRestored(logger, operation.OperationId, spec.TargetId, target.ListenerRuleArn!);
+                }
+                catch (Exception restoreEx) when (IsAwsRuntimeException(restoreEx))
+                {
+                    Log.AlbWeightRestoreFailed(logger, operation.OperationId, spec.TargetId, restoreEx.Message);
+                }
+            }
+
             return SanitizedSubmissionFailure(ex);
         }
     }
@@ -1135,5 +1176,11 @@ internal sealed partial class AwsEcsAlbDeployBackend(
 
         [LoggerMessage(9094, LogLevel.Warning, "ECS/ALB submission failed for workflow operation {OperationId} targeting {TargetId}: {ErrorMessage}")]
         public static partial void SubmissionFailed(ILogger logger, string operationId, string targetId, string errorMessage);
+
+        [LoggerMessage(9095, LogLevel.Information, "Restored ALB listener-rule weights after a failed ECS/ALB submission for workflow operation {OperationId} targeting {TargetId} (rule {ListenerRuleArn})")]
+        public static partial void AlbWeightsRestored(ILogger logger, string operationId, string targetId, string listenerRuleArn);
+
+        [LoggerMessage(9096, LogLevel.Error, "Failed to restore ALB listener-rule weights after a failed ECS/ALB submission for workflow operation {OperationId} targeting {TargetId}: {ErrorMessage}")]
+        public static partial void AlbWeightRestoreFailed(ILogger logger, string operationId, string targetId, string errorMessage);
     }
 }

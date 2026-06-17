@@ -17,26 +17,16 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 
-[Collection("Database")]
 [Protocol(TestProtocols.OgcApiFeatures)]
-public sealed class OgcFeaturesTransactionTests : IAsyncLifetime, IDisposable
+[Collection("Database")]
+public sealed class OgcFeaturesTransactionTests : IClassFixture<OgcFeaturesTransactionTestsFixture>
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Community);
+    private readonly WebAppFixture _fixture;
     private const int TestLayerId = 0;
 
-    public async Task InitializeAsync()
+    public OgcFeaturesTransactionTests(OgcFeaturesTransactionTestsFixture fixture)
     {
-        await _fixture.InitializeAsync();
-    }
-
-    public async Task DisposeAsync()
-    {
-        await _fixture.DisposeAsync();
-    }
-
-    public void Dispose()
-    {
-        GC.SuppressFinalize(this);
+        _fixture = fixture.App;
     }
 
     [IntegrationTest]
@@ -477,4 +467,13 @@ public sealed class OgcFeaturesTransactionTests : IAsyncLifetime, IDisposable
             => throw new InvalidOperationException("publish failed");
     }
 
+}
+
+public sealed class OgcFeaturesTransactionTestsFixture : IAsyncLifetime
+{
+    public WebAppFixture App { get; } = new WebAppFixture().WithTestLicense(HonuaEdition.Community);
+
+    public Task InitializeAsync() => App.InitializeAsync();
+
+    public Task DisposeAsync() => App.DisposeAsync();
 }

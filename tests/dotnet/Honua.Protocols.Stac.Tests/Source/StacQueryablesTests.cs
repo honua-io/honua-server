@@ -14,14 +14,13 @@ namespace Honua.Server.Tests.Features.Protocols.Stac;
 /// <summary>
 /// Integration tests for the STAC queryables endpoints (Filter Extension).
 /// </summary>
-[Collection("Database")]
 [Protocol(TestProtocols.Stac)]
-public sealed class StacQueryablesTests : IAsyncLifetime
+[Collection("Database")]
+public sealed class StacQueryablesTests : IClassFixture<WebAppFixture>
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture;
 
-    public async Task InitializeAsync() => await _fixture.InitializeAsync();
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public StacQueryablesTests(WebAppFixture fixture) => _fixture = fixture;
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]

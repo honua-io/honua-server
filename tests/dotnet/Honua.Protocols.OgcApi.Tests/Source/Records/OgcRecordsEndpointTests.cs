@@ -16,14 +16,15 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Records;
 /// </summary>
 [Collection("Database.OgcApiData")]
 [Protocol(TestProtocols.OgcApiRecords)]
-public sealed class OgcRecordsEndpointTests : IAsyncLifetime
+public sealed class OgcRecordsEndpointTests : IClassFixture<OgcRecordsEndpointTestsFixture>
 {
     private const string CatalogId = "honua-catalog";
-    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+    private readonly WebAppFixture _fixture;
 
-    public Task InitializeAsync() => _fixture.InitializeAsync();
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public OgcRecordsEndpointTests(OgcRecordsEndpointTestsFixture fixture)
+    {
+        _fixture = fixture.App;
+    }
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
@@ -283,4 +284,18 @@ public sealed class OgcRecordsEndpointTests : IAsyncLifetime
     private static bool HrefContains(JsonElement link, string value)
         => link.TryGetProperty("href", out var hrefElement) &&
            hrefElement.GetString()?.Contains(value, StringComparison.OrdinalIgnoreCase) == true;
+}
+
+/// <summary>
+/// Per-class fixture wrapper that builds the Pro-licensed <see cref="WebAppFixture"/> once for the
+/// whole <see cref="OgcRecordsEndpointTests"/> class. All record tests are read-only, so they can
+/// safely share a single server/schema instance.
+/// </summary>
+public sealed class OgcRecordsEndpointTestsFixture : IAsyncLifetime
+{
+    public WebAppFixture App { get; } = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+
+    public Task InitializeAsync() => App.InitializeAsync();
+
+    public Task DisposeAsync() => App.DisposeAsync();
 }

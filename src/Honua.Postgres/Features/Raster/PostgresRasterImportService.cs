@@ -599,6 +599,14 @@ internal sealed class PostgresRasterImportService : IRasterImportService
                 throw new InvalidDataException("World file contains invalid numeric values.");
             }
 
+            // A zero (or non-finite) pixel scale yields a degenerate geotransform with no spatial
+            // extent, so reject it up front rather than persisting an unusable georeference.
+            if (scaleX == 0.0 || scaleY == 0.0 ||
+                !double.IsFinite(scaleX) || !double.IsFinite(scaleY))
+            {
+                throw new InvalidDataException("World file pixel scale (lines 1 and 4) must be non-zero and finite.");
+            }
+
             // Apply georeferencing via ST_SetGeoReference.
             // World files store the CENTER of the upper-left pixel, but the
             // PostGIS 6-parameter overload maps directly to the GDAL

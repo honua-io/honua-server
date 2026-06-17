@@ -12,21 +12,31 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 
-[Collection("Database")]
-[Protocol(TestProtocols.OgcApiFeatures)]
-[Operation(Operations.Query)]
-public sealed class OgcFeaturesStreamingTests : IAsyncLifetime
+public sealed class OgcFeaturesStreamingTestsFixture : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
-    private const int TestLayerId = 0;
+    public WebAppFixture App { get; } = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
 
     public async Task InitializeAsync()
     {
-        await _fixture.InitializeAsync();
-        await _fixture.EnsureLargeTestDatasetAsync();
+        await App.InitializeAsync();
+        await App.EnsureLargeTestDatasetAsync();
     }
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public Task DisposeAsync() => App.DisposeAsync();
+}
+
+[Protocol(TestProtocols.OgcApiFeatures)]
+[Operation(Operations.Query)]
+[Collection("Database")]
+public sealed class OgcFeaturesStreamingTests : IClassFixture<OgcFeaturesStreamingTestsFixture>
+{
+    private readonly WebAppFixture _fixture;
+    private const int TestLayerId = 0;
+
+    public OgcFeaturesStreamingTests(OgcFeaturesStreamingTestsFixture fixture)
+    {
+        _fixture = fixture.App;
+    }
 
     [IntegrationTest]
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]

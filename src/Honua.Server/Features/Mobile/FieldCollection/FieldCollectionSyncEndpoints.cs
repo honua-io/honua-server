@@ -374,7 +374,7 @@ internal static class FieldCollectionSyncEndpoints
             FeaturePayloadJson = body.Feature,
         };
 
-        var result = await store.PushChangeAsync(pushRequest, context.RequestAborted).ConfigureAwait(false);
+        var result = await store.PushChangeAsync(clientId, pushRequest, context.RequestAborted).ConfigureAwait(false);
         activity?.SetTag("honua.fieldcollection.outcome", OutcomeToWire(result.Outcome));
         activity?.SetTag("honua.fieldcollection.server_generation", result.ServerGeneration);
 

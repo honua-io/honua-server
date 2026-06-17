@@ -296,23 +296,13 @@ internal sealed partial class DatabaseQueryPerformanceMonitor : IDatabaseQueryPe
         if (_disposed)
             return Array.Empty<SlowQueryRecord>();
 
-        var result = new List<SlowQueryRecord>();
-        var count = 0;
-
-        // Get the most recent slow queries up to maxCount
-        while (count < maxCount && _slowQueryRecords.TryDequeue(out var slowQuery))
-        {
-            result.Add(slowQuery);
-            count++;
-        }
-
-        // Re-enqueue the items we took (maintaining FIFO order)
-        foreach (var query in result.AsEnumerable().Reverse())
-        {
-            _slowQueryRecords.Enqueue(query);
-        }
-
-        return result.OrderByDescending(q => q.ExecutedAt).Take(maxCount).ToList();
+        // Snapshot the queue without mutating it, then return the most recent records.
+        // ToArray() on ConcurrentQueue is atomic and does not dequeue items, so this read
+        // path is non-mutating and safe against concurrent RecordSlowQuery writers.
+        return _slowQueryRecords.ToArray()
+            .OrderByDescending(q => q.ExecutedAt)
+            .Take(maxCount)
+            .ToList();
     }
 
     internal void RecordQueryExecution(QueryExecutionData data)
@@ -367,7 +357,9 @@ internal sealed partial class DatabaseQueryPerformanceMonitor : IDatabaseQueryPe
             ExecutionTimeMs = data.ExecutionTimeMs,
             RowCount = data.RowCount,
             ExecutedAt = data.ExecutedAt,
-            QueryText = _options.CaptureQueryText ? data.QueryText?.Take(_options.MaxQueryTextLength).ToString() : null,
+            QueryText = _options.CaptureQueryText && data.QueryText is { } qt
+                ? qt[..Math.Min(qt.Length, _options.MaxQueryTextLength)]
+                : null,
             AdditionalMetrics = data.AdditionalMetrics as IReadOnlyDictionary<string, object>,
             Failed = !data.Success,
             ExceptionType = data.Exception?.GetType().Name,

@@ -127,8 +127,13 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                     serverByObjectId.TryGetValue(objectId, out var serverOp))
                 {
                     var conflictType = ClassifyConflict(edit.Kind, serverOp);
+                    // In manual-review mode the conflicting edit is NOT applied, so the durable
+                    // conflict record is the only carrier of the client intent. If that write fails
+                    // it must surface (propagate) rather than be swallowed: silently skipping the
+                    // edit would lose it with no record to resolve. Under last-write-wins the edit is
+                    // still applied below, so a record failure stays tolerable (logged only).
                     var conflictId = canRecordConflicts
-                        ? await RecordConflictAsync(request, layer.PublicLayerId, objectId, conflictType, cancellationToken).ConfigureAwait(false)
+                        ? await RecordConflictAsync(request, layer.PublicLayerId, objectId, conflictType, mustRecord: !applyConflicting, cancellationToken).ConfigureAwait(false)
                         : null;
 
                     conflicts.Add(new ReplicaSyncConflict(
@@ -216,6 +221,7 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
         int publicLayerId,
         long objectId,
         ReplicaConflictType conflictType,
+        bool mustRecord,
         CancellationToken cancellationToken)
     {
         var conflictId = Guid.NewGuid().ToString("N");
@@ -242,9 +248,18 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // A conflict-record write failure must not fail the sync; the edit is still applied under
-            // last-write-wins. Surface the failure in logs for operator follow-up.
+            // Always surface the failure in logs for operator follow-up.
             Log.ConflictRecordFailed(_logger, request.ReplicaId, publicLayerId, objectId, ex);
+
+            // Manual review (mustRecord): the conflicting edit will be skipped, so the conflict
+            // record is the only carrier of the client intent. Losing it would drop the edit with
+            // no trace, so propagate the failure and fail the sync instead of returning null.
+            if (mustRecord)
+            {
+                throw;
+            }
+
+            // Last-write-wins: the edit is still applied, so a record write failure is tolerable.
             return null;
         }
     }

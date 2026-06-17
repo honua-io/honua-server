@@ -11,13 +11,15 @@ using Honua.TestKit.Constants;
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
 
 [Collection("Database")]
-public sealed class WfsLegacyEndpointsTests : IAsyncLifetime
+
+public sealed class WfsLegacyEndpointsTests : IClassFixture<WebAppFixture>
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture;
 
-    public async Task InitializeAsync() => await _fixture.InitializeAsync();
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public WfsLegacyEndpointsTests(WebAppFixture fixture)
+    {
+        _fixture = fixture;
+    }
 
     [IntegrationTest]
     [Protocol(TestProtocols.Wfs11)]

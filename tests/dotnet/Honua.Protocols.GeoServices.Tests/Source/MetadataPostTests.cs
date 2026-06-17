@@ -22,17 +22,15 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices;
 /// Verifies the GeoServices metadata endpoints accept POST (Esri SDK hydration
 /// path) and return metadata identical to the GET form.
 /// </summary>
-[Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
-public sealed class MetadataPostTests : IAsyncLifetime
+[Collection("Database")]
+public sealed class MetadataPostTests : IClassFixture<WebAppFixture>
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture;
     private const string TestServiceId = "test";
     private const int TestLayerId = 0;
 
-    public async Task InitializeAsync() => await _fixture.InitializeAsync();
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public MetadataPostTests(WebAppFixture fixture) => _fixture = fixture;
 
     private static FormUrlEncodedContent EmptyJsonForm()
         => new(new[] { new KeyValuePair<string, string>("f", "json") });

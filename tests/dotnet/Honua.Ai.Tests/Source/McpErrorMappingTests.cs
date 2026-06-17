@@ -114,7 +114,9 @@ public sealed class McpErrorMappingTests
 
         error.Code.Should().Be(JsonRpcServerError);
         error.Data!.Code.Should().Be(McpErrorMapper.Codes.Internal);
-        error.Message.Should().Be("bad state");
+        // The raw exception message is deliberately not surfaced to MCP clients
+        // (it can leak internal state); the mapper returns a sanitized message.
+        error.Message.Should().Be("An internal MCP operation failed.");
     }
 
     [UnitTest]

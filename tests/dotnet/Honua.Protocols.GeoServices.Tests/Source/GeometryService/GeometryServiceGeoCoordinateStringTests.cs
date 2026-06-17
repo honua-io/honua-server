@@ -18,14 +18,14 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService;
 /// </summary>
 [Protocol(TestProtocols.GeometryService)]
 [Collection("Database.GeoServicesRaster")]
-public sealed class GeometryServiceGeoCoordinateStringTests : IAsyncLifetime
+public sealed class GeometryServiceGeoCoordinateStringTests : IClassFixture<WebAppFixture>
 {
+    private readonly WebAppFixture _fixture;
 
-    private readonly WebAppFixture _fixture = new();
-
-    public async Task InitializeAsync() => await _fixture.InitializeAsync();
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public GeometryServiceGeoCoordinateStringTests(WebAppFixture fixture)
+    {
+        _fixture = fixture;
+    }
 
     [IntegrationTest]
     [Operation(Operations.ToGeoCoordinateString)]

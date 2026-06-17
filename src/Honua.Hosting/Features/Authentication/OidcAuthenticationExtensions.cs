@@ -24,6 +24,8 @@ public static class OidcAuthenticationExtensions
 {
     private static readonly ConcurrentDictionary<string, ReplayLockState> TokenReplayLocks = new(StringComparer.Ordinal);
 
+    private static readonly string[] GoogleIssuers = { "https://accounts.google.com" };
+
     /// <summary>
     /// Authentication scheme name for Azure AD.
     /// </summary>
@@ -382,35 +384,87 @@ public static class OidcAuthenticationExtensions
             // Set valid audiences
             var validAudiences = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+            // Per-issuer audience map. Without this, ValidIssuers and ValidAudiences are
+            // merged into flat sets and a token whose iss belongs to provider A but whose
+            // aud is provider B's client id would validate (cross-issuer/audience pairing).
+            // The AudienceValidator wired below uses this map to enforce that a token's
+            // audience matches the audience(s) configured for its (already validated) issuer.
+            var audiencesByIssuer = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+
+            void MapIssuerAudiences(IEnumerable<string> issuers, IEnumerable<string> audiences)
+            {
+                foreach (var issuer in issuers)
+                {
+                    if (string.IsNullOrWhiteSpace(issuer))
+                    {
+                        continue;
+                    }
+
+                    if (!audiencesByIssuer.TryGetValue(issuer, out var set))
+                    {
+                        set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                        audiencesByIssuer[issuer] = set;
+                    }
+
+                    foreach (var audience in audiences)
+                    {
+                        if (!string.IsNullOrWhiteSpace(audience))
+                        {
+                            set.Add(audience);
+                        }
+                    }
+                }
+            }
+
             if (oidcOptions.AzureAd?.IsValid == true)
             {
                 var clientId = oidcOptions.AzureAd.ClientId!;
+                var azureAudiences = new[] { clientId, $"api://{clientId}" };
                 validAudiences.Add(clientId);
                 validAudiences.Add($"api://{clientId}");
+
+                var tenantId = oidcOptions.AzureAd.TenantId!;
+                MapIssuerAudiences(
+                    new[]
+                    {
+                        $"{oidcOptions.AzureAd.Instance}{tenantId}/v2.0",
+                        $"https://sts.windows.net/{tenantId}/"
+                    },
+                    azureAudiences);
             }
 
             if (oidcOptions.Google?.IsValid == true)
             {
                 validAudiences.Add(oidcOptions.Google.ClientId!);
+                MapIssuerAudiences(GoogleIssuers, new[] { oidcOptions.Google.ClientId! });
             }
 
             if (oidcOptions.Generic?.IsValid == true)
             {
                 validAudiences.Add(oidcOptions.Generic.ClientId!);
+                if (!string.IsNullOrEmpty(oidcOptions.Generic.Authority))
+                {
+                    MapIssuerAudiences(new[] { oidcOptions.Generic.Authority! }, new[] { oidcOptions.Generic.ClientId! });
+                }
             }
 
             if (oidcOptions.Okta?.IsValid == true)
             {
                 validAudiences.Add(oidcOptions.Okta.ClientId!);
+                MapIssuerAudiences(new[] { oidcOptions.Okta.GetAuthority() }, new[] { oidcOptions.Okta.ClientId! });
             }
 
             if (oidcOptions.Auth0?.IsValid == true)
             {
+                var auth0Audiences = new List<string> { oidcOptions.Auth0.ClientId! };
                 validAudiences.Add(oidcOptions.Auth0.ClientId!);
                 if (!string.IsNullOrWhiteSpace(oidcOptions.Auth0.Audience))
                 {
                     validAudiences.Add(oidcOptions.Auth0.Audience);
+                    auth0Audiences.Add(oidcOptions.Auth0.Audience);
                 }
+
+                MapIssuerAudiences(new[] { oidcOptions.Auth0.GetAuthority() }, auth0Audiences);
             }
 
             if (oidcOptions.TokenValidation.ValidAudiences.Length > 0)
@@ -422,6 +476,32 @@ public static class OidcAuthenticationExtensions
             }
 
             options.TokenValidationParameters.ValidAudiences = validAudiences.ToArray();
+
+            // Enforce per-issuer -> audience pairing across multiple providers. The
+            // validator only runs after issuer validation, so securityToken.Issuer is the
+            // validated issuer. Issuers that have an explicit per-provider audience mapping
+            // are restricted to those audiences; issuers without a mapping (e.g. supplied
+            // only via TokenValidation.ValidIssuers, which carries no pairing metadata)
+            // fall back to the merged ValidAudiences set so existing setups keep working.
+            if (oidcOptions.TokenValidation.ValidateAudience && audiencesByIssuer.Count > 0)
+            {
+                var pairing = audiencesByIssuer;
+                options.TokenValidationParameters.AudienceValidator = (audiences, securityToken, validationParameters) =>
+                {
+                    var issuer = securityToken?.Issuer;
+                    if (!string.IsNullOrWhiteSpace(issuer) && pairing.TryGetValue(issuer, out var allowedForIssuer))
+                    {
+                        return audiences is not null && audiences.Any(allowedForIssuer.Contains);
+                    }
+
+                    // Unknown/unpaired issuer: fall back to the merged audience set to
+                    // preserve prior behavior for config-supplied ValidIssuers.
+                    var fallback = validationParameters.ValidAudiences;
+                    return audiences is not null && fallback is not null &&
+                        audiences.Any(audience =>
+                            fallback.Any(valid => string.Equals(valid, audience, StringComparison.OrdinalIgnoreCase)));
+                };
+            }
 
             var staticSigningKey = oidcOptions.TokenValidation.SymmetricSigningKey;
             if (!string.IsNullOrWhiteSpace(staticSigningKey))
@@ -718,7 +798,11 @@ public static class OidcAuthenticationExtensions
         {
             if (!string.IsNullOrWhiteSpace(jwtToken.Id))
             {
-                return $"jti:{jwtToken.Id}";
+                // jti is only unique per-issuer. The single Bearer scheme accepts tokens
+                // from multiple issuers simultaneously, so scope the replay key by the
+                // token's (already validated) issuer to avoid cross-issuer jti collisions
+                // rejecting a legitimate token as a replay.
+                return $"jti:{NormalizeReplayIssuer(jwtToken.Issuer)}:{jwtToken.Id}";
             }
 
             if (!string.IsNullOrWhiteSpace(jwtToken.RawData))
@@ -732,7 +816,8 @@ public static class OidcAuthenticationExtensions
         {
             if (!string.IsNullOrWhiteSpace(jsonWebToken.Id))
             {
-                return $"jti:{jsonWebToken.Id}";
+                // See note above: scope the jti by the validated issuer.
+                return $"jti:{NormalizeReplayIssuer(jsonWebToken.Issuer)}:{jsonWebToken.Id}";
             }
 
             if (!string.IsNullOrWhiteSpace(jsonWebToken.EncodedToken))
@@ -744,6 +829,25 @@ public static class OidcAuthenticationExtensions
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Produces a stable, collision-resistant component for the replay key from the
+    /// token's validated issuer. The issuer reaches this method only after the Bearer
+    /// pipeline has validated it against the configured <c>ValidIssuers</c>, so it is a
+    /// trusted value. It is hashed to keep the cache key bounded and free of characters
+    /// that backing stores (e.g. Redis) treat specially.
+    /// </summary>
+    private static string NormalizeReplayIssuer(string? issuer)
+    {
+        if (string.IsNullOrWhiteSpace(issuer))
+        {
+            return "unknown";
+        }
+
+        var hash = System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(issuer));
+        return Convert.ToHexStringLower(hash);
     }
 
     private static DateTime GetReplayCacheExpiration(SecurityToken token, TokenValidationOptions options)

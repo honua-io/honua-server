@@ -30,15 +30,16 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 /// written as a full literal path so the EndpointRegistry HTTP-backing drift guard
 /// can anchor every registry entry to a same-method request in this file.
 /// </remarks>
-[Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
-public sealed class FeatureServerNotImplementedOperationTests : IAsyncLifetime
+[Collection("Database")]
+public sealed class FeatureServerNotImplementedOperationTests : IClassFixture<WebAppFixture>
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture;
 
-    public async Task InitializeAsync() => await _fixture.InitializeAsync();
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public FeatureServerNotImplementedOperationTests(WebAppFixture fixture)
+    {
+        _fixture = fixture;
+    }
 
     private static StringContent EmptyJsonBody()
         => new("{}", Encoding.UTF8, "application/json");

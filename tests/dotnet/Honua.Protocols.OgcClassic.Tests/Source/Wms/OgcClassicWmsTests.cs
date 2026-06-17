@@ -452,10 +452,32 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Wms)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
-    public async Task Wms_GetMap_Crs84MinXGreaterThanMaxX_ReturnsXmlServiceException()
+    public async Task Wms_GetMap_Crs84MinXGreaterThanMaxX_RendersAntimeridianWrap()
     {
+        // A geographic bbox with MinX > MaxX (both in range) is a valid
+        // antimeridian-crossing request, matching the WFS bbox path. GetMap must
+        // accept it and render rather than rejecting it as a coordinate-ordering
+        // error: CreateBboxSpatialFilter splits the wrapped extent into a
+        // multi-polygon and the render transform handles the longitude wrap.
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=1,0,0,1&WIDTH=200&HEIGHT=200&CRS=CRS:84&FORMAT=image/png&LAYERS={WebAppFixture.TestLayerId}&STYLES=");
+
+        var content = await response.Content.ReadAsByteArrayAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, $"Response body: {System.Text.Encoding.UTF8.GetString(content)}");
+        response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+        content.Length.Should().BeGreaterThan(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wms)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms_GetMap_GeographicBboxOutsideCrsBounds_ReturnsXmlServiceException()
+    {
+        // A geographic bbox whose coordinates fall outside the valid CRS range
+        // (here latitude 90..110) is rejected at parse time, matching the WFS
+        // bbox path which validates geographic coordinate ranges.
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-10,90,10,110&WIDTH=100&HEIGHT=100&CRS=CRS:84&FORMAT=image/png&LAYERS={WebAppFixture.TestLayerId}&STYLES=");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
@@ -467,10 +489,15 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Wms)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
-    public async Task Wms_GetMap_BboxOutsideCrsBounds_ReturnsBlankImage()
+    public async Task Wms_GetMap_BboxDisjointFromCrsBounds_ReturnsBlankImage()
     {
+        // A projected bbox that lies entirely outside the Web Mercator bounds
+        // (north-east of the ±20 037 508 m square, but still within the parser's
+        // sanity range) has an empty intersection with the CRS, so GetMap
+        // short-circuits to a blank image. A partial overlap, by contrast,
+        // renders normally.
         var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-10,90,10,110&WIDTH=100&HEIGHT=100&CRS=CRS:84&FORMAT=image/png&LAYERS={WebAppFixture.TestLayerId}&STYLES=");
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=21000000,21000000,39000000,39000000&WIDTH=100&HEIGHT=100&CRS=EPSG:3857&FORMAT=image/png&LAYERS={WebAppFixture.TestLayerId}&STYLES=");
 
         var content = await response.Content.ReadAsByteArrayAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, $"Response body: {System.Text.Encoding.UTF8.GetString(content)}");

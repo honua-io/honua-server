@@ -13,27 +13,31 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.MapServer;
 
-[Collection("Database")]
 [Protocol(TestProtocols.MapServer)]
-public sealed class MapServerTileLimitsTests : IAsyncLifetime
+[Collection("Database")]
+public sealed class MapServerTileLimitsTests : IClassFixture<MapServerTileLimitsTests.Fixture>
 {
-    private readonly WebAppFixture _fixture = new();
-
-    private readonly LimitsOptions _limits = new()
+    public sealed class Fixture : IAsyncLifetime
     {
-        Tiles = new TileLimits
+        private static readonly LimitsOptions Limits = new()
         {
-            MaxTileZoom = 24
-        }
-    };
+            Tiles = new TileLimits
+            {
+                MaxTileZoom = 24
+            }
+        };
 
-    public async Task InitializeAsync()
-    {
-        _fixture.ReplaceService<IOptions<LimitsOptions>>(Options.Create(_limits));
-        await _fixture.InitializeAsync();
+        public WebAppFixture App { get; } =
+            new WebAppFixture().ReplaceService<IOptions<LimitsOptions>>(Options.Create(Limits));
+
+        public Task InitializeAsync() => App.InitializeAsync();
+
+        public Task DisposeAsync() => App.DisposeAsync();
     }
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    private readonly WebAppFixture _fixture;
+
+    public MapServerTileLimitsTests(Fixture fixture) => _fixture = fixture.App;
 
     [IntegrationTest]
     [Operation(Operations.Tile)]
