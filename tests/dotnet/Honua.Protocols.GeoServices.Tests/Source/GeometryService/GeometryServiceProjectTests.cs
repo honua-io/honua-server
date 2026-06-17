@@ -14,13 +14,14 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService;
 
 [Protocol(TestProtocols.GeometryService)]
 [Collection("Database.GeoServicesRaster")]
-public sealed class GeometryServiceProjectTests : IAsyncLifetime
+public sealed class GeometryServiceProjectTests : IClassFixture<WebAppFixture>
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture;
 
-    public async Task InitializeAsync() => await _fixture.InitializeAsync();
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public GeometryServiceProjectTests(WebAppFixture fixture)
+    {
+        _fixture = fixture;
+    }
 
     [IntegrationTest]
     [Operation(Operations.Project)]

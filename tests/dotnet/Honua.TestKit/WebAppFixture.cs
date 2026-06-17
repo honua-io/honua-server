@@ -57,6 +57,19 @@ public sealed class WebAppFixture : IAsyncLifetime
     private string? _seedProfile;
     private IServiceScope? _serviceScope;
 
+    // Set to the per-test cloned database name when template-database isolation is active
+    // (HONUA_TEST_DB_TEMPLATE=1) and the fixture uses the default seed. When null the
+    // fixture uses the classic per-test schema isolation (byte-identical to flag-off).
+    private string? _currentDatabase;
+
+    /// <summary>
+    /// <see langword="true"/> when this fixture should use template-database isolation:
+    /// the global flag is on AND no custom seed was requested (the process-wide template
+    /// holds the default <c>server.yaml</c> baseline only). Custom-seed fixtures keep the
+    /// classic schema path so their bespoke seed is honoured.
+    /// </summary>
+    private bool UseTemplateDatabase => PostgresFixture.TemplateDatabaseModeEnabled && string.IsNullOrWhiteSpace(_seedPath);
+
     /// <summary>
     /// Test service ID used for testing operations.
     /// </summary>
@@ -161,7 +174,8 @@ public sealed class WebAppFixture : IAsyncLifetime
                         services,
                         _postgres.ConnectionString,
                         () => _currentSchema,
-                        _serviceConfigurations);
+                        _serviceConfigurations,
+                        UseTemplateDatabase ? _postgres : null);
                 });
             });
 
@@ -170,8 +184,19 @@ public sealed class WebAppFixture : IAsyncLifetime
 
         if (string.IsNullOrWhiteSpace(_currentSchema))
         {
-            _currentSchema = await _postgres.CreateIsolatedSchemaAsync(nameof(WebAppFixture));
-            await SeedSchemaAsync(_currentSchema);
+            if (UseTemplateDatabase)
+            {
+                // Clone the seeded template into a fresh per-test database; the header below
+                // carries the database name so the router routes this fixture's connections
+                // to it. No per-test seed — the template already holds the baseline.
+                _currentDatabase = await _postgres.CreateIsolatedDatabaseAsync(nameof(WebAppFixture));
+                _currentSchema = _currentDatabase;
+            }
+            else
+            {
+                _currentSchema = await _postgres.CreateIsolatedSchemaAsync(nameof(WebAppFixture));
+                await SeedSchemaAsync(_currentSchema);
+            }
         }
         ApplyCurrentSchemaHeader(Client);
 
@@ -323,10 +348,23 @@ public sealed class WebAppFixture : IAsyncLifetime
 
         if (string.IsNullOrWhiteSpace(_currentSchema))
         {
-            _currentSchema = await Postgres.CreateIsolatedSchemaAsync(nameof(WebAppFixture));
+            if (UseTemplateDatabase)
+            {
+                _currentDatabase = await Postgres.CreateIsolatedDatabaseAsync(nameof(WebAppFixture));
+                _currentSchema = _currentDatabase;
+            }
+            else
+            {
+                _currentSchema = await Postgres.CreateIsolatedSchemaAsync(nameof(WebAppFixture));
+            }
         }
 
-        await SeedSchemaAsync(_currentSchema);
+        if (_currentDatabase is null)
+        {
+            // Schema mode: seed the freshly-created schema. Template mode skips this — the
+            // per-test database was cloned from the already-seeded template.
+            await SeedSchemaAsync(_currentSchema);
+        }
 
         Client = CreateAdminClient();
         _serviceScope = Honua.TestKit.Mixins.WebAppFixtureSharedBootstrapMixin.Factory.Services.CreateScope();
@@ -343,10 +381,7 @@ public sealed class WebAppFixture : IAsyncLifetime
 
         if (_useSharedServer)
         {
-            if (_currentSchema is not null)
-            {
-                await Postgres.DropSchemaAsync(_currentSchema);
-            }
+            await DropIsolatedStoreAsync();
 
             Client.Dispose();
 
@@ -356,10 +391,7 @@ public sealed class WebAppFixture : IAsyncLifetime
             return;
         }
 
-        if (_currentSchema is not null)
-        {
-            await Postgres.DropSchemaAsync(_currentSchema);
-        }
+        await DropIsolatedStoreAsync();
 
         Client.Dispose();
         if (_factory is not null)
@@ -481,6 +513,24 @@ public sealed class WebAppFixture : IAsyncLifetime
     /// </summary>
     private Task EnsureTestSecureConnectionAsync()
         => Honua.TestKit.Mixins.WebAppFixtureSecureConnectionMixin.EnsureTestSecureConnectionAsync(_serviceScope);
+
+    /// <summary>
+    /// Tears down this fixture's isolated store: drops the cloned per-test database in
+    /// template-database mode, or the per-test schema in classic schema mode.
+    /// </summary>
+    private async Task DropIsolatedStoreAsync()
+    {
+        if (_currentDatabase is not null)
+        {
+            await Postgres.DropDatabaseAsync(_currentDatabase);
+            return;
+        }
+
+        if (_currentSchema is not null)
+        {
+            await Postgres.DropSchemaAsync(_currentSchema);
+        }
+    }
 
     private Task SeedSchemaAsync(string schemaName)
     {

@@ -26,30 +26,13 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes;
 /// </summary>
 [Collection("Database.OgcApiData")]
 [Protocol(TestProtocols.OgcApiProcesses)]
-public sealed class OgcProcessesJobResultsTests : IAsyncLifetime
+public sealed class OgcProcessesJobResultsTests : IClassFixture<OgcProcessesJobResultsTestsFixture>
 {
     private const string JobId = "ogc-gp-result-job";
 
     private readonly WebAppFixture _fixture;
 
-    public OgcProcessesJobResultsTests()
-    {
-        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
-        jobStore.GetAsync(JobId, Arg.Any<CancellationToken>()).Returns(CreateSucceededJob());
-
-        _fixture = new WebAppFixture()
-            .ConfigureServices(services =>
-            {
-                services.RemoveAll<IExecutionJobStore>();
-                services.AddSingleton(jobStore);
-                services.RemoveAll<IGeoprocessingJobService>();
-                services.AddSingleton<IGeoprocessingJobService>(new ArtifactBackedJobService());
-            });
-    }
-
-    public async Task InitializeAsync() => await _fixture.InitializeAsync();
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public OgcProcessesJobResultsTests(OgcProcessesJobResultsTestsFixture fixture) => _fixture = fixture.App;
 
     [IntegrationTest]
     [Operation(Operations.JobStatus)]
@@ -89,6 +72,39 @@ public sealed class OgcProcessesJobResultsTests : IAsyncLifetime
         duplicateOutput.GetProperty("href").GetString().Should().Be("https://example.test/ogc-buffer-output-summary.json");
         duplicateOutput.GetProperty("id").GetString().Should().Be("artifact-output-2");
     }
+}
+
+/// <summary>
+/// Per-class wrapper that owns a single <see cref="WebAppFixture"/> with a fixed
+/// succeeded artifact-backed job store and geoprocessing job service registered
+/// once, shared across all tests in <see cref="OgcProcessesJobResultsTests"/> via
+/// <see cref="IClassFixture{T}"/>. Both tests only read the fixed job id, so the
+/// shared fixture is safe.
+/// </summary>
+public sealed class OgcProcessesJobResultsTestsFixture : IAsyncLifetime
+{
+    private const string JobId = "ogc-gp-result-job";
+
+    public WebAppFixture App { get; }
+
+    public OgcProcessesJobResultsTestsFixture()
+    {
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
+        jobStore.GetAsync(JobId, Arg.Any<CancellationToken>()).Returns(CreateSucceededJob());
+
+        App = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IExecutionJobStore>();
+                services.AddSingleton(jobStore);
+                services.RemoveAll<IGeoprocessingJobService>();
+                services.AddSingleton<IGeoprocessingJobService>(new ArtifactBackedJobService());
+            });
+    }
+
+    public Task InitializeAsync() => App.InitializeAsync();
+
+    public Task DisposeAsync() => App.DisposeAsync();
 
     private static ExecutionJobRecord CreateSucceededJob()
         => new()

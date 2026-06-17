@@ -14,12 +14,9 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 
-[Collection("Database")]
-[Protocol(TestProtocols.OgcApiFeatures)]
-[Operation(Operations.Query)]
-public sealed class OgcFeaturesNumberMatchedPolicyTests : IAsyncLifetime
+public sealed class OgcFeaturesNumberMatchedPolicyTestsFixture : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
+    public WebAppFixture App { get; } = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
         .ConfigureWebHost(builder =>
             builder.ConfigureAppConfiguration((_, configBuilder) =>
                 configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
@@ -28,14 +25,24 @@ public sealed class OgcFeaturesNumberMatchedPolicyTests : IAsyncLifetime
                     ["OgcFeatures:IncludeFeatureLinks"] = "false"
                 })));
 
+    public Task InitializeAsync() => App.InitializeAsync();
+
+    public Task DisposeAsync() => App.DisposeAsync();
+}
+
+[Protocol(TestProtocols.OgcApiFeatures)]
+[Operation(Operations.Query)]
+[Collection("Database")]
+public sealed class OgcFeaturesNumberMatchedPolicyTests : IClassFixture<OgcFeaturesNumberMatchedPolicyTestsFixture>
+{
+    private readonly WebAppFixture _fixture;
+
     private const int TestLayerId = 0;
 
-    public async Task InitializeAsync()
+    public OgcFeaturesNumberMatchedPolicyTests(OgcFeaturesNumberMatchedPolicyTestsFixture fixture)
     {
-        await _fixture.InitializeAsync();
+        _fixture = fixture.App;
     }
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTest]
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]

@@ -12,19 +12,27 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 
-[Collection("Database")]
+public sealed class OgcFeaturesItemsTestsFixture : IAsyncLifetime
+{
+    public WebAppFixture App { get; } = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+
+    public Task InitializeAsync() => App.InitializeAsync();
+
+    public Task DisposeAsync() => App.DisposeAsync();
+}
+
 [Protocol(TestProtocols.OgcApiFeatures)]
 [Operation(Operations.Query)]
-public class OgcFeaturesItemsTests : IAsyncLifetime
+[Collection("Database")]
+public class OgcFeaturesItemsTests : IClassFixture<OgcFeaturesItemsTestsFixture>
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+    private readonly WebAppFixture _fixture;
     private const int TestLayerId = 0; // Use existing test layer
 
-    public async Task InitializeAsync()
+    public OgcFeaturesItemsTests(OgcFeaturesItemsTestsFixture fixture)
     {
-        await _fixture.InitializeAsync();
+        _fixture = fixture.App;
     }
-    public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTest]
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]

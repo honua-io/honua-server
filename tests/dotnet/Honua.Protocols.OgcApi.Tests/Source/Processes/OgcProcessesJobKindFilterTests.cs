@@ -23,66 +23,14 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes;
 /// </summary>
 [Collection("Database.OgcApiData")]
 [Protocol(TestProtocols.OgcApiProcesses)]
-public sealed class OgcProcessesJobKindFilterTests : IAsyncLifetime
+public sealed class OgcProcessesJobKindFilterTests : IClassFixture<OgcProcessesJobKindFilterTestsFixture>
 {
     private const string EtlJobId = "etl-job-001";
     private const string GeoJobId = "geo-job-001";
 
-    private static readonly ExecutionJobRecord EtlJob = new()
-    {
-        OperationId = EtlJobId,
-        Status = ExecutionJobStatus.Running,
-        CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
-        UpdatedAt = DateTimeOffset.UtcNow,
-        Spec = new ExecutionJobSpec
-        {
-            TargetKind = BatchComputeTargetKind.KubernetesJob,
-            Backend = "test-backend",
-            Kind = ExecutionJobKind.ExtractTransformLoad,
-            WorkloadName = "etl-workload"
-        }
-    };
-
-    private static readonly ExecutionJobRecord GeoJob = new()
-    {
-        OperationId = GeoJobId,
-        Status = ExecutionJobStatus.Running,
-        CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
-        UpdatedAt = DateTimeOffset.UtcNow,
-        Spec = new ExecutionJobSpec
-        {
-            TargetKind = BatchComputeTargetKind.KubernetesJob,
-            Backend = "test-backend",
-            Kind = ExecutionJobKind.Geoprocessing,
-            WorkloadName = "geo-workload"
-        }
-    };
-
-    private readonly IExecutionJobStore _mockJobStore;
     private readonly WebAppFixture _fixture;
 
-    public OgcProcessesJobKindFilterTests()
-    {
-        _mockJobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
-
-        _mockJobStore.GetAsync(EtlJobId, Arg.Any<CancellationToken>())
-            .Returns(EtlJob);
-        _mockJobStore.GetAsync(GeoJobId, Arg.Any<CancellationToken>())
-            .Returns(GeoJob);
-        _mockJobStore.GetAsync(Arg.Is<string>(id => id != EtlJobId && id != GeoJobId), Arg.Any<CancellationToken>())
-            .Returns((ExecutionJobRecord?)null);
-        _mockJobStore.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<CancellationToken>())
-            .Returns(new List<ExecutionJobRecord> { GeoJob });
-
-        _fixture = new WebAppFixture()
-            .ConfigureServices(services =>
-            {
-                services.AddSingleton(_mockJobStore);
-            });
-    }
-
-    public async Task InitializeAsync() => await _fixture.InitializeAsync();
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public OgcProcessesJobKindFilterTests(OgcProcessesJobKindFilterTestsFixture fixture) => _fixture = fixture.App;
 
     [IntegrationTest]
     [Operation(Operations.JobStatus)]
@@ -131,4 +79,74 @@ public sealed class OgcProcessesJobKindFilterTests : IAsyncLifetime
         var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         json.RootElement.GetProperty("type").GetString().Should().Contain("no-such-job");
     }
+}
+
+/// <summary>
+/// Per-class wrapper that owns a single <see cref="WebAppFixture"/> with the
+/// non-geoprocessing/geoprocessing job store substitute registered once, shared
+/// across all tests in <see cref="OgcProcessesJobKindFilterTests"/> via
+/// <see cref="IClassFixture{T}"/>. All mock setups are fixed (no per-test
+/// reconfiguration) and every test only reads fixed job ids, so the shared
+/// fixture is safe.
+/// </summary>
+public sealed class OgcProcessesJobKindFilterTestsFixture : IAsyncLifetime
+{
+    private const string EtlJobId = "etl-job-001";
+    private const string GeoJobId = "geo-job-001";
+
+    private static readonly ExecutionJobRecord EtlJob = new()
+    {
+        OperationId = EtlJobId,
+        Status = ExecutionJobStatus.Running,
+        CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
+        UpdatedAt = DateTimeOffset.UtcNow,
+        Spec = new ExecutionJobSpec
+        {
+            TargetKind = BatchComputeTargetKind.KubernetesJob,
+            Backend = "test-backend",
+            Kind = ExecutionJobKind.ExtractTransformLoad,
+            WorkloadName = "etl-workload"
+        }
+    };
+
+    private static readonly ExecutionJobRecord GeoJob = new()
+    {
+        OperationId = GeoJobId,
+        Status = ExecutionJobStatus.Running,
+        CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
+        UpdatedAt = DateTimeOffset.UtcNow,
+        Spec = new ExecutionJobSpec
+        {
+            TargetKind = BatchComputeTargetKind.KubernetesJob,
+            Backend = "test-backend",
+            Kind = ExecutionJobKind.Geoprocessing,
+            WorkloadName = "geo-workload"
+        }
+    };
+
+    public WebAppFixture App { get; }
+
+    public OgcProcessesJobKindFilterTestsFixture()
+    {
+        var mockJobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
+
+        mockJobStore.GetAsync(EtlJobId, Arg.Any<CancellationToken>())
+            .Returns(EtlJob);
+        mockJobStore.GetAsync(GeoJobId, Arg.Any<CancellationToken>())
+            .Returns(GeoJob);
+        mockJobStore.GetAsync(Arg.Is<string>(id => id != EtlJobId && id != GeoJobId), Arg.Any<CancellationToken>())
+            .Returns((ExecutionJobRecord?)null);
+        mockJobStore.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<CancellationToken>())
+            .Returns(new List<ExecutionJobRecord> { GeoJob });
+
+        App = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.AddSingleton(mockJobStore);
+            });
+    }
+
+    public Task InitializeAsync() => App.InitializeAsync();
+
+    public Task DisposeAsync() => App.DisposeAsync();
 }

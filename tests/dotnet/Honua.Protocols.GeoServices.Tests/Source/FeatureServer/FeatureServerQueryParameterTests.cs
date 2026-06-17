@@ -11,15 +11,16 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-[Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
-public sealed class FeatureServerQueryParameterTests : IAsyncLifetime
+[Collection("Database")]
+public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixture>
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture;
 
-    public async Task InitializeAsync() => await _fixture.InitializeAsync();
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public FeatureServerQueryParameterTests(WebAppFixture fixture)
+    {
+        _fixture = fixture;
+    }
 
     // ArcGIS Pro and the JS API send these parameters by default even when the
     // backing service doesn't honor them. Rejecting the request would break

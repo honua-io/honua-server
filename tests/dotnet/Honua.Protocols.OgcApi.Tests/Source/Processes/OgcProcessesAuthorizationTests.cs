@@ -16,17 +16,11 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes;
 /// </summary>
 [Collection("Database.OgcApiData")]
 [Protocol(TestProtocols.OgcApiProcesses)]
-public sealed class OgcProcessesAuthorizationTests : IAsyncLifetime
+public sealed class OgcProcessesAuthorizationTests : IClassFixture<OgcProcessesAuthorizationTestsFixture>
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture()
-        .ConfigureWebHost(builder =>
-        {
-            builder.UseSetting("HONUA_DEV_AUTH", "false");
-        });
+    private readonly WebAppFixture _fixture;
 
-    public async Task InitializeAsync() => await _fixture.InitializeAsync();
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public OgcProcessesAuthorizationTests(OgcProcessesAuthorizationTestsFixture fixture) => _fixture = fixture.App;
 
     [IntegrationTest]
     [Operation(Operations.ProcessExecution)]
@@ -92,4 +86,22 @@ public sealed class OgcProcessesAuthorizationTests : IAsyncLifetime
         var response = await _fixture.Client.DeleteAsync("/ogc/processes/jobs/any-job-id");
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
+}
+
+/// <summary>
+/// Per-class wrapper that owns a single <see cref="WebAppFixture"/> configured
+/// with dev-auth disabled, shared across all tests in
+/// <see cref="OgcProcessesAuthorizationTests"/> via <see cref="IClassFixture{T}"/>.
+/// </summary>
+public sealed class OgcProcessesAuthorizationTestsFixture : IAsyncLifetime
+{
+    public WebAppFixture App { get; } = new WebAppFixture()
+        .ConfigureWebHost(builder =>
+        {
+            builder.UseSetting("HONUA_DEV_AUTH", "false");
+        });
+
+    public Task InitializeAsync() => App.InitializeAsync();
+
+    public Task DisposeAsync() => App.DisposeAsync();
 }

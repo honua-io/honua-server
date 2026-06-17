@@ -11,12 +11,16 @@ using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
 
-[Collection("Database")]
-[Protocol(TestProtocols.Wfs20)]
-[Operation(Operations.Query)]
-public sealed class Wfs20NumberMatchedPolicyTests : IAsyncLifetime
+/// <summary>
+/// Per-class fixture wrapper that owns a <see cref="WebAppFixture"/> configured with the
+/// "UnknownWhenExpensive" numberMatched policy. Created once per test class via
+/// <see cref="IClassFixture{TFixture}"/> so the isolated schema + host build happen once
+/// rather than once per test method. All tests in the class only issue read-only GetFeature
+/// queries over the seeded data, so sharing one schema/server is safe.
+/// </summary>
+public sealed class Wfs20NumberMatchedPolicyTestsFixture : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture()
+    public WebAppFixture App { get; } = new WebAppFixture()
         .ConfigureWebHost(builder =>
             builder.ConfigureAppConfiguration((_, configBuilder) =>
                 configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
@@ -24,12 +28,22 @@ public sealed class Wfs20NumberMatchedPolicyTests : IAsyncLifetime
                     ["Wfs20:NumberMatchedPolicy"] = "UnknownWhenExpensive"
                 })));
 
-    public async Task InitializeAsync()
-    {
-        await _fixture.InitializeAsync();
-    }
+    public Task InitializeAsync() => App.InitializeAsync();
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public Task DisposeAsync() => App.DisposeAsync();
+}
+
+[Protocol(TestProtocols.Wfs20)]
+[Operation(Operations.Query)]
+[Collection("Database")]
+public sealed class Wfs20NumberMatchedPolicyTests : IClassFixture<Wfs20NumberMatchedPolicyTestsFixture>
+{
+    private readonly WebAppFixture _fixture;
+
+    public Wfs20NumberMatchedPolicyTests(Wfs20NumberMatchedPolicyTestsFixture fixture)
+    {
+        _fixture = fixture.App;
+    }
 
     [IntegrationTest]
     [Endpoint("GET /wfs")]

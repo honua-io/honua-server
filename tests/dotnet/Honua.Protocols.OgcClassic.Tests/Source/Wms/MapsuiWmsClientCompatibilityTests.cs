@@ -11,15 +11,16 @@ using Mapsui.Providers.Wms;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms;
 
-[Collection("Database")]
 [Protocol(TestProtocols.Wms13)]
-public sealed class MapsuiWmsClientCompatibilityTests : IAsyncLifetime
+[Collection("Database")]
+public sealed class MapsuiWmsClientCompatibilityTests : IClassFixture<WebAppFixture>
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture;
 
-    public async Task InitializeAsync() => await _fixture.InitializeAsync();
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public MapsuiWmsClientCompatibilityTests(WebAppFixture fixture)
+    {
+        _fixture = fixture;
+    }
 
     [IntegrationTest]
     [Operation(Operations.Wms)]

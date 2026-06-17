@@ -21,17 +21,15 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
 [Collection("Database.GeoServicesRaster")]
 [Protocol(TestProtocols.ImageServer)]
-public class ImageServerBasicTests : IAsyncLifetime
+public class ImageServerBasicTests : IClassFixture<WebAppFixture>
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture;
     private const int TestLayerId = 0; // Use existing test layer
 
-    public async Task InitializeAsync()
+    public ImageServerBasicTests(WebAppFixture fixture)
     {
-        await _fixture.InitializeAsync();
+        _fixture = fixture;
     }
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTest]
     [Endpoint("GET /rest/services/{id}/ImageServer")]

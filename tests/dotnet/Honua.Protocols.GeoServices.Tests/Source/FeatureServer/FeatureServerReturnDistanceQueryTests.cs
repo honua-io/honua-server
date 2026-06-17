@@ -17,20 +17,21 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 /// spatial filter geometry is supplied, each matched feature carries its geodesic
 /// distance (meters) from the query geometry under the runtime <c>distance</c> attribute.
 /// </summary>
-[Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
-public sealed class FeatureServerReturnDistanceQueryTests : IAsyncLifetime
+[Collection("Database")]
+public sealed class FeatureServerReturnDistanceQueryTests : IClassFixture<WebAppFixture>
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture;
     private const string TestServiceId = "test";
     private const int TestLayerId = 0;
 
     // San Francisco; the seed dataset places features within a 50km radius.
     private const string PointGeometry = @"{""x"":-122.4194,""y"":37.7749}";
 
-    public async Task InitializeAsync() => await _fixture.InitializeAsync();
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public FeatureServerReturnDistanceQueryTests(WebAppFixture fixture)
+    {
+        _fixture = fixture;
+    }
 
     private static QueryResponse Deserialize(string content)
     {

@@ -28,19 +28,17 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices;
 /// Verifies the GeoServices metadata endpoints accept the default parameters
 /// ArcGIS Pro / arcpy append when resolving a FeatureServer by URL.
 /// </summary>
-[Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
-public sealed class MetadataClientParameterTests : IAsyncLifetime
+[Collection("Database")]
+public sealed class MetadataClientParameterTests : IClassFixture<WebAppFixture>
 {
     private const string TestServiceId = "test";
     private const int TestLayerId = 0;
     private const string ArcGisProMetadataParameters = "returnFieldGroups=true&returnPbfFeatureEncodings=true&returnAdvancedSymbols=true";
 
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture;
 
-    public async Task InitializeAsync() => await _fixture.InitializeAsync();
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public MetadataClientParameterTests(WebAppFixture fixture) => _fixture = fixture;
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]

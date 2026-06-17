@@ -11,18 +11,16 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-[Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
-public class MvtTileErrorHandlingTests : IAsyncLifetime
+[Collection("Database")]
+public class MvtTileErrorHandlingTests : IClassFixture<WebAppFixture>
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture;
 
-    public async Task InitializeAsync()
+    public MvtTileErrorHandlingTests(WebAppFixture fixture)
     {
-        await _fixture.InitializeAsync();
+        _fixture = fixture;
     }
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [Fact]
     public async Task GetTile_InvalidZoomBelowMinimum_ReturnsGeoServicesErrorFormat()

@@ -10,15 +10,16 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-[Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
-public sealed class FeatureServerServiceQueryTests : IAsyncLifetime
+[Collection("Database")]
+public sealed class FeatureServerServiceQueryTests : IClassFixture<WebAppFixture>
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture;
 
-    public async Task InitializeAsync() => await _fixture.InitializeAsync();
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public FeatureServerServiceQueryTests(WebAppFixture fixture)
+    {
+        _fixture = fixture;
+    }
 
     [IntegrationTest]
     [Operation(Operations.Query)]

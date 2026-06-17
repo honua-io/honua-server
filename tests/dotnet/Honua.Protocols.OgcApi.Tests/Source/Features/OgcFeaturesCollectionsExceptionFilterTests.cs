@@ -10,22 +10,16 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 
-[Collection("Database")]
 [Protocol(TestProtocols.OgcApiFeatures)]
-public sealed class OgcFeaturesCollectionsExceptionFilterTests : IAsyncLifetime
+[Collection("Database")]
+public sealed class OgcFeaturesCollectionsExceptionFilterTests : IClassFixture<OgcFeaturesCollectionsExceptionFilterTestsFixture>
 {
     private readonly WebAppFixture _fixture;
 
-    public OgcFeaturesCollectionsExceptionFilterTests()
+    public OgcFeaturesCollectionsExceptionFilterTests(OgcFeaturesCollectionsExceptionFilterTestsFixture fixture)
     {
-        _fixture = new WebAppFixture()
-            .ReplaceService<IMetadataV2GraphProvider>(
-                new ThrowingMetadataV2GraphProvider(() => new ArgumentException("Invalid Parse failure")));
+        _fixture = fixture.App;
     }
-
-    public Task InitializeAsync() => _fixture.InitializeAsync();
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [Fact]
     [Operation(Operations.Query)]
@@ -51,7 +45,7 @@ public sealed class OgcFeaturesCollectionsExceptionFilterTests : IAsyncLifetime
         payload.Should().NotContain("Invalid Parse failure");
     }
 
-    private sealed class ThrowingMetadataV2GraphProvider(Func<Exception> exceptionFactory) : IMetadataV2GraphProvider
+    internal sealed class ThrowingMetadataV2GraphProvider(Func<Exception> exceptionFactory) : IMetadataV2GraphProvider
     {
         public ValueTask<MetadataV2GraphSnapshot> GetCurrentAsync(CancellationToken cancellationToken = default)
             => new(Task.FromException<MetadataV2GraphSnapshot>(exceptionFactory()));
@@ -59,4 +53,16 @@ public sealed class OgcFeaturesCollectionsExceptionFilterTests : IAsyncLifetime
         public ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(long revision, CancellationToken cancellationToken = default)
             => new(Task.FromException<MetadataV2GraphSnapshot?>(exceptionFactory()));
     }
+}
+
+public sealed class OgcFeaturesCollectionsExceptionFilterTestsFixture : IAsyncLifetime
+{
+    public WebAppFixture App { get; } = new WebAppFixture()
+        .ReplaceService<IMetadataV2GraphProvider>(
+            new OgcFeaturesCollectionsExceptionFilterTests.ThrowingMetadataV2GraphProvider(
+                () => new ArgumentException("Invalid Parse failure")));
+
+    public Task InitializeAsync() => App.InitializeAsync();
+
+    public Task DisposeAsync() => App.DisposeAsync();
 }

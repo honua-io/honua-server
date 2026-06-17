@@ -721,6 +721,14 @@ public sealed class FieldCollectionSyncEndpointsTests : IAsyncLifetime
         var featureId = $"feat-{Guid.NewGuid():N}";
         var layerId = 160;
 
+        // The push idempotency key (and its advisory lock) is scoped by
+        // (client_id, change_id). The loser HTTP push sends no X-Honua-Client-Id
+        // header, so ResolveClientId falls back to the authenticated principal
+        // name, which the API-key handler emits as "admin". The holder must stage
+        // its row and take its advisory lock under the SAME client scope or the
+        // loser would neither block on the lock nor match the staged row.
+        const string clientId = "admin";
+
         // The store persists FieldCollectionPushResult via the source-generated
         // JSON context with JsonSerializerDefaults.General (PascalCase property
         // names, numeric enum values). Match that on-disk shape so the loser's
@@ -747,25 +755,26 @@ public sealed class FieldCollectionSyncEndpointsTests : IAsyncLifetime
         await using var holderTransaction = await holderConnection.BeginTransactionAsync(IsolationLevel.ReadCommitted);
 
         await using (var lockCmd = new NpgsqlCommand(
-            "SELECT pg_advisory_xact_lock(@namespace, hashtext(@change_id))",
+            "SELECT pg_advisory_xact_lock(@namespace, hashtext(@change_lock_key))",
             holderConnection,
             holderTransaction))
         {
             lockCmd.Parameters.AddWithValue("namespace", NpgsqlDbType.Integer, FieldCollectionPushLockNamespace);
-            lockCmd.Parameters.AddWithValue("change_id", NpgsqlDbType.Text, changeId);
+            lockCmd.Parameters.AddWithValue("change_lock_key", NpgsqlDbType.Text, $"{clientId}:{changeId}");
             _ = await lockCmd.ExecuteScalarAsync();
         }
 
         await using (var insertCmd = new NpgsqlCommand(
             """
             INSERT INTO honua.fieldcollection_pushed_changes (
-                change_id, feature_id, layer_id, operation, outcome, response_payload, pushed_at)
+                client_id, change_id, feature_id, layer_id, operation, outcome, response_payload, pushed_at)
             VALUES (
-                @change_id, @feature_id, @layer_id, 1, 1, @payload::jsonb, now())
+                @client_id, @change_id, @feature_id, @layer_id, 1, 1, @payload::jsonb, now())
             """,
             holderConnection,
             holderTransaction))
         {
+            insertCmd.Parameters.AddWithValue("client_id", NpgsqlDbType.Text, clientId);
             insertCmd.Parameters.AddWithValue("change_id", NpgsqlDbType.Text, changeId);
             insertCmd.Parameters.AddWithValue("feature_id", NpgsqlDbType.Text, featureId);
             insertCmd.Parameters.AddWithValue("layer_id", NpgsqlDbType.Integer, layerId);

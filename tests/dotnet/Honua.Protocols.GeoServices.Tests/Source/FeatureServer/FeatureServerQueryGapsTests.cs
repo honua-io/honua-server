@@ -16,15 +16,16 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 /// certification matrix: <c>returnExtentOnly</c>, point + <c>distance</c>/<c>units</c>
 /// spatial buffering, and the <c>sqlFormat</c> parameter.
 /// </summary>
-[Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
-public sealed class FeatureServerQueryGapsTests : IAsyncLifetime
+[Collection("Database")]
+public sealed class FeatureServerQueryGapsTests : IClassFixture<WebAppFixture>
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture;
 
-    public async Task InitializeAsync() => await _fixture.InitializeAsync();
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public FeatureServerQueryGapsTests(WebAppFixture fixture)
+    {
+        _fixture = fixture;
+    }
 
     // Gap 1: returnExtentOnly must return the bounding envelope of matching features
     // plus a count, rather than 400-ing.

@@ -15,7 +15,7 @@ namespace Honua.Postgres.Tests.Features.FeatureStore;
 public sealed class FeatureCacheManagerTests
 {
     [Fact]
-    public void InvalidateLayerCache_RemovesLayerAndSchemaScopedEntries()
+    public void InvalidateLayerCache_RemovesOnlyLayerScopedEntry()
     {
         var layerSridCache = GetField<ConcurrentDictionary<(string Identity, int LayerId), LayerSridCacheEntry>>("_layerSridCache");
         var geometryStorageCache = GetField<ConcurrentDictionary<string, int>>("_geometryStorageTypeCache");
@@ -39,8 +39,11 @@ public sealed class FeatureCacheManagerTests
             manager.InvalidateLayerCache(12);
 
             layerSridCache.ContainsKey(("tenant_a", 12)).Should().BeFalse();
-            geometryStorageCache.ContainsKey("tenant_a").Should().BeFalse();
-            layerCatalogCache.ContainsKey("tenant_a").Should().BeFalse();
+
+            // Schema-scoped caches reflect schema/DDL state, not per-layer row state, so a
+            // single-layer invalidation must leave them intact for the rest of the schema.
+            geometryStorageCache.ContainsKey("tenant_a").Should().BeTrue();
+            layerCatalogCache.ContainsKey("tenant_a").Should().BeTrue();
         }
         finally
         {

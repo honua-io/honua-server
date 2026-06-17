@@ -259,18 +259,31 @@ public class ImageServerExportHandlerTests
 
     [UnitTest]
     [Operation(Operations.Export)]
-    public async Task ExportImageAsync_WithRenderingRule_ReturnsNotImplemented()
+    public async Task ExportImageAsync_WithIdentityRenderingRule_ExportsNoOp()
     {
-        SetupLayerAndRasters();
+        // An Identity-only renderingRule is a documented no-op that the raster function
+        // planner explicitly supports, so export proceeds with no stretch/colormap/clip/bands.
+        SetupSuccessfulExport();
+        RasterQuery? capturedQuery = null;
+        _rasterStore.ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                capturedQuery = callInfo.ArgAt<RasterQuery>(2);
+                return CreateTestRasterResult();
+            });
 
         var context = CreateImageServerContext();
         var request = CreateRequest(renderingRule: "{\"rasterFunction\":\"Identity\"}");
         var result = await _handler.ExportImageAsync(context, 1, request);
-        await result.ExecuteAsync(context);
 
-        context.Response.StatusCode.Should().Be(StatusCodes.Status501NotImplemented);
-        await _rasterStore.DidNotReceive()
+        result.Should().BeOfType<JsonHttpResult<ExportImageResponse>>();
+        await _rasterStore.Received()
             .ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>());
+        capturedQuery.Should().NotBeNull();
+        capturedQuery!.Value.Stretch.Should().BeNull();
+        capturedQuery.Value.Colormap.Should().BeNull();
+        capturedQuery.Value.RenderingClip.Should().BeNull();
+        capturedQuery.Value.Bands.Should().BeNull();
     }
 
     [UnitTest]
@@ -653,10 +666,12 @@ public class ImageServerExportHandlerTests
 
         var jsonResult = result as JsonHttpResult<ExportImageResponse>;
         jsonResult.Should().NotBeNull();
-        jsonResult!.Value!.Extent.XMin.Should().Be(-180);
-        jsonResult.Value.Extent.YMin.Should().Be(-90);
-        jsonResult.Value.Extent.XMax.Should().Be(180);
-        jsonResult.Value.Extent.YMax.Should().Be(90);
+        var extent = jsonResult!.Value!.Extent;
+        extent.Should().NotBeNull();
+        extent!.XMin.Should().Be(-180);
+        extent.YMin.Should().Be(-90);
+        extent.XMax.Should().Be(180);
+        extent.YMax.Should().Be(90);
     }
 
     [UnitTest]
@@ -708,11 +723,13 @@ public class ImageServerExportHandlerTests
 
         var jsonResult = result as JsonHttpResult<ExportImageResponse>;
         jsonResult.Should().NotBeNull();
-        jsonResult!.Value!.Extent.XMin.Should().Be(-1000);
-        jsonResult.Value.Extent.YMin.Should().Be(-500);
-        jsonResult.Value.Extent.XMax.Should().Be(1000);
-        jsonResult.Value.Extent.YMax.Should().Be(500);
-        jsonResult.Value.Extent.SpatialReference.Wkid.Should().Be(3857);
+        var extent = jsonResult!.Value!.Extent;
+        extent.Should().NotBeNull();
+        extent!.XMin.Should().Be(-1000);
+        extent.YMin.Should().Be(-500);
+        extent.XMax.Should().Be(1000);
+        extent.YMax.Should().Be(500);
+        extent.SpatialReference.Wkid.Should().Be(3857);
 
         await _rasterStore.DidNotReceive()
             .GetExtentAsync(1, 100, Arg.Any<CancellationToken>());

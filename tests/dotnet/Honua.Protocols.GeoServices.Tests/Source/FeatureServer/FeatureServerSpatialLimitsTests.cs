@@ -10,20 +10,30 @@ using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-[Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
-public sealed class FeatureServerSpatialLimitsTests : IAsyncLifetime
+[Collection("Database")]
+public sealed class FeatureServerSpatialLimitsTests : IClassFixture<FeatureServerSpatialLimitsTests.Fixture>
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture()
-        .ConfigureWebHost(builder => builder.ConfigureAppConfiguration((_, configBuilder) =>
-            configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["Limits:Query:MaxBboxAreaSqKm"] = "10"
-            })));
+    public sealed class Fixture : IAsyncLifetime
+    {
+        public WebAppFixture App { get; } = new WebAppFixture()
+            .ConfigureWebHost(builder => builder.ConfigureAppConfiguration((_, configBuilder) =>
+                configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Limits:Query:MaxBboxAreaSqKm"] = "10"
+                })));
 
-    public async Task InitializeAsync() => await _fixture.InitializeAsync();
+        public Task InitializeAsync() => App.InitializeAsync();
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+        public Task DisposeAsync() => App.DisposeAsync();
+    }
+
+    private readonly WebAppFixture _fixture;
+
+    public FeatureServerSpatialLimitsTests(Fixture fixture)
+    {
+        _fixture = fixture.App;
+    }
 
     [IntegrationTest]
     [Operation(Operations.Query)]
