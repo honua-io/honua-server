@@ -93,7 +93,8 @@ internal static class ServiceCollectionExtensions
                 provider.GetRequiredService<ObjectPool<Dictionary<string, object?>>>(),
                 provider.GetService<IConnectionEncryptionService>(),
                 provider.GetService<IFilterExpressionService>(),
-                provider.GetService<IMetadataV2GraphProvider>()));
+                provider.GetService<IMetadataV2GraphProvider>(),
+                provider.GetService<ILogger<PostgresStorageMappedFeatureReader>>()));
 
         // Register segregated interfaces
         services.AddScoped<IFeatureDataProvider>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());

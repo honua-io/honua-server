@@ -21,27 +21,40 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 /// the test feature: <c>test1.txt</c> (text/plain, 17 bytes, keywords "test,document")
 /// and <c>test2.jpg</c> (image/jpeg, 4 bytes, keywords "test,image").
 /// </summary>
-[Collection("Database")]
-[Protocol(TestProtocols.FeatureServer)]
-public sealed class FeatureServerQueryAttachmentsFilterTests : IAsyncLifetime
+public sealed class FeatureServerQueryAttachmentsFilterFixture : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
-    private const string TestServiceId = "test";
     private const int TestLayerId = 0;
     private const long TestFeatureId = 1;
 
+    public WebAppFixture App { get; } = new();
+
     public async Task InitializeAsync()
     {
-        await _fixture.InitializeAsync();
-        var storage = _fixture.GetService<ICloudFileStorage>();
-        await AttachmentTestData.SeedAsync(_fixture.Postgres, storage, TestLayerId, TestFeatureId);
+        await App.InitializeAsync();
+        var storage = App.GetService<ICloudFileStorage>();
+        await AttachmentTestData.SeedAsync(App.Postgres, storage, TestLayerId, TestFeatureId);
     }
 
     public async Task DisposeAsync()
     {
-        var storage = _fixture.GetService<ICloudFileStorage>();
-        await AttachmentTestData.CleanupAsync(_fixture.Postgres, storage, TestLayerId, TestFeatureId);
-        await _fixture.DisposeAsync();
+        var storage = App.GetService<ICloudFileStorage>();
+        await AttachmentTestData.CleanupAsync(App.Postgres, storage, TestLayerId, TestFeatureId);
+        await App.DisposeAsync();
+    }
+}
+
+[Protocol(TestProtocols.FeatureServer)]
+[Collection("Database")]
+public sealed class FeatureServerQueryAttachmentsFilterTests : IClassFixture<FeatureServerQueryAttachmentsFilterFixture>
+{
+    private readonly WebAppFixture _fixture;
+    private const string TestServiceId = "test";
+    private const int TestLayerId = 0;
+    private const long TestFeatureId = 1;
+
+    public FeatureServerQueryAttachmentsFilterTests(FeatureServerQueryAttachmentsFilterFixture wrapper)
+    {
+        _fixture = wrapper.App;
     }
 
     private async Task<AttachmentQueryResponse> QueryAsync(string queryString)

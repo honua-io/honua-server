@@ -195,7 +195,7 @@ re-applying.
 
 | Field         | Type    | Required | Notes |
 |---------------|---------|----------|-------|
-| `changeId`    | string  | yes      | Mobile-assigned UUID; the server uses this as the idempotency key. |
+| `changeId`    | string  | yes      | Mobile-assigned UUID; the server uses `(clientId, changeId)` as the idempotency key, where `clientId` is the resolved `X-Honua-Client-Id` (or principal name). |
 | `featureId`   | string  | yes      | Mobile-assigned feature identifier. |
 | `layerId`     | integer | yes      | Layer the feature belongs to. |
 | `operation`   | string  | yes      | `insert`, `update`, or `delete`. |
@@ -262,17 +262,22 @@ correcting the request.
 ## Idempotency
 
 The server records a row in `honua.fieldcollection_pushed_changes` keyed by
-`changeId` for every push that produced a deterministic outcome (applied,
-conflict, or rejected). Repeating the push with the same `changeId`
-replays the stored response payload without re-applying. Mobile clients
-should always reuse the same `changeId` when retrying after network or
-server failure.
+`(clientId, changeId)` for every push that produced a deterministic outcome
+(applied, conflict, or rejected). Repeating the push with the same
+`(clientId, changeId)` replays the stored response payload without
+re-applying. Mobile clients should always reuse the same `changeId` when
+retrying after network or server failure. The idempotency key is scoped by
+the resolved client id (the `X-Honua-Client-Id` header, falling back to the
+authenticated principal name) so that two field devices sharing one API key
+can mint a colliding `changeId` without the second device's edit being
+silently dropped as a duplicate of the first.
 
-Concurrent pushes that share a `changeId` are serialized inside the server
-with a transaction-scoped advisory lock keyed on `changeId`. The first
-request commits the idempotency record; the second waits for that
-commit and then returns the stored response. Callers never observe a
-unique-violation surfaced as a 5xx for duplicate `changeId`.
+Concurrent pushes that share a `(clientId, changeId)` are serialized inside
+the server with a transaction-scoped advisory lock keyed on
+`(clientId, changeId)`. The first request commits the idempotency record;
+the second waits for that commit and then returns the stored response.
+Callers never observe a unique-violation surfaced as a 5xx for a duplicate
+`(clientId, changeId)`.
 
 Concurrent pushes that target the same `(featureId, layerId)` with
 distinct `changeId` values are also serialized so exactly one push

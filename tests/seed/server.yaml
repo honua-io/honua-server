@@ -1075,13 +1075,15 @@ sql:
   - "CREATE INDEX IF NOT EXISTS idx_fieldcollection_changes_feature ON honua.fieldcollection_changes(feature_id, layer_id, generation);"
   - |
       CREATE TABLE IF NOT EXISTS honua.fieldcollection_pushed_changes (
-          change_id        TEXT        NOT NULL PRIMARY KEY,
+          client_id        TEXT        NOT NULL DEFAULT 'default',
+          change_id        TEXT        NOT NULL,
           feature_id       TEXT        NOT NULL,
           layer_id         INT         NOT NULL,
           operation        SMALLINT    NOT NULL,
           outcome          SMALLINT    NOT NULL,
           response_payload JSONB       NOT NULL,
           pushed_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+          PRIMARY KEY (client_id, change_id),
           CONSTRAINT fieldcollection_pushed_changes_valid_operation CHECK (operation IN (1, 2, 3)),
           CONSTRAINT fieldcollection_pushed_changes_valid_outcome CHECK (outcome IN (1, 2, 3))
       );

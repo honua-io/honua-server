@@ -558,6 +558,7 @@ internal static partial class GeoServerImportEndpoints
     private static ILogger<GeoServerImportEndpointsLog> GetLogger(HttpContext context) =>
         context.RequestServices.GetRequiredService<ILogger<GeoServerImportEndpointsLog>>();
 
+    /// <summary>Log category marker for GeoServer import endpoint operations.</summary>
     internal sealed class GeoServerImportEndpointsLog;
 
     private static partial class Log

@@ -20,6 +20,13 @@ internal static class ConsoleContentEndpoints
     private const int DefaultProvenanceDepth = 5;
 
     /// <summary>
+    /// Defence-in-depth ceiling on the list/search page size. Mirrors the
+    /// field-collection pull cap (<c>MaxPullLimit = 1_000</c>) so an admin
+    /// caller cannot request an unbounded <c>.Take(limit)</c> page.
+    /// </summary>
+    private const int MaxListLimit = 1_000;
+
+    /// <summary>
     /// Log category for Console content endpoints.
     /// </summary>
     internal sealed class ConsoleContentEndpointsLog;
@@ -106,7 +113,7 @@ internal static class ConsoleContentEndpoints
                 OwnerId = string.IsNullOrWhiteSpace(owner) ? null : owner,
                 Namespace = string.IsNullOrWhiteSpace(@namespace) ? null : @namespace,
                 Cursor = cursor,
-                Limit = limit,
+                Limit = Math.Min(limit, MaxListLimit),
                 SearchTerm = string.IsNullOrWhiteSpace(q) ? null : q,
             };
 

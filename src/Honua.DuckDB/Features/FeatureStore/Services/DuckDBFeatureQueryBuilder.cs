@@ -481,6 +481,13 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         string binExpr;
         if (binDefinition.Type == BinType.FixedInterval && binDefinition.IntervalSize.HasValue)
         {
+            var intervalSize = binDefinition.IntervalSize.Value;
+            if (!double.IsFinite(intervalSize) || intervalSize <= 0)
+            {
+                throw new ArgumentException(
+                    $"Invalid IntervalSize: {intervalSize.ToString(CultureInfo.InvariantCulture)}. IntervalSize must be a finite, positive value.");
+            }
+
             var start = binDefinition.IntervalStart ?? 0;
             binExpr = $"FLOOR(({fieldExpr} - {start.ToString(CultureInfo.InvariantCulture)}) / {binDefinition.IntervalSize.Value.ToString(CultureInfo.InvariantCulture)}) * {binDefinition.IntervalSize.Value.ToString(CultureInfo.InvariantCulture)} + {start.ToString(CultureInfo.InvariantCulture)}";
         }
@@ -834,8 +841,16 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         return false;
     }
 
+    // The bound parameter is a naive DateTime carrying UTC wall-clock components
+    // (filter.Start/End .UtcDateTime, Kind=Unspecified). DuckDB.NET binds it as a
+    // naive TIMESTAMP, and casting a naive TIMESTAMP straight to TIMESTAMPTZ would
+    // reinterpret those components in the session TimeZone — shifting the [start, end]
+    // window by the session offset on non-UTC sessions. "::TIMESTAMP AT TIME ZONE 'UTC'"
+    // pins the interpretation to UTC, producing a TIMESTAMPTZ that compares correctly
+    // against the TIMESTAMPTZ column regardless of session zone (mirrors the Postgres
+    // timestamptz path). DATE has no zone, so it is bound directly.
     private static string TemporalParameterCast(TemporalPropertyType propertyType)
-        => propertyType == TemporalPropertyType.Date ? "::DATE" : "::TIMESTAMPTZ";
+        => propertyType == TemporalPropertyType.Date ? "::DATE" : "::TIMESTAMP AT TIME ZONE 'UTC'";
 
     private static void AppendSpatialFilter(
         StringBuilder sb,

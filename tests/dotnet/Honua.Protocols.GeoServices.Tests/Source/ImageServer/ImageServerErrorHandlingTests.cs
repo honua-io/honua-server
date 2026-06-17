@@ -16,14 +16,16 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 /// </summary>
 [Collection("Database.GeoServicesRaster")]
 [Protocol(TestProtocols.ImageServer)]
-public class ImageServerErrorHandlingTests : IAsyncLifetime
+public class ImageServerErrorHandlingTests : IClassFixture<WebAppFixture>
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture;
     private const int TestLayerId = 0;
     private const int NonExistentLayerId = 99999;
 
-    public async Task InitializeAsync() => await _fixture.InitializeAsync();
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public ImageServerErrorHandlingTests(WebAppFixture fixture)
+    {
+        _fixture = fixture;
+    }
 
     #region Format Parameter Validation
 

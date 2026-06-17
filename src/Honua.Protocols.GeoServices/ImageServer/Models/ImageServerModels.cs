@@ -679,8 +679,12 @@ public sealed class ExportImageResponse
     [JsonPropertyName("height")]
     public required int Height { get; init; }
 
+    // Esri echoes the export extent here. When no real extent can be resolved we omit the
+    // property rather than fabricate a 1×1 box, so clients can tell a genuine extent apart
+    // from a placeholder.
     [JsonPropertyName("extent")]
-    public required ImageServerExtent Extent { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ImageServerExtent? Extent { get; init; }
 
     [JsonPropertyName("scale")]
     public double? Scale { get; init; }

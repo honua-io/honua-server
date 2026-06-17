@@ -102,8 +102,11 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
 
         // Probe one extra row when a Limit is requested so HasMoreResults is reported correctly
         // without paying for a separate COUNT query. The probe row is trimmed before returning.
+        // Guard against int.MaxValue: requestedLimit.Value + 1 would overflow to int.MinValue and
+        // emit a negative FETCH NEXT (mirrors MySqlFeatureStore.QueryPageAsync). At int.MaxValue
+        // there can be no further page, so skip the probe and use the limit as-is.
         var requestedLimit = query.Limit;
-        var probeQuery = requestedLimit.HasValue
+        var probeQuery = requestedLimit.HasValue && requestedLimit.Value < int.MaxValue
             ? query with { Limit = requestedLimit.Value + 1 }
             : query;
 

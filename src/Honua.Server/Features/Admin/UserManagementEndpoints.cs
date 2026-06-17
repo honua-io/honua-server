@@ -18,6 +18,13 @@ namespace Honua.Server.Features.Admin;
 internal static partial class UserManagementEndpoints
 {
     /// <summary>
+    /// Defence-in-depth ceiling on the user list page size. Mirrors the
+    /// field-collection pull cap (<c>MaxPullLimit = 1_000</c>) so an admin
+    /// caller cannot request an unbounded <c>.Take(limit)</c> page.
+    /// </summary>
+    private const int MaxListLimit = 1_000;
+
+    /// <summary>
     /// Log category for user management endpoints.
     /// </summary>
     internal sealed class UserManagementEndpointsLog;
@@ -104,7 +111,7 @@ internal static partial class UserManagementEndpoints
                 ProvisioningSource = source,
                 Role = role,
                 IsActive = active,
-                Limit = limit,
+                Limit = Math.Min(limit, MaxListLimit),
                 Offset = offset,
             };
 

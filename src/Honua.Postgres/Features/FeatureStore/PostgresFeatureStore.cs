@@ -16,6 +16,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Postgres.Features.FeatureStore.Services;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.ObjectPool;
 using CoreGeometryStorageType = Honua.Core.Features.FeatureStore.Abstractions.GeometryStorageType;
 
@@ -47,6 +48,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
     private readonly ObjectPool<Dictionary<string, object?>>? _dictionaryPool;
     private readonly IConnectionEncryptionService? _connectionEncryptionService;
     private readonly IFilterExpressionService? _filterExpressionService;
+    private readonly ILogger<PostgresStorageMappedFeatureReader>? _storageMappedReaderLogger;
 
     public PostgresFeatureStoreRefactored(
         IFeatureQueryBuilder queryBuilder,
@@ -71,7 +73,8 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         ObjectPool<Dictionary<string, object?>>? dictionaryPool,
         IConnectionEncryptionService? connectionEncryptionService,
         IFilterExpressionService? filterExpressionService = null,
-        IMetadataV2GraphProvider? v2Provider = null)
+        IMetadataV2GraphProvider? v2Provider = null,
+        ILogger<PostgresStorageMappedFeatureReader>? storageMappedReaderLogger = null)
     {
         _queryBuilder = queryBuilder ?? throw new ArgumentNullException(nameof(queryBuilder));
         _dataAccess = dataAccess ?? throw new ArgumentNullException(nameof(dataAccess));
@@ -81,6 +84,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         _dictionaryPool = dictionaryPool;
         _connectionEncryptionService = connectionEncryptionService;
         _filterExpressionService = filterExpressionService;
+        _storageMappedReaderLogger = storageMappedReaderLogger;
     }
 
     public string ProviderName => DataProviderNames.Postgis;
@@ -106,7 +110,8 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
             binding.Resource,
             binding.StorageMapping,
             binding.Connection,
-            _connectionEncryptionService);
+            _connectionEncryptionService,
+            _storageMappedReaderLogger);
     }
 
     #region Core CRUD Operations

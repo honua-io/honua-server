@@ -635,10 +635,15 @@ internal static partial class WmsRequestHandlers
         // Keep parsing strict on axis order and min/max ordering, but allow
         // out-of-range geographic coordinates so GetMap can return blank
         // imagery and GetFeatureInfo can emit a targeted CRS-range exception.
+        // Pass the resolved CRS's IsGeographic flag (matching the WFS bbox
+        // path) so a dateline-crossing geographic bbox (minX > maxX) is accepted
+        // rather than rejected as a min/max ordering error — CreateBboxSpatialFilter
+        // already splits a wrapped extent into a multi-polygon and the render
+        // transform handles the longitude wrap.
         if (!RasterParsingHelpers.TryParseBoundingBox(
                 bbox,
                 ResolveWmsBboxAxisOrder(version, crsDefinition.AxisOrder),
-                isGeographic: false,
+                crsDefinition.IsGeographic,
                 out var minX,
                 out var minY,
                 out var maxX,
@@ -733,6 +738,37 @@ internal static partial class WmsRequestHandlers
                    Math.Abs(extent.MaxX) <= WmsWebMercatorMax &&
                    Math.Abs(extent.MinY) <= WmsWebMercatorMax &&
                    Math.Abs(extent.MaxY) <= WmsWebMercatorMax;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Returns true when the requested bbox intersects the CRS's valid bounds at
+    /// all (non-empty intersection). Unlike <see cref="IsExtentWithinCrsBounds"/>,
+    /// a partial overlap counts as intersecting: GetMap renders the in-bounds
+    /// portion and paints the out-of-bounds margin as background, so only a fully
+    /// disjoint bbox should short-circuit to a blank image. For CRSes without
+    /// declared bounds the bbox is always considered to intersect.
+    /// </summary>
+    private static bool DoesExtentIntersectCrsBounds(SkiaMapRenderer.RenderExtent extent, string normalizedCrs)
+    {
+        if (string.Equals(normalizedCrs, "CRS:84", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(normalizedCrs, "EPSG:4326", StringComparison.OrdinalIgnoreCase))
+        {
+            // An antimeridian-crossing geographic bbox (MinX > MaxX) wraps the
+            // dateline and therefore always overlaps the valid longitude range,
+            // so only the latitude axis needs an intersection test.
+            var longitudeIntersects = extent.MinX > extent.MaxX ||
+                                      (extent.MinX <= 180 && extent.MaxX >= -180);
+            var latitudeIntersects = extent.MinY <= 90 && extent.MaxY >= -90;
+            return longitudeIntersects && latitudeIntersects;
+        }
+
+        if (string.Equals(normalizedCrs, "EPSG:3857", StringComparison.OrdinalIgnoreCase))
+        {
+            return extent.MinX <= WmsWebMercatorMax && extent.MaxX >= -WmsWebMercatorMax &&
+                   extent.MinY <= WmsWebMercatorMax && extent.MaxY >= -WmsWebMercatorMax;
         }
 
         return true;

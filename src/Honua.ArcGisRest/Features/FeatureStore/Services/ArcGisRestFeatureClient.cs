@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Net.Http.Json;
 using Honua.ArcGisRest.Features.FeatureStore.Models;
 
 namespace Honua.ArcGisRest.Features.FeatureStore.Services;
@@ -50,6 +49,19 @@ internal sealed class ArcGisRestFeatureClient : IArcGisRestFeatureClient
     /// </summary>
     private const string EsriAuthorizationHeader = "X-Esri-Authorization";
 
+    /// <summary>
+    /// Maximum number of bytes the federated client will read from an upstream
+    /// ArcGIS response body (64 MiB). The module's threat model treats the remote
+    /// service as potentially hostile, so the body is read through a
+    /// length-limited stream that fails fast once this bound is crossed. This
+    /// keeps a malicious or compromised endpoint from driving unbounded memory
+    /// allocation during deserialization (<see cref="HttpClient.MaxResponseContentBufferSize"/>
+    /// does not apply to streamed reads via <see cref="HttpCompletionOption.ResponseHeadersRead"/>
+    /// + <c>JsonSerializer.DeserializeAsync</c>), and it is the real cap that bounds
+    /// the per-buffer WKB limits in <see cref="EsriJsonWkbWriter"/>.
+    /// </summary>
+    internal const long MaxResponseContentBytes = 64L * 1024 * 1024;
+
     private readonly HttpClient _httpClient;
 
     public ArcGisRestFeatureClient(HttpClient httpClient)
@@ -89,9 +101,108 @@ internal sealed class ArcGisRestFeatureClient : IArcGisRestFeatureClient
 
         response.EnsureSuccessStatusCode();
 
-        var result = await response.Content.ReadFromJsonAsync(typeInfo, cancellationToken).ConfigureAwait(false);
+        // Defense against a hostile/compromised upstream: reject any body whose
+        // advertised Content-Length already exceeds the cap before reading a byte,
+        // then read through a length-limited stream so a missing or lying
+        // Content-Length still cannot drive unbounded allocation during
+        // deserialization. ResponseHeadersRead + streamed deserialization means
+        // HttpClient.MaxResponseContentBufferSize does not apply here.
+        var declaredLength = response.Content.Headers.ContentLength;
+        if (declaredLength is > MaxResponseContentBytes)
+        {
+            throw new InvalidOperationException(
+                $"ArcGIS REST service response of {declaredLength} bytes exceeds the {MaxResponseContentBytes}-byte limit.");
+        }
+
+        await using var contentStream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        await using var boundedStream = new LengthLimitedStream(contentStream, MaxResponseContentBytes);
+
+        var result = await System.Text.Json.JsonSerializer.DeserializeAsync(boundedStream, typeInfo, cancellationToken).ConfigureAwait(false);
         return result ?? throw new InvalidOperationException(
             "ArcGIS REST service returned an empty response body.");
+    }
+
+    /// <summary>
+    /// Read-only wrapper that fails fast once more than <c>maxBytes</c> have been
+    /// read from the underlying stream, bounding the memory a hostile upstream can
+    /// force the JSON deserializer to allocate from a streamed response body.
+    /// </summary>
+    private sealed class LengthLimitedStream : Stream
+    {
+        private readonly Stream _inner;
+        private readonly long _maxBytes;
+        private long _bytesRead;
+
+        public LengthLimitedStream(Stream inner, long maxBytes)
+        {
+            _inner = inner;
+            _maxBytes = maxBytes;
+        }
+
+        public override bool CanRead => true;
+
+        public override bool CanSeek => false;
+
+        public override bool CanWrite => false;
+
+        public override long Length => throw new NotSupportedException();
+
+        public override long Position
+        {
+            get => _bytesRead;
+            set => throw new NotSupportedException();
+        }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            var read = _inner.Read(buffer, offset, count);
+            Track(read);
+            return read;
+        }
+
+        public override int Read(Span<byte> buffer)
+        {
+            var read = _inner.Read(buffer);
+            Track(read);
+            return read;
+        }
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            var read = await _inner.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+            Track(read);
+            return read;
+        }
+
+        public override async Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+        {
+            var read = await _inner.ReadAsync(buffer.AsMemory(offset, count), cancellationToken).ConfigureAwait(false);
+            Track(read);
+            return read;
+        }
+
+        public override void Flush() => throw new NotSupportedException();
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        private void Track(int read)
+        {
+            if (read <= 0)
+            {
+                return;
+            }
+
+            _bytesRead += read;
+            if (_bytesRead > _maxBytes)
+            {
+                throw new InvalidOperationException(
+                    $"ArcGIS REST service response exceeds the {_maxBytes}-byte limit.");
+            }
+        }
     }
 }
 

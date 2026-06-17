@@ -133,8 +133,15 @@ COPY --from=build /app /var/task
 # The Debian-based dotnet runtime-deps base already ships ICU, which is required
 # because Honua.Server runs with InvariantGlobalization=false (Microsoft.Data.SqlClient
 # and Oracle.ManagedDataAccess fail to connect without ICU). See honua-server#1369.
+#
+# libfontconfig1 + libfreetype6 are required by SkiaSharp.NativeAssets.Linux:
+# libSkiaSharp.so is dynamically linked against libfontconfig.so.1 / libfreetype.so.6,
+# so the first P/Invoke into Skia (any map render: MapServer export, OGC API Maps,
+# WMS GetMap) fails to dlopen the native lib and surfaces as a generic 500. The
+# runtime-deps base does not ship them. The non-Lambda images (Dockerfile,
+# Dockerfile.aot) already install fontconfig for the same reason.
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends libgssapi-krb5-2 && \
+    apt-get install -y --no-install-recommends libgssapi-krb5-2 libfontconfig1 libfreetype6 && \
     rm -rf /var/lib/apt/lists/* && \
     chmod +x /var/task/Honua.Server
 

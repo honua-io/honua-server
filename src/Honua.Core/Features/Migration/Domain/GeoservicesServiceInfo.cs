@@ -90,6 +90,13 @@ public sealed record GeoservicesLayerInfo
     public string? GeometryType { get; init; }
 
     /// <summary>
+    /// Whether the source layer advertises Z (elevation) ordinates on its geometries. When
+    /// <c>true</c> the import preserves the Z ordinate in converted geometry and creates a
+    /// Z-aware PostGIS geometry column so 3D data is not flattened to 2D.
+    /// </summary>
+    public bool HasZ { get; init; }
+
+    /// <summary>
     /// The spatial reference WKID of the layer.
     /// </summary>
     public int? SpatialReferenceWkid { get; init; }

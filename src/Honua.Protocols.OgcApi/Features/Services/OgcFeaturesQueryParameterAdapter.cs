@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
+using System.Text.RegularExpressions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Query;
@@ -177,10 +178,18 @@ internal sealed class OgcFeaturesQueryParameterAdapter(
             return left;
         }
 
+        var rightSql = RenumberSqlFragmentParameters(right.Sql, left.Parameters.Count);
         return new SqlFragment(
-            $"({left.Sql}) AND ({right.Sql})",
+            $"({left.Sql}) AND ({rightSql})",
             left.Parameters.Concat(right.Parameters).ToArray());
     }
+
+    private static string RenumberSqlFragmentParameters(string sql, int offset)
+        => Regex.Replace(
+            sql,
+            @"@p(\d+)",
+            match => "@p" + (int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture) + offset).ToString(CultureInfo.InvariantCulture),
+            RegexOptions.CultureInvariant);
 
     private static bool TryParseProperties(
         string? rawProperties,

@@ -53,9 +53,8 @@ internal static partial class ImportEndpoints
         HttpMethods.Delete,
         HttpMethods.Patch
     ];
-    internal sealed class ImportEndpointsLog
-    {
-    }
+    /// <summary>Log category marker for file import endpoint operations.</summary>
+    internal sealed class ImportEndpointsLog;
 
     /// <summary>
     /// Map file import endpoints to the web application with formal API versioning
@@ -920,7 +919,7 @@ internal static partial class ImportEndpoints
                     var fieldName = HeaderUtilities.RemoveQuotes(contentDisposition.Name).Value;
                     if (!string.IsNullOrWhiteSpace(fieldName))
                     {
-                        fields[fieldName] = await MultipartParsingHelpers.ReadSectionStringAsync(section, cancellationToken);
+                        fields[fieldName] = await MultipartParsingHelpers.ReadFormFieldStringAsync(section, cancellationToken);
                     }
                 }
             }

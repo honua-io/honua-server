@@ -41,12 +41,22 @@ while read local_ref local_sha remote_ref remote_sha; do
         exit 1
     fi
 
-    # Run pre-PR validation
-    echo -e "${YELLOW}🔍 Running pre-PR validation before push...${NC}"
-    echo "   This ensures your code passes CI checks"
+    # Run pre-PR validation.
+    #
+    # Default to the FAST tier on push: build + format + affected unit tests +
+    # architecture. The heavy Honua.Server.Tests shards and the AOT publish are
+    # deferred to CI and the merge queue (which is the trunk-protecting gate), so
+    # the push loop stays quick instead of grinding every shard locally. Run the
+    # full local gate before opening a PR with:
+    #     HONUA_PRE_PR_FAST=0 bash scripts/ci/pre-pr-check.sh    # smart (affected)
+    #     HONUA_PRE_PR_FULL=1 bash scripts/ci/pre-pr-check.sh    # everything
+    # Override per-push by exporting HONUA_PRE_PR_FAST=0 before `git push`.
+    echo -e "${YELLOW}🔍 Running FAST pre-push validation...${NC}"
+    echo "   (build + format + unit + architecture; server-test shards & AOT run in CI / the merge queue)"
+    echo "   Run 'HONUA_PRE_PR_FAST=0 bash scripts/ci/pre-pr-check.sh' for the full local gate before a PR."
     echo
 
-    if ! bash scripts/ci/pre-pr-check.sh; then
+    if ! HONUA_PRE_PR_FAST="${HONUA_PRE_PR_FAST:-1}" bash scripts/ci/pre-pr-check.sh; then
         echo
         echo -e "${RED}❌ Pre-push validation failed!${NC}"
         echo "   Your push has been rejected to prevent CI failures."

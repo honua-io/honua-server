@@ -14,11 +14,25 @@
 - [Ecosystem & SDKs](concepts/ecosystem.md)
 - [Editions & licensing](concepts/editions-and-licensing.md)
 
+## SDKs
+
+- [SDK overview](sdks/README.md)
+- .NET
+  - [Get started](sdks/dotnet/getting-started.md)
+  - [Common tasks](sdks/dotnet/common-tasks.md)
+- Python
+  - [Get started](sdks/python/getting-started.md)
+  - [Common tasks](sdks/python/common-tasks.md)
+- JavaScript / TypeScript
+  - [Get started](sdks/javascript/getting-started.md)
+  - [Common tasks](sdks/javascript/common-tasks.md)
+
 ## Guides
 
 - [All guides: I want to…](guides/README.md)
 - Publish data
   - [Import files](guides/publish/import-files.md)
+  - [Open-data area-import provisioner](guides/open-data-provisioner.md)
   - [Import from ArcGIS services](guides/publish/import-from-arcgis-services.md)
   - [Serve existing databases](guides/publish/serve-existing-databases.md)
   - [Publish layers](guides/publish/publish-layers.md)

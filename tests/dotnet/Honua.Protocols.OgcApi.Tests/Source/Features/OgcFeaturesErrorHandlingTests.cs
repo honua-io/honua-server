@@ -13,18 +13,25 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 
-[Collection("Database")]
-[Protocol(TestProtocols.OgcApiFeatures)]
-public class OgcFeaturesErrorHandlingTests : IAsyncLifetime
+public sealed class OgcFeaturesErrorHandlingTestsFixture : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+    public WebAppFixture App { get; } = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
 
-    public async Task InitializeAsync()
+    public Task InitializeAsync() => App.InitializeAsync();
+
+    public Task DisposeAsync() => App.DisposeAsync();
+}
+
+[Protocol(TestProtocols.OgcApiFeatures)]
+[Collection("Database")]
+public class OgcFeaturesErrorHandlingTests : IClassFixture<OgcFeaturesErrorHandlingTestsFixture>
+{
+    private readonly WebAppFixture _fixture;
+
+    public OgcFeaturesErrorHandlingTests(OgcFeaturesErrorHandlingTestsFixture fixture)
     {
-        await _fixture.InitializeAsync();
+        _fixture = fixture.App;
     }
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [Fact]
     [Operation(Operations.Query)]

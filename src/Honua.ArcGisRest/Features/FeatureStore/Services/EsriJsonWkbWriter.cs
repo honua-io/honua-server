@@ -35,6 +35,15 @@ internal static class EsriJsonWkbWriter
     private const uint WkbMultiLineString = 5;
     private const uint WkbMultiPolygon = 6;
 
+    // Upper bound on a single WKB buffer (256 MiB). Coordinate counts come straight
+    // from JsonElement.GetArrayLength() on an untrusted response; computing buffer
+    // sizes in long and validating against this cap turns an Int32 multiplication
+    // overflow (which would silently produce a wrong-sized/negative allocation)
+    // into a clear, fail-fast error. In practice the response-size cap enforced by
+    // ArcGisRestFeatureClient (LengthLimitedStream, MaxResponseContentBytes) keeps
+    // real payloads far below this bound.
+    private const long MaxWkbBufferBytes = 256L * 1024 * 1024;
+
     /// <summary>
     /// Converts an Esri JSON geometry element into a WKB byte array.
     /// </summary>
@@ -110,7 +119,7 @@ internal static class EsriJsonWkbWriter
 
         var count = points.GetArrayLength();
         var pointWkbSize = 1 + 4 + 16;
-        var buffer = new byte[1 + 4 + 4 + (count * pointWkbSize)];
+        var buffer = new byte[CheckedBufferSize(1 + 4 + 4, count, pointWkbSize)];
         var span = buffer.AsSpan();
 
         WriteHeader(span[..5], WkbMultiPoint);
@@ -145,7 +154,7 @@ internal static class EsriJsonWkbWriter
     private static byte[] WriteSingleLineString(JsonElement path)
     {
         var count = path.GetArrayLength();
-        var buffer = new byte[1 + 4 + 4 + (count * 16)];
+        var buffer = new byte[CheckedBufferSize(1 + 4 + 4, count, 16)];
         var span = buffer.AsSpan();
 
         WriteHeader(span[..5], WkbLineString);
@@ -168,7 +177,7 @@ internal static class EsriJsonWkbWriter
         EnsurePathsShape(paths);
 
         var lineBuffers = new List<byte[]>(paths.GetArrayLength());
-        var total = 1 + 4 + 4;
+        long total = 1 + 4 + 4;
         foreach (var path in paths.EnumerateArray())
         {
             var lineWkb = WriteSingleLineString(path);
@@ -176,7 +185,7 @@ internal static class EsriJsonWkbWriter
             total += lineWkb.Length;
         }
 
-        var buffer = new byte[total];
+        var buffer = new byte[CheckedTotalSize(total)];
         var span = buffer.AsSpan();
 
         WriteHeader(span[..5], WkbMultiLineString);
@@ -233,7 +242,7 @@ internal static class EsriJsonWkbWriter
         {
             var count = ring.GetArrayLength();
             var coords = new (double X, double Y)[count];
-            var ringBuffer = new byte[4 + (count * 16)];
+            var ringBuffer = new byte[CheckedBufferSize(4, count, 16)];
             var ringSpan = ringBuffer.AsSpan();
             BinaryPrimitives.WriteUInt32LittleEndian(ringSpan[..4], (uint)count);
             var offset = 4;
@@ -296,13 +305,13 @@ internal static class EsriJsonWkbWriter
 
     private static byte[] BuildPolygonWkb(List<byte[]> ringBuffers)
     {
-        var total = 1 + 4 + 4;
+        long total = 1 + 4 + 4;
         foreach (var rb in ringBuffers)
         {
             total += rb.Length;
         }
 
-        var buffer = new byte[total];
+        var buffer = new byte[CheckedTotalSize(total)];
         var span = buffer.AsSpan();
         WriteHeader(span[..5], WkbPolygon);
         BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(5, 4), (uint)ringBuffers.Count);
@@ -408,13 +417,13 @@ internal static class EsriJsonWkbWriter
         }
 
         // Multiple shells → emit WKB MultiPolygon.
-        var multiTotal = 1 + 4 + 4;
+        long multiTotal = 1 + 4 + 4;
         foreach (var poly in polygonBuffers)
         {
             multiTotal += poly.Length;
         }
 
-        var multiBuffer = new byte[multiTotal];
+        var multiBuffer = new byte[CheckedTotalSize(multiTotal)];
         var multiSpan = multiBuffer.AsSpan();
         WriteHeader(multiSpan[..5], WkbMultiPolygon);
         BinaryPrimitives.WriteUInt32LittleEndian(multiSpan.Slice(5, 4), (uint)polygonBuffers.Count);
@@ -469,8 +478,28 @@ internal static class EsriJsonWkbWriter
                 "ArcGIS coordinate tuple must be an array of at least two numbers ([x, y]).");
         }
 
-        x = point[0].GetDouble();
-        y = point[1].GetDouble();
+        x = ReadCoordinate(point[0], "x");
+        y = ReadCoordinate(point[1], "y");
+    }
+
+    /// <summary>
+    /// Reads a single coordinate scalar, enforcing the writer's documented
+    /// <see cref="InvalidOperationException"/> contract for malformed geometry. A
+    /// bare <see cref="JsonElement.GetDouble"/> would surface a non-numeric string
+    /// as <see cref="InvalidOperationException"/> but an out-of-range number as
+    /// <see cref="FormatException"/>; validating the value kind (and using
+    /// <see cref="JsonElement.TryGetDouble"/>) keeps every malformed coordinate on
+    /// the documented exception type.
+    /// </summary>
+    private static double ReadCoordinate(JsonElement value, string axis)
+    {
+        if (value.ValueKind != JsonValueKind.Number || !value.TryGetDouble(out var result))
+        {
+            throw new InvalidOperationException(
+                $"ArcGIS coordinate '{axis}' must be a finite JSON number.");
+        }
+
+        return result;
     }
 
     private static void EnsurePathsShape(JsonElement paths)
@@ -487,6 +516,43 @@ internal static class EsriJsonWkbWriter
         {
             throw new InvalidOperationException("ArcGIS polygon 'rings' must be a non-empty JSON array.");
         }
+    }
+
+    /// <summary>
+    /// Computes a WKB buffer length as <c>header + (count * elementSize)</c> using
+    /// 64-bit arithmetic and validates it against <see cref="MaxWkbBufferBytes"/>,
+    /// so an oversized untrusted coordinate count fails loudly instead of silently
+    /// overflowing Int32 into a wrong-sized (or negative) allocation.
+    /// </summary>
+    private static int CheckedBufferSize(int headerBytes, int count, int elementSize)
+    {
+        var total = headerBytes + ((long)count * elementSize);
+        if (count < 0 || total > MaxWkbBufferBytes)
+        {
+            throw new InvalidOperationException(
+                $"ArcGIS geometry has {count} coordinates, exceeding the supported WKB buffer size.");
+        }
+
+        return (int)total;
+    }
+
+    /// <summary>
+    /// Validates an already-computed running total (the sum of several sub-buffer
+    /// lengths for a multi-part geometry) against <see cref="MaxWkbBufferBytes"/>
+    /// before casting back to int for the final allocation. Each sub-buffer is
+    /// individually bounded by <see cref="CheckedBufferSize"/>, but the running sum
+    /// is accumulated in a long so summing many near-cap parts cannot overflow
+    /// Int32 into a wrong-sized (or negative) allocation.
+    /// </summary>
+    private static int CheckedTotalSize(long total)
+    {
+        if (total < 0 || total > MaxWkbBufferBytes)
+        {
+            throw new InvalidOperationException(
+                "ArcGIS multi-part geometry exceeds the supported WKB buffer size.");
+        }
+
+        return (int)total;
     }
 
     private static void WriteHeader(Span<byte> destination, uint wkbType)

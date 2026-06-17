@@ -112,7 +112,11 @@ internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDataba
                 await connection.DisposeAsync().ConfigureAwait(false);
             }
 
-            ReleaseOneSlot(slotAcquiredAt);
+            // The connection never served any work, so do not feed a (near-zero)
+            // lease duration into the adaptive concurrency controller — that would
+            // bias the EWMA downward and nudge the limit upward exactly when the
+            // database is unhealthy. Release the slot without recording metrics.
+            ReleaseOneSlot(0);
             throw;
         }
     }

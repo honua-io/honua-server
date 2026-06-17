@@ -96,7 +96,7 @@ internal sealed class NominatimGeocodeProvider : BaseGeocodeProvider
         try
         {
             var url = BuildSearchUrl(request);
-            var response = await _httpClient.GetAsync(url, cancellationToken).ConfigureAwait(false);
+            using var response = await _httpClient.GetAsync(url, cancellationToken).ConfigureAwait(false);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -154,7 +154,7 @@ internal sealed class NominatimGeocodeProvider : BaseGeocodeProvider
         try
         {
             var url = BuildReverseUrl(request);
-            var response = await _httpClient.GetAsync(url, cancellationToken).ConfigureAwait(false);
+            using var response = await _httpClient.GetAsync(url, cancellationToken).ConfigureAwait(false);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -229,7 +229,7 @@ internal sealed class NominatimGeocodeProvider : BaseGeocodeProvider
         try
         {
             var url = $"{_configuration.BaseUrl.TrimEnd('/')}/status.php?format=json";
-            var response = await _httpClient.GetAsync(url, cancellationToken).ConfigureAwait(false);
+            using var response = await _httpClient.GetAsync(url, cancellationToken).ConfigureAwait(false);
 
             if (!response.IsSuccessStatusCode)
             {

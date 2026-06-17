@@ -58,6 +58,22 @@ public static class ParameterBinder
 
     private static void AddParameter(DbCommand command, string name, object? value)
     {
+        // Surface a clear binding error here rather than letting an empty or duplicate
+        // ParameterName fail deep inside the provider's DbCommand with an opaque message.
+        // Names are never interpolated into SQL (parameters are bound), so this is a
+        // diagnostics/robustness guard, not a security control.
+        if (string.IsNullOrEmpty(name))
+        {
+            throw new ArgumentException("Parameter name cannot be null or empty.", nameof(name));
+        }
+
+        if (command.Parameters.Contains(name))
+        {
+            throw new ArgumentException(
+                $"Duplicate parameter name '{name}'. Parameter names must be unique within a command.",
+                nameof(name));
+        }
+
         var parameter = command.CreateParameter();
         parameter.ParameterName = name;
         parameter.Value = value ?? DBNull.Value;

@@ -22,16 +22,17 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 /// </summary>
 [Collection("Database.GeoServicesRaster")]
 [Protocol(TestProtocols.GPServer)]
-public sealed class GPServerClientCompatibilityTests : IAsyncLifetime
+public sealed class GPServerClientCompatibilityTests : IClassFixture<WebAppFixture>
 {
     private const string ServiceId = WebAppFixture.TestServiceId;
     private const string PointWkbBase64 = "AQEAAAAAAAAAAAAAAAAAAAAAAAAA";
 
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture;
 
-    public async Task InitializeAsync() => await _fixture.InitializeAsync();
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public GPServerClientCompatibilityTests(WebAppFixture fixture)
+    {
+        _fixture = fixture;
+    }
 
     [IntegrationTest]
     [Operation(Operations.GetServiceInfo)]

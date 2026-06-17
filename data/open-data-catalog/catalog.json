@@ -1,0 +1,233 @@
+{
+  "catalogVersion": "1.0.0",
+  "updated": "2026-06-17",
+  "sources": [
+    {
+      "id": "census-tiger",
+      "name": "US Census TIGER/Line",
+      "publisher": "U.S. Census Bureau",
+      "homepage": "https://www.census.gov/geographies/mapping-files/time-series/geo/tiger-line-file.html",
+      "license": {
+        "spdx": "US-PD",
+        "url": "https://www.census.gov/about/policies/open-data.html",
+        "attributionRequired": false,
+        "attributionText": "U.S. Census Bureau, TIGER/Line"
+      },
+      "status": "available",
+      "extractMethod": "census-geoid",
+      "areaParam": {
+        "accepts": ["state-fips", "county-geoid", "place-geoid"],
+        "notes": "TIGER files are published per state (2-digit FIPS) or per county (5-digit GEOID = state FIPS + county code). The provisioner downloads the smallest published file covering the area, then row-filters/clips to the exact GEOID."
+      },
+      "products": [
+        {
+          "product": "county-boundaries",
+          "layerName": "County Boundaries (TIGER)",
+          "geometryType": "MultiPolygon",
+          "format": "shapefile-zip",
+          "sourceProduct": "features",
+          "fetch": {
+            "kind": "http-template",
+            "urlTemplate": "https://www2.census.gov/geo/tiger/TIGER2024/COUNTY/tl_2024_us_county.zip",
+            "sampleUrl": "https://www2.census.gov/geo/tiger/TIGER2024/COUNTY/tl_2024_us_county.zip",
+            "clip": true
+          },
+          "tile": { "enabled": true, "minZoom": 0, "maxZoom": 10 }
+        },
+        {
+          "product": "places",
+          "layerName": "Incorporated Places (TIGER)",
+          "geometryType": "MultiPolygon",
+          "format": "shapefile-zip",
+          "sourceProduct": "features",
+          "fetch": {
+            "kind": "http-template",
+            "urlTemplate": "https://www2.census.gov/geo/tiger/TIGER2024/PLACE/tl_2024_{stateFips}_place.zip",
+            "sampleUrl": "https://www2.census.gov/geo/tiger/TIGER2024/PLACE/tl_2024_06_place.zip",
+            "clip": true
+          },
+          "tile": { "enabled": true, "minZoom": 4, "maxZoom": 12 }
+        },
+        {
+          "product": "roads",
+          "layerName": "Roads (TIGER)",
+          "geometryType": "MultiLineString",
+          "format": "shapefile-zip",
+          "sourceProduct": "features",
+          "fetch": {
+            "kind": "http-template",
+            "urlTemplate": "https://www2.census.gov/geo/tiger/TIGER2024/ROADS/tl_2024_{countyGeoid}_roads.zip",
+            "sampleUrl": "https://www2.census.gov/geo/tiger/TIGER2024/ROADS/tl_2024_06075_roads.zip",
+            "clip": false
+          },
+          "tile": { "enabled": true, "minZoom": 8, "maxZoom": 14 }
+        },
+        {
+          "product": "addresses",
+          "layerName": "Address Ranges (TIGER) [geocoder feedstock]",
+          "geometryType": "MultiLineString",
+          "format": "shapefile-zip",
+          "sourceProduct": "geocoder",
+          "fetch": {
+            "kind": "http-template",
+            "urlTemplate": "https://www2.census.gov/geo/tiger/TIGER2024/ADDRFEAT/tl_2024_{countyGeoid}_addrfeat.zip",
+            "sampleUrl": "https://www2.census.gov/geo/tiger/TIGER2024/ADDRFEAT/tl_2024_06075_addrfeat.zip",
+            "clip": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "osm-geofabrik",
+      "name": "OpenStreetMap (via Geofabrik regional extracts + Overpass bbox)",
+      "publisher": "OpenStreetMap contributors / Geofabrik GmbH",
+      "homepage": "https://download.geofabrik.de/",
+      "license": {
+        "spdx": "ODbL-1.0",
+        "url": "https://www.openstreetmap.org/copyright",
+        "attributionRequired": true,
+        "attributionText": "© OpenStreetMap contributors, ODbL"
+      },
+      "status": "available",
+      "extractMethod": "bbox",
+      "areaParam": {
+        "accepts": ["bbox"],
+        "notes": "Small areas: Overpass API by bbox returns GeoJSON directly (no clip needed). Large areas: download the nearest Geofabrik regional .osm.pbf and clip to the bbox with osmium/ogr2ogr. This slice wires the Overpass bbox path; the Geofabrik-pbf path is a documented TODO."
+      },
+      "products": [
+        {
+          "product": "roads",
+          "layerName": "Roads (OSM)",
+          "geometryType": "MultiLineString",
+          "format": "geojson",
+          "sourceProduct": "features",
+          "fetch": {
+            "kind": "overpass",
+            "urlTemplate": "https://overpass-api.de/api/interpreter?data=[out:json][timeout:90];way[highway]({bboxSWNE});out geom;",
+            "clip": false
+          },
+          "tile": { "enabled": true, "minZoom": 8, "maxZoom": 15 }
+        },
+        {
+          "product": "buildings",
+          "layerName": "Buildings (OSM)",
+          "geometryType": "MultiPolygon",
+          "format": "geojson",
+          "sourceProduct": "features",
+          "fetch": {
+            "kind": "overpass",
+            "urlTemplate": "https://overpass-api.de/api/interpreter?data=[out:json][timeout:120];way[building]({bboxSWNE});relation[building]({bboxSWNE});out geom;",
+            "clip": false
+          },
+          "tile": { "enabled": true, "minZoom": 12, "maxZoom": 16 }
+        },
+        {
+          "product": "poi",
+          "layerName": "Points of Interest (OSM)",
+          "geometryType": "Point",
+          "format": "geojson",
+          "sourceProduct": "features",
+          "fetch": {
+            "kind": "overpass",
+            "urlTemplate": "https://overpass-api.de/api/interpreter?data=[out:json][timeout:90];node[amenity]({bboxSWNE});out geom;",
+            "clip": false
+          },
+          "tile": { "enabled": true, "minZoom": 12, "maxZoom": 16 }
+        }
+      ]
+    },
+    {
+      "id": "overture",
+      "name": "Overture Maps Foundation",
+      "publisher": "Overture Maps Foundation",
+      "homepage": "https://overturemaps.org/",
+      "license": {
+        "spdx": "CDLA-Permissive-2.0",
+        "url": "https://docs.overturemaps.org/attribution/",
+        "attributionRequired": true,
+        "attributionText": "Overture Maps Foundation"
+      },
+      "status": "placeholder",
+      "extractMethod": "bbox",
+      "areaParam": {
+        "accepts": ["bbox"],
+        "notes": "PLACEHOLDER. Overture ships GeoParquet on S3 (s3://overturemaps-us-west-2/release/...). Honua already imports GeoParquet, so the extract recipe is a DuckDB spatial bbox query over the public parquet, writing a clipped GeoParquet. Wire in a future slice."
+      },
+      "products": [
+        {
+          "product": "places",
+          "layerName": "Places (Overture)",
+          "geometryType": "Point",
+          "format": "geoparquet",
+          "sourceProduct": "features"
+        },
+        {
+          "product": "buildings",
+          "layerName": "Buildings (Overture)",
+          "geometryType": "MultiPolygon",
+          "format": "geoparquet",
+          "sourceProduct": "features"
+        }
+      ]
+    },
+    {
+      "id": "usgs-nhd",
+      "name": "USGS National Hydrography Dataset",
+      "publisher": "U.S. Geological Survey",
+      "homepage": "https://www.usgs.gov/national-hydrography",
+      "license": {
+        "spdx": "US-PD",
+        "url": "https://www.usgs.gov/faqs/what-are-terms-uselicensing-map-services-and-data-national-map",
+        "attributionRequired": false
+      },
+      "status": "placeholder",
+      "extractMethod": "census-geoid",
+      "areaParam": {
+        "accepts": ["state-fips", "county-geoid"],
+        "notes": "PLACEHOLDER. NHD is published per-HUC and per-state as FileGDB/Shapefile. Honua imports zipped FileGDB. Recipe: map county GEOID -> covering HUC4/HUC8, fetch GDB, clip. Wire in a future slice."
+      },
+      "products": [
+        {
+          "product": "waterbodies",
+          "layerName": "Waterbodies (NHD)",
+          "geometryType": "MultiPolygon",
+          "format": "gpkg",
+          "sourceProduct": "features"
+        },
+        {
+          "product": "flowlines",
+          "layerName": "Flowlines (NHD)",
+          "geometryType": "MultiLineString",
+          "format": "gpkg",
+          "sourceProduct": "features"
+        }
+      ]
+    },
+    {
+      "id": "fema-nfhl",
+      "name": "FEMA National Flood Hazard Layer",
+      "publisher": "Federal Emergency Management Agency",
+      "homepage": "https://www.fema.gov/flood-maps/national-flood-hazard-layer",
+      "license": {
+        "spdx": "US-PD",
+        "url": "https://www.fema.gov/about/openfema/terms-conditions",
+        "attributionRequired": false
+      },
+      "status": "placeholder",
+      "extractMethod": "census-geoid",
+      "areaParam": {
+        "accepts": ["county-geoid"],
+        "notes": "PLACEHOLDER. NFHL is published per-county/community as zipped FileGDB (effective panels). Recipe: resolve county GEOID -> NFHL county product URL, fetch GDB, import the S_FLD_HAZ_AR flood-hazard polygons. Wire in a future slice."
+      },
+      "products": [
+        {
+          "product": "flood-hazard-areas",
+          "layerName": "Flood Hazard Areas (NFHL)",
+          "geometryType": "MultiPolygon",
+          "format": "gpkg",
+          "sourceProduct": "features"
+        }
+      ]
+    }
+  ]
+}

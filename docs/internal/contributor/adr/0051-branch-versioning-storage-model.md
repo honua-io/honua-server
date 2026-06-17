@@ -246,7 +246,7 @@ only**; the durable `sync_generation` sequence as the "moment."
   such workload is in scope; the DEFAULT path is unaffected either way.
 - **Single global generation sequence serializes posts.** Accepted for v1; per-layer
   generation streams are a future option if concurrent multi-version post throughput
-  becomes a bottleneck.
+  becomes a bottleneck (tracked in #1726, revisit only on a measured bottleneck).
 - **Esri `startReading`/`stopReading`/`startEditing`/`stopEditing`** remain stateless
   acknowledgements (the overlay/moment model carries the version per-request via
   `gdbVersion`, so there is no server-held session token / edit lock to mint). They are
@@ -262,8 +262,13 @@ only**; the durable `sync_generation` sequence as the "moment."
 - #1272 — Branch-versioned editing + production offline replica/change-tracking
   (closed; this ADR decided the branch-versioning storage model, implemented across
   #1504/#1508/#1509/#1510).
-- #1511 — Branch-versioning follow-ups (post via `IFeatureWriter`, overlay-read-at-scale
-  validation, session-stateful edit, per-layer generation streams).
+- #1511 — Branch-versioning follow-ups (closed). Post via `IFeatureWriter` recorded as a
+  retained by-decision divergence; overlay-read-at-scale validated
+  (`BranchVersioningOverlayReadScaleTests`, #1533); session-stateful start/stop edit
+  resolved as moment-stateful acknowledgements (unknown → 404, locked → 409,
+  `BranchGeneration` moment) with endpoint coverage including the 409-on-locked path. The
+  per-layer generation-stream scale option is split out to #1726 (revisit only on a
+  measured concurrent multi-version post bottleneck).
 - #1270 — Epic: editing-model parity.
 - #371 — Named versions, reconcile/post, multi-user concurrent editing (owns the
   reconcile/post UX + auto-resolution policy this substrate serves).

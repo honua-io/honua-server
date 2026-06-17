@@ -13,16 +13,26 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-[Collection("Database")]
-[Protocol(TestProtocols.FeatureServer)]
-public sealed class FeatureServerQueryDateBinsTests : IAsyncLifetime
+public sealed class FeatureServerQueryDateBinsFixture : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture()
+    public WebAppFixture App { get; } = new WebAppFixture()
         .WithTestLicense(HonuaEdition.Pro);
 
-    public async Task InitializeAsync() => await _fixture.InitializeAsync();
+    public Task InitializeAsync() => App.InitializeAsync();
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public Task DisposeAsync() => App.DisposeAsync();
+}
+
+[Protocol(TestProtocols.FeatureServer)]
+[Collection("Database")]
+public sealed class FeatureServerQueryDateBinsTests : IClassFixture<FeatureServerQueryDateBinsFixture>
+{
+    private readonly WebAppFixture _fixture;
+
+    public FeatureServerQueryDateBinsTests(FeatureServerQueryDateBinsFixture wrapper)
+    {
+        _fixture = wrapper.App;
+    }
 
     [IntegrationTest]
     [Operation(Operations.QueryDateBins)]

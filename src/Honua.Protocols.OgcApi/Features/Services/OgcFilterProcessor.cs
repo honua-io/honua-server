@@ -536,7 +536,11 @@ internal sealed partial class OgcFilterProcessor
 
         if (crsDefinition.IsGeographic)
         {
-            if (minX < -180 || maxX > 180 || minY < -90 || maxY > 90)
+            // Validate ALL longitude bounds independently before interpreting a reversed-X
+            // (minX > maxX) bbox as an antimeridian crossing. Otherwise an out-of-range west
+            // longitude (e.g. minX > 180) would slip through as a "crossing" and build a
+            // degenerate envelope returning zero features instead of a 400.
+            if (minX < -180 || minX > 180 || maxX < -180 || maxX > 180 || minY < -90 || maxY > 90)
             {
                 return BboxParseResult.Failure("Bounding box coordinates are out of valid range.");
             }

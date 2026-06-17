@@ -14,15 +14,13 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.MapServer;
 
-[Collection("Database")]
 [Protocol(TestProtocols.MapServer)]
-public sealed class MapServerTileEndpointTests : IAsyncLifetime
+[Collection("Database")]
+public sealed class MapServerTileEndpointTests : IClassFixture<WebAppFixture>
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture;
 
-    public async Task InitializeAsync() => await _fixture.InitializeAsync();
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public MapServerTileEndpointTests(WebAppFixture fixture) => _fixture = fixture;
 
     [IntegrationTest]
     [Operation(Operations.Tile)]

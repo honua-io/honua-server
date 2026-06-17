@@ -8,6 +8,16 @@ on:
   pull_request:
     branches: [trunk]
     types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
+  # Merge queue: GitHub batches approved PRs and runs CI once on the combined
+  # result before fast-forwarding trunk (replaces manual PR bundling). A
+  # merge_group event is a non-pull_request event, so the existing job logic
+  # already routes it down the FULL integration lane (changes/targeted-shards
+  # else-branches => run_all; PR-only jobs short-circuit to success), making
+  # the queue the thorough trunk-protecting gate while the PR lane stays
+  # selective/fast. Enable in branch protection with "CI Gate" as the required
+  # status check (see docs/internal/ci/merge-queue.md).
+  merge_group:
+    types: [checks_requested]
   workflow_dispatch:
     inputs:
       sdk_ref:

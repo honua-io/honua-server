@@ -58,18 +58,21 @@ internal sealed class OracleFeatureDataAccess
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
-                var id = reader.IsDBNull(0) ? 0L : Convert.ToInt64(reader.GetValue(0), CultureInfo.InvariantCulture);
+                // Do not fabricate a 0 object id for a NULL primary key: that silently collapses
+                // distinct rows onto OBJECTID 0 and breaks identity-based protocol operations.
+                // Fail loud instead, matching the MySQL/Postgres providers (which read the key
+                // directly and surface a NULL as an error).
+                var id = Convert.ToInt64(reader.GetValue(0), CultureInfo.InvariantCulture);
                 var wkb = reader.IsDBNull(1) ? null : ReadWkb(reader, 1);
 
                 var attrs = ImmutableDictionary<string, object?>.Empty.ToBuilder();
                 for (var i = 2; i < reader.FieldCount; i++)
                 {
+                    // Map each attribute by its ACTUAL reader column name. The builder filters the
+                    // SELECT list by OutFields, so the reader can return fewer (and differently
+                    // ordered) columns than the full attributeColumns list; positional mapping
+                    // against that list would mislabel values.
                     var name = reader.GetName(i);
-                    if (i - 2 < attributeColumns.Count)
-                    {
-                        name = attributeColumns[i - 2];
-                    }
-
                     attrs[name] = reader.IsDBNull(i) ? null : reader.GetValue(i);
                 }
 

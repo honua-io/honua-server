@@ -73,4 +73,26 @@ public sealed class TracingOptions
     /// Format: "key1=value1,key2=value2"
     /// </summary>
     public string? OtlpHeaders { get; set; }
+
+    /// <summary>
+    /// Gets or sets the AWS X-Ray tracing options. When enabled, the tracer
+    /// emits X-Ray-compatible trace IDs and propagation so spans nest into the
+    /// Lambda/API Gateway trace and surface in the X-Ray service map.
+    /// </summary>
+    public XRayTracingOptions XRay { get; set; } = new();
+}
+
+/// <summary>
+/// Configuration options for AWS X-Ray distributed tracing.
+/// </summary>
+public sealed class XRayTracingOptions
+{
+    /// <summary>
+    /// Gets or sets a value indicating whether X-Ray-compatible trace ID
+    /// generation and propagation are enabled. Default is false so non-AWS
+    /// runs are unaffected. When unset in configuration, the
+    /// <c>AWS_XRAY_TRACING_ENABLED</c> / <c>AWS_XRAY_DAEMON_ADDRESS</c>
+    /// environment signals can opt the process in (see resolution logic).
+    /// </summary>
+    public bool Enabled { get; set; }
 }

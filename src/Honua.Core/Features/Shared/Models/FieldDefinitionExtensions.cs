@@ -19,7 +19,9 @@ public static class FieldDefinitionExtensions
     {
         return esriType.ToUpperInvariant() switch
         {
-            "ESRIFIELDTYPEOID" => "INTEGER",
+            // OIDs can exceed Int32 on modern ArcGIS (64-bit object ids), and the downstream
+            // read path materializes them via GetInt64, so map to a 64-bit column to avoid overflow.
+            "ESRIFIELDTYPEOID" or "ESRIFIELDTYPEBIGINTEGER" => "BIGINT",
             "ESRIFIELDTYPEINTEGER" or "ESRIFIELDTYPESMALLINTEGER" => "INTEGER",
             "ESRIFIELDTYPEDOUBLE" or "ESRIFIELDTYPESINGLE" => "DOUBLE PRECISION",
             "ESRIFIELDTYPESTRING" => length.HasValue && length > 0 && length <= 8000

@@ -368,7 +368,15 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
             mixedGeometryDetected |= pageMixed;
 
             startIndex += page.Features.Count;
-            hasMore = page.Features.Count >= pageSize && (page.NumberMatched == null || startIndex < page.NumberMatched);
+
+            // Do NOT infer "done" from a short page: many WFS servers cap the page size below
+            // the requested count (e.g. GeoServer maxFeatures), so a page smaller than pageSize
+            // is the norm, not the final page. Terminate only on a reliable signal: an empty
+            // page (handled above) or, when the server reports numberMatched, once we have
+            // advanced past the total. Otherwise keep paging until an empty page arrives (the
+            // repeated-first-feature guard and MaxPagesPerFeatureType cap above protect against
+            // non-advancing servers).
+            hasMore = page.NumberMatched == null || startIndex < page.NumberMatched;
             Log.BatchInserted(_logger, resource.Name, pageNumber, pageInserted, pageFailed, inserted);
         }
 

@@ -18,17 +18,14 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 
-[Collection("Database")]
-[Protocol(TestProtocols.OgcApiFeatures)]
-[Operation(Operations.Query)]
-public sealed class OgcFeaturesSpatialReferenceTests : IAsyncLifetime
+public sealed class OgcFeaturesSpatialReferenceTestsFixture : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+    public WebAppFixture App { get; } = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
 
     public async Task InitializeAsync()
     {
-        _fixture.UseSeed(Path.Combine("tests", "seed", "spatial-reference.yaml"));
-        await _fixture.InitializeAsync();
+        App.UseSeed(Path.Combine("tests", "seed", "spatial-reference.yaml"));
+        await App.InitializeAsync();
 
         // V2 query processor rejects bbox queries on resources whose Spatial slot is
         // unset; the default test V2 graph (WebAppFixtureMetadataV2Mixin.BuildDefaultTestGraph) does
@@ -44,20 +41,30 @@ public sealed class OgcFeaturesSpatialReferenceTests : IAsyncLifetime
                 IsGeographic = false,
             },
         };
-        _fixture.UpdateV2ResourceMetadata(
+        App.UpdateV2ResourceMetadata(
             SpatialReferenceTestLayerCatalog.PointLayerId,
             spatial: sridSpatial with { GeometryType = Honua.Core.Features.Metadata.Domain.V2.MetadataV2GeometryType.Point });
-        _fixture.UpdateV2ResourceMetadata(
+        App.UpdateV2ResourceMetadata(
             SpatialReferenceTestLayerCatalog.LineLayerId,
             spatial: sridSpatial with { GeometryType = Honua.Core.Features.Metadata.Domain.V2.MetadataV2GeometryType.LineString });
-        _fixture.UpdateV2ResourceMetadata(
+        App.UpdateV2ResourceMetadata(
             SpatialReferenceTestLayerCatalog.PolygonLayerId,
             spatial: sridSpatial with { GeometryType = Honua.Core.Features.Metadata.Domain.V2.MetadataV2GeometryType.Polygon });
     }
 
-    public async Task DisposeAsync()
+    public Task DisposeAsync() => App.DisposeAsync();
+}
+
+[Protocol(TestProtocols.OgcApiFeatures)]
+[Operation(Operations.Query)]
+[Collection("Database")]
+public sealed class OgcFeaturesSpatialReferenceTests : IClassFixture<OgcFeaturesSpatialReferenceTestsFixture>
+{
+    private readonly WebAppFixture _fixture;
+
+    public OgcFeaturesSpatialReferenceTests(OgcFeaturesSpatialReferenceTestsFixture fixture)
     {
-        await _fixture.DisposeAsync();
+        _fixture = fixture.App;
     }
 
     [IntegrationTest]

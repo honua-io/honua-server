@@ -14,8 +14,8 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 /// <summary>
 /// Tests for temporal filtering in FeatureServer endpoints
 /// </summary>
-[Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
+[Collection("Database")]
 public sealed class FeatureServerTemporalTests : IClassFixture<WebAppFixture>
 {
     private readonly HttpClient _client;
@@ -210,22 +210,20 @@ public sealed class FeatureServerTemporalTests : IClassFixture<WebAppFixture>
         {
             feature.TryGetProperty("attributes", out var attributes).Should().BeTrue();
 
-            // Check if any datetime field is within our range
+            // Esri f=json serializes esriFieldTypeDate attributes as epoch-millisecond
+            // integers (UTC), so date fields arrive as JSON numbers, not strings. Check
+            // whether any numeric field, interpreted as epoch-ms, falls within our range.
+            var startMs = startTimestamp;
+            var endMs = endTimestamp;
             var hasDateInRange = false;
             foreach (var property in attributes.EnumerateObject())
             {
-                if (property.Value.ValueKind == JsonValueKind.String)
+                if (property.Value.ValueKind == JsonValueKind.Number
+                    && property.Value.TryGetInt64(out var epochMs)
+                    && epochMs >= startMs && epochMs <= endMs)
                 {
-                    var stringValue = property.Value.GetString();
-                    if (DateTime.TryParse(stringValue, out var dateValue))
-                    {
-                        var dateUtc = DateTime.SpecifyKind(dateValue, DateTimeKind.Utc);
-                        if (dateUtc >= startDate && dateUtc <= endDate)
-                        {
-                            hasDateInRange = true;
-                            break;
-                        }
-                    }
+                    hasDateInRange = true;
+                    break;
                 }
             }
 

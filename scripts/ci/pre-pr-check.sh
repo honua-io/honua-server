@@ -18,9 +18,21 @@ set -euo pipefail
 #                           or a large cross-cutting refactor).
 #   HONUA_PRE_PR_BASE=<ref> override the diff base ref (default origin/trunk).
 #   HONUA_PRE_PR_SKIP_AOT=1 skip the AOT publish step.
+#   HONUA_PRE_PR_FAST=1     FAST tier: build + format + affected unit tests +
+#                           architecture only; SKIP the heavy Honua.Server.Tests
+#                           shards and the AOT publish (they run in CI / the merge
+#                           queue). Used by the pre-push hook by default so the
+#                           push loop stays quick. Run without it (the default
+#                           SMART tier) or with HONUA_PRE_PR_FULL=1 before opening
+#                           a PR for the full local gate.
+#   HONUA_PRE_PR_SHARD_PARALLELISM=<n>  how many server-test shards to run
+#                           concurrently in SMART/FULL mode (default 2). Each
+#                           shard is a separate dotnet-test process with its own
+#                           Postgres container, so keep this modest.
 
 BASE_REF="${HONUA_PRE_PR_BASE:-origin/trunk}"
 FULL="${HONUA_PRE_PR_FULL:-0}"
+FAST="${HONUA_PRE_PR_FAST:-0}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${REPO_ROOT}"
 
@@ -38,6 +50,15 @@ if [[ "${FULL}" != "1" ]] && ! git rev-parse --verify --quiet "${BASE_REF}" >/de
 fi
 
 echo "🔍 Running pre-PR validation..."
+# FULL is the most thorough tier and overrides the FAST shortcut.
+if [[ "${FULL}" == "1" ]]; then
+    FAST=0
+fi
+if [[ "${FAST}" == "1" ]]; then
+    echo "    Tier: FAST (build + format + unit + architecture; server-test shards"
+    echo "          and AOT deferred to CI / the merge queue). Run without"
+    echo "          HONUA_PRE_PR_FAST=1 for the full local gate before opening a PR."
+fi
 if [[ "${FULL}" == "1" ]]; then
     echo "    Mode: FULL (everything)."
     AFFECTED="ALL"
@@ -139,37 +160,86 @@ run_unit_project tests/dotnet/Honua.Core.Security.Tests/Honua.Core.Security.Test
 run_unit_project tests/dotnet/Honua.LoadTests/Honua.LoadTests.csproj
 run_unit_project tests/dotnet/Honua.Postgres.Tests/Honua.Postgres.Tests.csproj
 
-# Server-test shards: run the targeted subset (or all, when run_all).
-RUN_ALL_SHARDS="$(jq -r '.run_all // false' <<< "${TARGETED}")"
-SHARD_REASON="$(jq -r '.reason // "unknown"' <<< "${TARGETED}")"
-echo "   Honua.Server.Tests shards (router: ${SHARD_REASON})..."
-if [[ "${RUN_ALL_SHARDS}" == "true" ]]; then
-    SELECTED_SHARDS="$(jq -r '.shards[].shard_name' .github/ci-shards.json)"
+# Server-test shards: run the targeted subset (or all, when run_all). FAST tier
+# skips them entirely (CI / the merge queue is the gate); otherwise run them in
+# parallel — each shard is its own dotnet-test process with its own Postgres
+# container, so parallelism is modest by default.
+if [[ "${FAST}" == "1" ]]; then
+    echo "   (FAST tier: skipping Honua.Server.Tests shards — they run in CI / the merge queue)"
 else
-    SELECTED_SHARDS="$(jq -r '.shards[]?' <<< "${TARGETED}")"
-fi
-if [[ -z "${SELECTED_SHARDS//[[:space:]]/}" ]]; then
-    echo "   (no server-test shards selected for this diff)"
-else
-    while IFS= read -r shard_name; do
-        [[ -z "${shard_name}" ]] && continue
-        shard_json="$(jq -c --arg n "${shard_name}" '.shards[] | select(.shard_name==$n)' .github/ci-shards.json)"
-        [[ -z "${shard_json}" ]] && { echo "   ⚠️ unknown shard '${shard_name}'"; continue; }
-        log_name="$(jq -r '.log_name' <<< "${shard_json}")"
-        filter="$(jq -r '.filter' <<< "${shard_json}")"
-        max_cpu_count="$(jq -r '.max_cpu_count // ""' <<< "${shard_json}")"
-        test_timeout_minutes="$(jq -r '(.test_timeout_minutes // .timeout_minutes) | tostring' <<< "${shard_json}")"
-        echo "   - ${shard_name} (test timeout ${test_timeout_minutes}m)"
-        HONUA_SERVER_TEST_SHARD_NAME="${shard_name}" \
-        HONUA_SERVER_TEST_FILTER="${filter}" \
-        HONUA_SERVER_TEST_LOG_NAME="${log_name}" \
-        HONUA_SERVER_TEST_TIMEOUT_MINUTES="${HONUA_PRE_PR_SERVER_TEST_TIMEOUT_MINUTES:-${test_timeout_minutes}}" \
-        HONUA_SERVER_TEST_MAX_CPU_COUNT="${HONUA_PRE_PR_MAX_CPU_COUNT:-${max_cpu_count}}" \
-        HONUA_SERVER_TEST_RESULTS_DIR="./tests/TestResults" \
-        HONUA_SERVER_TEST_CONFIGURATION="Release" \
-        HONUA_SERVER_TEST_HEARTBEAT_SECONDS="${HONUA_PRE_PR_HEARTBEAT_SECONDS:-30}" \
-        scripts/ci/run-server-test-shard.sh
-    done <<< "${SELECTED_SHARDS}"
+    RUN_ALL_SHARDS="$(jq -r '.run_all // false' <<< "${TARGETED}")"
+    SHARD_REASON="$(jq -r '.reason // "unknown"' <<< "${TARGETED}")"
+    echo "   Honua.Server.Tests shards (router: ${SHARD_REASON})..."
+    if [[ "${RUN_ALL_SHARDS}" == "true" ]]; then
+        SELECTED_SHARDS="$(jq -r '.shards[].shard_name' .github/ci-shards.json)"
+    else
+        SELECTED_SHARDS="$(jq -r '.shards[]?' <<< "${TARGETED}")"
+    fi
+    if [[ -z "${SELECTED_SHARDS//[[:space:]]/}" ]]; then
+        echo "   (no server-test shards selected for this diff)"
+    else
+        SHARD_PARALLELISM="${HONUA_PRE_PR_SHARD_PARALLELISM:-2}"
+        SHARD_STATUS_DIR="$(mktemp -d)"
+        echo "   (parallelism=${SHARD_PARALLELISM}; per-shard logs under ${SHARD_STATUS_DIR})"
+
+        run_one_shard() {
+            local shard_name="$1"
+            local safe="${shard_name//[^A-Za-z0-9_]/_}"
+            local shard_json log_name filter max_cpu_count test_timeout_minutes csproj
+            shard_json="$(jq -c --arg n "${shard_name}" '.shards[] | select(.shard_name==$n)' .github/ci-shards.json)"
+            if [[ -z "${shard_json}" ]]; then
+                echo "unknown" > "${SHARD_STATUS_DIR}/${safe}.status"
+                echo "   ⚠️ unknown shard '${shard_name}'"
+                return
+            fi
+            log_name="$(jq -r '.log_name' <<< "${shard_json}")"
+            filter="$(jq -r '.filter' <<< "${shard_json}")"
+            max_cpu_count="$(jq -r '.max_cpu_count // ""' <<< "${shard_json}")"
+            test_timeout_minutes="$(jq -r '(.test_timeout_minutes // .timeout_minutes) | tostring' <<< "${shard_json}")"
+            # Forward the shard's test project (ADR-0042 split protocol projects). When a shard has
+            # no csproj, this is empty and run-server-test-shard.sh falls back to the Honua.Server.Tests
+            # monolith — matching CI. Without this, protocol-project shards run their filter against the
+            # monolith locally and silently match zero tests.
+            csproj="$(jq -r '.csproj // ""' <<< "${shard_json}")"
+            if HONUA_SERVER_TEST_SHARD_NAME="${shard_name}" \
+               HONUA_SERVER_TEST_CSPROJ="${csproj}" \
+               HONUA_SERVER_TEST_FILTER="${filter}" \
+               HONUA_SERVER_TEST_LOG_NAME="${log_name}" \
+               HONUA_SERVER_TEST_TIMEOUT_MINUTES="${HONUA_PRE_PR_SERVER_TEST_TIMEOUT_MINUTES:-${test_timeout_minutes}}" \
+               HONUA_SERVER_TEST_MAX_CPU_COUNT="${HONUA_PRE_PR_MAX_CPU_COUNT:-${max_cpu_count}}" \
+               HONUA_SERVER_TEST_RESULTS_DIR="./tests/TestResults" \
+               HONUA_SERVER_TEST_CONFIGURATION="Release" \
+               HONUA_SERVER_TEST_HEARTBEAT_SECONDS="${HONUA_PRE_PR_HEARTBEAT_SECONDS:-30}" \
+               scripts/ci/run-server-test-shard.sh > "${SHARD_STATUS_DIR}/${safe}.log" 2>&1; then
+                echo "pass" > "${SHARD_STATUS_DIR}/${safe}.status"
+                echo "   ✅ ${shard_name}"
+            else
+                echo "fail" > "${SHARD_STATUS_DIR}/${safe}.status"
+                echo "   ❌ ${shard_name} — tail of ${SHARD_STATUS_DIR}/${safe}.log:"
+                tail -n 25 "${SHARD_STATUS_DIR}/${safe}.log" 2>/dev/null | sed 's/^/        /' || true
+            fi
+        }
+
+        while IFS= read -r shard_name; do
+            [[ -z "${shard_name}" ]] && continue
+            # Throttle to SHARD_PARALLELISM concurrent shards (poll-based so it
+            # works regardless of `wait -n` availability).
+            while [[ "$(jobs -rp | wc -l)" -ge "${SHARD_PARALLELISM}" ]]; do sleep 0.5; done
+            run_one_shard "${shard_name}" &
+        done <<< "${SELECTED_SHARDS}"
+        wait
+
+        shard_failed=0
+        for s in "${SHARD_STATUS_DIR}"/*.status; do
+            [[ -e "${s}" ]] || continue
+            [[ "$(cat "${s}")" == "pass" ]] || shard_failed=1
+        done
+        if [[ "${shard_failed}" -eq 1 ]]; then
+            echo "❌ One or more server-test shards failed (logs in ${SHARD_STATUS_DIR})."
+            exit 1
+        fi
+        rm -rf "${SHARD_STATUS_DIR}"
+    fi
 fi
 
 # Architecture tests are cheap and guard the module topology — always run them.
@@ -182,8 +252,8 @@ dotnet test tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.cspro
     --results-directory ./tests/TestResults \
     -- RunConfiguration.MaxCpuCount=1
 
-if [[ "${HONUA_PRE_PR_SKIP_AOT:-0}" == "1" ]]; then
-    echo "7. Skipping AOT build (HONUA_PRE_PR_SKIP_AOT=1)."
+if [[ "${HONUA_PRE_PR_SKIP_AOT:-0}" == "1" || "${FAST}" == "1" ]]; then
+    echo "7. Skipping AOT build (FAST tier or HONUA_PRE_PR_SKIP_AOT=1; AOT verified in CI)."
 elif [[ "${AFFECTED}" == "ALL" ]] || affected_contains "Honua.Server.csproj"; then
     echo "7. Testing AOT build..."
     (

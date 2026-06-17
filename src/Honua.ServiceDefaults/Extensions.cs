@@ -13,6 +13,7 @@ using Microsoft.Extensions.Options;
 using Npgsql;
 using OpenTelemetry;
 using OpenTelemetry.Exporter;
+using OpenTelemetry.Extensions.AWS.Trace;
 using OpenTelemetry.Logs;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
@@ -34,7 +35,8 @@ public static partial class Extensions
         HonuaTelemetry.ServiceName,
         "Honua.Wfs20.Transactions",
         "Honua.Database.ConnectionPool",
-        "Honua.Production.Metrics"
+        "Honua.Production.Metrics",
+        LambdaTelemetry.MeterName
     ];
     private static readonly string[] _activitySourceNames =
     [
@@ -114,6 +116,12 @@ public static partial class Extensions
         var otlpEndpoint = ResolveOtlpEndpoint(builder.Configuration, tracingOptions);
         var otlpHeaders = ResolveOtlpHeaders(builder.Configuration, tracingOptions);
         var useOtlp = !string.IsNullOrWhiteSpace(otlpEndpoint);
+        var useXRay = ResolveXRayEnabled(builder.Configuration, tracingOptions);
+
+        // Record the Lambda cold start once during process initialization so the
+        // counter/init-duration histogram are emitted through the shared meter.
+        // No-op off Lambda.
+        LambdaTelemetry.RecordColdStart();
 
         builder.Logging.AddOpenTelemetry(logging =>
         {
@@ -177,14 +185,33 @@ public static partial class Extensions
                     return new AlwaysOnSampler();
                 });
 
+                // AWS X-Ray-compatible trace IDs + propagation. Gated so non-AWS
+                // runs are unaffected. Spans still export through the existing
+                // OTLP exporter (pointed at an ADOT/X-Ray collector); this only
+                // changes ID generation and context propagation so HTTP -> DB ->
+                // render spans nest into the Lambda/API Gateway X-Ray trace.
+                if (useXRay)
+                {
+                    tracing.AddXRayTraceId();
+                    Sdk.SetDefaultTextMapPropagator(new AWSXRayPropagator());
+                }
+
+                var resourceBuilder = ResourceBuilder.CreateDefault()
+                    .AddService(
+                        serviceName: HonuaTelemetry.ServiceName,
+                        serviceVersion: HonuaTelemetry.ServiceVersion,
+                        serviceInstanceId: Environment.MachineName);
+
+                if (useXRay)
+                {
+                    // Surface FaaS/cloud resource attributes so the X-Ray service
+                    // map is correctly attributed to the Lambda function.
+                    resourceBuilder.AddAttributes(BuildAwsResourceAttributes());
+                }
+
                 tracing
                     .AddSource(_activitySourceNames)
-                    .SetResourceBuilder(
-                        ResourceBuilder.CreateDefault()
-                            .AddService(
-                                serviceName: HonuaTelemetry.ServiceName,
-                                serviceVersion: HonuaTelemetry.ServiceVersion,
-                                serviceInstanceId: Environment.MachineName))
+                    .SetResourceBuilder(resourceBuilder)
                     .AddAspNetCoreInstrumentation(options =>
                     {
                         options.EnrichWithHttpResponse = (activity, response) =>
@@ -272,6 +299,72 @@ public static partial class Extensions
         }
 
         return configuration["OTEL_EXPORTER_OTLP_HEADERS"];
+    }
+
+    /// <summary>
+    /// Resolves whether AWS X-Ray tracing should be enabled. Precedence:
+    /// explicit <c>Tracing:XRay:Enabled</c> configuration first, then the
+    /// AWS-provided environment signals (<c>AWS_XRAY_TRACING_ENABLED</c>, or an
+    /// <c>AWS_XRAY_DAEMON_ADDRESS</c> present alongside a Lambda runtime).
+    /// </summary>
+    private static bool ResolveXRayEnabled(IConfiguration configuration, TracingOptions tracingOptions)
+    {
+        if (tracingOptions.XRay.Enabled)
+        {
+            return true;
+        }
+
+        // Explicit opt-out via configuration wins over environment inference.
+        var configured = configuration["Tracing:XRay:Enabled"];
+        if (bool.TryParse(configured, out var configuredEnabled))
+        {
+            return configuredEnabled;
+        }
+
+        var envFlag = configuration["AWS_XRAY_TRACING_ENABLED"];
+        if (bool.TryParse(envFlag, out var envEnabled))
+        {
+            return envEnabled;
+        }
+
+        // The Lambda/ECS runtime injects AWS_XRAY_DAEMON_ADDRESS only when
+        // active tracing is turned on, so treat its presence on Lambda as opt-in.
+        return LambdaTelemetry.IsRunningOnLambda
+            && !string.IsNullOrEmpty(configuration["AWS_XRAY_DAEMON_ADDRESS"]);
+    }
+
+    private static KeyValuePair<string, object>[] BuildAwsResourceAttributes()
+    {
+        var attributes = new List<KeyValuePair<string, object>>
+        {
+            new("cloud.provider", "aws"),
+        };
+
+        if (LambdaTelemetry.FunctionName is { Length: > 0 } functionName)
+        {
+            attributes.Add(new KeyValuePair<string, object>("cloud.platform", "aws_lambda"));
+            attributes.Add(new KeyValuePair<string, object>("faas.name", functionName));
+
+            if (LambdaTelemetry.FunctionVersion is { Length: > 0 } functionVersion)
+            {
+                attributes.Add(new KeyValuePair<string, object>("faas.version", functionVersion));
+            }
+
+            if (LambdaTelemetry.MemoryLimitMib > 0)
+            {
+                attributes.Add(new KeyValuePair<string, object>(
+                    "faas.max_memory",
+                    LambdaTelemetry.MemoryLimitMib * 1024L * 1024L));
+            }
+        }
+
+        var region = Environment.GetEnvironmentVariable("AWS_REGION");
+        if (!string.IsNullOrEmpty(region))
+        {
+            attributes.Add(new KeyValuePair<string, object>("cloud.region", region));
+        }
+
+        return [.. attributes];
     }
 
     private static void ConfigureOtlpExporter(OtlpExporterOptions options, string? endpoint, string? headers)

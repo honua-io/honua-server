@@ -87,6 +87,14 @@ public sealed record GeocodeCandidate(
     double? DistanceMeters = null)
 {
     /// <summary>
+    /// Attribute key carrying the zero-based index of the batch input record this candidate
+    /// corresponds to. Batch geocoding returns one candidate slot per input in request order;
+    /// this value lets callers correlate each result back to its submitted record, matching the
+    /// Esri <c>geocodeAddresses</c> contract where every location reports a <c>ResultID</c>.
+    /// </summary>
+    public const string ResultIdAttribute = "ResultID";
+
+    /// <summary>
     /// Geocode match level (e.g., "exact", "interpolated", "approximate")
     /// </summary>
     public string? MatchLevel { get; init; }
@@ -105,6 +113,57 @@ public sealed record GeocodeCandidate(
     /// Structured address components
     /// </summary>
     public StructuredAddress? StructuredAddress { get; init; }
+
+    /// <summary>
+    /// Indicates whether this candidate represents a successful match. A <see langword="false"/>
+    /// value denotes a "no match" slot emitted to keep batch results positionally aligned with
+    /// their inputs (see <see cref="CreateNoMatch"/>).
+    /// </summary>
+    public bool IsMatch { get; init; } = true;
+
+    /// <summary>
+    /// Returns a copy of this candidate whose <see cref="Attributes"/> include a stable
+    /// <see cref="ResultIdAttribute"/> entry equal to <paramref name="resultId"/>. Existing
+    /// attributes are preserved; any prior <c>ResultID</c> entry is overwritten.
+    /// </summary>
+    /// <param name="resultId">Zero-based index of the originating batch input record.</param>
+    public GeocodeCandidate WithResultId(int resultId)
+    {
+        var attributes = new Dictionary<string, string?>(Attributes, StringComparer.Ordinal)
+        {
+            [ResultIdAttribute] = resultId.ToString(System.Globalization.CultureInfo.InvariantCulture)
+        };
+
+        return this with { Attributes = attributes };
+    }
+
+    /// <summary>
+    /// Creates an explicit "no match" candidate for a batch input that was blank or that the
+    /// provider could not geocode. The slot preserves positional alignment with the input list
+    /// and carries the originating <see cref="ResultIdAttribute"/> so callers can still correlate
+    /// it back to the submitted record. Coordinates are <see cref="double.NaN"/> and
+    /// <see cref="Score"/> is zero, matching the Esri convention for unmatched records.
+    /// </summary>
+    /// <param name="resultId">Zero-based index of the originating batch input record.</param>
+    /// <param name="spatialReferenceWkid">Spatial reference requested for the batch.</param>
+    public static GeocodeCandidate CreateNoMatch(int resultId, int spatialReferenceWkid = 4326)
+    {
+        var attributes = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [ResultIdAttribute] = resultId.ToString(System.Globalization.CultureInfo.InvariantCulture)
+        };
+
+        return new GeocodeCandidate(
+            Address: string.Empty,
+            X: double.NaN,
+            Y: double.NaN,
+            Score: 0.0,
+            Attributes: attributes)
+        {
+            IsMatch = false,
+            SpatialReferenceWkid = spatialReferenceWkid
+        };
+    }
 }
 
 /// <summary>

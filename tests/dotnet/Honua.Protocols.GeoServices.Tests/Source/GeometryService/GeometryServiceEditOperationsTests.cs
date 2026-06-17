@@ -20,13 +20,14 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService;
 /// </summary>
 [Protocol(TestProtocols.GeometryService)]
 [Collection("Database.GeoServicesRaster")]
-public sealed class GeometryServiceEditOperationsTests : IAsyncLifetime
+public sealed class GeometryServiceEditOperationsTests : IClassFixture<WebAppFixture>
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture;
 
-    public async Task InitializeAsync() => await _fixture.InitializeAsync();
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public GeometryServiceEditOperationsTests(WebAppFixture fixture)
+    {
+        _fixture = fixture;
+    }
 
     // --- cut ---
 
@@ -203,7 +204,10 @@ public sealed class GeometryServiceEditOperationsTests : IAsyncLifetime
     [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/offset")]
     public async Task Offset_PostPolyline_ReturnsParallelLine()
     {
-        // Offsetting a horizontal line by +1 should shift it to y=1.
+        // Offsetting a horizontal line by +1 in the SR's native units (degrees on
+        // sr=4326) should shift it to y=1. offsetUnit is omitted so the supplied
+        // distance is taken directly in native units rather than being converted
+        // from meters to degrees (1 m on sr=4326 would be ~8.98e-6 degrees).
         var body = """
         {
             "geometries": {
@@ -214,7 +218,6 @@ public sealed class GeometryServiceEditOperationsTests : IAsyncLifetime
             },
             "sr": "4326",
             "offsetDistance": 1,
-            "offsetUnit": "esriMeters",
             "offsetHow": "esriGeometryOffsetRounded"
         }
         """;

@@ -43,11 +43,21 @@ public class ArcGisRestQueryParametersTests
     }
 
     [Fact]
-    public void BuildFeatureQueryUrl_AppendsTokenWhenSupplied()
+    public void BuildFeatureQueryUrl_DoesNotPlaceTokenInUrl()
     {
+        // The API token must never appear in the URL query string (it would leak
+        // into logs/referrers). It is delivered via the X-Esri-Authorization header
+        // produced by BuildAuthorizationHeader instead.
         var url = ArcGisRestQueryParameters.BuildFeatureQueryUrl(ServiceUrl, 1, new FeatureQuery(), token: "abc-123");
 
-        Assert.Contains("token=" + Uri.EscapeDataString("abc-123"), url, StringComparison.Ordinal);
+        Assert.DoesNotContain("token=", url, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildAuthorizationHeader_CarriesTokenAsBearer()
+    {
+        Assert.Equal("Bearer abc-123", ArcGisRestQueryParameters.BuildAuthorizationHeader("abc-123"));
+        Assert.Null(ArcGisRestQueryParameters.BuildAuthorizationHeader(null));
     }
 
     [Fact]

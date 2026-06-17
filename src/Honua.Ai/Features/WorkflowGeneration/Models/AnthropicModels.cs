@@ -19,8 +19,9 @@ internal sealed class AnthropicMessagesRequest
     [JsonPropertyName("max_tokens")]
     public int MaxTokens { get; set; }
 
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     [JsonPropertyName("temperature")]
-    public double Temperature { get; set; }
+    public double? Temperature { get; set; }
 
     [JsonPropertyName("system")]
     public string? System { get; set; }
