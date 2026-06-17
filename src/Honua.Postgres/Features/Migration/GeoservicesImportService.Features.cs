@@ -238,14 +238,21 @@ internal sealed partial class GeoservicesImportService
 
         return esriType.ToUpperInvariant() switch
         {
-            // Read OID/Integer/SmallInteger as 64-bit. GetInt32 throws OverflowException for
-            // BigInteger fields or OIDs greater than Int32.MaxValue, and the per-feature catch
-            // would then silently drop the whole row. The target columns are mapped to BIGINT,
-            // so a long carries every supported value. Degrade to null (rather than throwing)
-            // when the JSON number is not a whole integer.
-            "ESRIFIELDTYPEOID" or "ESRIFIELDTYPEINTEGER" or "ESRIFIELDTYPESMALLINTEGER" =>
+            // OID columns are created as BIGINT (see FieldDefinitionExtensions.ToPostgresType),
+            // so read OIDs as 64-bit: GetInt32 throws OverflowException for OIDs greater than
+            // Int32.MaxValue, and the per-feature catch would then silently drop the whole row.
+            "ESRIFIELDTYPEOID" =>
                 element.ValueKind == JsonValueKind.Number
-                    ? (element.TryGetInt64(out var int64Value) ? int64Value : (object?)null)
+                    ? (element.TryGetInt64(out var oidValue) ? oidValue : (object?)null)
+                    : null,
+
+            // Integer/SmallInteger columns are created as INTEGER (int4), so bind an Int32 — an
+            // Int64 parameter into an int4 column fails the insert with "column is of type integer
+            // but expression is of type bigint", and the per-feature catch then drops the row.
+            // Degrade to null (rather than throwing) when the JSON number is not a 32-bit integer.
+            "ESRIFIELDTYPEINTEGER" or "ESRIFIELDTYPESMALLINTEGER" =>
+                element.ValueKind == JsonValueKind.Number
+                    ? (element.TryGetInt32(out var int32Value) ? int32Value : (object?)null)
                     : null,
 
             "ESRIFIELDTYPEDOUBLE" or "ESRIFIELDTYPESINGLE" =>
