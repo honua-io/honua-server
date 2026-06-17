@@ -143,6 +143,17 @@ The MVP intentionally defers enterprise/operational features to reduce complexit
 
 ## Critical Rules
 
+### Creating a PR — fill the template (or CI is skipped)
+
+When opening a PR, follow the **Pull Request Policy** section above. The **Validate PR Template Compliance** check **gates the entire CI matrix**: a PR that does not fill every required section of `.github/pull_request_template.md` fails it, and **every build/test shard is SKIPPED** — the PR then looks broken with nothing actually wrong. This is the single most common agent-PR failure. Do **not** hand-roll a freeform `gh pr create --body "..."` (it overrides the template). Instead copy the template, fill **all** sections — conventional-commit title (`type(scope): description`), issue link (`Fixes #N`), non-empty Summary, `-` bullet Changes Made, Breaking Changes (or `None`), one `[x]` in both Gate Impact and Testing, and the `Ran scripts/ci/pre-pr-check.sh` box — and pass it with `--body-file`:
+
+```bash
+cp .github/pull_request_template.md /tmp/pr-body.md   # then fill every section in /tmp/pr-body.md
+gh pr create --base trunk --title "type(scope): description" --body-file /tmp/pr-body.md
+```
+
+The check re-runs on push / `labeled` / `ready_for_review` — **not** on PR-body edits alone, so re-trigger by pushing or toggling a label after filling it.
+
 ### Legacy Code Reference Policy
 
 There is an archived legacy project at `../Honua.Server/` which serves as **reference documentation only**. Treat it as archive-only historical context, not as an active repo or implementation source.

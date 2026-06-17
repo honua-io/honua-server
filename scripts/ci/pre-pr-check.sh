@@ -185,7 +185,7 @@ else
         run_one_shard() {
             local shard_name="$1"
             local safe="${shard_name//[^A-Za-z0-9_]/_}"
-            local shard_json log_name filter max_cpu_count test_timeout_minutes
+            local shard_json log_name filter max_cpu_count test_timeout_minutes csproj
             shard_json="$(jq -c --arg n "${shard_name}" '.shards[] | select(.shard_name==$n)' .github/ci-shards.json)"
             if [[ -z "${shard_json}" ]]; then
                 echo "unknown" > "${SHARD_STATUS_DIR}/${safe}.status"
@@ -196,7 +196,13 @@ else
             filter="$(jq -r '.filter' <<< "${shard_json}")"
             max_cpu_count="$(jq -r '.max_cpu_count // ""' <<< "${shard_json}")"
             test_timeout_minutes="$(jq -r '(.test_timeout_minutes // .timeout_minutes) | tostring' <<< "${shard_json}")"
+            # Forward the shard's test project (ADR-0042 split protocol projects). When a shard has
+            # no csproj, this is empty and run-server-test-shard.sh falls back to the Honua.Server.Tests
+            # monolith — matching CI. Without this, protocol-project shards run their filter against the
+            # monolith locally and silently match zero tests.
+            csproj="$(jq -r '.csproj // ""' <<< "${shard_json}")"
             if HONUA_SERVER_TEST_SHARD_NAME="${shard_name}" \
+               HONUA_SERVER_TEST_CSPROJ="${csproj}" \
                HONUA_SERVER_TEST_FILTER="${filter}" \
                HONUA_SERVER_TEST_LOG_NAME="${log_name}" \
                HONUA_SERVER_TEST_TIMEOUT_MINUTES="${HONUA_PRE_PR_SERVER_TEST_TIMEOUT_MINUTES:-${test_timeout_minutes}}" \
