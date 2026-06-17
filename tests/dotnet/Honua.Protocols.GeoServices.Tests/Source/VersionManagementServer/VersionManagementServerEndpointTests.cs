@@ -232,6 +232,44 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.VersionManagement)]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/startEditing")]
+    [InterfaceOperation(TestProtocols.VersionManagementServer, "startEditing")]
+    public async Task StartEditing_VersionMidReconcile_Returns409Locked()
+    {
+        // A version that is mid-reconcile/post is locked (Redis-backed) for the duration of that job,
+        // so opening an edit session would be a false acknowledgement: no edit can land. Pin the
+        // version into the Reconciling state and assert startEditing refuses with a 409 in-progress
+        // (ADR-0051; the documented edit-session lock path). The read path stays open in this state.
+        var created = await CreateVersionAsync("admin.start_editing_locked");
+        var guid = created.GetProperty("versionGuid").GetString();
+
+        // VersionState.Reconciling == 1; honua.gdb_versions is the global versioning catalog and the
+        // version_id GUID targets exactly the version created above.
+        await _fixture.Postgres.ExecuteAsync(
+            $"UPDATE honua.gdb_versions SET state = 1 WHERE version_id = '{guid}'::uuid");
+
+        var editResponse = await PostFormAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{guid}/startEditing",
+            ("f", "json"));
+        editResponse.StatusCode.Should().Be(HttpStatusCode.Conflict,
+            "opening an edit session against a reconciling version must return 409; body: {0}",
+            await editResponse.Content.ReadAsStringAsync());
+
+        using (var doc = JsonDocument.Parse(await editResponse.Content.ReadAsStringAsync()))
+        {
+            doc.RootElement.TryGetProperty("error", out _).Should().BeTrue(
+                "GeoServices protocol wraps errors in an 'error' envelope");
+        }
+
+        // A read session is not gated on the lock — it reports the current moment regardless of state.
+        var readResponse = await PostFormAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{guid}/startReading",
+            ("f", "json"));
+        await AssertSuccessMomentAsync(readResponse, expectGenerationMoment: true);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.VersionManagement)]
     [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/stopEditing")]
     [InterfaceOperation(TestProtocols.VersionManagementServer, "stopEditing")]
     public async Task StopEditing_AcknowledgesSession()
