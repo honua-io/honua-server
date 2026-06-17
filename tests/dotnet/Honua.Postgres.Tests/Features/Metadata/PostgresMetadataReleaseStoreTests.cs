@@ -127,6 +127,64 @@ public sealed class PostgresMetadataReleaseStoreTests(PostgresFixture fixture)
     }
 
     [IntegrationTest]
+    public async Task ReleasePackageStore_ListAsync_WithEmptyFilter_DoesNotThrowParameterTypeError()
+    {
+        // Regression for #1688: GET /api/v1/admin/metadata/release-packages returned HTTP 500
+        // "42P08: could not determine data type of parameter $1" because the nullable
+        // source/target/status filters were bound as untyped DBNull while the SQL wraps them in
+        // LOWER(...). An unfiltered list (every filter null) is the common GitOps/console discovery
+        // call, and it must succeed and return all packages newest-first.
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataReleaseStoreTests));
+        try
+        {
+            await EnsureTablesAsync(schema);
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var store = new PostgresMetadataReleasePackageStore(provider, schema);
+
+            await store.CreateAsync(BuildPackage(Guid.NewGuid(), "promote-parcels", "ops"));
+            await store.CreateAsync(BuildPackage(Guid.NewGuid(), "promote-zoning", "ops"));
+
+            var act = () => store.ListAsync(new MetadataReleasePackageListFilter());
+
+            var summaries = (await act.Should().NotThrowAsync()).Subject;
+            summaries.Should().HaveCount(2);
+            summaries.Should().OnlyContain(summary => summary.SourceEnvironment == "dev");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task ReleasePackageStore_ListAsync_WithEnvironmentFilter_MatchesCaseInsensitively()
+    {
+        // Companion to the empty-filter regression: confirms the typed filter parameters still
+        // drive the LOWER(...) case-insensitive WHERE clause when a value IS supplied.
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataReleaseStoreTests));
+        try
+        {
+            await EnsureTablesAsync(schema);
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var store = new PostgresMetadataReleasePackageStore(provider, schema);
+
+            await store.CreateAsync(BuildPackage(Guid.NewGuid(), "promote-parcels", "ops"));
+
+            var summaries = await store.ListAsync(new MetadataReleasePackageListFilter
+            {
+                SourceEnvironment = "DEV",
+                TargetEnvironment = "Staging",
+            });
+
+            summaries.Should().ContainSingle(summary => summary.PackageKey == "promote-parcels");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
     public async Task ReleasePackageStore_CreateAsync_WithDuplicateDefaultNamespaceKey_ThrowsConflict()
     {
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataReleaseStoreTests));
