@@ -32,6 +32,7 @@
 - [All guides: I want to…](guides/README.md)
 - Publish data
   - [Import files](guides/publish/import-files.md)
+  - [Open-data area-import provisioner](guides/open-data-provisioner.md)
   - [Import from ArcGIS services](guides/publish/import-from-arcgis-services.md)
   - [Serve existing databases](guides/publish/serve-existing-databases.md)
   - [Publish layers](guides/publish/publish-layers.md)

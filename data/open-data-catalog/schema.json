@@ -1,0 +1,136 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://honua.io/schemas/open-data-catalog/v1.json",
+  "title": "Honua Open-Data Source Catalog",
+  "description": "Curated registry of open geospatial data sources that the area-import provisioner can fetch, clip to an area, and load into Honua Server. Catalog is config-as-data: adding a source is a data edit, not a code change.",
+  "type": "object",
+  "required": ["catalogVersion", "sources"],
+  "additionalProperties": false,
+  "properties": {
+    "catalogVersion": {
+      "type": "string",
+      "description": "Semver of the catalog document format.",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "updated": {
+      "type": "string",
+      "format": "date",
+      "description": "ISO date the catalog was last curated."
+    },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/source" }
+    }
+  },
+  "definitions": {
+    "source": {
+      "type": "object",
+      "required": ["id", "name", "license", "extractMethod", "products"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Stable machine id, kebab-case. Used as the --source argument to the provisioner.",
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "name": { "type": "string", "description": "Human-readable source name." },
+        "publisher": { "type": "string", "description": "Authoritative publisher / steward." },
+        "homepage": { "type": "string", "format": "uri" },
+        "license": {
+          "type": "object",
+          "required": ["spdx", "url"],
+          "additionalProperties": false,
+          "properties": {
+            "spdx": { "type": "string", "description": "SPDX id where one exists, else a short label (e.g. 'US-PD', 'ODbL-1.0')." },
+            "url": { "type": "string", "format": "uri" },
+            "attributionRequired": { "type": "boolean", "default": false },
+            "attributionText": { "type": "string", "description": "Verbatim attribution string to surface on derived layers when attributionRequired is true." }
+          }
+        },
+        "status": {
+          "type": "string",
+          "enum": ["available", "placeholder"],
+          "default": "available",
+          "description": "'available' = a working extract recipe exists; 'placeholder' = curated but extraction is a future slice (TODO)."
+        },
+        "extractMethod": {
+          "type": "string",
+          "enum": ["bbox", "admin-boundary", "census-geoid"],
+          "description": "How an AREA parameter selects a subset. bbox = clip by lon/lat envelope; admin-boundary = clip by a named/geocoded polygon; census-geoid = select rows whose Census GEOID prefix matches the area."
+        },
+        "areaParam": {
+          "type": "object",
+          "description": "Declares which AREA inputs this source accepts and how they map to the extract.",
+          "additionalProperties": false,
+          "properties": {
+            "accepts": {
+              "type": "array",
+              "items": { "type": "string", "enum": ["bbox", "state-fips", "county-geoid", "place-geoid", "iso3166-2"] }
+            },
+            "notes": { "type": "string" }
+          }
+        },
+        "products": {
+          "type": "array",
+          "minItems": 1,
+          "description": "The layer(s) this source yields. Each product becomes one Honua layer after import.",
+          "items": { "$ref": "#/definitions/product" }
+        }
+      }
+    },
+    "product": {
+      "type": "object",
+      "required": ["product", "layerName", "geometryType"],
+      "additionalProperties": false,
+      "properties": {
+        "product": {
+          "type": "string",
+          "description": "Machine id of the product within the source (e.g. 'roads', 'buildings', 'county-boundaries'). Used as --product.",
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "layerName": { "type": "string", "description": "Default published layer display name." },
+        "geometryType": {
+          "type": "string",
+          "enum": ["Point", "LineString", "Polygon", "MultiPoint", "MultiLineString", "MultiPolygon", "GeometryCollection"]
+        },
+        "format": {
+          "type": "string",
+          "description": "Source-side format of the fetched file (one of Honua's 13 import formats, or an intermediate that the recipe converts).",
+          "enum": ["geojson", "shapefile-zip", "gpkg", "fgb", "geoparquet", "csv", "osm-pbf", "kml"]
+        },
+        "sourceProduct": {
+          "type": "string",
+          "enum": ["features", "tiles", "geocoder", "router"],
+          "default": "features",
+          "description": "What downstream artifact this product is built into. 'features' = vector layer (this slice). 'geocoder'/'router' = future GP-Batch products (see docs/guides/open-data-provisioner.md)."
+        },
+        "fetch": {
+          "type": "object",
+          "description": "Declarative fetch recipe. urlTemplate placeholders are substituted from the AREA param.",
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "type": "string", "enum": ["http-template", "overpass", "geofabrik-extract"] },
+            "urlTemplate": { "type": "string", "description": "URL with {placeholders} like {stateFips}, {countyGeoid}, {bbox}." },
+            "sampleUrl": { "type": "string", "format": "uri", "description": "A concrete small example URL for docs/testing (NOT committed as data)." },
+            "clip": {
+              "type": "boolean",
+              "default": true,
+              "description": "Whether the fetched file still needs clipping to the AREA after download (e.g. a statewide file clipped to a bbox). false when the URL already returns exactly the area."
+            }
+          }
+        },
+        "tile": {
+          "type": "object",
+          "description": "Optional PMTiles generation hints once the layer is published.",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": false },
+            "minZoom": { "type": "integer", "minimum": 0, "maximum": 24 },
+            "maxZoom": { "type": "integer", "minimum": 0, "maximum": 24 }
+          }
+        }
+      }
+    }
+  }
+}
