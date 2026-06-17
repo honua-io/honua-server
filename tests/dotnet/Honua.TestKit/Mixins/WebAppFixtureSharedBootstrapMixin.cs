@@ -64,7 +64,7 @@ internal static class WebAppFixtureSharedBootstrapMixin
                 _sharedPostgres = new PostgresFixture();
                 await _sharedPostgres.InitializeAsync();
 
-                _sharedFactory = BuildSharedFactory(_sharedPostgres, sharedAdminPassword);
+                _sharedFactory = BuildSharedFactory(_sharedPostgres.ConnectionString, sharedAdminPassword);
 
                 _sharedInitialized = true;
             }
@@ -116,11 +116,9 @@ internal static class WebAppFixtureSharedBootstrapMixin
     }
 
     private static WebApplicationFactory<Program> BuildSharedFactory(
-        PostgresFixture postgres,
+        string connectionString,
         string sharedAdminPassword)
     {
-        var connectionString = postgres.ConnectionString;
-        var templateFixture = PostgresFixture.TemplateDatabaseModeEnabled ? postgres : null;
         var sharedAppConfigExtras = new Dictionary<string, string?>
         {
             ["HONUA_DEV_AUTH"] = "true",
@@ -154,8 +152,7 @@ internal static class WebAppFixtureSharedBootstrapMixin
                     WebAppFixturePostgresWiringMixin.ConfigureSharedTestServices(
                         services,
                         connectionString,
-                        sharedPostgresConfigExtras,
-                        templateFixture);
+                        sharedPostgresConfigExtras);
                 });
             });
     }

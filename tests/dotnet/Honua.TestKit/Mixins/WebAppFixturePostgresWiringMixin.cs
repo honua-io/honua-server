@@ -239,60 +239,6 @@ internal static class WebAppFixturePostgresWiringMixin
     }
 
     /// <summary>
-    /// Replaces the singleton-shape <see cref="NpgsqlDataSource"/> registration with a
-    /// per-test-database routing registration used by template-database isolation
-    /// (<c>HONUA_TEST_DB_TEMPLATE=1</c>). The router resolves the active database from the
-    /// ambient request schema (which carries the test's database name in this mode), so
-    /// every DB-access path — the connection providers AND services that inject
-    /// <see cref="NpgsqlDataSource"/> directly — routes to the test's own cloned database.
-    /// </summary>
-    /// <remarks>
-    /// The router is a process-scoped resource (one pooled data source per live test
-    /// database); it is registered as a singleton keyed off the owning
-    /// <see cref="PostgresFixture"/> and the data source resolves it per scope. Disabling
-    /// the template flag leaves this path untouched.
-    /// </remarks>
-    internal static void OverrideTemplateDatabaseRouting(
-        IServiceCollection services,
-        PostgresFixture fixture,
-        string connectionString)
-    {
-        // One router per host. The fallback (no ambient test DB in scope: background work /
-        // header-less requests) targets the bootstrap database with multiplexing disabled,
-        // matching the schema-mode override. The router owns + caches the per-database data
-        // sources (a DI singleton, disposed at host teardown).
-        var fallbackConnectionString = BuildNonMultiplexingConnectionString(connectionString);
-        var router = new Infrastructure.TemplateDatabaseDataSourceRouter(fixture, fallbackConnectionString);
-        services.AddSingleton(router);
-        fixture.AttachRouter(router);
-
-        // Hot path: route DB access through a router-backed connection provider that opens
-        // from the router's cached per-test-database data source. Mirrors the isolated path's
-        // IDatabaseConnectionProvider override so the secure decorator wraps it transparently.
-        // This avoids a scoped NpgsqlDataSource registration whose container-owned disposal
-        // would dispose the router's cached data source at the first scope's end.
-        services.RemoveAll<IDatabaseConnectionProvider>();
-        services.AddScoped<IDatabaseConnectionProvider>(serviceProvider =>
-            new Infrastructure.TemplateDatabaseConnectionProvider(
-                serviceProvider.GetRequiredService<Infrastructure.TemplateDatabaseDataSourceRouter>(),
-                fixture));
-
-        // Direct NpgsqlDataSource consumers (off the Stac hot path) get a per-scope,
-        // DI-owned data source for the active database so the container can safely dispose it
-        // without touching the router's cached instances.
-        services.RemoveAll<NpgsqlDataSource>();
-        services.AddScoped<NpgsqlDataSource>(serviceProvider =>
-            serviceProvider.GetRequiredService<Infrastructure.TemplateDatabaseDataSourceRouter>()
-                .CreateOwnedForCurrentDatabase());
-    }
-
-    private static string BuildNonMultiplexingConnectionString(string connectionString)
-    {
-        var builder = new NpgsqlConnectionStringBuilder(connectionString) { Multiplexing = false };
-        return builder.ConnectionString;
-    }
-
-    /// <summary>
     /// Applies the full ConfigureTestServices block used by the isolated bootstrap
     /// path: strip the Postgres-backed registrations, register them against the test
     /// connection string, override the data source to disable multiplexing, register
@@ -303,8 +249,7 @@ internal static class WebAppFixturePostgresWiringMixin
         IServiceCollection services,
         string connectionString,
         Func<string?> currentSchemaAccessor,
-        IEnumerable<Action<IServiceCollection>> userConfigurations,
-        PostgresFixture? templateFixture = null)
+        IEnumerable<Action<IServiceCollection>> userConfigurations)
     {
         RemovePostgresBackedServices(services);
         RemoveBackgroundPollers(services);
@@ -312,16 +257,7 @@ internal static class WebAppFixturePostgresWiringMixin
         var testConfiguration = BuildPostgresTestConfiguration(connectionString);
         Honua.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices(services, testConfiguration);
 
-        if (templateFixture is not null)
-        {
-            // Template-database mode: route every DB-access path to the test's own cloned
-            // database via the ambient-schema-keyed router instead of one shared data source.
-            OverrideTemplateDatabaseRouting(services, templateFixture, connectionString);
-        }
-        else
-        {
-            OverrideNonMultiplexingDataSource(services, connectionString);
-        }
+        OverrideNonMultiplexingDataSource(services, connectionString);
 
         // Replace the Postgres-backed Metadata v2 provider with an in-memory fixture so
         // endpoints read the seeded snapshot without a migrated snapshot row being
@@ -345,8 +281,7 @@ internal static class WebAppFixturePostgresWiringMixin
     internal static void ConfigureSharedTestServices(
         IServiceCollection services,
         string connectionString,
-        IDictionary<string, string?>? extraConfiguration = null,
-        PostgresFixture? templateFixture = null)
+        IDictionary<string, string?>? extraConfiguration = null)
     {
         RemovePostgresBackedServices(services);
         RemoveBackgroundPollers(services);
@@ -354,16 +289,7 @@ internal static class WebAppFixturePostgresWiringMixin
         var testConfiguration = BuildPostgresTestConfiguration(connectionString, extraConfiguration);
         Honua.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices(services, testConfiguration);
 
-        if (templateFixture is not null)
-        {
-            // Template-database mode: route every DB-access path to the test's own cloned
-            // database via the ambient-schema-keyed router instead of one shared data source.
-            OverrideTemplateDatabaseRouting(services, templateFixture, connectionString);
-        }
-        else
-        {
-            OverrideNonMultiplexingDataSource(services, connectionString);
-        }
+        OverrideNonMultiplexingDataSource(services, connectionString);
 
         // Replace the Postgres-backed Metadata v2 provider with an in-memory fixture so
         // endpoints read the seeded snapshot without a migrated snapshot row being
