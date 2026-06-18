@@ -65,6 +65,7 @@ using Honua.Server.Features.Mobile.FieldCollection;
 using Honua.Server.Features.Orchestration;
 using Honua.Server.Features.Studio;
 using Honua.PackageReview;
+using Honua.Server.Features.Operations;
 using Honua.Server.Features.Streaming;
 using Honua.Server.Features.WorkflowPackages;
 using Honua.Server.Startup;
@@ -586,6 +587,7 @@ builder.Services.AddValidationServices();
 builder.Services.AddServerFeatures(builder.Configuration);
 builder.Services.AddOperateObservabilityFixtures(builder.Configuration, builder.Environment);
 builder.Services.AddWorkflowPackages();
+builder.Services.AddOperationsToolset();
 builder.Services.AddAdminRealtime();
 if (!isTestEnvironment)
 {
@@ -767,6 +769,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Ai.AnalysisContent.AnalysisContentApiJsonContext.Default,
         Honua.Server.Features.Capabilities.Models.CapabilityManifestJsonContext.Default,
         Honua.Server.Features.WorkflowPackages.WorkflowPackagesJsonContext.Default,
+        Honua.Server.Features.Operations.OperationsJsonContext.Default,
         Honua.Server.Features.Admin.Models.AdminApiKeyJsonContext.Default,
         Honua.Server.Features.Admin.Models.SceneDatasetJsonContext.Default,
         Honua.Server.Features.Admin.Models.SceneGenerationJsonContext.Default,
@@ -1287,6 +1290,7 @@ app.MapConsoleOpenDataPublicEndpoints();
 app.MapStudioPackageEndpoints();
 app.MapStudioMapCollaborationEndpoints();
 app.MapWorkflowPackageEndpoints();
+app.MapOperationsEndpoints();
 Honua.Server.Features.Console.Publications.ContentPublicationEndpoints.MapContentPublicationEndpoints(app);
 Honua.Server.Features.Console.Publications.PublishedRouteEndpoints.MapPublishedRouteEndpoints(app);
 app.MapAdminApiKeyEndpoints();
