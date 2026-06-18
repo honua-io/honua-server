@@ -4,13 +4,20 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Ai.AnalysisGeneration;
+using Honua.Ai.AppGeneration;
 using Honua.Ai.DashboardGeneration;
+using Honua.Ai.FormGeneration;
+using Honua.Ai.MapGeneration;
 using Honua.Ai.Providers.Bedrock;
+using Honua.Ai.QueryGeneration;
 using Honua.Ai.ReportGeneration;
 using Honua.Ai.WorkflowGeneration;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Publishing.Dashboards;
 using Honua.Core.Features.Publishing.Reports;
 using Honua.Core.Features.WorkflowPackages.Generation;
+using Honua.Geoprocessing;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -131,6 +138,130 @@ public sealed class BedrockStudioProviderTests
 
         result.Status.Should().Be("needs-clarification");
         result.Provider.Should().Be(WorkflowGenerationConfiguration.BedrockProviderId);
+    }
+
+    [UnitTest]
+    public async Task MapService_WithBedrockProvider_RoutesThroughConverseAndSurfacesTheProposal()
+    {
+        const string ToolJson = """
+        { "status": "needs-clarification", "rationale": "Which basemap?", "clarifications": [] }
+        """;
+
+        var factory = FakeFactoryReturning(ToolJson, out var capturedModel, out var capturedRegion);
+        var service = new MapGenerationService(
+            httpClientFactory: Substitute.For<IHttpClientFactory>(),
+            options: BedrockOptions(),
+            apiKeyResolver: new WorkflowGenerationApiKeyResolver(),
+            bedrockChatClientFactory: factory,
+            logger: NullLogger<MapGenerationService>.Instance);
+
+        var result = await service.GenerateAsync(new MapGenerationRequest { Prompt = "fleet map" });
+
+        // The Endpoint guard no longer rejects Bedrock (which has no endpoint) with "unsupported";
+        // the call routed through the Converse backend instead of the HTTP-only path.
+        result.Status.Should().Be("needs-clarification");
+        result.Provider.Should().Be(WorkflowGenerationConfiguration.BedrockProviderId);
+        result.Model.Should().Be("test-bedrock-model");
+        capturedModel.Value.Should().Be("test-bedrock-model");
+        capturedRegion.Value.Should().Be("us-west-2");
+    }
+
+    [UnitTest]
+    public async Task AppService_WithBedrockProvider_RoutesThroughConverseAndSurfacesTheProposal()
+    {
+        const string ToolJson = """
+        { "status": "needs-clarification", "rationale": "Which components?", "clarifications": [] }
+        """;
+
+        var factory = FakeFactoryReturning(ToolJson, out var capturedModel, out var capturedRegion);
+        var service = new AppGenerationService(
+            httpClientFactory: Substitute.For<IHttpClientFactory>(),
+            options: BedrockOptions(),
+            apiKeyResolver: new WorkflowGenerationApiKeyResolver(),
+            bedrockChatClientFactory: factory,
+            logger: NullLogger<AppGenerationService>.Instance);
+
+        var result = await service.GenerateAsync(new AppGenerationRequest { Prompt = "field app" });
+
+        result.Status.Should().Be("needs-clarification");
+        result.Provider.Should().Be(WorkflowGenerationConfiguration.BedrockProviderId);
+        result.Model.Should().Be("test-bedrock-model");
+        capturedModel.Value.Should().Be("test-bedrock-model");
+        capturedRegion.Value.Should().Be("us-west-2");
+    }
+
+    [UnitTest]
+    public async Task FormService_WithBedrockProvider_RoutesThroughConverseAndSurfacesTheProposal()
+    {
+        const string ToolJson = """
+        { "status": "needs-clarification", "rationale": "Which fields?", "clarifications": [] }
+        """;
+
+        var factory = FakeFactoryReturning(ToolJson, out var capturedModel, out var capturedRegion);
+        var service = new FormGenerationService(
+            httpClientFactory: Substitute.For<IHttpClientFactory>(),
+            options: BedrockOptions(),
+            limitsOptions: Options.Create(new LimitsOptions()),
+            apiKeyResolver: new WorkflowGenerationApiKeyResolver(),
+            bedrockChatClientFactory: factory,
+            logger: NullLogger<FormGenerationService>.Instance);
+
+        var result = await service.GenerateAsync(new FormGenerationRequest { Prompt = "inspection form" });
+
+        result.Status.Should().Be("needs-clarification");
+        result.Provider.Should().Be(WorkflowGenerationConfiguration.BedrockProviderId);
+        result.Model.Should().Be("test-bedrock-model");
+        capturedModel.Value.Should().Be("test-bedrock-model");
+        capturedRegion.Value.Should().Be("us-west-2");
+    }
+
+    [UnitTest]
+    public async Task AnalysisService_WithBedrockProvider_RoutesThroughConverseAndSurfacesTheProposal()
+    {
+        const string ToolJson = """
+        { "status": "needs-clarification", "rationale": "Which layers?", "clarifications": [] }
+        """;
+
+        var factory = FakeFactoryReturning(ToolJson, out var capturedModel, out var capturedRegion);
+        var service = new AnalysisGenerationService(
+            httpClientFactory: Substitute.For<IHttpClientFactory>(),
+            options: BedrockOptions(),
+            processCatalog: new BuiltInProcessCatalog(),
+            apiKeyResolver: new WorkflowGenerationApiKeyResolver(),
+            bedrockChatClientFactory: factory,
+            logger: NullLogger<AnalysisGenerationService>.Instance);
+
+        var result = await service.GenerateAsync(new AnalysisGenerationRequest { Prompt = "buffer parcels by 100m" });
+
+        result.Status.Should().Be("needs-clarification");
+        result.Provider.Should().Be(WorkflowGenerationConfiguration.BedrockProviderId);
+        result.Model.Should().Be("test-bedrock-model");
+        capturedModel.Value.Should().Be("test-bedrock-model");
+        capturedRegion.Value.Should().Be("us-west-2");
+    }
+
+    [UnitTest]
+    public async Task QueryService_WithBedrockProvider_RoutesThroughConverseAndSurfacesTheProposal()
+    {
+        const string ToolJson = """
+        { "status": "needs-clarification", "rationale": "Which layer?", "clarifications": [] }
+        """;
+
+        var factory = FakeFactoryReturning(ToolJson, out var capturedModel, out var capturedRegion);
+        var service = new QueryGenerationService(
+            httpClientFactory: Substitute.For<IHttpClientFactory>(),
+            options: BedrockOptions(),
+            apiKeyResolver: new WorkflowGenerationApiKeyResolver(),
+            bedrockChatClientFactory: factory,
+            logger: NullLogger<QueryGenerationService>.Instance);
+
+        var result = await service.GenerateAsync(new QueryGenerationRequest { Prompt = "parcels within 500m of rivers" });
+
+        result.Status.Should().Be("needs-clarification");
+        result.Provider.Should().Be(WorkflowGenerationConfiguration.BedrockProviderId);
+        result.Model.Should().Be("test-bedrock-model");
+        capturedModel.Value.Should().Be("test-bedrock-model");
+        capturedRegion.Value.Should().Be("us-west-2");
     }
 
     [UnitTest]

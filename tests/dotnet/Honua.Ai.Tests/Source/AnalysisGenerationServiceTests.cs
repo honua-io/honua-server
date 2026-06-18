@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Ai.AnalysisGeneration;
+using Honua.Ai.Providers.Bedrock;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.WorkflowPackages.Generation;
@@ -13,6 +14,7 @@ using Honua.Geoprocessing;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.Ai.WorkflowGeneration;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -373,12 +375,20 @@ public sealed class AnalysisGenerationServiceTests
         var handler = new StubChatHandler(cannedResponses, throwIfCalled);
         var factory = new StubHttpClientFactory(handler);
 
-        return new AnalysisGenerationService(factory, configuration, _catalog, new WorkflowGenerationApiKeyResolver(), NullLogger<AnalysisGenerationService>.Instance);
+        return new AnalysisGenerationService(factory, configuration, _catalog, new WorkflowGenerationApiKeyResolver(), new ThrowingBedrockChatClientFactory(), NullLogger<AnalysisGenerationService>.Instance);
     }
 
     private sealed class StubHttpClientFactory(HttpMessageHandler handler) : IHttpClientFactory
     {
         public HttpClient CreateClient(string name) => new(handler, disposeHandler: false);
+    }
+
+    // These tests exercise the OpenAI-compatible (local) path only; the Bedrock branch must never be
+    // reached, so the factory throws if invoked. (Bedrock routing is covered by BedrockStudioProviderTests.)
+    private sealed class ThrowingBedrockChatClientFactory : IBedrockChatClientFactory
+    {
+        public IChatClient Create(string model, string region, string? apiKey) =>
+            throw new InvalidOperationException("Bedrock must not be invoked on the OpenAI-compatible path.");
     }
 
     // Returns the next canned chat-completion body per call so the repair loop can be exercised.
