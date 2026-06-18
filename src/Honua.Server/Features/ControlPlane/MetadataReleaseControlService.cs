@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.RegularExpressions;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.ControlPlane.Abstractions;
@@ -39,6 +41,7 @@ internal sealed partial class MetadataReleaseControlService(
 
         var now = DateTimeOffset.UtcNow;
         var operationId = CreateOperationId(plan.PackageId, idempotencyKey);
+        var requestFingerprint = CreateRequestFingerprint(plan);
 
         var release = new MetadataReleaseContext
         {
@@ -62,7 +65,8 @@ internal sealed partial class MetadataReleaseControlService(
                 RequestedBy = requestedBy,
                 Reason = reason,
                 IdempotencyKey = idempotencyKey,
-                CorrelationId = correlationId
+                CorrelationId = correlationId,
+                RequestFingerprint = requestFingerprint
             },
             Concurrency = new OperationConcurrencyPolicy
             {
@@ -78,6 +82,11 @@ internal sealed partial class MetadataReleaseControlService(
             var existing = await _workflowStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
             if (existing != null)
             {
+                // An idempotency key deterministically maps to one operation id. Guard against a
+                // replay that reuses the key for a different package/resource/field: returning the
+                // prior operation in that case would report success while silently dropping the new
+                // request. Compare the request fingerprint and surface a conflict on mismatch.
+                EnsureMatchingIdempotentRequest(existing, requestFingerprint);
                 return existing;
             }
 
@@ -85,6 +94,54 @@ internal sealed partial class MetadataReleaseControlService(
         }
 
         return operation;
+    }
+
+    private static void EnsureMatchingIdempotentRequest(WorkflowOperationRecord existing, string requestFingerprint)
+    {
+        var existingFingerprint = existing.Audit.RequestFingerprint;
+        if (!string.IsNullOrWhiteSpace(existingFingerprint) &&
+            string.Equals(existingFingerprint, requestFingerprint, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        throw new ResourceConflictException(
+            $"Idempotency key '{existing.Audit.IdempotencyKey}' is already associated with a different metadata-release request.");
+    }
+
+    /// <summary>
+    /// Computes a stable fingerprint of the behavior-changing inputs of a metadata-release request
+    /// (package, environment, resource, new field, optional data-populate workload, and the
+    /// executable script shape). Mirrors the deploy workflow so a replay that reuses an idempotency
+    /// key for a different intent is detected rather than silently skipped.
+    /// </summary>
+    private static string CreateRequestFingerprint(MetadataReleaseExecutionPlan plan)
+    {
+        var builder = new StringBuilder();
+        builder.Append("package=").Append(plan.PackageId.Trim()).Append('\n');
+        builder.Append("environment=").Append(plan.TargetEnvironment.Trim()).Append('\n');
+        builder.Append("resource=").Append(plan.ResourceSemanticId.Trim()).Append('\n');
+        builder.Append("field=").Append(plan.NewFieldName.Trim()).Append('\n');
+        builder.Append("dataPopulate=").Append(plan.DataPopulateWorkloadId?.Trim() ?? string.Empty).Append('\n');
+        builder.Append("scriptId=").Append(plan.Script.ScriptId.Trim()).Append('\n');
+        builder.Append("scriptReversible=").Append(plan.Script.Reversible ? "1" : "0").Append('\n');
+
+        foreach (var op in plan.Script.ForwardOperations)
+        {
+            builder.Append("op=")
+                .Append(op.Kind)
+                .Append(':')
+                .Append(op.ResourceSemanticId.Trim())
+                .Append(':')
+                .Append(op.FieldName.Trim())
+                .Append(':')
+                .Append(op.FieldType?.Trim() ?? string.Empty)
+                .Append(':')
+                .Append(op.Nullable ? "1" : "0")
+                .Append('\n');
+        }
+
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString()))).ToLowerInvariant();
     }
 
     public async Task<WorkflowOperationRecord?> GetAsync(string operationId, CancellationToken cancellationToken = default)

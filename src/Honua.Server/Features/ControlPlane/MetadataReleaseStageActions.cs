@@ -17,9 +17,15 @@ namespace Honua.ControlPlane;
 /// release package is addressable, and otherwise classifies the additive plan directly: a plan whose
 /// forward operations are all nullable column adds is script-reversible. The reconciler refuses
 /// snapshot-required classifications (the deferred Item 2 path).
+///
+/// The metadata-release reconciler that consumes this gate is a singleton, but the canonical
+/// <see cref="IMetadataCompatibilityPrevalidationService"/> (and the graph/package services it
+/// depends on) is registered scoped. Resolving it per evaluation through an
+/// <see cref="IServiceScopeFactory"/> avoids capturing scoped services from the root provider and
+/// keeps the gate compatible with DI scope validation.
 /// </summary>
 internal sealed class MetadataReleasePreflightGate(
-    IMetadataCompatibilityPrevalidationService prevalidationService) : IMetadataReleasePreflightGate
+    IServiceScopeFactory scopeFactory) : IMetadataReleasePreflightGate
 {
     public async Task<MetadataReleasePreflightResult> EvaluateAsync(
         MetadataReleaseExecutionPlan plan,
@@ -31,6 +37,9 @@ internal sealed class MetadataReleasePreflightGate(
         // gate and lift its rollback classification. This is the shared sync-check path.
         if (Guid.TryParse(plan.PackageId, out var packageId))
         {
+            await using var scope = scopeFactory.CreateAsyncScope();
+            var prevalidationService = scope.ServiceProvider
+                .GetRequiredService<IMetadataCompatibilityPrevalidationService>();
             var report = await prevalidationService.PrevalidateAsync(
                     new MetadataCompatibilityPrevalidationRequest
                     {
@@ -94,10 +103,14 @@ internal sealed class MetadataReleasePreflightGate(
 
 /// <summary>
 /// Default data-job dispatcher. Submits the optional ETL/data-populate workload through the
-/// canonical batch-compute backend (local in-process fallback for the non-AWS demo path) and waits
-/// for a terminal job state. Returns false when no workload is declared.
+/// canonical execution-job store so the execution-job reconciler (and its background worker)
+/// actually starts and drives the job, then polls the durable record for a terminal state.
+/// Dispatching the local backend's <c>StartAsync</c> directly would only mark the job
+/// <c>Running</c> without enqueuing it for any worker, leaving the release to time out and
+/// require manual intervention. Returns false when no workload is declared.
 /// </summary>
 internal sealed class MetadataReleaseDataJobDispatcher(
+    IExecutionJobStore jobStore,
     IEnumerable<IBatchComputeBackend> backends) : IMetadataReleaseDataJobDispatcher
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(250);
@@ -114,14 +127,17 @@ internal sealed class MetadataReleaseDataJobDispatcher(
         }
 
         // Prefer the local in-process backend so the additive demo path runs without a cloud backend.
+        // The backend is only used to resolve the target kind/name stamped on the spec; the canonical
+        // reconciler is what actually starts and observes the job once it is persisted as Queued.
         var backend = backends.FirstOrDefault(b => b.BackendName == LocalBatchComputeBackend.BackendId)
             ?? backends.FirstOrDefault()
             ?? throw new InvalidOperationException("No batch-compute backend is registered for metadata-release data populate.");
 
+        var jobOperationId = $"metadata-release-etl-{operationId}";
         var now = DateTimeOffset.UtcNow;
         var job = new ExecutionJobRecord
         {
-            OperationId = $"metadata-release-etl-{operationId}",
+            OperationId = jobOperationId,
             Status = ExecutionJobStatus.Queued,
             CreatedAt = now,
             UpdatedAt = now,
@@ -135,29 +151,36 @@ internal sealed class MetadataReleaseDataJobDispatcher(
             }
         };
 
-        var submission = await backend.StartAsync(job, cancellationToken).ConfigureAwait(false);
-        job = job with { Status = submission.Status, ProviderOperationId = submission.ProviderOperationId };
+        // Enqueue through the canonical job store. Idempotent across reconciler re-entry: a job that
+        // already exists (because a prior cycle persisted it) is simply observed to completion.
+        await jobStore.TryCreateAsync(job, cancellationToken: cancellationToken).ConfigureAwait(false);
 
         var deadline = DateTimeOffset.UtcNow + MaxWait;
-        while (!IsTerminal(job.Status))
+        while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
+
+            var current = await jobStore.GetAsync(jobOperationId, cancellationToken).ConfigureAwait(false)
+                ?? throw new InvalidOperationException(
+                    $"Data-populate job '{jobOperationId}' was not found in the execution-job store after enqueue.");
+
+            if (IsTerminal(current.Status))
+            {
+                return current.Status switch
+                {
+                    ExecutionJobStatus.Succeeded => true,
+                    ExecutionJobStatus.Cancelled => throw new InvalidOperationException($"Data-populate job '{jobOperationId}' was cancelled."),
+                    _ => throw new InvalidOperationException($"Data-populate job '{jobOperationId}' failed."),
+                };
+            }
+
             if (DateTimeOffset.UtcNow > deadline)
             {
-                throw new TimeoutException($"Data-populate job '{job.OperationId}' did not complete within {MaxWait}.");
+                throw new TimeoutException($"Data-populate job '{jobOperationId}' did not complete within {MaxWait}.");
             }
 
             await Task.Delay(PollInterval, cancellationToken).ConfigureAwait(false);
-            var observation = await backend.ObserveAsync(job, cancellationToken).ConfigureAwait(false);
-            job = job with { Status = observation.Status };
         }
-
-        return job.Status switch
-        {
-            ExecutionJobStatus.Succeeded => true,
-            ExecutionJobStatus.Cancelled => throw new InvalidOperationException($"Data-populate job '{job.OperationId}' was cancelled."),
-            _ => throw new InvalidOperationException($"Data-populate job '{job.OperationId}' failed.")
-        };
     }
 
     private static bool IsTerminal(ExecutionJobStatus status)
