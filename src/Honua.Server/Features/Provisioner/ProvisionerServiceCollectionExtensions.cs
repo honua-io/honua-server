@@ -8,7 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using StackExchange.Redis;
 
-namespace Honua.Server.Startup;
+namespace Honua.Server.Features.Provisioner;
 
 /// <summary>
 /// Registers the per-area geocoder/router build job submission service and its
@@ -19,7 +19,13 @@ namespace Honua.Server.Startup;
 /// dependency in stores-less dev/test profiles. The build jobs ride the same GP-on-Batch
 /// dispatch path (durable record → reconciler → IBatchComputeBackend) that tiling uses.
 /// </summary>
-internal static class ProvisionerBuildJobsRegistration
+/// <remarks>
+/// Provisioner is a service/job-only vertical slice with no HTTP endpoint surface, so this
+/// in-folder service-registration extension is the slice's composition root (mirroring the
+/// ControlPlane slice's <c>JobOrchestrationServiceCollectionExtensions</c>). Keeping it under
+/// <c>Features/Provisioner</c> satisfies the vertical-slice architecture fitness test.
+/// </remarks>
+internal static class ProvisionerServiceCollectionExtensions
 {
     public static IServiceCollection AddHonuaProvisionerBuildJobs(
         this IServiceCollection services,
