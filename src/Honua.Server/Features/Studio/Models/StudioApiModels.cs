@@ -144,3 +144,37 @@ public sealed class StudioContentVersionListResponse
     [JsonPropertyName("versions")]
     public required IReadOnlyList<StudioContentVersion> Versions { get; init; }
 }
+
+/// <summary>
+/// Response body for a stored Studio deliverable export (returned when the artifact is persisted to share storage).
+/// </summary>
+public sealed class StudioDeliverableExportResponse
+{
+    /// <summary>Content item identifier the deliverable was rendered from.</summary>
+    [JsonPropertyName("itemId")]
+    public required Guid ItemId { get; init; }
+
+    /// <summary>Deliverable kind (map, dashboard, or report).</summary>
+    [JsonPropertyName("kind")]
+    public required StudioPackageFamily Kind { get; init; }
+
+    /// <summary>Export format (pdf or png).</summary>
+    [JsonPropertyName("format")]
+    public required string Format { get; init; }
+
+    /// <summary>Suggested download file name including extension.</summary>
+    [JsonPropertyName("fileName")]
+    public required string FileName { get; init; }
+
+    /// <summary>MIME content type of the rendered artifact.</summary>
+    [JsonPropertyName("contentType")]
+    public required string ContentType { get; init; }
+
+    /// <summary>Rendered artifact size in bytes.</summary>
+    [JsonPropertyName("sizeBytes")]
+    public required int SizeBytes { get; init; }
+
+    /// <summary>Stored share-artifact URL, when the deliverable was persisted to cloud storage.</summary>
+    [JsonPropertyName("artifactUrl")]
+    public string? ArtifactUrl { get; init; }
+}

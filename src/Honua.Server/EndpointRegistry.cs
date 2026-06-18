@@ -285,6 +285,8 @@ public static class EndpointRegistry
         // NL-assisted map package generation (#1180).
         new("POST", "/api/v1/studio/app-packages/generate"),
         new("POST", "/api/v1/studio/map-packages/generate"),
+        // Studio deliverable export: render a map/dashboard/report content item to PDF/PNG.
+        new("POST", "/api/v1/studio/{kind}/{id}/export"),
 
         // v1 Studio map collaboration: comment threads + activity feed (#1278, slice 1)
         new("GET", "/api/v1/console/maps/{mapId}/collab/comments"),
