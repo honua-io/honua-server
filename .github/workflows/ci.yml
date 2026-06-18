@@ -1032,6 +1032,27 @@ jobs:
           cache: 'npm'
           cache-dependency-path: tests/js/package-lock.json
 
+      # The setup-honua-server action redirects the server's stdout/stderr to
+      # ${RUNNER_TEMP}/honua-server-setup.log but only dumps it when the readiness
+      # wait *fails*. When readiness succeeds and a later JS request 500s (e.g. a
+      # WFS GetFeature), the server-side exception is otherwise lost — leaving the
+      # failure undiagnosable. Surface the log (and DB seed status) on ANY later
+      # failure in this job so the actual exception/stack trace is visible.
+      - name: Dump Honua Server log on failure
+        if: failure()
+        run: |
+          SERVER_LOG="${RUNNER_TEMP:-/tmp}/honua-server-setup.log"
+          if [ -f "$SERVER_LOG" ]; then
+            echo "----- Honua Server log (${SERVER_LOG}) -----"
+            cat "$SERVER_LOG"
+          else
+            echo "No Honua Server log found at ${SERVER_LOG}."
+          fi
+          echo "----- DB seed status (features per layer) -----"
+          PGPASSWORD=honua psql -h localhost -U honua -d honua_test \
+            -c "SELECT layer_id, COUNT(*) AS feature_count FROM features GROUP BY layer_id ORDER BY layer_id;" 2>&1 || \
+            echo "(could not query feature counts — DB unreachable?)"
+
       - name: Install JavaScript test dependencies
         run: npm ci
         working-directory: tests/js
@@ -1113,6 +1134,24 @@ jobs:
           cache: 'npm'
           cache-dependency-path: tests/js-browser/package-lock.json
 
+      # Surface the server log + DB seed status on ANY later failure in this job
+      # (not just a readiness timeout) so a boot-then-die or later 500 is
+      # diagnosable. See the matching step in the JS Integration Tests job.
+      - name: Dump Honua Server log on failure
+        if: failure()
+        run: |
+          SERVER_LOG="${RUNNER_TEMP:-/tmp}/honua-server-setup.log"
+          if [ -f "$SERVER_LOG" ]; then
+            echo "----- Honua Server log (${SERVER_LOG}) -----"
+            cat "$SERVER_LOG"
+          else
+            echo "No Honua Server log found at ${SERVER_LOG}."
+          fi
+          echo "----- DB seed status (features per layer) -----"
+          PGPASSWORD=honua psql -h localhost -U honua -d honua_test \
+            -c "SELECT layer_id, COUNT(*) AS feature_count FROM features GROUP BY layer_id ORDER BY layer_id;" 2>&1 || \
+            echo "(could not query feature counts — DB unreachable?)"
+
       - name: Install dependencies
         run: npm ci
         working-directory: tests/js-browser
@@ -1191,6 +1230,24 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
           cache-dependency-path: tests/js-browser/package-lock.json
+
+      # Surface the server log + DB seed status on ANY later failure in this job
+      # (not just a readiness timeout) so a boot-then-die or later 500 is
+      # diagnosable. See the matching step in the JS Integration Tests job.
+      - name: Dump Honua Server log on failure
+        if: failure()
+        run: |
+          SERVER_LOG="${RUNNER_TEMP:-/tmp}/honua-server-setup.log"
+          if [ -f "$SERVER_LOG" ]; then
+            echo "----- Honua Server log (${SERVER_LOG}) -----"
+            cat "$SERVER_LOG"
+          else
+            echo "No Honua Server log found at ${SERVER_LOG}."
+          fi
+          echo "----- DB seed status (features per layer) -----"
+          PGPASSWORD=honua psql -h localhost -U honua -d honua_test \
+            -c "SELECT layer_id, COUNT(*) AS feature_count FROM features GROUP BY layer_id ORDER BY layer_id;" 2>&1 || \
+            echo "(could not query feature counts — DB unreachable?)"
 
       - name: Install dependencies
         run: npm ci
