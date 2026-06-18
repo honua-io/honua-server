@@ -664,6 +664,11 @@ builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IReplic
 builder.Services.AddHonuaImportExportAndTileOperations(builder.Configuration);
 // ---- End extracted block
 
+// ---- Per-area geocoder/router build jobs (provisioner GP-on-Batch jobs)
+//      (Startup/ProvisionerBuildJobsRegistration.cs)
+builder.Services.AddHonuaProvisionerBuildJobs(builder.Configuration);
+// ---- End block
+
 
 // ---- Extracted: feature-change events, streaming, transactional outbox
 //      (Startup/FeatureEventsAndStreamingRegistration.cs)
