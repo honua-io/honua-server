@@ -457,6 +457,110 @@ public sealed class MobileOfflineDemoFixtureReplicationTests : IAsyncLifetime
         root.GetProperty("features").GetArrayLength().Should().BeGreaterThanOrEqualTo(3);
     }
 
+    // Regression guard for honua-server#1768. The mobile DisconnectedFieldWorkflow
+    // Cloud Acceptance harness reads features back from the seeded mobile_offline_demo
+    // JSONB-attribute layer (68910) with the harness "run tag" field
+    // 'honua_acceptance_run' in both the WHERE clause and outFields, plus an objectIds
+    // readback. #1768 reported that path returning HTTP 500 "Query execution failed"
+    // against a deployed (pinned) honua-server. These assertions pin the corrected
+    // trunk contract (post-#1238 JSONB-attribute resolution):
+    //   * an UNDECLARED run-tag field is rejected cleanly with 400 ("Unknown field …
+    //     in filter expression"), never a 500; and
+    //   * once the run-tag field is DECLARED on the layer (as the cloud acceptance
+    //     layer exposes it), the WHERE+outFields and objectIds readbacks both return
+    //     200 with the persisted JSONB attribute value — no bare-column 42703.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/mobile_offline_demo/FeatureServer/68910/query")]
+    public async Task MobileOfflineFixture_AcceptanceRunTagReadback_ResolvesJsonbAttributesWithout500()
+    {
+        var runTaggedUri =
+            $"/rest/services/{ServiceId}/FeatureServer/{OfflineSitesLayerId}/query"
+            + "?where=honua_acceptance_run%20%3D%20%27run-1%27"
+            + "&outFields=objectid,status,honua_acceptance_run"
+            + "&returnGeometry=false&resultRecordCount=10&f=json";
+
+        // An undeclared filter field must be a clean 400, not a 500.
+        var undeclaredResponse = await _fixture.Client.GetAsync(runTaggedUri);
+        undeclaredResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest,
+            "an undeclared filter field is a client error, not a server 'Query execution failed' 500");
+        using (var undeclaredDocument = await ReadJsonDocumentAsync(undeclaredResponse))
+        {
+            undeclaredDocument.RootElement.GetProperty("error").GetProperty("code").GetInt32()
+                .Should().Be(400);
+        }
+
+        // Declare the run-tag field on the layer (mirroring the cloud acceptance layer),
+        // write it into a feature's JSONB attributes via applyEdits, then exercise both
+        // harness readback shapes.
+        await PublishWithAcceptanceRunFieldAsync();
+
+        var applyJson = JsonSerializer.Serialize(new ApplyEditsRequest
+        {
+            Updates = new[]
+            {
+                new GeoServicesFeature
+                {
+                    Attributes = new Dictionary<string, object?>
+                    {
+                        ["objectid"] = UpdateControlObjectId,
+                        ["status"] = "inspection-complete",
+                        ["honua_acceptance_run"] = "run-1"
+                    }
+                }
+            }
+        }, FeatureServerJsonContext.Default.ApplyEditsRequest);
+        using var applyContent = new StringContent(applyJson, Encoding.UTF8, "application/json");
+        var applyResponse = await _fixture.Client.PostAsync(
+            $"/rest/services/{ServiceId}/FeatureServer/{OfflineSitesLayerId}/applyEdits", applyContent);
+        applyResponse.Be200Ok();
+
+        var declaredResponse = await _fixture.Client.GetAsync(runTaggedUri);
+        declaredResponse.Be200Ok();
+        using (var declaredDocument = await ReadJsonDocumentAsync(declaredResponse))
+        {
+            var root = declaredDocument.RootElement;
+            root.TryGetProperty("error", out _).Should().BeFalse(
+                "the declared JSONB run-tag field must resolve to attributes->>'honua_acceptance_run'");
+            var attributes = root.GetProperty("features")[0].GetProperty("attributes");
+            attributes.GetProperty("honua_acceptance_run").GetString().Should().Be("run-1");
+            attributes.GetProperty("status").GetString().Should().Be("inspection-complete");
+        }
+
+        var deleteTargetUri =
+            $"/rest/services/{ServiceId}/FeatureServer/{OfflineSitesLayerId}/query"
+            + $"?objectIds={UpdateControlObjectId}"
+            + "&outFields=objectid,status&returnGeometry=false&resultRecordCount=1&f=json";
+        var deleteTargetResponse = await _fixture.Client.GetAsync(deleteTargetUri);
+        deleteTargetResponse.Be200Ok();
+        using var deleteTargetDocument = await ReadJsonDocumentAsync(deleteTargetResponse);
+        deleteTargetDocument.RootElement.GetProperty("features").GetArrayLength().Should().Be(1,
+            "the objectIds readback must return the edited feature");
+    }
+
+    private async Task PublishWithAcceptanceRunFieldAsync()
+    {
+        var provider = _fixture.GetService<IMetadataV2GraphProvider>() as TestMetadataV2GraphProvider
+            ?? throw new InvalidOperationException("Test V2 graph provider not registered.");
+        var snapshot = await provider.GetCurrentAsync();
+        var graph = snapshot.Graph;
+
+        var existing = graph.Resources.First(r => r.Metadata.Id == "res-layer-68910");
+        var augmentedFields = existing.SchemaFields
+            .Append(Field("honua_acceptance_run", MetadataV2FieldType.String, nullable: true, "Acceptance harness run tag", length: 128))
+            .ToArray();
+        var augmented = existing with { SchemaFields = augmentedFields };
+
+        provider.SetGraph(graph with
+        {
+            Revision = graph.Revision + 1,
+            Resources = graph.Resources
+                .Where(r => r.Metadata.Id != "res-layer-68910")
+                .Append(augmented)
+                .ToArray()
+        });
+    }
+
     private async Task<string> CreateReplicaAsync()
     {
         var payload = JsonSerializer.Serialize(new
