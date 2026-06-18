@@ -197,17 +197,13 @@ internal sealed partial class FeatureQueryBuilder
             AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
             AppendOrderByClause(sql, query, ref paramIndex, parameters);
 
-            if (query.Limit.HasValue)
-            {
-                sql.Append(CultureInfo.InvariantCulture, $" LIMIT ${paramIndex++}");
-                parameters.Add(query.Limit.Value);
-            }
-
-            if (query.Offset.HasValue)
-            {
-                sql.Append(CultureInfo.InvariantCulture, $" OFFSET ${paramIndex++}");
-                parameters.Add(query.Offset.Value);
-            }
+            // Emit LIMIT/OFFSET placeholders only; the pagination values are bound by
+            // AddQueryParameters (AddRegularPaginationParameters / AddOffsetParameterIfEmitted),
+            // matching the convention every other builder uses via AppendPagination. Adding them
+            // to `parameters` here as well double-binds pagination, producing more bound parameters
+            // than SQL placeholders and an Npgsql "Parameter '' cannot be null" 500 on WFS
+            // GetFeature (which sets both count -> Limit and startIndex -> Offset).
+            AppendPagination(sql, isKnnQuery: false, query, spatialFilter: null, ref paramIndex);
 
             return new CoreParameterizedQuery(sql.ToString(), parameters);
         }

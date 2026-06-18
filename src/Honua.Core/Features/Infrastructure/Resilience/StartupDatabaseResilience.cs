@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 
 namespace Honua.Core.Features.Infrastructure.Resilience;
@@ -146,12 +147,16 @@ public static class StartupDatabaseResilience
         return false;
     }
 
+    [UnconditionalSuppressMessage(
+        "Trimming",
+        "IL2075:'this' argument does not satisfy 'DynamicallyAccessedMemberTypes' in call to 'System.Type.GetProperty(String)'",
+        Justification = "Best-effort cold-startup read of PostgresException.SqlState by name, used only to classify transient DB errors for degraded start without a compile-time Npgsql dependency in Core. If the property is trimmed away the lookup returns null and the failure is treated as non-transient — the safe default — so the access is correctness-neutral under trimming/AOT.")]
     private static string? TryReadSqlState(Exception exception)
     {
         // PostgresException exposes a public string SqlState property. Reading it via the runtime
         // property avoids a compile-time dependency on Npgsql from Core. Reflection here runs only
-        // on the cold startup path (never in request hot paths) and is guarded against trimming by
-        // the fact that the failing type is already materialized in the exception instance.
+        // on the cold startup path (never in request hot paths); a trimmed-away property simply
+        // yields null, which is treated as a non-transient error (the safe default).
         var property = exception.GetType().GetProperty("SqlState");
         return property?.GetValue(exception) as string;
     }
