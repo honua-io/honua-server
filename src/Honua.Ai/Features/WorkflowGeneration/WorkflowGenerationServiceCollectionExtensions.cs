@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Ai.Providers.Bedrock;
 using Honua.Core.Features.Infrastructure.Resilience;
 using Honua.Core.Features.WorkflowPackages.Generation;
 using Honua.Core.Features.WorkflowPackages.Generation.Abstractions;
@@ -59,6 +60,12 @@ internal static class WorkflowGenerationServiceCollectionExtensions
             "workflow-generation",
             HttpResiliencePolicies.FastApiDefaults);
         services.TryAddSingleton<WorkflowGenerationApiKeyResolver>();
+
+        // Bedrock chat-client factory: the shared backend the studio generation flows use when the
+        // selected provider id is "bedrock" (AWS Bedrock / Claude over the Converse API). Lets the
+        // dashboard/report/workflow generators run on cloud AI without a local Ollama/Qwen model.
+        services.TryAddSingleton<IBedrockChatClientFactory, BedrockChatClientFactory>();
+
         services.AddSingleton<IWorkflowGenerationProvider>(sp =>
             ActivatorUtilities.CreateInstance<OpenAiCompatibleWorkflowGenerationProvider>(
                 sp, WorkflowGenerationConfiguration.LocalProviderId));
@@ -68,6 +75,9 @@ internal static class WorkflowGenerationServiceCollectionExtensions
         services.AddSingleton<IWorkflowGenerationProvider>(sp =>
             ActivatorUtilities.CreateInstance<AnthropicWorkflowGenerationProvider>(
                 sp, WorkflowGenerationConfiguration.AnthropicProviderId));
+        services.AddSingleton<IWorkflowGenerationProvider>(sp =>
+            ActivatorUtilities.CreateInstance<BedrockWorkflowGenerationProvider>(
+                sp, WorkflowGenerationConfiguration.BedrockProviderId));
 
         services.TryAddSingleton<IWorkflowGenerationService, WorkflowGenerationService>();
         return services;
