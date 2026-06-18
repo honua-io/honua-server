@@ -33,6 +33,11 @@ internal static class OperationsServiceCollectionExtensions
         services.TryAddEnumerable(
             ServiceDescriptor.Scoped<IOperationExecutor, ServicePublishExecutor>());
 
+        // map.generate: the strangler proof — a Studio generator that wraps IMapGenerationService
+        // and frames the produced draft as a handle entering the Studio publish-request lane.
+        services.TryAddEnumerable(
+            ServiceDescriptor.Scoped<IOperationExecutor, MapGenerateExecutor>());
+
         // Policy seam: no-op pass-through default (Community tier). Pro/Enterprise swap this.
         services.TryAddSingleton<IOperationPolicyDecisionPoint, AllowAllPolicyDecisionPoint>();
 

@@ -6,9 +6,11 @@ using Honua.Core.Features.Operations.Abstractions;
 namespace Honua.Server.Features.Operations;
 
 /// <summary>
-/// Surfaces the server-side operation descriptors into the grounding catalog. Today it
-/// contributes the <c>service.publish</c> descriptor; DevOps descriptors join the catalog
-/// through their own provider in a later phase (descriptors only — execution stays remote).
+/// Surfaces the server-side operation descriptors into the grounding catalog. It contributes
+/// the synchronous <c>service.publish</c> descriptor and the Studio <c>map.generate</c>
+/// generator descriptor (a draft-producing operation that enters the publish-request lane);
+/// DevOps descriptors join the catalog through their own provider in a later phase (descriptors
+/// only — execution stays remote).
 /// </summary>
 internal sealed class ServerOperationDescriptorProvider : IOperationDescriptorProvider
 {
@@ -20,6 +22,7 @@ internal sealed class ServerOperationDescriptorProvider : IOperationDescriptorPr
         CancellationToken cancellationToken = default)
         => Task.FromResult<IReadOnlyList<IOperationDescriptor>>(
         [
-            ServicePublishOperation.BuildDescriptor()
+            ServicePublishOperation.BuildDescriptor(),
+            MapGenerateOperation.BuildDescriptor()
         ]);
 }
