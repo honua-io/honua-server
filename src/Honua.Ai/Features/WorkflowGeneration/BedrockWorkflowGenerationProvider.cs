@@ -107,65 +107,89 @@ internal sealed class BedrockWorkflowGenerationProvider : IWorkflowGenerationPro
                 new(ChatRole.User, WorkflowGenerationPrompt.BuildUser(request))
             };
 
-            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeoutCts.CancelAfter(TimeSpan.FromSeconds(options.TimeoutSeconds));
-
-            ChatResponse response;
-            try
+            // Tool-call output can come back malformed or absent on a transient bad turn; re-issue the
+            // forced tool call exactly once before surfacing a parse/tool-output failure to the caller.
+            const int MaxAttempts = 2;
+            string lastFailureReason = "Provider response could not be parsed.";
+            for (var attempt = 1; attempt <= MaxAttempts; attempt++)
             {
-                response = await client.GetResponseAsync(messages, chatOptions, timeoutCts.Token).ConfigureAwait(false);
+                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                timeoutCts.CancelAfter(TimeSpan.FromSeconds(options.TimeoutSeconds));
+
+                ChatResponse response;
+                try
+                {
+                    response = await client.GetResponseAsync(messages, chatOptions, timeoutCts.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (OperationCanceledException)
+                {
+                    WorkflowGenerationLog.GenerationFailed(_logger, _providerId, "Request timed out.");
+                    return WorkflowGenerationProposal.Error("Provider request timed out.", _providerId, model);
+                }
+
+                if (response.FinishReason == ChatFinishReason.ContentFilter)
+                {
+                    const string Reason = "Provider declined the request (content filtered).";
+                    WorkflowGenerationLog.GenerationFailed(_logger, _providerId, Reason);
+                    return WorkflowGenerationProposal.Error(Reason, _providerId, model);
+                }
+
+                var call = response.Messages
+                    .SelectMany(m => m.Contents)
+                    .OfType<FunctionCallContent>()
+                    .FirstOrDefault(c => string.Equals(c.Name, ToolName, StringComparison.Ordinal));
+
+                if (call is null)
+                {
+                    lastFailureReason = "Provider did not return the expected tool output.";
+                    WorkflowGenerationLog.GenerationFailed(
+                        _logger, _providerId, $"{lastFailureReason} (attempt {attempt}/{MaxAttempts})");
+                    continue;
+                }
+
+                WorkflowGenerationModelProposal? proposalModel;
+                try
+                {
+                    proposalModel = DeserializeProposal(call.Arguments);
+                }
+                catch (JsonException ex)
+                {
+                    lastFailureReason = "Provider response could not be parsed.";
+                    WorkflowGenerationLog.GenerationFailed(
+                        _logger, _providerId, $"{ex.Message} (attempt {attempt}/{MaxAttempts})");
+                    continue;
+                }
+
+                if (proposalModel is null)
+                {
+                    lastFailureReason = "Failed to deserialize the workflow proposal from the tool output.";
+                    WorkflowGenerationLog.GenerationFailed(
+                        _logger, _providerId, $"{lastFailureReason} (attempt {attempt}/{MaxAttempts})");
+                    continue;
+                }
+
+                stopwatch.Stop();
+                var usage = new WorkflowGenerationUsage
+                {
+                    PromptTokens = (int?)response.Usage?.InputTokenCount,
+                    CompletionTokens = (int?)response.Usage?.OutputTokenCount,
+                    LatencyMs = stopwatch.ElapsedMilliseconds
+                };
+
+                var proposal = WorkflowGenerationProposalMapper.ToProposal(proposalModel, _providerId, model, usage);
+                WorkflowGenerationLog.GenerationProduced(
+                    _logger, proposal.Status, _providerId, proposal.Graph?.Nodes.Count ?? 0);
+                activity?.SetTag("workflowgen.success", true);
+                activity?.SetTag("workflowgen.status", proposal.Status.ToString());
+                return proposal;
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (OperationCanceledException)
-            {
-                WorkflowGenerationLog.GenerationFailed(_logger, _providerId, "Request timed out.");
-                return WorkflowGenerationProposal.Error("Provider request timed out.", _providerId, model);
-            }
 
-            if (response.FinishReason == ChatFinishReason.ContentFilter)
-            {
-                const string Reason = "Provider declined the request (content filtered).";
-                WorkflowGenerationLog.GenerationFailed(_logger, _providerId, Reason);
-                return WorkflowGenerationProposal.Error(Reason, _providerId, model);
-            }
-
-            var call = response.Messages
-                .SelectMany(m => m.Contents)
-                .OfType<FunctionCallContent>()
-                .FirstOrDefault(c => string.Equals(c.Name, ToolName, StringComparison.Ordinal));
-
-            if (call is null)
-            {
-                const string Reason = "Provider did not return the expected tool output.";
-                WorkflowGenerationLog.GenerationFailed(_logger, _providerId, Reason);
-                return WorkflowGenerationProposal.Error(Reason, _providerId, model);
-            }
-
-            var proposalModel = DeserializeProposal(call.Arguments);
-            if (proposalModel is null)
-            {
-                const string Reason = "Failed to deserialize the workflow proposal from the tool output.";
-                WorkflowGenerationLog.GenerationFailed(_logger, _providerId, Reason);
-                return WorkflowGenerationProposal.Error(Reason, _providerId, model);
-            }
-
-            stopwatch.Stop();
-            var usage = new WorkflowGenerationUsage
-            {
-                PromptTokens = (int?)response.Usage?.InputTokenCount,
-                CompletionTokens = (int?)response.Usage?.OutputTokenCount,
-                LatencyMs = stopwatch.ElapsedMilliseconds
-            };
-
-            var proposal = WorkflowGenerationProposalMapper.ToProposal(proposalModel, _providerId, model, usage);
-            WorkflowGenerationLog.GenerationProduced(
-                _logger, proposal.Status, _providerId, proposal.Graph?.Nodes.Count ?? 0);
-            activity?.SetTag("workflowgen.success", true);
-            activity?.SetTag("workflowgen.status", proposal.Status.ToString());
-            return proposal;
+            // All attempts produced an unusable tool call; surface the last failure reason.
+            return WorkflowGenerationProposal.Error(lastFailureReason, _providerId, model);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -218,6 +242,18 @@ internal sealed class BedrockWorkflowGenerationProvider : IWorkflowGenerationPro
         writer.WriteEndObject();
     }
 
+    private static void WriteReadOnlyObject(Utf8JsonWriter writer, IReadOnlyDictionary<string, object?> map)
+    {
+        writer.WriteStartObject();
+        foreach (var (key, value) in map)
+        {
+            writer.WritePropertyName(key);
+            WriteValue(writer, value);
+        }
+
+        writer.WriteEndObject();
+    }
+
     private static void WriteValue(Utf8JsonWriter writer, object? value)
     {
         switch (value)
@@ -231,11 +267,32 @@ internal sealed class BedrockWorkflowGenerationProvider : IWorkflowGenerationPro
             case bool b:
                 writer.WriteBooleanValue(b);
                 break;
+            case byte by:
+                writer.WriteNumberValue(by);
+                break;
+            case sbyte sb:
+                writer.WriteNumberValue(sb);
+                break;
+            case short sh:
+                writer.WriteNumberValue(sh);
+                break;
+            case ushort us:
+                writer.WriteNumberValue(us);
+                break;
             case int i:
                 writer.WriteNumberValue(i);
                 break;
+            case uint ui:
+                writer.WriteNumberValue(ui);
+                break;
             case long l:
                 writer.WriteNumberValue(l);
+                break;
+            case ulong ul:
+                writer.WriteNumberValue(ul);
+                break;
+            case decimal dec:
+                writer.WriteNumberValue(dec);
                 break;
             case double d:
                 writer.WriteNumberValue(d);
@@ -248,6 +305,9 @@ internal sealed class BedrockWorkflowGenerationProvider : IWorkflowGenerationPro
                 break;
             case IDictionary<string, object?> nested:
                 WriteObject(writer, nested);
+                break;
+            case IReadOnlyDictionary<string, object?> readOnlyNested:
+                WriteReadOnlyObject(writer, readOnlyNested);
                 break;
             case System.Collections.IEnumerable enumerable:
                 writer.WriteStartArray();

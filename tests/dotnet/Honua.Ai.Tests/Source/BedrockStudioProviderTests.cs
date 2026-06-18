@@ -10,7 +10,9 @@ using Honua.Ai.ReportGeneration;
 using Honua.Ai.WorkflowGeneration;
 using Honua.Core.Features.Publishing.Dashboards;
 using Honua.Core.Features.Publishing.Reports;
+using Honua.Core.Features.WorkflowPackages.Domain;
 using Honua.Core.Features.WorkflowPackages.Generation;
+using Honua.Core.Features.WorkflowPackages.Generation.Domain;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -173,6 +175,109 @@ public sealed class BedrockStudioProviderTests
         unconfigured.IsConfigured.Should().BeFalse();
     }
 
+    [UnitTest]
+    public async Task BedrockWorkflowProvider_WithBoxedNumericToolArgs_ParsesWithoutError()
+    {
+        // Regression for honua-server#1760: the Converse adapter can surface tool-call arguments as
+        // boxed CLR numbers (int/long/decimal/...) rather than JsonElements. WriteValue must emit those
+        // as JSON numbers; previously decimal/byte/short/uint/ulong fell through to the stringifying
+        // default branch, producing "n" for numeric DTO fields and a "could not be parsed" failure.
+        var arguments = new Dictionary<string, object?>
+        {
+            ["status"] = "unsupported",
+            ["rationale"] = "No vector-tile node is available.",
+            ["unmappedRequests"] = new object?[] { "Generate vector tiles" },
+            // Numeric primitives that previously hit the stringifying default branch.
+            ["diagnostics"] = new Dictionary<string, object?>
+            {
+                ["intValue"] = 1,
+                ["longValue"] = 2L,
+                ["decimalValue"] = 3.5m,
+                ["byteValue"] = (byte)4,
+                ["shortValue"] = (short)5,
+                ["uintValue"] = (uint)6,
+                ["ulongValue"] = (ulong)7,
+                ["floatValue"] = 8.5f,
+                ["doubleValue"] = 9.5d
+            }
+        };
+
+        var factory = FakeWorkflowFactoryReturning(arguments);
+        var provider = new BedrockWorkflowGenerationProvider(
+            WorkflowGenerationConfiguration.BedrockProviderId,
+            factory,
+            BedrockOptions(),
+            NullLogger<BedrockWorkflowGenerationProvider>.Instance);
+
+        var result = await provider.GenerateAsync(WorkflowProviderRequest());
+
+        result.Status.ToString().ToLowerInvariant().Should().Be("unsupported");
+        result.Rationale.Should().NotBe("Provider response could not be parsed.");
+    }
+
+    [UnitTest]
+    public async Task BedrockWorkflowProvider_WhenFirstToolCallIsMissing_RetriesOnce()
+    {
+        // First turn returns no forced tool call (a transient bad turn); the provider must re-issue the
+        // request exactly once and succeed on the second valid tool call (honua-server#1760 hardening).
+        var goodArgs = new Dictionary<string, object?>
+        {
+            ["status"] = "unsupported",
+            ["rationale"] = "Second attempt succeeded.",
+            ["unmappedRequests"] = new object?[] { "anything" }
+        };
+
+        var factory = Substitute.For<IBedrockChatClientFactory>();
+        factory.Create(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>())
+            .Returns(_ => new SequencedChatClient(
+                new ChatResponse(new ChatMessage(ChatRole.Assistant, "no tool call")),
+                new ChatResponse(new ChatMessage(ChatRole.Assistant,
+                    [new FunctionCallContent("call-2", "emit_workflow", goodArgs)]))
+                {
+                    FinishReason = ChatFinishReason.ToolCalls
+                }));
+
+        var provider = new BedrockWorkflowGenerationProvider(
+            WorkflowGenerationConfiguration.BedrockProviderId,
+            factory,
+            BedrockOptions(),
+            NullLogger<BedrockWorkflowGenerationProvider>.Instance);
+
+        var result = await provider.GenerateAsync(WorkflowProviderRequest());
+
+        result.Status.ToString().ToLowerInvariant().Should().Be("unsupported");
+        result.Rationale.Should().Be("Second attempt succeeded.");
+    }
+
+    private static WorkflowGenerationProviderRequest WorkflowProviderRequest() =>
+        new()
+        {
+            Prompt = "build a workflow",
+            Registry = new WorkflowNodeRegistrySnapshot
+            {
+                RegistryVersion = "test",
+                GeneratedAt = DateTimeOffset.UnixEpoch,
+                Providers = [],
+                Nodes = []
+            }
+        };
+
+    private static IBedrockChatClientFactory FakeWorkflowFactoryReturning(IDictionary<string, object?> arguments)
+    {
+        var factory = Substitute.For<IBedrockChatClientFactory>();
+        factory.Create(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>())
+            .Returns(_ =>
+            {
+                var call = new FunctionCallContent("call-1", "emit_workflow", arguments);
+                return new FakeChatClient(new ChatResponse(new ChatMessage(ChatRole.Assistant, [call]))
+                {
+                    FinishReason = ChatFinishReason.ToolCalls
+                });
+            });
+
+        return factory;
+    }
+
     private static IOptions<WorkflowGenerationConfiguration> BedrockOptions() =>
         Options.Create(new WorkflowGenerationConfiguration
         {
@@ -240,6 +345,40 @@ public sealed class BedrockStudioProviderTests
             ChatOptions? options = null,
             CancellationToken cancellationToken = default)
             => Task.FromResult(response);
+
+        public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+            IEnumerable<ChatMessage> messages,
+            ChatOptions? options = null,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+
+        public object? GetService(Type serviceType, object? serviceKey = null) => null;
+
+        public void Dispose()
+        {
+        }
+    }
+
+    /// <summary>
+    /// <see cref="IChatClient"/> that returns each supplied response in order across successive
+    /// <see cref="GetResponseAsync"/> calls — used to exercise the retry-once path.
+    /// </summary>
+    private sealed class SequencedChatClient(params ChatResponse[] responses) : IChatClient
+    {
+        private int _index;
+
+        public Task<ChatResponse> GetResponseAsync(
+            IEnumerable<ChatMessage> messages,
+            ChatOptions? options = null,
+            CancellationToken cancellationToken = default)
+        {
+            var response = responses[Math.Min(_index, responses.Length - 1)];
+            _index++;
+            return Task.FromResult(response);
+        }
 
         public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
             IEnumerable<ChatMessage> messages,
