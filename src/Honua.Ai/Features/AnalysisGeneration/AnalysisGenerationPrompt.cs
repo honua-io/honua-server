@@ -32,6 +32,7 @@ internal static class AnalysisGenerationPrompt
         sb.AppendLine("Artifact kinds: Scalar, FeatureLayer, Table, Raster, File, Report, Map, AppBundle.");
         sb.AppendLine();
         sb.AppendLine("Rules:");
+        sb.AppendLine("- When status is \"generated\" you MUST return the full analysis object, and the analysis object MUST contain a non-null \"plan\". The plan is required: always set plan.planId, plan.intentId, and a non-empty plan.steps array. Never return status \"generated\" without analysis.plan.");
         sb.AppendLine("- The core of the analysis is one or more Geoprocess steps. Each Geoprocess step MUST set processId to a method id from the catalog below, and MUST supply every required parameter for that method in its inputs. Never invent a processId or a parameter name.");
         sb.AppendLine("- Choose the method whose purpose matches the request (e.g. buffer, spatial join, clustering, density/hotspot binning, dissolve, slope/hillshade). Set parameter values from the request; for an input layer the user named but whose numeric layerId is unknown, use \"0\" and note it in the rationale — the operator binds the real layer at run/publish time.");
         sb.AppendLine("- Respect each parameter's allowed values and value type (e.g. an algorithm enum, a positive distance). Conditionally-required parameters (e.g. eps+minPoints when algorithm=dbscan, k when algorithm=kmeans, distance when predicate=dwithin) must be present when their condition holds.");

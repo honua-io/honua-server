@@ -243,6 +243,56 @@ public sealed class BedrockStudioProviderTests
     }
 
     [UnitTest]
+    public async Task AnalysisService_WithBedrockProvider_DeserializesAGeneratedPlanProposal()
+    {
+        // Regression for the analysis-only Bedrock deserialization failure (#1763 fallout): a
+        // "generated" proposal carrying a full analysis.plan must round-trip through the Converse
+        // forced-tool path into AnalysisPackageContent (whose Plan is a required member). Previously
+        // the model omitted analysis.plan and the proposal failed deserialization
+        // ("missing required properties including: 'plan'"); the schema/prompt now require the plan
+        // and a representative response with it must deserialize cleanly into a generated plan.
+        const string ToolJson = """
+        {
+          "status": "generated",
+          "rationale": "Buffer each parcel geometry by 100 meters and emit a feature layer.",
+          "analysis": {
+            "intent": { "intentId": "buffer-intent", "goal": "buffer parcels by 100 meters", "mode": "analysis", "inputs": ["parcels"], "requestedOutputs": ["FeatureLayer"] },
+            "plan": {
+              "planId": "buffer-plan",
+              "intentId": "buffer-intent",
+              "steps": [
+                { "stepId": "s1", "kind": "Geoprocess", "processId": "geometry.buffer", "inputs": { "wkb": "AAAA", "srid": "4326", "distance": "100" }, "dependsOn": [] }
+              ],
+              "outputs": ["FeatureLayer"],
+              "warnings": []
+            },
+            "requestedArtifacts": ["FeatureLayer"]
+          }
+        }
+        """;
+
+        var factory = FakeFactoryReturning(ToolJson, out _, out _);
+        var service = new AnalysisGenerationService(
+            httpClientFactory: Substitute.For<IHttpClientFactory>(),
+            options: BedrockOptions(),
+            processCatalog: new BuiltInProcessCatalog(),
+            apiKeyResolver: new WorkflowGenerationApiKeyResolver(),
+            bedrockChatClientFactory: factory,
+            logger: NullLogger<AnalysisGenerationService>.Instance);
+
+        var result = await service.GenerateAsync(new AnalysisGenerationRequest { Prompt = "buffer parcels by 100m" });
+
+        result.Status.Should().Be("generated", because: "a generated proposal carrying analysis.plan must not collapse into a parse error");
+        result.Provider.Should().Be(WorkflowGenerationConfiguration.BedrockProviderId);
+        result.Analysis.Should().NotBeNull();
+        result.Analysis!.Plan.Should().NotBeNull(because: "the required 'plan' property must deserialize from the Bedrock tool output");
+        result.Analysis.Plan.PlanId.Should().Be("buffer-plan");
+        result.Analysis.Plan.Steps.Should().ContainSingle()
+            .Which.ProcessId.Should().Be("geometry.buffer");
+        result.Rationale.Should().NotBe("Bedrock response could not be parsed.");
+    }
+
+    [UnitTest]
     public async Task QueryService_WithBedrockProvider_RoutesThroughConverseAndSurfacesTheProposal()
     {
         const string ToolJson = """
