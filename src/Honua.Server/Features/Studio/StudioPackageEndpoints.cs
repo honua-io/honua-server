@@ -170,6 +170,18 @@ internal static class StudioPackageEndpoints
 
             if (store)
             {
+                // Storage was requested but persisting the artifact failed (upload or presigned-url
+                // lookup returned no URL). Do not report success with a null artifactUrl and no bytes;
+                // surface the failure so the caller can retry rather than silently losing the export.
+                if (string.IsNullOrEmpty(result.ArtifactUrl))
+                {
+                    StudioEndpointsLog.EndpointFailed(
+                        logger,
+                        "deliverable.export",
+                        new InvalidOperationException("Studio deliverable was rendered but could not be persisted to share storage."));
+                    return ServerError(context, "Studio deliverable was rendered but could not be persisted to share storage.");
+                }
+
                 var response = new StudioDeliverableExportResponse
                 {
                     ItemId = id,
