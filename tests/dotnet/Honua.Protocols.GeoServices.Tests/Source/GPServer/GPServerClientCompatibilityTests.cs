@@ -45,7 +45,8 @@ public sealed class GPServerClientCompatibilityTests : IClassFixture<WebAppFixtu
         var service = await client.GetServiceInfoAsync();
         var task = await client.GetTaskInfoAsync("geometry.buffer");
 
-        service.CurrentVersion.Should().Be(10.81);
+        // Honua does not advertise an ArcGIS Server version (see NoArcGisServerVersionTests).
+        service.HasCurrentVersion.Should().BeFalse();
         service.ExecutionType.Should().Be("esriExecutionTypeAsynchronous");
         service.Tasks.Should().Contain("geometry.buffer");
 
@@ -137,7 +138,7 @@ public sealed class GPServerClientCompatibilityTests : IClassFixture<WebAppFixtu
             using var doc = await ReadJsonAsync(response);
             var root = doc.RootElement;
             return new GPServiceInfo(
-                root.GetProperty("currentVersion").GetDouble(),
+                root.TryGetProperty("currentVersion", out _),
                 root.GetProperty("executionType").GetString()!,
                 root.GetProperty("tasks").EnumerateArray().Select(task => task.GetString()!).ToArray());
         }
@@ -238,7 +239,7 @@ public sealed class GPServerClientCompatibilityTests : IClassFixture<WebAppFixtu
             => JsonDocument.Parse(await response.Content.ReadAsStringAsync());
     }
 
-    private sealed record GPServiceInfo(double CurrentVersion, string ExecutionType, string[] Tasks);
+    private sealed record GPServiceInfo(bool HasCurrentVersion, string ExecutionType, string[] Tasks);
 
     private sealed record GPTaskInfo(string Name, string ExecutionType, GPParameter[] Parameters);
 
