@@ -55,11 +55,25 @@ public interface IRasterStore
     /// <summary>
     /// Exports a composited layer mosaic built from the requested raster identifiers.
     /// </summary>
+    /// <param name="layerId">Layer identifier containing the rasters.</param>
+    /// <param name="rasterIds">Raster identifiers to composite.</param>
+    /// <param name="mergeStrategy">Pixel-resolution operation applied to overlapping pixels.</param>
+    /// <param name="query">Query specification for clipping, reprojection, sizing, and formatting.</param>
+    /// <param name="ordering">
+    /// Ordering applied when overlapping rasters are unioned. Controls which raster wins a
+    /// contested pixel for the LAST/FIRST merge strategies and is orthogonal to
+    /// <paramref name="mergeStrategy"/>. <see cref="RasterMosaicOrdering.LockOrder"/> assumes
+    /// the caller has already restricted <paramref name="rasterIds"/> to the locked set; it
+    /// composites them ordered by newest acquisition and bypasses the timestamp newest-batch
+    /// snapshot filter that <see cref="QueryRastersAsync"/> would otherwise apply.
+    /// </param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     Task<RasterResult> ExportMosaicAsync(
         int layerId,
         long[] rasterIds,
         RasterMergeStrategy mergeStrategy,
         RasterQuery query,
+        RasterMosaicOrdering ordering = RasterMosaicOrdering.AcquisitionNewest,
         CancellationToken cancellationToken = default);
 
     /// <summary>
