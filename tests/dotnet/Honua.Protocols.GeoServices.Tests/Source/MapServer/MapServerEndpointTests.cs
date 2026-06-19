@@ -2190,4 +2190,81 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
                }
              }
              """;
+
+    [IntegrationTest]
+    [Operation(Operations.Find)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/find")]
+    public async Task MapServer_Find_ReturnsFindResults()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/find?searchText=Test&layers=0&returnGeometry=true&f=json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+        var find = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.FindResponse);
+        find.Should().NotBeNull();
+        find!.Results.Should().NotBeNullOrEmpty();
+
+        var hit = find.Results!.First();
+        hit.LayerId.Should().Be(0);
+        hit.LayerName.Should().NotBeNullOrWhiteSpace();
+        hit.FoundFieldName.Should().NotBeNullOrWhiteSpace();
+        hit.Value.Should().NotBeNullOrWhiteSpace();
+        hit.Attributes.Should().NotBeNullOrEmpty();
+        hit.Geometry.Should().NotBeNull();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Find)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/find")]
+    public async Task MapServer_Find_WithEmptySearchFields_ReturnsFindResults()
+    {
+        // Esri clients (ArcGIS API for Python) send searchFields= empty, which is the
+        // original honua-server#1771 repro that 500'd.
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/find?searchText=a&layers=0&searchFields=&returnGeometry=true&f=json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+        var find = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.FindResponse);
+        find.Should().NotBeNull();
+        find!.Results.Should().NotBeNull();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Find)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/find")]
+    public async Task MapServer_Find_WithContainsFalse_UsesExactMatch()
+    {
+        // contains=false => exact (case-insensitive) match. 'Test Feature' is an exact
+        // value in the seed; 'Test' alone must not match under exact semantics.
+        var exact = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/find" +
+            $"?searchText={Uri.EscapeDataString("Test Feature")}&layers=0&searchFields=name&contains=false&f=json");
+        var exactContent = await exact.Content.ReadAsStringAsync();
+        exact.StatusCode.Should().Be(HttpStatusCode.OK, exactContent);
+        var exactFind = JsonSerializer.Deserialize(exactContent, MapServerJsonContext.Default.FindResponse);
+        exactFind!.Results.Should().NotBeNullOrEmpty();
+        exactFind.Results!.Should().OnlyContain(r => r.FoundFieldName == "name");
+
+        var partial = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/find" +
+            $"?searchText=Test&layers=0&searchFields=name&contains=false&f=json");
+        var partialContent = await partial.Content.ReadAsStringAsync();
+        partial.StatusCode.Should().Be(HttpStatusCode.OK, partialContent);
+        var partialFind = JsonSerializer.Deserialize(partialContent, MapServerJsonContext.Default.FindResponse);
+        partialFind!.Results.Should().BeNullOrEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Find)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/find")]
+    public async Task MapServer_Find_WithoutLayers_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/find?searchText=Test&f=json");
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
 }

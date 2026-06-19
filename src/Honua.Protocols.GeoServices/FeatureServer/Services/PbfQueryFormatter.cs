@@ -92,6 +92,136 @@ internal sealed class PbfQueryFormatter
         }
     }
 
+    /// <summary>
+    /// Formats a <c>returnIdsOnly=true</c> result as an Esri-compatible PBF response
+    /// (<c>FeatureCollectionPBuffer</c> with the <c>idsResult</c> arm of the
+    /// <c>QueryResult</c> oneof), mirroring how the count path emits protobuf so that
+    /// <c>f=pbf</c> on the ids-only path returns <c>application/x-protobuf</c> rather than
+    /// silently degrading to JSON (#1824).
+    /// </summary>
+    public static (byte[] response, string contentType) FormatIdsAsPbf(
+        string objectIdFieldName,
+        IReadOnlyList<long> objectIds)
+    {
+        // Schema (github.com/Esri/arcgis-pbf FeatureCollection.proto):
+        //   QueryResult { oneof Results { ... ObjectIdsResult idsResult = 3; ... } }
+        //   ObjectIdsResult { string objectIdFieldName = 1; ServerGens serverGens = 2;
+        //                     repeated uint64 objectIds = 3 [packed = true]; }
+        var packedIds = new ulong[objectIds.Count];
+        for (int i = 0; i < objectIds.Count; i++)
+        {
+            packedIds[i] = (ulong)objectIds[i];
+        }
+
+        var idsMsg = new ProtobufWriter(objectIds.Count * 4 + 32);
+        try
+        {
+            idsMsg.WriteString(1, objectIdFieldName);
+            idsMsg.WritePackedUInt64(3, packedIds);
+
+            var queryResult = new ProtobufWriter(idsMsg.Position + 8);
+            try
+            {
+                queryResult.WriteMessage(3, ref idsMsg);
+
+                var outer = new ProtobufWriter(queryResult.Position + 16);
+                try
+                {
+                    outer.WriteString(1, PbfVersion);
+                    outer.WriteMessage(2, ref queryResult);
+                    return (outer.ToArrayAndDispose(), "application/x-protobuf");
+                }
+                catch
+                {
+                    outer.Dispose();
+                    throw;
+                }
+            }
+            finally
+            {
+                queryResult.Dispose();
+            }
+        }
+        finally
+        {
+            idsMsg.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Formats a <c>returnExtentOnly=true</c> result as an Esri-compatible PBF response
+    /// (<c>FeatureCollectionPBuffer</c> with the <c>extentCountResult</c> arm of the
+    /// <c>QueryResult</c> oneof), mirroring how the count path emits protobuf so that
+    /// <c>f=pbf</c> on the extent-only path returns <c>application/x-protobuf</c> rather
+    /// than silently degrading to JSON (#1824).
+    /// </summary>
+    public static (byte[] response, string contentType) FormatExtentAsPbf(
+        double xmin,
+        double ymin,
+        double xmax,
+        double ymax,
+        int wkid,
+        long count)
+    {
+        // Schema (github.com/Esri/arcgis-pbf FeatureCollection.proto):
+        //   QueryResult { oneof Results { ... ExtentCountResult extentCountResult = 4; } }
+        //   ExtentCountResult { Envelope extent = 1; optional uint64 count = 2; }
+        //   Envelope { double XMin = 1; double YMin = 2; double XMax = 3; double YMax = 4;
+        //              SpatialReference SpatialReference = 5; }
+        var envelope = new ProtobufWriter(64);
+        try
+        {
+            envelope.WriteDoubleAlways(1, xmin);
+            envelope.WriteDoubleAlways(2, ymin);
+            envelope.WriteDoubleAlways(3, xmax);
+            envelope.WriteDoubleAlways(4, ymax);
+
+            var sr = new ProtobufWriter(16);
+            sr.WriteUInt32(1, (uint)wkid);
+            sr.WriteUInt32(2, (uint)wkid);
+            envelope.WriteMessage(5, ref sr);
+            sr.Dispose();
+
+            var extentMsg = new ProtobufWriter(envelope.Position + 16);
+            try
+            {
+                extentMsg.WriteMessage(1, ref envelope);
+                extentMsg.WriteUInt64Always(2, (ulong)Math.Max(count, 0));
+
+                var queryResult = new ProtobufWriter(extentMsg.Position + 8);
+                try
+                {
+                    queryResult.WriteMessage(4, ref extentMsg);
+
+                    var outer = new ProtobufWriter(queryResult.Position + 16);
+                    try
+                    {
+                        outer.WriteString(1, PbfVersion);
+                        outer.WriteMessage(2, ref queryResult);
+                        return (outer.ToArrayAndDispose(), "application/x-protobuf");
+                    }
+                    catch
+                    {
+                        outer.Dispose();
+                        throw;
+                    }
+                }
+                finally
+                {
+                    queryResult.Dispose();
+                }
+            }
+            finally
+            {
+                extentMsg.Dispose();
+            }
+        }
+        finally
+        {
+            envelope.Dispose();
+        }
+    }
+
     public (byte[] response, string contentType) FormatAsPbf(
         QueryResult<Feature> result,
         MetadataV2Resource resource,

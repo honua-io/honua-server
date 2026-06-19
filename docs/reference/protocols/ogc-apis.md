@@ -76,7 +76,9 @@ curl -o map.png "https://server.example.com/ogc/maps/collections/roads/map?bbox=
 | GET | `/ogc/tiles/collections/{collectionId}/tiles`, `.../tiles/{tileMatrixSetId}` | Per-collection tileset metadata. |
 | GET | `/ogc/tiles/collections/{collectionId}/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}` | Tile retrieval (vector or raster). |
 | GET | `/ogc/tiles/tiles`, `.../tiles/{tileMatrixSetId}`, `.../tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}` | Dataset-level tilesets and tiles. |
-| GET | `/ogc/tiles/tileMatrixSets`, `.../tileMatrixSets/{tileMatrixSetId}` | Tile matrix set registry. |
+| GET | `/ogc/tiles/tileMatrixSets`, `.../tileMatrixSets/{tileMatrixSetId}` | Tile matrix set registry: the reserved built-ins (`WebMercatorQuad`, `WorldCRS84Quad`) plus any operator-defined custom gridsets. |
+
+Custom tile matrix sets are merged in from the `TileMatrixSets` configuration section (validated for unique IDs, no reserved-ID collision, monotonic scale denominators, positive tile dimensions, and a valid SRID). Custom gridsets are advertised through the registry and served by `GetTile` as PNG (raster); the vector-tile provider remains built-in-gridset only. Built-in gridset output is byte-identical to before. Tile requests accept a vertical/elevation subset (`subset=Z(...)` / `elevation(...)` / `height(...)`): the value is parsed, validated, and recorded on the render descriptor — raster layers can honour the coordinate, vector layers record-but-do-not-render it (Zarr-slice render binding is deferred). Non-vertical or unknown subset axes (e.g. `E(0:1)`) still return 400.
 
 ```bash
 curl -o tile.mvt "https://server.example.com/ogc/tiles/collections/roads/tiles/WebMercatorQuad/12/1586/2412"
@@ -91,7 +93,7 @@ curl -o tile.mvt "https://server.example.com/ogc/tiles/collections/roads/tiles/W
 | GET | `/ogc/coverages/collections/{collectionId}/schema` | Band fields (`band_1`, `band_2`, …) as JSON Schema. |
 | GET | `/ogc/coverages/collections/{collectionId}/coverage` | Coverage bytes (GeoTIFF default, PNG via `f=png` or `Accept`). |
 
-Key coverage parameters: `f` (`geotiff`/`tiff`/`png` and MIME forms), `bbox`, `bbox-crs`, `crs` (output CRS), `properties` (band selection, order-preserving), and exactly one scaling control per request — `resolution`, `scale-factor`, or `scale-size` (max 8192 px per axis). `datetime`, `subset`, and `scale-axes` are deferred and return 400.
+Key coverage parameters: `f` (`geotiff`/`tiff`/`png` and MIME forms), `bbox`, `bbox-crs`, `crs` (output CRS), `properties` (band selection, order-preserving), and exactly one scaling control per request — `resolution`, `scale-factor`, or `scale-size` (max 8192 px per axis). `datetime` (RFC 3339 instant or interval) applies temporal subsetting to Zarr multidimensional coverages that declare an evenly-spaced time axis — an instant rounds to the nearest index, an interval is resolved by ceil/floor over the index range; coverages with no time axis, an irregular axis, or a conflicting `subset` over time return 400. `subset` and `scale-axes` are deferred and return 400.
 
 ```bash
 curl -o clip.tif "https://server.example.com/ogc/coverages/collections/0/coverage?bbox=-122.5,37.7,-122.3,37.9&properties=band_1"

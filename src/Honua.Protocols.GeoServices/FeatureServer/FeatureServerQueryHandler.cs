@@ -478,6 +478,23 @@ internal sealed partial class FeatureServerQueryHandler(
                     ["GeoJSON output does not support returnM=true."]);
             }
 
+            // f=pjson is byte-identical to f=json except for indentation. TryValidateOutputFormat
+            // collapses pjson to json, so recover the pretty flag from the raw requested format
+            // and indent the serialized JSON payload below (#1824).
+            var prettyJson = string.Equals(requestedFormat?.Trim(), "pjson", StringComparison.OrdinalIgnoreCase);
+
+            // returnCountOnly/returnIdsOnly/returnExtentOnly produce scalar/structural results,
+            // not a GeoJSON FeatureCollection. The format validator allow-lists geojson for the
+            // query operation, but these secondary modes cannot honor it — return a clean 400
+            // rather than silently downgrading to an Esri-JSON 200 (#1824).
+            if (string.Equals(format, "geojson", StringComparison.OrdinalIgnoreCase) &&
+                (validatedParams.ReturnCountOnly || validatedParams.ReturnIdsOnly || validatedParams.ReturnExtentOnly))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context,
+                    "Invalid query parameters",
+                    ["f=geojson is not supported for returnCountOnly, returnIdsOnly, or returnExtentOnly queries."]);
+            }
+
             var canCache = !ShouldBypassQueryResponseCache(validatedParams) &&
                            ResponseCacheUtilities.ShouldCache(context, _cacheOptions);
             var cacheTtl = canCache ? _cacheOptions.GetQueryTtlWithJitter() : TimeSpan.Zero;
@@ -520,10 +537,25 @@ internal sealed partial class FeatureServerQueryHandler(
                 var currentCacheKey = GetCacheKey();
                 if (currentCacheKey is null)
                 {
+                    // f=pjson is JSON with indentation; re-indent the serialized payload rather
+                    // than returning the compact Results.Json so pjson is not byte-identical to
+                    // json (#1824).
+                    if (prettyJson)
+                    {
+                        var prettyPayload = JsonReindenter.ToIndentedUtf8Bytes(
+                            JsonSerializer.SerializeToUtf8Bytes(response, typeInfo));
+                        return Results.Bytes(prettyPayload, contentType);
+                    }
+
                     return Results.Json(response, typeInfo, contentType: contentType);
                 }
 
                 var payload = JsonSerializer.SerializeToUtf8Bytes(response, typeInfo);
+                if (prettyJson)
+                {
+                    payload = JsonReindenter.ToIndentedUtf8Bytes(payload);
+                }
+
                 var cachedResponse = ResponseCacheUtilities.CreateCachedResponse(payload, contentType, _etagService);
                 await _responseCache.SetAsync(currentCacheKey, cachedResponse, cacheTtl, cancellationToken);
                 return ResponseCacheUtilities.CreateResultFromCachedResponse(context, cachedResponse, _etagService);
@@ -740,9 +772,26 @@ internal sealed partial class FeatureServerQueryHandler(
                 FeatureServerLog.QueryExecuted(_logger, "extent", serviceId, layerId, stopwatch.Elapsed.TotalMilliseconds);
                 extent ??= await ResolveExtentFallbackAsync(context, validatedParams, queryLayer.Resource, outputSrid, cancellationToken);
                 HonuaTelemetry.SetSuccess(featureActivity, (int)Math.Min(extentCount, int.MaxValue));
+                var extentInfo = extent.HasValue ? extent.Value.ToExtentInfo() : null;
+
+                // f=pbf must return the ExtentCountResult arm of the FeatureCollectionPBuffer
+                // QueryResult oneof (application/x-protobuf), mirroring the count path; otherwise
+                // the extent branch silently degrades to JSON (#1824).
+                if (string.Equals(format, "pbf", StringComparison.OrdinalIgnoreCase) && extentInfo is not null)
+                {
+                    var (extentPayload, extentContentType) = PbfQueryFormatter.FormatExtentAsPbf(
+                        extentInfo.Xmin,
+                        extentInfo.Ymin,
+                        extentInfo.Xmax,
+                        extentInfo.Ymax,
+                        extentInfo.SpatialReference.Wkid,
+                        extentCount);
+                    return await CreateCachedBytesResultAsync(extentPayload, extentContentType);
+                }
+
                 var response = new QueryResponse
                 {
-                    Extent = extent.HasValue ? extent.Value.ToExtentInfo() : null,
+                    Extent = extentInfo,
                     Count = extentCount,
                     Features = null
                 };
@@ -752,8 +801,13 @@ internal sealed partial class FeatureServerQueryHandler(
 
             if (validatedParams.ReturnIdsOnly)
             {
+                // f=pbf must return the ObjectIdsResult arm of the FeatureCollectionPBuffer
+                // QueryResult oneof (application/x-protobuf), mirroring the count path; the
+                // JSON streaming writer cannot emit protobuf, so force materialization for pbf
+                // and never take the streaming branch (#1824).
+                var idsIsPbf = string.Equals(format, "pbf", StringComparison.OrdinalIgnoreCase);
                 var idsEffectiveLimit = query.Limit ?? validatedParams.ObjectIds?.Length ?? queryLimits.DefaultRecordCount;
-                var idsUseStreaming = !query.Limit.HasValue || idsEffectiveLimit > StreamingThreshold;
+                var idsUseStreaming = !idsIsPbf && (!query.Limit.HasValue || idsEffectiveLimit > StreamingThreshold);
                 if (idsUseStreaming)
                 {
                     await _queryExecutor.StreamIdsAsync(
@@ -789,6 +843,12 @@ internal sealed partial class FeatureServerQueryHandler(
                     .Select(feature => GeoServicesObjectIdFieldResolver.ResolveObjectIdValue(feature, objectIdFieldName))
                     .ToArray();
                 HonuaTelemetry.SetSuccess(featureActivity, objectIds.Length);
+
+                if (idsIsPbf)
+                {
+                    var (idsPayload, idsContentType) = PbfQueryFormatter.FormatIdsAsPbf(objectIdFieldName, objectIds);
+                    return await CreateCachedBytesResultAsync(idsPayload, idsContentType);
+                }
 
                 var response = new QueryResponse
                 {
@@ -950,7 +1010,11 @@ internal sealed partial class FeatureServerQueryHandler(
                     outFields = parsed.Length == 0 ? null : parsed;
                 }
                 var shouldApplyDistinct = validatedParams.ReturnDistinctValues && outFields is { Length: > 0 };
+                // The raw point fast path emits a pre-serialized compact JSON payload; f=pjson
+                // needs indentation, so skip the fast path and fall through to the materialized
+                // formatter where the pretty flag is honored (#1824).
                 if (quantizationTransform is null &&
+                    !prettyJson &&
                     CanUseRawGeoServicesPointFastPath(queryLayer.Resource, validatedParams, query, outputSrid, format) &&
                     await _queryExecutor.SupportsRawGeoServicesPointOutputAsync(
                         queryLayer.Service,
