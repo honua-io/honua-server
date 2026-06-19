@@ -40,6 +40,43 @@ internal enum TileGridKind
     WorldCrs84Quad = 1
 }
 
+/// <summary>
+/// An honest, protocol-neutral representation of a requested vertical (elevation)
+/// selection on a tile request. Carries the resolved numeric value(s) together with
+/// the verbatim token the client sent so adapters can record / telemetry-tag the
+/// selection.
+/// </summary>
+/// <remarks>
+/// <para>This value type is shared by the WMTS (<c>elevation=</c>) and OGC API Tiles
+/// (<c>subset=Z(...)</c> / <c>subset=elevation(...)</c>) adapters via
+/// <c>OgcVerticalSelectionParser</c> so the parse, validation, and recording behavior
+/// live in one place (AGENTS.md DRY rule). It is defined here, in the rendering layer,
+/// because <see cref="RasterMapRenderingPipeline.RenderLayerDescriptor"/> carries it and
+/// the protocol-shared assembly already depends on this assembly (defining it the other
+/// way round would introduce a project-reference cycle).</para>
+/// <para>An instant selection (single value) sets both <see cref="Min"/> and
+/// <see cref="Max"/> to the same value. An interval selection sets them to the
+/// low/high bounds. This mirrors the (start, end) shape of the temporal filter so
+/// downstream code can treat the two dimensions uniformly.</para>
+/// <para>Shape A (#1792) records the selection only — it is not yet bound to a Zarr
+/// datacube slice render. That binding is the deferred Shape B follow-up after #1790.</para>
+/// </remarks>
+internal readonly record struct VerticalSelection(double Min, double Max, string RawValue)
+{
+    /// <summary>
+    /// <see langword="true"/> when the selection is a single value (an instant on the
+    /// vertical axis) rather than an interval.
+    /// </summary>
+    public bool IsInstant => Min.Equals(Max);
+
+    /// <summary>
+    /// Creates a single-value (instant) vertical selection from a resolved numeric value.
+    /// The <paramref name="rawValue"/> is the verbatim client token, retained for telemetry.
+    /// </summary>
+    public static VerticalSelection FromValue(double value, string rawValue)
+        => new(value, value, rawValue);
+}
+
 internal static class RasterMapRenderingPipeline
 {
     internal sealed class RasterStylePlan
@@ -76,13 +113,26 @@ internal static class RasterMapRenderingPipeline
     /// <summary>
     /// Lightweight descriptor used by <see cref="RenderRasterTileCoreAsync"/> for one render layer.
     /// </summary>
-    internal readonly record struct RenderLayerDescriptor(int LayerId, bool HasGeometry, MetadataV2GeometryType GeometryType);
+    /// <remarks>
+    /// <see cref="VerticalSelection"/> carries an optional elevation/vertical selection
+    /// resolved from the WMTS <c>elevation=</c> dimension or the OGC API Tiles
+    /// <c>subset=Z(...)</c> axis. In Shape A (#1792) it is recorded/telemetry-only — the
+    /// raster pipeline does not yet bind it to a Zarr datacube Z-slice render (that is the
+    /// deferred Shape B follow-up after #1790). It is threaded here so the value flows to a
+    /// single, honest recording point rather than being silently dropped at the adapter.
+    /// </remarks>
+    internal readonly record struct RenderLayerDescriptor(
+        int LayerId,
+        bool HasGeometry,
+        MetadataV2GeometryType GeometryType,
+        VerticalSelection? VerticalSelection = null);
 
     internal static RenderLayerDescriptor CreateRenderLayerDescriptorFromV2(
         int layerId,
         bool hasGeometry,
-        MetadataV2GeometryType geometryType)
-        => new(layerId, hasGeometry, geometryType);
+        MetadataV2GeometryType geometryType,
+        VerticalSelection? verticalSelection = null)
+        => new(layerId, hasGeometry, geometryType, verticalSelection);
 
     /// <summary>
     /// Renders a raster tile from v2 resource render descriptors using the default
@@ -102,9 +152,9 @@ internal static class RasterMapRenderingPipeline
             context,
             serviceSrid,
             renderLayers,
-            z, y, x,
+            TileSrid,
+            TileMath.GetTileBounds(x, y, z),
             maxFeatures,
-            TileGridKind.WebMercatorQuad,
             cancellationToken,
             layerTemporalFilters);
 
@@ -127,18 +177,32 @@ internal static class RasterMapRenderingPipeline
         TileGridKind grid,
         CancellationToken cancellationToken,
         IReadOnlyList<TemporalFilter?>? layerTemporalFilters = null)
-        => RenderRasterTileCoreAsync(
+    {
+        var isGeographicGrid = grid == TileGridKind.WorldCrs84Quad;
+        var tileSrid = isGeographicGrid ? GeographicTileSrid : TileSrid;
+        var tileBounds = isGeographicGrid
+            ? TileMath.GetTileBoundsGeographic(x, y, z)
+            : TileMath.GetTileBounds(x, y, z);
+        return RenderRasterTileCoreAsync(
             context,
             serviceSrid,
             renderLayers,
-            z, y, x,
+            tileSrid,
+            tileBounds,
             maxFeatures,
-            grid,
             cancellationToken,
             layerTemporalFilters);
+    }
 
-#pragma warning disable CA1068 // legacy callers/tests pass cancellation before optional temporal filters
-    private static async Task<RasterTileRenderResult> RenderRasterTileCoreAsync(
+    /// <summary>
+    /// Renders a raster tile for an operator-defined custom tile matrix set described by a
+    /// <see cref="GridGeometry"/>. The tile envelope is computed from the grid origin / cell size
+    /// (in the gridset CRS) and the canonical query pipeline reprojects from the storage CRS as
+    /// needed. The two built-in gridsets continue to flow through the <see cref="TileGridKind"/>
+    /// overload so their output stays byte-identical; this overload exists because the enum cannot
+    /// represent operator-defined gridsets.
+    /// </summary>
+    internal static Task<RasterTileRenderResult> RenderRasterTileForGridAsync(
         HttpContext context,
         int serviceSrid,
         IReadOnlyList<RenderLayerDescriptor> renderLayers,
@@ -146,16 +210,36 @@ internal static class RasterMapRenderingPipeline
         int y,
         int x,
         int maxFeatures,
-        TileGridKind grid,
+        GridGeometry gridGeometry,
+        CancellationToken cancellationToken,
+        IReadOnlyList<TemporalFilter?>? layerTemporalFilters = null)
+    {
+        ArgumentNullException.ThrowIfNull(gridGeometry);
+        var tileBounds = gridGeometry.GetTileBounds(x, y, z)
+            ?? throw new ArgumentOutOfRangeException(nameof(z), "Requested level is not part of the tile matrix set.");
+        return RenderRasterTileCoreAsync(
+            context,
+            serviceSrid,
+            renderLayers,
+            gridGeometry.Srid,
+            tileBounds,
+            maxFeatures,
+            cancellationToken,
+            layerTemporalFilters);
+    }
+
+#pragma warning disable CA1068 // legacy callers/tests pass cancellation before optional temporal filters
+    private static async Task<RasterTileRenderResult> RenderRasterTileCoreAsync(
+        HttpContext context,
+        int serviceSrid,
+        IReadOnlyList<RenderLayerDescriptor> renderLayers,
+        int tileSrid,
+        TileBounds tileBounds,
+        int maxFeatures,
         CancellationToken cancellationToken,
         IReadOnlyList<TemporalFilter?>? layerTemporalFilters)
 #pragma warning restore CA1068
     {
-        var isGeographicGrid = grid == TileGridKind.WorldCrs84Quad;
-        var tileSrid = isGeographicGrid ? GeographicTileSrid : TileSrid;
-        var tileBounds = isGeographicGrid
-            ? TileMath.GetTileBoundsGeographic(x, y, z)
-            : TileMath.GetTileBounds(x, y, z);
         var renderExtent = new SkiaMapRenderer.RenderExtent(
             tileBounds.XMin,
             tileBounds.YMin,
@@ -215,6 +299,23 @@ internal static class RasterMapRenderingPipeline
         {
             var layer = renderLayers[layerIndex];
             cancellationToken.ThrowIfCancellationRequested();
+
+            // DOCUMENTED DIVERGENCE (#1792 Shape A): the elevation/vertical selection
+            // resolved from the WMTS `elevation=` dimension or the OGC API Tiles
+            // `subset=Z(...)` axis is RECORDED (telemetry-tagged) here but is NOT applied
+            // to the vector render below — there is no Z-aware vector source yet. This is
+            // an intentional, honest divergence from the shared pipeline per AGENTS.md
+            // ("intentionally diverges" rule): we validate + record the vertical dimension
+            // instead of advertising-but-ignoring it (WMTS) or blanket-rejecting it (Tiles).
+            // Actually slicing a Zarr datacube into the raster is the deferred Shape B
+            // follow-up (after #1790). Direct endpoint tests cover this record-but-don't-render
+            // behavior.
+            if (layer.VerticalSelection is { } verticalSelection)
+            {
+                System.Diagnostics.Activity.Current?.SetTag(
+                    "honua.tile.vertical_selection",
+                    verticalSelection.RawValue);
+            }
 
             if (!layer.HasGeometry)
             {
