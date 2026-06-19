@@ -59,7 +59,17 @@ namespace Honua.Protocols.GeoServices.MapServer.Models;
 [JsonSerializable(typeof(int))]
 [JsonSerializable(typeof(long))]
 [JsonSerializable(typeof(double))]
+[JsonSerializable(typeof(float))]
+// decimal is produced by JsonElementConverter.ConvertToScalar for high-precision PostGIS
+// numeric columns and lands in the object-typed Attributes/Geometry slots. The published
+// image runs with JsonSerializerIsReflectionEnabledByDefault=false, so a missing
+// JsonTypeInfo throws NotSupportedException (HTTP 500) instead of falling back to
+// reflection — see honua-server#1771 (MapServer find 500 on the AOT image).
+[JsonSerializable(typeof(decimal))]
 [JsonSerializable(typeof(bool))]
+[JsonSerializable(typeof(Guid))]
+[JsonSerializable(typeof(byte[]))]
+[JsonSerializable(typeof(DateOnly))]
 [JsonSerializable(typeof(DateTime))]
 [JsonSerializable(typeof(DateTimeOffset))]
 [JsonSourceGenerationOptions(
