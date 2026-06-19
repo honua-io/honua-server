@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Data.Common;
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
@@ -351,6 +352,18 @@ internal sealed partial class FeatureServerQueryHandler(
             HonuaTelemetry.RecordException(featureActivity, ex);
             return (null, StandardErrorHelpers.CreateBadRequest(context, ErrorMessages.Validation.InvalidParameter));
         }
+        catch (DbException ex) when (IsClientDataException(ex))
+        {
+            // Eval-time SQL data exceptions (e.g. division-by-zero or numeric
+            // overflow in a `where` arithmetic expression, a bad CAST) are caused
+            // by malformed client input, not a server fault. They surface only at
+            // execution time, after up-front validation, so map their data-exception
+            // SQL states to a structured 400 instead of letting them fall through to
+            // the generic 500 path. Provider-agnostic via DbException.SqlState.
+            FeatureServerLog.QueryFailed(_logger, serviceId, layerId, ex.Message, ex);
+            HonuaTelemetry.RecordException(featureActivity, ex);
+            return (null, StandardErrorHelpers.CreateBadRequest(context, ErrorMessages.Validation.InvalidParameter));
+        }
         catch (Exception ex)
         {
             FeatureServerLog.QueryFailed(_logger, serviceId, layerId, ex.Message, ex);
@@ -622,18 +635,14 @@ internal sealed partial class FeatureServerQueryHandler(
                 ImmutableArray<string>? groupByFields = null;
                 if (!string.IsNullOrWhiteSpace(validatedParams.GroupByFieldsForStatistics))
                 {
-                    var parsed = validatedParams.GroupByFieldsForStatistics
-                        .Split(',', StringSplitOptions.RemoveEmptyEntries)
-                        .Select(f => f.Trim())
-                        .ToImmutableArray();
-                    if (parsed.IsDefaultOrEmpty)
+                    if (!TryParseGroupByFields(validatedParams.GroupByFieldsForStatistics, queryLayer.Resource, out var parsedGroupBy, out var groupByError))
                     {
                         return StandardErrorHelpers.CreateBadRequest(context,
                             "Invalid groupByFieldsForStatistics",
-                            ["groupByFieldsForStatistics must contain valid field names."]);
+                            [groupByError ?? "groupByFieldsForStatistics must contain valid field names."]);
                     }
 
-                    groupByFields = parsed;
+                    groupByFields = parsedGroupBy;
                 }
 
                 ImmutableArray<HavingCondition>? havingConditions = null;
@@ -1185,6 +1194,22 @@ internal sealed partial class FeatureServerQueryHandler(
 
             return StandardErrorHelpers.CreateBadRequest(context, ErrorMessages.Validation.InvalidParameter);
         }
+        catch (DbException ex) when (IsClientDataException(ex))
+        {
+            // Eval-time SQL data exceptions (division/mod-by-zero, numeric overflow,
+            // invalid LOG/POWER/SQRT argument, bad CAST) raised by client `where`
+            // arithmetic are malformed-input errors surfacing only at execution time.
+            // Map their SQLSTATE class-22 codes to a structured 400 rather than 500.
+            FeatureServerLog.QueryFailed(_logger, serviceId, layerId, ex.Message, ex);
+            HonuaTelemetry.RecordException(featureActivity, ex);
+
+            if (context.Response.HasStarted)
+            {
+                return _streamingResult;
+            }
+
+            return StandardErrorHelpers.CreateBadRequest(context, ErrorMessages.Validation.InvalidParameter);
+        }
         catch (Exception ex)
         {
             FeatureServerLog.QueryFailed(_logger, serviceId, layerId, ex.Message, ex);
@@ -1662,16 +1687,12 @@ internal sealed partial class FeatureServerQueryHandler(
             ImmutableArray<string>? groupByFields = null;
             if (!string.IsNullOrWhiteSpace(validatedParams.GroupByFieldsForStatistics))
             {
-                var parsed = validatedParams.GroupByFieldsForStatistics
-                    .Split(',', StringSplitOptions.RemoveEmptyEntries)
-                    .Select(f => f.Trim())
-                    .ToImmutableArray();
-                if (parsed.IsDefaultOrEmpty)
+                if (!TryParseGroupByFields(validatedParams.GroupByFieldsForStatistics, queryLayer.Resource, out var parsedGroupBy, out var groupByError))
                 {
-                    throw new ArgumentException("groupByFieldsForStatistics must contain valid field names.");
+                    throw new ArgumentException(groupByError ?? "groupByFieldsForStatistics must contain valid field names.");
                 }
 
-                groupByFields = parsed;
+                groupByFields = parsedGroupBy;
             }
 
             ImmutableArray<HavingCondition>? havingConditions = null;
@@ -2425,6 +2446,12 @@ internal sealed partial class FeatureServerQueryHandler(
             var fieldNames = new HashSet<string>(
                 resource.SchemaFields.Select(f => f.Name),
                 StringComparer.OrdinalIgnoreCase);
+            var fieldTypes = new Dictionary<string, MetadataV2FieldType>(StringComparer.OrdinalIgnoreCase);
+            foreach (var schemaField in resource.SchemaFields)
+            {
+                fieldTypes[schemaField.Name] = schemaField.Type;
+            }
+
             // Also allow objectid
             fieldNames.Add(FieldNames.ObjectId);
 
@@ -2459,6 +2486,19 @@ internal sealed partial class FeatureServerQueryHandler(
                 if (!TryParseStatisticType(statisticTypeStr, out var statisticType))
                 {
                     error = $"Unsupported statisticType: '{statisticTypeStr}'. Supported types: count, sum, min, max, avg, stddev, var.";
+                    return false;
+                }
+
+                // Numeric aggregates (sum/avg/stddev/var) are only meaningful over a
+                // numeric column; applying them to a string field is a type mismatch
+                // that the database would otherwise raise at execution time as a 500.
+                // count/min/max are valid on any comparable type, so they are exempt.
+                // ObjectId is always numeric, so its type need not be looked up.
+                if (RequiresNumericField(statisticType) &&
+                    fieldTypes.TryGetValue(onField, out var onFieldType) &&
+                    !IsNumericFieldType(onFieldType))
+                {
+                    error = $"Statistic '{statisticTypeStr}' requires a numeric field; '{onField}' is not numeric.";
                     return false;
                 }
 
@@ -2618,6 +2658,65 @@ internal sealed partial class FeatureServerQueryHandler(
         }
     }
 
+    // Parses groupByFieldsForStatistics and validates each name against the
+    // layer schema, mirroring the onStatisticField/outFields/orderByFields
+    // existence checks. An unvalidated groupBy column would otherwise reach the
+    // database and surface as a 500 instead of a structured 400.
+    private static bool TryParseGroupByFields(
+        string groupByFieldsForStatistics,
+        MetadataV2Resource resource,
+        out ImmutableArray<string> groupByFields,
+        out string? error)
+    {
+        error = null;
+        groupByFields = default;
+
+        var parsed = groupByFieldsForStatistics
+            .Split(',', StringSplitOptions.RemoveEmptyEntries)
+            .Select(f => f.Trim())
+            .Where(f => f.Length > 0)
+            .ToImmutableArray();
+        if (parsed.IsDefaultOrEmpty)
+        {
+            error = "groupByFieldsForStatistics must contain valid field names.";
+            return false;
+        }
+
+        var fieldNames = new HashSet<string>(
+            resource.SchemaFields.Select(f => f.Name),
+            StringComparer.OrdinalIgnoreCase)
+        {
+            FieldNames.ObjectId
+        };
+
+        foreach (var field in parsed)
+        {
+            if (!fieldNames.Contains(field))
+            {
+                error = $"Field '{field}' referenced in groupByFieldsForStatistics does not exist on the layer.";
+                return false;
+            }
+        }
+
+        groupByFields = parsed;
+        return true;
+    }
+
+    // Aggregates that compute over numeric magnitudes; applying them to a
+    // non-numeric column is a type mismatch. min/max/count operate on any
+    // comparable type and are intentionally excluded.
+    private static bool RequiresNumericField(StatisticType statisticType) =>
+        statisticType is StatisticType.Sum
+            or StatisticType.Avg
+            or StatisticType.Stddev
+            or StatisticType.Var;
+
+    private static bool IsNumericFieldType(MetadataV2FieldType fieldType) =>
+        fieldType is MetadataV2FieldType.Integer
+            or MetadataV2FieldType.BigInteger
+            or MetadataV2FieldType.Double
+            or MetadataV2FieldType.Float;
+
     private static bool TryParseStatisticType(string value, out StatisticType statisticType)
     {
         statisticType = default;
@@ -2664,6 +2763,21 @@ internal sealed partial class FeatureServerQueryHandler(
         }
 
         return false;
+    }
+
+    // A SQL "data exception" (SQLSTATE class 22) is raised by the database when a
+    // value in the executed statement is malformed or out of range — division/mod by
+    // zero (22012/22020), numeric overflow (22003), invalid argument to LOG/POWER/SQRT
+    // (2201E/2201F/2201G), bad text-to-number CAST (22P02), etc. For a read query these
+    // are always driven by client `where`/arithmetic input, so they are client errors
+    // (400), not server faults (500). DbException.SqlState is provider-agnostic, so this
+    // adapter stays free of any concrete provider dependency.
+    private static bool IsClientDataException(DbException exception)
+    {
+        var sqlState = exception.SqlState;
+        return !string.IsNullOrEmpty(sqlState)
+            && sqlState.Length >= 2
+            && sqlState.StartsWith("22", StringComparison.Ordinal);
     }
 
     private static bool IsClientSafeInvalidOperation(InvalidOperationException exception)

@@ -108,9 +108,25 @@ internal static partial class FeatureServerEndpoints
             .WithDisplayName("Query FeatureServer Service (GET)")
             .WithName("QueryFeatureServiceGet")
             .WithSummary("Query features from a FeatureServer service using GET")
-            .WithDescription("GET-only service-level query endpoint that returns per-layer results for the selected accessible layers")
+            .WithDescription("Service-level query endpoint that returns per-layer results for the selected accessible layers")
             .WithTags("FeatureServer")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
+            .Produces<ServiceQueryResponse>(200, "application/json")
+            .Produces(400)
+            .Produces(404);
+
+        // Esri services accept BOTH GET and POST for the service-level query operation;
+        // clients POST large layerDefs/layers arrays that exceed URL limits
+        // (honua-server#1825). The POST companion shares the read-only handler and is
+        // anonymous by design (per-layer access is enforced by the handler).
+        var serviceQueryPost = endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/query", HandleServiceQueryFeaturesPost)
+            .WithDisplayName("Query FeatureServer Service (POST)")
+            .WithName("QueryFeatureServicePost")
+            .WithSummary("Query features from a FeatureServer service using POST")
+            .WithDescription("Service-level query endpoint that returns per-layer results for the selected accessible layers")
+            .WithTags("FeatureServer")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .AllowAnonymous()
             .Produces<ServiceQueryResponse>(200, "application/json")
             .Produces(400)
             .Produces(404);
@@ -431,6 +447,21 @@ internal static partial class FeatureServerEndpoints
             .WithSummary("Query coded-value domains for the service")
             .WithDescription("Returns schema-defined domains for accessible service layers")
             .WithTags("FeatureServer")
+            .Produces<QueryDomainsResponse>(200, "application/json")
+            .Produces(400)
+            .Produces(404);
+
+        // Esri services accept BOTH GET and POST for queryDomains; clients POST large
+        // layers arrays that exceed URL limits (honua-server#1825). The POST companion
+        // shares the read-only handler and is anonymous by design (per-layer access is
+        // enforced by the handler).
+        endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/queryDomains", HandleQueryDomains)
+            .WithDisplayName("Query Domains (POST)")
+            .WithName("QueryDomainsPost")
+            .WithSummary("Query coded-value domains for the service using POST")
+            .WithDescription("Returns schema-defined domains for accessible service layers")
+            .WithTags("FeatureServer")
+            .AllowAnonymous()
             .Produces<QueryDomainsResponse>(200, "application/json")
             .Produces(400)
             .Produces(404);

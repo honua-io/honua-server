@@ -79,6 +79,45 @@ public class GeoServicesSqlParserTests
     }
 
     [Fact]
+    public void Parse_TimestampLiteralWithoutOffset_AcceptedAsUtc()
+    {
+        // The canonical SQL-92 TIMESTAMP literal the ArcGIS SDK emits carries no
+        // timezone offset; real ArcGIS accepts it (honua-server#1825). The parser
+        // must treat it as naive/UTC instead of rejecting it as ambiguous.
+        var expression = _parser.Parse("event_date > TIMESTAMP '2024-06-01 12:30:00'");
+
+        var binary = (BinaryExpression)expression;
+        var literal = (Literal)binary.Right;
+        literal.Type.Should().Be(LiteralType.DateTime);
+        var value = (DateTimeOffset)literal.Value!;
+        value.Offset.Should().Be(TimeSpan.Zero);
+        value.UtcDateTime.Should().Be(new DateTime(2024, 6, 1, 12, 30, 0, DateTimeKind.Utc));
+    }
+
+    [Fact]
+    public void Parse_TimestampLiteralAtMidnightWithoutOffset_Accepted()
+    {
+        // The exact literal from the issue report. Midnight collapses to a Date
+        // literal (existing behavior for offset-bearing midnight timestamps), which
+        // still filters correctly — the point is that it no longer 400s.
+        var act = () => _parser.Parse("event_date > TIMESTAMP '2024-06-01 00:00:00'");
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void Parse_HashDatetimeLiteralWithoutOffset_StillRejected()
+    {
+        // Without the explicit TIMESTAMP keyword, a #...# date+time literal carrying a
+        // time component but no offset remains ambiguous and must still be rejected;
+        // only the explicit TIMESTAMP keyword relaxes the offset requirement.
+        var act = () => _parser.Parse("event_date > #2024-06-01T12:30:00#");
+
+        act.Should().Throw<ArgumentException>()
+            .WithMessage("*missing a timezone offset*");
+    }
+
+    [Fact]
     public void Parse_CurrentDate_ReturnsFunctionCall()
     {
         var expression = _parser.Parse("timestamp >= CURRENT_DATE");
