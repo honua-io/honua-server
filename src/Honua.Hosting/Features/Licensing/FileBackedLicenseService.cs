@@ -94,9 +94,19 @@ internal sealed class FileBackedLicenseService :
             current.KeyId);
     }
 
+    /// <summary>
+    /// Computes the bootstrap license snapshot consulted by early startup gates (e.g. the
+    /// Redis-cache entitlement probe) before DI is built. When <paramref name="honorDevGrant"/>
+    /// is <see langword="true"/> and <c>Licensing:DevGrantEdition</c> is set to a valid edition,
+    /// the returned snapshot reflects that dev grant — keeping the startup gate consistent with
+    /// the runtime <see cref="DevLicenseEntitlementService"/> entitlement path (honua-server#1787).
+    /// Callers must pass <c>honorDevGrant: false</c> in Production so the override never relaxes a
+    /// startup gate without a signed license (the host-level guard fails the process closed there).
+    /// </summary>
     internal static async Task<LicenseSnapshot> LoadBootstrapSnapshotAsync(
         IConfiguration configuration,
         ILoggerFactory loggerFactory,
+        bool honorDevGrant = false,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(configuration);
@@ -104,6 +114,12 @@ internal sealed class FileBackedLicenseService :
 
         var options = new LicenseOptions();
         configuration.GetSection(LicenseOptions.SectionName).Bind(options);
+
+        if (honorDevGrant &&
+            DevLicenseSnapshotFactory.TryParseEdition(options.DevGrantEdition, out var grantEdition))
+        {
+            return DevLicenseSnapshotFactory.Create(grantEdition);
+        }
 
         var service = new FileBackedLicenseService(
             Options.Create(options),
