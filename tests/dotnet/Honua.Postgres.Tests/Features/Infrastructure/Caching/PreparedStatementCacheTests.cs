@@ -145,6 +145,43 @@ public class PreparedStatementCacheTests : IDisposable
     }
 
     [Fact]
+    public async Task GetOrCreatePreparedCommandAsync_ConfigureParametersGatedOnCommandText_BindsThroughCache()
+    {
+        // Regression (honua-server#1749): the cache gathers parameter values on a scratch
+        // command before applying them onto the cloned execution command. Parameter-binding
+        // callbacks that gate on CommandText (e.g. WFS GetFeature only binds OFFSET when the
+        // emitted SQL actually contains an OFFSET clause) silently skipped their parameter when
+        // that scratch command had no CommandText, leaving the cloned parameter null and
+        // failing execution with "Parameter '' cannot be null, DBNull.Value should be used".
+        await using var connection = await _dataSource.OpenConnectionAsync();
+        const string sql = "SELECT $1::integer AS gated_value";
+
+        Action<NpgsqlCommand> configureParams = cmd =>
+        {
+            // Mirror AddOffsetParameterIfEmitted: only bind when the command carries the SQL.
+            if (cmd.CommandText.Contains("gated_value", StringComparison.Ordinal))
+            {
+                cmd.Parameters.AddWithValue(7);
+            }
+        };
+
+        // First call primes the cache (MinExecutionsForCaching=2); the second returns the
+        // cloned, parameter-applied execution command that previously dropped the value.
+        await _cache.GetOrCreatePreparedCommandAsync((NpgsqlConnection)connection, sql, configureParams);
+        await using var preparedCommand = await _cache.GetOrCreatePreparedCommandAsync(
+            (NpgsqlConnection)connection,
+            sql,
+            configureParams);
+
+        preparedCommand.Should().NotBeNull();
+        preparedCommand!.Parameters.Should().ContainSingle("the CommandText-gated parameter must survive the cache clone/apply path");
+        preparedCommand.Parameters[0].Value.Should().Be(7);
+
+        var result = await preparedCommand.ExecuteScalarAsync();
+        result.Should().Be(7);
+    }
+
+    [Fact]
     public async Task PreparePriorityStatementAsync_ValidStatement_CreatesPreparedStatement()
     {
         // Arrange
