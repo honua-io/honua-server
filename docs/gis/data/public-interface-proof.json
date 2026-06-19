@@ -1456,6 +1456,50 @@
       ]
     },
     {
+      "surfaceId": "vector-tile-server",
+      "displayName": "GeoServices REST VectorTileServer",
+      "surfaceKind": "http-route-family",
+      "protocol": "GeoServices REST VectorTileServer",
+      "canonicalIdentifier": "/rest/services/{serviceId}/VectorTileServer",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [],
+      "endpointExactMatches": [],
+      "endpointContains": [
+        "/VectorTileServer"
+      ],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage and deployed-route drift checks for the VectorTileServer service-metadata adapter",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "scenario-depth",
+          "proofMechanism": "Tile data, style/resources, and tileMap routes are declared and stubbed (HTTP 501) in the metadata foundation; the parallel wave fills the handlers under the VectorTileServer epic.",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "src/Honua.Protocols.GeoServices/VectorTileServer/VectorTileServerEndpoints.Tile.cs",
+            "src/Honua.Protocols.GeoServices/VectorTileServer/VectorTileServerEndpoints.Resources.cs",
+            "src/Honua.Protocols.GeoServices/VectorTileServer/VectorTileServerEndpoints.TileMap.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "bounded-child-ticket",
+          "linkedTicket": "#1776",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
       "surfaceId": "map-server",
       "displayName": "GeoServices REST MapServer",
       "surfaceKind": "http-route-family",

@@ -130,6 +130,11 @@ public static class ProtocolNames
     public const string ImageServer = "ImageServer";
 
     /// <summary>
+    /// GeoServices VectorTileServer REST API.
+    /// </summary>
+    public const string VectorTileServer = "VectorTileServer";
+
+    /// <summary>
     /// OGC API - Maps (Part 1: Core).
     /// </summary>
     public const string OgcApiMaps = "OGC-API-Maps";
