@@ -241,6 +241,7 @@ internal static partial class FeatureServerEndpoints
     internal static FrozenSet<string> FeatureServerServiceQueryAllowedParameters => AllowedQueryParameters.ServiceQuery;
     internal static FrozenSet<string> FeatureServerQueryFormats => SupportedFormats.Query;
     internal static FrozenSet<string> JsonOnlyFormats => SupportedFormats.JsonOnly;
+    internal static FrozenSet<string> TopFeaturesFormats => SupportedFormats.TopFeatures;
 
     private static class SupportedFormats
     {
@@ -249,6 +250,11 @@ internal static partial class FeatureServerEndpoints
 
         public static readonly FrozenSet<string> JsonOnly =
             new[] { "json", "pjson" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
+        // queryTopFeatures supports pbf (mirroring ArcGIS), unlike queryRelatedRecords
+        // which stays json/pjson-only (#1824).
+        public static readonly FrozenSet<string> TopFeatures =
+            new[] { "json", "pjson", "pbf" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>

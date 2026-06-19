@@ -548,6 +548,119 @@ public sealed class QueryFormatterTests
         queryResponse.Features[0].Attributes.Should().Contain("distance", 12.5);
     }
 
+    [Fact]
+    public async Task FormatQueryResultAsync_GeoJson_MultipartPolygon_EmitsMultiPolygonNotGeometryCollection()
+    {
+        // Regression (#1824): a multipart Esri geometry surfaces as an NTS GeometryCollection
+        // of single-part polygons; RFC 7946 requires the homogeneous form to be tagged
+        // MultiPolygon, not GeometryCollection.
+        var geoJson = await FormatGeoJsonGeometryAsync(
+            CreateGeometryCollectionWkb(CreatePolygon(0, 0), CreatePolygon(10, 10)),
+            CreatePolygonLayer());
+
+        geoJson.Features.Should().HaveCount(1);
+        geoJson.Features[0].Geometry!.Type.Should().Be("MultiPolygon");
+        geoJson.Features[0].Geometry!.Geometries.Should().BeNull("a Multi* geometry has coordinates, not nested geometries");
+    }
+
+    [Fact]
+    public async Task FormatQueryResultAsync_GeoJson_MultipartPolyline_EmitsMultiLineString()
+    {
+        var geoJson = await FormatGeoJsonGeometryAsync(
+            CreateGeometryCollectionWkb(CreateLine(0, 0), CreateLine(5, 5)),
+            CreateResource("polyline-layer", MetadataV2GeometryType.LineString,
+                new MetadataV2Field { Name = FieldNames.ObjectId, Type = MetadataV2FieldType.Integer, Nullable = false }));
+
+        geoJson.Features[0].Geometry!.Type.Should().Be("MultiLineString");
+    }
+
+    [Fact]
+    public async Task FormatQueryResultAsync_GeoJson_MultipartPoint_EmitsMultiPoint()
+    {
+        var geoJson = await FormatGeoJsonGeometryAsync(
+            CreateGeometryCollectionWkb(new Point(0, 0), new Point(3, 4)),
+            CreateResource("multipoint-layer", MetadataV2GeometryType.MultiPoint,
+                new MetadataV2Field { Name = FieldNames.ObjectId, Type = MetadataV2FieldType.Integer, Nullable = false }));
+
+        geoJson.Features[0].Geometry!.Type.Should().Be("MultiPoint");
+    }
+
+    [Fact]
+    public async Task FormatQueryResultAsync_GeoJson_SinglePartHoledPolygon_StaysPolygon()
+    {
+        // A single-part holed polygon must remain a Polygon (no false-positive Multi*).
+        var shell = new LinearRing([
+            new Coordinate(0, 0), new Coordinate(10, 0), new Coordinate(10, 10),
+            new Coordinate(0, 10), new Coordinate(0, 0)
+        ]);
+        var hole = new LinearRing([
+            new Coordinate(3, 3), new Coordinate(3, 6), new Coordinate(6, 6),
+            new Coordinate(6, 3), new Coordinate(3, 3)
+        ]);
+        var holed = new Polygon(shell, [hole]) { SRID = 4326 };
+
+        var geoJson = await FormatGeoJsonGeometryAsync(new WKBWriter().Write(holed), CreatePolygonLayer());
+
+        geoJson.Features[0].Geometry!.Type.Should().Be("Polygon");
+    }
+
+    private async Task<GeoJsonFeatureSet> FormatGeoJsonGeometryAsync(byte[] wkb, MetadataV2Resource resource)
+    {
+        var limitsOptions = Options.Create(new LimitsOptions());
+        var formatter = new QueryFormatter(
+            limitsOptions,
+            new PbfQueryFormatter(limitsOptions),
+            NullLogger<QueryFormatter>.Instance);
+
+        var feature = Feature.Create(
+            1,
+            wkb,
+            ImmutableDictionary<string, object?>.Empty.Add("objectid", 1L));
+
+        var (response, _) = await formatter.FormatQueryResultAsync(
+            QueryResult<Feature>.Create(1, [feature]),
+            resource,
+            format: "geojson",
+            returnGeometry: true,
+            outputSrid: null,
+            returnZ: false,
+            returnM: false,
+            geometryPrecision: null,
+            maxAllowableOffset: null);
+
+        return response.Should().BeOfType<GeoJsonFeatureSet>().Subject;
+    }
+
+    private static Polygon CreatePolygon(double originX, double originY)
+    {
+        var ring = new LinearRing(
+        [
+            new Coordinate(originX, originY),
+            new Coordinate(originX + 1, originY),
+            new Coordinate(originX + 1, originY + 1),
+            new Coordinate(originX, originY + 1),
+            new Coordinate(originX, originY)
+        ]);
+        return new Polygon(ring) { SRID = 4326 };
+    }
+
+    private static LineString CreateLine(double originX, double originY)
+    {
+        var coordinates = new[]
+        {
+            new Coordinate(originX, originY),
+            new Coordinate(originX + 1, originY + 1),
+            new Coordinate(originX + 2, originY)
+        };
+        return new LineString(coordinates) { SRID = 4326 };
+    }
+
+    private static byte[] CreateGeometryCollectionWkb(params Geometry[] parts)
+    {
+        var collection = new GeometryCollection(parts) { SRID = 4326 };
+        return new WKBWriter().Write(collection);
+    }
+
     private static MetadataV2Resource CreatePointLayer()
         => CreatePointResource(
             "test-layer",

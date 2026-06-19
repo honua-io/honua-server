@@ -390,15 +390,63 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
-    public async Task Query_WithPjsonFormat_ReturnsCompactJson()
+    public async Task Query_WithPjsonFormat_ReturnsPrettyPrintedJson()
     {
+        // f=pjson must emit indented JSON, not the byte-identical compact f=json payload (#1824).
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=pjson");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
-        content.Should().NotContain("\n");
+        content.Should().Contain("\n", "pjson is pretty-printed (indented) JSON");
+
+        // Still valid, semantically-identical JSON.
+        var queryResponse = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.QueryResponse);
+        queryResponse.Should().NotBeNull();
+        queryResponse!.Features.Should().NotBeNull();
+
+        // And distinct from the compact f=json byte payload.
+        var compact = await _fixture.Client.GetStringAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=json");
+        compact.Should().NotContain("\n");
+        content.Should().NotBe(compact);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithoutFormatAndWildcardAccept_DefaultsToJson()
+    {
+        // Esri REST defaults f to json; a no-f request (even with a wildcard Accept that a
+        // browser/curl sends) must not silently return binary protobuf (#1824).
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?where=1%3D1");
+        request.Headers.TryAddWithoutValidation("Accept", "*/*");
+
+        var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithoutFormatAndBrowserAccept_DefaultsToJson()
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?where=1%3D1");
+        request.Headers.TryAddWithoutValidation(
+            "Accept",
+            "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8");
+
+        var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
     }
 
     [IntegrationTest]
