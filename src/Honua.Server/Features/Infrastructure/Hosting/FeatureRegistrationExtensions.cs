@@ -224,6 +224,7 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapVisibilityAnalysisEndpoints();
         endpoints.MapSceneGenerationEndpoints();
         endpoints.MapSceneBimIngestEndpoints();
+        endpoints.MapScenePointCloudIngestEndpoints();
         endpoints.MapPMTilesProxyEndpoints();
         endpoints.MapStyleEndpoints();
         endpoints.MapOgcCoveragesEndpoints();
