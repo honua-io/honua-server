@@ -12,8 +12,9 @@ namespace Honua.Protocols.GeoServices.VersionManagementServer.Models;
 /// </summary>
 public sealed class VersionManagementServiceInfo
 {
-    /// <summary>Current GeoServices REST API version reported by the service.</summary>
-    public double CurrentVersion { get; init; } = 10.91;
+    // No ArcGIS Server version (currentVersion/fullVersion) is advertised. Honua is an
+    // independent, Esri-compatible server and must not impersonate a specific ArcGIS Server
+    // release. Do NOT add a currentVersion/fullVersion field (guarded by NoArcGisServerVersionTests).
 
     /// <summary>Default version name (always the implicit DEFAULT version).</summary>
     public string DefaultVersionName { get; init; } = "sde.DEFAULT";

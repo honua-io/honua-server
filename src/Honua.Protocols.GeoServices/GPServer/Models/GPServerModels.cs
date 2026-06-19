@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json.Serialization;
+
 namespace Honua.Protocols.GeoServices.GPServer.Models;
 
 /// <summary>
@@ -8,8 +10,9 @@ namespace Honua.Protocols.GeoServices.GPServer.Models;
 /// </summary>
 internal sealed class GPServiceInfoResponse
 {
-    /// <summary>Service version.</summary>
-    public double CurrentVersion { get; set; } = 10.81;
+    // No ArcGIS Server version (currentVersion/fullVersion) is advertised. Honua is an
+    // independent, Esri-compatible server and must not impersonate a specific ArcGIS Server
+    // release. Do NOT add a currentVersion/fullVersion field (guarded by NoArcGisServerVersionTests).
 
     /// <summary>Service description.</summary>
     public string? ServiceDescription { get; set; }
@@ -77,7 +80,13 @@ internal sealed class GPParameterInfo
     /// <summary>Parameter direction (esriGPParameterDirectionInput or esriGPParameterDirectionOutput).</summary>
     public string? Direction { get; set; }
 
-    /// <summary>Default value.</summary>
+    /// <summary>
+    /// Default value. Esri GP task metadata always carries a <c>defaultValue</c> key
+    /// (JSON <c>null</c> when the parameter has no default); arcgis.geoprocessing's
+    /// <c>import_toolbox()</c> raises <c>KeyError('defaultValue')</c> when it is absent,
+    /// so this property is always serialized even when null. (#1775)
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public string? DefaultValue { get; set; }
 
     /// <summary>Parameter type (esriGPParameterTypeRequired, esriGPParameterTypeOptional).</summary>

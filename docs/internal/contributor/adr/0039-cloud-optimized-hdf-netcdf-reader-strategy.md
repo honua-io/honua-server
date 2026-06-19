@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted
+Accepted. **Path selection resolved (2026-06-18, issue #1756): Path B — GDAL
+sidecar NetCDF→Zarr conversion.** See "Path Selection (#1756)" below.
 
 ## Context
 
@@ -110,3 +111,51 @@ sources today; they read pixels once split 3 lands.
 - No server-side scientific analysis (CDO / `xarray.compute`).
 - No protocol-specific HDF5 readers that bypass the canonical raster
   pipeline.
+
+## Path Selection (#1756)
+
+**Decision (2026-06-18): Path B — GDAL sidecar NetCDF→Zarr conversion.**
+
+Issue #1756 is the follow-up this ADR deferred the path choice to. After
+evaluating both options against the current codebase, **Path B is selected**:
+
+NetCDF/HDF5 sources are converted to a Zarr store by the out-of-tree GDAL
+worker (`Honua.Worker.Gdal`) at metadata-scan time, and then served through
+the **existing** pure-managed Zarr reader (`ZarrMetadataExtractor` /
+`ZarrSubsetReader`). The server gains no native dependency; the GDAL worker
+that already exists does the format work.
+
+Evidence that decided it:
+
+- **Server AOT posture preserved.** Path A would put a large bespoke HDF5
+  binary parser (superblock v2/v3 — confirmed on a real NetCDF4 fixture —
+  plus chunk B-tree, filter pipeline, dimension-scale/`DIMENSION_LIST`
+  resolution, CF interpretation) into `Honua.Core`. Path B keeps all native
+  format handling in the worker image, exactly per ADR-0034.
+- **Reuses proven infrastructure.** The job-executor dispatch pattern
+  (`GdalDispatchJobExecutor`) and the Zarr metadata+subset reader already
+  work end-to-end. Path B is a new GDAL executor plus mapping glue, not a new
+  parser.
+- **Bounded scope / risk.** HDF5 correctness is owned by GDAL upstream.
+
+Accepted cost (the "container layering" complexity this ADR anticipated):
+
+- **The GDAL worker image must move from `osgeo/gdal:ubuntu-small-*` to
+  `ubuntu-full-*`.** Verified 2026-06-18: the `ubuntu-small` image does **not**
+  ship the NetCDF/HDF5/Zarr drivers (`gdalmdiminfo` reports "not recognized as
+  being in a supported file format"); `ubuntu-full` does. This enlarges the
+  worker image and is a deployment change tracked with the worker Dockerfile
+  update.
+- A derived Zarr copy is produced per registered source (storage cost +
+  staleness on source change; re-scan re-converts).
+- The coverage metadata-scan path now depends on the GDAL worker being
+  available. The serverless/demo profile must account for this (the demo
+  cube for devops#101 is batch-seeded, so the convert runs at seed time, not
+  on the browse path).
+
+Implementation shape: a `gdalmdiminfo --json` → `MultidimensionalCoverageMetadata`
+mapper (pure, in `Honua.Core`), a `GdalNetCdfToZarrConvertJobExecutor` in the
+worker (runs `gdalmdiminfo` + `gdal_translate -of Zarr`), registered in
+`GdalDispatchJobExecutor`; the refresh/scan endpoint dispatches the job and the
+result populates the registration metadata. `raster.multidim-coverage` Pro
+entitlement gates the surface.

@@ -222,6 +222,188 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
         }
     }
 
+    [IntegrationTest]
+    public async Task ExportMosaicAsync_ByDateNewestOrdering_NewestRasterWinsOverlapPixel()
+    {
+        var (schemaName, ids) = await SeedMosaicStackAsync();
+        try
+        {
+            var store = CreateStore(schemaName);
+
+            // The west↔overlap-newest overlap column is x[1,2]; sample the pixel at (1.5, 1.5).
+            // The newest acquisition (overlap-newest, value 5, 2024-02-01) must win.
+            var winner = await ExportAndSampleOverlapPixelAsync(
+                store, [ids.West, ids.OverlapNewest, ids.East],
+                RasterMergeStrategy.Newest, RasterMosaicOrdering.AcquisitionNewest);
+
+            winner.Should().Be(5);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task ExportMosaicAsync_ByDateOldestOrdering_OldestRasterWinsOverlapPixel()
+    {
+        var (schemaName, ids) = await SeedMosaicStackAsync();
+        try
+        {
+            var store = CreateStore(schemaName);
+
+            // In the x[1,2] overlap, the oldest acquisition (west, value 20, 2024-01-01) must win.
+            var winner = await ExportAndSampleOverlapPixelAsync(
+                store, [ids.West, ids.OverlapNewest, ids.East],
+                RasterMergeStrategy.Oldest, RasterMosaicOrdering.AcquisitionOldest);
+
+            winner.Should().Be(20);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task ExportMosaicAsync_NorthwestOrdering_UpperLeftMostRasterWinsOverlapPixel()
+    {
+        var (schemaName, ids) = await SeedMosaicStackAsync();
+        try
+        {
+            var store = CreateStore(schemaName);
+
+            // west and overlap-newest share the same YMax; west sits further west (XMin 0 vs 1)
+            // so the Northwest ordering keeps west (value 20) in the overlap pixel.
+            var winner = await ExportAndSampleOverlapPixelAsync(
+                store, [ids.West, ids.OverlapNewest, ids.East],
+                RasterMergeStrategy.Newest, RasterMosaicOrdering.Northwest);
+
+            winner.Should().Be(20);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task ExportMosaicAsync_LockOrder_OnlyLockedRastersContribute()
+    {
+        var (schemaName, ids) = await SeedMosaicStackAsync();
+        try
+        {
+            var store = CreateStore(schemaName);
+
+            // Lock to west + east only (drop overlap-newest). In the x[1,2] overlap pixel only
+            // west (value 20) contributes, so the otherwise-winning overlap value (5) must not appear.
+            var winner = await ExportAndSampleOverlapPixelAsync(
+                store, [ids.West, ids.East],
+                RasterMergeStrategy.Newest, RasterMosaicOrdering.LockOrder);
+
+            winner.Should().Be(20);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    private PostgresRasterStore CreateStore(string schemaName)
+        => new(
+            new FixtureConnectionProvider(fixture.DataSource),
+            NullLogger<PostgresRasterStore>.Instance,
+            schemaName);
+
+    // Exports the full mosaic (no clip, so original raster envelopes drive Northwest ordering),
+    // re-imports the GeoTIFF, and samples the contested pixel in the west↔overlap-newest overlap
+    // column at world point (1.5, 1.5).
+    private async Task<double> ExportAndSampleOverlapPixelAsync(
+        PostgresRasterStore store,
+        long[] rasterIds,
+        RasterMergeStrategy mergeStrategy,
+        RasterMosaicOrdering ordering)
+    {
+        var result = await store.ExportMosaicAsync(
+                LayerId,
+                rasterIds,
+                mergeStrategy,
+                new RasterQuery { OutputFormat = RasterFormat.TIFF },
+                ordering)
+            .ConfigureAwait(false);
+
+        result.Data.Should().NotBeEmpty();
+        return await SamplePixelAsync(_currentSchema!, result.Data, x: 1.5, y: 1.5);
+    }
+
+    private async Task<double> SamplePixelAsync(string schemaName, byte[] exportedRaster, double x, double y)
+    {
+        await using var connection = await fixture.GetConnectionAsync(schemaName);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT ST_Value(ST_FromGDALRaster(@data), 1, ST_SetSRID(ST_MakePoint(@x, @y), 4326));
+            """;
+        command.Parameters.AddWithValue("data", exportedRaster);
+        command.Parameters.AddWithValue("x", x);
+        command.Parameters.AddWithValue("y", y);
+        return Convert.ToDouble(await command.ExecuteScalarAsync(), CultureInfo.InvariantCulture);
+    }
+
+    private string? _currentSchema;
+
+    private async Task<(string SchemaName, (long West, long OverlapNewest, long East) Ids)> SeedMosaicStackAsync()
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreQueryTests));
+        _currentSchema = schemaName;
+        await CreateRasterTableAsync(schemaName);
+
+        // Three 2x2 float rasters with offset extents and distinct acquisition dates, mirroring
+        // the shared SeedIssue522MosaicAsync fixture: west [0,2] value 20 (oldest), overlap-newest
+        // [1,3] value 5 (newest), east [2,4] value 40.
+        var west = await InsertConstantRasterAsync(
+            schemaName, "west", upperLeftX: 0, value: 20,
+            acquisition: DateTimeOffset.Parse("2024-01-01T00:00:00Z", CultureInfo.InvariantCulture));
+        var overlapNewest = await InsertConstantRasterAsync(
+            schemaName, "overlap-newest", upperLeftX: 1, value: 5,
+            acquisition: DateTimeOffset.Parse("2024-02-01T00:00:00Z", CultureInfo.InvariantCulture));
+        var east = await InsertConstantRasterAsync(
+            schemaName, "east", upperLeftX: 2, value: 40,
+            acquisition: DateTimeOffset.Parse("2024-01-15T00:00:00Z", CultureInfo.InvariantCulture));
+
+        return (schemaName, (west, overlapNewest, east));
+    }
+
+    private async Task<long> InsertConstantRasterAsync(
+        string schemaName,
+        string name,
+        double upperLeftX,
+        double value,
+        DateTimeOffset acquisition)
+    {
+        await using var connection = await fixture.GetConnectionAsync(schemaName);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO raster_data (layer_id, name, raster, acquisition_date, created_at)
+            SELECT @layerId,
+                   @name,
+                   ST_AddBand(
+                       ST_MakeEmptyRaster(2, 2, @upperLeftX, 2, 1, -1, 0, 0, 4326),
+                       '32BF'::text,
+                       @value,
+                       NULL
+                   ),
+                   @acquisition,
+                   @acquisition
+            RETURNING id;
+            """;
+        command.Parameters.AddWithValue("layerId", LayerId);
+        command.Parameters.AddWithValue("name", name);
+        command.Parameters.AddWithValue("upperLeftX", upperLeftX);
+        command.Parameters.AddWithValue("value", value);
+        command.Parameters.AddWithValue("acquisition", acquisition.UtcDateTime);
+        return (long)(await command.ExecuteScalarAsync().ConfigureAwait(false))!;
+    }
+
     private async Task<int> GetExportedBandCountAsync(string schemaName, byte[] exportedRaster)
     {
         await using var connection = await fixture.GetConnectionAsync(schemaName);

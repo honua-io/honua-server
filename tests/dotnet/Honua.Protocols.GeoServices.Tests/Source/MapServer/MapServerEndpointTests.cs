@@ -42,7 +42,6 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
 
         service.Should().NotBeNull();
         service!.MapName.Should().NotBeNullOrWhiteSpace();
-        service.CurrentVersion.Should().BeGreaterThan(0);
         service.ServiceDescription.Should().NotBeNullOrWhiteSpace();
         service.Layers.Should().NotBeNullOrEmpty();
         service.Tables.Should().NotBeNull();
@@ -183,6 +182,40 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
         content.Should().NotContain("BytePositionInLine");
         content.Should().NotContain("LineNumber");
         content.Should().NotContain("System.Text.Json");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer")]
+    public async Task MapServer_Metadata_SupportedImageFormatTypes_DoesNotAdvertiseGif()
+    {
+        // Regression (#1772): GIF was advertised in supportedImageFormatTypes but the
+        // SkiaSharp export renderer ships no GIF encoder, so export?format=gif was
+        // rejected. Capabilities must match behavior -> GIF must not be advertised.
+        var response = await _fixture.Client.GetAsync($"/rest/services/{WebAppFixture.TestServiceId}/MapServer?f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        var service = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.MapServerResponse);
+
+        service.Should().NotBeNull();
+        service!.SupportedImageFormatTypes.Should().NotBeNullOrWhiteSpace();
+        service.SupportedImageFormatTypes!
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Should().NotContain(format => string.Equals(format, "GIF", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
+    public async Task MapServer_Export_WithGifFormat_ReturnsBadRequest()
+    {
+        // Regression (#1772): format=gif must be rejected cleanly (400), and the
+        // capability advertisement above must not promise it.
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&size=256,256&format=gif&f=image");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [IntegrationTest]

@@ -940,6 +940,30 @@ public class PostgresSqlFilterTranslatorTests
     }
 
     [Fact]
+    public void Translate_ArcGisCastVarcharWithLength_EmitsLengthBoundedCast()
+    {
+        var expression = new GeoServicesSqlParser().Parse("CAST(age AS VARCHAR(20)) = '42'");
+
+        var result = _translator.Translate(expression, _resource);
+
+        // The length is preserved so the cast truncates exactly as ArcGIS does;
+        // only the compared value is parameterized.
+        result.Sql.Should().Be("(\"age\")::VARCHAR(20) = @p0");
+        result.Parameters.Should().ContainSingle().Which.Should().Be("42");
+    }
+
+    [Fact]
+    public void Translate_ArcGisCastDecimalWithPrecisionScale_EmitsNumericWithArguments()
+    {
+        var expression = new GeoServicesSqlParser().Parse("CAST(age AS DECIMAL(10, 2)) > 1");
+
+        var result = _translator.Translate(expression, _resource);
+
+        result.Sql.Should().Be("(\"age\")::NUMERIC(10,2) > @p0");
+        result.Parameters.Should().ContainSingle().Which.Should().Be((long)1);
+    }
+
+    [Fact]
     public void Translate_ArcGisStringConcatenation_EmitsConcatWithBoundLiterals()
     {
         var expression = new GeoServicesSqlParser().Parse("name || ' ' || description = 'a b'");

@@ -71,6 +71,15 @@ internal static class InfrastructureCompositionRoot
             Honua.SqlServer.ServiceCollectionExtensions.AddSqlServerFeatureProvider(services, configuration);
         }
 
+        // Register the Amazon Redshift spatial provider as an additional read-only feature backend (#1712).
+        // Metadata v2 publications whose connection resolves to provider 'redshift' are routed here through
+        // the shared FeatureProviderQueryRouter. Disabled when Redshift:Enabled is explicitly false. Redshift
+        // speaks the PostgreSQL wire protocol (Npgsql) and is AOT-friendly, so it needs no AOT carve-out.
+        if (configuration.GetValue("Redshift:Enabled", true))
+        {
+            Honua.Redshift.ServiceCollectionExtensions.AddRedshiftFeatureProvider(services, configuration);
+        }
+
         // Register the federated ArcGIS REST read-through provider (#1251). Metadata v2 publications whose
         // backing connection resolves to provider 'arcgis-rest' are routed here so customers can register a
         // live ArcGIS FeatureServer/MapServer as a Honua layer on day one without copying data. Disabled
@@ -94,6 +103,32 @@ internal static class InfrastructureCompositionRoot
             Honua.Oracle.ServiceCollectionExtensions.AddOracleFeatureProvider(services, configuration);
         }
 #endif
+
+        // Register the Snowflake spatial provider as an additional read-only feature backend (#1713).
+        // Metadata v2 publications whose connection resolves to provider 'snowflake'/'snowflakedb' are routed
+        // here through the shared FeatureProviderQueryRouter. Disabled when Snowflake:Enabled is explicitly false.
+        // Snowflake.Data uses internal reflection and is not Native AOT-compatible; operators publishing
+        // trimmed/AOT artifacts should leave the provider disabled. The AOT-verification publish
+        // (HonuaSkipSnowflakeForAotVerification) drops the Honua.Snowflake ProjectReference and defines
+        // HONUA_SKIP_SNOWFLAKE, so this registration is compiled out and the non-single-file-safe driver is
+        // never linked into the AOT image.
+#if !HONUA_SKIP_SNOWFLAKE
+        if (configuration.GetValue("Snowflake:Enabled", true))
+        {
+            Honua.Snowflake.ServiceCollectionExtensions.AddSnowflakeFeatureProvider(services, configuration);
+        }
+#endif
+
+        // Register the read-only Databricks read-through provider (#1714). Layers whose
+        // backing connection resolves to provider 'databricks' (aliases 'databrickssql',
+        // 'dbsql') are routed here. Databricks has no first-class .NET driver, so the
+        // provider is a best-effort HTTP adapter over the SQL Statement Execution REST API
+        // against a SQL Warehouse. It is pure-HTTP and AOT-friendly. Disabled when
+        // Databricks:Enabled is explicitly false.
+        if (configuration.GetValue("Databricks:Enabled", true))
+        {
+            Honua.Databricks.ServiceCollectionExtensions.AddDatabricksFeatureProvider(services, configuration);
+        }
 
         services.TryAddScoped<IFeatureDataProviderRegistry>(serviceProvider =>
             new FeatureDataProviderRegistry(serviceProvider.GetServices<IFeatureDataProvider>()));
@@ -175,6 +210,15 @@ internal static class InfrastructureCompositionRoot
         {
             configuration.GetSection(Honua.Core.Features.Tiles.TileOptions.SectionName).Bind(options);
         });
+
+        // Bind operator-defined custom tile matrix sets and expose the merged built-in +
+        // custom gridset registry consumed by the OGC API Tiles and classic WMTS adapters.
+        // ValidateOnStart drives the registered IValidateOptions<TileMatrixSetDefinitionOptions>
+        // (TileMatrixSetOptionsValidator) so a misconfigured gridset fails the host fast.
+        services.AddOptions<Honua.Core.Features.Tiles.TileMatrixSetDefinitionOptions>()
+            .Bind(configuration.GetSection(Honua.Core.Features.Tiles.TileMatrixSetDefinitionOptions.SectionName))
+            .ValidateOnStart();
+        services.AddSingleton<Honua.Core.Features.Tiles.ITileMatrixSetRegistry, Honua.Core.Features.Tiles.TileMatrixSetRegistry>();
     }
 
     /// <summary>

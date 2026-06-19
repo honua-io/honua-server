@@ -33,7 +33,9 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
 
         var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        payload.RootElement.TryGetProperty("currentVersion", out _).Should().BeTrue();
+        // Honua does not advertise an ArcGIS Server version (see NoArcGisServerVersionTests).
+        payload.RootElement.TryGetProperty("currentVersion", out _).Should().BeFalse();
+        payload.RootElement.TryGetProperty("fullVersion", out _).Should().BeFalse();
         payload.RootElement.TryGetProperty("folders", out var folders).Should().BeTrue();
         folders.ValueKind.Should().Be(JsonValueKind.Array);
         payload.RootElement.TryGetProperty("services", out var services).Should().BeTrue();
@@ -72,8 +74,9 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
 
         var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        payload.RootElement.TryGetProperty("currentVersion", out _).Should().BeTrue();
-        payload.RootElement.TryGetProperty("fullVersion", out _).Should().BeTrue();
+        // Honua does not advertise an ArcGIS Server version (see NoArcGisServerVersionTests).
+        payload.RootElement.TryGetProperty("currentVersion", out _).Should().BeFalse();
+        payload.RootElement.TryGetProperty("fullVersion", out _).Should().BeFalse();
         payload.RootElement.TryGetProperty("authInfo", out var authInfo).Should().BeTrue();
         authInfo.TryGetProperty("isTokenBasedSecurity", out _).Should().BeTrue();
     }
@@ -99,6 +102,33 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
             firstService.TryGetProperty("name", out _).Should().BeTrue();
             firstService.TryGetProperty("type", out _).Should().BeTrue();
         }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services")]
+    public async Task GetServicesDirectory_IncludesVectorTileServerEntry()
+    {
+        var response = await _fixture.Client.GetAsync("/rest/services?f=json");
+
+        response.Be200Ok();
+
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var vectorTileEntries = payload.RootElement
+            .GetProperty("services")
+            .EnumerateArray()
+            .Where(service =>
+                service.TryGetProperty("type", out var type) &&
+                string.Equals(type.GetString(), "VectorTileServer", StringComparison.Ordinal))
+            .ToArray();
+
+        // The default test graph seeds an EsriVectorTileLayer publication on the "test"
+        // service, so the catalog must advertise a VectorTileServer entry with a
+        // service-name-scoped URL, matching every other service type.
+        vectorTileEntries.Should().NotBeEmpty();
+        vectorTileEntries.Should().OnlyContain(service =>
+            service.GetProperty("url").GetString()!.EndsWith(
+                "/rest/services/test/VectorTileServer", StringComparison.Ordinal));
     }
 
     [IntegrationTest]

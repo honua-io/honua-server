@@ -35,6 +35,41 @@ public enum RasterMergeStrategy
 }
 
 /// <summary>
+/// Ordering applied when overlapping rasters are unioned into a mosaic. This controls
+/// which raster "wins" a contested pixel for the LAST/FIRST pixel-selection merge
+/// strategies and is orthogonal to <see cref="RasterMergeStrategy"/> (which selects the
+/// pixel-resolution operation). Ordering has no effect on the MEAN/MAX/MIN strategies,
+/// which combine overlapping values without regard to raster order.
+/// </summary>
+public enum RasterMosaicOrdering
+{
+    /// <summary>
+    /// Newest acquisition wins a contested pixel (Esri <c>esriMosaicByAttribute</c> on an
+    /// acquisition field, descending). This is the default mosaic ordering.
+    /// </summary>
+    AcquisitionNewest = 0,
+
+    /// <summary>
+    /// Oldest acquisition wins a contested pixel (Esri <c>esriMosaicByAttribute</c> on an
+    /// acquisition field, ascending).
+    /// </summary>
+    AcquisitionOldest = 1,
+
+    /// <summary>
+    /// The upper-left-most raster wins a contested pixel: rasters whose envelope sits
+    /// further north (and then further west) take precedence (Esri <c>esriMosaicNorthwest</c>).
+    /// </summary>
+    Northwest = 2,
+
+    /// <summary>
+    /// A caller-pinned set of rasters is composited (Esri <c>esriMosaicLockRaster</c>). The
+    /// locked-id filtering happens upstream of the store; the union itself orders by newest
+    /// acquisition so the contested pixel resolves deterministically among the locked rasters.
+    /// </summary>
+    LockOrder = 3
+}
+
+/// <summary>
 /// Selection filter applied before a raster mosaic is built.
 /// </summary>
 public readonly record struct RasterSelectionQuery

@@ -513,8 +513,42 @@ public sealed class GeoServicesSqlParser
             name = $"{name} {Advance().Lexeme}";
         }
 
+        // Accept an optional length/precision argument list, e.g. VARCHAR(20),
+        // CHAR(8), DECIMAL(10, 2). The arguments must be plain non-negative
+        // integer literals (Number tokens that lexed to a long), so nothing other
+        // than digits can ever reach the SQL layer. The arguments are appended to
+        // the type-name string so the translator can re-emit a parameter-safe
+        // cast such as `(value)::VARCHAR(20)`.
+        if (Match(TokenType.LeftParen))
+        {
+            var first = ConsumeTypeArgument();
+            if (Match(TokenType.Comma))
+            {
+                var second = ConsumeTypeArgument();
+                Consume(TokenType.RightParen, "Expected ')' after CAST type arguments.");
+                name = $"{name}({first},{second})";
+            }
+            else
+            {
+                Consume(TokenType.RightParen, "Expected ')' after CAST type argument.");
+                name = $"{name}({first})";
+            }
+        }
+
         FilterParserGuard.EnsureIdentifierLength(name.Length, "GeoServicesSQL CAST type");
         return name;
+    }
+
+    // A CAST type length/precision argument must be a non-negative integer literal.
+    private long ConsumeTypeArgument()
+    {
+        var token = Consume(TokenType.Number, "Expected an integer length/precision in CAST type.");
+        if (token.Literal is not long value || value < 0)
+        {
+            throw Error("CAST type length/precision must be a non-negative integer.");
+        }
+
+        return value;
     }
 
     private static bool IsKeyword(string identifier, string keyword)

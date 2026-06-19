@@ -336,6 +336,43 @@ public sealed class FeatureServerTemporalTests : IClassFixture<WebAppFixture>
             "esriTimeRelationOverlaps",
             new long[] { 1, 3 }
         };
+
+        // Start/end-relative Esri relations (ArcObjects esriTimeRelation vocabulary).
+        // Feature interval = [timestamp, COALESCE(event_date, timestamp)]; a single time
+        // value sets queryStart == queryEnd. ArcGIS Pro / arcpy send these spellings and
+        // previously got HTTP 400 because only Overlaps/OverlapsStartWithinEnd were mapped.
+
+        // start > queryStart (2023-01-04): OID 2,3,5.
+        yield return new object[]
+        {
+            "2023-01-04T00:00:00Z",
+            "esriTimeRelationAfterStartTime",
+            new long[] { 2, 3, 5 }
+        };
+
+        // end < queryStart (2024-01-15): OID 1,3,5.
+        yield return new object[]
+        {
+            "2024-01-15T00:00:00Z",
+            "esriTimeRelationBeforeStartTime",
+            new long[] { 1, 3, 5 }
+        };
+
+        // start > queryEnd (2023-01-10): OID 3,5.
+        yield return new object[]
+        {
+            "2023-01-10T00:00:00Z",
+            "esriTimeRelationAfterEndTime",
+            new long[] { 3, 5 }
+        };
+
+        // end < queryEnd (2024-02-15): OID 1,3,5.
+        yield return new object[]
+        {
+            "2024-02-15T00:00:00Z",
+            "esriTimeRelationBeforeEndTime",
+            new long[] { 1, 3, 5 }
+        };
     }
 
     [Theory]
@@ -363,6 +400,57 @@ public sealed class FeatureServerTemporalTests : IClassFixture<WebAppFixture>
 
         var objectIds = ExtractObjectIds(document);
         objectIds.Should().BeEquivalentTo(expectedObjectIds);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task GeoServicesQuery_TimeRelation_OverlapsStartWithinEnd_IsAccepted()
+    {
+        // esriTimeRelationOverlapsStartWithinEnd is one of the six standard Esri
+        // start/end-relative spellings; confirm it is accepted (not rejected with 400).
+        var serviceId = WebAppFixture.TestServiceId;
+        var layerId = WebAppFixture.TestLayerId;
+        var encodedTime = Uri.EscapeDataString("2023-12-15T00:00:00Z,2024-02-15T00:00:00Z");
+
+        var response = await _client.GetAsync(
+            $"/rest/services/{serviceId}/FeatureServer/{layerId}/query?" +
+            $"time={encodedTime}&timeRelation=esriTimeRelationOverlapsStartWithinEnd&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+        document.RootElement.TryGetProperty("features", out _).Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task GeoServicesQuery_TimeFilterAlias_IsAcceptedAndEquivalentToTime()
+    {
+        // The ArcGIS API for Python (arcgis 2.4.x) serializes query(time_filter=) to the
+        // "timeFilter" query parameter. It must be accepted as an alias of "time" rather
+        // than rejected with HTTP 400 "Unknown query parameter: timeFilter" (#1775).
+        var serviceId = WebAppFixture.TestServiceId;
+        var layerId = WebAppFixture.TestLayerId;
+        var encodedTime = Uri.EscapeDataString("2023-12-15T00:00:00Z,2024-02-15T00:00:00Z");
+
+        var timeFilterResponse = await _client.GetAsync(
+            $"/rest/services/{serviceId}/FeatureServer/{layerId}/query?" +
+            $"timeFilter={encodedTime}&timeRelation=esriTimeRelationOverlaps&f=json");
+
+        timeFilterResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // The alias must produce the same result set as the canonical "time" parameter.
+        var timeResponse = await _client.GetAsync(
+            $"/rest/services/{serviceId}/FeatureServer/{layerId}/query?" +
+            $"time={encodedTime}&timeRelation=esriTimeRelationOverlaps&f=json");
+        timeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var timeFilterDocument = JsonDocument.Parse(await timeFilterResponse.Content.ReadAsStringAsync());
+        using var timeDocument = JsonDocument.Parse(await timeResponse.Content.ReadAsStringAsync());
+
+        ExtractObjectIds(timeFilterDocument).Should().BeEquivalentTo(ExtractObjectIds(timeDocument));
     }
 
     [IntegrationTest]

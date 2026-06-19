@@ -36,6 +36,7 @@ using Honua.Server.Features.Console.Collaboration;
 using Honua.Server.Features.Collaboration.Sessions;
 using Honua.Io.Export;
 using Honua.Server.Features.PrintingTools;
+using Honua.Server.Features.Provisioner;
 using Honua.ControlPlane;
 using Honua.FileStorage;
 using Honua.Server.Features.HealthCheck;
@@ -139,7 +140,9 @@ builder.Services.AddDataProtection();
 var useAspire = builder.Configuration.GetSection("Aspire").Exists();
 var redisConnectionString = builder.Configuration.GetConnectionString("redis")
     ?? builder.Configuration["Aspire:StackExchange:Redis:ConnectionString"];
-var redisCacheEntitled = await StartupConfigurationHelpers.IsRedisCacheEntitledAsync(builder.Configuration);
+var redisCacheEntitled = await StartupConfigurationHelpers.IsRedisCacheEntitledAsync(
+    builder.Configuration,
+    builder.Environment);
 var redisCacheConnectionString = redisCacheEntitled ? redisConnectionString : null;
 var redisInfrastructureConnectionString = RedisConnectionSelector.SelectInfrastructureConnectionString(
     redisConnectionString,
@@ -293,11 +296,18 @@ if (!isTestEnvironment || registerInfrastructureInTestEnvironment)
 Honua.Postgres.Features.Security.PostgresConnectionDriverServiceCollectionExtensions.AddPostgresConnectionDriver(builder.Services);
 Honua.MySql.Features.Security.MySqlConnectionDriverServiceCollectionExtensions.AddMySqlConnectionDriver(builder.Services);
 Honua.SqlServer.Features.Security.SqlServerConnectionDriverServiceCollectionExtensions.AddSqlServerConnectionDriver(builder.Services);
+Honua.Redshift.Features.Security.RedshiftConnectionDriverServiceCollectionExtensions.AddRedshiftConnectionDriver(builder.Services);
 #if !HONUA_SKIP_ORACLE
 // The Native AOT publish (HonuaSkipOracleForAotVerification) drops the Honua.Oracle
 // ProjectReference and defines HONUA_SKIP_ORACLE, so this registration is compiled out
 // (Oracle.ManagedDataAccess is not single-file/AOT safe — see Honua.Server.csproj).
 Honua.Oracle.Features.Security.OracleConnectionDriverServiceCollectionExtensions.AddOracleConnectionDriver(builder.Services);
+#endif
+#if !HONUA_SKIP_SNOWFLAKE
+// The Native AOT publish (HonuaSkipSnowflakeForAotVerification) drops the Honua.Snowflake
+// ProjectReference and defines HONUA_SKIP_SNOWFLAKE, so this registration is compiled out
+// (Snowflake.Data is not single-file/AOT safe — see Honua.Server.csproj).
+Honua.Snowflake.Features.Security.SnowflakeConnectionDriverServiceCollectionExtensions.AddSnowflakeConnectionDriver(builder.Services);
 #endif
 builder.Services.AddSingleton<Honua.Core.Features.Security.Abstractions.IConnectionDriverRegistry, Honua.Core.Features.Security.Abstractions.ConnectionDriverRegistry>();
 
@@ -399,10 +409,35 @@ if (connectedRedis != null)
     builder.Services.AddSingleton<IWorkflowOperationStore, RedisWorkflowOperationStore>();
     builder.Services.AddSingleton<IWorkflowOperationReconciler, DeployWorkflowReconciler>();
     builder.Services.AddSingleton<IExecutionJobReconciler, ExecutionJobReconciler>();
+
+    // Additive metadata-release layer-evolution lifecycle: create service, stage-action services,
+    // reconciler, and its background loop. Sibling to the deploy reconciler; processes only
+    // WorkflowOperationKind.MetadataRelease.
+    builder.Services.AddSingleton<Honua.ControlPlane.MetadataReleaseControlService>();
+    builder.Services.AddSingleton<
+        Honua.Core.Features.ControlPlane.Abstractions.IMetadataReleasePreflightGate,
+        Honua.ControlPlane.MetadataReleasePreflightGate>();
+    builder.Services.AddSingleton<
+        Honua.Core.Features.ControlPlane.Abstractions.IMetadataReleaseScriptExecutor,
+        Honua.ControlPlane.MetadataReleaseScriptExecutor>();
+    builder.Services.AddSingleton<
+        Honua.Core.Features.ControlPlane.Abstractions.IMetadataReleaseDataJobDispatcher,
+        Honua.ControlPlane.MetadataReleaseDataJobDispatcher>();
+    builder.Services.AddSingleton<
+        Honua.Core.Features.ControlPlane.Abstractions.IMetadataReleaseActivator,
+        Honua.ControlPlane.MetadataReleaseActivator>();
+    builder.Services.AddSingleton<
+        Honua.Core.Features.ControlPlane.Abstractions.IMetadataReleaseSmokeChecker,
+        Honua.ControlPlane.MetadataReleaseSmokeChecker>();
+    builder.Services.AddSingleton<
+        Honua.Core.Features.ControlPlane.Abstractions.IMetadataReleaseOperationReconciler,
+        Honua.ControlPlane.MetadataReleaseReconciler>();
+
     if (!isTestEnvironment)
     {
         builder.Services.AddHostedService<DeployWorkflowReconcilerBackgroundService>();
         builder.Services.AddHostedService<ExecutionJobReconcilerBackgroundService>();
+        builder.Services.AddHostedService<Honua.ControlPlane.MetadataReleaseReconcilerBackgroundService>();
     }
 
     // Agent-operation approval surface (#1692/#1693): durable proposal store +
@@ -640,6 +675,11 @@ builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IReplic
 //      (Startup/ImportExportTileOperationsRegistration.cs)
 builder.Services.AddHonuaImportExportAndTileOperations(builder.Configuration);
 // ---- End extracted block
+
+// ---- Per-area geocoder/router build jobs (provisioner GP-on-Batch jobs)
+//      (Features/Provisioner/ProvisionerServiceCollectionExtensions.cs)
+builder.Services.AddHonuaProvisionerBuildJobs(builder.Configuration);
+// ---- End block
 
 
 // ---- Extracted: feature-change events, streaming, transactional outbox
@@ -1198,6 +1238,7 @@ app.MapServiceSettingsEndpoints();
 // v1 admin endpoint mappings removed in #1035 cutover; V2 admin UX (#1046) lives elsewhere.
 app.MapMetadataReleaseEndpoints();
 app.MapMetadataReleaseOperationEndpoints();
+app.MapMetadataReleaseControlEndpoints();
 app.MapMetadataPrevalidationEndpoints();
 app.MapDeployControlEndpoints();
 

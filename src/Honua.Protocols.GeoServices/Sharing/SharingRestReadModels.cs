@@ -13,18 +13,10 @@ namespace Honua.Protocols.GeoServices.Sharing;
 /// </summary>
 internal sealed record SharingInfoResponse
 {
-    /// <summary>
-    /// Portal short version (e.g. <c>10.81</c>), matching the GeoServices catalog
-    /// version so the Portal facade and services directory stay aligned.
-    /// </summary>
-    [JsonPropertyName("currentVersion")]
-    public double CurrentVersion { get; init; } = 10.81;
-
-    /// <summary>
-    /// Portal full version string.
-    /// </summary>
-    [JsonPropertyName("fullVersion")]
-    public string FullVersion { get; init; } = "10.81";
+    // No ArcGIS Portal version (currentVersion/fullVersion) is advertised. Honua is an
+    // independent, Esri-compatible server and must not impersonate a specific ArcGIS
+    // Portal/Server release. Do NOT add a currentVersion/fullVersion field
+    // (guarded by NoArcGisServerVersionTests).
 
     /// <summary>
     /// Authentication metadata advertising token-based security and the
@@ -81,9 +73,8 @@ internal sealed record PortalSelfResponse
     [JsonPropertyName("user")]
     public PortalUser? User { get; init; }
 
-    /// <summary>Default basemap gallery group (empty — out of scope per #1243).</summary>
-    [JsonPropertyName("currentVersion")]
-    public string CurrentVersion { get; init; } = "10.81";
+    // No ArcGIS Portal version (currentVersion) is advertised — Honua does not impersonate a
+    // specific ArcGIS Portal release (guarded by NoArcGisServerVersionTests).
 }
 
 /// <summary>

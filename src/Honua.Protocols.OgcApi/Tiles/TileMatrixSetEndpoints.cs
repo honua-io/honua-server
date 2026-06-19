@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Tiles;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Protocols.Ogc.Common;
@@ -40,7 +41,10 @@ internal static class TileMatrixSetEndpoints
         return endpoints;
     }
 
-    private static IResult HandleGetTileMatrixSets(HttpContext context, string? f)
+    private static IResult HandleGetTileMatrixSets(
+        HttpContext context,
+        string? f,
+        [FromServices] ITileMatrixSetRegistry registry)
     {
         var validationError = OgcCommonUtilities.ValidateQueryParameters(context.Request, OgcTilesUtilities.AllowedQueryParameters.Metadata);
         if (validationError is not null)
@@ -55,9 +59,13 @@ internal static class TileMatrixSetEndpoints
 
         var request = context.Request;
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
-        var items = ImmutableArray.Create(
-            OgcTilesUtilities.BuildWebMercatorQuadItem(baseUrl),
-            OgcTilesUtilities.BuildWorldCrs84QuadItem(baseUrl));
+        var itemsBuilder = ImmutableArray.CreateBuilder<TileMatrixSetItem>(registry.All.Count);
+        foreach (var entry in registry.All)
+        {
+            itemsBuilder.Add(OgcTilesUtilities.BuildTileMatrixSetItem(entry, baseUrl));
+        }
+
+        var items = itemsBuilder.ToImmutable();
 
         var links = OgcCommonUtilities.BuildFormatLinks(
                 request,
@@ -86,7 +94,8 @@ internal static class TileMatrixSetEndpoints
         string tileMatrixSetId,
         HttpContext context,
         string? f,
-        [FromServices] IOptions<LimitsOptions> limitsOptions)
+        [FromServices] IOptions<LimitsOptions> limitsOptions,
+        [FromServices] ITileMatrixSetRegistry registry)
     {
         var validationError = OgcCommonUtilities.ValidateQueryParameters(context.Request, OgcTilesUtilities.AllowedQueryParameters.Metadata);
         if (validationError is not null)
@@ -99,14 +108,21 @@ internal static class TileMatrixSetEndpoints
             return OgcCommonUtilities.CreateFormatError(context, formatError);
         }
 
-        if (!OgcTilesUtilities.IsSupportedTileMatrixSet(tileMatrixSetId))
+        if (!registry.TryGet(tileMatrixSetId, out var entry))
         {
             return StandardErrorHelpers.CreateNotFound(context, $"Tile matrix set '{tileMatrixSetId}' not found.");
         }
 
-        var definition = OgcTilesUtilities.IsWorldCrs84Quad(tileMatrixSetId)
-            ? OgcTilesUtilities.BuildWorldCrs84QuadDefinition(limitsOptions.Value.Tiles)
-            : OgcTilesUtilities.BuildWebMercatorQuadDefinition(limitsOptions.Value.Tiles);
+        // Built-in gridsets generate levels for the configured zoom range; custom gridsets carry
+        // their own explicit levels (the maxLevel argument is ignored for those).
+        var maxLevel = Math.Max(0, limitsOptions.Value.Tiles.MaxTileZoom);
+        if (!registry.TryGetGeometry(entry.Id, maxLevel, out var geometry))
+        {
+            return StandardErrorHelpers.CreateNotFound(context, $"Tile matrix set '{tileMatrixSetId}' not found.");
+        }
+
+        var minLevel = entry.IsBuiltIn ? Math.Max(0, limitsOptions.Value.Tiles.MinTileZoom) : 0;
+        var definition = OgcTilesUtilities.BuildTileMatrixSetDefinition(entry, geometry, minLevel);
         return OgcCommonUtilities.FormatMetadataResponse(definition, OgcTilesJsonContext.Default.TileMatrixSetDefinition, outputFormat, "Tile matrix set");
     }
 }

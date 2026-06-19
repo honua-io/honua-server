@@ -711,6 +711,10 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
         public Task<ReplicaState?> GetAsync(string replicaId, CancellationToken cancellationToken = default)
             => Task.FromResult<ReplicaState?>(null);
 
+        public Task<IReadOnlyList<ReplicaState>> ListByServiceAsync(string serviceId, CancellationToken cancellationToken = default)
+            => throw new ServiceUnavailableException(
+                "Distributed replica state is unavailable while attempting to list replica state.");
+
         public Task<bool> RemoveAsync(string replicaId, CancellationToken cancellationToken = default)
             => Task.FromResult(false);
     }

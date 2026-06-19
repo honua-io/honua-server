@@ -25,6 +25,9 @@ internal static partial class StudioEndpointsLog
     [LoggerMessage(EventId = 118005, Level = LogLevel.Information, Message = "Studio rollback request {RequestId} moved item {ItemId} pointer {Target} to version {VersionId}.")]
     public static partial void RollbackCreated(ILogger logger, Guid requestId, Guid itemId, Honua.Core.Features.Studio.Domain.StudioRollbackPointer target, Guid versionId);
 
+    [LoggerMessage(EventId = 118006, Level = LogLevel.Information, Message = "Studio {Kind} deliverable exported for item {ItemId} as {Format} ({Bytes} bytes).")]
+    public static partial void DeliverableExported(ILogger logger, Honua.Core.Features.Studio.Domain.StudioPackageFamily kind, Guid itemId, Honua.Server.Features.Studio.Export.StudioDeliverableFormat format, int bytes);
+
     [LoggerMessage(EventId = 118050, Level = LogLevel.Error, Message = "Studio package endpoint {Operation} failed.")]
     public static partial void EndpointFailed(ILogger logger, string operation, Exception exception);
 }

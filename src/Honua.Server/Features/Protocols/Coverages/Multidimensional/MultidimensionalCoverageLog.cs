@@ -56,4 +56,16 @@ internal static partial class MultidimensionalCoverageLog
         Level = LogLevel.Information,
         Message = "Multidim coverage {RegistrationId} metadata scan completed: {VariableCount} variables, SRID {Srid}")]
     public static partial void MetadataScanCompleted(ILogger logger, long registrationId, int variableCount, int srid);
+
+    [LoggerMessage(
+        EventId = 8006,
+        Level = LogLevel.Information,
+        Message = "Multidim coverage {RegistrationId} metadata scan dispatched as job {JobId}")]
+    public static partial void ScanJobSubmitted(ILogger logger, long registrationId, string jobId);
+
+    [LoggerMessage(
+        EventId = 8007,
+        Level = LogLevel.Warning,
+        Message = "Derived Zarr coverage {ZarrId} registered but metadata scan deferred: {Reason}")]
+    public static partial void DerivedZarrScanDeferred(ILogger logger, long zarrId, string reason);
 }

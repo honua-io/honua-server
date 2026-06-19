@@ -282,6 +282,16 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
             return Task.FromResult(replica);
         }
 
+        public Task<IReadOnlyList<ReplicaState>> ListByServiceAsync(string serviceId, CancellationToken cancellationToken = default)
+        {
+            var matches = _replicas.Values
+                .Where(replica => string.Equals(replica.ServiceId, serviceId, StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(replica => replica.CreatedAt)
+                .ThenBy(replica => replica.ReplicaId, StringComparer.Ordinal)
+                .ToArray();
+            return Task.FromResult<IReadOnlyList<ReplicaState>>(matches);
+        }
+
         public Task<bool> RemoveAsync(string replicaId, CancellationToken cancellationToken = default)
             => Task.FromResult(_replicas.TryRemove(replicaId, out _));
     }

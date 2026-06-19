@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Raster.Multidimensional.Domain;
 
 namespace Honua.Core.Features.Raster.Domain;
 
@@ -49,6 +50,16 @@ public sealed record ZarrArrayMetadata(
 /// <summary>
 /// Parsed Zarr store metadata covering one or more arrays.
 /// </summary>
+/// <param name="ZarrFormat">Detected Zarr format version.</param>
+/// <param name="Srid">CRS as an EPSG SRID; 0 when not georeferenced.</param>
+/// <param name="Extent">Spatial extent in the declared CRS.</param>
+/// <param name="Arrays">Discovered arrays (variables).</param>
+/// <param name="PrimaryVariable">Default variable name, or null.</param>
+/// <param name="SpatialXDimension">Declared X dimension name, or null.</param>
+/// <param name="SpatialYDimension">Declared Y dimension name, or null.</param>
+/// <param name="TemporalDimension">Declared time dimension name, or null.</param>
+/// <param name="Temporal">Temporal extent of the time axis, or null when the
+/// store declares no resolvable time axis.</param>
 public sealed record ZarrStoreMetadata(
     ZarrFormatVersion ZarrFormat,
     int Srid,
@@ -57,7 +68,8 @@ public sealed record ZarrStoreMetadata(
     string? PrimaryVariable,
     string? SpatialXDimension,
     string? SpatialYDimension,
-    string? TemporalDimension);
+    string? TemporalDimension,
+    TemporalExtent? Temporal = null);
 
 /// <summary>
 /// Persisted catalog entry for a registered Zarr store.

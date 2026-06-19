@@ -4,6 +4,7 @@
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using Honua.Ai.Providers.Bedrock;
 using Honua.Ai.WorkflowGeneration;
 using Honua.Ai.WorkflowGeneration.Models;
 using Honua.Core.Features.Publishing.Reports;
@@ -25,17 +26,20 @@ public sealed class ReportGenerationService : IReportGenerationService
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly WorkflowGenerationConfiguration _configuration;
     private readonly WorkflowGenerationApiKeyResolver _apiKeyResolver;
+    private readonly IBedrockChatClientFactory _bedrockChatClientFactory;
     private readonly ILogger<ReportGenerationService> _logger;
 
     public ReportGenerationService(
         IHttpClientFactory httpClientFactory,
         IOptions<WorkflowGenerationConfiguration> options,
         WorkflowGenerationApiKeyResolver apiKeyResolver,
+        IBedrockChatClientFactory bedrockChatClientFactory,
         ILogger<ReportGenerationService> logger)
     {
         _httpClientFactory = httpClientFactory;
         _configuration = options.Value;
         _apiKeyResolver = apiKeyResolver;
+        _bedrockChatClientFactory = bedrockChatClientFactory;
         _logger = logger;
     }
 
@@ -51,7 +55,12 @@ public sealed class ReportGenerationService : IReportGenerationService
 
         var providerId = string.IsNullOrWhiteSpace(request.Provider) ? _configuration.DefaultProvider : request.Provider!;
         var options = _configuration.GetProvider(providerId);
-        if (options is null || string.IsNullOrWhiteSpace(options.Endpoint) || string.IsNullOrWhiteSpace(options.Model))
+
+        // Bedrock targets the regional runtime endpoint via the AWS credential chain, so it needs no
+        // endpoint URL — only a model id. OpenAI-compatible/Anthropic providers require an endpoint.
+        var isBedrock = string.Equals(providerId, WorkflowGenerationConfiguration.BedrockProviderId, StringComparison.OrdinalIgnoreCase);
+        var endpointMissing = !isBedrock && string.IsNullOrWhiteSpace(options?.Endpoint);
+        if (options is null || endpointMissing || string.IsNullOrWhiteSpace(options.Model))
         {
             return Unsupported($"Report generation provider '{providerId}' is not configured on this server.");
         }
@@ -136,6 +145,13 @@ public sealed class ReportGenerationService : IReportGenerationService
         string model,
         CancellationToken cancellationToken)
     {
+        // The AWS Bedrock (Claude) provider has no OpenAI-compatible /chat/completions surface;
+        // route it through the Converse API (forced tool call for structured output) instead.
+        if (string.Equals(providerId, WorkflowGenerationConfiguration.BedrockProviderId, StringComparison.OrdinalIgnoreCase))
+        {
+            return await CallBedrockAsync(request, options, providerId, model, cancellationToken).ConfigureAwait(false);
+        }
+
         try
         {
             var apiKey = await _apiKeyResolver.ResolveAsync(providerId, options, cancellationToken).ConfigureAwait(false);
@@ -213,6 +229,50 @@ public sealed class ReportGenerationService : IReportGenerationService
         {
             GenerationProviderLog.ProviderResponseParseFailed(_logger, providerId, ex);
             return ErrorProposal("Provider response could not be parsed.");
+        }
+    }
+
+    private async Task<ReportGenerationModelProposal> CallBedrockAsync(
+        ReportGenerationProviderRequest request,
+        WorkflowGenerationProviderOptions options,
+        string providerId,
+        string model,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await BedrockStructuredGenerationClient.GenerateAsync(
+                options,
+                model,
+                ReportGenerationPrompt.BuildSystem(request),
+                ReportGenerationPrompt.BuildUser(request),
+                ReportGenerationSchema.Build(),
+                "Emit the proposed report.document (or a clarification/refusal).",
+                _bedrockChatClientFactory.Create,
+                cancellationToken).ConfigureAwait(false);
+
+            if (!result.Succeeded)
+            {
+                GenerationProviderLog.ProviderRequestFailed(_logger, providerId, new InvalidOperationException(result.Error));
+                return ErrorProposal(result.Error ?? "Bedrock request failed.");
+            }
+
+            var proposal = JsonSerializer.Deserialize(result.Json!, ReportGenerationJsonContext.Default.ReportGenerationModelProposal);
+            return proposal ?? ErrorProposal("Failed to deserialize the report proposal from the Bedrock response.");
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (JsonException ex)
+        {
+            GenerationProviderLog.ProviderResponseParseFailed(_logger, providerId, ex);
+            return ErrorProposal("Bedrock response could not be parsed.");
+        }
+        catch (Exception ex)
+        {
+            GenerationProviderLog.ProviderRequestFailed(_logger, providerId, ex);
+            return ErrorProposal("Bedrock request failed.");
         }
     }
 

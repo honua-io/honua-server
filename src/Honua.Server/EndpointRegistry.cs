@@ -105,6 +105,7 @@ public static class EndpointRegistry
         new("GET", "/api/v1/admin/metadata/release-packages/{packageId}"),
         new("GET", "/api/v1/admin/metadata/release-packages/{packageId}/gitops-manifest"),
         new("GET", "/api/v1/admin/metadata/releases/{packageId}/operation"),
+        new("POST", "/api/v1/admin/metadata/releases/operations"),
         new("POST", "/api/v1/admin/metadata/prevalidate"),
         new("GET", "/api/v1/admin/deploy/preflight"),
         new("POST", "/api/v1/admin/deploy/plan"),
@@ -291,6 +292,8 @@ public static class EndpointRegistry
         // NL-assisted map package generation (#1180).
         new("POST", "/api/v1/studio/app-packages/generate"),
         new("POST", "/api/v1/studio/map-packages/generate"),
+        // Studio deliverable export: render a map/dashboard/report content item to PDF/PNG.
+        new("POST", "/api/v1/studio/{kind}/{id}/export"),
 
         // v1 Studio map collaboration: comment threads + activity feed (#1278, slice 1)
         new("GET", "/api/v1/console/maps/{mapId}/collab/comments"),
@@ -849,6 +852,16 @@ public static class EndpointRegistry
         new("GET", "/ogc/services/{serviceId}/wms"),
         new("GET", "/ogc/services/{serviceId}/wcs"),
 
+        new("GET", "/rest/services/{serviceId}/VectorTileServer"),
+        new("POST", "/rest/services/{serviceId}/VectorTileServer"),
+        new("GET", "/rest/services/{serviceId}/VectorTileServer/tile/{z}/{y}/{x}.pbf"),
+        new("GET", "/rest/services/{serviceId}/VectorTileServer/resources/styles"),
+        new("GET", "/rest/services/{serviceId}/VectorTileServer/resources/styles/{**resourcePath}"),
+        new("GET", "/rest/services/{serviceId}/VectorTileServer/resources/sprites/{spriteResource}"),
+        new("GET", "/rest/services/{serviceId}/VectorTileServer/resources/fonts/{fontstack}/{range}.pbf"),
+        new("GET", "/rest/services/{serviceId}/VectorTileServer/tilemap/{z}/{y}/{x}/{dimension}/{dimension2}"),
+        new("GET", "/rest/services/{serviceId}/VectorTileServer/tilemap"),
+
         new("GET", "/rest/services/{id}/ImageServer"),
         new("POST", "/rest/services/{id}/ImageServer"),
         new("GET", "/rest/services/{id}/ImageServer/conf.json"),
@@ -1231,6 +1244,7 @@ public static class EndpointRegistry
         new("GET", "/api/v1/admin/multidim-coverages/{id}"),
         new("DELETE", "/api/v1/admin/multidim-coverages/{id}"),
         new("POST", "/api/v1/admin/multidim-coverages/{id}/refresh"),
+        new("GET", "/api/v1/admin/multidim-coverages/jobs/{jobId}"),
     ];
 }
 

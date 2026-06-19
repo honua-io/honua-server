@@ -78,7 +78,18 @@ internal static class StartupConfigurationHelpers
     /// Inspect a bootstrap license snapshot to determine whether the running host is
     /// entitled to use Redis as the distributed cache backend.
     /// </summary>
-    public static async Task<bool> IsRedisCacheEntitledAsync(IConfiguration configuration)
+    /// <remarks>
+    /// Outside Production the snapshot honors the test/dev-only <c>Licensing:DevGrantEdition</c>
+    /// override, identically to the runtime <c>DevLicenseEntitlementService</c> entitlement path.
+    /// Without this, a Development + <c>DevGrantEdition=Pro</c> stack with Redis reachable would
+    /// fail the gate, the <c>IConnectionMultiplexer</c> would never be wired, and the durable job
+    /// store would not register — so authenticated GPServer <c>/execute</c> and <c>/submitJob</c>
+    /// returned 503 despite the dev grant entitling Redis (honua-server#1787). DevGrant is never
+    /// honored in Production (the host-level guard fails the process closed there).
+    /// </remarks>
+    public static async Task<bool> IsRedisCacheEntitledAsync(
+        IConfiguration configuration,
+        IHostEnvironment environment)
     {
         var redisConnectionString = configuration.GetConnectionString("redis")
             ?? configuration["Aspire:StackExchange:Redis:ConnectionString"];
@@ -89,7 +100,7 @@ internal static class StartupConfigurationHelpers
 
         using var loggerFactory = LoggerFactory.Create(static builder => builder.AddConsole());
         var snapshot = await FileBackedLicenseService
-            .LoadBootstrapSnapshotAsync(configuration, loggerFactory)
+            .LoadBootstrapSnapshotAsync(configuration, loggerFactory, honorDevGrant: !environment.IsProduction())
             .ConfigureAwait(false);
         return snapshot.HasEntitlement("caching.redis");
     }
@@ -163,6 +174,8 @@ internal static class StartupConfigurationHelpers
     public static void RegisterConfigurationValidators(IServiceCollection services)
     {
         services.AddSingleton<IValidateOptions<LimitsOptions>>(new LimitsOptionsValidator());
+        services.AddSingleton<IValidateOptions<Honua.Core.Features.Tiles.TileMatrixSetDefinitionOptions>>(
+            new Honua.Core.Features.Tiles.TileMatrixSetOptionsValidator());
         services.AddSingleton<IValidateOptions<CacheOptions>>(new CacheOptionsValidator());
         services.AddSingleton<IValidateOptions<CloudStorageOptions>>(new CloudStorageOptionsValidator());
         services.AddSingleton<IValidateOptions<OidcAuthenticationOptions>>(new OidcAuthenticationOptionsValidator());

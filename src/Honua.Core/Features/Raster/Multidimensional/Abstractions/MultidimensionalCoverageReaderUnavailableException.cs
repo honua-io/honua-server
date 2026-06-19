@@ -43,4 +43,13 @@ public sealed class MultidimensionalCoverageUnsupportedLayoutException : Invalid
         : base(message)
     {
     }
+
+    /// <summary>
+    /// Creates a new <see cref="MultidimensionalCoverageUnsupportedLayoutException"/>
+    /// wrapping the underlying cause (for example a JSON parse failure).
+    /// </summary>
+    public MultidimensionalCoverageUnsupportedLayoutException(string message, Exception innerException)
+        : base(message, innerException)
+    {
+    }
 }

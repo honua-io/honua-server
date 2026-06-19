@@ -200,7 +200,19 @@ public enum ExecutionJobKind
     /// <summary>
     /// Scheduled Share export workload.
     /// </summary>
-    ShareExport
+    ShareExport,
+
+    /// <summary>
+    /// Per-area geocoder/locator build workload. Clips an address feedstock layer to
+    /// an area and emits a self-hostable locator artifact the GeocodeServer can serve.
+    /// </summary>
+    GeocoderBuild,
+
+    /// <summary>
+    /// Per-area routing-graph build workload. Clips a road-network feedstock layer to
+    /// an area and emits a pgRouting topology artifact a routing endpoint can solve over.
+    /// </summary>
+    RouterBuild
 }
 
 /// <summary>
@@ -575,6 +587,20 @@ public sealed record MetadataReleaseContext
     /// Precomputed rollback plan retained with the operation record.
     /// </summary>
     public MetadataRollbackPlan? RollbackPlan { get; init; }
+
+    /// <summary>
+    /// Executable additive layer-evolution plan for the metadata-release reconciler. Carries the
+    /// forward schema script and its reversible inverse so the lifecycle can advance the additive
+    /// stages and roll back without a snapshot. Null for releases that do not use the additive
+    /// execution lifecycle.
+    /// </summary>
+    public MetadataReleaseExecutionPlan? ExecutionPlan { get; init; }
+
+    /// <summary>
+    /// Prior current Metadata v2 revision captured before activation so a reversible rollback can
+    /// reactivate it. Null when no prior revision existed.
+    /// </summary>
+    public long? PriorRevision { get; init; }
 
     /// <summary>
     /// Blocking reason codes or messages specific to metadata release progression.

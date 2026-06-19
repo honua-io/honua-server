@@ -211,7 +211,7 @@ public sealed class OgcCoveragesEndpointsTests : IAsyncLifetime
     {
         var invalidRequests = new[]
         {
-            ("datetime=2026-04-29T00:00:00Z", "datetime"),
+            ("datetime=2026-04-29T00:00:00Z", "not applicable to a single-raster coverage"),
             ("subset=x(1,2)", "subset"),
             ("scale-axes=x(64)", "scale-axes"),
             ("f=netcdf", "NetCDF"),

@@ -74,6 +74,19 @@
             "sampleUrl": "https://www2.census.gov/geo/tiger/TIGER2024/ADDRFEAT/tl_2024_06075_addrfeat.zip",
             "clip": false
           }
+        },
+        {
+          "product": "routing-roads",
+          "layerName": "Routing Roads (TIGER) [router feedstock]",
+          "geometryType": "MultiLineString",
+          "format": "shapefile-zip",
+          "sourceProduct": "router",
+          "fetch": {
+            "kind": "http-template",
+            "urlTemplate": "https://www2.census.gov/geo/tiger/TIGER2024/ROADS/tl_2024_{countyGeoid}_roads.zip",
+            "sampleUrl": "https://www2.census.gov/geo/tiger/TIGER2024/ROADS/tl_2024_15009_roads.zip",
+            "clip": false
+          }
         }
       ]
     },
@@ -133,6 +146,31 @@
             "clip": false
           },
           "tile": { "enabled": true, "minZoom": 12, "maxZoom": 16 }
+        },
+        {
+          "product": "addresses",
+          "layerName": "Addressed Points (OSM) [geocoder feedstock]",
+          "geometryType": "Point",
+          "format": "geojson",
+          "sourceProduct": "geocoder",
+          "fetch": {
+            "kind": "overpass",
+            "urlTemplate": "https://overpass-api.de/api/interpreter?data=[out:json][timeout:120];node[\"addr:housenumber\"]({bboxSWNE});way[\"addr:housenumber\"]({bboxSWNE});out geom;",
+            "sampleUrl": "https://overpass-api.de/api/interpreter?data=[out:json][timeout:120];node[%22addr:housenumber%22](20.57,-156.70,21.03,-155.98);out%20geom;",
+            "clip": false
+          }
+        },
+        {
+          "product": "routing-roads",
+          "layerName": "Routing Roads (OSM) [router feedstock]",
+          "geometryType": "MultiLineString",
+          "format": "geojson",
+          "sourceProduct": "router",
+          "fetch": {
+            "kind": "overpass",
+            "urlTemplate": "https://overpass-api.de/api/interpreter?data=[out:json][timeout:120];way[highway][!\"highway\"~\"footway|path|steps|cycleway|pedestrian\"]({bboxSWNE});out geom;",
+            "clip": false
+          }
         }
       ]
     },

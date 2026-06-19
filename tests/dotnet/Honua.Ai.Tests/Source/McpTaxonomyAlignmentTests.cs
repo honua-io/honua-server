@@ -38,7 +38,10 @@ public sealed class McpTaxonomyAlignmentTests
         "honua_ground_candidates",
         "honua_clarify_intent",
         "honua_geocode_address",
-        "honua_solve_route"
+        "honua_solve_route",
+        "honua_list_layers",
+        "honua_query_features",
+        "honua_render_map"
     };
 
     private static readonly string[] TaxonomyResourceUris =
@@ -344,7 +347,13 @@ public sealed class McpTaxonomyAlignmentTests
             new GroundCandidatesTool(groundingService, jobService, NullLogger<GroundCandidatesTool>.Instance),
             new ClarifyIntentTool(groundingService, jobService, NullLogger<ClarifyIntentTool>.Instance),
             new GeocodeTool(jobService, NullLogger<GeocodeTool>.Instance),
-            new RouteTool(jobService, NullLogger<RouteTool>.Instance)
+            new RouteTool(jobService, NullLogger<RouteTool>.Instance),
+            new Honua.Ai.Protocols.Mcp.MapTools.ListLayersTool(
+                jobService, NullLogger<Honua.Ai.Protocols.Mcp.MapTools.ListLayersTool>.Instance),
+            new Honua.Ai.Protocols.Mcp.MapTools.QueryFeaturesTool(
+                jobService, NullLogger<Honua.Ai.Protocols.Mcp.MapTools.QueryFeaturesTool>.Instance),
+            new Honua.Ai.Protocols.Mcp.MapTools.RenderMapTool(
+                jobService, NullLogger<Honua.Ai.Protocols.Mcp.MapTools.RenderMapTool>.Instance)
         ];
     }
 

@@ -161,6 +161,20 @@ internal static class WebAppFixtureMetadataV2Mixin
                 serviceLocalId: "test-layer",
                 publicationType: MetadataV2PublicationType.EsriImageLayer);
 
+        // VectorTileServer publication for the canonical "test" service. The
+        // GeoServices VectorTileServer adapter resolves the service by NAME against
+        // an EsriVectorTileLayer publication (honua-server#1777). Publish layer 0 so
+        // /rest/services/test/VectorTileServer resolves and inherits the seeded bbox.
+        builder
+            .AddService("svc-test-vectortile", "test", protocols: [MetadataV2ServiceProtocols.VectorTileServer])
+            .AddPublication(
+                id: "pub-vectortile-0",
+                serviceId: "svc-test-vectortile",
+                resourceId: "res-layer-0",
+                layerIndex: 0,
+                serviceLocalId: "0",
+                publicationType: MetadataV2PublicationType.EsriVectorTileLayer);
+
         // FeatureServer and MapServer publications for the canonical "test" service.
         // The GeoServices REST catalog endpoint enumerates these directly from the V2
         // graph, so the directory only emits FeatureServer/MapServer entries when matching
