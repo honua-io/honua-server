@@ -30,20 +30,20 @@ internal static class RasterMosaicSql
     public static string CreateMosaicAggregateExpression(
         RasterMergeStrategy mergeStrategy,
         RasterMosaicOrdering ordering = RasterMosaicOrdering.AcquisitionNewest) => mergeStrategy switch
-    {
-        // MEAN/MAX/MIN are order-independent; the ordering clause is meaningless for them.
-        RasterMergeStrategy.Average => "ST_Union(rast, 'MEAN')",
-        RasterMergeStrategy.Max => "ST_Union(rast, 'MAX')",
-        RasterMergeStrategy.Min => "ST_Union(rast, 'MIN')",
+        {
+            // MEAN/MAX/MIN are order-independent; the ordering clause is meaningless for them.
+            RasterMergeStrategy.Average => "ST_Union(rast, 'MEAN')",
+            RasterMergeStrategy.Max => "ST_Union(rast, 'MAX')",
+            RasterMergeStrategy.Min => "ST_Union(rast, 'MIN')",
 
-        // Oldest is an explicit FIRST/oldest-acquisition selection regardless of the
-        // requested ordering; ordering only refines the newest/Northwest/lock cases below.
-        RasterMergeStrategy.Oldest => $"ST_Union(rast, 'FIRST' ORDER BY {OrderByClause(ordering)})",
+            // Oldest is an explicit FIRST/oldest-acquisition selection regardless of the
+            // requested ordering; ordering only refines the newest/Northwest/lock cases below.
+            RasterMergeStrategy.Oldest => $"ST_Union(rast, 'FIRST' ORDER BY {OrderByClause(ordering)})",
 
-        // Newest (and the default) honour the requested ordering via a LAST union: the row
-        // sorted last in the ORDER BY wins the contested pixel.
-        _ => $"ST_Union(rast, 'LAST' ORDER BY {OrderByClause(ordering)})"
-    };
+            // Newest (and the default) honour the requested ordering via a LAST union: the row
+            // sorted last in the ORDER BY wins the contested pixel.
+            _ => $"ST_Union(rast, 'LAST' ORDER BY {OrderByClause(ordering)})"
+        };
 
     // The ORDER BY orients the union so the desired raster sorts LAST (and therefore wins a
     // LAST union). 'id ASC' is always appended as a unique tiebreaker for determinism.
