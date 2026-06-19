@@ -39,6 +39,13 @@
     <PackageReference Include="Azure.Storage.Blobs" />
     <PackageReference Include="Azure.Messaging.EventGrid" />
     <PackageReference Include="Azure.Messaging.EventHubs" />
+    <!-- Azure OpenAI studio-generation provider (#1744): the AzureOpenAiChatClientAdapter wraps a
+         deployment's ChatClient as a Microsoft.Extensions.AI IChatClient so the cloud-neutral
+         AzureOpenAiWorkflowGenerationProvider (in Honua.Ai) can run on Azure OpenAI. The Azure.* SDK
+         surface stays confined here per the cloud-SDK isolation contract. -->
+    <PackageReference Include="Azure.AI.OpenAI" />
+    <PackageReference Include="Microsoft.Extensions.AI" />
+    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" />
   </ItemGroup>
 
   <ItemGroup>

@@ -25,6 +25,9 @@ public sealed class WorkflowGenerationConfiguration
     /// <summary>Stable id for the Anthropic (Claude) provider.</summary>
     public const string AnthropicProviderId = "anthropic";
 
+    /// <summary>Stable id for the Azure OpenAI provider (Azure-hosted OpenAI deployments).</summary>
+    public const string AzureOpenAiProviderId = "azureopenai";
+
     /// <summary>Stable id for the deterministic fixture-replay provider.</summary>
     public const string DeterministicProviderId = "deterministic";
 
@@ -66,11 +69,22 @@ public sealed class WorkflowGenerationProviderOptions
     /// <summary>
     /// API endpoint base URL. For OpenAI-compatible providers this follows the
     /// <c>/v1/chat/completions</c> convention. For Anthropic it is the Messages API base.
+    /// For Azure OpenAI it is the resource endpoint (<c>https://&lt;resource&gt;.openai.azure.com</c>).
     /// </summary>
     public string Endpoint { get; set; } = string.Empty;
 
-    /// <summary>The model identifier to use.</summary>
+    /// <summary>
+    /// The model identifier to use. For Azure OpenAI this is the <b>deployment name</b>
+    /// (not the underlying model name).
+    /// </summary>
     public string Model { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Azure OpenAI service API version (for example <c>2024-10-21</c>). Ignored by the
+    /// OpenAI-compatible and Anthropic providers; the Azure OpenAI provider sends it on every
+    /// request. When empty the Azure OpenAI client falls back to its SDK default API version.
+    /// </summary>
+    public string ApiVersion { get; set; } = string.Empty;
 
     /// <summary>
     /// API key for the provider, or a secret reference resolved via <c>ISecretProvider</c>.
@@ -110,12 +124,13 @@ public sealed class WorkflowGenerationConfigurationValidator : ConfigurationVali
             || string.Equals(provider, WorkflowGenerationConfiguration.LocalProviderId, StringComparison.OrdinalIgnoreCase)
             || string.Equals(provider, WorkflowGenerationConfiguration.OpenAiProviderId, StringComparison.OrdinalIgnoreCase)
             || string.Equals(provider, WorkflowGenerationConfiguration.AnthropicProviderId, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(provider, WorkflowGenerationConfiguration.AzureOpenAiProviderId, StringComparison.OrdinalIgnoreCase)
             || string.Equals(provider, WorkflowGenerationConfiguration.DeterministicProviderId, StringComparison.OrdinalIgnoreCase);
 
         if (!isKnown)
         {
             errors.Add($"WorkflowGeneration:DefaultProvider '{provider}' is not a supported provider id. "
-                + "Supported values: 'local', 'openai', 'anthropic', 'deterministic'.");
+                + "Supported values: 'local', 'openai', 'anthropic', 'azureopenai', 'deterministic'.");
             return;
         }
 

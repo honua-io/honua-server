@@ -56,6 +56,13 @@
     <!-- StackExchange.Redis is required by InMemoryAnalysisContentStore and
          by GroundingService for distributed-cache helpers. -->
     <PackageReference Include="StackExchange.Redis" />
+    <!-- Microsoft.Extensions.AI provides the cloud-neutral IChatClient / chat-tooling abstractions
+         used by AzureOpenAiWorkflowGenerationProvider. The Azure.AI.OpenAI-typed IChatClient
+         implementation lives in Honua.Azure (behind the IAzureOpenAiChatClientFactory seam in
+         Honua.Hosting), so NO Azure.* package is referenced here and the SDK isolation contract
+         (CloudSdkIsolationTests) stays intact. -->
+    <PackageReference Include="Microsoft.Extensions.AI" />
+    <PackageReference Include="Microsoft.Extensions.AI.Abstractions" />
   </ItemGroup>
 
   <ItemGroup>

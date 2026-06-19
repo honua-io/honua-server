@@ -112,6 +112,13 @@ internal static class FeatureRegistrationExtensions
         services.AddAlerts(configuration);
         services.AddNlQuery(configuration);
         services.AddWorkflowGeneration(configuration);
+#if !HONUA_EXCLUDE_AZURE
+        // Bind the Azure OpenAI IChatClient factory (Azure.AI.OpenAI-typed; lives in Honua.Azure)
+        // for the cloud-neutral AzureOpenAiWorkflowGenerationProvider registered above. Only present
+        // when the Azure module is compiled in; otherwise the provider self-gates to unselectable.
+        Honua.Server.Features.WorkflowGeneration.AzureOpenAiWorkflowGenerationServiceCollectionExtensions
+            .AddAzureOpenAiChatClientFactory(services);
+#endif
         services.AddStac();
         services.AddStaticMap();
         services.AddTerrain();

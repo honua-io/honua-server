@@ -69,6 +69,15 @@ internal static class WorkflowGenerationServiceCollectionExtensions
             ActivatorUtilities.CreateInstance<AnthropicWorkflowGenerationProvider>(
                 sp, WorkflowGenerationConfiguration.AnthropicProviderId));
 
+        // Azure OpenAI provider ("azureopenai"). Cloud-neutral here: it consumes the
+        // IAzureOpenAiChatClientFactory seam (Honua.Hosting), whose Azure.AI.OpenAI-typed
+        // implementation is registered by the composition root only when the Azure module is
+        // compiled in. ActivatorUtilities supplies the optional factory from DI when present, or
+        // null otherwise — in which case IsConfigured reports false and the provider is unselectable.
+        services.AddSingleton<IWorkflowGenerationProvider>(sp =>
+            ActivatorUtilities.CreateInstance<AzureOpenAiWorkflowGenerationProvider>(
+                sp, WorkflowGenerationConfiguration.AzureOpenAiProviderId));
+
         services.TryAddSingleton<IWorkflowGenerationService, WorkflowGenerationService>();
         return services;
     }

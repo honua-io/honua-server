@@ -194,6 +194,7 @@ internal sealed class WorkflowGenerationService : IWorkflowGenerationService
         WorkflowGenerationConfiguration.LocalProviderId => "Local GIS model",
         WorkflowGenerationConfiguration.OpenAiProviderId => "GPT (OpenAI)",
         WorkflowGenerationConfiguration.AnthropicProviderId => "Claude (Anthropic)",
+        WorkflowGenerationConfiguration.AzureOpenAiProviderId => "Azure OpenAI",
         WorkflowGenerationConfiguration.DeterministicProviderId => "Deterministic (fixtures)",
         _ => providerId
     };

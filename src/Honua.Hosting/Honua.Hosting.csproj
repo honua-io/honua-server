@@ -26,6 +26,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Microsoft.Extensions.AI.Abstractions provides the cloud-neutral IChatClient abstraction
+         used by the IAzureOpenAiChatClientFactory seam (the SDK-typed Azure OpenAI adapter lives in
+         Honua.Azure; the cloud-neutral workflow provider lives in Honua.Ai). Hosting is the only
+         assembly both reference, so the factory interface lives here. This is NOT an Azure.* /
+         AWSSDK.* package, so it does not breach CloudSdkIsolationTests. -->
+    <PackageReference Include="Microsoft.Extensions.AI.Abstractions" />
     <!-- Packages required by the carved Authentication sub-area. Mirrors the
          Server csproj's auth-related references so the hosting surface
          (JWT bearer, OIDC, JWT handler) compiles standalone. -->

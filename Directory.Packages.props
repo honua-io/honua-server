@@ -20,6 +20,7 @@
     <PackageVersion Include="AWSSDK.S3" Version="4.0.21.2" />
     <PackageVersion Include="AWSSDK.SimpleNotificationService" Version="4.0.2.27" />
     <PackageVersion Include="AWSSDK.SQS" Version="4.0.2.25" />
+    <PackageVersion Include="Azure.AI.OpenAI" Version="2.1.0" />
     <PackageVersion Include="Azure.Identity" Version="1.21.0" />
     <PackageVersion Include="Azure.Messaging.EventGrid" Version="5.0.0" />
     <PackageVersion Include="Azure.Messaging.EventHubs" Version="5.12.2" />
@@ -54,6 +55,12 @@
     <PackageVersion Include="Microsoft.AspNetCore.WebUtilities" Version="10.0.6" />
     <PackageVersion Include="Microsoft.Data.SqlClient" Version="6.1.2" />
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.6" />
+    <PackageVersion Include="Microsoft.Extensions.AI" Version="10.5.2" />
+    <PackageVersion Include="Microsoft.Extensions.AI.Abstractions" Version="10.5.2" />
+    <!-- OpenAI/Azure-OpenAI IChatClient adapter (ChatClient.AsIChatClient()); consumed only by
+         Honua.Azure for the Azure OpenAI studio-generation provider (#1744). Pinned to the same
+         10.5.x line as Microsoft.Extensions.AI. -->
+    <PackageVersion Include="Microsoft.Extensions.AI.OpenAI" Version="10.5.2" />
     <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="10.0.6" />
     <PackageVersion Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="10.0.6" />
     <PackageVersion Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.6" />
