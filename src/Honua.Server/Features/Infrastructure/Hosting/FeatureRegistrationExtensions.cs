@@ -130,6 +130,16 @@ internal static class FeatureRegistrationExtensions
         // that depends on Honua.Server.Features.Admin.Share — out of reach for the
         // carved Honua.Geoprocessing assembly.
         services.AddJobOrchestration();
+        // In-process job worker: the hosted service that claims queued jobs, dispatches
+        // them to the registered IJobExecutor (the GPServer/Processes execution path), and
+        // writes terminal status. Without it, AddJobOrchestration only registers the
+        // API-side store/queue, so authenticated GPServer execute/submitJob jobs enqueue
+        // and never drain (honua-server#1841). AddJobWorker self-gates on IJobQueue being
+        // registered, which AddJobOrchestration only does when the Redis multiplexer is
+        // wired — i.e. under the same DevGrant/license Redis entitlement that enables GP
+        // (honua-server#1827/#1787). On a Redis-less profile this is a no-op, so the lean
+        // API-only and Community editions never start an unconditional worker.
+        services.AddJobWorker();
         services.AddAnalysisContent(configuration);
         services.AddTemporalHistory();
         services.AddAnalysisReporting(configuration);
