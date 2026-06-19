@@ -54,9 +54,10 @@ internal static class RasterMosaicSql
         RasterMosaicOrdering.AcquisitionOldest => "effective_acquisition ASC, created_at ASC, id ASC",
 
         // Northwest: the upper-left-most raster must sort last so a LAST union keeps it.
-        // Higher YMax (further north) and lower XMin (further west) win.
+        // Highest YMax (further north) sorts last via ASC; lowest XMin (further west)
+        // sorts last via DESC. 'id ASC' tiebreaker keeps the result deterministic.
         RasterMosaicOrdering.Northwest =>
-            "ST_YMax(ST_Envelope(rast)) DESC, ST_XMin(ST_Envelope(rast)) ASC, id ASC",
+            "ST_YMax(ST_Envelope(rast)) ASC, ST_XMin(ST_Envelope(rast)) DESC, id ASC",
 
         // LockOrder composites the caller-pinned set ordered by newest acquisition, matching
         // the default newest-wins behaviour among the locked rasters.
