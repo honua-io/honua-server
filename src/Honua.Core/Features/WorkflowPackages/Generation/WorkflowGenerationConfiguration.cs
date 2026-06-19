@@ -25,6 +25,12 @@ public sealed class WorkflowGenerationConfiguration
     /// <summary>Stable id for the Anthropic (Claude) provider.</summary>
     public const string AnthropicProviderId = "anthropic";
 
+    /// <summary>Stable id for the AWS Bedrock (Claude on Bedrock) provider.</summary>
+    public const string BedrockProviderId = "bedrock";
+
+    /// <summary>Default AWS region for the Bedrock provider when none is configured.</summary>
+    public const string DefaultBedrockRegion = "us-west-2";
+
     /// <summary>Stable id for the deterministic fixture-replay provider.</summary>
     public const string DeterministicProviderId = "deterministic";
 
@@ -66,11 +72,20 @@ public sealed class WorkflowGenerationProviderOptions
     /// <summary>
     /// API endpoint base URL. For OpenAI-compatible providers this follows the
     /// <c>/v1/chat/completions</c> convention. For Anthropic it is the Messages API base.
+    /// Not required for the AWS Bedrock provider, which targets the regional Bedrock
+    /// runtime endpoint derived from <see cref="Region"/>.
     /// </summary>
     public string Endpoint { get; set; } = string.Empty;
 
     /// <summary>The model identifier to use.</summary>
     public string Model { get; set; } = string.Empty;
+
+    /// <summary>
+    /// AWS region for the Bedrock provider (for example <c>us-west-2</c>). Ignored by the
+    /// OpenAI-compatible and Anthropic providers. When empty the Bedrock provider falls back
+    /// to <see cref="WorkflowGenerationConfiguration.DefaultBedrockRegion"/>.
+    /// </summary>
+    public string Region { get; set; } = string.Empty;
 
     /// <summary>
     /// API key for the provider, or a secret reference resolved via <c>ISecretProvider</c>.
@@ -110,12 +125,13 @@ public sealed class WorkflowGenerationConfigurationValidator : ConfigurationVali
             || string.Equals(provider, WorkflowGenerationConfiguration.LocalProviderId, StringComparison.OrdinalIgnoreCase)
             || string.Equals(provider, WorkflowGenerationConfiguration.OpenAiProviderId, StringComparison.OrdinalIgnoreCase)
             || string.Equals(provider, WorkflowGenerationConfiguration.AnthropicProviderId, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(provider, WorkflowGenerationConfiguration.BedrockProviderId, StringComparison.OrdinalIgnoreCase)
             || string.Equals(provider, WorkflowGenerationConfiguration.DeterministicProviderId, StringComparison.OrdinalIgnoreCase);
 
         if (!isKnown)
         {
             errors.Add($"WorkflowGeneration:DefaultProvider '{provider}' is not a supported provider id. "
-                + "Supported values: 'local', 'openai', 'anthropic', 'deterministic'.");
+                + "Supported values: 'local', 'openai', 'anthropic', 'bedrock', 'deterministic'.");
             return;
         }
 
@@ -129,6 +145,17 @@ public sealed class WorkflowGenerationConfigurationValidator : ConfigurationVali
         if (providerOptions is null)
         {
             errors.Add($"WorkflowGeneration:Providers:{provider} must be configured because it is the default provider.");
+            return;
+        }
+
+        // Bedrock targets the regional Bedrock runtime endpoint via the AWS credential chain
+        // (IAM), so it requires no endpoint URL or API key — only a model id. The region is
+        // optional and defaults to DefaultBedrockRegion.
+        if (string.Equals(provider, WorkflowGenerationConfiguration.BedrockProviderId, StringComparison.OrdinalIgnoreCase))
+        {
+            ValidateRequiredString(providerOptions.Model, $"WorkflowGeneration:Providers:{provider}:Model", errors);
+            ValidateRange(providerOptions.TimeoutSeconds, 5, 300, $"WorkflowGeneration:Providers:{provider}:TimeoutSeconds", errors);
+            ValidateRange(providerOptions.MaxTokens, 256, 32_768, $"WorkflowGeneration:Providers:{provider}:MaxTokens", errors);
             return;
         }
 

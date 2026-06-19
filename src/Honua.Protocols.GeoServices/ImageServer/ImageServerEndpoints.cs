@@ -1001,8 +1001,8 @@ internal static class ImageServerEndpoints
 
     // On a real Esri ImageServer, `…/ImageServer/conf.json` returns the SAME
     // service-descriptor document as `…/ImageServer?f=json` (verified against a
-    // public Esri ImageServer: conf.json yields currentVersion/extent/
-    // spatialReference/… — the service info, not a tile-cache schema). The ArcGIS
+    // public Esri ImageServer: conf.json yields the extent/
+    // spatialReference/… service info, not a tile-cache schema). The ArcGIS
     // Maps SDK for .NET native runtime reads this while loading an
     // ImageServiceRaster; honua previously 404'd here, so LoadAsync failed with
     // "could not read configuration data". Serve the service descriptor (always

@@ -23,9 +23,6 @@ namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 /// </summary>
 internal sealed class ImageServerMetadataHandler
 {
-    /// <summary>ArcGIS REST API version for compatibility.</summary>
-    private const double ArcGisVersion = 10.81;
-
     /// <summary>Minimum pixel size advertised in service metadata (finest resolution).</summary>
     private const double MinPixelSize = 0.1;
 
@@ -139,7 +136,6 @@ internal sealed class ImageServerMetadataHandler
             // Build service info response
             var serviceInfo = new ImageServerServiceInfo
             {
-                CurrentVersion = ArcGisVersion,
                 ServiceDescription = resolved.Description ?? $"Image service for {resolved.DisplayName}",
                 Name = resolved.DisplayName,
                 Description = resolved.Description,

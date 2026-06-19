@@ -7,8 +7,9 @@ namespace Honua.Protocols.GeoServices.Catalog;
 
 internal sealed record ServicesDirectoryResponse
 {
-    [JsonPropertyName("currentVersion")]
-    public double CurrentVersion { get; init; } = 10.81;
+    // No ArcGIS Server version is advertised. Honua is an independent, Esri-compatible
+    // server and must not impersonate a specific ArcGIS Server release. Do NOT add a
+    // currentVersion/fullVersion field (guarded by NoArcGisServerVersionTests).
 
     [JsonPropertyName("folders")]
     public string[] Folders { get; init; } = [];
@@ -31,11 +32,7 @@ internal sealed record ServiceDirectoryEntry
 
 internal sealed record RestInfoResponse
 {
-    [JsonPropertyName("currentVersion")]
-    public double CurrentVersion { get; init; } = 10.81;
-
-    [JsonPropertyName("fullVersion")]
-    public string FullVersion { get; init; } = "10.81";
+    // No currentVersion/fullVersion — Honua does not advertise an ArcGIS Server version.
 
     [JsonPropertyName("authInfo")]
     public RestAuthInfo AuthInfo { get; init; } = new();

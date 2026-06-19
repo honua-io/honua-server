@@ -200,7 +200,19 @@ public enum ExecutionJobKind
     /// <summary>
     /// Scheduled Share export workload.
     /// </summary>
-    ShareExport
+    ShareExport,
+
+    /// <summary>
+    /// Per-area geocoder/locator build workload. Clips an address feedstock layer to
+    /// an area and emits a self-hostable locator artifact the GeocodeServer can serve.
+    /// </summary>
+    GeocoderBuild,
+
+    /// <summary>
+    /// Per-area routing-graph build workload. Clips a road-network feedstock layer to
+    /// an area and emits a pgRouting topology artifact a routing endpoint can solve over.
+    /// </summary>
+    RouterBuild
 }
 
 /// <summary>

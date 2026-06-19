@@ -231,6 +231,24 @@ internal sealed class McpContentBlock
 
     [JsonPropertyName("text")]
     public string? Text { get; set; }
+
+    /// <summary>
+    /// Base64-encoded binary payload for an <c>image</c> content block. Per the
+    /// MCP 2025-03-26 content-block schema an image block carries
+    /// <c>{ "type": "image", "data": "&lt;base64&gt;", "mimeType": "image/png" }</c>.
+    /// Null for text blocks (omitted from the wire by the
+    /// <c>WhenWritingNull</c> serializer policy) so existing text tools are
+    /// unaffected.
+    /// </summary>
+    [JsonPropertyName("data")]
+    public string? Data { get; set; }
+
+    /// <summary>
+    /// MIME type for an <c>image</c> content block (e.g. <c>image/png</c>). Null
+    /// for text blocks.
+    /// </summary>
+    [JsonPropertyName("mimeType")]
+    public string? MimeType { get; set; }
 }
 
 /// <summary>

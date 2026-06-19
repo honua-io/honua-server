@@ -42,6 +42,9 @@ public sealed class VerticalSliceIsolationTests
         "Migration",    // Import-split: ArcGIS/legacy migration slice.
         "RasterImport", // Import-split: raster ingest slice.
         "ControlPlane", // Relocated out of the Infrastructure grab-bag (audit-A1).
+        "Provisioner",  // Per-area geocoder/router build-job slice (honua-server#1752): service/job-only,
+                        // no HTTP surface — rides the GP-on-Batch dispatch path. Satisfies the vertical-slice
+                        // rule via its in-folder ProvisionerServiceCollectionExtensions.cs (mirrors ControlPlane).
         "FileStorage",
         "PrintingTools",
         "HealthCheck",
