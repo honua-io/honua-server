@@ -58,6 +58,206 @@ public sealed class I3sSceneLayerDocument
     /// <summary>Store block describing geometry/node-page layout.</summary>
     [JsonPropertyName("store")]
     public I3sStore? Store { get; set; }
+
+    /// <summary>
+    /// Per-attribute binary storage layout (OGC 19-008 <c>attributeStorageInfo</c>).
+    /// Describes how feature attributes are encoded; it is descriptive metadata
+    /// only and does not imply a fetchable attribute resource on this slice.
+    /// </summary>
+    [JsonPropertyName("attributeStorageInfo")]
+    public IReadOnlyList<I3sAttributeStorageInfo>? AttributeStorageInfo { get; set; }
+
+    /// <summary>
+    /// Default geometry schema (OGC 19-008 <c>store.defaultGeometrySchema</c> is
+    /// commonly surfaced at the layer level by 1.7 producers): the vertex/face
+    /// layout a node's geometry buffer conforms to. Descriptive only.
+    /// </summary>
+    [JsonPropertyName("geometryDefinitions")]
+    public IReadOnlyList<I3sGeometryDefinition>? GeometryDefinitions { get; set; }
+
+    /// <summary>
+    /// Material definitions referenced by the layer's geometry
+    /// (OGC 19-008 <c>materialDefinitions</c>). Descriptive only.
+    /// </summary>
+    [JsonPropertyName("materialDefinitions")]
+    public IReadOnlyList<I3sMaterialDefinition>? MaterialDefinitions { get; set; }
+
+    /// <summary>
+    /// Texture-set definitions describing the texture formats the layer's
+    /// materials reference (OGC 19-008 <c>textureSetDefinitions</c>).
+    /// Descriptive only.
+    /// </summary>
+    [JsonPropertyName("textureSetDefinitions")]
+    public IReadOnlyList<I3sTextureSetDefinition>? TextureSetDefinitions { get; set; }
+}
+
+/// <summary>
+/// I3S per-attribute storage descriptor (OGC 19-008 <c>attributeStorageInfo</c>).
+/// Describes the binary encoding of a single feature attribute.
+/// </summary>
+public sealed class I3sAttributeStorageInfo
+{
+    /// <summary>Stable attribute key (matches the attribute's field index).</summary>
+    [JsonPropertyName("key")]
+    public string? Key { get; set; }
+
+    /// <summary>Human-readable attribute name.</summary>
+    [JsonPropertyName("name")]
+    public string? Name { get; set; }
+
+    /// <summary>Ordered names of the binary value headers (e.g. <c>count</c>).</summary>
+    [JsonPropertyName("ordering")]
+    public IReadOnlyList<string>? Ordering { get; set; }
+
+    /// <summary>Header value descriptors (property + value type).</summary>
+    [JsonPropertyName("header")]
+    public IReadOnlyList<I3sAttributeHeader>? Header { get; set; }
+
+    /// <summary>Value-buffer encoding descriptor.</summary>
+    [JsonPropertyName("attributeValues")]
+    public I3sAttributeValues? AttributeValues { get; set; }
+}
+
+/// <summary>I3S attribute-buffer header descriptor.</summary>
+public sealed class I3sAttributeHeader
+{
+    /// <summary>Header property name (e.g. <c>count</c>).</summary>
+    [JsonPropertyName("property")]
+    public string? Property { get; set; }
+
+    /// <summary>Value type (e.g. <c>UInt32</c>).</summary>
+    [JsonPropertyName("valueType")]
+    public string? ValueType { get; set; }
+}
+
+/// <summary>I3S attribute value-buffer encoding descriptor.</summary>
+public sealed class I3sAttributeValues
+{
+    /// <summary>Element value type (e.g. <c>Float64</c>, <c>String</c>).</summary>
+    [JsonPropertyName("valueType")]
+    public string? ValueType { get; set; }
+
+    /// <summary>Encoding (e.g. <c>UTF-8</c> for string attributes).</summary>
+    [JsonPropertyName("encoding")]
+    public string? Encoding { get; set; }
+
+    /// <summary>Values-per-element (1 for scalars).</summary>
+    [JsonPropertyName("valuesPerElement")]
+    public int? ValuesPerElement { get; set; }
+}
+
+/// <summary>
+/// I3S geometry-schema definition (OGC 19-008 <c>defaultGeometrySchema</c> /
+/// <c>geometryDefinitions</c>): the vertex/face layout a node geometry buffer
+/// conforms to. Descriptive metadata only.
+/// </summary>
+public sealed class I3sGeometryDefinition
+{
+    /// <summary>Geometry encodings the layer's nodes use.</summary>
+    [JsonPropertyName("geometryBuffers")]
+    public IReadOnlyList<I3sGeometryBuffer>? GeometryBuffers { get; set; }
+}
+
+/// <summary>I3S geometry-buffer descriptor (compressed / uncompressed layout).</summary>
+public sealed class I3sGeometryBuffer
+{
+    /// <summary>Whether the buffer is compressed (e.g. <c>draco</c>).</summary>
+    [JsonPropertyName("compressedAttributes")]
+    public I3sCompressedAttributes? CompressedAttributes { get; set; }
+
+    /// <summary>Uncompressed offset descriptor for the position stream.</summary>
+    [JsonPropertyName("position")]
+    public I3sVertexLayout? Position { get; set; }
+
+    /// <summary>Uncompressed offset descriptor for the normal stream.</summary>
+    [JsonPropertyName("normal")]
+    public I3sVertexLayout? Normal { get; set; }
+
+    /// <summary>Uncompressed offset descriptor for the UV0 stream.</summary>
+    [JsonPropertyName("uv0")]
+    public I3sVertexLayout? Uv0 { get; set; }
+}
+
+/// <summary>I3S compressed-attribute (Draco) descriptor.</summary>
+public sealed class I3sCompressedAttributes
+{
+    /// <summary>Compression encoding (e.g. <c>draco</c>).</summary>
+    [JsonPropertyName("encoding")]
+    public string? Encoding { get; set; }
+
+    /// <summary>Attribute streams carried in the compressed buffer.</summary>
+    [JsonPropertyName("attributes")]
+    public IReadOnlyList<string>? Attributes { get; set; }
+}
+
+/// <summary>I3S uncompressed geometry-attribute descriptor.</summary>
+public sealed class I3sVertexLayout
+{
+    /// <summary>Component type (e.g. <c>Float32</c>).</summary>
+    [JsonPropertyName("type")]
+    public string? Type { get; set; }
+
+    /// <summary>Components per vertex (e.g. 3 for position).</summary>
+    [JsonPropertyName("component")]
+    public int? Component { get; set; }
+}
+
+/// <summary>
+/// I3S material definition (OGC 19-008 <c>materialDefinitions</c>): a PBR
+/// material the layer's geometry references. Descriptive metadata only.
+/// </summary>
+public sealed class I3sMaterialDefinition
+{
+    /// <summary>Metallic-roughness PBR block.</summary>
+    [JsonPropertyName("pbrMetallicRoughness")]
+    public I3sPbrMetallicRoughness? PbrMetallicRoughness { get; set; }
+
+    /// <summary>Alpha mode (<c>OPAQUE</c>, <c>MASK</c>, <c>BLEND</c>).</summary>
+    [JsonPropertyName("alphaMode")]
+    public string? AlphaMode { get; set; }
+
+    /// <summary>Whether the material is double-sided.</summary>
+    [JsonPropertyName("doubleSided")]
+    public bool? DoubleSided { get; set; }
+}
+
+/// <summary>I3S PBR metallic-roughness descriptor.</summary>
+public sealed class I3sPbrMetallicRoughness
+{
+    /// <summary>Linear-space base color factor (RGBA).</summary>
+    [JsonPropertyName("baseColorFactor")]
+    public IReadOnlyList<double>? BaseColorFactor { get; set; }
+
+    /// <summary>Metalness factor.</summary>
+    [JsonPropertyName("metallicFactor")]
+    public double? MetallicFactor { get; set; }
+
+    /// <summary>Roughness factor.</summary>
+    [JsonPropertyName("roughnessFactor")]
+    public double? RoughnessFactor { get; set; }
+}
+
+/// <summary>
+/// I3S texture-set definition (OGC 19-008 <c>textureSetDefinitions</c>):
+/// the texture formats the layer's materials reference. Descriptive only.
+/// </summary>
+public sealed class I3sTextureSetDefinition
+{
+    /// <summary>Texture format entries (e.g. jpg, ktx2).</summary>
+    [JsonPropertyName("formats")]
+    public IReadOnlyList<I3sTextureFormat>? Formats { get; set; }
+}
+
+/// <summary>I3S texture-format descriptor.</summary>
+public sealed class I3sTextureFormat
+{
+    /// <summary>Texture file name token (e.g. <c>0</c>).</summary>
+    [JsonPropertyName("name")]
+    public string? Name { get; set; }
+
+    /// <summary>Texture encoding format (e.g. <c>jpg</c>, <c>ktx2</c>).</summary>
+    [JsonPropertyName("format")]
+    public string? Format { get; set; }
 }
 
 /// <summary>
@@ -162,6 +362,10 @@ public sealed class I3sStore
 [JsonSerializable(typeof(I3sFullExtent))]
 [JsonSerializable(typeof(I3sHeightModelInfo))]
 [JsonSerializable(typeof(I3sStore))]
+[JsonSerializable(typeof(I3sAttributeStorageInfo))]
+[JsonSerializable(typeof(I3sGeometryDefinition))]
+[JsonSerializable(typeof(I3sMaterialDefinition))]
+[JsonSerializable(typeof(I3sTextureSetDefinition))]
 public sealed partial class I3sSceneLayerJsonContext : System.Text.Json.Serialization.JsonSerializerContext
 {
 }
