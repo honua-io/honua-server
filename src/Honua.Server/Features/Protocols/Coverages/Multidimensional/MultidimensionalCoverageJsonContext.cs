@@ -14,6 +14,7 @@ namespace Honua.Server.Features.Protocols.Coverages.Multidimensional;
 [JsonSerializable(typeof(RegisterMultidimensionalCoverageRequest))]
 [JsonSerializable(typeof(MultidimensionalCoverageRegistrationResponse))]
 [JsonSerializable(typeof(MultidimensionalCoverageRegistrationResponse[]))]
+[JsonSerializable(typeof(MultidimensionalCoverageScanJobResponse))]
 [JsonSerializable(typeof(string))]
 [JsonSerializable(typeof(int))]
 [JsonSerializable(typeof(long))]

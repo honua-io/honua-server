@@ -46,6 +46,24 @@ public static class DataProviderNames
     public const string Oracle = "oracle";
 
     /// <summary>
+    /// Canonical Amazon Redshift provider name. Redshift speaks the PostgreSQL wire protocol but
+    /// uses its own native spatial layer (not PostGIS); it is registered as a read-only provider.
+    /// </summary>
+    public const string Redshift = "redshift";
+
+    /// <summary>
+    /// Canonical Snowflake provider name.
+    /// </summary>
+    public const string Snowflake = "snowflake";
+
+    /// <summary>
+    /// Canonical Databricks provider name. Bound to secure-connection records whose
+    /// backing storage is a Databricks SQL Warehouse reached over the Statement
+    /// Execution REST API.
+    /// </summary>
+    public const string Databricks = "databricks";
+
+    /// <summary>
     /// Normalizes a provider name or alias into the canonical provider identifier.
     /// Unknown non-empty provider names are lower-cased so external provider registrations
     /// can participate without changing the core model.
@@ -83,6 +101,17 @@ public static class DataProviderNames
             "featureserver" => ArcGisRest,
             "oracle" => Oracle,
             "oracledb" => Oracle,
+            "redshift" => Redshift,
+            "amazon-redshift" => Redshift,
+            "amazonredshift" => Redshift,
+            "redshiftdb" => Redshift,
+            "aws-redshift" => Redshift,
+            "awsredshift" => Redshift,
+            "snowflake" => Snowflake,
+            "snowflakedb" => Snowflake,
+            "databricks" => Databricks,
+            "databrickssql" => Databricks,
+            "dbsql" => Databricks,
             _ => normalized
         };
     }

@@ -56,6 +56,13 @@
     <!-- StackExchange.Redis is required by InMemoryAnalysisContentStore and
          by GroundingService for distributed-cache helpers. -->
     <PackageReference Include="StackExchange.Redis" />
+    <!-- AWS Bedrock (Claude) provider for the studio generation flows. The
+         BedrockChatClientAdapter wraps the Converse API as a Microsoft.Extensions.AI
+         IChatClient so the dashboard/report/workflow generators can run on cloud AI
+         (no local Ollama/Qwen). Mirrors the honua-devops agent's Bedrock provider. -->
+    <PackageReference Include="AWSSDK.BedrockRuntime" />
+    <PackageReference Include="Microsoft.Extensions.AI" />
+    <PackageReference Include="Microsoft.Extensions.AI.Abstractions" />
   </ItemGroup>
 
   <ItemGroup>
