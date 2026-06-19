@@ -104,14 +104,57 @@ internal static partial class FeatureServerEndpoints
             cancellationToken);
     }
 
-    private static async Task<IResult> HandleServiceQueryFeaturesGet(
+    private static Task<IResult> HandleServiceQueryFeaturesGet(
         string serviceId,
         HttpContext context,
         [FromServices] FeatureServerQueryHandler queryHandler,
         [FromServices] ICommonQueryValidator queryValidator)
+        => HandleServiceQueryFeaturesAsync(serviceId, context, queryHandler, queryValidator);
+
+    // Esri Map/Feature services accept BOTH GET and POST for the service-level query
+    // operation; clients POST large layerDefs/layers arrays that exceed URL limits
+    // (honua-server#1825). The POST companion merges the form body over the query string
+    // and shares this handler; it is AllowAnonymous because the per-layer access policy is
+    // enforced below via RequireAnyResourceAccess/FilterAccessibleLayersV2.
+    private static Task<IResult> HandleServiceQueryFeaturesPost(
+        string serviceId,
+        HttpContext context,
+        [FromServices] FeatureServerQueryHandler queryHandler,
+        [FromServices] ICommonQueryValidator queryValidator)
+        => HandleServiceQueryFeaturesAsync(serviceId, context, queryHandler, queryValidator);
+
+    private static async Task<IResult> HandleServiceQueryFeaturesAsync(
+        string serviceId,
+        HttpContext context,
+        FeatureServerQueryHandler queryHandler,
+        ICommonQueryValidator queryValidator)
     {
+        var cancellationToken = GetTimeoutAwareCancellationToken(context);
+
+        var values = ToCaseInsensitiveDictionary(context.Request.Query);
+        if (HttpMethods.IsPost(context.Request.Method))
+        {
+            var (bodyValues, bodyReadError) = await TryReadRequestValuesAsync(context.Request, cancellationToken);
+            if (bodyValues == null)
+            {
+                if (TryGetUnsupportedMediaType(bodyReadError, out var receivedContentType))
+                {
+                    return CreateUnsupportedRequestContentTypeResult(context, receivedContentType);
+                }
+
+                return StandardErrorHelpers.CreateBadRequest(context,
+                    "Invalid query parameters",
+                    [bodyReadError ?? "Invalid request body."]);
+            }
+
+            foreach (var pair in bodyValues)
+            {
+                values[pair.Key] = pair.Value;
+            }
+        }
+
         if (!TryValidateAllowedParameters(
-                context.Request.Query,
+                values,
                 queryValidator,
                 FeatureServerServiceQueryAllowedParameters,
                 out var error))
@@ -121,7 +164,6 @@ internal static partial class FeatureServerEndpoints
                 [error ?? "Invalid query parameter."]);
         }
 
-        var values = ToCaseInsensitiveDictionary(context.Request.Query);
         var requestedFormat = GetValueString(values, "f");
 
         using var scope = HonuaTelemetryScope.StartFeature(
@@ -131,7 +173,6 @@ internal static partial class FeatureServerEndpoints
             context.TraceIdentifier);
         scope.WithTag(HonuaTelemetry.Tags.ServiceId, serviceId);
 
-        var cancellationToken = GetTimeoutAwareCancellationToken(context);
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
         var serviceValidationResult = await FeatureServerResourceValidationHelpers.ValidateServiceV2Async(
             resourceValidator,

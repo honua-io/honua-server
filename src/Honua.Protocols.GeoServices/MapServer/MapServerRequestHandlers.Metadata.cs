@@ -17,6 +17,7 @@ using Honua.Protocols.GeoServices.FeatureServer;
 using Honua.Protocols.GeoServices.MapServer.Models;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Primitives;
 
 namespace Honua.Protocols.GeoServices.MapServer;
 
@@ -200,14 +201,14 @@ internal static partial class MapServerEndpoints
     }
 
     private static bool TryValidateMetadataFormat(IQueryCollection query, out string? error)
+        => TryValidateMetadataFormat(query.TryGetValue("f", out var formatValues) ? formatValues.ToString() : null, out error);
+
+    private static bool TryValidateMetadataFormat(Dictionary<string, StringValues> values, out string? error)
+        => TryValidateMetadataFormat(values.TryGetValue("f", out var formatValues) ? formatValues.ToString() : null, out error);
+
+    private static bool TryValidateMetadataFormat(string? format, out string? error)
     {
         error = null;
-        if (!query.TryGetValue("f", out var formatValues))
-        {
-            return true;
-        }
-
-        var format = formatValues.ToString();
         if (string.IsNullOrWhiteSpace(format))
         {
             return true;
