@@ -383,6 +383,50 @@
       ]
     },
     {
+      "surfaceId": "operations-toolset",
+      "displayName": "Honua Operations Toolset API",
+      "surfaceKind": "http-route-family",
+      "protocol": "Admin API",
+      "canonicalIdentifier": "/api/v1/operations*",
+      "parentSurfaceId": "control-plane-admin",
+      "endpointPrefixes": [
+        "/api/v1/operations"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus OperationsEndpointsTests integration tests assert the descriptor catalog lists the service.publish descriptor, ValidateAsync/SubmitAsync flow through the policy-gated dispatcher, and the submitted handle status surfaces the metadata-v2 revision",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Operations/OperationsEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "contract-governance",
+          "proofMechanism": "Descriptor/executor split: groundable IOperationDescriptor catalog is separate from IOperationExecutor (Validate/Submit->Handle/GetStatus); every submit flows through IOperationPolicyDecisionPoint (AllowAll pass-through default) and OperationsJsonContext keeps the operation DTOs AOT-safe",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "src/Honua.Core/Features/Operations/Abstractions/IOperationExecutor.cs",
+            "src/Honua.Core/Features/Operations/Abstractions/IOperationPolicyDecisionPoint.cs",
+            "src/Honua.Server/Features/Operations/OperationsJsonContext.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
       "surfaceId": "console-job-observability",
       "displayName": "Console durable job observability API",
       "surfaceKind": "http-route-family",
