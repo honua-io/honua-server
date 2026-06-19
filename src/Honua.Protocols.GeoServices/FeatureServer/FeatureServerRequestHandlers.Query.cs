@@ -393,7 +393,9 @@ internal static partial class FeatureServerEndpoints
             Units = GetValueString(values, "units"),
             F = GetValueString(values, "f") ?? "json",
             FormatSpecified = values.ContainsKey("f"),
-            Time = GetValueString(values, "time"),
+            // arcgis 2.4.x serializes query(time_filter=) to the "timeFilter" query
+            // parameter; accept it as an alias of "time" (explicit "time" wins). #1775
+            Time = GetValueString(values, "time") ?? GetValueString(values, "timeFilter"),
             TimeRelation = GetValueString(values, "timeRelation"),
             ReturnGeometry = returnGeometry,
             ReturnIdsOnly = returnIdsOnly,
