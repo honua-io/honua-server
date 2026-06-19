@@ -93,4 +93,31 @@
   <PropertyGroup>
     <NoWarn>$(NoWarn);RCS1194;RCS1203;RCS1075;RCS1139</NoWarn>
   </PropertyGroup>
+
+  <!--
+    NuGet audit (NU1903) runs during `dotnet restore` and queries the live
+    NuGet vulnerability feed. Under TreatWarningsAsErrors=true a freshly
+    published advisory for any transitive dependency becomes a hard restore
+    error on every project at once — which deterministically ejected good PRs
+    from the ALLGREEN merge queue (the whole merge_group is tested as one batch,
+    so a single restore failure fails the entire batch). See honua-server#1767.
+
+    Audit stays fully enabled for every other package; we only suppress
+    advisories that are genuinely unactionable here:
+
+      GHSA-2m69-gcr7-jv3q — SQLitePCLRaw.lib.e_sqlite3 <= 2.1.11 (high).
+        Pulled in transitively via Microsoft.Data.Sqlite. There is NO patched
+        version published (first_patched_version = none), so it cannot be
+        cleared by a version bump the way the MessagePack advisory above was.
+        e_sqlite3 is the bundled SQLite native lib used by test/tooling paths;
+        the advisory is acknowledged here and tracked for re-evaluation when a
+        patched e_sqlite3 ships, at which point this suppression is removed.
+
+    Genuinely transient restore failures (feed timeouts / 5xx) are handled
+    separately by scripts/ci/dotnet-restore-retry.sh, which bounded-retries
+    restore but deliberately does NOT retry NU190x audit errors.
+  -->
+  <ItemGroup>
+    <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-2m69-gcr7-jv3q" />
+  </ItemGroup>
 </Project>
