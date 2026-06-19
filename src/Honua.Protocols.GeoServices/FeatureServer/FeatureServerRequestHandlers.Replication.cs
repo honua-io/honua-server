@@ -87,8 +87,10 @@ internal static partial class FeatureServerEndpoints
             .Select(layer => layer.PublicLayerId)
             .ToHashSet();
 
-        var replicaRepository = context.RequestServices.GetRequiredService<IReplicaRepository>();
-        var replicas = await replicaRepository.ListByServiceAsync(serviceId, cancellationToken).ConfigureAwait(false);
+        // Serve /replicas from the live registry (IReplicaStore) rather than a lagging cached snapshot, so
+        // the enumeration reflects createReplica / unRegisterReplica immediately (#1775).
+        var replicaStore = context.RequestServices.GetRequiredService<IReplicaStore>();
+        var replicas = await replicaStore.ListByServiceAsync(serviceId, cancellationToken).ConfigureAwait(false);
 
         var response = replicas
             .Where(record => record.LayerIds.Length > 0 && record.LayerIds.All(accessibleLayerIds.Contains))
@@ -379,14 +381,65 @@ internal static partial class FeatureServerEndpoints
 
         var changeTracker = context.RequestServices.GetRequiredService<IChangeTracker>();
         var currentGen = await changeTracker.GetCurrentGenerationAsync(cancellationToken);
-        var layerChanges = new List<LayerChanges>();
+
+        // Assemble the per-layer delta since the replica's last-sync generation. The same
+        // change-tracking delta-assembly serves the synchronizeReplica(download) path so both
+        // directions deliver identical changes (the download bug, #1775, was that the download
+        // path never assembled this delta).
+        var (layerChanges, deltaError) = await BuildReplicaLayerChangesAsync(
+            context,
+            replicaId,
+            replica.LastSyncGeneration,
+            replicaLayers,
+            changeTracker,
+            cancellationToken);
+        if (deltaError is not null)
+        {
+            return deltaError;
+        }
+
+        var minGen = replica.LastSyncGeneration;
+        var maxGen = currentGen;
+
+        var response = new ExtractChangesResponse
+        {
+            Success = true,
+            ReplicaId = replicaId,
+            LayerChanges = layerChanges!,
+            ServerGen = currentGen,
+            MinServerGen = minGen,
+            MaxServerGen = maxGen
+        };
+
+        return Results.Json(response, FeatureServerJsonContext.Default.ExtractChangesResponse, contentType: "application/json");
+    }
+
+    /// <summary>
+    /// Assembles the per-layer server-to-client change delta for a replica since
+    /// <paramref name="sinceGeneration"/>, reusing the change-tracking engine that backs
+    /// <c>extractChanges</c>. Returns the per-layer adds/updates/deletes (with the actual inserted and
+    /// updated feature payloads), or a bad-request <see cref="IResult"/> when a layer's change set exceeds
+    /// the configured per-layer record limit. A <paramref name="sinceGeneration"/> of 0 means pre-migration
+    /// or first sync and falls back to "all current features as adds" for backward compatibility. This is
+    /// the shared download-assembly path consumed by both <c>extractChanges</c> and the
+    /// <c>synchronizeReplica</c> download direction (#1775).
+    /// </summary>
+    private static async Task<(LayerChanges[]? LayerChanges, IResult? Error)> BuildReplicaLayerChangesAsync(
+        HttpContext context,
+        string replicaId,
+        long sinceGeneration,
+        ReplicaLayerV2[] replicaLayers,
+        IChangeTracker changeTracker,
+        CancellationToken cancellationToken)
+    {
+        var layerChanges = new List<LayerChanges>(replicaLayers.Length);
 
         var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
         var queryLimits = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value.Query;
 
-        // Special case: LastSyncGeneration == 0 means pre-migration data or first sync;
+        // Special case: sinceGeneration == 0 means pre-migration data or first sync;
         // fall back to "all features as adds" for backward compatibility.
-        if (replica.LastSyncGeneration == 0)
+        if (sinceGeneration == 0)
         {
             foreach (var layer in replicaLayers)
             {
@@ -396,10 +449,10 @@ internal static partial class FeatureServerEndpoints
                     cancellationToken);
                 if (result.HasMoreResults || result.Items.Length > queryLimits.MaxRecordCount)
                 {
-                    return StandardErrorHelpers.CreateBadRequest(
+                    return (null, StandardErrorHelpers.CreateBadRequest(
                         context,
                         $"Replica '{replicaId}' initial extract exceeds the configured per-layer record limit.",
-                        [$"Layer {layer.PublicLayerId} returned more than {queryLimits.MaxRecordCount} features."]);
+                        [$"Layer {layer.PublicLayerId} returned more than {queryLimits.MaxRecordCount} features."]));
                 }
 
                 var addFeatures = result.Items
@@ -417,109 +470,96 @@ internal static partial class FeatureServerEndpoints
                     DeleteIds = null
                 });
             }
+
+            return (layerChanges.ToArray(), null);
         }
-        else
+
+        // Query real incremental deltas from the change log
+        var changes = await changeTracker.GetChangesSinceAsync(
+            sinceGeneration,
+            replicaLayers.Select(layer => layer.StorageLayerId).Distinct().ToArray(),
+            cancellationToken);
+
+        // Group collapsed changes by layer
+        var changesByLayer = changes
+            .GroupBy(c => c.LayerId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        foreach (var layer in replicaLayers)
         {
-            // Query real incremental deltas from the change log
-            var changes = await changeTracker.GetChangesSinceAsync(
-                replica.LastSyncGeneration,
-                replicaLayers.Select(layer => layer.StorageLayerId).Distinct().ToArray(),
-                cancellationToken);
-
-            // Group collapsed changes by layer
-            var changesByLayer = changes
-                .GroupBy(c => c.LayerId)
-                .ToDictionary(g => g.Key, g => g.ToList());
-
-            foreach (var layer in replicaLayers)
+            if (changesByLayer.TryGetValue(layer.StorageLayerId, out var layerChangeList))
             {
-                if (changesByLayer.TryGetValue(layer.StorageLayerId, out var layerChangeList))
+                // Collect objectIds by operation type
+                var insertIds = layerChangeList
+                    .Where(c => c.Operation == FeatureChangeOperation.Insert)
+                    .Select(c => c.ObjectId)
+                    .ToArray();
+
+                var updateIds = layerChangeList
+                    .Where(c => c.Operation == FeatureChangeOperation.Update)
+                    .Select(c => c.ObjectId)
+                    .ToArray();
+
+                var deleteIds = layerChangeList
+                    .Where(c => c.Operation == FeatureChangeOperation.Delete)
+                    .Select(c => c.ObjectId)
+                    .ToArray();
+
+                if (insertIds.Length > queryLimits.MaxRecordCount ||
+                    updateIds.Length > queryLimits.MaxRecordCount ||
+                    deleteIds.Length > queryLimits.MaxRecordCount)
                 {
-                    // Collect objectIds by operation type
-                    var insertIds = layerChangeList
-                        .Where(c => c.Operation == FeatureChangeOperation.Insert)
-                        .Select(c => c.ObjectId)
-                        .ToArray();
-
-                    var updateIds = layerChangeList
-                        .Where(c => c.Operation == FeatureChangeOperation.Update)
-                        .Select(c => c.ObjectId)
-                        .ToArray();
-
-                    var deleteIds = layerChangeList
-                        .Where(c => c.Operation == FeatureChangeOperation.Delete)
-                        .Select(c => c.ObjectId)
-                        .ToArray();
-
-                    if (insertIds.Length > queryLimits.MaxRecordCount ||
-                        updateIds.Length > queryLimits.MaxRecordCount ||
-                        deleteIds.Length > queryLimits.MaxRecordCount)
-                    {
-                        return StandardErrorHelpers.CreateBadRequest(
-                            context,
-                            $"Replica '{replicaId}' extract exceeds the configured per-layer change limit.",
-                            [$"Layer {layer.PublicLayerId} exceeded {queryLimits.MaxRecordCount} adds, updates, or deletes in a single extract."]);
-                    }
-
-                    // Query actual features for inserts and updates
-                    GeoServicesFeature[]? addFeatures = null;
-                    if (insertIds.Length > 0)
-                    {
-                        var query = new FeatureQuery { ObjectIds = ImmutableArray.Create(insertIds) };
-                        var result = await featureReader.QueryAsync(layer.StorageLayerId, query, cancellationToken);
-                        addFeatures = result.Items
-                            .Select(f => ConvertFeatureToGeoServices(f, layer.Resource))
-                            .ToArray();
-                    }
-
-                    GeoServicesFeature[]? updateFeatures = null;
-                    if (updateIds.Length > 0)
-                    {
-                        var query = new FeatureQuery { ObjectIds = ImmutableArray.Create(updateIds) };
-                        var result = await featureReader.QueryAsync(layer.StorageLayerId, query, cancellationToken);
-                        updateFeatures = result.Items
-                            .Select(f => ConvertFeatureToGeoServices(f, layer.Resource))
-                            .ToArray();
-                    }
-
-                    layerChanges.Add(new LayerChanges
-                    {
-                        Id = layer.PublicLayerId,
-                        Adds = insertIds.Length,
-                        Updates = updateIds.Length,
-                        Deletes = deleteIds.Length,
-                        AddFeatures = addFeatures,
-                        UpdateFeatures = updateFeatures,
-                        DeleteIds = deleteIds.Length > 0 ? deleteIds : null
-                    });
+                    return (null, StandardErrorHelpers.CreateBadRequest(
+                        context,
+                        $"Replica '{replicaId}' extract exceeds the configured per-layer change limit.",
+                        [$"Layer {layer.PublicLayerId} exceeded {queryLimits.MaxRecordCount} adds, updates, or deletes in a single extract."]));
                 }
-                else
+
+                // Query actual features for inserts and updates
+                GeoServicesFeature[]? addFeatures = null;
+                if (insertIds.Length > 0)
                 {
-                    layerChanges.Add(new LayerChanges
-                    {
-                        Id = layer.PublicLayerId,
-                        Adds = 0,
-                        Updates = 0,
-                        Deletes = 0
-                    });
+                    var query = new FeatureQuery { ObjectIds = ImmutableArray.Create(insertIds) };
+                    var result = await featureReader.QueryAsync(layer.StorageLayerId, query, cancellationToken);
+                    addFeatures = result.Items
+                        .Select(f => ConvertFeatureToGeoServices(f, layer.Resource))
+                        .ToArray();
                 }
+
+                GeoServicesFeature[]? updateFeatures = null;
+                if (updateIds.Length > 0)
+                {
+                    var query = new FeatureQuery { ObjectIds = ImmutableArray.Create(updateIds) };
+                    var result = await featureReader.QueryAsync(layer.StorageLayerId, query, cancellationToken);
+                    updateFeatures = result.Items
+                        .Select(f => ConvertFeatureToGeoServices(f, layer.Resource))
+                        .ToArray();
+                }
+
+                layerChanges.Add(new LayerChanges
+                {
+                    Id = layer.PublicLayerId,
+                    Adds = insertIds.Length,
+                    Updates = updateIds.Length,
+                    Deletes = deleteIds.Length,
+                    AddFeatures = addFeatures,
+                    UpdateFeatures = updateFeatures,
+                    DeleteIds = deleteIds.Length > 0 ? deleteIds : null
+                });
+            }
+            else
+            {
+                layerChanges.Add(new LayerChanges
+                {
+                    Id = layer.PublicLayerId,
+                    Adds = 0,
+                    Updates = 0,
+                    Deletes = 0
+                });
             }
         }
 
-        var minGen = replica.LastSyncGeneration;
-        var maxGen = currentGen;
-
-        var response = new ExtractChangesResponse
-        {
-            Success = true,
-            ReplicaId = replicaId,
-            LayerChanges = layerChanges.ToArray(),
-            ServerGen = currentGen,
-            MinServerGen = minGen,
-            MaxServerGen = maxGen
-        };
-
-        return Results.Json(response, FeatureServerJsonContext.Default.ExtractChangesResponse, contentType: "application/json");
+        return (layerChanges.ToArray(), null);
     }
 
     /// <summary>
@@ -846,7 +886,11 @@ internal static partial class FeatureServerEndpoints
 
         var syncDirection = GetValueString(values, "syncDirection") ?? "download";
         var editsJson = GetValueString(values, "edits");
+        // "upload" and "bidirectional" carry client edits to apply; "download" and "bidirectional" return
+        // a server-to-client delta. The default (download) delivers the delta only.
         var isUploadDirection = !string.Equals(syncDirection, "download", StringComparison.OrdinalIgnoreCase);
+        var isDownloadDirection = string.Equals(syncDirection, "download", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(syncDirection, "bidirectional", StringComparison.OrdinalIgnoreCase);
 
         // Esri sync protocol: the client echoes the server generation it actually
         // received (replicaServerGen, from the preceding extractChanges serverGen).
@@ -959,21 +1003,60 @@ internal static partial class FeatureServerEndpoints
 
         // The server generation cursor recorded for the replica. After an upload we record the
         // post-apply generation as both the last-sync and upload-base cursor so a subsequent download
-        // delta excludes the client's own just-applied edits. Download-only syncs advance the
-        // last-sync cursor to the generation the client acknowledged receiving (replicaServerGen,
-        // clamped to the live generation); only when the client supplies no acknowledgment do we
-        // fall back to the live current generation.
+        // delta excludes the client's own just-applied edits. Download/bidirectional syncs advance the
+        // last-sync cursor to the live current generation once the server-to-client delta below has been
+        // assembled, so the replica receives every change committed since its last sync exactly once.
         long currentGen;
-        if (didUpload)
+        if (didUpload && !isDownloadDirection)
         {
             currentGen = uploadServerGen;
         }
         else
         {
-            var liveGen = await changeTracker.GetCurrentGenerationAsync(cancellationToken);
-            currentGen = acknowledgedServerGen is { } acknowledged
-                ? Math.Min(acknowledged, liveGen)
-                : liveGen;
+            currentGen = await changeTracker.GetCurrentGenerationAsync(cancellationToken);
+        }
+
+        // Download / bidirectional sync: assemble the server-to-client delta and deliver it in the
+        // response. This is the core of the #1775 fix — previously the download direction returned
+        // success with no edits and never advanced the serverGen, so server-side changes committed after
+        // createReplica were never delivered. The delta is assembled with the same change-tracking engine
+        // extractChanges uses. The "since" cursor is the generation the client says it already holds
+        // (replicaServerGen, the serverGen from its preceding extractChanges/createReplica) when supplied,
+        // otherwise the replica's recorded last-sync generation; an upload in the same bidirectional call
+        // moves that baseline to the post-apply generation so the replica does not receive its own edits.
+        LayerChanges[]? downloadEdits = null;
+        ReplicaInfoLayerServerGeneration[]? downloadLayerServerGens = null;
+        if (isDownloadDirection)
+        {
+            var downloadSinceGen = didUpload
+                ? uploadServerGen
+                : acknowledgedServerGen is { } acknowledged
+                    ? Math.Min(acknowledged, currentGen)
+                    : replica.LastSyncGeneration;
+
+            var (assembledEdits, deltaError) = await BuildReplicaLayerChangesAsync(
+                context,
+                replicaId,
+                downloadSinceGen,
+                replicaLayers,
+                changeTracker,
+                cancellationToken);
+            if (deltaError is not null)
+            {
+                return deltaError;
+            }
+
+            downloadEdits = assembledEdits;
+            downloadLayerServerGens = replicaLayers
+                .Select(layer => layer.PublicLayerId)
+                .Distinct()
+                .Select(id => new ReplicaInfoLayerServerGeneration
+                {
+                    Id = id,
+                    ServerGen = currentGen,
+                    ServerSibGen = currentGen
+                })
+                .ToArray();
         }
 
         var updated = replica with
@@ -1005,6 +1088,8 @@ internal static partial class FeatureServerEndpoints
             ReplicaId = replicaId,
             SyncDirection = syncDirection,
             ServerGen = currentGen,
+            Edits = downloadEdits,
+            LayerServerGens = downloadLayerServerGens,
             AppliedAdds = appliedAdds,
             AppliedUpdates = appliedUpdates,
             AppliedDeletes = appliedDeletes,
