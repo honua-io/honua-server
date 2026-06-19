@@ -788,6 +788,7 @@ internal sealed class CapabilityManifestService(
             MetadataV2PublicationType.EsriFeatureLayer => "esri-feature-layer",
             MetadataV2PublicationType.EsriMapLayer => "esri-map-layer",
             MetadataV2PublicationType.EsriImageLayer => "esri-image-layer",
+            MetadataV2PublicationType.EsriVectorTileLayer => "esri-vector-tile-layer",
             MetadataV2PublicationType.StacCollection => "stac-collection",
             MetadataV2PublicationType.DcatDistribution => "dcat-distribution",
             MetadataV2PublicationType.OgcRecord => "ogc-record",

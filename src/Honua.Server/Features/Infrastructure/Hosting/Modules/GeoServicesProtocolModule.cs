@@ -5,6 +5,7 @@ using Honua.Protocols.GeoServices.FeatureServer;
 using Honua.Protocols.GeoServices.ImageServer;
 using Honua.Protocols.GeoServices.MapServer;
 using Honua.Protocols.GeoServices.Sharing;
+using Honua.Protocols.GeoServices.VectorTileServer;
 using Honua.Protocols.GeoServices.VersionManagementServer;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
@@ -44,6 +45,7 @@ public sealed class GeoServicesProtocolModule : IHonuaProtocolModule
         endpoints.MapFeatureServerEndpoints();
         endpoints.MapMapServerEndpoints();
         endpoints.MapImageServerEndpoints();
+        endpoints.MapVectorTileServerEndpoints();
         endpoints.MapSharingRestEndpoints();
         endpoints.MapVersionManagementServerEndpoints();
     }
