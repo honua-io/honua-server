@@ -683,6 +683,16 @@ internal sealed partial class FeatureServerQueryHandler(
                 FeatureServerLog.QueryExecuted(_logger, "count", serviceId, layerId, stopwatch.Elapsed.TotalMilliseconds);
                 var safeCount = (int)Math.Min(count, int.MaxValue);
                 HonuaTelemetry.SetSuccess(featureActivity, safeCount);
+
+                // f=pbf must return a protobuf-encoded count (CountResult arm of the
+                // FeatureCollectionPBuffer QueryResult oneof), mirroring the feature path;
+                // otherwise the count branch silently degrades to JSON. (#1775)
+                if (string.Equals(format, "pbf", StringComparison.OrdinalIgnoreCase))
+                {
+                    var (countPayload, countContentType) = PbfQueryFormatter.FormatCountAsPbf(count);
+                    return await CreateCachedBytesResultAsync(countPayload, countContentType);
+                }
+
                 var response = new QueryResponse
                 {
                     Count = count,
