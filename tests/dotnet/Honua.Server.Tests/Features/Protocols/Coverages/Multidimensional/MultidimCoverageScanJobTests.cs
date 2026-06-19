@@ -22,6 +22,9 @@ public sealed class MultidimCoverageScanJobTests
     private const string GdalMdimInfoJson =
         """{"type":"group","driver":"netCDF","name":"/","arrays":{"sst":{"datatype":"Float32","dimensions":["/time"],"dimension_size":[3],"block_size":[1],"unit":"degC"}}}""";
 
+    private const string GdalInfoJson =
+        """{"geoTransform":[-156.55,0.1,0.0,20.85,0.0,-0.1],"cornerCoordinates":{"upperLeft":[-156.55,20.85],"lowerRight":[-156.05,20.45]},"metadata":{"":{"NETCDF_DIM_EXTRA":"{time}","time#units":"hours since 2026-01-01 00:00:00","NETCDF_DIM_time_VALUES":"{0,6,12}"}}}""";
+
     private static MultidimensionalCoverageRegistration Registration(long id = 7) => new()
     {
         Id = id,
@@ -81,10 +84,29 @@ public sealed class MultidimCoverageScanJobTests
     }
 
     [UnitTest]
-    public void TryMapArtifact_DecodesDataUriAndMaps()
+    public void TryMapArtifact_DecodesEnvelopeMapsAndEnriches()
     {
+        var envelope =
+            $$"""{"mdiminfo":{{GdalMdimInfoJson}},"info":{{GdalInfoJson}}}""";
         var artifact = "data:application/json;base64," +
-            Convert.ToBase64String(Encoding.UTF8.GetBytes(GdalMdimInfoJson));
+            Convert.ToBase64String(Encoding.UTF8.GetBytes(envelope));
+
+        var metadata = MultidimCoverageScanJob.TryMapArtifact(
+            artifact, MultidimensionalCoverageFormat.NetCdf4, Array.Empty<string>());
+
+        metadata.Should().NotBeNull();
+        metadata!.Variables.Should().ContainSingle().Which.Name.Should().Be("sst");
+        // Enrichment from the gdalinfo block fills extent + resolution.
+        metadata.Extent.Should().NotBeNull();
+        metadata.Resolution.X.Should().BeApproximately(0.1, 1e-9);
+    }
+
+    [UnitTest]
+    public void TryMapArtifact_MdimOnlyEnvelope_StillMaps()
+    {
+        var envelope = $$"""{"mdiminfo":{{GdalMdimInfoJson}}}""";
+        var artifact = "data:application/json;base64," +
+            Convert.ToBase64String(Encoding.UTF8.GetBytes(envelope));
 
         var metadata = MultidimCoverageScanJob.TryMapArtifact(
             artifact, MultidimensionalCoverageFormat.NetCdf4, Array.Empty<string>());

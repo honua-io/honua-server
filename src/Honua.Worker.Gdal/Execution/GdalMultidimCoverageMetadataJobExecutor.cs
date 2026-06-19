@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text;
+using System.Text.Json;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Domain;
@@ -130,9 +131,23 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-            await context.ReportProgressAsync(80, "Publishing coverage metadata", cancellationToken).ConfigureAwait(false);
+            await context.ReportProgressAsync(70, "Reading coverage extent", cancellationToken).ConfigureAwait(false);
 
-            var payload = Encoding.UTF8.GetBytes(result.StandardOutput);
+            // Best-effort enrichment: gdalmdiminfo carries structure but no coordinate
+            // values, so a classic gdalinfo pass supplies the spatial extent, cell
+            // resolution, and temporal/vertical bounds. A failure here is non-fatal —
+            // the server still materializes structural metadata from gdalmdiminfo.
+            string? infoJson = null;
+            var infoResult = await RunInfoAsync(runner, vsiPath, workspace, linked.Token).ConfigureAwait(false);
+            if (infoResult is { Succeeded: true } && !string.IsNullOrWhiteSpace(infoResult.StandardOutput))
+            {
+                infoJson = infoResult.StandardOutput;
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            await context.ReportProgressAsync(85, "Publishing coverage metadata", cancellationToken).ConfigureAwait(false);
+
+            var payload = Encoding.UTF8.GetBytes(BuildCombinedArtifact(result.StandardOutput, infoJson));
             if (payload.Length > opts.MaxArtifactBytes)
             {
                 Log.ArtifactTooLarge(logger, job.OperationId, payload.Length, opts.MaxArtifactBytes);
@@ -151,6 +166,56 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
         {
             GdalScratch.TryCleanup(workspace, logger);
         }
+    }
+
+    private static async Task<GdalCommandResult?> RunInfoAsync(
+        IGdalCommandRunner runner,
+        string vsiPath,
+        string workspace,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await runner.RunAsync("gdalinfo", new List<string> { "-json", vsiPath }, workspace, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return null;
+        }
+    }
+
+    private static string BuildCombinedArtifact(string mdimJson, string? infoJson)
+    {
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            writer.WriteStartObject();
+
+            writer.WritePropertyName("mdiminfo");
+            using (var mdim = JsonDocument.Parse(mdimJson))
+            {
+                mdim.RootElement.WriteTo(writer);
+            }
+
+            if (!string.IsNullOrWhiteSpace(infoJson))
+            {
+                try
+                {
+                    using var info = JsonDocument.Parse(infoJson);
+                    writer.WritePropertyName("info");
+                    info.RootElement.WriteTo(writer);
+                }
+                catch (JsonException)
+                {
+                    // gdalinfo emitted non-JSON; skip enrichment payload.
+                }
+            }
+
+            writer.WriteEndObject();
+        }
+
+        return Encoding.UTF8.GetString(stream.ToArray());
     }
 
     private static partial class Log

@@ -49,9 +49,11 @@ public sealed class GdalMultidimCoverageExecutorTests
 
         result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
 
-        var invocation = runner.Invocations.Should().ContainSingle().Subject;
-        invocation.Tool.Should().Be("gdalmdiminfo");
-        invocation.Arguments.Should().ContainSingle().Which.Should().Be("/vsis3/honua-cubes/maui/sst.nc");
+        // gdalmdiminfo (structure) runs first, then a best-effort gdalinfo (extent).
+        var mdim = runner.Invocations[0];
+        mdim.Tool.Should().Be("gdalmdiminfo");
+        mdim.Arguments.Should().ContainSingle().Which.Should().Be("/vsis3/honua-cubes/maui/sst.nc");
+        runner.Invocations.Should().Contain(i => i.Tool == "gdalinfo");
 
         context.Artifacts.Should().ContainSingle()
             .Which.Should().StartWith("data:application/json");

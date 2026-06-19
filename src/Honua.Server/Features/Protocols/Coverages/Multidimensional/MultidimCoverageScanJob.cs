@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text;
+using System.Text.Json;
 using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
@@ -123,8 +124,10 @@ internal static class MultidimCoverageScanJob
     }
 
     /// <summary>
-    /// Decodes the worker's <c>data:</c> artifact and maps the <c>gdalmdiminfo</c>
-    /// JSON into canonical coverage metadata. Returns null when the artifact is
+    /// Decodes the worker's <c>data:</c> artifact (a <c>{ "mdiminfo", "info" }</c>
+    /// envelope), maps the <c>gdalmdiminfo</c> structure into canonical coverage
+    /// metadata, and enriches it with extent/temporal bounds from the
+    /// <c>gdalinfo</c> document when present. Returns null when the artifact is
     /// missing or unparseable.
     /// </summary>
     public static MultidimensionalCoverageMetadata? TryMapArtifact(
@@ -139,7 +142,26 @@ internal static class MultidimCoverageScanJob
 
         try
         {
-            return GdalMultidimensionalMetadataMapper.Map(json, format, variables);
+            using var document = JsonDocument.Parse(json);
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object ||
+                !root.TryGetProperty("mdiminfo", out var mdim))
+            {
+                return null;
+            }
+
+            var metadata = GdalMultidimensionalMetadataMapper.Map(mdim.GetRawText(), format, variables);
+
+            if (root.TryGetProperty("info", out var info) && info.ValueKind == JsonValueKind.Object)
+            {
+                metadata = GdalInfoCoverageEnricher.Enrich(metadata, info.GetRawText());
+            }
+
+            return metadata;
+        }
+        catch (JsonException)
+        {
+            return null;
         }
         catch (InvalidOperationException)
         {

@@ -291,8 +291,9 @@ public class MultidimensionalCoverageEndpointTests : IAsyncLifetime
             // Simulate the GDAL worker completing the job with a gdalmdiminfo artifact.
             var job = await _jobStore.GetAsync(jobId);
             job.Should().NotBeNull();
+            var envelope = $$"""{"mdiminfo":{{GdalMdimInfoJson}}}""";
             var artifact = "data:application/json;base64," +
-                Convert.ToBase64String(Encoding.UTF8.GetBytes(GdalMdimInfoJson));
+                Convert.ToBase64String(Encoding.UTF8.GetBytes(envelope));
             await _jobStore.SetAsync(job! with
             {
                 Status = ExecutionJobStatus.Succeeded,
