@@ -234,8 +234,20 @@ internal sealed class PostgresRasterStore : IRasterStore
             extraParams.Add(("@bands", bands));
         }
 
+        // 1a-i. Apply band arithmetic (renderingRule BandArithmetic) BETWEEN the band
+        // selection and the stretch. This collapses two source bands into a single
+        // analytic band (e.g. NDVI) via a vetted, hardcoded ST_MapAlgebra formula.
+        if (query.BandArithmetic is { } bandArithmetic)
+        {
+            rasterExpr = BuildBandArithmeticExpression(rasterExpr, bandArithmetic);
+        }
+
         // 1b. Apply display stretch (renderingRule Stretch) on the selected bands.
-        if (query.Stretch is { } stretch)
+        // The persisted whole-raster band statistics describe the source pixels, not a
+        // band-math output, so when BandArithmetic is set only an explicitly-supplied
+        // stretch range is honoured; auto-derived bounds are skipped to avoid mis-stretching
+        // the analytic band (NDVI's [-1, 1] range pairs with an explicit Colormap instead).
+        if (query.Stretch is { } stretch && CanResolveStretchBounds(stretch, query.BandArithmetic))
         {
             var stretchBounds = await ResolveStretchBoundsAsync(
                 stretch, layerId, rasterId, query.Bands, cancellationToken).ConfigureAwait(false);
@@ -483,6 +495,47 @@ internal sealed class PostgresRasterStore : IRasterStore
 
     private static string FormatStretchNumber(double value)
         => value.ToString("G17", CultureInfo.InvariantCulture);
+
+    // ----- Band arithmetic execution (renderingRule BandArithmetic) -----------
+    // Collapses two selected source bands into a single analytic band using a vetted,
+    // hardcoded ST_MapAlgebra formula selected by RasterBandArithmeticMethod. The only
+    // caller-influenced tokens are the two band ordinals, which are validated > 0 and
+    // formatted with InvariantCulture; the per-pixel formula text is a compile-time
+    // constant, so this stays injection-safe (matching the stretch/colormap convention).
+
+    /// <summary>
+    /// Wraps <paramref name="baseExpr"/> in a two-raster <c>ST_MapAlgebra</c> that derives a
+    /// single analytic band (e.g. NDVI) from the infrared and visible source bands named by
+    /// <paramref name="ba"/>. Band ordinals are validated to be positive; the per-pixel
+    /// formula is a constant, so the result is injection-safe.
+    /// </summary>
+    internal static string BuildBandArithmeticExpression(string baseExpr, RasterBandArithmetic ba)
+    {
+        if (ba.VisibleBand <= 0 || ba.InfraredBand <= 0)
+        {
+            throw new ArgumentException("Band arithmetic band numbers must be positive.", nameof(ba));
+        }
+
+        var nir = ba.InfraredBand.ToString(CultureInfo.InvariantCulture);
+        var vis = ba.VisibleBand.ToString(CultureInfo.InvariantCulture);
+
+        // The formula text is a compile-time constant; only the band ordinals vary.
+        var formula = ba.Method switch
+        {
+            RasterBandArithmeticMethod.Ndvi =>
+                "([rast1.val] - [rast2.val]) / NULLIF(([rast1.val] + [rast2.val]), 0)",
+            _ => throw new ArgumentException(
+                $"Unsupported band arithmetic method: {ba.Method}", nameof(ba)),
+        };
+
+        return $"ST_MapAlgebra({baseExpr}, {nir}, {baseExpr}, {vis}, '{formula}', '32BF', 'INTERSECTION', NULL, NULL)";
+    }
+
+    // Persisted band statistics describe the source pixels, not a band-math output. When
+    // BandArithmetic is set, only an explicitly-supplied stretch range (Statistics on the
+    // rule) is meaningful over the derived band; auto-derived bounds are skipped.
+    private static bool CanResolveStretchBounds(RasterStretch stretch, RasterBandArithmetic? bandArithmetic)
+        => bandArithmetic is null || (stretch.StatisticsMin is not null && stretch.StatisticsMax is not null);
 
     // ----- Clip execution (export bbox + renderingRule Clip raster function) ---
     // Builds the ST_Clip wrapper for a clip region, reprojecting the clip geometry into the

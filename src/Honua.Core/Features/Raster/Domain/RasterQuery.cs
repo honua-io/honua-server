@@ -68,6 +68,14 @@ public readonly record struct RasterQuery
     public int? OutputHeight { get; init; }
 
     /// <summary>
+    /// Optional two-raster band-arithmetic operation (e.g. NDVI) applied to the
+    /// selected bands before <see cref="Stretch"/>. When set, the raster store
+    /// composes a single analytic band from the two source bands using a vetted,
+    /// hardcoded formula. When <c>null</c> no band arithmetic is applied.
+    /// </summary>
+    public RasterBandArithmetic? BandArithmetic { get; init; }
+
+    /// <summary>
     /// Optional display stretch applied to pixel values before encoding. When
     /// set, each selected band is linearly rescaled to the 8-bit display range
     /// using bounds derived from the chosen <see cref="RasterStretchType"/>.

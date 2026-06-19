@@ -34,6 +34,7 @@ using Honua.Server.Features.Styling;
 using Honua.Protocols.GeoServices.MapServer;
 using Honua.Protocols.GeoServices.NAServer;
 using Honua.Protocols.GeoServices.Sharing;
+using Honua.Protocols.GeoServices.VectorTileServer;
 using Honua.Protocols.GeoServices.VersionManagementServer;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.NlQuery;
@@ -209,6 +210,7 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapSharingRestEndpoints();
         endpoints.MapImageServerEndpoints();
         endpoints.MapMapServerEndpoints();
+        endpoints.MapVectorTileServerEndpoints();
         endpoints.MapOgcClassicEndpoints();
         endpoints.MapAttachmentEndpoints();
         endpoints.MapTileJsonEndpoints();

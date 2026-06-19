@@ -22,6 +22,7 @@ internal static class GeoservicesCatalogEndpoints
     private const string FeatureServerProtocolName = "FeatureServer";
     private const string MapServerProtocolName = "MapServer";
     private const string ImageServerProtocolName = "ImageServer";
+    private const string VectorTileServerProtocolName = "VectorTileServer";
 
     /// <summary>
     /// Maps root catalog endpoints under /rest.
@@ -32,7 +33,7 @@ internal static class GeoservicesCatalogEndpoints
             .WithDisplayName("GeoServices Services Directory")
             .WithName("GeoServicesServicesDirectory")
             .WithSummary("List available GeoServices endpoints")
-            .WithDescription("Returns FeatureServer, MapServer, and ImageServer service directory entries.")
+            .WithDescription("Returns FeatureServer, MapServer, ImageServer, and VectorTileServer service directory entries.")
             .WithTags("GeoServices Catalog")
             .CacheOutput("ServiceDirectory")
             .Produces<ServicesDirectoryResponse>(StatusCodes.Status200OK, JsonContentType)
@@ -204,8 +205,9 @@ internal static class GeoservicesCatalogEndpoints
 
     /// <summary>
     /// Maps an Esri-family primary protocol to the directory-entry "type" string the
-    /// GeoServices REST catalog exposes. Returns false for non-Esri protocols
-    /// (OGC API Features, STAC, etc.) which are surfaced through other catalogs.
+    /// GeoServices REST catalog exposes (FeatureServer, MapServer, ImageServer,
+    /// VectorTileServer). Returns false for non-Esri protocols (OGC API Features, STAC, etc.)
+    /// which are surfaced through other catalogs.
     /// </summary>
     private static bool TryMapServiceType(string? primaryProtocol, out string directoryType)
     {
@@ -219,6 +221,9 @@ internal static class GeoservicesCatalogEndpoints
                 return true;
             case ImageServerProtocolName:
                 directoryType = "ImageServer";
+                return true;
+            case VectorTileServerProtocolName:
+                directoryType = "VectorTileServer";
                 return true;
             default:
                 directoryType = string.Empty;

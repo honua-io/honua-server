@@ -377,4 +377,112 @@ public sealed class ImageServerRenderingRuleMappingTests
         mapping.Supported.Should().BeFalse();
         mapping.IsNotImplemented.Should().BeFalse();
     }
+
+    [UnitTest]
+    public void MapRenderingRule_BandArithmeticNdvi_MapsToOneBasedBands()
+    {
+        var document = Parse(
+            """{"rasterFunction":"BandArithmetic","rasterFunctionArguments":{"Method":3,"BandIndexes":[2,3]}}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeTrue();
+        mapping.BandArithmetic.Should().NotBeNull();
+        // 0-based [2,3] -> 1-based visible=3, infrared=4.
+        mapping.BandArithmetic!.Value.VisibleBand.Should().Be(3);
+        mapping.BandArithmetic.Value.InfraredBand.Should().Be(4);
+        mapping.BandArithmetic.Value.Method.Should().Be(RasterBandArithmeticMethod.Ndvi);
+    }
+
+    [UnitTest]
+    public void MapRenderingRule_BandArithmeticDefaultsToNdviWhenMethodOmitted()
+    {
+        var document = Parse(
+            """{"rasterFunction":"BandArithmetic","rasterFunctionArguments":{"BandIndexes":[0,1]}}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeTrue();
+        mapping.BandArithmetic!.Value.Method.Should().Be(RasterBandArithmeticMethod.Ndvi);
+        mapping.BandArithmetic.Value.VisibleBand.Should().Be(1);
+        mapping.BandArithmetic.Value.InfraredBand.Should().Be(2);
+    }
+
+    [UnitTest]
+    public void MapRenderingRule_BandArithmeticAcceptsBandIDsAlias()
+    {
+        var document = Parse(
+            """{"rasterFunction":"BandArithmetic","rasterFunctionArguments":{"Method":3,"BandIDs":[0,1]}}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeTrue();
+        mapping.BandArithmetic.Should().NotBeNull();
+    }
+
+    [UnitTest]
+    public void MapRenderingRule_BandArithmeticUnsupportedMethod_IsNotImplemented()
+    {
+        // Method 1 (e.g. simple band ratio / NDVI variants other than NDVI) is recognized
+        // but not implemented in the first cut.
+        var document = Parse(
+            """{"rasterFunction":"BandArithmetic","rasterFunctionArguments":{"Method":1,"BandIndexes":[0,1]}}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeFalse();
+        mapping.IsNotImplemented.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void MapRenderingRule_BandArithmeticWithoutBandIndexes_IsInvalid()
+    {
+        var document = Parse(
+            """{"rasterFunction":"BandArithmetic","rasterFunctionArguments":{"Method":3}}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeFalse();
+        mapping.IsNotImplemented.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void MapRenderingRule_BandArithmeticWithWrongBandCount_IsInvalid()
+    {
+        var document = Parse(
+            """{"rasterFunction":"BandArithmetic","rasterFunctionArguments":{"Method":3,"BandIndexes":[0,1,2]}}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeFalse();
+        mapping.IsNotImplemented.Should().BeFalse();
+        mapping.Reason.Should().Contain("exactly two");
+    }
+
+    [UnitTest]
+    public void MapRenderingRule_BandArithmeticWithNegativeIndex_IsInvalid()
+    {
+        var document = Parse(
+            """{"rasterFunction":"BandArithmetic","rasterFunctionArguments":{"Method":3,"BandIndexes":[-1,1]}}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeFalse();
+        mapping.IsNotImplemented.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void MapRenderingRule_StretchWrappingBandArithmetic_ResolvesBoth()
+    {
+        var document = Parse(
+            """{"rasterFunction":"Stretch","rasterFunctionArguments":{"StretchType":5,"Statistics":[[-1,1]],"Raster":{"rasterFunction":"BandArithmetic","rasterFunctionArguments":{"Method":3,"BandIndexes":[0,1]}}}}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeTrue();
+        mapping.Stretch!.Value.StretchType.Should().Be(RasterStretchType.MinMax);
+        mapping.BandArithmetic.Should().NotBeNull();
+        mapping.BandArithmetic!.Value.VisibleBand.Should().Be(1);
+        mapping.BandArithmetic.Value.InfraredBand.Should().Be(2);
+    }
 }

@@ -326,6 +326,23 @@ public interface IWorkflowOperationReconciler
 }
 
 /// <summary>
+/// Reconciles durable metadata-release workflow operations through the additive layer-evolution
+/// lifecycle. Distinct from <see cref="IWorkflowOperationReconciler"/> so the deploy and
+/// metadata-release reconcilers can be registered and resolved independently.
+/// </summary>
+public interface IMetadataReleaseOperationReconciler
+{
+    /// <summary>
+    /// Reconciles a metadata-release workflow operation by identifier.
+    /// </summary>
+    /// <param name="operationId">Metadata-release workflow operation identifier.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task ReconcileMetadataReleaseAsync(
+        string operationId,
+        CancellationToken cancellationToken = default);
+}
+
+/// <summary>
 /// Reconciles durable execution jobs such as geoprocessing and ETL against external provider state.
 /// </summary>
 public interface IExecutionJobReconciler
