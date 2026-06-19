@@ -9,6 +9,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Core.Features.Raster.Multidimensional.Domain;
 
 namespace Honua.Core.Features.Raster.ZarrParser;
 
@@ -72,7 +73,7 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
             throw new InvalidDataException("Zarr store contains no arrays.");
         }
 
-        var (srid, extent, primary, xDim, yDim, tDim) = ResolveStoreGeoreferencing(attrsDoc, arrays);
+        var (srid, extent, primary, xDim, yDim, tDim, temporal) = ResolveStoreGeoreferencing(attrsDoc, arrays);
 
         return new ZarrStoreMetadata(
             ZarrFormat: arrays[0].ZarrFormat,
@@ -82,7 +83,8 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
             PrimaryVariable: primary,
             SpatialXDimension: xDim,
             SpatialYDimension: yDim,
-            TemporalDimension: tDim);
+            TemporalDimension: tDim,
+            Temporal: temporal);
     }
 
     private static string NormalizeRootPath(string rootPath)
@@ -381,7 +383,7 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
         return fallback;
     }
 
-    private static (int Srid, RasterExtent Extent, string? PrimaryVariable, string? XDim, string? YDim, string? TDim)
+    private static (int Srid, RasterExtent Extent, string? PrimaryVariable, string? XDim, string? YDim, string? TDim, TemporalExtent? Temporal)
         ResolveStoreGeoreferencing(JsonDocument? attrsDoc, List<ZarrArrayMetadata> arrays)
     {
         var srid = 0;
@@ -391,6 +393,7 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
         string? xDim = null;
         string? yDim = null;
         string? tDim = null;
+        TemporalExtent? temporal = null;
 
         if (attrsDoc is not null && attrsDoc.RootElement.ValueKind == JsonValueKind.Object)
         {
@@ -431,6 +434,7 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
             xDim = ReadOptionalString(root, "x_dimension");
             yDim = ReadOptionalString(root, "y_dimension");
             tDim = ReadOptionalString(root, "t_dimension");
+            temporal = ResolveTemporalExtent(root, tDim, arrays);
         }
 
         if (string.IsNullOrEmpty(primary) && arrays.Count > 0)
@@ -447,7 +451,105 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
             Srid = srid
         };
 
-        return (srid, extent, primary, xDim, yDim, tDim);
+        return (srid, extent, primary, xDim, yDim, tDim, temporal);
+    }
+
+    /// <summary>
+    /// Builds the store temporal extent from optional <c>.zattrs</c> keys
+    /// <c>t_start</c>, <c>t_end</c>, and a step expressed as either
+    /// <c>t_step</c> (ISO-8601 duration / RFC3339-parseable timespan) or
+    /// <c>t_step_seconds</c> (numeric seconds). Step count is taken from the
+    /// time dimension's length on any array that declares it. Returns null when
+    /// the required attributes are absent or unresolvable.
+    /// </summary>
+    private static TemporalExtent? ResolveTemporalExtent(JsonElement root, string? tDim, List<ZarrArrayMetadata> arrays)
+    {
+        if (string.IsNullOrEmpty(tDim))
+        {
+            return null;
+        }
+
+        if (!TryReadDateTimeOffset(root, "t_start", out var start) ||
+            !TryReadDateTimeOffset(root, "t_end", out var end))
+        {
+            return null;
+        }
+
+        var stepCount = ResolveTemporalStepCount(tDim, arrays);
+        if (stepCount <= 0)
+        {
+            return null;
+        }
+
+        // The step attributes are validated for consistency but the indexer
+        // derives spacing from (start, end, stepCount); we only require that a
+        // step source is present so irregular axes opt out explicitly.
+        if (!TryReadStepSeconds(root, out _))
+        {
+            return null;
+        }
+
+        return new TemporalExtent(start, end, stepCount);
+    }
+
+    private static long ResolveTemporalStepCount(string tDim, List<ZarrArrayMetadata> arrays)
+    {
+        foreach (var array in arrays)
+        {
+            for (var i = 0; i < array.DimensionNames.Length; i++)
+            {
+                if (string.Equals(array.DimensionNames[i], tDim, StringComparison.OrdinalIgnoreCase))
+                {
+                    return array.Shape[i];
+                }
+            }
+        }
+        return 0;
+    }
+
+    private static bool TryReadDateTimeOffset(JsonElement root, string property, out DateTimeOffset value)
+    {
+        value = default;
+        if (!root.TryGetProperty(property, out var el) || el.ValueKind != JsonValueKind.String)
+        {
+            return false;
+        }
+        return DateTimeOffset.TryParse(
+            el.GetString(),
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+            out value);
+    }
+
+    private static bool TryReadStepSeconds(JsonElement root, out double seconds)
+    {
+        seconds = 0;
+        if (root.TryGetProperty("t_step_seconds", out var secEl) &&
+            secEl.ValueKind == JsonValueKind.Number &&
+            secEl.TryGetDouble(out var parsedSeconds) &&
+            parsedSeconds > 0)
+        {
+            seconds = parsedSeconds;
+            return true;
+        }
+
+        if (root.TryGetProperty("t_step", out var stepEl))
+        {
+            if (stepEl.ValueKind == JsonValueKind.Number && stepEl.TryGetDouble(out var numericStep) && numericStep > 0)
+            {
+                seconds = numericStep;
+                return true;
+            }
+            if (stepEl.ValueKind == JsonValueKind.String &&
+                TimeSpan.TryParse(stepEl.GetString(), CultureInfo.InvariantCulture, out var span) &&
+                span.Ticks > 0)
+            {
+                seconds = span.TotalSeconds;
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static string? ReadOptionalString(JsonElement root, string property)

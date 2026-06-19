@@ -1456,6 +1456,50 @@
       ]
     },
     {
+      "surfaceId": "vector-tile-server",
+      "displayName": "GeoServices REST VectorTileServer",
+      "surfaceKind": "http-route-family",
+      "protocol": "GeoServices REST VectorTileServer",
+      "canonicalIdentifier": "/rest/services/{serviceId}/VectorTileServer",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [],
+      "endpointExactMatches": [],
+      "endpointContains": [
+        "/VectorTileServer"
+      ],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage and deployed-route drift checks for the VectorTileServer service-metadata adapter",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "scenario-depth",
+          "proofMechanism": "Tile data (tile/{z}/{y}/{x}.pbf), style/resources (default styles + root.json, scoped-minimal sprites and glyph ranges), and tileMap routes are implemented as thin adapters over the shared vector-tile pipeline; sprite/glyphs are referenced from the composed style only when it has symbol layers.",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "src/Honua.Protocols.GeoServices/VectorTileServer/VectorTileServerEndpoints.Tile.cs",
+            "src/Honua.Protocols.GeoServices/VectorTileServer/VectorTileServerEndpoints.Resources.cs",
+            "src/Honua.Protocols.GeoServices/VectorTileServer/VectorTileServerEndpoints.TileMap.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
       "surfaceId": "map-server",
       "displayName": "GeoServices REST MapServer",
       "surfaceKind": "http-route-family",
