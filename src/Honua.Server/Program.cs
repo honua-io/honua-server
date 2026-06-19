@@ -139,7 +139,9 @@ builder.Services.AddDataProtection();
 var useAspire = builder.Configuration.GetSection("Aspire").Exists();
 var redisConnectionString = builder.Configuration.GetConnectionString("redis")
     ?? builder.Configuration["Aspire:StackExchange:Redis:ConnectionString"];
-var redisCacheEntitled = await StartupConfigurationHelpers.IsRedisCacheEntitledAsync(builder.Configuration);
+var redisCacheEntitled = await StartupConfigurationHelpers.IsRedisCacheEntitledAsync(
+    builder.Configuration,
+    builder.Environment);
 var redisCacheConnectionString = redisCacheEntitled ? redisConnectionString : null;
 var redisInfrastructureConnectionString = RedisConnectionSelector.SelectInfrastructureConnectionString(
     redisConnectionString,
@@ -399,10 +401,35 @@ if (connectedRedis != null)
     builder.Services.AddSingleton<IWorkflowOperationStore, RedisWorkflowOperationStore>();
     builder.Services.AddSingleton<IWorkflowOperationReconciler, DeployWorkflowReconciler>();
     builder.Services.AddSingleton<IExecutionJobReconciler, ExecutionJobReconciler>();
+
+    // Additive metadata-release layer-evolution lifecycle: create service, stage-action services,
+    // reconciler, and its background loop. Sibling to the deploy reconciler; processes only
+    // WorkflowOperationKind.MetadataRelease.
+    builder.Services.AddSingleton<Honua.ControlPlane.MetadataReleaseControlService>();
+    builder.Services.AddSingleton<
+        Honua.Core.Features.ControlPlane.Abstractions.IMetadataReleasePreflightGate,
+        Honua.ControlPlane.MetadataReleasePreflightGate>();
+    builder.Services.AddSingleton<
+        Honua.Core.Features.ControlPlane.Abstractions.IMetadataReleaseScriptExecutor,
+        Honua.ControlPlane.MetadataReleaseScriptExecutor>();
+    builder.Services.AddSingleton<
+        Honua.Core.Features.ControlPlane.Abstractions.IMetadataReleaseDataJobDispatcher,
+        Honua.ControlPlane.MetadataReleaseDataJobDispatcher>();
+    builder.Services.AddSingleton<
+        Honua.Core.Features.ControlPlane.Abstractions.IMetadataReleaseActivator,
+        Honua.ControlPlane.MetadataReleaseActivator>();
+    builder.Services.AddSingleton<
+        Honua.Core.Features.ControlPlane.Abstractions.IMetadataReleaseSmokeChecker,
+        Honua.ControlPlane.MetadataReleaseSmokeChecker>();
+    builder.Services.AddSingleton<
+        Honua.Core.Features.ControlPlane.Abstractions.IMetadataReleaseOperationReconciler,
+        Honua.ControlPlane.MetadataReleaseReconciler>();
+
     if (!isTestEnvironment)
     {
         builder.Services.AddHostedService<DeployWorkflowReconcilerBackgroundService>();
         builder.Services.AddHostedService<ExecutionJobReconcilerBackgroundService>();
+        builder.Services.AddHostedService<Honua.ControlPlane.MetadataReleaseReconcilerBackgroundService>();
     }
 
     // Agent-operation approval surface (#1692/#1693): durable proposal store +
@@ -1198,6 +1225,7 @@ app.MapServiceSettingsEndpoints();
 // v1 admin endpoint mappings removed in #1035 cutover; V2 admin UX (#1046) lives elsewhere.
 app.MapMetadataReleaseEndpoints();
 app.MapMetadataReleaseOperationEndpoints();
+app.MapMetadataReleaseControlEndpoints();
 app.MapMetadataPrevalidationEndpoints();
 app.MapDeployControlEndpoints();
 

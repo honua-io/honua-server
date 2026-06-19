@@ -425,6 +425,22 @@ public sealed class SynchronizeReplicaResponse
     public long ServerGen { get; set; }
 
     /// <summary>
+    /// Server-to-client changes assembled for a download (or bidirectional) sync: the per-layer
+    /// adds/updates/deletes committed on the server since the replica's last sync generation. Omitted
+    /// (null) for upload-only syncs, which carry no download payload.
+    /// </summary>
+    [JsonPropertyName("edits")]
+    public LayerChanges[]? Edits { get; set; }
+
+    /// <summary>
+    /// Per-layer server generations advanced by this synchronization, encoded using the ArcGIS replicas
+    /// resource shape. Lets a per-layer replica record the generation it has now received for each layer.
+    /// Omitted (null) for upload-only syncs.
+    /// </summary>
+    [JsonPropertyName("layerServerGens")]
+    public ReplicaInfoLayerServerGeneration[]? LayerServerGens { get; set; }
+
+    /// <summary>
     /// Number of uploaded add operations applied during this synchronization. Omitted (null) for
     /// download-only syncs that carry no upload.
     /// </summary>

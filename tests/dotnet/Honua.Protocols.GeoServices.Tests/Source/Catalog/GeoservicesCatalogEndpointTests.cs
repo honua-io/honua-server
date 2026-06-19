@@ -107,6 +107,33 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /rest/services")]
+    public async Task GetServicesDirectory_IncludesVectorTileServerEntry()
+    {
+        var response = await _fixture.Client.GetAsync("/rest/services?f=json");
+
+        response.Be200Ok();
+
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var vectorTileEntries = payload.RootElement
+            .GetProperty("services")
+            .EnumerateArray()
+            .Where(service =>
+                service.TryGetProperty("type", out var type) &&
+                string.Equals(type.GetString(), "VectorTileServer", StringComparison.Ordinal))
+            .ToArray();
+
+        // The default test graph seeds an EsriVectorTileLayer publication on the "test"
+        // service, so the catalog must advertise a VectorTileServer entry with a
+        // service-name-scoped URL, matching every other service type.
+        vectorTileEntries.Should().NotBeEmpty();
+        vectorTileEntries.Should().OnlyContain(service =>
+            service.GetProperty("url").GetString()!.EndsWith(
+                "/rest/services/test/VectorTileServer", StringComparison.Ordinal));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services")]
     public async Task GetServicesDirectory_ImageServerEntriesUseServiceScopedUrls()
     {
         var rasterStore = Substitute.For<IRasterStore>();

@@ -918,7 +918,7 @@ internal sealed class OgcCoveragesHandler
 
         if (context.Request.Query.ContainsKey("datetime"))
         {
-            return "The datetime parameter is not supported by this OGC API Coverages implementation.";
+            return "The datetime parameter is not applicable to a single-raster coverage. Temporal subsetting is supported only for multidimensional (Zarr) coverages with a time axis.";
         }
 
         if (context.Request.Query.ContainsKey("subset"))

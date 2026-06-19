@@ -283,10 +283,138 @@ public sealed class FeatureServerReplicaSyncTests : IAsyncLifetime
         serverName.Should().Be("client-only");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.SynchronizeReplica)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
+    public async Task SynchronizeReplica_Download_DeliversPostReplicaChangesAndAdvancesServerGen()
+    {
+        // Repro for the #1775 download no-op: createReplica at generation N, add a feature server-side,
+        // then synchronizeReplica(download) must deliver the added feature (in edits) and advance
+        // serverGen past N. Previously the download direction returned success with no edits and echoed
+        // the client serverGen, so the post-replica feature was never delivered.
+        var createRoot = await CreateReplicaWithResponseAsync("DownloadDelivery", "0");
+        var replicaId = createRoot.GetProperty("replicaID").GetString()!;
+        var baseServerGen = createRoot.GetProperty("serverGen").GetInt64();
+
+        // Server-side edit committed AFTER the replica was created.
+        var objectId = await AddFeatureAsync("post-replica-add");
+
+        // Download sync echoing the replica's serverGen (replicaServerGen=N), exactly as a client that has
+        // only the createReplica generation would send.
+        var downloadRoot = await SynchronizeDownloadWithResponseAsync(replicaId, baseServerGen);
+
+        downloadRoot.GetProperty("success").GetBoolean().Should().BeTrue();
+        downloadRoot.GetProperty("syncDirection").GetString().Should().Be("download");
+
+        // serverGen must advance past the client's generation so the cursor moves forward.
+        var newServerGen = downloadRoot.GetProperty("serverGen").GetInt64();
+        newServerGen.Should().BeGreaterThan(baseServerGen, "the download must advance the replica's serverGen past the post-replica edit");
+
+        // The post-replica feature must be delivered in the edits payload as an add on layer 0.
+        downloadRoot.TryGetProperty("edits", out var edits).Should().BeTrue("download syncs must carry an edits delta");
+        edits.ValueKind.Should().Be(JsonValueKind.Array);
+        var layer0 = edits.EnumerateArray().Single(layer => layer.GetProperty("id").GetInt32() == 0);
+        layer0.GetProperty("adds").GetInt32().Should().Be(1);
+        layer0.GetProperty("addFeatures")
+            .EnumerateArray()
+            .Should()
+            .Contain(feature =>
+                feature.GetProperty("attributes").GetProperty("objectid").GetInt64() == objectId);
+
+        // A subsequent download from the advanced cursor must be empty (the feature is delivered exactly once).
+        var secondDownload = await SynchronizeDownloadWithResponseAsync(replicaId, newServerGen);
+        secondDownload.GetProperty("serverGen").GetInt64().Should().Be(newServerGen);
+        if (secondDownload.TryGetProperty("edits", out var secondEdits) && secondEdits.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var layer in secondEdits.EnumerateArray())
+            {
+                layer.GetProperty("adds").GetInt32().Should().Be(0, "an already-delivered change must not be sent again");
+                layer.GetProperty("updates").GetInt32().Should().Be(0);
+                layer.GetProperty("deletes").GetInt32().Should().Be(0);
+            }
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ListReplicas)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/replicas")]
+    public async Task Replicas_AfterCreateAndUnregister_ReflectsLiveRegistryImmediately()
+    {
+        // #1775 minor bug: /replicas must reflect createReplica / unRegisterReplica immediately (served
+        // from the live registry), not lag behind a cached snapshot.
+        var replicaId = await CreateReplicaAsync("LiveRegistryReplica", "0");
+
+        // Immediately after createReplica the new replica must be visible.
+        var afterCreate = await ListReplicaIdsAsync();
+        afterCreate.Should().Contain(replicaId, "a just-created replica must appear in /replicas without lag");
+
+        // Immediately after unRegisterReplica the replica must be gone.
+        await UnregisterReplicaAsync(replicaId);
+        var afterUnregister = await ListReplicaIdsAsync();
+        afterUnregister.Should().NotContain(replicaId, "an unregistered replica must disappear from /replicas without lag");
+    }
+
     private static bool HasNoConflicts(JsonElement root)
         => !root.TryGetProperty("conflicts", out var conflicts)
            || conflicts.ValueKind == JsonValueKind.Null
            || conflicts.GetArrayLength() == 0;
+
+    private async Task<JsonElement> CreateReplicaWithResponseAsync(string name, string layers)
+    {
+        var payload = JsonSerializer.Serialize(new
+        {
+            replicaName = name,
+            layers,
+            syncModel = "perReplica",
+            f = "json"
+        });
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        return JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement.Clone();
+    }
+
+    private async Task<JsonElement> SynchronizeDownloadWithResponseAsync(string replicaId, long replicaServerGen)
+    {
+        var payload = JsonSerializer.Serialize(new
+        {
+            replicaID = replicaId,
+            syncDirection = "download",
+            replicaServerGen,
+            f = "json"
+        });
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/synchronizeReplica",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        return JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement.Clone();
+    }
+
+    private async Task UnregisterReplicaAsync(string replicaId)
+    {
+        var payload = JsonSerializer.Serialize(new { replicaID = replicaId, f = "json" });
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/unRegisterReplica",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    private async Task<List<string>> ListReplicaIdsAsync()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/replicas?f=json");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        return doc.RootElement
+            .EnumerateArray()
+            .Select(replica => replica.GetProperty("replicaID").GetString()!)
+            .ToList();
+    }
 
     private async Task<string> CreateReplicaAsync(string name, string layers)
     {

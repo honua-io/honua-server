@@ -1008,6 +1008,126 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query?returnCountOnly=true&f=pbf")]
+    public async Task QueryFeatures_WithReturnCountOnlyAndPbf_ReturnsProtobufCount()
+    {
+        // Regression (#1775): the count-only path ignored f=pbf and returned JSON. It must
+        // emit a protobuf-encoded count (CountResult arm of the FeatureCollectionPBuffer
+        // QueryResult oneof) with Content-Type application/x-protobuf, mirroring the
+        // feature query pbf path.
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?returnCountOnly=true&f=pbf");
+
+        response.Be200Ok();
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/x-protobuf");
+
+        var bytes = await response.Content.ReadAsByteArrayAsync();
+        bytes.Should().NotBeEmpty();
+        DecodePbfCount(bytes).Should().Be(5);
+    }
+
+    // Minimal protobuf reader for the FeatureCollectionPBuffer count-only response:
+    //   FeatureCollectionPBuffer { string version = 1; QueryResult queryResult = 2; }
+    //   QueryResult { CountResult countResult = 2; }  CountResult { uint64 count = 1; }
+    private static ulong DecodePbfCount(byte[] bytes)
+    {
+        var queryResult = ReadMessageField(bytes, 2);
+        queryResult.Should().NotBeNull("the outer message must carry queryResult (field 2)");
+        var countResult = ReadMessageField(queryResult!, 2);
+        countResult.Should().NotBeNull("queryResult must carry the countResult arm (field 2)");
+        return ReadVarintField(countResult!, 1)
+            ?? throw new Xunit.Sdk.XunitException("countResult.count (field 1) was not present");
+    }
+
+    private static byte[]? ReadMessageField(byte[] data, int fieldNumber)
+    {
+        int pos = 0;
+        while (pos < data.Length)
+        {
+            ulong tag = ReadVarint(data, ref pos);
+            int field = (int)(tag >> 3);
+            int wireType = (int)(tag & 0x7);
+            if (wireType == 2)
+            {
+                int len = (int)ReadVarint(data, ref pos);
+                if (field == fieldNumber)
+                {
+                    return data[pos..(pos + len)];
+                }
+
+                pos += len;
+            }
+            else
+            {
+                SkipField(data, ref pos, wireType);
+            }
+        }
+
+        return null;
+    }
+
+    private static ulong? ReadVarintField(byte[] data, int fieldNumber)
+    {
+        int pos = 0;
+        while (pos < data.Length)
+        {
+            ulong tag = ReadVarint(data, ref pos);
+            int field = (int)(tag >> 3);
+            int wireType = (int)(tag & 0x7);
+            if (wireType == 0 && field == fieldNumber)
+            {
+                return ReadVarint(data, ref pos);
+            }
+
+            SkipField(data, ref pos, wireType);
+        }
+
+        return null;
+    }
+
+    private static void SkipField(byte[] data, ref int pos, int wireType)
+    {
+        switch (wireType)
+        {
+            case 0:
+                ReadVarint(data, ref pos);
+                break;
+            case 1:
+                pos += 8;
+                break;
+            case 2:
+                int len = (int)ReadVarint(data, ref pos);
+                pos += len;
+                break;
+            case 5:
+                pos += 4;
+                break;
+            default:
+                throw new Xunit.Sdk.XunitException($"Unsupported wire type {wireType}");
+        }
+    }
+
+    private static ulong ReadVarint(byte[] data, ref int pos)
+    {
+        ulong result = 0;
+        int shift = 0;
+        while (true)
+        {
+            byte b = data[pos++];
+            result |= (ulong)(b & 0x7F) << shift;
+            if ((b & 0x80) == 0)
+            {
+                break;
+            }
+
+            shift += 7;
+        }
+
+        return result;
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query?returnIdsOnly=true")]
     public async Task QueryFeatures_WithReturnIdsOnly_ReturnsIds()
     {
@@ -2667,6 +2787,59 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         response.Be200Ok();
         var responseContent = await response.Content.ReadAsStringAsync();
         responseContent.Should().Contain("editResults");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/applyEdits")]
+    public async Task ApplyEdits_ServiceLevel_AddsOnly_IncludesEmptyUpdateAndDeleteResults()
+    {
+        // Regression (#1775): a real Esri FeatureServer always includes per-layer
+        // updateResults and deleteResults (empty arrays when none). arcpy's `da` driver
+        // raises without them. An adds-only payload must still emit all three arrays.
+        var request = """
+            [
+                {
+                    "id": 0,
+                    "adds": [
+                        {
+                            "attributes": {
+                                "name": "Service-level all-arrays feature"
+                            },
+                            "geometry": {
+                                "x": -122.4194,
+                                "y": 37.7749
+                            }
+                        }
+                    ]
+                }
+            ]
+            """;
+        var content = new StringContent(request, Encoding.UTF8, "application/json");
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/applyEdits",
+            content);
+
+        response.Be200Ok();
+        var responseContent = await response.Content.ReadAsStringAsync();
+
+        using var jsonDoc = JsonDocument.Parse(responseContent);
+        var editResults = jsonDoc.RootElement.GetProperty("editResults");
+        editResults.GetArrayLength().Should().BeGreaterThan(0);
+        var layerResult = editResults[0];
+
+        layerResult.TryGetProperty("addResults", out var addResults).Should().BeTrue();
+        addResults.ValueKind.Should().Be(JsonValueKind.Array);
+        addResults.GetArrayLength().Should().Be(1);
+
+        layerResult.TryGetProperty("updateResults", out var updateResults).Should().BeTrue();
+        updateResults.ValueKind.Should().Be(JsonValueKind.Array);
+        updateResults.GetArrayLength().Should().Be(0);
+
+        layerResult.TryGetProperty("deleteResults", out var deleteResults).Should().BeTrue();
+        deleteResults.ValueKind.Should().Be(JsonValueKind.Array);
+        deleteResults.GetArrayLength().Should().Be(0);
     }
 
     [IntegrationTest]
