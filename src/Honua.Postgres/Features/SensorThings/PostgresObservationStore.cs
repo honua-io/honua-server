@@ -19,10 +19,73 @@ namespace Honua.Postgres.Features.SensorThings;
 internal sealed class PostgresObservationStore : IObservationStore
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
+    private bool _schemaEnsured;
 
     public PostgresObservationStore(IAdoNetDatabaseConnectionProvider connectionProvider)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
+    }
+
+    // Self-heal the SensorThings schema (mirrors migration 059) so reads work on a
+    // fresh-DB container where migrations are skipped (the integration-test harness
+    // runs with HONUA_SKIP_MIGRATIONS=true). Idempotent: a no-op once the migration
+    // has run. Includes the synthetic demo datastream + 48-point series.
+    private async Task EnsureSchemaAsync(CancellationToken cancellationToken)
+    {
+        if (_schemaEnsured)
+        {
+            return;
+        }
+
+        const string sql = @"
+CREATE TABLE IF NOT EXISTS honua.sta_thing (
+    id bigint NOT NULL, name text NOT NULL, description text NOT NULL DEFAULT '',
+    CONSTRAINT sta_thing_pkey PRIMARY KEY (id));
+CREATE TABLE IF NOT EXISTS honua.sta_sensor (
+    id bigint NOT NULL, name text NOT NULL, description text NOT NULL DEFAULT '',
+    encoding_type text NOT NULL DEFAULT 'application/pdf', metadata text NOT NULL DEFAULT '',
+    CONSTRAINT sta_sensor_pkey PRIMARY KEY (id));
+CREATE TABLE IF NOT EXISTS honua.sta_observed_property (
+    id bigint NOT NULL, name text NOT NULL, definition text NOT NULL DEFAULT '', description text NOT NULL DEFAULT '',
+    CONSTRAINT sta_observed_property_pkey PRIMARY KEY (id));
+CREATE TABLE IF NOT EXISTS honua.sta_datastream (
+    id bigint NOT NULL, name text NOT NULL, description text NOT NULL DEFAULT '',
+    observation_type text NOT NULL DEFAULT 'http://www.opengis.net/def/observationType/OGC-OM/2.0/OM_Measurement',
+    unit_name text NOT NULL DEFAULT '', unit_symbol text NOT NULL DEFAULT '', unit_definition text NOT NULL DEFAULT '',
+    thing_id bigint NOT NULL, sensor_id bigint NOT NULL, observed_property_id bigint NOT NULL,
+    CONSTRAINT sta_datastream_pkey PRIMARY KEY (id));
+CREATE TABLE IF NOT EXISTS honua.sta_observation (
+    id bigint NOT NULL, datastream_id bigint NOT NULL, phenomenon_time timestamptz NOT NULL,
+    result_time timestamptz, result double precision NOT NULL, feature_of_interest_id bigint,
+    CONSTRAINT sta_observation_pkey PRIMARY KEY (id, phenomenon_time)) PARTITION BY RANGE (phenomenon_time);
+CREATE TABLE IF NOT EXISTS honua.sta_observation_default PARTITION OF honua.sta_observation DEFAULT;
+CREATE INDEX IF NOT EXISTS ix_sta_observation_time ON honua.sta_observation USING BRIN (phenomenon_time);
+CREATE INDEX IF NOT EXISTS ix_sta_observation_datastream_time ON honua.sta_observation (datastream_id, phenomenon_time);
+
+INSERT INTO honua.sta_thing (id, name, description)
+VALUES (1, 'Demo Air Quality Station', 'Synthetic air-quality monitoring station for the SensorThings Phase 1 demo')
+ON CONFLICT (id) DO NOTHING;
+INSERT INTO honua.sta_sensor (id, name, description, encoding_type, metadata)
+VALUES (1, 'Demo Thermometer', 'Synthetic temperature sensor', 'application/pdf', 'https://example.org/sensors/demo-thermometer')
+ON CONFLICT (id) DO NOTHING;
+INSERT INTO honua.sta_observed_property (id, name, definition, description)
+VALUES (1, 'Air Temperature', 'http://mmisw.org/ont/cf/parameter/air_temperature', 'Ambient air temperature')
+ON CONFLICT (id) DO NOTHING;
+INSERT INTO honua.sta_datastream (id, name, description, observation_type, unit_name, unit_symbol, unit_definition, thing_id, sensor_id, observed_property_id)
+VALUES (1, 'Demo Air Temperature', 'Synthetic air-temperature datastream for the SensorThings Phase 1 demo',
+    'http://www.opengis.net/def/observationType/OGC-OM/2.0/OM_Measurement', 'degree Celsius', 'C',
+    'http://unitsofmeasure.org/ucum.html#para-30', 1, 1, 1)
+ON CONFLICT (id) DO NOTHING;
+INSERT INTO honua.sta_observation (id, datastream_id, phenomenon_time, result_time, result, feature_of_interest_id)
+SELECT gs, 1, (now() - ((48 - gs) || ' hours')::interval), (now() - ((48 - gs) || ' hours')::interval),
+    15.0 + 10.0 * sin(gs::double precision), NULL::bigint
+FROM generate_series(1, 48) AS gs
+ON CONFLICT (id, phenomenon_time) DO NOTHING;";
+
+        await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, lease);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        _schemaEnsured = true;
     }
 
     public async Task<IReadOnlyList<SensorThingsDatastream>> ListDatastreamsAsync(
@@ -30,6 +93,8 @@ internal sealed class PostgresObservationStore : IObservationStore
         int top,
         CancellationToken cancellationToken)
     {
+        await EnsureSchemaAsync(cancellationToken).ConfigureAwait(false);
+
         const string sql = @"
 SELECT d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_symbol,
        d.unit_definition, d.thing_id, d.sensor_id, d.observed_property_id,
@@ -58,6 +123,8 @@ OFFSET @skip LIMIT @top";
 
     public async Task<SensorThingsDatastream?> GetDatastreamAsync(long id, CancellationToken cancellationToken)
     {
+        await EnsureSchemaAsync(cancellationToken).ConfigureAwait(false);
+
         const string sql = @"
 SELECT d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_symbol,
        d.unit_definition, d.thing_id, d.sensor_id, d.observed_property_id,
@@ -78,6 +145,8 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
 
     public async Task<IReadOnlyList<SensorThingsThing>> ListThingsAsync(int skip, int top, CancellationToken cancellationToken)
     {
+        await EnsureSchemaAsync(cancellationToken).ConfigureAwait(false);
+
         const string sql = "SELECT id, name, description FROM honua.sta_thing ORDER BY id OFFSET @skip LIMIT @top";
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, lease);
@@ -101,6 +170,8 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
 
     public async Task<SensorThingsThing?> GetThingAsync(long id, CancellationToken cancellationToken)
     {
+        await EnsureSchemaAsync(cancellationToken).ConfigureAwait(false);
+
         const string sql = "SELECT id, name, description FROM honua.sta_thing WHERE id = @id";
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, lease);
@@ -122,6 +193,8 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
 
     public async Task<IReadOnlyList<SensorThingsSensor>> ListSensorsAsync(int skip, int top, CancellationToken cancellationToken)
     {
+        await EnsureSchemaAsync(cancellationToken).ConfigureAwait(false);
+
         const string sql = "SELECT id, name, description, encoding_type, metadata FROM honua.sta_sensor ORDER BY id OFFSET @skip LIMIT @top";
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, lease);
@@ -140,6 +213,8 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
 
     public async Task<SensorThingsSensor?> GetSensorAsync(long id, CancellationToken cancellationToken)
     {
+        await EnsureSchemaAsync(cancellationToken).ConfigureAwait(false);
+
         const string sql = "SELECT id, name, description, encoding_type, metadata FROM honua.sta_sensor WHERE id = @id";
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, lease);
@@ -154,6 +229,8 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
         int top,
         CancellationToken cancellationToken)
     {
+        await EnsureSchemaAsync(cancellationToken).ConfigureAwait(false);
+
         const string sql = "SELECT id, name, definition, description FROM honua.sta_observed_property ORDER BY id OFFSET @skip LIMIT @top";
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, lease);
@@ -172,6 +249,8 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
 
     public async Task<SensorThingsObservedProperty?> GetObservedPropertyAsync(long id, CancellationToken cancellationToken)
     {
+        await EnsureSchemaAsync(cancellationToken).ConfigureAwait(false);
+
         const string sql = "SELECT id, name, definition, description FROM honua.sta_observed_property WHERE id = @id";
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, lease);
@@ -185,6 +264,8 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
         ObservationQuery query,
         CancellationToken cancellationToken)
     {
+        await EnsureSchemaAsync(cancellationToken).ConfigureAwait(false);
+
         var sql = new System.Text.StringBuilder(
             "SELECT id, datastream_id, phenomenon_time, result_time, result, feature_of_interest_id FROM honua.sta_observation");
 
@@ -237,6 +318,8 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
 
     public async Task<SensorThingsObservation?> GetObservationAsync(long id, CancellationToken cancellationToken)
     {
+        await EnsureSchemaAsync(cancellationToken).ConfigureAwait(false);
+
         const string sql =
             "SELECT id, datastream_id, phenomenon_time, result_time, result, feature_of_interest_id FROM honua.sta_observation WHERE id = @id";
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
