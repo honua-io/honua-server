@@ -294,11 +294,18 @@ if (!isTestEnvironment || registerInfrastructureInTestEnvironment)
 Honua.Postgres.Features.Security.PostgresConnectionDriverServiceCollectionExtensions.AddPostgresConnectionDriver(builder.Services);
 Honua.MySql.Features.Security.MySqlConnectionDriverServiceCollectionExtensions.AddMySqlConnectionDriver(builder.Services);
 Honua.SqlServer.Features.Security.SqlServerConnectionDriverServiceCollectionExtensions.AddSqlServerConnectionDriver(builder.Services);
+Honua.Redshift.Features.Security.RedshiftConnectionDriverServiceCollectionExtensions.AddRedshiftConnectionDriver(builder.Services);
 #if !HONUA_SKIP_ORACLE
 // The Native AOT publish (HonuaSkipOracleForAotVerification) drops the Honua.Oracle
 // ProjectReference and defines HONUA_SKIP_ORACLE, so this registration is compiled out
 // (Oracle.ManagedDataAccess is not single-file/AOT safe — see Honua.Server.csproj).
 Honua.Oracle.Features.Security.OracleConnectionDriverServiceCollectionExtensions.AddOracleConnectionDriver(builder.Services);
+#endif
+#if !HONUA_SKIP_SNOWFLAKE
+// The Native AOT publish (HonuaSkipSnowflakeForAotVerification) drops the Honua.Snowflake
+// ProjectReference and defines HONUA_SKIP_SNOWFLAKE, so this registration is compiled out
+// (Snowflake.Data is not single-file/AOT safe — see Honua.Server.csproj).
+Honua.Snowflake.Features.Security.SnowflakeConnectionDriverServiceCollectionExtensions.AddSnowflakeConnectionDriver(builder.Services);
 #endif
 builder.Services.AddSingleton<Honua.Core.Features.Security.Abstractions.IConnectionDriverRegistry, Honua.Core.Features.Security.Abstractions.ConnectionDriverRegistry>();
 
