@@ -875,6 +875,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         long[] rasterIds,
         RasterMergeStrategy mergeStrategy,
         RasterQuery query,
+        RasterMosaicOrdering ordering = RasterMosaicOrdering.AcquisitionNewest,
         CancellationToken cancellationToken = default)
     {
         if (rasterIds.Length == 0)
@@ -993,7 +994,7 @@ internal sealed class PostgresRasterStore : IRasterStore
                   AND id IN (SELECT raster_id FROM requested)
             ),
             merged AS (
-                SELECT {CreateMosaicAggregateExpression(mergeStrategy)} AS rast
+                SELECT {CreateMosaicAggregateExpression(mergeStrategy, ordering)} AS rast
                 FROM source
                 WHERE rast IS NOT NULL
             ),
@@ -3070,8 +3071,10 @@ internal sealed class PostgresRasterStore : IRasterStore
         };
     }
 
-    private static string CreateMosaicAggregateExpression(RasterMergeStrategy mergeStrategy)
-        => RasterMosaicSql.CreateMosaicAggregateExpression(mergeStrategy);
+    private static string CreateMosaicAggregateExpression(
+        RasterMergeStrategy mergeStrategy,
+        RasterMosaicOrdering ordering = RasterMosaicOrdering.AcquisitionNewest)
+        => RasterMosaicSql.CreateMosaicAggregateExpression(mergeStrategy, ordering);
 
     // GDAL driver availability is static for the PostGIS process lifetime.
     // Cache per driver name to avoid querying ST_GDALDrivers() on every export.

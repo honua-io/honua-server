@@ -10,6 +10,7 @@ using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
 using Honua.Server.Features.Console;
+using Honua.Server.Features.Studio.Export;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
@@ -108,6 +109,140 @@ internal static class StudioPackageEndpoints
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .Accepts<GenerateAppPackageRequest>("application/json")
             .Produces<AppGenerationResult>();
+
+        group.MapPost("/{kind}/{id:guid}/export", HandleExportDeliverable)
+            .WithDisplayName("Export Studio Deliverable")
+            .WithSummary("Render a Studio map, dashboard, or report content item to a shareable PDF or PNG deliverable.")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+    }
+
+    private static async Task<IResult> HandleExportDeliverable(
+        string kind,
+        Guid id,
+        [FromServices] IStudioDeliverableExporter exporter,
+        [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
+        HttpContext context)
+    {
+        if (!TryParseKind(kind, out var family))
+        {
+            return BadRequest(context, "kind must be one of: map, dashboard, report.");
+        }
+
+        if (!TryParseFormat(context.Request.Query["format"], out var format))
+        {
+            return BadRequest(context, "format must be one of: pdf, png.");
+        }
+
+        Guid? versionId = null;
+        var versionRaw = context.Request.Query["versionId"].ToString();
+        if (!string.IsNullOrWhiteSpace(versionRaw))
+        {
+            if (!Guid.TryParse(versionRaw, out var parsed))
+            {
+                return BadRequest(context, "versionId must be a valid GUID.");
+            }
+
+            versionId = parsed;
+        }
+
+        var store = string.Equals(context.Request.Query["store"], "true", StringComparison.OrdinalIgnoreCase);
+
+        try
+        {
+            var result = await exporter.ExportAsync(
+                family,
+                id,
+                format,
+                versionId,
+                store,
+                context.RequestAborted).ConfigureAwait(false);
+
+            switch (result.Status)
+            {
+                case StudioDeliverableExportStatus.NotFound:
+                    return NotFound(context, result.Detail ?? "Studio content item was not found.");
+                case StudioDeliverableExportStatus.KindMismatch:
+                    return BadRequest(context, result.Detail ?? "Requested kind does not match the package family.");
+            }
+
+            var artifact = result.Artifact!;
+            StudioEndpointsLog.DeliverableExported(logger, family, id, artifact.Format, artifact.Content.Length);
+
+            if (store)
+            {
+                // Storage was requested but persisting the artifact failed (upload or presigned-url
+                // lookup returned no URL). Do not report success with a null artifactUrl and no bytes;
+                // surface the failure so the caller can retry rather than silently losing the export.
+                if (string.IsNullOrEmpty(result.ArtifactUrl))
+                {
+                    StudioEndpointsLog.EndpointFailed(
+                        logger,
+                        "deliverable.export",
+                        new InvalidOperationException("Studio deliverable was rendered but could not be persisted to share storage."));
+                    return ServerError(context, "Studio deliverable was rendered but could not be persisted to share storage.");
+                }
+
+                var response = new StudioDeliverableExportResponse
+                {
+                    ItemId = id,
+                    Kind = family,
+                    Format = format == StudioDeliverableFormat.Pdf ? "pdf" : "png",
+                    FileName = artifact.FileName,
+                    ContentType = artifact.ContentType,
+                    SizeBytes = artifact.Content.Length,
+                    ArtifactUrl = result.ArtifactUrl,
+                };
+                return Results.Json(
+                    ApiResponse<StudioDeliverableExportResponse>.CreateSuccess(response),
+                    StudioApiJsonContext.Default.ApiResponseStudioDeliverableExportResponse);
+            }
+
+            context.Response.Headers.ContentDisposition = $"attachment; filename=\"{artifact.FileName}\"";
+            context.Response.Headers.CacheControl = "no-store";
+            return Results.Bytes(artifact.Content, artifact.ContentType, artifact.FileName);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            StudioEndpointsLog.EndpointFailed(logger, "deliverable.export", ex);
+            return ServerError(context, "Studio deliverable could not be exported.");
+        }
+    }
+
+    private static bool TryParseKind(string kind, out StudioPackageFamily family)
+    {
+        switch (kind?.ToLowerInvariant())
+        {
+            case "map":
+                family = StudioPackageFamily.Map;
+                return true;
+            case "dashboard":
+                family = StudioPackageFamily.Dashboard;
+                return true;
+            case "report":
+                family = StudioPackageFamily.Report;
+                return true;
+            default:
+                family = default;
+                return false;
+        }
+    }
+
+    private static bool TryParseFormat(string? format, out StudioDeliverableFormat parsed)
+    {
+        switch (format?.ToLowerInvariant())
+        {
+            case "pdf":
+                parsed = StudioDeliverableFormat.Pdf;
+                return true;
+            case "png":
+            case "":
+            case null:
+                parsed = StudioDeliverableFormat.Png;
+                return true;
+            default:
+                parsed = default;
+                return false;
+        }
     }
 
     private static async Task<IResult> HandleGenerateApp(
