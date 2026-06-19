@@ -16,6 +16,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Services;
+using Honua.Protocols.GeoServices.FeatureServer;
 using Honua.Protocols.GeoServices.MapServer.Models;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Options;
@@ -222,6 +223,10 @@ internal static partial class MapServerEndpoints
 
                 var objectIdField = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(layer.Resource);
                 var displayField = ResolveDisplayField(layer.Resource, objectIdField);
+                // esriFieldTypeDate attributes must serialize as epoch-ms integers uniformly,
+                // matching the MapServer identify and FeatureServer query paths (a date field
+                // searched via searchFields would otherwise leak its raw stored shape).
+                var dateFieldNames = GeoServicesFieldConventions.ResolveDateFieldNames(layer.Resource);
 
                 SqlFragment? layerSqlFilter = null;
                 if (!string.IsNullOrWhiteSpace(layerDef) &&
@@ -288,6 +293,8 @@ internal static partial class MapServerEndpoints
 
                             attributes[kvp.Key] = FeatureAttributeValueNormalizer.Normalize(kvp.Value);
                         }
+
+                        GeoServicesFieldConventions.CoerceDateAttributes(attributes, dateFieldNames);
 
                         object? geometryResult = null;
                         if (returnGeometry && feature.Geometry != null)
