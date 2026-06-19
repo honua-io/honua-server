@@ -139,7 +139,9 @@ builder.Services.AddDataProtection();
 var useAspire = builder.Configuration.GetSection("Aspire").Exists();
 var redisConnectionString = builder.Configuration.GetConnectionString("redis")
     ?? builder.Configuration["Aspire:StackExchange:Redis:ConnectionString"];
-var redisCacheEntitled = await StartupConfigurationHelpers.IsRedisCacheEntitledAsync(builder.Configuration);
+var redisCacheEntitled = await StartupConfigurationHelpers.IsRedisCacheEntitledAsync(
+    builder.Configuration,
+    builder.Environment);
 var redisCacheConnectionString = redisCacheEntitled ? redisConnectionString : null;
 var redisInfrastructureConnectionString = RedisConnectionSelector.SelectInfrastructureConnectionString(
     redisConnectionString,
