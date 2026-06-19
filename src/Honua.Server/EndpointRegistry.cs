@@ -851,6 +851,7 @@ public static class EndpointRegistry
         new("GET", "/rest/services/{serviceId}/VectorTileServer/resources/styles"),
         new("GET", "/rest/services/{serviceId}/VectorTileServer/resources/styles/{**resourcePath}"),
         new("GET", "/rest/services/{serviceId}/VectorTileServer/tilemap/{z}/{y}/{x}/{dimension}/{dimension2}"),
+        new("GET", "/rest/services/{serviceId}/VectorTileServer/tilemap"),
 
         new("GET", "/rest/services/{id}/ImageServer"),
         new("POST", "/rest/services/{id}/ImageServer"),

@@ -15,6 +15,8 @@ namespace Honua.Protocols.GeoServices.VectorTileServer.Models;
 [JsonSerializable(typeof(VectorTileLevelOfDetail))]
 [JsonSerializable(typeof(VectorTileLevelOfDetail[]))]
 [JsonSerializable(typeof(VectorTileExtent))]
+[JsonSerializable(typeof(VectorTileMapResponse))]
+[JsonSerializable(typeof(VectorTileMapLocation))]
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]

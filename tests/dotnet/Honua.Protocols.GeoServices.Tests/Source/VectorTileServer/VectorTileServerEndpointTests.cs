@@ -136,11 +136,100 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetTileMetadata)]
     [Endpoint("GET /rest/services/{serviceId}/VectorTileServer/tilemap/{z}/{y}/{x}/{dimension}/{dimension2}")]
-    public async Task VectorTileServer_TileMap_IsStubbedNotImplemented()
+    public async Task VectorTileServer_TileMap_FullyInRange_ReturnsAllAvailable()
     {
+        // Level 2 has a 4x4 grid (0..3 in both axes); a 4x4 block at (0,0) covers it exactly.
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/VectorTileServer/tilemap/2/0/0/4/4");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+        var tileMap = JsonSerializer.Deserialize(
+            content, VectorTileServerJsonContext.Default.VectorTileMapResponse);
+
+        tileMap.Should().NotBeNull();
+        tileMap!.Adjusted.Should().BeFalse();
+        tileMap.Location.Left.Should().Be(0);
+        tileMap.Location.Top.Should().Be(0);
+        tileMap.Location.Width.Should().Be(4);
+        tileMap.Location.Height.Should().Be(4);
+        tileMap.Data.Should().HaveCount(16);
+        tileMap.Data.Should().OnlyContain(value => value == 1);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTileMetadata)]
+    [Endpoint("GET /rest/services/{serviceId}/VectorTileServer/tilemap/{z}/{y}/{x}/{dimension}/{dimension2}")]
+    public async Task VectorTileServer_TileMap_EdgeBlock_MarksOutOfRangeTilesZero()
+    {
+        // Level 2 grid is 0..3. A 2x2 block anchored at (3,3) covers tile (3,3) plus three
+        // tiles that overrun the grid edge, so only the top-left flag is 1.
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/VectorTileServer/tilemap/2/3/3/2/2");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+        var tileMap = JsonSerializer.Deserialize(
+            content, VectorTileServerJsonContext.Default.VectorTileMapResponse);
+
+        tileMap.Should().NotBeNull();
+        tileMap!.Data.Should().HaveCount(4);
+        // Row-major: (3,3)=in-range, (4,3)=out, (3,4)=out, (4,4)=out.
+        tileMap.Data.Should().Equal(1, 0, 0, 0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTileMetadata)]
+    [Endpoint("GET /rest/services/{serviceId}/VectorTileServer/tilemap")]
+    public async Task VectorTileServer_TileMapRoot_ReturnsTopOfPyramid()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/VectorTileServer/tilemap");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+        var tileMap = JsonSerializer.Deserialize(
+            content, VectorTileServerJsonContext.Default.VectorTileMapResponse);
+
+        tileMap.Should().NotBeNull();
+        tileMap!.Data.Should().ContainSingle().Which.Should().Be(1);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTileMetadata)]
+    [Endpoint("GET /rest/services/{serviceId}/VectorTileServer/tilemap/{z}/{y}/{x}/{dimension}/{dimension2}")]
+    public async Task VectorTileServer_TileMap_LevelOutsideScheme_ReturnsBadRequest()
+    {
+        // Level 99 is well beyond the served LOD range; the tileMap pyramid cannot describe it.
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/VectorTileServer/tilemap/99/0/0/2/2");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTileMetadata)]
+    [Endpoint("GET /rest/services/{serviceId}/VectorTileServer/tilemap/{z}/{y}/{x}/{dimension}/{dimension2}")]
+    public async Task VectorTileServer_TileMap_AbsurdDimension_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/VectorTileServer/tilemap/2/0/0/4096/4096");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTileMetadata)]
+    [Endpoint("GET /rest/services/{serviceId}/VectorTileServer/tilemap/{z}/{y}/{x}/{dimension}/{dimension2}")]
+    public async Task VectorTileServer_TileMap_UnknownService_ReturnsNotFound()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/rest/services/does-not-exist/VectorTileServer/tilemap/2/0/0/4/4");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 }
