@@ -252,6 +252,12 @@ public static class EndpointRegistry
         new("POST", "/api/v1/admin/packages/preview"),
         new("GET", "/api/v1/console/workflow-node-registry"),
         new("GET", "/api/v1/console/workflow-node-registry/{nodeTypeId}"),
+
+        // Honua Operations Toolset (descriptor/executor split, policy-gated dispatcher)
+        new("GET", "/api/v1/operations"),
+        new("POST", "/api/v1/operations/{id}/validate"),
+        new("POST", "/api/v1/operations/{id}/submit"),
+        new("GET", "/api/v1/operations/handles/{handleId}"),
         new("GET", "/api/v1/console/workflow-packages"),
         new("POST", "/api/v1/console/workflow-packages"),
         new("GET", "/api/v1/console/workflow-packages/{packageId}"),
