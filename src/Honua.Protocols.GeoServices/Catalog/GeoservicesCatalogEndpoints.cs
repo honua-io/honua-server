@@ -80,7 +80,15 @@ internal static class GeoservicesCatalogEndpoints
 
         foreach (var service in snapshot.Graph.Services.OrderBy(static s => s.Metadata.Name, StringComparer.OrdinalIgnoreCase))
         {
-            if (!TryMapServiceType(service.PrimaryProtocol, out var directoryType))
+            // Derive the catalog "type" from every Esri-family protocol the service
+            // exposes, not just the primary one. A service reachable under multiple
+            // Esri types (e.g. both FeatureServer and MapServer, or a vector layer that
+            // is also rendered as a MapServer) is listed once per type, mirroring how a
+            // real ArcGIS Services Directory enumerates it (#1853). Raster/coverage
+            // services that expose ImageServer/MapServer therefore type as
+            // ImageServer/MapServer instead of being flattened to FeatureServer.
+            var directoryTypes = MapEsriDirectoryTypes(service);
+            if (directoryTypes.Count == 0)
             {
                 continue;
             }
@@ -110,13 +118,18 @@ internal static class GeoservicesCatalogEndpoints
                 continue;
             }
 
-            if (string.Equals(directoryType, "ImageServer", StringComparison.Ordinal))
+            var escapedName = Uri.EscapeDataString(service.Metadata.Name);
+            foreach (var directoryType in directoryTypes)
             {
-                imageServerServices.Add(service);
-            }
-            else
-            {
-                var escapedName = Uri.EscapeDataString(service.Metadata.Name);
+                // ImageServer availability additionally depends on a raster-store probe,
+                // so those entries are collected and probed concurrently below rather
+                // than emitted unconditionally here.
+                if (string.Equals(directoryType, ImageServerProtocolName, StringComparison.Ordinal))
+                {
+                    imageServerServices.Add(service);
+                    continue;
+                }
+
                 entries.Add(new ServiceDirectoryEntry
                 {
                     Name = service.Metadata.Name,
@@ -225,7 +238,31 @@ internal static class GeoservicesCatalogEndpoints
     }
 
     /// <summary>
-    /// Maps an Esri-family primary protocol to the directory-entry "type" string the
+    /// Maps every Esri-family protocol a service exposes to the directory-entry "type"
+    /// strings the GeoServices REST catalog advertises (FeatureServer, MapServer,
+    /// ImageServer, VectorTileServer, SceneServer), preserving the service's declared
+    /// protocol order and de-duplicating. A service reachable under several Esri types
+    /// is listed once per type, matching ArcGIS Services Directory semantics (#1853).
+    /// Non-Esri protocols (OGC API Features, STAC, OData, etc.) are skipped because they
+    /// are surfaced through their own catalogs.
+    /// </summary>
+    private static List<string> MapEsriDirectoryTypes(MetadataV2Service service)
+    {
+        var types = new List<string>();
+        foreach (var protocol in service.Protocols)
+        {
+            if (TryMapServiceType(protocol, out var directoryType) &&
+                !types.Contains(directoryType, StringComparer.Ordinal))
+            {
+                types.Add(directoryType);
+            }
+        }
+
+        return types;
+    }
+
+    /// <summary>
+    /// Maps an Esri-family protocol to the directory-entry "type" string the
     /// GeoServices REST catalog exposes (FeatureServer, MapServer, ImageServer,
     /// VectorTileServer). Returns false for non-Esri protocols (OGC API Features, STAC, etc.)
     /// which are surfaced through other catalogs.

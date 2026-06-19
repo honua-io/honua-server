@@ -465,6 +465,56 @@ public sealed class FeatureServerMaintenanceTests : IAsyncLifetime
         document.RootElement.GetProperty("isValidSQL").GetBoolean().Should().BeTrue();
     }
 
+    // #1858: Real Esri clients send the canonical sqlType enum
+    // (esriSQLTypeWhere / esriSQLTypeOrderBy / esriSQLTypeExpression). These must be
+    // accepted in addition to the short forms.
+    [IntegrationTest]
+    [Operation(Operations.ValidateSql)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/validateSQL")]
+    public async Task ServiceValidateSql_EsriSqlTypeWhereEnum_ReturnsIsValid()
+    {
+        var content = new FormUrlEncodedContent(new[]
+        {
+            new KeyValuePair<string, string>("sql", "objectid > 0"),
+            new KeyValuePair<string, string>("sqlType", "esriSQLTypeWhere"),
+            new KeyValuePair<string, string>("f", "json"),
+        });
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/validateSQL",
+            content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("isValidSQL").GetBoolean().Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ValidateSql)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/validateSQL")]
+    public async Task ServiceValidateSql_EsriSqlTypeOrderByEnum_ReturnsIsValid()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/validateSQL?sql={Uri.EscapeDataString("objectid DESC")}&sqlType=esriSQLTypeOrderBy&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("isValidSQL").GetBoolean().Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ValidateSql)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/validateSQL")]
+    public async Task ServiceValidateSql_EsriSqlTypeExpressionEnum_ReturnsIsValid()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/validateSQL?sql={Uri.EscapeDataString("objectid = 1")}&sqlType=esriSQLTypeExpression&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("isValidSQL").GetBoolean().Should().BeTrue();
+    }
+
     [IntegrationTest]
     [Operation(Operations.ValidateSql)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/validateSQL")]
