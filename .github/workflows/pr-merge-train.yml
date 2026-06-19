@@ -1,13 +1,12 @@
 name: PR merge train
 
-# Keeps opted-in PRs flowing to trunk without a human babysitting "update the branch"
-# or clicking merge. A PR opts in by carrying the `auto-merge` label; everything else
-# (drafts, WIP, other agents' in-flight branches) is left untouched. With strict
-# (up-to-date-before-merge) branch protection, every PR goes stale each time another
-# merges; this train does ONE action per trigger — merge the oldest labeled green +
-# up-to-date PR, or if none is ready, freshen the next labeled green-but-behind PR —
-# so it drains serially (no runner storm) and re-triggers itself (a merge pushes
-# trunk; an update completes a check_suite).
+# Keeps every ready PR flowing to trunk without a human babysitting "update the branch"
+# or clicking merge. It handles all non-draft PRs (mark a PR draft, or add a `hold`
+# label, to exclude it). With strict (up-to-date-before-merge) branch protection, every
+# PR goes stale each time another merges; this train does ONE action per trigger —
+# merge the oldest green + up-to-date PR, or if none is ready, freshen the next
+# green-but-behind PR — so it drains serially (no runner storm) and re-triggers itself
+# (a merge pushes trunk; an update completes a check_suite).
 #
 # Safety: it only ever merges a PR GitHub reports as `clean` (all required checks
 # green AND up to date), and only updates PRs that are `behind` but otherwise
@@ -51,14 +50,14 @@ jobs:
               return (await github.rest.pulls.get({ owner, repo, pull_number: number })).data;
             }
 
-            // Opt-in: the train only ever touches PRs explicitly marked ready with the
-            // `auto-merge` label. WIP / drafts / someone else's in-flight branches are
-            // left strictly alone until their owner adds the label.
-            const LABEL = 'auto-merge';
+            // Handle every PR that's ready (non-draft). `draft` is the universal "this is
+            // WIP, leave it alone" signal; a `hold` label is an explicit escape hatch to
+            // exclude a specific ready PR from the train.
+            const HOLD = 'hold';
             const { data: list } = await github.rest.pulls.list({
               owner, repo, state: 'open', base: 'trunk', per_page: 100,
             });
-            const open = list.filter(p => !p.draft && p.labels.some(l => l.name === LABEL))
+            const open = list.filter(p => !p.draft && !p.labels.some(l => l.name === HOLD))
                              .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
 
             // 1) Merge the first CLEAN PR (green + up to date). One per run — the
