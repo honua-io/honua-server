@@ -376,6 +376,12 @@ public enum MetadataV2PublicationType
     EsriImageLayer,
 
     /// <summary>
+    /// An Esri vector tile layer publication (GeoServices VectorTileServer).
+    /// </summary>
+    [JsonStringEnumMemberName("esri-vector-tile-layer")]
+    EsriVectorTileLayer,
+
+    /// <summary>
     /// A STAC collection publication.
     /// </summary>
     [JsonStringEnumMemberName("stac-collection")]

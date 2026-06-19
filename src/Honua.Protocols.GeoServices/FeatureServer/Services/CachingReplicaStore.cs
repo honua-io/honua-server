@@ -119,6 +119,27 @@ internal sealed partial class CachingReplicaStore : IReplicaStore
         return state;
     }
 
+    public async Task<IReadOnlyList<ReplicaState>> ListByServiceAsync(string serviceId, CancellationToken cancellationToken = default)
+    {
+        // Serve the enumeration from the authoritative repository so /replicas reflects
+        // createReplica / unRegisterReplica immediately. Writes go through Postgres first
+        // (write-through), so the repository is the live registry; the distributed cache cannot
+        // enumerate keys and would otherwise lag (#1775).
+        var records = await _repository.ListByServiceAsync(serviceId, cancellationToken).ConfigureAwait(false);
+        if (records.Count == 0)
+        {
+            return [];
+        }
+
+        var states = new ReplicaState[records.Count];
+        for (var i = 0; i < records.Count; i++)
+        {
+            states[i] = ToState(records[i]);
+        }
+
+        return states;
+    }
+
     public async Task<bool> RemoveAsync(string replicaId, CancellationToken cancellationToken = default)
     {
         // Remove from both stores

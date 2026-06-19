@@ -1073,6 +1073,48 @@ INSERT INTO honua.service_layers (service_name, layer_id, layer_order)
 VALUES ('test_service', 1, 1)
 ON CONFLICT (service_name, layer_id) DO NOTHING;
 
+-- Deterministic feature rows for the dedicated 'Mixed' layer (layer 1). Layer 1
+-- is advertised as the 'mixed_geometry_test_layer' WFS/OGC feature type, but it
+-- was previously seeded empty and only populated at runtime by the geometry
+-- round-trip applyEdits suite. That left every read-only consumer of layer 1 —
+-- notably the WFS GetFeature suite's discoverTypeWithFeatures(), which scans the
+-- advertised types for one that returns parseable features — depending solely on
+-- layer 0 ('test_layer'). Layer 0 is the single Point layer every other
+-- concurrent JS lane (apply-edits/query/geometry, all HONUA_LAYER_ID=0) mutates,
+-- so a single transient failure on its first GetFeature left the WFS suite with
+-- no populated fallback type and failed the whole lane ("No WFS FeatureType
+-- produced parseable features"). Seed layer 1 with stable, heterogeneous
+-- geometries (point/line/polygon — valid for a Mixed layer) so the suite always
+-- has a second populated, low-contention type and additionally exercises GML
+-- decode of non-point geometry. Runtime applyEdits rows are additive on top.
+WITH mixed_seed AS (
+    SELECT *
+    FROM (
+        VALUES
+            ('mixed_point',   'active',   1, 1.25, true,  '00000000-0000-0000-0000-000000000101', 'POINT(-122.4400 37.7600)'),
+            ('mixed_line',    'active',   2, 2.50, true,  '00000000-0000-0000-0000-000000000102', 'LINESTRING(-122.4500 37.7500, -122.4300 37.7700)'),
+            ('mixed_polygon', 'inactive', 3, 3.75, false, '00000000-0000-0000-0000-000000000103', 'POLYGON((-122.4600 37.7400, -122.4200 37.7400, -122.4200 37.7800, -122.4600 37.7800, -122.4600 37.7400))')
+    ) AS seed(name, status, feature_count, ratio, active_flag, uid, wkt)
+)
+INSERT INTO features (layer_id, geometry, attributes)
+SELECT
+    1,
+    ST_SetSRID(ST_GeomFromText(wkt), 4326),
+    jsonb_build_object(
+        'name', name,
+        'status', status,
+        'count', feature_count,
+        'ratio', ratio,
+        'active', active_flag,
+        'uid', uid
+    )
+FROM mixed_seed
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM features
+    WHERE layer_id = 1
+);
+
 -- Deterministic feature rows for CI lanes that only apply base-schema.sql.
 -- Keep these aligned with the JS/Python shared test attributes so query
 -- contracts validate against a populated layer instead of an empty catalog.

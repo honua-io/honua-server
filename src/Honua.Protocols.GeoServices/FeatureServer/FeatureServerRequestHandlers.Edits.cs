@@ -640,12 +640,16 @@ internal static partial class FeatureServerEndpoints
             if (layerResult is Microsoft.AspNetCore.Http.HttpResults.JsonHttpResult<ApplyEditsResponse> jsonResult)
             {
                 var response = jsonResult.Value;
+                // A real Esri FeatureServer always emits all three per-layer arrays
+                // (empty when the layer had no edits of that kind); arcpy's `da` driver
+                // raises KeyError without them. Coalesce nulls to empty arrays so the
+                // service-level response never omits updateResults/deleteResults. (#1775)
                 results[i] = new ServiceLayerEditResult
                 {
                     Id = entry.Id,
-                    AddResults = response?.AddResults,
-                    UpdateResults = response?.UpdateResults,
-                    DeleteResults = response?.DeleteResults
+                    AddResults = response?.AddResults ?? [],
+                    UpdateResults = response?.UpdateResults ?? [],
+                    DeleteResults = response?.DeleteResults ?? []
                 };
             }
             else if (i == 0)
@@ -668,9 +672,9 @@ internal static partial class FeatureServerEndpoints
                 results[i] = new ServiceLayerEditResult
                 {
                     Id = entry.Id,
-                    AddResults = BuildAddFailureResults(entry.Adds, description),
-                    UpdateResults = BuildFeatureFailureResults(entry.Updates, description),
-                    DeleteResults = BuildDeleteFailureResults(entry.Deletes, description)
+                    AddResults = BuildAddFailureResults(entry.Adds, description) ?? [],
+                    UpdateResults = BuildFeatureFailureResults(entry.Updates, description) ?? [],
+                    DeleteResults = BuildDeleteFailureResults(entry.Deletes, description) ?? []
                 };
             }
         }
