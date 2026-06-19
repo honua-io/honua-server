@@ -33,7 +33,9 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
 
         var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        payload.RootElement.TryGetProperty("currentVersion", out _).Should().BeTrue();
+        // Honua does not advertise an ArcGIS Server version (see NoArcGisServerVersionTests).
+        payload.RootElement.TryGetProperty("currentVersion", out _).Should().BeFalse();
+        payload.RootElement.TryGetProperty("fullVersion", out _).Should().BeFalse();
         payload.RootElement.TryGetProperty("folders", out var folders).Should().BeTrue();
         folders.ValueKind.Should().Be(JsonValueKind.Array);
         payload.RootElement.TryGetProperty("services", out var services).Should().BeTrue();
@@ -72,8 +74,9 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
 
         var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        payload.RootElement.TryGetProperty("currentVersion", out _).Should().BeTrue();
-        payload.RootElement.TryGetProperty("fullVersion", out _).Should().BeTrue();
+        // Honua does not advertise an ArcGIS Server version (see NoArcGisServerVersionTests).
+        payload.RootElement.TryGetProperty("currentVersion", out _).Should().BeFalse();
+        payload.RootElement.TryGetProperty("fullVersion", out _).Should().BeFalse();
         payload.RootElement.TryGetProperty("authInfo", out var authInfo).Should().BeTrue();
         authInfo.TryGetProperty("isTokenBasedSecurity", out _).Should().BeTrue();
     }

@@ -74,7 +74,8 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
 
-        root.GetProperty("currentVersion").GetDouble().Should().Be(10.81);
+        // Honua does not advertise an ArcGIS Server version (see NoArcGisServerVersionTests).
+        root.TryGetProperty("currentVersion", out _).Should().BeFalse();
         root.GetProperty("executionType").GetString().Should().Be("esriExecutionTypeAsynchronous");
         root.TryGetProperty("capabilities", out _).Should().BeTrue();
         root.GetProperty("resultMapServerName").GetString().Should().BeEmpty();

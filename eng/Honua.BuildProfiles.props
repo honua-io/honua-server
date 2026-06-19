@@ -12,6 +12,7 @@
     <HonuaIncludeAws Condition="'$(HonuaIncludeAws)' == ''">false</HonuaIncludeAws>
     <HonuaIncludeAzure Condition="'$(HonuaIncludeAzure)' == ''">false</HonuaIncludeAzure>
     <HonuaIncludeOracle Condition="'$(HonuaIncludeOracle)' == ''">false</HonuaIncludeOracle>
+    <HonuaIncludeSnowflake Condition="'$(HonuaIncludeSnowflake)' == ''">false</HonuaIncludeSnowflake>
   </PropertyGroup>
 
   <PropertyGroup>
@@ -19,12 +20,15 @@
     <HonuaIncludeAzure Condition="'$(HonuaIncludeAzure)' == ''">true</HonuaIncludeAzure>
     <HonuaIncludeOracle Condition="'$(HonuaSkipOracleForAotVerification)' == 'true'">false</HonuaIncludeOracle>
     <HonuaIncludeOracle Condition="'$(HonuaIncludeOracle)' == ''">true</HonuaIncludeOracle>
+    <HonuaIncludeSnowflake Condition="'$(HonuaSkipSnowflakeForAotVerification)' == 'true'">false</HonuaIncludeSnowflake>
+    <HonuaIncludeSnowflake Condition="'$(HonuaIncludeSnowflake)' == ''">true</HonuaIncludeSnowflake>
   </PropertyGroup>
 
   <PropertyGroup>
     <DefineConstants Condition="'$(HonuaIncludeAws)' != 'true'">$(DefineConstants);HONUA_EXCLUDE_AWS</DefineConstants>
     <DefineConstants Condition="'$(HonuaIncludeAzure)' != 'true'">$(DefineConstants);HONUA_EXCLUDE_AZURE</DefineConstants>
     <DefineConstants Condition="'$(HonuaIncludeOracle)' != 'true'">$(DefineConstants);HONUA_SKIP_ORACLE;HONUA_EXCLUDE_ORACLE</DefineConstants>
+    <DefineConstants Condition="'$(HonuaIncludeSnowflake)' != 'true'">$(DefineConstants);HONUA_SKIP_SNOWFLAKE;HONUA_EXCLUDE_SNOWFLAKE</DefineConstants>
   </PropertyGroup>
 
   <Target Name="ValidateHonuaBuildProfile" BeforeTargets="PrepareForBuild;Restore">

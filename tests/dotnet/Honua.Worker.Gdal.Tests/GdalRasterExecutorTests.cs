@@ -669,6 +669,8 @@ public sealed class GdalRasterExecutorTests
             "surface.rugosity-tri", "surface.rugosity-tpi", "surface.roughness",
             "raster.clip", "raster.reproject", "raster.statistics",
             "raster.histogram", "raster.zonal-statistics",
+            // Internal multidimensional-coverage metadata scan (ADR-0039 Path B).
+            "coverage.multidim.metadata",
             // Existing native-routed ids must still be present.
             "gdal.gdalwarp", "gdal.ogr2ogr",
         };
@@ -722,6 +724,7 @@ public sealed class GdalRasterExecutorTests
             new GdalRasterReprojectCatalogJobExecutor(runner, options, NullLogger<GdalRasterReprojectCatalogJobExecutor>.Instance),
             new GdalRasterStatisticsJobExecutor(runner, options, NullLogger<GdalRasterStatisticsJobExecutor>.Instance),
             new GdalRasterZonalStatisticsJobExecutor(runner, options, NullLogger<GdalRasterZonalStatisticsJobExecutor>.Instance),
+            new GdalMultidimCoverageMetadataJobExecutor(runner, options, NullLogger<GdalMultidimCoverageMetadataJobExecutor>.Instance),
             NullLogger<GdalDispatchJobExecutor>.Instance);
     }
 

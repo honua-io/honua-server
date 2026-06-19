@@ -40,8 +40,8 @@ public sealed class GeometryServiceInfoTests : IClassFixture<WebAppFixture>
         using var doc = JsonDocument.Parse(body);
         var root = doc.RootElement;
 
-        root.TryGetProperty("currentVersion", out var currentVersion).Should().BeTrue();
-        currentVersion.GetDouble().Should().BeGreaterThan(0);
+        // Honua does not advertise an ArcGIS Server version (see NoArcGisServerVersionTests).
+        root.TryGetProperty("currentVersion", out _).Should().BeFalse();
         root.TryGetProperty("serviceDescription", out _).Should().BeTrue();
         root.TryGetProperty("maxBufferCount", out var maxBuffer).Should().BeTrue();
         maxBuffer.GetInt32().Should().BeGreaterThan(0);

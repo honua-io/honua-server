@@ -45,8 +45,9 @@ public class ImageServerParameterValidationTests : IClassFixture<WebAppFixture>
             var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             var root = json.RootElement;
 
-            // Verify required Esri ImageServer properties
-            root.TryGetProperty("currentVersion", out _).Should().BeTrue();
+            // Verify required Esri ImageServer properties. Honua does not advertise an ArcGIS
+            // Server version (see NoArcGisServerVersionTests).
+            root.TryGetProperty("currentVersion", out _).Should().BeFalse();
             root.TryGetProperty("serviceDescription", out _).Should().BeTrue();
             root.TryGetProperty("name", out _).Should().BeTrue();
             root.TryGetProperty("extent", out var extent).Should().BeTrue();

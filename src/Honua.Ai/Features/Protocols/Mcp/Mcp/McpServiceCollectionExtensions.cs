@@ -75,6 +75,30 @@ internal static class McpServiceCollectionExtensions
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, RouteTool>());
         }
 
+        // Catalog-discovery and feature-query tools (#1xxx) are thin adapters
+        // over the canonical Metadata v2 graph and the shared feature-query
+        // pipeline. They are only advertised when the host composition has wired
+        // IMetadataV2GraphProvider (the same provider that backs /rest/services
+        // and FeatureServer query). Gating keeps tools/list honest in tests that
+        // call AddMcpOperatorSurface in isolation without a data provider.
+        if (services.Any(d => d.ServiceType == typeof(Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider)))
+        {
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, MapTools.ListLayersTool>());
+
+            if (services.Any(d => d.ServiceType == typeof(Honua.Core.Features.FeatureStore.Abstractions.IFeatureReader)))
+            {
+                services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, MapTools.QueryFeaturesTool>());
+            }
+
+            // The map-render tool additionally needs the canonical raster
+            // renderer (the same IRasterMapRenderer the OGC API Maps / MapServer
+            // export / WMS GetMap surfaces drive).
+            if (services.Any(d => d.ServiceType == typeof(Honua.Core.Features.Raster.Abstractions.IRasterMapRenderer)))
+            {
+                services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, MapTools.RenderMapTool>());
+            }
+        }
+
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpResource, JobStatusResource>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpResource, JobResultsResource>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpResource, ProposalStatusResource>());
