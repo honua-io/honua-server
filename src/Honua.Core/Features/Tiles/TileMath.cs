@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System;
 using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Core.Features.Tiles;
@@ -33,6 +34,24 @@ public static class TileMath
         var yMin = yMax - tileSize;
 
         return new TileBounds(xMin, yMin, xMax, yMax);
+    }
+
+    /// <summary>
+    /// Gets the bounding box for a tile using an explicit <see cref="GridGeometry"/> (the grid
+    /// origin, tile pixel size, and per-level cell size). This is the gridset-aware generalization
+    /// of <see cref="GetTileBounds(int, int, int)"/> / <see cref="GetTileBoundsGeographic(int, int, int)"/>
+    /// used by operator-defined custom tile matrix sets. Returns <see langword="null"/> when the
+    /// requested level is not part of the gridset.
+    /// </summary>
+    /// <param name="geometry">The grid geometry.</param>
+    /// <param name="x">Tile X (column) coordinate.</param>
+    /// <param name="y">Tile Y (row) coordinate.</param>
+    /// <param name="z">Tile matrix (zoom) level.</param>
+    /// <returns>Bounding box as (xmin, ymin, xmax, ymax) in the gridset CRS, or <see langword="null"/>.</returns>
+    public static TileBounds? GetTileBounds(GridGeometry geometry, int x, int y, int z)
+    {
+        ArgumentNullException.ThrowIfNull(geometry);
+        return geometry.GetTileBounds(x, y, z);
     }
 
     /// <summary>
