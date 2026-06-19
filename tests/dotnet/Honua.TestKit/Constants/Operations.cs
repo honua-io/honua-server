@@ -116,6 +116,7 @@ public static class Operations
     public const string Export = "Export";
     public const string Print = "Print";
     public const string Identify = "Identify";
+    public const string Find = "Find";
     public const string Render = "Render";
     public const string Tile = "Tile";
     public const string Wms = "WMS";
