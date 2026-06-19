@@ -32,6 +32,8 @@ public sealed class SqlDialectGuardrailTests
         ("Honua.SqlServer", typeof(Honua.SqlServer.Queries.Filters.SqlServerSqlDialect).Assembly),
         ("Honua.DuckDB", typeof(Honua.DuckDB.Queries.Filters.DuckDbSqlDialect).Assembly),
         ("Honua.Oracle", typeof(Honua.Oracle.Queries.Filters.OracleSqlDialect).Assembly),
+        ("Honua.Redshift", typeof(Honua.Redshift.Queries.Filters.RedshiftSqlDialect).Assembly),
+        ("Honua.Snowflake", typeof(Honua.Snowflake.Queries.Filters.SnowflakeSqlDialect).Assembly),
     };
 
     [ArchitectureTest]

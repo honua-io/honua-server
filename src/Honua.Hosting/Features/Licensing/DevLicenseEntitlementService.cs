@@ -35,31 +35,7 @@ internal sealed partial class DevLicenseEntitlementService : ILicenseEntitlement
         HonuaEdition grantEdition,
         ILogger<DevLicenseEntitlementService>? logger = null)
     {
-        var activeKeys = FeatureCatalog.All
-            .Where(feature => feature.MinimumEdition <= grantEdition)
-            .Select(feature => feature.Key)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var entitlements = FeatureCatalog.All
-            .Select(feature => new Entitlement
-            {
-                Key = feature.Key,
-                Name = feature.DisplayName,
-                IsActive = activeKeys.Contains(feature.Key),
-            })
-            .ToArray();
-
-        _snapshot = new LicenseSnapshot(
-            grantEdition,
-            IsValid: true,
-            LicenseValidationState.Valid,
-            ExpiresAt: null,
-            LicensedTo: "Honua Dev Grant",
-            LicenseId: "dev-grant",
-            IssuedAt: null,
-            entitlements,
-            activeKeys,
-            SnapshotVersion: 1,
-            KeyId: null);
+        _snapshot = DevLicenseSnapshotFactory.Create(grantEdition);
 
         if (logger is not null)
         {
