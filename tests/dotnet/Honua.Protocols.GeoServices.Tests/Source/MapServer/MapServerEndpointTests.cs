@@ -1696,6 +1696,25 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
         domains.ValueKind.Should().Be(JsonValueKind.Array);
     }
 
+    // honua-server#1825: Esri services accept BOTH GET and POST for queryDomains; clients
+    // POST large layers arrays that exceed URL limits. Previously POST returned 405.
+    [IntegrationTest]
+    [Operation(Operations.QueryDomains)]
+    [Endpoint("POST /rest/services/{serviceId}/MapServer/queryDomains")]
+    public async Task MapServer_QueryDomains_Post_ReturnsDomainsArray()
+    {
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/queryDomains",
+            new FormUrlEncodedContent([new KeyValuePair<string, string>("f", "json")]));
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+        using var document = JsonDocument.Parse(content);
+        document.RootElement.TryGetProperty("domains", out var domains).Should().BeTrue();
+        domains.ValueKind.Should().Be(JsonValueKind.Array);
+    }
+
     [IntegrationTest]
     [Operation(Operations.QueryDomains)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/queryDomains")]

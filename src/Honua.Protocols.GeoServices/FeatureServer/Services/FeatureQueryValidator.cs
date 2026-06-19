@@ -13,8 +13,18 @@ namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 internal sealed class FeatureQueryValidator : IFeatureQueryValidator
 {
     private readonly ICommonQueryValidator _commonQueryValidator;
+
+    // ArcGIS silently caps an over-maximum resultRecordCount to maxRecordCount and
+    // returns the capped page with exceededTransferLimit:true rather than rejecting the
+    // request with a 400 (honua-server#1825). Clients commonly pass a large "give me
+    // everything" resultRecordCount, so clamp to the limit instead of failing. The
+    // executor still detects the overflow (it probes one extra row) and emits
+    // exceededTransferLimit:true, so the response stays spec-correct.
     private static readonly PaginationValidationOptions _featureQueryPagination =
-        new(MinOffset: 0, MinLimit: 1, OffsetParameterName: "resultOffset", LimitParameterName: "resultRecordCount");
+        new(MinOffset: 0, MinLimit: 1, OffsetParameterName: "resultOffset", LimitParameterName: "resultRecordCount")
+        {
+            ClampLimitToMaximum = true
+        };
 
     public FeatureQueryValidator(ICommonQueryValidator commonQueryValidator)
     {
