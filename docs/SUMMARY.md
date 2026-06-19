@@ -134,6 +134,7 @@
 ## Internal
 
 - [Internal engineering docs](internal/README.md)
+- [Demo B — ops-champion recording runbook](internal/demo/demo-b-ops-runbook.md)
 
 ## Archive
 
