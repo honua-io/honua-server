@@ -577,6 +577,20 @@ public sealed record MetadataReleaseContext
     public MetadataRollbackPlan? RollbackPlan { get; init; }
 
     /// <summary>
+    /// Executable additive layer-evolution plan for the metadata-release reconciler. Carries the
+    /// forward schema script and its reversible inverse so the lifecycle can advance the additive
+    /// stages and roll back without a snapshot. Null for releases that do not use the additive
+    /// execution lifecycle.
+    /// </summary>
+    public MetadataReleaseExecutionPlan? ExecutionPlan { get; init; }
+
+    /// <summary>
+    /// Prior current Metadata v2 revision captured before activation so a reversible rollback can
+    /// reactivate it. Null when no prior revision existed.
+    /// </summary>
+    public long? PriorRevision { get; init; }
+
+    /// <summary>
     /// Blocking reason codes or messages specific to metadata release progression.
     /// </summary>
     public IReadOnlyList<string> Blockers { get; init; } = Array.Empty<string>();
