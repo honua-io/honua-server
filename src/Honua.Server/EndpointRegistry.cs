@@ -850,6 +850,8 @@ public static class EndpointRegistry
         new("GET", "/rest/services/{serviceId}/VectorTileServer/tile/{z}/{y}/{x}.pbf"),
         new("GET", "/rest/services/{serviceId}/VectorTileServer/resources/styles"),
         new("GET", "/rest/services/{serviceId}/VectorTileServer/resources/styles/{**resourcePath}"),
+        new("GET", "/rest/services/{serviceId}/VectorTileServer/resources/sprites/{spriteResource}"),
+        new("GET", "/rest/services/{serviceId}/VectorTileServer/resources/fonts/{fontstack}/{range}.pbf"),
         new("GET", "/rest/services/{serviceId}/VectorTileServer/tilemap/{z}/{y}/{x}/{dimension}/{dimension2}"),
         new("GET", "/rest/services/{serviceId}/VectorTileServer/tilemap"),
 

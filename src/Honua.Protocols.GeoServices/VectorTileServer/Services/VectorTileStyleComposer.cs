@@ -7,10 +7,13 @@
 // GL v8 document whose vector source's tile template resolves to this service's
 // tile/{z}/{y}/{x}.pbf route.
 //
-// Per the epic decision, sprite and glyphs references are OMITTED: Honua has no sprite/glyph
-// pipeline yet (honua-server#1780 adds it), so emitting those refs would 404 in clients. Any
-// sprite/glyphs already present in a stored style are stripped here so the served document
-// stays self-consistent.
+// Sprite/glyphs references are scoped-minimal (honua-server#1780, epic decision): Honua serves
+// only a stub sprite sheet and a stub glyph stack, so emitting sprite/glyphs is useful ONLY for
+// styles that actually consume them — i.e. styles with at least one `symbol` layer. When the
+// composed style has a symbol layer, the composer points sprite/glyphs at THIS service's
+// resources routes (absolute); otherwise it omits them. Any stale sprite/glyphs already present
+// in a stored style are always replaced (when symbol layers exist) or stripped (when they don't)
+// so the served document stays self-consistent.
 
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -22,7 +25,8 @@ namespace Honua.Protocols.GeoServices.VectorTileServer.Services;
 /// Rewrites a stored MapLibre/Mapbox style (or synthesizes a deterministic default) into the
 /// Mapbox GL v8 style document served by the VectorTileServer <c>resources/styles/root.json</c>
 /// endpoint. The sole vector source is pointed at this service's tile template; sprite/glyphs
-/// references are omitted until the sprite/glyph pipeline lands (honua-server#1780).
+/// references are emitted (pointed at this service's scoped-minimal sprite/glyph routes) only
+/// when the composed style has at least one <c>symbol</c> layer (honua-server#1780).
 /// </summary>
 internal static class VectorTileStyleComposer
 {
@@ -55,13 +59,26 @@ internal static class VectorTileStyleComposer
     /// The primary layer's geometry type, used to pick deterministic default paint when no
     /// style is stored.
     /// </param>
+    /// <param name="spriteUrl">
+    /// The absolute sprite base reference for this service (for example
+    /// <c>https://host/rest/services/{id}/VectorTileServer/resources/sprites/sprite</c>), emitted
+    /// only when the composed style has a symbol layer. Pass <see langword="null"/> to always omit.
+    /// </param>
+    /// <param name="glyphsUrl">
+    /// The absolute glyphs template for this service (for example
+    /// <c>https://host/rest/services/{id}/VectorTileServer/resources/fonts/{fontstack}/{range}.pbf</c>),
+    /// emitted only when the composed style has a symbol layer. Pass <see langword="null"/> to
+    /// always omit.
+    /// </param>
     /// <returns>A serialized Mapbox GL v8 style document.</returns>
     public static string Compose(
         string? storedMapLibreJson,
         string serviceName,
         string sourceId,
         string tileUrl,
-        MetadataV2GeometryType geometryType)
+        MetadataV2GeometryType geometryType,
+        string? spriteUrl = null,
+        string? glyphsUrl = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(serviceName);
         ArgumentException.ThrowIfNullOrWhiteSpace(sourceId);
@@ -71,7 +88,7 @@ internal static class VectorTileStyleComposer
             ?? BuildDefaultStyle(serviceName, sourceId, tileUrl, geometryType);
 
         RewriteSources(root, sourceId, tileUrl);
-        StripSpriteAndGlyphs(root);
+        ApplySpriteAndGlyphs(root, spriteUrl, glyphsUrl);
         EnsureVersionAndName(root, serviceName);
 
         return root.ToJsonString(SerializerOptions);
@@ -142,10 +159,50 @@ internal static class VectorTileStyleComposer
         source["tiles"] = new JsonArray(tileUrl);
     }
 
-    private static void StripSpriteAndGlyphs(JsonObject root)
+    /// <summary>
+    /// Applies the scoped-minimal sprite/glyphs rule: when the composed style has at least one
+    /// <c>symbol</c> layer and absolute references are supplied, point <c>sprite</c>/<c>glyphs</c>
+    /// at this service's resources routes; otherwise strip them so the served document never
+    /// advertises a sprite/glyph reference the client would fail to use.
+    /// </summary>
+    private static void ApplySpriteAndGlyphs(JsonObject root, string? spriteUrl, string? glyphsUrl)
     {
+        if (HasSymbolLayer(root)
+            && !string.IsNullOrWhiteSpace(spriteUrl)
+            && !string.IsNullOrWhiteSpace(glyphsUrl))
+        {
+            root["sprite"] = spriteUrl;
+            root["glyphs"] = glyphsUrl;
+            return;
+        }
+
         root.Remove("sprite");
         root.Remove("glyphs");
+    }
+
+    /// <summary>
+    /// Returns <see langword="true"/> when any layer in the style has <c>type == "symbol"</c>,
+    /// the only Mapbox GL layer type that consumes a sprite sheet (icons) or glyph stack (text).
+    /// </summary>
+    private static bool HasSymbolLayer(JsonObject root)
+    {
+        if (root["layers"] is not JsonArray layers)
+        {
+            return false;
+        }
+
+        foreach (var layer in layers)
+        {
+            if (layer is JsonObject layerObject
+                && layerObject["type"] is JsonValue typeValue
+                && typeValue.TryGetValue(out string? type)
+                && string.Equals(type, "symbol", StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static void EnsureVersionAndName(JsonObject root, string serviceName)
