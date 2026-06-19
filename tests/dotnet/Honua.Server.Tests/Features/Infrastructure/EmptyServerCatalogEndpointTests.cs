@@ -137,8 +137,9 @@ public sealed class EmptyServerCatalogEndpointTests : IAsyncLifetime
         using var doc = JsonDocument.Parse(content);
         var root = doc.RootElement;
 
-        // Valid GeoServices directory structure
-        root.GetProperty("currentVersion").GetDouble().Should().BeGreaterThan(0);
+        // Valid GeoServices directory structure.
+        // Honua does not advertise an ArcGIS Server version (see NoArcGisServerVersionTests).
+        root.TryGetProperty("currentVersion", out _).Should().BeFalse();
         root.GetProperty("services").GetArrayLength().Should().Be(0,
             "an empty server should advertise zero services");
         root.GetProperty("folders").GetArrayLength().Should().Be(0,
