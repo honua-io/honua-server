@@ -103,12 +103,82 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetTile)]
     [Endpoint("GET /rest/services/{serviceId}/VectorTileServer/tile/{z}/{y}/{x}.pbf")]
-    public async Task VectorTileServer_Tile_IsStubbedNotImplemented()
+    public async Task VectorTileServer_Tile_InRange_ReturnsMvtBytesWithCacheHeader()
+    {
+        // Zoom 1, tile (0,0) covers a quadrant of the world; the seeded "test" service
+        // resolves its EsriVectorTileLayer publication -> storage layer 0 and renders MVT.
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/VectorTileServer/tile/1/0/0.pbf");
+
+        // The seeded geometry may or may not intersect this specific tile, so accept either
+        // rendered bytes or an empty (204) tile; both are valid pipeline outcomes.
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NoContent);
+
+        // Cache-Control (max-age from TileOptions.CacheMaxAge) is set on both OK and 204.
+        response.Headers.Should().ContainKey("Cache-Control");
+        response.Headers.CacheControl!.MaxAge.Should().BeGreaterThan(TimeSpan.Zero);
+
+        if (response.StatusCode == HttpStatusCode.OK)
+        {
+            response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.mapbox-vector-tile");
+            var bytes = await response.Content.ReadAsByteArrayAsync();
+            bytes.Should().NotBeEmpty();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTile)]
+    [Endpoint("GET /rest/services/{serviceId}/VectorTileServer/tile/{z}/{y}/{x}.pbf")]
+    public async Task VectorTileServer_Tile_EmptyTile_ReturnsNoContent()
+    {
+        // A high-zoom tile far from the seeded extent yields no features -> 204 No Content.
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/VectorTileServer/tile/15/0/0.pbf");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        response.Headers.Should().ContainKey("Cache-Control");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTile)]
+    [Endpoint("GET /rest/services/{serviceId}/VectorTileServer/tile/{z}/{y}/{x}.pbf")]
+    public async Task VectorTileServer_Tile_BadCoordinates_ReturnsBadRequest()
+    {
+        // x/y out of range for the zoom level (z=1 -> max index 1) -> 400 Bad Request.
+        var badCoordinates = new[]
+        {
+            $"/rest/services/{WebAppFixture.TestServiceId}/VectorTileServer/tile/1/2/0.pbf", // y >= 2^z
+            $"/rest/services/{WebAppFixture.TestServiceId}/VectorTileServer/tile/1/0/2.pbf"  // x >= 2^z
+        };
+
+        foreach (var url in badCoordinates)
+        {
+            var response = await _fixture.Client.GetAsync(url);
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest, $"{url} is out of range");
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTile)]
+    [Endpoint("GET /rest/services/{serviceId}/VectorTileServer/tile/{z}/{y}/{x}.pbf")]
+    public async Task VectorTileServer_Tile_OutOfRangeZoom_ReturnsBadRequest()
+    {
+        // Zoom above LimitsOptions.Tiles.MaxTileZoom -> 400 Bad Request.
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/VectorTileServer/tile/30/0/0.pbf");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTile)]
+    [Endpoint("GET /rest/services/{serviceId}/VectorTileServer/tile/{z}/{y}/{x}.pbf")]
+    public async Task VectorTileServer_Tile_UnknownService_ReturnsNotFound()
     {
         var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/VectorTileServer/tile/0/0/0.pbf");
+            "/rest/services/does-not-exist/VectorTileServer/tile/1/0/0.pbf");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [IntegrationTest]
