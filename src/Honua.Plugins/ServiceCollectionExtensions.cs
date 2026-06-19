@@ -78,8 +78,12 @@ public static class ServiceCollectionExtensions
     /// <param name="configuration">Application configuration.</param>
     /// <param name="pluginId">The plugin id whose section to bind.</param>
     /// <returns>The same service collection for chaining.</returns>
+    [UnconditionalSuppressMessage(
+        "Trimming",
+        "IL2026:RequiresUnreferencedCode",
+        Justification = "ValidateDataAnnotations reflects over the options type, whose public and non-public properties are preserved by the DynamicallyAccessedMembers annotation on TOptions.")]
     public static IServiceCollection AddPluginOptions<[DynamicallyAccessedMembers(
-        DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] TOptions>(
+        DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.NonPublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] TOptions>(
         this IServiceCollection services,
         IConfiguration configuration,
         string pluginId)
@@ -109,8 +113,14 @@ public static class ServiceCollectionExtensions
     // source generator's syntactic match, which cannot emit a typed binder for the open generic
     // TOptions (SYSLIB1104). The concrete services.Configure<PluginOptions>(...) bind elsewhere in
     // this file still benefits from the generator.
-    private static readonly System.Reflection.MethodInfo BindMethod =
-        typeof(ConfigurationBinder).GetMethod(
+    private static readonly System.Reflection.MethodInfo BindMethod = ResolveBindMethod();
+
+    [UnconditionalSuppressMessage(
+        "Trimming",
+        "IL2026:RequiresUnreferencedCode",
+        Justification = "Resolves the ConfigurationBinder.Bind(IConfiguration, object) overload by reflection so the bind stays out of the configuration-binding source generator's match; the bound options type's members are preserved by the DynamicallyAccessedMembers annotation on AddPluginOptions' TOptions parameter.")]
+    private static System.Reflection.MethodInfo ResolveBindMethod()
+        => typeof(ConfigurationBinder).GetMethod(
             nameof(ConfigurationBinder.Bind),
             [typeof(IConfiguration), typeof(object)])
         ?? throw new InvalidOperationException("ConfigurationBinder.Bind(IConfiguration, object) overload was not found.");
