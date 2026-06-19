@@ -1,0 +1,90 @@
+name: PR merge train
+
+# Keeps open PRs flowing to trunk without a human babysitting "update the branch"
+# or clicking merge. With strict (up-to-date-before-merge) branch protection, every
+# PR goes stale each time another merges; this train does ONE action per trigger —
+# merge the oldest green + up-to-date PR, or if none is ready, freshen the next
+# green-but-behind PR — so it drains serially (no runner storm) and re-triggers
+# itself (a merge pushes trunk; an update completes a check_suite).
+#
+# Safety: it only ever merges a PR GitHub reports as `clean` (all required checks
+# green AND up to date), and only updates PRs that are `behind` but otherwise
+# mergeable. Red/draft/conflicting PRs are never touched.
+
+on:
+  push:
+    branches: [trunk]
+  check_suite:
+    types: [completed]
+  schedule:
+    - cron: '*/15 * * * *'   # backstop in case an event is missed
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  checks: read
+
+concurrency:
+  group: pr-merge-train
+  cancel-in-progress: false
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v9
+        with:
+          script: |
+            const owner = context.repo.owner, repo = context.repo.repo;
+            const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+            // mergeable_state is computed async; poll past 'unknown'.
+            async function fullState(number) {
+              for (let i = 0; i < 5; i++) {
+                const { data } = await github.rest.pulls.get({ owner, repo, pull_number: number });
+                if (data.mergeable_state !== 'unknown') return data;
+                await sleep(2500);
+              }
+              return (await github.rest.pulls.get({ owner, repo, pull_number: number })).data;
+            }
+
+            const { data: list } = await github.rest.pulls.list({
+              owner, repo, state: 'open', base: 'trunk', per_page: 100,
+            });
+            const open = list.filter(p => !p.draft)
+                             .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
+            // 1) Merge the first CLEAN PR (green + up to date). One per run — the
+            //    resulting trunk push re-triggers the train for the next.
+            for (const pr of open) {
+              const full = await fullState(pr.number);
+              if (full.mergeable_state === 'clean') {
+                try {
+                  await github.rest.pulls.merge({
+                    owner, repo, pull_number: pr.number, merge_method: 'squash',
+                  });
+                  core.info(`Merged #${pr.number} — ${pr.title}`);
+                  return;
+                } catch (e) {
+                  core.warning(`Merge #${pr.number} failed: ${e.message}`);
+                }
+              }
+            }
+
+            // 2) Nothing clean — freshen the oldest green-but-behind PR to tee up
+            //    the next merge (its CI completion re-triggers the train).
+            for (const pr of open) {
+              const full = await fullState(pr.number);
+              if (full.mergeable_state === 'behind') {
+                try {
+                  await github.rest.pulls.updateBranch({ owner, repo, pull_number: pr.number });
+                  core.info(`Updated #${pr.number} to trunk — ${pr.title}`);
+                  return;
+                } catch (e) {
+                  core.warning(`Update #${pr.number} failed: ${e.message}`);
+                }
+              }
+            }
+
+            core.info('Merge train idle: nothing clean to merge or behind to update.');
