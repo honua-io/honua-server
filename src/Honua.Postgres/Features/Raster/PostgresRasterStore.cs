@@ -537,6 +537,72 @@ internal sealed class PostgresRasterStore : IRasterStore
     private static bool CanResolveStretchBounds(RasterStretch stretch, RasterBandArithmetic? bandArithmetic)
         => bandArithmetic is null || (stretch.StatisticsMin is not null && stretch.StatisticsMax is not null);
 
+    // ----- On-the-fly overview selection for dynamic tile generation ----------
+    // Low-zoom raster tiles cover a huge ground area at coarse resolution (a z=0 tile
+    // is one 256px image of the whole web-mercator world). Resampling the full-resolution
+    // source straight onto that tiny grid forces PostGIS to read every source pixel even
+    // though almost all of them collapse into a single output pixel. To avoid that, we
+    // first reduce the source to a grid near the tile's own ground resolution, then let
+    // the existing precise ST_Resample reproject/register that reduced grid onto the
+    // 256x256 tile envelope. At native-or-finer zoom this is a strict no-op so high-zoom
+    // tiles keep reading the full-resolution raster unchanged.
+
+    /// <summary>
+    /// WebMercator world span in metres (equator), matching the constant used by the
+    /// import service's tile-index math. A WebMercatorQuad tile at zoom <c>z</c> spans
+    /// <c>WebMercatorWorldSpanMeters / 2^z</c> metres across 256 pixels.
+    /// </summary>
+    internal const double WebMercatorWorldSpanMeters = 40075016.686;
+
+    /// <summary>
+    /// Below this zoom the tile ground resolution is coarse enough relative to typical
+    /// source rasters that reducing the source first is worthwhile; at or above the native
+    /// resolution the reduction is a no-op so high-zoom tiles read the full-resolution
+    /// <c>raster</c> column. The SQL guard below additionally prevents any upsampling on a
+    /// per-source basis, so this threshold only bounds where we bother emitting the wrapper.
+    /// </summary>
+    internal const int OverviewMaxZoom = 22;
+
+    /// <summary>
+    /// Wraps the source <paramref name="rasterToken"/> so a low-zoom tile reads a
+    /// resolution-reduced grid (metres/pixel ≈ the requested tile's ground resolution)
+    /// instead of resampling the full-resolution raster. Returns the bare token unchanged
+    /// at native-or-finer zoom (<paramref name="level"/> &gt;= <see cref="OverviewMaxZoom"/>),
+    /// keeping the substitution a single-token no-op on the high-zoom path.
+    /// </summary>
+    /// <remarks>
+    /// The reduction is performed in EPSG:3857 (the tile CRS) via <c>ST_Rescale</c> so it is
+    /// SRID-agnostic: the outer <c>ST_Transform(..., 3857)</c> in the tile query becomes an
+    /// identity transform on the already-reprojected grid. <c>GREATEST</c>/<c>LEAST</c> guards
+    /// clamp the target pixel size against the source's own 3857 resolution so the rescale can
+    /// only ever coarsen — never upsample — making it a per-source no-op when the source is
+    /// already coarser than the tile. Residual sub-pixel drift from <c>ST_Rescale</c> keeping
+    /// the source origin is corrected by the subsequent envelope-aligned <c>ST_Resample</c>.
+    /// NearestNeighbor matches the tile path's existing (default) resampling/nodata semantics.
+    /// </remarks>
+    internal static string BuildOverviewSourceExpression(int level, string rasterToken = "raster")
+    {
+        // At native-or-finer zoom there is nothing to reduce: emit the bare column so the
+        // high-zoom tile query is byte-for-byte the full-resolution path.
+        if (level >= OverviewMaxZoom)
+        {
+            return rasterToken;
+        }
+
+        // Tile ground resolution: world span / (256 px * 2^level) metres-per-pixel.
+        var metresPerPixel = WebMercatorWorldSpanMeters / (256.0 * Math.Pow(2, level));
+        var mpp = metresPerPixel.ToString("G17", CultureInfo.InvariantCulture);
+
+        // Reproject to 3857 once, then rescale to ~tile resolution. The GREATEST/LEAST guards
+        // clamp against the source's own scale so we never produce a finer grid than the source.
+        var transformed = $"ST_Transform({rasterToken}, 3857)";
+        return
+            $"ST_Rescale({transformed}, " +
+            $"GREATEST(abs(ST_ScaleX({transformed})), {mpp}), " +
+            $"-GREATEST(abs(ST_ScaleY({transformed})), {mpp}), " +
+            "'NearestNeighbor')";
+    }
+
     // ----- Clip execution (export bbox + renderingRule Clip raster function) ---
     // Builds the ST_Clip wrapper for a clip region, reprojecting the clip geometry into the
     // raster SRID when a source SRID is supplied. When the region is inverted (Esri Clip
@@ -1317,6 +1383,10 @@ internal sealed class PostgresRasterStore : IRasterStore
             tileClipExpr = BuildStretchedRasterExpression(tileClipExpr, tileStretchBounds);
         }
 
+        // On-the-fly overview: reduce the source toward the tile's ground resolution at low
+        // zoom (no-op at native/finer zoom) so wide tiles do not resample full-res pixels.
+        var overviewSource = BuildOverviewSourceExpression(level);
+
         await using var dynCommand = connection.CreateCommand();
         // Build a 256×256 reference raster exactly aligned to the WebMercatorQuad tile
         // envelope (EPSG:3857). ST_Resample reprojects the source raster onto that grid so
@@ -1340,7 +1410,7 @@ internal sealed class PostgresRasterStore : IRasterStore
                 FROM tile_bounds tb
             )
             SELECT ST_AsGDALRaster(
-                ST_Resample(ST_Transform(raster, 3857), tile_ref.rast),
+                ST_Resample(ST_Transform({overviewSource}, 3857), tile_ref.rast),
                 '{effectiveTileFormat}'{tileCreationOptions}
             ) AS data
             FROM {_rasterDataTable}, tile_bounds tb, tile_ref
@@ -1411,6 +1481,9 @@ internal sealed class PostgresRasterStore : IRasterStore
             mosaicTileExpr = BuildStretchedRasterExpression(mosaicTileExpr, mosaicTileBounds);
         }
 
+        // Same on-the-fly overview reduction as GetImageTileAsync (no-op at native/finer zoom).
+        var overviewSource = BuildOverviewSourceExpression(level);
+
         await using var command = connection.CreateCommand();
         // Same tile-envelope-aligned approach as GetImageTileAsync: build a 256×256
         // reference raster in EPSG:3857 and use ST_Resample so the mosaic output covers
@@ -1434,7 +1507,7 @@ internal sealed class PostgresRasterStore : IRasterStore
                 FROM tile_bounds tb
             ),
             source AS (
-                SELECT ST_Resample(ST_Transform(raster, 3857), tile_ref.rast) AS rast,
+                SELECT ST_Resample(ST_Transform({overviewSource}, 3857), tile_ref.rast) AS rast,
                        id,
                        created_at,
                        COALESCE(acquisition_date, created_at) AS effective_acquisition
