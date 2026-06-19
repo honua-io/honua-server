@@ -148,6 +148,54 @@ internal sealed class VectorTileLevelOfDetail
     public double Scale { get; init; }
 }
 
+/// <summary>
+/// Response for the VectorTileServer tileMap endpoint
+/// (<c>GET /rest/services/{serviceId}/VectorTileServer/tilemap/{z}/{y}/{x}/{dim}/{dim}</c>).
+/// The shape mirrors the Esri tileMap availability block: a <c>location</c> describing the
+/// requested tile window and a row-major <c>data</c> array of <c>1</c> (tile in range) / <c>0</c>
+/// (tile outside the LOD/coordinate bounds) flags.
+/// </summary>
+internal sealed class VectorTileMapResponse
+{
+    /// <summary>
+    /// Whether the returned <see cref="Location"/> was adjusted (clamped) from the requested
+    /// window. Honua returns the requested window verbatim, so this is always <see langword="false"/>.
+    /// </summary>
+    [JsonPropertyName("adjusted")]
+    public bool Adjusted { get; init; }
+
+    /// <summary>The tile window the availability block covers.</summary>
+    [JsonPropertyName("location")]
+    public required VectorTileMapLocation Location { get; init; }
+
+    /// <summary>
+    /// Row-major availability flags for the window (<c>Height * Width</c> entries): <c>1</c>
+    /// when the tile is inside the LOD/coordinate bounds, <c>0</c> otherwise.
+    /// </summary>
+    [JsonPropertyName("data")]
+    public required int[] Data { get; init; }
+}
+
+/// <summary>Describes the tile window (top-left origin and size, in tiles) of a tileMap block.</summary>
+internal sealed class VectorTileMapLocation
+{
+    /// <summary>Column index (tile X) of the top-left tile in the window.</summary>
+    [JsonPropertyName("left")]
+    public required int Left { get; init; }
+
+    /// <summary>Row index (tile Y) of the top-left tile in the window.</summary>
+    [JsonPropertyName("top")]
+    public required int Top { get; init; }
+
+    /// <summary>Window width, in tiles.</summary>
+    [JsonPropertyName("width")]
+    public required int Width { get; init; }
+
+    /// <summary>Window height, in tiles.</summary>
+    [JsonPropertyName("height")]
+    public required int Height { get; init; }
+}
+
 /// <summary>Esri spatial extent for a VectorTileServer response.</summary>
 internal sealed class VectorTileExtent
 {
