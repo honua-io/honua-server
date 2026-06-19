@@ -18,6 +18,13 @@ public sealed class GeoServicesSqlParser
     // ANSI date/time fields the shared SQL translator already exposes as single-argument
     // functions (EXTRACT(YEAR FROM d) -> YEAR(d), etc.). Restricting to this allowlist keeps
     // unknown EXTRACT fields from ever reaching the SQL layer.
+    //
+    // The first group are the canonical ANSI fields mapped 1:1 to existing single-argument
+    // functions (YEAR(d), MONTH(d), ...). The second group are additional Postgres-supported
+    // fields (#1865) that have no equivalent single-arg function, so they are emitted as a
+    // distinct EXTRACT_<FIELD> FunctionCall the translator re-emits as EXTRACT(<FIELD> FROM x).
+    // Every entry here is a fixed SQL keyword chosen by the parser, never user text, so the
+    // field token can be interpolated by the translator while operands stay parameterized.
     private static readonly HashSet<string> _extractFields = new(StringComparer.OrdinalIgnoreCase)
     {
         "YEAR",
@@ -26,6 +33,18 @@ public sealed class GeoServicesSqlParser
         "HOUR",
         "MINUTE",
         "SECOND"
+    };
+
+    // Additional EXTRACT fields (beyond YEAR..SECOND) that Postgres supports and that we accept
+    // as of #1865. Each is emitted as FunctionCall("EXTRACT_<FIELD>", [source]); the translator
+    // owns the (allowlisted) field -> SQL mapping.
+    private static readonly HashSet<string> _extendedExtractFields = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "DOW",
+        "DOY",
+        "QUARTER",
+        "WEEK",
+        "EPOCH"
     };
 
     /// <summary>
@@ -101,7 +120,7 @@ public sealed class GeoServicesSqlParser
         {
             if (Match(TokenType.Like))
             {
-                return new BinaryExpression(left, BinaryOperator.NotLike, ParseConcat());
+                return ParseLikeRemainder(left, negate: true);
             }
 
             if (Match(TokenType.In))
@@ -122,7 +141,7 @@ public sealed class GeoServicesSqlParser
 
         if (Match(TokenType.Like))
         {
-            return new BinaryExpression(left, BinaryOperator.Like, ParseConcat());
+            return ParseLikeRemainder(left, negate: false);
         }
 
         if (Match(TokenType.In))
@@ -170,6 +189,92 @@ public sealed class GeoServicesSqlParser
 
         return left;
     }
+
+    // Parses the right-hand side of a `[NOT] LIKE pattern [ESCAPE 'c']` predicate.
+    // Without an ESCAPE clause this is the existing BinaryExpression(Like/NotLike). With one,
+    // the escape character is captured as a single-character string Literal and the whole
+    // predicate is emitted as FunctionCall("LIKE_ESCAPE"/"NOT_LIKE_ESCAPE", [left, pattern,
+    // escape]). The escape character stays a bound parameter at translation time, so no user
+    // text is interpolated into SQL.
+    private FilterExpression ParseLikeRemainder(FilterExpression left, bool negate)
+    {
+        var pattern = ParseConcat();
+
+        if (!TryMatchKeyword("ESCAPE"))
+        {
+            return new BinaryExpression(left, negate ? BinaryOperator.NotLike : BinaryOperator.Like, pattern);
+        }
+
+        if (!Match(TokenType.String))
+        {
+            throw Error("Expected a single-character string literal after ESCAPE.");
+        }
+
+        var escapeValue = Previous().Literal as string;
+        if (escapeValue is not { Length: 1 })
+        {
+            throw Error("ESCAPE requires a single-character string literal.");
+        }
+
+        var escapeLiteral = new Literal(escapeValue, LiteralType.Text);
+        return new FunctionCall(
+            negate ? "NOT_LIKE_ESCAPE" : "LIKE_ESCAPE",
+            new[] { left, pattern, escapeLiteral });
+    }
+
+    // CASE WHEN <cond> THEN <result> [WHEN ...] [ELSE <result>] END  (searched CASE), and
+    // CASE <operand> WHEN <value> THEN <result> ... [ELSE <result>] END (simple CASE).
+    //
+    // Both are desugared to a single searched-CASE shape encoded as
+    // FunctionCall("CASE", [cond1, result1, cond2, result2, ..., (else)]): an even argument
+    // count carries no ELSE branch, an odd count's trailing argument is the ELSE result. A
+    // simple CASE rewrites each `WHEN value` into the equality predicate `<operand> = value`
+    // at parse time, so the translator only ever handles the searched form and every operand
+    // (including the simple-CASE selector and branch values) is parameterized as usual.
+    private FilterExpression ParseCaseExpression()
+        => ParseWithDepth<FilterExpression>(() =>
+        {
+            // A simple CASE has an operand expression between CASE and the first WHEN.
+            FilterExpression? selector = null;
+            if (!Check(TokenType.When))
+            {
+                selector = ParseExpression();
+            }
+
+            var args = new List<FilterExpression>();
+            var branchCount = 0;
+            while (Match(TokenType.When))
+            {
+                var condition = ParseExpression();
+                if (selector is not null)
+                {
+                    // Simple CASE: `WHEN value` means `selector = value`.
+                    condition = new BinaryExpression(selector, BinaryOperator.Equal, condition);
+                }
+
+                Consume(TokenType.Then, "Expected 'THEN' in CASE expression.");
+                var result = ParseExpression();
+
+                args.Add(condition);
+                args.Add(result);
+
+                branchCount++;
+                FilterParserGuard.EnsureInListSize(branchCount, "GeoServicesSQL CASE branch");
+            }
+
+            if (branchCount == 0)
+            {
+                throw Error("CASE expression requires at least one WHEN ... THEN branch.");
+            }
+
+            if (Match(TokenType.Else))
+            {
+                args.Add(ParseExpression());
+            }
+
+            Consume(TokenType.End, "Expected 'END' to close CASE expression.");
+            return new FunctionCall("CASE", args);
+        });
 
     // SQL string concatenation (a || b || c). Chained operands are flattened into a single
     // CONCAT(...) FunctionCall, which the shared SQL translator already emits with each literal
@@ -247,6 +352,11 @@ public sealed class GeoServicesSqlParser
             var expression = ParseExpression();
             Consume(TokenType.RightParen, "Expected ')' after expression.");
             return expression;
+        }
+
+        if (Match(TokenType.Case))
+        {
+            return ParseCaseExpression();
         }
 
         if (Match(TokenType.Number))
@@ -395,15 +505,24 @@ public sealed class GeoServicesSqlParser
     {
         var field = ConsumeIdentifier("Expected a date/time field in EXTRACT expression.")
             .ToUpperInvariant();
-        if (!_extractFields.Contains(field))
+
+        var isCanonical = _extractFields.Contains(field);
+        var isExtended = _extendedExtractFields.Contains(field);
+        if (!isCanonical && !isExtended)
         {
-            throw Error($"Unsupported EXTRACT field '{field}'. Supported fields: {string.Join(", ", _extractFields)}.");
+            throw Error(
+                $"Unsupported EXTRACT field '{field}'. Supported fields: "
+                + $"{string.Join(", ", _extractFields.Concat(_extendedExtractFields))}.");
         }
 
         ConsumeKeyword("FROM", "Expected 'FROM' in EXTRACT expression.");
         var source = ParseExpression();
         Consume(TokenType.RightParen, "Expected ')' after EXTRACT source.");
-        return new FunctionCall(field, new[] { source });
+
+        // Canonical fields reuse the existing single-arg date/time functions (YEAR(x), ...);
+        // extended fields carry an EXTRACT_ prefix the translator maps to EXTRACT(field FROM x).
+        var functionName = isCanonical ? field : $"EXTRACT_{field}";
+        return new FunctionCall(functionName, new[] { source });
     }
 
     // SUBSTRING(value FROM start [FOR length]) -> FunctionCall("SUBSTRING", [value, start (, length)])
@@ -765,6 +884,11 @@ public sealed class GeoServicesSqlParser
         CurrentDate,
         CurrentTimestamp,
         CurrentTime,
+        Case,
+        When,
+        Then,
+        Else,
+        End,
         EndOfFile
     }
 
@@ -793,7 +917,12 @@ public sealed class GeoServicesSqlParser
             ["TIMESTAMP"] = TokenType.Timestamp,
             ["CURRENT_DATE"] = TokenType.CurrentDate,
             ["CURRENT_TIMESTAMP"] = TokenType.CurrentTimestamp,
-            ["CURRENT_TIME"] = TokenType.CurrentTime
+            ["CURRENT_TIME"] = TokenType.CurrentTime,
+            ["CASE"] = TokenType.Case,
+            ["WHEN"] = TokenType.When,
+            ["THEN"] = TokenType.Then,
+            ["ELSE"] = TokenType.Else,
+            ["END"] = TokenType.End
         };
 
         public Lexer(string source)

@@ -456,6 +456,26 @@ internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBa
             return TranslateCast(function, context);
         }
 
+        // Searched-CASE emitted by the GeoServices SQL parser as
+        // FunctionCall("CASE", [cond1, result1, ..., (else)]). Each operand is translated
+        // recursively, so every literal inside the branches becomes a bound parameter.
+        if (string.Equals(function.FunctionName, "CASE", StringComparison.OrdinalIgnoreCase))
+        {
+            return TranslateCase(function, context);
+        }
+
+        // `[NOT] LIKE pattern ESCAPE 'c'` emitted as FunctionCall with three operands.
+        // The escape character is a normal Literal and is parameterized like any other value.
+        if (string.Equals(function.FunctionName, "LIKE_ESCAPE", StringComparison.OrdinalIgnoreCase))
+        {
+            return TranslateLikeEscape(function, context, negate: false);
+        }
+
+        if (string.Equals(function.FunctionName, "NOT_LIKE_ESCAPE", StringComparison.OrdinalIgnoreCase))
+        {
+            return TranslateLikeEscape(function, context, negate: true);
+        }
+
         var args = function.Arguments.Select(arg => TranslateExpression(arg, context)).ToArray();
         var argString = string.Join(", ", args);
 
@@ -502,6 +522,15 @@ internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBa
             "SECOND" => args.Length == 1
                 ? $"EXTRACT(SECOND FROM {args[0]})"
                 : throw new ArgumentException("SECOND requires one argument"),
+
+            // Extended EXTRACT fields (#1865). The field token is fixed by the parser's
+            // allowlist (never user text), so it is interpolated while the source operand
+            // stays a translated, parameter-safe sub-expression.
+            "EXTRACT_DOW" => TranslateExtractField("DOW", args),
+            "EXTRACT_DOY" => TranslateExtractField("DOY", args),
+            "EXTRACT_QUARTER" => TranslateExtractField("QUARTER", args),
+            "EXTRACT_WEEK" => TranslateExtractField("WEEK", args),
+            "EXTRACT_EPOCH" => TranslateExtractField("EPOCH", args),
             "CURRENT_DATE" => args.Length == 0
                 ? "CURRENT_DATE"
                 : throw new ArgumentException("CURRENT_DATE does not accept arguments"),
@@ -574,6 +603,66 @@ internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBa
 
         var length = CastInteger(args[2]);
         return $"SUBSTRING({args[0]}, {start}, {length})";
+    }
+
+    // EXTRACT(<field> FROM source). `field` is a parser-allowlisted SQL keyword token, never
+    // user text; the source operand is already a translated, parameter-safe expression.
+    private static string TranslateExtractField(string field, string[] args)
+    {
+        if (args.Length != 1)
+        {
+            throw new ArgumentException($"EXTRACT({field} ...) requires one argument.");
+        }
+
+        return $"EXTRACT({field} FROM {args[0]})";
+    }
+
+    // Searched-CASE: FunctionCall("CASE", [cond1, result1, cond2, result2, ..., (else)]).
+    // An even argument count has no ELSE branch; an odd count's trailing argument is the ELSE
+    // result. Every operand is translated recursively so all embedded literals are bound.
+    private string TranslateCase(FunctionCall function, FilterTranslationContext context)
+    {
+        var arguments = function.Arguments;
+        if (arguments.Count < 2)
+        {
+            throw new ArgumentException("CASE requires at least one WHEN/THEN branch.");
+        }
+
+        var branchCount = arguments.Count / 2; // integer division drops a trailing ELSE
+        var builder = new System.Text.StringBuilder("CASE");
+        for (var i = 0; i < branchCount; i++)
+        {
+            var condition = TranslateExpression(arguments[i * 2], context);
+            var result = TranslateExpression(arguments[(i * 2) + 1], context);
+            builder.Append(" WHEN ").Append(condition).Append(" THEN ").Append(result);
+        }
+
+        // Odd count => trailing ELSE result.
+        if (arguments.Count % 2 == 1)
+        {
+            var elseResult = TranslateExpression(arguments[^1], context);
+            builder.Append(" ELSE ").Append(elseResult);
+        }
+
+        builder.Append(" END");
+        return $"({builder})";
+    }
+
+    // `[NOT] LIKE pattern ESCAPE 'c'` -> `<left> [NOT] LIKE <pattern> ESCAPE <escapeParam>`.
+    // The escape character is a normal Literal operand and is bound as a parameter; nothing
+    // user-supplied is interpolated into the SQL string.
+    private string TranslateLikeEscape(FunctionCall function, FilterTranslationContext context, bool negate)
+    {
+        if (function.Arguments.Count != 3)
+        {
+            throw new ArgumentException("LIKE ... ESCAPE requires a value, a pattern, and an escape character.");
+        }
+
+        var value = TranslateExpression(function.Arguments[0], context);
+        var pattern = TranslateExpression(function.Arguments[1], context);
+        var escape = TranslateExpression(function.Arguments[2], context);
+        var op = negate ? "NOT LIKE" : "LIKE";
+        return $"{value} {op} {pattern} ESCAPE {escape}";
     }
 
     private static string TranslateSpatialFunction(string postgisName, string[] args, int expectedArgCount)
