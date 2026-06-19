@@ -1084,11 +1084,17 @@ internal static partial class FeatureServerEndpoints
         }
 
         // Esri's service-level sqlType is one of where|orderBy|expression. It defaults to
-        // `where` when omitted, matching the most common ArcGIS client usage.
+        // `where` when omitted, matching the most common ArcGIS client usage. Real ArcGIS
+        // clients send the canonical enum (esriSQLTypeWhere/OrderBy/Expression), so map those
+        // to the short forms while still accepting the short forms directly (#1858).
         var sqlType = GetValueString(values, "sqlType");
         if (string.IsNullOrWhiteSpace(sqlType))
         {
             sqlType = "where";
+        }
+        else
+        {
+            sqlType = NormalizeServiceSqlType(sqlType);
         }
 
         if (!IsSupportedServiceSqlType(sqlType))
@@ -1118,6 +1124,33 @@ internal static partial class FeatureServerEndpoints
         => string.Equals(sqlType, "where", StringComparison.OrdinalIgnoreCase)
            || string.Equals(sqlType, "orderBy", StringComparison.OrdinalIgnoreCase)
            || string.Equals(sqlType, "expression", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Maps the canonical Esri <c>sqlType</c> enum values
+    /// (<c>esriSQLTypeWhere</c>/<c>esriSQLTypeOrderBy</c>/<c>esriSQLTypeExpression</c>) that real
+    /// ArcGIS clients send to the short forms (<c>where</c>/<c>orderBy</c>/<c>expression</c>) the
+    /// rest of the pipeline uses. Short forms and any unrecognized value pass through unchanged so
+    /// the caller still validates them (#1858).
+    /// </summary>
+    private static string NormalizeServiceSqlType(string sqlType)
+    {
+        if (string.Equals(sqlType, "esriSQLTypeWhere", StringComparison.OrdinalIgnoreCase))
+        {
+            return "where";
+        }
+
+        if (string.Equals(sqlType, "esriSQLTypeOrderBy", StringComparison.OrdinalIgnoreCase))
+        {
+            return "orderBy";
+        }
+
+        if (string.Equals(sqlType, "esriSQLTypeExpression", StringComparison.OrdinalIgnoreCase))
+        {
+            return "expression";
+        }
+
+        return sqlType;
+    }
 
     /// <summary>
     /// Validates a SQL string for the given Esri <c>sqlType</c> against a layer schema.
