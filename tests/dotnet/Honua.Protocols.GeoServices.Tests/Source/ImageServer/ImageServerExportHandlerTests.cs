@@ -299,25 +299,13 @@ public class ImageServerExportHandlerTests
 
         long[]? capturedRasterIds = null;
         RasterMergeStrategy? capturedMergeStrategy = null;
-        _rasterStore.ExportMosaicAsync(
-                1,
-                Arg.Any<long[]>(),
-                Arg.Any<RasterMergeStrategy>(),
-                Arg.Any<RasterQuery>(),
-                Arg.Any<CancellationToken>())
-            .Returns(callInfo =>
+        SetupMosaicCapture(
+            callInfo =>
             {
                 capturedRasterIds = callInfo.ArgAt<long[]>(1);
                 capturedMergeStrategy = callInfo.ArgAt<RasterMergeStrategy>(2);
-                return CreateTestRasterResult();
             });
-        _temporaryFileService.StoreTemporaryFileAsync(
-            Arg.Any<byte[]>(),
-            Arg.Any<string>(),
-            Arg.Any<TimeSpan?>(),
-            Arg.Any<ClaimsPrincipal?>(),
-            Arg.Any<CancellationToken>())
-            .Returns("/temp/test.png");
+        SetupTemporaryStorage();
 
         var context = CreateImageServerContext();
         var request = CreateRequest(mosaicRule: "{\"mergeStrategy\":\"max\"}");
@@ -334,9 +322,142 @@ public class ImageServerExportHandlerTests
                 Arg.Any<long[]>(),
                 RasterMergeStrategy.Max,
                 Arg.Any<RasterQuery>(),
+                Arg.Any<RasterMosaicOrdering>(),
                 Arg.Any<CancellationToken>());
         await _rasterStore.DidNotReceive()
             .ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExportImageAsync_WithByDateMosaicMethod_MapsToNewestOrdering()
+    {
+        _rasterStore.QueryRastersAsync(default, default, default)
+            .ReturnsForAnyArgs(
+            [
+                CreateTestRasterInfo(),
+                CreateTestRasterInfo() with { Id = 101, Name = "second-raster" }
+            ]);
+
+        RasterMosaicOrdering? capturedOrdering = null;
+        SetupMosaicCapture(callInfo => capturedOrdering = callInfo.ArgAt<RasterMosaicOrdering>(4));
+        SetupTemporaryStorage();
+
+        var context = CreateImageServerContext();
+        // esriMosaicByAttribute over an acquisition date field, descending (default).
+        var request = CreateRequest(
+            mosaicRule: "{\"mosaicMethod\":\"esriMosaicByAttribute\",\"sortField\":\"AcquisitionDate\"}");
+        var result = await _handler.ExportImageAsync(context, 1, request);
+
+        result.Should().BeOfType<JsonHttpResult<ExportImageResponse>>();
+        capturedOrdering.Should().Be(RasterMosaicOrdering.AcquisitionNewest);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExportImageAsync_WithByDateAscendingMosaicMethod_MapsToOldestOrdering()
+    {
+        _rasterStore.QueryRastersAsync(default, default, default)
+            .ReturnsForAnyArgs(
+            [
+                CreateTestRasterInfo(),
+                CreateTestRasterInfo() with { Id = 101, Name = "second-raster" }
+            ]);
+
+        RasterMosaicOrdering? capturedOrdering = null;
+        SetupMosaicCapture(callInfo => capturedOrdering = callInfo.ArgAt<RasterMosaicOrdering>(4));
+        SetupTemporaryStorage();
+
+        var context = CreateImageServerContext();
+        var request = CreateRequest(
+            mosaicRule: "{\"mosaicMethod\":\"esriMosaicByAttribute\",\"sortField\":\"AcquisitionDate\",\"ascending\":true}");
+        var result = await _handler.ExportImageAsync(context, 1, request);
+
+        result.Should().BeOfType<JsonHttpResult<ExportImageResponse>>();
+        capturedOrdering.Should().Be(RasterMosaicOrdering.AcquisitionOldest);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExportImageAsync_WithNorthwestMosaicMethod_MapsToNorthwestOrdering()
+    {
+        _rasterStore.QueryRastersAsync(default, default, default)
+            .ReturnsForAnyArgs(
+            [
+                CreateTestRasterInfo(),
+                CreateTestRasterInfo() with { Id = 101, Name = "second-raster" }
+            ]);
+
+        RasterMosaicOrdering? capturedOrdering = null;
+        SetupMosaicCapture(callInfo => capturedOrdering = callInfo.ArgAt<RasterMosaicOrdering>(4));
+        SetupTemporaryStorage();
+
+        var context = CreateImageServerContext();
+        var request = CreateRequest(mosaicRule: "{\"mosaicMethod\":\"esriMosaicNorthwest\"}");
+        var result = await _handler.ExportImageAsync(context, 1, request);
+
+        result.Should().BeOfType<JsonHttpResult<ExportImageResponse>>();
+        capturedOrdering.Should().Be(RasterMosaicOrdering.Northwest);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExportImageAsync_WithLockRasterMosaicMethod_RestrictsCompositeToLockedIds()
+    {
+        _rasterStore.QueryRastersAsync(default, default, default)
+            .ReturnsForAnyArgs(
+            [
+                CreateTestRasterInfo(),
+                CreateTestRasterInfo() with { Id = 101, Name = "second-raster" },
+                CreateTestRasterInfo() with { Id = 102, Name = "third-raster" }
+            ]);
+
+        long[]? capturedRasterIds = null;
+        RasterMosaicOrdering? capturedOrdering = null;
+        SetupMosaicCapture(callInfo =>
+        {
+            capturedRasterIds = callInfo.ArgAt<long[]>(1);
+            capturedOrdering = callInfo.ArgAt<RasterMosaicOrdering>(4);
+        });
+        SetupTemporaryStorage();
+
+        var context = CreateImageServerContext();
+        // Lock to ids 100 and 102; id 101 must be dropped from the composite.
+        var request = CreateRequest(mosaicRule: "{\"mosaicMethod\":\"esriMosaicLockRaster\",\"lockRasterIds\":[100,102]}");
+        var result = await _handler.ExportImageAsync(context, 1, request);
+
+        result.Should().BeOfType<JsonHttpResult<ExportImageResponse>>();
+        capturedRasterIds.Should().NotBeNull();
+        capturedRasterIds!.Should().Equal(100L, 102L);
+        capturedOrdering.Should().Be(RasterMosaicOrdering.LockOrder);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExportImageAsync_WithLockRasterMosaicMethodAndNoMatchingIds_ReturnsNotFound()
+    {
+        _rasterStore.QueryRastersAsync(default, default, default)
+            .ReturnsForAnyArgs(
+            [
+                CreateTestRasterInfo(),
+                CreateTestRasterInfo() with { Id = 101, Name = "second-raster" }
+            ]);
+
+        var context = CreateImageServerContext();
+        // None of the selected rasters (100, 101) match the locked id 999.
+        var request = CreateRequest(mosaicRule: "{\"mosaicMethod\":\"esriMosaicLockRaster\",\"lockRasterIds\":[999]}");
+        var result = await _handler.ExportImageAsync(context, 1, request);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status404NotFound);
+        await _rasterStore.DidNotReceive()
+            .ExportMosaicAsync(
+                1,
+                Arg.Any<long[]>(),
+                Arg.Any<RasterMergeStrategy>(),
+                Arg.Any<RasterQuery>(),
+                Arg.Any<RasterMosaicOrdering>(),
+                Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -347,18 +468,13 @@ public class ImageServerExportHandlerTests
             .ReturnsForAnyArgs([CreateTestRasterInfo() with { Width = 100, Height = 20000 }]);
         _rasterStore.ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
             .Returns(CreateTestRasterResult());
-        _temporaryFileService.StoreTemporaryFileAsync(
-            Arg.Any<byte[]>(),
-            Arg.Any<string>(),
-            Arg.Any<TimeSpan?>(),
-            Arg.Any<ClaimsPrincipal?>(),
-            Arg.Any<CancellationToken>())
-            .Returns("/temp/test.png");
+        SetupTemporaryStorage();
         _rasterStore.GetExtentAsync(1, 100, Arg.Any<CancellationToken>())
             .Returns(new RasterExtent { XMin = -180, YMin = -90, XMax = 180, YMax = 90, Srid = 4326 });
 
         var context = CreateImageServerContext();
-        var request = CreateRequest(mosaicRule: "{\"mosaicMethod\":\"esriMosaicLockRaster\",\"lockRasterIds\":[8]}");
+        // A single raster matching the locked id short-circuits to the single-raster export path.
+        var request = CreateRequest(mosaicRule: "{\"mosaicMethod\":\"esriMosaicLockRaster\",\"lockRasterIds\":[100]}");
         var result = await _handler.ExportImageAsync(context, 1, request);
 
         result.Should().BeOfType<JsonHttpResult<ExportImageResponse>>();
@@ -366,7 +482,7 @@ public class ImageServerExportHandlerTests
 
     [UnitTest]
     [Operation(Operations.Export)]
-    public async Task ExportImageAsync_WithUnsupportedMosaicMethodAndMultipleRasters_ReturnsNotImplemented()
+    public async Task ExportImageAsync_WithSeamlineMosaicMethodAndMultipleRasters_ReturnsNotImplemented()
     {
         _rasterStore.QueryRastersAsync(default, default, default)
             .ReturnsForAnyArgs(
@@ -376,7 +492,7 @@ public class ImageServerExportHandlerTests
             ]);
 
         var context = CreateImageServerContext();
-        var request = CreateRequest(mosaicRule: "{\"mosaicMethod\":\"esriMosaicLockRaster\",\"lockRasterIds\":[8]}");
+        var request = CreateRequest(mosaicRule: "{\"mosaicMethod\":\"esriMosaicSeamline\"}");
         var result = await _handler.ExportImageAsync(context, 1, request);
         await result.ExecuteAsync(context);
 
@@ -387,6 +503,7 @@ public class ImageServerExportHandlerTests
                 Arg.Any<long[]>(),
                 Arg.Any<RasterMergeStrategy>(),
                 Arg.Any<RasterQuery>(),
+                Arg.Any<RasterMosaicOrdering>(),
                 Arg.Any<CancellationToken>());
     }
 
@@ -927,6 +1044,33 @@ public class ImageServerExportHandlerTests
     {
         _rasterStore.QueryRastersAsync(default, default, default)
             .ReturnsForAnyArgs([CreateTestRasterInfo()]);
+    }
+
+    private void SetupMosaicCapture(Action<NSubstitute.Core.CallInfo> capture)
+    {
+        _rasterStore.ExportMosaicAsync(
+                1,
+                Arg.Any<long[]>(),
+                Arg.Any<RasterMergeStrategy>(),
+                Arg.Any<RasterQuery>(),
+                Arg.Any<RasterMosaicOrdering>(),
+                Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                capture(callInfo);
+                return CreateTestRasterResult();
+            });
+    }
+
+    private void SetupTemporaryStorage()
+    {
+        _temporaryFileService.StoreTemporaryFileAsync(
+            Arg.Any<byte[]>(),
+            Arg.Any<string>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<ClaimsPrincipal?>(),
+            Arg.Any<CancellationToken>())
+            .Returns("/temp/test.png");
     }
 
     private void SetupSuccessfulExport()

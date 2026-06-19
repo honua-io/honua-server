@@ -93,25 +93,53 @@ internal sealed class ImageServerExportHandler
                 return editionError;
             }
 
-            var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, request.MosaicRule);
+            if (!ImageServerMosaicRule.TryParse(request.MosaicRule, out var mosaicRule, out var mosaicRuleError, out var mosaicRuleNotImplemented))
+            {
+                ImageServerLog.InvalidExportParameters(_logger, layerId, mosaicRuleError);
+                return mosaicRuleNotImplemented
+                    ? StandardErrorHelpers.CreateNotImplemented(context, mosaicRuleError)
+                    : StandardErrorHelpers.CreateBadRequest(context, mosaicRuleError);
+            }
+
+            // The request override (mosaicRule mergeStrategy/operation token) wins; otherwise
+            // fall back to the resource-default merge strategy.
+            var mergeStrategy = mosaicRule.Operation
+                ?? ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, mosaicRule: null);
+            var ordering = mosaicRule.ToOrdering();
+
+            // esriMosaicLockRaster composites a caller-pinned set of rasters and is independent
+            // of the temporal newest-batch snapshot, so the selection query drops the timestamp
+            // filter and the locked ids are intersected with the spatial selection below.
             var selectionQuery = new RasterSelectionQuery
             {
                 Geometry = exportQuery.ClipRegion?.Geometry,
                 GeometrySrid = exportQuery.ClipRegion?.Srid,
-                Timestamp = timestamp,
+                Timestamp = mosaicRule.Method == MosaicMethod.LockRaster ? null : timestamp,
             };
 
             var selectedRasters = await _rasterStore.QueryRastersAsync(layerId, selectionQuery, cancellationToken);
+
+            if (mosaicRule.Method == MosaicMethod.LockRaster)
+            {
+                var lockedIds = mosaicRule.LockRasterIds ?? Array.Empty<long>();
+                var lockedSet = new HashSet<long>(lockedIds);
+                selectedRasters = selectedRasters.Where(r => lockedSet.Contains(r.Id)).ToArray();
+            }
+
             if (selectedRasters.Length == 0)
             {
                 ImageServerLog.NoRastersFound(_logger, layerId);
                 return StandardErrorHelpers.CreateNotFound(context, "No rasters found for layer.");
             }
 
-            if (!TryValidateMosaicRule(request.MosaicRule, selectedRasters.Length > 1, out var mosaicRuleError))
+            // A genuinely-unsupported mosaic method (seamline, nadir, arbitrary non-date
+            // attribute sort) can only affect output when more than one raster is composited;
+            // with a single raster the method cannot change pixel selection, so it is accepted.
+            if (mosaicRule.Method == MosaicMethod.Unsupported && selectedRasters.Length > 1)
             {
-                ImageServerLog.InvalidExportParameters(_logger, layerId, mosaicRuleError);
-                return StandardErrorHelpers.CreateNotImplemented(context, mosaicRuleError);
+                var unsupportedMessage = "mosaicRule mosaicMethod is not implemented on this service.";
+                ImageServerLog.InvalidExportParameters(_logger, layerId, unsupportedMessage);
+                return StandardErrorHelpers.CreateNotImplemented(context, unsupportedMessage);
             }
 
             var aggregateExtent = ImageServerMosaicHelpers.ComputeAggregateExtent(selectedRasters);
@@ -131,6 +159,7 @@ internal sealed class ImageServerExportHandler
                     selectedRasters.Select(r => r.Id).ToArray(),
                     mergeStrategy,
                     exportQuery,
+                    ordering,
                     cancellationToken);
 
             if (WantsInlineImageResponse(request.F))
@@ -619,60 +648,6 @@ internal sealed class ImageServerExportHandler
 
     private static bool WantsInlineImageResponse(string? format)
         => string.Equals(format, InlineImageFormat, StringComparison.OrdinalIgnoreCase);
-
-    // A mosaicRule is honored only to the extent of its mergeStrategy/operation token
-    // (mapped to a RasterMergeStrategy). Esri mosaicRules that select a mosaicMethod honua
-    // does not implement (e.g. esriMosaicNadir, esriMosaicLockRaster, esriMosaicSeamline)
-    // are rejected with a clean 501 when multiple rasters would need true mosaic ordering.
-    // With a single selected raster, the method cannot affect pixel selection and is accepted.
-    private static bool TryValidateMosaicRule(string? mosaicRule, bool affectsMosaicSelection, out string error)
-    {
-        error = string.Empty;
-        if (string.IsNullOrWhiteSpace(mosaicRule))
-        {
-            return true;
-        }
-
-        var trimmed = mosaicRule.Trim();
-        if (!trimmed.StartsWith('{'))
-        {
-            return true;
-        }
-
-        try
-        {
-            using var document = System.Text.Json.JsonDocument.Parse(trimmed);
-            if (document.RootElement.ValueKind != System.Text.Json.JsonValueKind.Object)
-            {
-                return true;
-            }
-
-            if (document.RootElement.TryGetProperty("mosaicMethod", out var method) &&
-                method.ValueKind == System.Text.Json.JsonValueKind.String)
-            {
-                var value = method.GetString();
-                if (!string.IsNullOrWhiteSpace(value) &&
-                    !value.Equals("esriMosaicNone", StringComparison.OrdinalIgnoreCase) &&
-                    !value.Equals("esriMosaicAttribute", StringComparison.OrdinalIgnoreCase))
-                {
-                    if (!affectsMosaicSelection)
-                    {
-                        return true;
-                    }
-
-                    error = $"mosaicRule mosaicMethod '{value}' is not implemented on this service.";
-                    return false;
-                }
-            }
-
-            return true;
-        }
-        catch (System.Text.Json.JsonException)
-        {
-            error = "mosaicRule contains invalid JSON.";
-            return false;
-        }
-    }
 
     private readonly record struct ExportParameterParseError(string Detail, bool IsNotImplemented = false);
 }
