@@ -756,7 +756,11 @@ public static class EndpointRegistry
         new("GET", "/scenes/{sceneId}/tileset.json"),
         new("HEAD", "/scenes/{sceneId}/tileset.json"),
 
-        // Esri I3S SceneServer serving (#1202; Enterprise-gated).
+        // Esri I3S SceneServer serving at the canonical GeoServices path
+        // (#1806; Enterprise-gated). The /scenes/{sceneId}/SceneServer routes
+        // below are retained as documented aliases (#1202).
+        new("GET", "/rest/services/{sceneId}/SceneServer"),
+        new("GET", "/rest/services/{sceneId}/SceneServer/layers/{layerId:int}"),
         new("GET", "/scenes/{sceneId}/SceneServer"),
         new("GET", "/scenes/{sceneId}/SceneServer/layers/{layerId:int}"),
 
