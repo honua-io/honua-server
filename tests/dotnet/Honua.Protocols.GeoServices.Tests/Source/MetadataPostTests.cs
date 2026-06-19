@@ -52,7 +52,8 @@ public sealed class MetadataPostTests : IClassFixture<WebAppFixture>
         using var getDoc = JsonDocument.Parse(getBody);
         using var postDoc = JsonDocument.Parse(postBody);
         postDoc.RootElement.GetProperty("serviceName").GetString().Should().Be(TestServiceId);
-        postDoc.RootElement.GetProperty("currentVersion").GetDouble().Should().BeGreaterThan(0);
+        // Honua does not advertise an ArcGIS Server version (see NoArcGisServerVersionTests).
+        postDoc.RootElement.TryGetProperty("currentVersion", out _).Should().BeFalse();
         postBody.Should().Be(getBody);
     }
 
@@ -161,7 +162,8 @@ public sealed class MetadataPostTests : IClassFixture<WebAppFixture>
         var getBody = await getResponse.Content.ReadAsStringAsync();
         var postBody = await postResponse.Content.ReadAsStringAsync();
         using var postDoc = JsonDocument.Parse(postBody);
-        postDoc.RootElement.TryGetProperty("currentVersion", out _).Should().BeTrue();
+        // Honua does not advertise an ArcGIS Server version (see NoArcGisServerVersionTests).
+        postDoc.RootElement.TryGetProperty("currentVersion", out _).Should().BeFalse();
         postBody.Should().Be(getBody);
     }
 }

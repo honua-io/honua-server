@@ -97,7 +97,9 @@ public sealed class SharingRestReadTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var root = doc.RootElement;
-        root.GetProperty("currentVersion").GetDouble().Should().BeGreaterThan(0);
+        // Honua does not advertise an ArcGIS Portal/Server version (see NoArcGisServerVersionTests).
+        root.TryGetProperty("currentVersion", out _).Should().BeFalse();
+        root.TryGetProperty("fullVersion", out _).Should().BeFalse();
         var authInfo = root.GetProperty("authInfo");
         authInfo.GetProperty("isTokenBasedSecurity").GetBoolean().Should().BeTrue();
         authInfo.GetProperty("tokenServicesUrl").GetString().Should().EndWith("/sharing/rest/generateToken");

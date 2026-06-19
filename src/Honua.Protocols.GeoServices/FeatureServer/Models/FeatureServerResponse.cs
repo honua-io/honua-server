@@ -10,10 +10,9 @@ namespace Honua.Protocols.GeoServices.FeatureServer.Models;
 /// </summary>
 public sealed class FeatureServerResponse
 {
-    /// <summary>
-    /// Current version of the service
-    /// </summary>
-    public double CurrentVersion { get; init; } = 10.81;
+    // No ArcGIS Server version (currentVersion/fullVersion) is advertised. Honua is an
+    // independent, Esri-compatible server and must not impersonate a specific ArcGIS Server
+    // release. Do NOT add a currentVersion/fullVersion field (guarded by NoArcGisServerVersionTests).
 
     /// <summary>
     /// Name of the service
