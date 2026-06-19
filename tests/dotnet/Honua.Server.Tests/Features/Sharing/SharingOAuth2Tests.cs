@@ -230,6 +230,9 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
     [Endpoint("POST /sharing/rest/oauth2/token")]
     public async Task Token_UnsupportedGrantType_ReturnsError()
     {
+        // client_credentials is off by default (ADR-0053): the default fixture does
+        // NOT enable it, so the grant is rejected exactly as before. This is the
+        // no-behaviour-change-by-default regression guard.
         using var client = _fixture.CreateClient();
         using var response = await PostFormAsync(
             client,
@@ -239,6 +242,100 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var error = await ReadErrorAsync(response);
         error.Error.Should().Be("unsupported_grant_type");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /sharing/rest/oauth2/token")]
+    public async Task Token_ClientCredentialsGrant_WhenEnabledWithValidSecret_ReachesIssuanceAndBindsToClientIp()
+    {
+        // Opt in to the client_credentials grant (ADR-0053, #1860) and provision an
+        // API key whose value is the client_secret, then exchange it end-to-end
+        // through the real HTTP endpoint. The grant binds the issued token to the
+        // calling client's IP (PortalTokenClientType.Ip); the in-process TestServer
+        // does NOT populate Connection.RemoteIpAddress, so the endpoint correctly
+        // returns invalid_request here rather than minting an unbound token. This
+        // proves the flag is honored and the request reaches the IP-binding step;
+        // the full happy path (valid secret + resolvable IP -> opaque IP-bound token
+        // carrying the key's permissions, no refresh token) is covered without a
+        // TestServer by PortalOAuthClientCredentialsTests.
+        var fixture = new WebAppFixture()
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+                builder.UseSetting("Authentication:PortalToken:RequireHttps", "false");
+                builder.UseSetting("Authentication:PortalToken:OAuth2:EnableClientCredentials", "true");
+            });
+        await fixture.InitializeAsync();
+        try
+        {
+            var apiKeyStore = fixture.Services.GetRequiredService<IAdminApiKeyStore>();
+            var created = await apiKeyStore.CreateAsync(
+                name: "etl-worker",
+                permissions: ["services:read"],
+                expiresAt: null,
+                createdBy: "test",
+                CancellationToken.None);
+
+            using var client = fixture.CreateClient();
+            using var response = await client.PostAsync(
+                "/sharing/rest/oauth2/token",
+                new FormUrlEncodedContent(new[]
+                {
+                    new KeyValuePair<string, string>("grant_type", "client_credentials"),
+                    new KeyValuePair<string, string>("client_id", "etl-worker"),
+                    new KeyValuePair<string, string>("client_secret", created.Key),
+                }));
+
+            // A valid secret authenticated (so it is not invalid_client); issuance was
+            // reached and only the IP binding could not be resolved under TestServer.
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            var error = await ReadErrorAsync(response);
+            error.Error.Should().Be("invalid_request");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /sharing/rest/oauth2/token")]
+    public async Task Token_ClientCredentialsGrant_WhenEnabledWithBadSecret_ReturnsInvalidClient()
+    {
+        var fixture = new WebAppFixture()
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+                builder.UseSetting("Authentication:PortalToken:RequireHttps", "false");
+                builder.UseSetting("Authentication:PortalToken:OAuth2:EnableClientCredentials", "true");
+            });
+        await fixture.InitializeAsync();
+        try
+        {
+            using var client = fixture.CreateClient();
+            using var response = await client.PostAsync(
+                "/sharing/rest/oauth2/token",
+                new FormUrlEncodedContent(new[]
+                {
+                    new KeyValuePair<string, string>("grant_type", "client_credentials"),
+                    new KeyValuePair<string, string>("client_id", "etl-worker"),
+                    new KeyValuePair<string, string>("client_secret", "hnua_not-a-real-key"),
+                }));
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            var error = await ReadErrorAsync(response);
+            error.Error.Should().Be("invalid_client");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
     }
 
     [IntegrationTest]
