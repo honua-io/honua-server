@@ -51,6 +51,34 @@ curl -X POST "https://server.example.com/api/v1/admin/scenes" \
   -d '{"id":"downtown","name":"Downtown massing model","assetRoot":"/data/scenes/downtown","isPublic":true}'
 ```
 
+## Scene ingest (admin, Enterprise)
+
+Ingest endpoints convert a source document into a deterministic 3D Tiles tileset, register it in the scene dataset registry, and return the servable tileset URL. All routes require admin authorization, are gated by an Enterprise entitlement (a `402` upgrade response otherwise), and accept `multipart/form-data` with a `file` field. Conversion is pure-managed (no native PDAL/py3dtiles dependency); the tileset is materialised inline and promoted atomically to its asset root.
+
+| Method | Path | Source → output | Entitlement |
+| --- | --- | --- | --- |
+| POST | `/api/v1/admin/scenes/ingest/citygml` | CityGML building model → Building Scene Layer (`.glb`) tileset | `scene.bim-ingest` |
+| POST | `/api/v1/admin/scenes/ingest/pointcloud` | LAS point cloud → 3D Tiles point (`.pnts`) quadtree | `scene.pointcloud-ingest` |
+
+Common form fields: `file` (required), `sceneId` (optional URL slug; derived when omitted), `displayName`, `description`, `editionGate`, `cacheMaxAgeSeconds`, `requiresAuth`.
+
+### Point cloud (`/pointcloud`)
+
+Decodes a LAS point cloud into a quadtree of `.pnts` tiles plus `tileset.json`, preserving per-point **classification**, **intensity**, and **RGB**. Output is byte-stable for identical input.
+
+- **Supported formats:** uncompressed ASPRS **LAS** 1.1–1.4, point data record formats 0, 1, 2, 3, 6, 7, 8. Compressed **LAZ** and **COPC** are detected and rejected with a `400` problem-detail (decompression is a tracked follow-up; reproject/decompress to LAS before ingest).
+- **CRS:** geographic source coordinates only (EPSG:4326 / 4979 / OGC CRS84). Axis order is selected by the optional `sourceCrsAxisOrder` field (`lonlat` default, or `latlon`). Projected source CRS are rejected with a `400`; reproject to geographic before ingest.
+- **Limits:** upload capped at 256 MiB; total point count capped (default 250 M) to bound worst-case memory. Per-tile point budget and LOD depth follow the shared `SceneGeneration` tiling options.
+
+```bash
+curl -X POST "https://server.example.com/api/v1/admin/scenes/ingest/pointcloud" \
+  -H "X-API-Key: $ADMIN_KEY" \
+  -F "file=@cloud.las" -F "sceneId=lidar-survey" -F "sourceCrsAxisOrder=lonlat"
+# → 201 { "sceneId": "lidar-survey", "tilesetUrl": ".../scenes/lidar-survey/tileset.json", ... }
+```
+
+The registered tileset serves through the standard [hosted serving](#hosted-3d-tiles-serving) routes and loads in CesiumJS like any other point tileset.
+
 ## gRPC scene access
 
 `SceneService`, `TileService`, and `ElevationService` expose the same scene/tile/elevation reads over gRPC — see [gRPC](grpc.md).
