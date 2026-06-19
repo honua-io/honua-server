@@ -11,6 +11,31 @@ internal sealed record GeocodeProviderCapabilities(
     bool SupportsStructuredInput,
     bool SupportsBiasing);
 
+/// <summary>
+/// The category tokens GeocodeServer advertises for <c>category</c> filtering. They mirror the
+/// address-type families Honua's backing providers classify candidates and suggestions into
+/// (see each provider's <c>GetAddressType</c> mapping), so filtering only ever matches data the
+/// provider already returns.
+/// </summary>
+internal static class GeocodeSupportedCategories
+{
+    public static readonly string[] All =
+    [
+        "Address",
+        "PointAddress",
+        "StreetAddress",
+        "POI",
+        "Neighborhood",
+        "Locality",
+        "City",
+        "Subregion",
+        "County",
+        "State",
+        "Country",
+        "PostalCode"
+    ];
+}
+
 internal sealed record ForwardGeocodeRequest(
     string Query,
     int MaxResults,
@@ -91,10 +116,12 @@ internal sealed record GeocodeServerInfoResponse
         new GeocodeAddressField { Name = "Provider", Alias = "Provider" }
     ];
 
-    // Advertised for client compatibility. Honua does not filter candidates by
-    // category, so the supported set is empty.
+    // The category tokens findAddressCandidates/suggest accept to narrow results by the
+    // provider-supplied address type. Filtering runs on the shared geocode interface against the
+    // category data providers return, so the advertised set is the canonical address/place
+    // families Honua's providers classify candidates into.
     [JsonPropertyName("categories")]
-    public string[] Categories { get; init; } = [];
+    public string[] Categories { get; init; } = GeocodeSupportedCategories.All;
 
     [JsonPropertyName("locatorProperties")]
     public Dictionary<string, string> LocatorProperties { get; init; } = new(StringComparer.Ordinal)

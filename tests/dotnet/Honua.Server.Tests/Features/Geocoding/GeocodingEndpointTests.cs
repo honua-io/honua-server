@@ -244,14 +244,15 @@ public sealed class GeocodingEndpointTests
         Assert.Equal("Geocode,ReverseGeocode,Suggest", capabilities);
 
         // candidateFields advertises the attributes every candidate emits; categories
-        // is advertised (empty) for client compatibility since filtering is unsupported.
+        // advertises the address/place families candidates are classified into, now that
+        // category filtering is supported on the shared interface (#1867).
         var candidateFields = payload.RootElement.GetProperty("candidateFields");
         Assert.Equal(JsonValueKind.Array, candidateFields.ValueKind);
         Assert.Contains(
             candidateFields.EnumerateArray(),
             field => field.GetProperty("name").GetString() == "Match_addr");
         Assert.Equal(JsonValueKind.Array, payload.RootElement.GetProperty("categories").ValueKind);
-        Assert.Equal(0, payload.RootElement.GetProperty("categories").GetArrayLength());
+        Assert.True(payload.RootElement.GetProperty("categories").GetArrayLength() > 0);
     }
 
     [IntegrationTest]
@@ -1026,6 +1027,178 @@ public sealed class GeocodingEndpointTests
         Assert.Equal(51.5, fakeProvider.LastSuggestRequest.BiasLocation.Y, precision: 5);
     }
 
+    // #1867: magicKey suggest->candidate round-trip. The handler re-mints each suggestion's
+    // magicKey as a self-issued, signed, opaque token; findAddressCandidates resolves it
+    // deterministically. The provider's own magicKeys (fake-suggest-*) are never surfaced.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/suggest")]
+    public async Task Suggest_EmitsSelfIssuedMagicKey_NotProviderInternalId()
+    {
+        using var factory = CreateDefaultFactory();
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync("/rest/services/World/GeocodeServer/suggest?text=1600&f=json");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var suggestions = payload.RootElement.GetProperty("suggestions");
+        Assert.True(suggestions.GetArrayLength() > 0);
+
+        var magicKey = suggestions[0].GetProperty("magicKey").GetString();
+        Assert.False(string.IsNullOrWhiteSpace(magicKey));
+        // The opaque token is self-issued, not the provider-internal id.
+        Assert.DoesNotContain("fake-suggest", magicKey, StringComparison.Ordinal);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/suggest")]
+    public async Task Suggest_EmitsDeterministicMagicKey_AcrossRepeatedCalls()
+    {
+        using var factory = CreateDefaultFactory();
+        using var client = factory.CreateClient();
+
+        using var first = await client.GetAsync("/rest/services/World/GeocodeServer/suggest?text=1600&f=json");
+        using var second = await client.GetAsync("/rest/services/World/GeocodeServer/suggest?text=1600&f=json");
+
+        using var firstPayload = JsonDocument.Parse(await first.Content.ReadAsStringAsync());
+        using var secondPayload = JsonDocument.Parse(await second.Content.ReadAsStringAsync());
+
+        var firstKey = firstPayload.RootElement.GetProperty("suggestions")[0].GetProperty("magicKey").GetString();
+        var secondKey = secondPayload.RootElement.GetProperty("suggestions")[0].GetProperty("magicKey").GetString();
+
+        Assert.Equal(firstKey, secondKey);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/suggest")]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
+    public async Task SuggestThenFindAddressCandidates_WithMagicKey_RoundTripsDeterministically()
+    {
+        var fakeProvider = new FakeGeocodeProvider(DefaultCapabilities);
+        using var factory = CreateFactory(fakeProvider);
+        using var client = factory.CreateClient();
+
+        // 1) suggest issues an opaque magicKey for the picked suggestion.
+        using var suggestResponse = await client.GetAsync("/rest/services/World/GeocodeServer/suggest?text=1600&f=json");
+        Assert.Equal(HttpStatusCode.OK, suggestResponse.StatusCode);
+        using var suggestPayload = JsonDocument.Parse(await suggestResponse.Content.ReadAsStringAsync());
+        var suggestion = suggestPayload.RootElement.GetProperty("suggestions")[0];
+        var magicKey = suggestion.GetProperty("magicKey").GetString()!;
+        var suggestionText = suggestion.GetProperty("text").GetString();
+
+        // 2) findAddressCandidates resolves the magicKey directly (singleLine is the SDK-required echo).
+        using var candidatesResponse = await client.GetAsync(
+            $"/rest/services/World/GeocodeServer/findAddressCandidates?singleLine={Uri.EscapeDataString(suggestionText!)}&magicKey={Uri.EscapeDataString(magicKey)}&f=json");
+
+        Assert.Equal(HttpStatusCode.OK, candidatesResponse.StatusCode);
+        using var candidatesPayload = JsonDocument.Parse(await candidatesResponse.Content.ReadAsStringAsync());
+        var candidates = candidatesPayload.RootElement.GetProperty("candidates");
+        Assert.True(candidates.GetArrayLength() > 0);
+
+        // The forward query used the magicKey's encoded suggestion text, not free input.
+        Assert.NotNull(fakeProvider.LastForwardRequest);
+        Assert.Equal(suggestionText, fakeProvider.LastForwardRequest!.Query);
+        Assert.Equal(magicKey, fakeProvider.LastForwardRequest.MagicKey);
+
+        // The first suggestion was PointAddress; its encoded category narrows resolution to the
+        // address-typed candidate only (the POI candidate is filtered out).
+        Assert.Equal(1, candidates.GetArrayLength());
+        Assert.Equal("1600 Pennsylvania Ave NW", candidates[0].GetProperty("address").GetString());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
+    public async Task FindAddressCandidates_WithInvalidMagicKey_Returns400()
+    {
+        using var factory = CreateDefaultFactory();
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync(
+            "/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=test&magicKey=tampered.token&f=json");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("magicKey", body, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // #1867: forward category filtering narrows candidates by the provider-supplied address type.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
+    public async Task FindAddressCandidates_WithCategory_NarrowsCandidates()
+    {
+        using var factory = CreateDefaultFactory();
+        using var client = factory.CreateClient();
+
+        // No filter: both the PointAddress and POI candidates are returned.
+        using var unfiltered = await client.GetAsync(
+            "/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=Pennsylvania&f=json");
+        using var unfilteredPayload = JsonDocument.Parse(await unfiltered.Content.ReadAsStringAsync());
+        Assert.Equal(2, unfilteredPayload.RootElement.GetProperty("candidates").GetArrayLength());
+
+        // category=POI keeps only the POI candidate.
+        using var filtered = await client.GetAsync(
+            "/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=Pennsylvania&category=POI&f=json");
+
+        Assert.Equal(HttpStatusCode.OK, filtered.StatusCode);
+        using var filteredPayload = JsonDocument.Parse(await filtered.Content.ReadAsStringAsync());
+        var candidates = filteredPayload.RootElement.GetProperty("candidates");
+        Assert.Equal(1, candidates.GetArrayLength());
+        Assert.Equal("White House Visitor Center", candidates[0].GetProperty("address").GetString());
+
+        // The handler forwards the requested category on the canonical request.
+        Assert.Equal("POI", GetLastForwardCategory(factory));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/suggest")]
+    public async Task Suggest_WithCategory_NarrowsSuggestions()
+    {
+        using var factory = CreateDefaultFactory();
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync("/rest/services/World/GeocodeServer/suggest?text=hon&category=POI&f=json");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var suggestions = payload.RootElement.GetProperty("suggestions");
+        Assert.Equal(1, suggestions.GetArrayLength());
+        Assert.Equal("Honua HQ", suggestions[0].GetProperty("text").GetString());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer")]
+    public async Task GeocodeServerMetadata_AdvertisesSupportedCategories()
+    {
+        using var factory = CreateDefaultFactory();
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync("/rest/services/World/GeocodeServer?f=json");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var categories = payload.RootElement.GetProperty("categories");
+        Assert.Equal(JsonValueKind.Array, categories.ValueKind);
+        Assert.True(categories.GetArrayLength() > 0);
+        var values = categories.EnumerateArray().Select(static c => c.GetString()).ToArray();
+        Assert.Contains("POI", values);
+        Assert.Contains("Address", values);
+    }
+
+    private static string? GetLastForwardCategory(WebApplicationFactory<Program> factory)
+    {
+        var provider = (FakeGeocodeProvider)factory.Services
+            .GetServices<CoreGeocodeProvider>()
+            .First(static p => p.Name == "fake");
+        return provider.LastForwardRequest?.CategoryFilter;
+    }
+
     private static readonly CoreGeocodeProviderCapabilities DefaultCapabilities = new(
         SupportsSuggest: true,
         SupportsBatch: false,
@@ -1113,7 +1286,10 @@ public sealed class GeocodingEndpointTests
         {
             LastForwardRequest = request;
 
-            var candidate = new CoreGeocodeCandidate(
+            // Emit a mix of address-typed candidates so category filtering has something to narrow.
+            // The handler filters by AddressType on the shared interface, so the provider always
+            // returns the full set and lets the adapter apply the requested category.
+            var addressCandidate = new CoreGeocodeCandidate(
                 Address: "1600 Pennsylvania Ave NW",
                 X: -77.03655,
                 Y: 38.89768,
@@ -1123,9 +1299,27 @@ public sealed class GeocodingEndpointTests
                     ["Provider"] = Name,
                     ["Match_addr"] = "1600 Pennsylvania Ave NW"
                 },
-                ProviderId: "fake-1");
+                ProviderId: "fake-1")
+            {
+                AddressType = "PointAddress"
+            };
 
-            return Task.FromResult<IReadOnlyList<CoreGeocodeCandidate>>([candidate]);
+            var poiCandidate = new CoreGeocodeCandidate(
+                Address: "White House Visitor Center",
+                X: -77.03361,
+                Y: 38.89466,
+                Score: 90.0,
+                Attributes: new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    ["Provider"] = Name,
+                    ["Match_addr"] = "White House Visitor Center"
+                },
+                ProviderId: "fake-2")
+            {
+                AddressType = "POI"
+            };
+
+            return Task.FromResult<IReadOnlyList<CoreGeocodeCandidate>>([addressCandidate, poiCandidate]);
         }
 
         public Task<CoreReverseGeocodeMatch?> ReverseGeocodeAsync(CoreReverseGeocodeRequest request, CancellationToken cancellationToken)
@@ -1150,8 +1344,20 @@ public sealed class GeocodingEndpointTests
         {
             LastSuggestRequest = request;
 
-            var suggestion = new CoreGeocodeSuggestion("Honua HQ", "fake-suggest-1", false);
-            return Task.FromResult<IReadOnlyList<CoreGeocodeSuggestion>>([suggestion]);
+            // Provider-internal magicKeys (fake-suggest-*) are intentionally not resolvable; the
+            // handler re-mints a self-issued token. Distinct categories let category filtering and
+            // the magicKey round-trip be asserted end-to-end.
+            var addressSuggestion = new CoreGeocodeSuggestion("1600 Pennsylvania Ave NW", "fake-suggest-1", false)
+            {
+                Category = "PointAddress"
+            };
+
+            var poiSuggestion = new CoreGeocodeSuggestion("Honua HQ", "fake-suggest-2", false)
+            {
+                Category = "POI"
+            };
+
+            return Task.FromResult<IReadOnlyList<CoreGeocodeSuggestion>>([addressSuggestion, poiSuggestion]);
         }
 
         public Task<IReadOnlyList<CoreGeocodeCandidate>> BatchGeocodeAsync(CoreBatchGeocodeRequest request, CancellationToken cancellationToken)
