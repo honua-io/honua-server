@@ -11,8 +11,9 @@ Honua's support for the cloud-native geospatial format family: what each format 
 | GeoParquet | Import + wire format | File import (`.parquet`, `.geoparquet`) | FeatureServer `f=parquet` (GeoParquet 1.1.0, PostGIS-backed layers) | Live |
 | GeoArrow | Wire format | — | FeatureServer `f=arrow` (Arrow IPC stream, PostGIS-backed layers) | Live |
 | FlatGeobuf | Import + wire format | File import (`.fgb`) | FeatureServer `f=fgb` (PostGIS-backed layers) | Live |
-| Zarr | Registered source | `POST /api/v1/admin/zarr-stores` (CRUD + `/refresh`) | Catalog/metadata only | Registration live; protocol serving not yet exposed |
-| Cloud-optimized HDF5 / NetCDF4 | Registered source | `POST /api/v1/admin/multidim-coverages` (CRUD; URL-registered, not file-imported) | Catalog/metadata only; reader is build-optional | Registration live; protocol serving not yet exposed |
+| Zarr | Registered source | `POST /api/v1/admin/zarr-stores` (CRUD + `/refresh`) | OGC API Coverages pixel subsets (`ZarrCoverageService`) | Registration + serving live |
+| Cloud-optimized HDF5 / NetCDF4 | Registered source | `POST /api/v1/admin/multidim-coverages` (CRUD; URL-registered, not file-imported); `/refresh` enqueues an async GDAL worker job (202 + jobId/statusUrl) | Metadata extracted + enriched, then auto-converted to Zarr and registered for OGC API Coverages serving | Registration + conversion live; pixel read via the derived Zarr (reader is build-optional) |
+| GRIB (`.grib`/`.grb`/`.grb2`/`.grib2`) | Registered source | `POST /api/v1/admin/multidim-coverages` (same path as HDF5/NetCDF) | Same GDAL→Zarr conversion and OGC API Coverages serving | Registration + conversion live |
 
 ## COG and cloud rasters
 
@@ -35,9 +36,9 @@ Tile-operations jobs can `archive` a layer's tiles into a single PMTiles file an
 
 PostGIS-backed layers negotiate columnar/binary outputs on FeatureServer query (`f=parquet`, `f=arrow`, `f=fgb`, `f=geobuf`) for notebook and pipeline consumption — see [Export data](../../guides/query-analyze/export-data.md) and the [data formats matrix](../data-formats.md) for which surfaces serve which formats.
 
-## Zarr and multidimensional coverages (HDF5/NetCDF)
+## Zarr and multidimensional coverages (HDF5/NetCDF/GRIB)
 
-Both are **registration and catalog surfaces today**: Honua stores the source descriptor and metadata and exposes them through the admin API, but does not yet serve them through a query/coverage protocol. The HDF5/NetCDF reader is optional per build (`MultidimensionalCoverage` reader), and `/api/v1/admin/multidim-coverages/{id}/refresh` returns `501` until it is enabled. Treat protocol exposure for both as roadmap, not shipped.
+NetCDF4, HDF5, and GRIB sources are registered via `POST /api/v1/admin/multidim-coverages` (URL-registered, not file-imported). Calling `/api/v1/admin/multidim-coverages/{id}/refresh` enqueues an async GDAL worker job (returns `202` with a `jobId`/`statusUrl`) that runs `gdalmdiminfo` + `gdalinfo` to extract and enrich structure and metadata — variables, dimensions, chunk layout, compression, CF attributes, nodata, spatial extent, cell resolution, and CF-decoded temporal/vertical bounds (best-effort, tolerant of missing fields) — and `gdal_translate -of Zarr` to convert the source to a derived Zarr written beside it in cloud storage. The derived Zarr is then registered as a sibling coverage and served through the existing Zarr coverage path (`ZarrCoverageService`) over **OGC API Coverages** (`GetCoverage`, including `datetime` temporal subsetting). The reader remains optional per build (`MultidimensionalCoverage` reader); when the feature is disabled, `/refresh` returns `501`. The end-to-end pixel read path runs against cloud object storage and the GDAL worker (`ubuntu-full` image for the NetCDF/HDF5/GRIB drivers). Per-slice multidimensional pixel subsetting on the GeoServices ImageServer surface (`multidimensionalDefinition`) is still deferred.
 
 ## Related
 
