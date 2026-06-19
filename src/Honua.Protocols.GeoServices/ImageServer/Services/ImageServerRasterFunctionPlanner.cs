@@ -50,6 +50,10 @@ internal readonly record struct RasterFunctionPlan(
 /// The resolved 1-based band selection/order from an <c>ExtractBand</c> function, when
 /// one applies; <c>null</c> when no band extraction is in the chain.
 /// </param>
+/// <param name="BandArithmetic">
+/// The resolved two-band arithmetic operation (e.g. NDVI) from a <c>BandArithmetic</c>
+/// function, when one applies; <c>null</c> when no band arithmetic is in the chain.
+/// </param>
 /// <param name="Reason">Explanation surfaced to the client when not supported.</param>
 /// <param name="IsNotImplemented">
 /// When unsupported, distinguishes a recognized-but-unimplemented function/option
@@ -61,6 +65,7 @@ internal readonly record struct RenderingRuleMapping(
     RasterColormap? Colormap,
     RasterClipRegion? ClipRegion,
     int[]? Bands,
+    RasterBandArithmetic? BandArithmetic,
     string? Reason,
     bool IsNotImplemented)
 {
@@ -68,14 +73,15 @@ internal readonly record struct RenderingRuleMapping(
         RasterStretch? stretch,
         RasterColormap? colormap = null,
         RasterClipRegion? clipRegion = null,
-        int[]? bands = null)
-        => new(true, stretch, colormap, clipRegion, bands, null, false);
+        int[]? bands = null,
+        RasterBandArithmetic? bandArithmetic = null)
+        => new(true, stretch, colormap, clipRegion, bands, bandArithmetic, null, false);
 
     public static RenderingRuleMapping Invalid(string reason)
-        => new(false, null, null, null, null, reason, false);
+        => new(false, null, null, null, null, null, reason, false);
 
     public static RenderingRuleMapping NotImplemented(string reason)
-        => new(false, null, null, null, null, reason, true);
+        => new(false, null, null, null, null, null, reason, true);
 }
 
 /// <summary>
@@ -105,6 +111,7 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
         "Colormap",
         "Clip",
         "ExtractBand",
+        "BandArithmetic",
     };
 
     public RasterFunctionPlan Plan(RasterFunctionDocument document)
@@ -136,7 +143,7 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
         if (!SupportedFunctions.Contains(document.RasterFunction))
         {
             throw new ImageServerRasterFunctionException(
-                $"Unsupported raster function '{document.RasterFunction}'. Supported functions: Identity, Stretch, Colormap, Clip, ExtractBand.");
+                $"Unsupported raster function '{document.RasterFunction}'. Supported functions: Identity, Stretch, Colormap, Clip, ExtractBand, BandArithmetic.");
         }
 
         executed.Add(document.RasterFunction);
@@ -174,6 +181,9 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
             case "EXTRACTBAND":
                 ValidateExtractBandArguments(arguments);
                 break;
+            case "BANDARITHMETIC":
+                ValidateBandArithmeticArguments(arguments);
+                break;
             case "IDENTITY":
             case "COLORMAP":
                 // Identity has no required arguments beyond the optional Raster nesting;
@@ -188,6 +198,15 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
         {
             throw new ImageServerRasterFunctionException(
                 "ExtractBand raster function requires a BandIds or BandNames argument.");
+        }
+    }
+
+    private static void ValidateBandArithmeticArguments(Dictionary<string, object?> arguments)
+    {
+        if (!arguments.ContainsKey("BandIndexes") && !arguments.ContainsKey("BandIDs") && !arguments.ContainsKey("BandIds"))
+        {
+            throw new ImageServerRasterFunctionException(
+                "BandArithmetic raster function requires a BandIndexes (or BandIds) argument.");
         }
     }
 
@@ -287,8 +306,9 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
     /// <summary>
     /// Translates a validated raster function <paramref name="document"/> into the
     /// canonical knobs (<see cref="RasterStretch"/>, <see cref="RasterColormap"/>,
-    /// <see cref="RasterClipRegion"/>, and a band selection) the shared raster export
-    /// pipeline executes. Walks an <c>Identity</c>/<c>Stretch</c>/<c>Colormap</c>/<c>Clip</c>/<c>ExtractBand</c>
+    /// <see cref="RasterClipRegion"/>, a band selection, and a <see cref="RasterBandArithmetic"/>)
+    /// the shared raster export pipeline executes. Walks an
+    /// <c>Identity</c>/<c>Stretch</c>/<c>Colormap</c>/<c>Clip</c>/<c>ExtractBand</c>/<c>BandArithmetic</c>
     /// chain (nested via the <c>Raster</c> argument); an <c>Identity</c>-only chain is
     /// an executable no-op. Recognized-but-unimplemented options
     /// (clip-inside, histogram-equalize/sigmoid stretches, named colour ramps) return a
@@ -302,6 +322,7 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
         RasterColormap? colormap = null;
         RasterClipRegion? clipRegion = null;
         int[]? bands = null;
+        RasterBandArithmetic? bandArithmetic = null;
         var current = document;
         for (var depth = 1; ; depth++)
         {
@@ -360,10 +381,21 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
                 // A later (outer) ExtractBand supersedes an inner one.
                 bands = mapping.Bands ?? bands;
             }
+            else if (string.Equals(current.RasterFunction, "BandArithmetic", StringComparison.OrdinalIgnoreCase))
+            {
+                var mapping = MapBandArithmeticArguments(arguments);
+                if (!mapping.Supported)
+                {
+                    return mapping;
+                }
+
+                // A later (outer) BandArithmetic supersedes an inner one.
+                bandArithmetic = mapping.BandArithmetic ?? bandArithmetic;
+            }
             else if (!string.Equals(current.RasterFunction, "Identity", StringComparison.OrdinalIgnoreCase))
             {
                 return RenderingRuleMapping.Invalid(
-                    $"Unsupported raster function '{current.RasterFunction}'. Supported functions: Identity, Stretch, Colormap, Clip, ExtractBand.");
+                    $"Unsupported raster function '{current.RasterFunction}'. Supported functions: Identity, Stretch, Colormap, Clip, ExtractBand, BandArithmetic.");
             }
 
             if (!TryGetNestedFunction(arguments, "Raster", out var nested))
@@ -374,7 +406,83 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
             current = nested;
         }
 
-        return RenderingRuleMapping.Executable(stretch, colormap, clipRegion, bands);
+        return RenderingRuleMapping.Executable(stretch, colormap, clipRegion, bands, bandArithmetic);
+    }
+
+    // BandArithmetic derives a single analytic band from two source bands. Esri encodes the
+    // two operands as a BandIndexes (or BandIDs) array of 0-based band indices and selects the
+    // formula with Method (NDVI = 3). The canonical raster pipeline uses 1-based bands, so each
+    // index is shifted by one. Exactly two band indices are required (visible + infrared). Only
+    // the NDVI method is implemented; other Esri band-arithmetic methods surface a clean
+    // not-implemented result. By Esri's NDVI convention BandIndexes is [visible, infrared].
+    private static RenderingRuleMapping MapBandArithmeticArguments(Dictionary<string, object?> arguments)
+    {
+        // Method: Esri esriBandArithmeticMethod (3 = NDVI). Default to NDVI when omitted so a
+        // bare BandArithmetic with band indices behaves as the common vegetation-index request.
+        const int MethodNdvi = 3;
+        var method = MethodNdvi;
+        if (TryGetInt(arguments, "Method", out var parsedMethod))
+        {
+            method = parsedMethod;
+        }
+
+        if (method != MethodNdvi)
+        {
+            return RenderingRuleMapping.NotImplemented(
+                $"BandArithmetic Method {method.ToString(CultureInfo.InvariantCulture)} is not implemented on this service. Supported method: NDVI (3).");
+        }
+
+        if (!TryGetBandArithmeticIndexes(arguments, out var element))
+        {
+            return RenderingRuleMapping.Invalid(
+                "BandArithmetic raster function requires a BandIndexes array of 0-based band indices.");
+        }
+
+        if (element.ValueKind != JsonValueKind.Array)
+        {
+            return RenderingRuleMapping.Invalid("BandArithmetic BandIndexes must be an array of 0-based band indices.");
+        }
+
+        var indices = new List<int>(element.GetArrayLength());
+        foreach (var entry in element.EnumerateArray())
+        {
+            if (entry.ValueKind != JsonValueKind.Number || !entry.TryGetInt32(out var zeroBased) || zeroBased < 0)
+            {
+                return RenderingRuleMapping.Invalid("BandArithmetic BandIndexes entries must be non-negative integers.");
+            }
+
+            indices.Add(zeroBased + 1);
+        }
+
+        if (indices.Count != 2)
+        {
+            return RenderingRuleMapping.Invalid(
+                "BandArithmetic NDVI requires exactly two band indices: [visible, infrared].");
+        }
+
+        var bandArithmetic = new RasterBandArithmetic
+        {
+            VisibleBand = indices[0],
+            InfraredBand = indices[1],
+            Method = RasterBandArithmeticMethod.Ndvi,
+        };
+
+        return RenderingRuleMapping.Executable(null, null, null, null, bandArithmetic);
+    }
+
+    private static bool TryGetBandArithmeticIndexes(Dictionary<string, object?> arguments, out JsonElement element)
+    {
+        element = default;
+        if ((arguments.TryGetValue("BandIndexes", out var raw) ||
+             arguments.TryGetValue("BandIDs", out raw) ||
+             arguments.TryGetValue("BandIds", out raw)) &&
+            raw is JsonElement json)
+        {
+            element = json;
+            return true;
+        }
+
+        return false;
     }
 
     // ExtractBand selects/reorders the output bands. Esri encodes the selection as a
