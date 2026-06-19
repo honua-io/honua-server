@@ -236,7 +236,6 @@ internal static partial class MapServerEndpoints
 
         return new MapServerResponse
         {
-            CurrentVersion = 10.81,
             ServiceDescription = service.Metadata.Description,
             MapName = service.Metadata.Name,
             Description = service.Metadata.Description,
@@ -363,7 +362,6 @@ internal static partial class MapServerEndpoints
 
         return new MapServerLayerResponse
         {
-            CurrentVersion = 10.81,
             Id = publicLayerId,
             Name = string.IsNullOrWhiteSpace(layerName)
                 ? publicLayerId.ToString(CultureInfo.InvariantCulture)
