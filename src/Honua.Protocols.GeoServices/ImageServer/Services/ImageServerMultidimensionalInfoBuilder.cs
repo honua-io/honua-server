@@ -101,29 +101,36 @@ internal sealed class ImageServerMultidimensionalInfoBuilder(
     {
         if (TimeDimensionNames.Contains(dimension.Name) && metadata.Temporal is { } temporal)
         {
+            var min = (double)temporal.Start.ToUnixTimeMilliseconds();
+            var max = (double)temporal.End.ToUnixTimeMilliseconds();
+            var size = temporal.StepCount > 0 ? temporal.StepCount : dimension.Size;
+            var values = EnumerateRegularValues(min, max, size);
             return new ImageServerMultidimensionalDimension
             {
                 Name = StdTimeDimension,
                 Unit = "ISO8601",
-                Extent =
-                [
-                    temporal.Start.ToUnixTimeMilliseconds(),
-                    temporal.End.ToUnixTimeMilliseconds()
-                ],
-                HasRegularIntervals = false,
-                DimensionSize = temporal.StepCount > 0 ? temporal.StepCount : dimension.Size
+                Extent = [min, max],
+                // A regular axis whose coordinate values we can enumerate; surfacing the
+                // values lets the slices operation enumerate one slice per coordinate
+                // (honua-server#1825). Irregular/extent-only axes leave Values null.
+                Values = values,
+                HasRegularIntervals = values is not null,
+                DimensionSize = size
             };
         }
 
         if (VerticalDimensionNames.Contains(dimension.Name) && metadata.Vertical is { } vertical)
         {
+            var size = vertical.StepCount > 0 ? vertical.StepCount : dimension.Size;
+            var values = EnumerateRegularValues(vertical.Min, vertical.Max, size);
             return new ImageServerMultidimensionalDimension
             {
                 Name = StdZDimension,
                 Unit = string.IsNullOrWhiteSpace(vertical.Units) ? null : vertical.Units,
                 Extent = [vertical.Min, vertical.Max],
-                HasRegularIntervals = false,
-                DimensionSize = vertical.StepCount > 0 ? vertical.StepCount : dimension.Size
+                Values = values,
+                HasRegularIntervals = values is not null,
+                DimensionSize = size
             };
         }
 
@@ -134,5 +141,50 @@ internal sealed class ImageServerMultidimensionalInfoBuilder(
             HasRegularIntervals = false,
             DimensionSize = dimension.Size
         };
+    }
+
+    /// <summary>
+    /// Synthesizes the evenly-spaced coordinate values for a regular dimension whose
+    /// inclusive [<paramref name="min"/>, <paramref name="max"/>] extent and step count
+    /// (<paramref name="size"/>) are known. ArcGIS enumerates one slice per coordinate,
+    /// so a coverage that advertises <c>dimensionSize:N</c> must surface N values for the
+    /// slices operation to enumerate (honua-server#1825). Returns <see langword="null"/>
+    /// when the axis is not safely enumerable (non-positive size, non-finite bounds, or an
+    /// implausibly large size that would balloon the document) so the dimension falls back
+    /// to extent-only and contributes no slices.
+    /// </summary>
+    private static double[]? EnumerateRegularValues(double min, double max, long size)
+    {
+        const long MaxEnumerableSize = 10_000;
+
+        if (size <= 0 || size > MaxEnumerableSize)
+        {
+            return null;
+        }
+
+        if (!double.IsFinite(min) || !double.IsFinite(max))
+        {
+            return null;
+        }
+
+        var count = (int)size;
+        var values = new double[count];
+        if (count == 1)
+        {
+            // A single-coordinate axis pins to its lower bound (== upper bound for a
+            // degenerate extent).
+            values[0] = min;
+            return values;
+        }
+
+        var step = (max - min) / (count - 1);
+        for (var i = 0; i < count; i++)
+        {
+            // Anchor the final value exactly on max to avoid floating-point drift at the
+            // inclusive upper bound.
+            values[i] = i == count - 1 ? max : min + (step * i);
+        }
+
+        return values;
     }
 }

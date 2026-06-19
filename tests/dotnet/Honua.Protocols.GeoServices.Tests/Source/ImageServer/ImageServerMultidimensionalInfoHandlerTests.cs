@@ -112,10 +112,22 @@ public class ImageServerMultidimensionalInfoHandlerTests
         timeDimension.Unit.Should().Be("ISO8601");
         timeDimension.DimensionSize.Should().Be(2);
         timeDimension.Extent.Should().HaveCount(2);
+        // A regular axis whose dimensionSize is known surfaces one coordinate value per
+        // slice so the slices operation can enumerate it (honua-server#1825).
+        timeDimension.HasRegularIntervals.Should().BeTrue();
+        timeDimension.Values.Should().NotBeNull();
+        timeDimension.Values!.Should().HaveCount(2)
+            .And.Equal(
+                DateTimeOffset.UnixEpoch.ToUnixTimeMilliseconds(),
+                DateTimeOffset.UnixEpoch.AddDays(1).ToUnixTimeMilliseconds());
 
         var verticalDimension = variable.Dimensions.Should().ContainSingle(d => d.Name == "StdZ").Subject;
         verticalDimension.Unit.Should().Be("Pa");
         verticalDimension.Extent.Should().Equal(1000.0, 50000.0);
+        verticalDimension.DimensionSize.Should().Be(5);
+        verticalDimension.HasRegularIntervals.Should().BeTrue();
+        // 5 evenly-spaced levels between 1000 and 50000 inclusive.
+        verticalDimension.Values!.Should().Equal(1000.0, 13250.0, 25500.0, 37750.0, 50000.0);
 
         // The horizontal axis stays under its source name with size only.
         variable.Dimensions.Should().ContainSingle(d => d.Name == "x")
@@ -291,5 +303,77 @@ public class ImageServerSlicesBuilderTests
         slices[1].MultidimensionalDefinition.Should()
             .ContainSingle(d => d.DimensionName == "StdTime")
             .Which.Values.Should().Equal(86_400_000);
+    }
+
+    /// <summary>
+    /// Regression for honua-server#1825: a multidimensional coverage that advertises
+    /// <c>hasMultidimensions:true</c> with a temporal dimension of <c>dimensionSize:4</c>
+    /// must enumerate one slice per temporal coordinate, not return an empty document.
+    /// </summary>
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task BuiltInfo_RegularTimeDimension_EnumeratesOneSlicePerStep()
+    {
+        var store = Substitute.For<IMultidimensionalCoverageStore>();
+        store.ListByLayerAsync(1, Arg.Any<CancellationToken>())
+            .Returns([CreateRegistration(metadata: CreateFourStepTemporalMetadata())]);
+
+        var info = await new ImageServerMultidimensionalInfoBuilder(store).BuildAsync(1, CancellationToken.None);
+        info.Should().NotBeNull();
+
+        var slices = ImageServerSlicesBuilder.Build(info!);
+
+        // dimensionSize:4 on the single temporal dimension => four slices, each pinning
+        // one StdTime coordinate.
+        slices.Should().HaveCount(4);
+        slices.Select(s => s.SliceId).Should().Equal(0, 1, 2, 3);
+        slices.Should().OnlyContain(s =>
+            s.MultidimensionalDefinition.Length == 1 &&
+            s.MultidimensionalDefinition[0].DimensionName == "StdTime" &&
+            s.MultidimensionalDefinition[0].VariableName == "temperature" &&
+            s.MultidimensionalDefinition[0].Values.Length == 1);
+    }
+
+    private static MultidimensionalCoverageMetadata CreateFourStepTemporalMetadata() => new()
+    {
+        Format = MultidimensionalCoverageFormat.NetCdf4,
+        Srid = 4326,
+        Extent = new RasterExtent { XMin = -180, YMin = -90, XMax = 180, YMax = 90, Srid = 4326 },
+        Resolution = (1.0, 1.0),
+        Temporal = new TemporalExtent(
+            DateTimeOffset.UnixEpoch,
+            DateTimeOffset.UnixEpoch.AddDays(3),
+            StepCount: 4),
+        Variables =
+        [
+            new MultidimensionalCoverageVariable(
+                Name: "temperature",
+                DataType: "float32",
+                Dimensions: [new MultidimensionalCoverageDimension("time", 4)],
+                ChunkLayout: null,
+                Units: "K",
+                LongName: "Air Temperature",
+                StandardName: "air_temperature",
+                NoData: -9999)
+        ]
+    };
+
+    private static MultidimensionalCoverageRegistration CreateRegistration(
+        MultidimensionalCoverageMetadata? metadata)
+    {
+        return new MultidimensionalCoverageRegistration
+        {
+            Id = 7,
+            LayerId = 1,
+            Name = "cube",
+            Format = MultidimensionalCoverageFormat.NetCdf4,
+            Provider = CloudStorageProvider.AwsS3,
+            Bucket = "bucket",
+            ObjectKey = "cube.nc",
+            Variables = Array.Empty<string>(),
+            Metadata = metadata,
+            MetadataScannedAt = metadata is null ? null : DateTimeOffset.UtcNow,
+            CreatedAt = DateTimeOffset.UtcNow
+        };
     }
 }

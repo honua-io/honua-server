@@ -500,16 +500,41 @@ internal static partial class FeatureServerEndpoints
         HttpContext context,
         [FromServices] ICommonQueryValidator queryValidator)
     {
-        if (!TryValidateAllowedParameters(context.Request.Query, queryValidator, AllowedQueryParameters.QueryDomains, out var error))
+        var cancellationToken = GetTimeoutAwareCancellationToken(context);
+
+        // Esri services accept BOTH GET and POST for queryDomains; clients POST large
+        // layers arrays that exceed URL limits (honua-server#1825). Merge the form body
+        // over the query string so both methods share this read-only handler.
+        var values = ToCaseInsensitiveDictionary(context.Request.Query);
+        if (HttpMethods.IsPost(context.Request.Method))
+        {
+            var (bodyValues, bodyReadError) = await TryReadRequestValuesAsync(context.Request, cancellationToken);
+            if (bodyValues == null)
+            {
+                if (TryGetUnsupportedMediaType(bodyReadError, out var receivedContentType))
+                {
+                    return CreateUnsupportedRequestContentTypeResult(context, receivedContentType);
+                }
+
+                return StandardErrorHelpers.CreateBadRequest(context,
+                    "Invalid query parameters",
+                    [bodyReadError ?? "Invalid request body."]);
+            }
+
+            foreach (var pair in bodyValues)
+            {
+                values[pair.Key] = pair.Value;
+            }
+        }
+
+        if (!TryValidateAllowedParameters(values, queryValidator, AllowedQueryParameters.QueryDomains, out var error))
         {
             return StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid query parameters",
                 [error ?? "Invalid query parameter."]);
         }
 
-        var requestedFormat = context.Request.Query.TryGetValue("f", out var formatValue)
-            ? formatValue.ToString()
-            : null;
+        var requestedFormat = GetValueString(values, "f");
         if (!TryValidateOutputFormat(requestedFormat, JsonOnlyFormats, out _, out var formatError))
         {
             return StandardErrorHelpers.CreateBadRequest(context,
@@ -525,7 +550,6 @@ internal static partial class FeatureServerEndpoints
         scope.WithTag(HonuaTelemetry.Tags.ServiceId, serviceId);
 
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
-        var cancellationToken = GetTimeoutAwareCancellationToken(context);
         var serviceValidationResult = await FeatureServerResourceValidationHelpers.ValidateServiceV2Async(
             resourceValidator,
             serviceId,
@@ -541,7 +565,6 @@ internal static partial class FeatureServerEndpoints
         var snapshotProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
         var snapshot = await snapshotProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
-        var values = ToCaseInsensitiveDictionary(context.Request.Query);
         if (!TryResolveRequestedServiceLayersV2(service, snapshot, values, out var selectedLayers, out _, out var selectionError))
         {
             return StandardErrorHelpers.CreateBadRequest(context,
