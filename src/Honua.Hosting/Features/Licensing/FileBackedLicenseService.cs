@@ -25,17 +25,20 @@ internal sealed class FileBackedLicenseService :
     private readonly IOptions<LicenseOptions> _options;
     private readonly IEd25519Verifier _verifier;
     private readonly ILogger<FileBackedLicenseService> _logger;
+    private readonly ILicenseContentSecretResolver? _licenseContentSecretResolver;
     private LicenseSnapshot _snapshot;
     private long _snapshotVersion;
 
     public FileBackedLicenseService(
         IOptions<LicenseOptions> options,
         IEd25519Verifier verifier,
-        ILogger<FileBackedLicenseService> logger)
+        ILogger<FileBackedLicenseService> logger,
+        ILicenseContentSecretResolver? licenseContentSecretResolver = null)
     {
         _options = options;
         _verifier = verifier;
         _logger = logger;
+        _licenseContentSecretResolver = licenseContentSecretResolver;
         _snapshot = CreateCommunitySnapshot(
             LicenseValidationState.NoLicenseConfigured,
             isValid: true,
@@ -217,14 +220,50 @@ internal sealed class FileBackedLicenseService :
     {
         var options = _options.Value;
 
+        // Resolve a Licensing:LicenseContentSecretRef (e.g.
+        // azure:keyvault:https://<vault>.vault.azure.net/<secret>) into the envelope JSON via the
+        // optional ILicenseContentSecretResolver. The resolved value is treated exactly like inline
+        // LicenseContent. Explicit inline LicenseContent always wins. FAIL-SAFE: any resolver error
+        // falls back to Community and never crashes the host.
+        // PROVISIONAL (#1745) pending the canonical resolver seam in honua-server#1742.
+        var effectiveLicenseContent = options.LicenseContent;
+        if (string.IsNullOrWhiteSpace(effectiveLicenseContent)
+            && !string.IsNullOrWhiteSpace(options.LicenseContentSecretRef))
+        {
+            if (_licenseContentSecretResolver is not null
+                && _licenseContentSecretResolver.CanResolve(options.LicenseContentSecretRef))
+            {
+                try
+                {
+                    effectiveLicenseContent = await _licenseContentSecretResolver
+                        .ResolveLicenseContentAsync(options.LicenseContentSecretRef, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // Fail safe to Community — a secret-store outage must not crash the host.
+                    PublishCommunity(LicenseValidationState.NoLicenseConfigured, isValid: true, payload: null, keyId: null);
+                    LicenseRuntimeLog.LicenseMalformed(_logger, $"secret-ref-resolve:{ex.GetType().Name}");
+                    return;
+                }
+            }
+            else
+            {
+                // No resolver can handle the configured ref (e.g. Azure module not compiled in).
+                PublishCommunity(LicenseValidationState.NoLicenseConfigured, isValid: true, payload: null, keyId: null);
+                LicenseRuntimeLog.NoLicensePathConfigured(_logger);
+                return;
+            }
+        }
+
         // Inline content takes precedence over a file path so the license can be
         // delivered on a read-only/serverless filesystem (e.g. AWS Lambda), typically
         // via a Licensing:LicenseContent=aws:secretsmanager:<arn> secret reference.
-        if (!string.IsNullOrWhiteSpace(options.LicenseContent))
+        if (!string.IsNullOrWhiteSpace(effectiveLicenseContent))
         {
             try
             {
-                var inlineData = System.Text.Encoding.UTF8.GetBytes(options.LicenseContent);
+                var inlineData = System.Text.Encoding.UTF8.GetBytes(effectiveLicenseContent);
                 var inlineResult = ValidateLicenseData(inlineData, options);
                 PublishSnapshot(inlineResult.Snapshot);
                 LogValidationResult(inlineResult);

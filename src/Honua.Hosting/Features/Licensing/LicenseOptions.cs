@@ -18,6 +18,21 @@ internal sealed class LicenseOptions
     /// </summary>
     public string? LicenseContent { get; set; }
 
+    /// <summary>
+    /// A reference to a cloud secret holding the signed license envelope JSON, resolved at startup
+    /// via an <see cref="ILicenseContentSecretResolver"/> and then treated exactly like
+    /// <see cref="LicenseContent"/> (the resolved value becomes the inline envelope). Lets the
+    /// license be delivered from a secret store on a read-only/serverless filesystem without baking
+    /// it into the image. Azure form:
+    /// <c>azure:keyvault:https://&lt;vault&gt;.vault.azure.net/&lt;secret&gt;</c> (managed identity).
+    /// </summary>
+    /// <remarks>
+    /// PROVISIONAL draft (#1745) pending the canonical resolver seam in honua-server#1742. When
+    /// both <see cref="LicenseContent"/> and this ref are set, the explicit inline content wins.
+    /// Resolution is FAIL-SAFE: any error falls back to Community licensing, never a crash.
+    /// </remarks>
+    public string? LicenseContentSecretRef { get; set; }
+
     public Dictionary<string, string> TrustedKeys { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
     public bool AllowAdminUpload { get; set; }

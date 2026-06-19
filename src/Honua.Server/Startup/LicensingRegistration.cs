@@ -30,6 +30,14 @@ internal static class LicensingRegistration
         services.Configure<LicenseCapacityOptions>(
             configuration.GetSection(LicenseCapacityOptions.SectionName));
         services.AddSingleton<IEd25519Verifier, BouncyCastleEd25519Verifier>();
+#if !HONUA_EXCLUDE_AZURE
+        // Azure Key Vault license-content resolver (#1745): resolves
+        // Licensing:LicenseContentSecretRef = azure:keyvault:... into the signed envelope at startup.
+        // Azure.* surface stays confined to Honua.Azure; FileBackedLicenseService consumes the
+        // optional ILicenseContentSecretResolver seam and fails safe to Community on any error.
+        Honua.Server.Features.Licensing.AzureLicenseResolverServiceCollectionExtensions
+            .AddAzureKeyVaultLicenseContentResolver(services);
+#endif
         services.AddSingleton<FileBackedLicenseService>();
         services.AddSingleton<ILicenseEntitlementService>(sp =>
             sp.GetRequiredService<FileBackedLicenseService>());
