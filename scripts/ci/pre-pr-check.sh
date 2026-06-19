@@ -265,6 +265,7 @@ elif [[ "${AFFECTED}" == "ALL" ]] || affected_contains "Honua.Server.csproj"; th
             -p:PublishAot=true \
             -p:HonuaSkipAdminClientForAotVerification=true \
             -p:HonuaSkipOracleForAotVerification=true \
+            -p:HonuaSkipSnowflakeForAotVerification=true \
             -p:HonuaIncludeStacOpsDemo=false \
             -p:StripSymbols=true \
             -o ./publish

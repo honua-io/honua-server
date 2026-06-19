@@ -1,0 +1,122 @@
+# Databricks provider (read-only, best-effort)
+
+The Databricks provider serves Honua feature layers from tables/views in a Databricks
+SQL Warehouse. It plugs in alongside the primary backend (PostGIS, DuckDB, or MySQL)
+through the shared feature-provider router: any layer whose backing `DataConnection`
+resolves to the `databricks` provider is read through this implementation.
+
+> **Status: best-effort, read-only.** Databricks has no first-class .NET ADO.NET
+> driver, so this provider is an HTTP read-through adapter over the Databricks **SQL
+> Statement Execution REST API**, closer in shape to the ArcGIS REST provider than to
+> the in-process RDBMS providers. A hardening follow-up is expected. Read the
+> [limitations](#limitations) before relying on it in production.
+
+## How it works
+
+Each Honua query is translated to Databricks SQL text and submitted to a SQL Warehouse
+over HTTPS with bearer-token (PAT/OAuth) authentication:
+
+1. **Submit** — `POST /api/2.0/sql/statements/` with the SQL statement, the warehouse
+   id, any named parameters, `disposition=INLINE`, `format=JSON_ARRAY`, and a server-side
+   `wait_timeout`.
+2. **Poll** — when the statement is `PENDING`/`RUNNING`, poll
+   `GET /api/2.0/sql/statements/{statement_id}` on the configured interval until the
+   state is `SUCCEEDED` (or the command-timeout budget elapses).
+3. **Page** — read the inline `result.data_array` rows and follow
+   `result.next_chunk_internal_link` to collect additional chunks.
+
+Geometry is requested as a WKB hex string via `hex(st_asbinary(<geometry-column>))` and
+decoded to the canonical feature geometry without an external geometry library. Extent
+queries use `st_xmin`/`st_ymin`/`st_xmax`/`st_ymax` aggregates. These `ST_*` functions
+require a Databricks runtime / DBSQL with spatial-function support.
+
+## Requirements
+
+- A running **Databricks SQL Warehouse** and its warehouse id.
+- A **personal access token** (PAT) or OAuth bearer token with read access to the
+  target catalog/schema/tables.
+- For geometry/extent: a Databricks runtime / DBSQL that exposes the spatial `ST_*`
+  functions used above.
+
+## Configuration
+
+Bound from the `Databricks` configuration section (environment variables shown with the
+`__` section separator):
+
+| Key | Required | Description |
+| --- | --- | --- |
+| `Databricks__Enabled` | no (default `true`) | Set `false` to compile the provider in but skip its DI registration. |
+| `Databricks__Host` | yes | Absolute HTTPS workspace URL, e.g. `https://dbc-abc123.cloud.databricks.com`. |
+| `Databricks__WarehouseId` | yes | SQL Warehouse id statements execute against. |
+| `Databricks__Token` | yes | PAT / OAuth bearer token. Prefer a secret reference. Sent only as an `Authorization: Bearer …` header — never in a URL. |
+| `Databricks__Catalog` | no | Unity Catalog catalog used to qualify tables when a layer does not override it. |
+| `Databricks__Schema` | no | Schema (database) used to qualify tables when a layer does not override it. |
+| `Databricks__CommandTimeoutSeconds` | no (default `120`) | Overall submit + poll budget. |
+| `Databricks__PollIntervalMilliseconds` | no (default `750`) | Delay between status polls. |
+
+### Layer mappings
+
+Databricks exposes no Honua-aware service-metadata endpoint, so layer mappings are
+configured explicitly (schema introspection is not performed in this slice). Each entry
+under `Databricks:Layers` maps a Honua layer id to a physical table:
+
+```jsonc
+{
+  "Databricks": {
+    "Host": "https://dbc-abc123.cloud.databricks.com",
+    "WarehouseId": "1234567890abcdef",
+    "Token": "dapi_...",
+    "Catalog": "main",
+    "Schema": "gis",
+    "Layers": [
+      {
+        "Id": 1,
+        "Name": "parcels",
+        "Table": "parcels",
+        "GeometryColumn": "geom",
+        "PrimaryKeyColumn": "id",
+        "Srid": 4326,
+        "GeometryType": "Polygon",
+        "Attributes": ["name", "owner", "area_sqm"]
+      }
+    ]
+  }
+}
+```
+
+`Catalog`/`Schema` may be overridden per layer. Table, geometry, primary-key, and
+attribute identifiers are validated against a simple-identifier allow-list at startup.
+
+## Capabilities
+
+| Capability | Supported |
+| --- | --- |
+| Query (where, object-ids, out-fields, order-by, paging) | Yes |
+| Count | Yes |
+| Extent (envelope) | Yes (requires `ST_*`) |
+| Envelope/bbox spatial filter | Yes (`st_intersects`, requires `ST_*`) |
+| Statistics / top-features / date-bins / bins / H3 | No |
+| Native MVT / FlatGeobuf / Geobuf / GML | No (shared formatters handle output) |
+| Streaming GeoJSON | No |
+| Edits (create/update/delete/transactions) | No — provider is read-only |
+
+## Limitations
+
+- **No writes.** The provider exposes no `IFeatureWriter`; all edit paths are rejected.
+- **No native .NET driver.** Communication is over the REST Statement Execution API, so
+  every request incurs submit + poll latency rather than a persistent connection.
+- **Spatial-function availability is environment-dependent.** `ST_AsBinary`,
+  `ST_GeomFromText`, `ST_Intersects`, and the `ST_*min/max` aggregates require a
+  Databricks runtime / DBSQL build that ships the spatial functions. On warehouses
+  without them, geometry, extent, and spatial-filter queries will fail.
+- **`WHERE` is forwarded verbatim.** The canonical GeoServices-style `where` clause is
+  passed through as a Spark-SQL predicate without re-parsing. It is assumed to be
+  Spark-SQL compatible.
+- **Unsupported query shapes fail loudly.** Parameterized SQL filters, enforced/security
+  SQL filters, temporal filters, and non-envelope spatial filters throw
+  `NotSupportedException` rather than silently returning over-broad results.
+- **No schema introspection.** Attribute columns must be listed explicitly per layer.
+- **Statistics and analytics are deferred** to the hardening follow-up.
+
+Provider selection variables are listed in the
+[environment variable reference](../environment-variables.md#database-and-providers).

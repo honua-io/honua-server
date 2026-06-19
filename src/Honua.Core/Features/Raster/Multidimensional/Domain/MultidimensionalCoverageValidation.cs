@@ -33,6 +33,7 @@ public static class MultidimensionalCoverageValidation
 
     private static readonly string[] AllowedHdfExtensions = [".h5", ".hdf5"];
     private static readonly string[] AllowedNetCdfExtensions = [".nc", ".nc4"];
+    private static readonly string[] AllowedGribExtensions = [".grib", ".grb", ".grb2", ".grib2"];
 
     /// <summary>
     /// Validates a registration request. Returns <c>true</c> when the request
@@ -65,7 +66,7 @@ public static class MultidimensionalCoverageValidation
 
         if (!Enum.IsDefined(request.Format))
         {
-            error = "format must be one of: CloudOptimizedHdf5, NetCdf4.";
+            error = "format must be one of: CloudOptimizedHdf5, NetCdf4, Grib.";
             return false;
         }
 
@@ -107,9 +108,14 @@ public static class MultidimensionalCoverageValidation
 
         if (!ExtensionMatchesFormat(request.ObjectKey, request.Format))
         {
-            error = request.Format == MultidimensionalCoverageFormat.CloudOptimizedHdf5
-                ? "objectKey must end with .h5 or .hdf5 for CloudOptimizedHdf5 format."
-                : "objectKey must end with .nc or .nc4 for NetCdf4 format.";
+            error = request.Format switch
+            {
+                MultidimensionalCoverageFormat.CloudOptimizedHdf5 =>
+                    "objectKey must end with .h5 or .hdf5 for CloudOptimizedHdf5 format.",
+                MultidimensionalCoverageFormat.Grib =>
+                    "objectKey must end with .grib, .grb, .grb2, or .grib2 for Grib format.",
+                _ => "objectKey must end with .nc or .nc4 for NetCdf4 format."
+            };
             return false;
         }
 
@@ -157,6 +163,7 @@ public static class MultidimensionalCoverageValidation
         {
             MultidimensionalCoverageFormat.CloudOptimizedHdf5 => AllowedHdfExtensions,
             MultidimensionalCoverageFormat.NetCdf4 => AllowedNetCdfExtensions,
+            MultidimensionalCoverageFormat.Grib => AllowedGribExtensions,
             _ => Array.Empty<string>()
         };
 
