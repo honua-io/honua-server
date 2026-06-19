@@ -184,23 +184,92 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetTileMetadata)]
     [Endpoint("GET /rest/services/{serviceId}/VectorTileServer/resources/styles")]
-    public async Task VectorTileServer_DefaultStyles_IsStubbedNotImplemented()
+    public async Task VectorTileServer_DefaultStyles_ReturnsGlStyleWithRewrittenTileSource()
     {
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/VectorTileServer/resources/styles");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+
+        using var document = JsonDocument.Parse(content);
+        var root = document.RootElement;
+
+        // Valid Mapbox GL style v8.
+        root.GetProperty("version").GetInt32().Should().Be(8);
+
+        // sprite/glyphs are omitted until the sprite/glyph pipeline lands (honua-server#1780).
+        root.TryGetProperty("sprite", out _).Should().BeFalse();
+        root.TryGetProperty("glyphs", out _).Should().BeFalse();
+
+        // A vector source whose tile template resolves to THIS service's tile route.
+        var sources = root.GetProperty("sources");
+        sources.EnumerateObject().Should().NotBeEmpty();
+
+        var sawVectorTileTemplate = false;
+        foreach (var source in sources.EnumerateObject())
+        {
+            source.Value.GetProperty("type").GetString().Should().Be("vector");
+
+            // The TileJSON pointer must not be emitted (we serve tiles directly).
+            source.Value.TryGetProperty("url", out _).Should().BeFalse();
+
+            var tiles = source.Value.GetProperty("tiles");
+            tiles.GetArrayLength().Should().BeGreaterThan(0);
+            foreach (var tile in tiles.EnumerateArray())
+            {
+                var template = tile.GetString();
+                template.Should().NotBeNullOrEmpty();
+                template.Should().Contain(
+                    $"/rest/services/{WebAppFixture.TestServiceId}/VectorTileServer/tile/{{z}}/{{y}}/{{x}}.pbf");
+                template.Should().StartWith("http");
+                sawVectorTileTemplate = true;
+            }
+        }
+
+        sawVectorTileTemplate.Should().BeTrue();
+
+        // The layer with no stored style still yields a deterministic, non-empty default style.
+        root.GetProperty("layers").GetArrayLength().Should().BeGreaterThan(0);
     }
 
     [IntegrationTest]
     [Operation(Operations.GetTileMetadata)]
     [Endpoint("GET /rest/services/{serviceId}/VectorTileServer/resources/styles/{**resourcePath}")]
-    public async Task VectorTileServer_StyleResource_IsStubbedNotImplemented()
+    public async Task VectorTileServer_StyleResource_RootJson_ReturnsGlStyle()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/VectorTileServer/resources/styles/root.json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+        using var document = JsonDocument.Parse(content);
+        document.RootElement.GetProperty("version").GetInt32().Should().Be(8);
+        document.RootElement.GetProperty("sources").EnumerateObject().Should().NotBeEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTileMetadata)]
+    [Endpoint("GET /rest/services/{serviceId}/VectorTileServer/resources/styles/{**resourcePath}")]
+    public async Task VectorTileServer_StyleResource_SpriteOrGlyph_ReturnsNotFound()
     {
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/VectorTileServer/resources/styles/sprites/sprite.json");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTileMetadata)]
+    [Endpoint("GET /rest/services/{serviceId}/VectorTileServer/resources/styles")]
+    public async Task VectorTileServer_DefaultStyles_UnknownService_ReturnsNotFound()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/rest/services/does-not-exist/VectorTileServer/resources/styles");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [IntegrationTest]
