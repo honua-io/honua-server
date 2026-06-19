@@ -59,7 +59,13 @@ public sealed class FeatureQueryBuilderSelectProjectionTests
 
         result.Sql.Should().Contain("jsonb_build_object('category', attributes -> $2)::text AS attributes");
         result.Sql.Should().Contain("COUNT(*) OVER()");
-        result.WhereParameters.Should().Equal("category", 10);
+        result.Sql.Should().Contain("LIMIT $");
+        // The optimized builder emits the LIMIT placeholder but does not append the pagination
+        // value to WhereParameters — pagination is bound by AddQueryParameters, matching the
+        // non-optimized BuildSelectQuery convention. Appending it here previously double-bound
+        // pagination at execution (honua-server#1749). Only the OutFields projection parameter
+        // ("category") belongs in WhereParameters.
+        result.WhereParameters.Should().Equal("category");
     }
 
     [Fact]
