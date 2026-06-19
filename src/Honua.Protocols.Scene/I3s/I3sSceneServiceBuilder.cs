@@ -38,8 +38,20 @@ internal static class I3sSceneServiceBuilder
     /// <summary>WGS-84 geographic well-known id used for served layers.</summary>
     public const int Wgs84Wkid = 4326;
 
+    /// <summary>
+    /// WGS-84 ellipsoidal-height vertical well-known id advertised on the
+    /// layer's spatial reference (EPSG:115700, the ellipsoidal vertical CRS for
+    /// WGS-84) so a client knows the z values are ellipsoidal metres.
+    /// </summary>
+    public const int Wgs84EllipsoidVcsWkid = 115700;
+
     /// <summary>The single layer id Honua exposes per scene (always 0).</summary>
     public const int LayerId = 0;
+
+    /// <summary>
+    /// I3S spec version targeted by the served descriptor shape.
+    /// </summary>
+    public const string I3sVersion = "1.7";
 
     /// <summary>
     /// Builds the I3S scene-layer descriptor for a scene with the supplied
@@ -47,14 +59,16 @@ internal static class I3sSceneServiceBuilder
     /// WGS-84.
     /// </summary>
     /// <param name="scene">The hosted scene dataset.</param>
-    /// <param name="extent">The scene's WGS-84 extent, when known.</param>
-    /// <param name="minHeightMeters">Minimum elevation in meters, when known.</param>
-    /// <param name="maxHeightMeters">Maximum elevation in meters, when known.</param>
+    /// <param name="extent">
+    /// The scene's WGS-84 extent, when known. When the extent carries a
+    /// vertical range (<see cref="SceneExtent.ZMin"/>/<see cref="SceneExtent.ZMax"/>,
+    /// read from the tileset's root bounding volume) the descriptor advertises a
+    /// z-bearing <c>fullExtent</c>; otherwise the vertical extent is omitted
+    /// rather than fabricated.
+    /// </param>
     public static I3sSceneLayerDocument BuildLayer(
         SceneDataset scene,
-        SceneExtent? extent,
-        double? minHeightMeters = null,
-        double? maxHeightMeters = null)
+        SceneExtent? extent)
     {
         ArgumentNullException.ThrowIfNull(scene);
 
@@ -62,6 +76,7 @@ internal static class I3sSceneServiceBuilder
         {
             Wkid = Wgs84Wkid,
             LatestWkid = Wgs84Wkid,
+            VcsWkid = Wgs84EllipsoidVcsWkid,
         };
 
         I3sFullExtent? fullExtent = extent is null
@@ -72,8 +87,8 @@ internal static class I3sSceneServiceBuilder
                 Ymin = extent.YMin,
                 Xmax = extent.XMax,
                 Ymax = extent.YMax,
-                Zmin = minHeightMeters,
-                Zmax = maxHeightMeters,
+                Zmin = extent.ZMin,
+                Zmax = extent.ZMax,
                 SpatialReference = spatialReference,
             };
 
@@ -83,7 +98,7 @@ internal static class I3sSceneServiceBuilder
             LayerType = DefaultLayerType,
             Name = scene.Name,
             Description = scene.Description,
-            Version = "1.7",
+            Version = I3sVersion,
             SpatialReference = spatialReference,
             HeightModelInfo = new I3sHeightModelInfo
             {
@@ -94,40 +109,122 @@ internal static class I3sSceneServiceBuilder
             FullExtent = fullExtent,
             // Descriptor preview only: do NOT advertise a fetchable rootNode /
             // node-page store, because the server maps no node/geometry routes
-            // yet (#1202). Advertising one would make conformant clients request
-            // a node URL that 404s. Only the honestly-servable store scalars are
-            // emitted here.
+            // yet (#1202, hard lane #1809-1811). Advertising one would make
+            // conformant clients request a node URL that 404s. Only the
+            // honestly-servable store scalars are emitted here.
             Store = new I3sStore
             {
                 Id = scene.Id,
                 Profile = "meshpyramids",
-                Version = "1.7",
+                Version = I3sVersion,
             },
+            // Format definitions/schema that DESCRIBE the served 3D Object
+            // format (vertex/material/texture/attribute layout). These are
+            // honest, inert metadata — they tell a client what a node *would*
+            // contain — and crucially do NOT advertise any fetchable node /
+            // node-page resource, keeping the no-advertised-but-404 stance
+            // (#1202) while enriching the 1.7 descriptor.
+            AttributeStorageInfo = DefaultAttributeStorageInfo,
+            GeometryDefinitions = DefaultGeometryDefinitions,
+            MaterialDefinitions = DefaultMaterialDefinitions,
+            TextureSetDefinitions = DefaultTextureSetDefinitions,
         };
     }
+
+    /// <summary>
+    /// Per-attribute storage layout describing the default <c>OBJECTID</c> key
+    /// every served 3D Object node carries. Descriptive only — no attribute
+    /// resource is fetchable on this slice.
+    /// </summary>
+    private static readonly IReadOnlyList<I3sAttributeStorageInfo> DefaultAttributeStorageInfo =
+    [
+        new I3sAttributeStorageInfo
+        {
+            Key = "f_0",
+            Name = "OBJECTID",
+            Ordering = ["attributeValues"],
+            AttributeValues = new I3sAttributeValues
+            {
+                ValueType = "Oid32",
+                ValuesPerElement = 1,
+            },
+        },
+    ];
+
+    /// <summary>
+    /// Default node geometry schema: a single uncompressed buffer carrying
+    /// interleaved position/normal/uv0 vertex streams. Describes the format the
+    /// hosted 3D Tiles content maps to; no geometry buffer is fetchable here.
+    /// </summary>
+    private static readonly IReadOnlyList<I3sGeometryDefinition> DefaultGeometryDefinitions =
+    [
+        new I3sGeometryDefinition
+        {
+            GeometryBuffers =
+            [
+                new I3sGeometryBuffer
+                {
+                    Position = new I3sVertexLayout { Type = "Float32", Component = 3 },
+                    Normal = new I3sVertexLayout { Type = "Float32", Component = 3 },
+                    Uv0 = new I3sVertexLayout { Type = "Float32", Component = 2 },
+                },
+            ],
+        },
+    ];
+
+    /// <summary>
+    /// Default PBR material the served geometry references. Descriptive only.
+    /// </summary>
+    private static readonly IReadOnlyList<I3sMaterialDefinition> DefaultMaterialDefinitions =
+    [
+        new I3sMaterialDefinition
+        {
+            AlphaMode = "OPAQUE",
+            DoubleSided = false,
+            PbrMetallicRoughness = new I3sPbrMetallicRoughness
+            {
+                BaseColorFactor = [1.0, 1.0, 1.0, 1.0],
+                MetallicFactor = 0.0,
+                RoughnessFactor = 1.0,
+            },
+        },
+    ];
+
+    /// <summary>
+    /// Default texture-set the served materials reference (JPEG). Descriptive
+    /// only.
+    /// </summary>
+    private static readonly IReadOnlyList<I3sTextureSetDefinition> DefaultTextureSetDefinitions =
+    [
+        new I3sTextureSetDefinition
+        {
+            Formats =
+            [
+                new I3sTextureFormat { Name = "0", Format = "jpg" },
+            ],
+        },
+    ];
 
     /// <summary>
     /// Builds the I3S SceneServer service descriptor wrapping a single scene
     /// layer.
     /// </summary>
     /// <param name="scene">The hosted scene dataset.</param>
-    /// <param name="extent">The scene's WGS-84 extent, when known.</param>
-    /// <param name="minHeightMeters">Minimum elevation in meters, when known.</param>
-    /// <param name="maxHeightMeters">Maximum elevation in meters, when known.</param>
+    /// <param name="extent">
+    /// The scene's WGS-84 extent (optionally z-bearing), when known.
+    /// </param>
     public static I3sSceneServiceDocument BuildService(
         SceneDataset scene,
-        SceneExtent? extent,
-        double? minHeightMeters = null,
-        double? maxHeightMeters = null)
+        SceneExtent? extent)
     {
         ArgumentNullException.ThrowIfNull(scene);
 
         return new I3sSceneServiceDocument
         {
             ServiceName = scene.Name,
-            ServiceVersion = "1.7",
+            ServiceVersion = I3sVersion,
             SupportedBindings = ["REST"],
-            Layers = [BuildLayer(scene, extent, minHeightMeters, maxHeightMeters)],
+            Layers = [BuildLayer(scene, extent)],
         };
     }
 }

@@ -25,17 +25,26 @@ public sealed class I3sSceneServiceBuilderTests
 
     private static readonly SceneExtent Extent = new(-122.5, 37.7, -122.4, 37.8);
 
+    // A z-bearing extent: the vertical range now lives on SceneExtent itself
+    // (read from the tileset's root bounding volume) rather than being passed as
+    // separate height parameters.
+    private static readonly SceneExtent ExtentWithZ = new(-122.5, 37.7, -122.4, 37.8, ZMin: 0.0, ZMax: 100.0);
+
     [UnitTest]
     public void BuildLayer_WithExtent_MapsToWgs84ThreeDObjectLayer()
     {
-        var layer = I3sSceneServiceBuilder.BuildLayer(Scene, Extent, minHeightMeters: 0.0, maxHeightMeters: 100.0);
+        var layer = I3sSceneServiceBuilder.BuildLayer(Scene, ExtentWithZ);
 
         layer.Id.Should().Be(0);
         layer.LayerType.Should().Be("3DObject");
         layer.Name.Should().Be("Downtown");
         layer.SpatialReference!.Wkid.Should().Be(4326);
+        // The layer advertises the WGS-84 ellipsoidal vertical CRS so a client
+        // knows the z values are ellipsoidal metres.
+        layer.SpatialReference.VcsWkid.Should().Be(115700);
         layer.FullExtent!.Xmin.Should().Be(-122.5);
         layer.FullExtent.Ymax.Should().Be(37.8);
+        layer.FullExtent.Zmin.Should().Be(0.0);
         layer.FullExtent.Zmax.Should().Be(100.0);
         layer.Store!.Id.Should().Be("downtown");
         layer.Store.Profile.Should().Be("meshpyramids");
@@ -45,6 +54,39 @@ public sealed class I3sSceneServiceBuilderTests
         layer.HeightModelInfo.Should().NotBeNull();
         layer.HeightModelInfo!.HeightModel.Should().Be("ellipsoidal");
         layer.HeightModelInfo.HeightUnit.Should().Be("meter");
+    }
+
+    [UnitTest]
+    public void BuildLayer_DescribesFormatDefinitions()
+    {
+        // The enriched 1.7 descriptor (#1808) carries the format
+        // definitions/schema that DESCRIBE the served 3D Object format —
+        // geometry schema, materials, texture sets, and attribute storage —
+        // without advertising any fetchable node store.
+        var layer = I3sSceneServiceBuilder.BuildLayer(Scene, ExtentWithZ);
+
+        layer.GeometryDefinitions.Should().NotBeNullOrEmpty();
+        layer.GeometryDefinitions![0].GeometryBuffers.Should().NotBeNullOrEmpty();
+        layer.GeometryDefinitions[0].GeometryBuffers![0].Position!.Component.Should().Be(3);
+
+        layer.MaterialDefinitions.Should().NotBeNullOrEmpty();
+        layer.MaterialDefinitions![0].PbrMetallicRoughness.Should().NotBeNull();
+
+        layer.TextureSetDefinitions.Should().NotBeNullOrEmpty();
+        layer.TextureSetDefinitions![0].Formats.Should().NotBeNullOrEmpty();
+
+        layer.AttributeStorageInfo.Should().NotBeNullOrEmpty();
+        layer.AttributeStorageInfo![0].Name.Should().Be("OBJECTID");
+    }
+
+    [UnitTest]
+    public void BuildLayer_WithZBearingExtent_PopulatesVerticalExtent()
+    {
+        var layer = I3sSceneServiceBuilder.BuildLayer(Scene, ExtentWithZ);
+
+        layer.FullExtent.Should().NotBeNull();
+        layer.FullExtent!.Zmin.Should().Be(0.0);
+        layer.FullExtent.Zmax.Should().Be(100.0);
     }
 
     [UnitTest]
