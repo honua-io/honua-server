@@ -1172,7 +1172,7 @@
         "WMTS GetTile/GetCapabilities serve the WebMercatorQuad and WorldCRS84Quad gridsets; WMTS GetFeatureInfo remains WebMercatorQuad-only.",
         "Layer queries inherit the FeatureServer query contract, including its format behavior.",
         "MapServer tile GET storage is a loose-object cache, not an Esri compact cache or tile package.",
-        "dynamicLayers and the dynamicLayer child resource support source.type=mapLayer and allowlisted source.type=dataLayer workspace data layers (resolved to published resources on an allowlisted workspace), definitionExpression, and drawingInfo.renderer overrides; dynamicLayers joins and dynamic query tables remain unimplemented.",
+        "dynamicLayers and the dynamicLayer child resource support source.type=mapLayer, allowlisted source.type=dataLayer workspace data layers (resolved to published resources on an allowlisted workspace), allowlisted dataSource.type=joinTable joins (left-outer/inner, materialized application-side and surfaced through identify and the dynamicLayer metadata with right-source fields qualified as table.field, both layers' access policies enforced), definitionExpression, and drawingInfo.renderer overrides; dynamic query tables (dataSource.type=queryTable, raw SQL) remain unimplemented.",
         "Advanced rendering parameters such as maxAllowableOffset and geometryPrecision are accepted but not yet applied."
       ]
     },

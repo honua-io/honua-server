@@ -775,7 +775,8 @@ internal static partial class MapServerEndpoints
         int Id,
         int MapLayerId,
         string? DefinitionExpression,
-        string? DrawingInfoJson);
+        string? DrawingInfoJson,
+        DynamicLayerJoinDefinition? Join = null);
 
     private sealed record ExportRenderLayer(
         MapServerMetadataLayerDescriptor Layer,
@@ -986,14 +987,16 @@ internal static partial class MapServerEndpoints
                     return false;
                 }
 
-                if (!sourceResolver.TryResolveMapLayerId(
+                if (!sourceResolver.TryResolveSource(
                         sourceElement,
                         $"dynamicLayers entry '{id}'",
-                        out var mapLayerId,
+                        out var resolvedSource,
                         out error))
                 {
                     return false;
                 }
+
+                var mapLayerId = resolvedSource.MapLayerId;
 
                 string? definitionExpression = null;
                 if (element.TryGetProperty("definitionExpression", out var definitionElement))
@@ -1060,7 +1063,8 @@ internal static partial class MapServerEndpoints
                     id,
                     mapLayerId,
                     string.IsNullOrWhiteSpace(definitionExpression) ? null : definitionExpression,
-                    string.IsNullOrWhiteSpace(drawingInfoJson) ? null : drawingInfoJson));
+                    string.IsNullOrWhiteSpace(drawingInfoJson) ? null : drawingInfoJson,
+                    resolvedSource.Join));
             }
 
             return true;
@@ -1194,6 +1198,20 @@ internal static partial class MapServerEndpoints
                 return (Array.Empty<ExportRenderLayer>(), StandardErrorHelpers.CreateBadRequest(
                     context,
                     "layers parameter references an invalid or inaccessible layer."));
+            }
+
+            // joinTable sources must also satisfy the right (secondary) layer's access policy: even
+            // though export renders only the left geometry, gating both sides keeps the join's
+            // authorization model identical across export/identify/metadata.
+            if (dynamicLayer.Join is { } exportJoin)
+            {
+                if (!layerLookup.TryGetValue(exportJoin.RightMapLayerId, out var rightLayer) ||
+                    !AccessPolicyHelpers.IsResourceAccessible(context, rightLayer.Resource, service))
+                {
+                    return (Array.Empty<ExportRenderLayer>(), StandardErrorHelpers.CreateBadRequest(
+                        context,
+                        "layers parameter references an invalid or inaccessible layer."));
+                }
             }
 
             renderLayers.Add(new ExportRenderLayer(
