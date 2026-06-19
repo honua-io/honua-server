@@ -30,7 +30,21 @@ internal static class GeoServicesTemporalQueryBuilder
         Meets,
         MetBy,
         OverlapsStartWithinEnd,
-        OverlapsEndWithinStart
+        OverlapsEndWithinStart,
+
+        // Esri start/end-relative relations (ArcObjects esriTimeRelation vocabulary).
+        // ArcGIS clients (ArcGIS Pro, the ArcGIS API for Python, Maps SDKs) send these
+        // spellings on time-aware queries; map them onto the interval engine so the
+        // queries succeed instead of returning HTTP 400. The feature interval is
+        // [start, COALESCE(end, start)] and the query interval is [queryStart, queryEnd].
+        // Feature start time is after the query start time.
+        AfterStartTime,
+        // Feature ends before the query start time.
+        BeforeStartTime,
+        // Feature start time is after the query end time.
+        AfterEndTime,
+        // Feature ends before the query end time.
+        BeforeEndTime
     }
 
     /// <summary>
@@ -165,6 +179,10 @@ internal static class GeoServicesTemporalQueryBuilder
             "esritimerelationmetby" or "metby" => TimeRelation.MetBy,
             "esritimerelationoverlapsstartwithinend" or "overlapsstartwithinend" => TimeRelation.OverlapsStartWithinEnd,
             "esritimerelationoverlapsendwithinstart" or "overlapsendwithinstart" => TimeRelation.OverlapsEndWithinStart,
+            "esritimerelationafterstarttime" or "afterstarttime" => TimeRelation.AfterStartTime,
+            "esritimerelationbeforestarttime" or "beforestarttime" => TimeRelation.BeforeStartTime,
+            "esritimerelationafterendtime" or "afterendtime" => TimeRelation.AfterEndTime,
+            "esritimerelationbeforeendtime" or "beforeendtime" => TimeRelation.BeforeEndTime,
             _ => throw new ArgumentException($"Unsupported timeRelation '{timeRelation}'.")
         };
     }
@@ -221,6 +239,10 @@ internal static class GeoServicesTemporalQueryBuilder
                 BuildOverlapEndWithinStart(startExpression, endExpression, queryStart, queryEnd, relation)),
             TimeRelation.OverlapsStartWithinEnd => BuildOverlapStartWithinEnd(startExpression, endExpression, queryStart, queryEnd, relation),
             TimeRelation.OverlapsEndWithinStart => BuildOverlapEndWithinStart(startExpression, endExpression, queryStart, queryEnd, relation),
+            TimeRelation.AfterStartTime => CompareRequired(startExpression, BinaryOperator.GreaterThan, queryStart, relation, "start"),
+            TimeRelation.BeforeStartTime => CompareRequired(endExpression, BinaryOperator.LessThan, queryStart, relation, "start"),
+            TimeRelation.AfterEndTime => CompareRequired(startExpression, BinaryOperator.GreaterThan, queryEnd, relation, "end"),
+            TimeRelation.BeforeEndTime => CompareRequired(endExpression, BinaryOperator.LessThan, queryEnd, relation, "end"),
             _ => throw new ArgumentException($"Unsupported timeRelation '{relation}'.")
         };
     }
