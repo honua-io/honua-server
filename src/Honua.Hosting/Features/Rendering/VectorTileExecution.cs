@@ -34,6 +34,10 @@ internal static class VectorTileExecution
     /// <c>ITileProvider.GetMvtTileAsync</c> consumes <c>int layerId</c> as its
     /// storage abstraction, so no further V2 plumbing is needed here.
     /// </summary>
+    // Default tile matrix set for tile serve paths that do not carry an explicit
+    // matrix set in their route (e.g. the GeoServices /tiles/{layerId} endpoint).
+    private const string DefaultTileMatrixSetId = "WebMercatorQuad";
+
     internal static async Task<IResult> ExecuteAsync(
         HttpContext context,
         ITileProvider tileProvider,
@@ -45,8 +49,18 @@ internal static class VectorTileExecution
         TileOptions tileOptions,
         TileLimits tileLimits,
         CancellationToken cancellationToken,
-        Activity? activity = null)
+        Activity? activity = null,
+        string? serviceId = null,
+        string? layerId = null,
+        string? tileMatrixSetId = null)
     {
+        var ttlSeconds = TilesetTtlResolver.Resolve(
+            tileOptions,
+            serviceId ?? string.Empty,
+            layerId ?? storageLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            tileMatrixSetId ?? DefaultTileMatrixSetId);
+        var cacheControl = $"public, max-age={ttlSeconds}";
+
         var tileData = await tileProvider.GetMvtTileAsync(
             storageLayerId,
             tileCol,
@@ -61,13 +75,13 @@ internal static class VectorTileExecution
         {
             activity?.SetStatus(ActivityStatusCode.Ok);
             activity?.SetTag(HonuaTelemetry.Tags.FeatureCount, 0);
-            context.Response.Headers["Cache-Control"] = $"public, max-age={tileOptions.CacheMaxAge}";
+            context.Response.Headers["Cache-Control"] = cacheControl;
             return Results.NoContent();
         }
 
         activity?.SetStatus(ActivityStatusCode.Ok);
         activity?.SetTag("honua.tile.bytes", tileData.Length);
-        context.Response.Headers["Cache-Control"] = $"public, max-age={tileOptions.CacheMaxAge}";
+        context.Response.Headers["Cache-Control"] = cacheControl;
         return Results.Bytes(tileData, MvtContentType);
     }
 }

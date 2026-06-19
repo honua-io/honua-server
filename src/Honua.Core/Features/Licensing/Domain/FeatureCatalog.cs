@@ -192,6 +192,16 @@ public static class FeatureCatalog
     public const string SceneBimIngestKey = "scene.bim-ingest";
 
     /// <summary>
+    /// Entitlement key for LAS/LAZ/COPC point-cloud ingest into a servable 3D
+    /// Tiles point tileset (#1201). Enterprise-only: gates the admin
+    /// <c>POST /api/v1/admin/scenes/ingest/pointcloud</c> surface that decodes a
+    /// LAS point cloud and publishes a deterministic <c>.pnts</c> quadtree
+    /// tileset preserving per-point classification, intensity, and RGB.
+    /// Postgres-only (registration-backed).
+    /// </summary>
+    public const string ScenePointCloudIngestKey = "scene.pointcloud-ingest";
+
+    /// <summary>
     /// All edition-gated features in the platform.
     /// </summary>
     public static IReadOnlyList<FeatureDefinition> All { get; } =
@@ -366,6 +376,8 @@ public static class FeatureCatalog
         // Scene — Enterprise (CityGML/BIM ingest + Building Scene Layer publishing)
         new(SceneBimIngestKey, "CityGML/BIM Scene Ingest", Categories.Scene,
             HonuaEdition.Enterprise, "Ingest CityGML building models into a servable Building Scene Layer 3D Tiles tileset with per-feature discipline / sub-layer semantics."),
+        new(ScenePointCloudIngestKey, "Point Cloud Scene Ingest", Categories.Scene,
+            HonuaEdition.Enterprise, "Ingest LAS point clouds into a servable 3D Tiles point tileset preserving per-point classification, intensity, and RGB."),
 
         // Extensibility — Enterprise (plugin/extension SDK)
         new(PluginSdkKey, "Plugin/Extension SDK", Categories.Extensibility,

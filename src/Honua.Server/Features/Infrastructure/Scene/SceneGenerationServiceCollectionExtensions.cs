@@ -48,6 +48,11 @@ internal static class SceneGenerationServiceCollectionExtensions
         // executor so the Enterprise-gated admin ingest endpoint can resolve it.
         services.TryAddScoped<CityGmlScenePublishExecutor>();
 
+        // LAS/LAZ/COPC point-cloud ingest path (#1201): registered alongside the
+        // other scene executors so the Enterprise-gated admin point-cloud ingest
+        // endpoint can resolve it.
+        services.TryAddScoped<PointCloudScenePublishExecutor>();
+
         return services;
     }
 
