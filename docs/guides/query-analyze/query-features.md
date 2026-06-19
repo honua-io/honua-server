@@ -4,11 +4,29 @@ Filter, page, sort, and project features over whichever protocol your client spe
 
 **Prerequisites:** a running server ([quickstart](../../get-started/quickstart.md)) and a published layer ([publish layers](../publish/publish-layers.md)).
 
-The three surfaces answer the same questions with different syntax: OGC items take `filter` (CQL2 text or JSON), FeatureServer takes SQL-like `where` clauses, and OData takes `$filter`. This page shows the request shapes; the full filter-language reference is in [CQL2 and filtering](../../reference/cql2-and-filtering.md). To create or change features, see [edit features](../edit/edit-features.md).
+The fastest way to query from a terminal is the **`honua` CLI** (installed with
+the JS SDK: `npm i -g @honua/sdk-js`, or run ad hoc with `npx @honua/sdk-js
+honua …`). It wraps the same FeatureServer query endpoint, prints a readable
+table by default, and emits GeoJSON or JSON on request — no URL-encoding, no
+`f=` parameters. Point it at your server once:
+
+```bash
+export HONUA_BASE_URL=http://localhost:8080
+# export HONUA_API_KEY=... # only if the service requires auth
+```
+
+The three HTTP surfaces answer the same questions with different syntax: OGC items take `filter` (CQL2 text or JSON), FeatureServer takes SQL-like `where` clauses, and OData takes `$filter`. The CLI maps onto the FeatureServer surface; the raw HTTP shapes for all three are kept below as a reference. The full filter-language reference is in [CQL2 and filtering](../../reference/cql2-and-filtering.md). To create or change features, see [edit features](../edit/edit-features.md).
 
 ## Steps
 
-1. Ask an attribute question — "population over 10000" — on each surface:
+1. Ask an attribute question — "population over 10000". The `<service>/<layer>` reference uses the numeric layer id:
+
+   ```bash
+   honua query my_service/0 --where "population > 10000"
+   honua query my_service/0 --where "population > 10000" --format geojson
+   ```
+
+   <details><summary>Same query over raw HTTP (curl)</summary>
 
    ```bash
    BASE=http://localhost:8080
@@ -30,7 +48,17 @@ The three surfaces answer the same questions with different syntax: OGC items ta
    curl -s "$BASE/odata/Layers($LAYER)/Features?\$filter=population%20gt%2010000"
    ```
 
-2. Filter spatially. Every surface accepts a bounding box; CQL2 and FeatureServer also take real geometries, and OData supports `geo.distance` and `geo.intersects` in `$filter` (see [CQL2 and filtering](../../reference/cql2-and-filtering.md)):
+   </details>
+
+2. Filter spatially with a bounding box (lon,lat order: `minLon,minLat,maxLon,maxLat`):
+
+   ```bash
+   honua query my_service/0 --bbox -122.5,37.7,-122.3,37.8 --format geojson
+   ```
+
+   CQL2 and FeatureServer also take real geometries, and OData supports `geo.distance` and `geo.intersects` in `$filter` (see [CQL2 and filtering](../../reference/cql2-and-filtering.md)):
+
+   <details><summary>Spatial filters over raw HTTP (curl)</summary>
 
    ```bash
    # OGC: bbox (minLon,minLat,maxLon,maxLat) or CQL2 S_INTERSECTS
@@ -42,7 +70,15 @@ The three surfaces answer the same questions with different syntax: OGC items ta
    curl -s "$BASE/rest/services/$SVC/FeatureServer/0/query?geometry=-122.5,37.7,-122.3,37.8&geometryType=esriGeometryEnvelope&spatialRel=esriSpatialRelIntersects&inSR=4326&f=geojson"
    ```
 
-3. Page through large results:
+   </details>
+
+3. Page through large results with `--limit` (the response notes when more rows are available):
+
+   ```bash
+   honua query my_service/0 --limit 100
+   ```
+
+   <details><summary>Paging over raw HTTP (curl)</summary>
 
    ```bash
    curl -s "$BASE/ogc/features/collections/$COLL/items?limit=100&offset=200"
@@ -52,7 +88,15 @@ The three surfaces answer the same questions with different syntax: OGC items ta
 
    OGC responses include `next` links — follow those instead of computing offsets yourself when possible.
 
-4. Sort and select only the properties you need:
+   </details>
+
+4. Select only the properties you need with repeated `--fields`:
+
+   ```bash
+   honua query my_service/0 --fields name --fields population
+   ```
+
+   <details><summary>Sort + project over raw HTTP (curl)</summary>
 
    ```bash
    curl -s "$BASE/ogc/features/collections/$COLL/items?sortby=-population&properties=name,population"
@@ -62,17 +106,27 @@ The three surfaces answer the same questions with different syntax: OGC items ta
 
    `sortby` takes comma-separated fields with an optional `-` prefix for descending; `orderByFields` takes `field ASC|DESC`.
 
+   </details>
+
 5. Count without fetching when you only need a number:
+
+   ```bash
+   honua query my_service/0 --where "population > 10000" --count
+   ```
+
+   <details><summary>Count over raw HTTP (curl)</summary>
 
    ```bash
    curl -s "$BASE/rest/services/$SVC/FeatureServer/0/query?where=population%20%3E%2010000&returnCountOnly=true&f=json"
    curl -s "$BASE/odata/Layers($LAYER)/Features/\$count?\$filter=population%20gt%2010000"
    ```
 
+   </details>
+
 ## Verify
 
 ```bash
-curl -s "$BASE/ogc/features/collections/$COLL/items?limit=1"
+honua query my_service/0 --limit 1 --format geojson
 ```
 
 Expected (trimmed): a GeoJSON FeatureCollection with `numberMatched` and paging links.
