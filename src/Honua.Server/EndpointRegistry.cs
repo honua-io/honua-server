@@ -1195,6 +1195,19 @@ public static class EndpointRegistry
         new("GET", "/stac/search"),
         new("POST", "/stac/search"),
 
+        // OGC SensorThings API (STA v1.1) read surface (#1747)
+        new("GET", "/sta/v1.1/Things"),
+        new("GET", "/sta/v1.1/Things({id})"),
+        new("GET", "/sta/v1.1/Sensors"),
+        new("GET", "/sta/v1.1/Sensors({id})"),
+        new("GET", "/sta/v1.1/ObservedProperties"),
+        new("GET", "/sta/v1.1/ObservedProperties({id})"),
+        new("GET", "/sta/v1.1/Datastreams"),
+        new("GET", "/sta/v1.1/Datastreams({id})"),
+        new("GET", "/sta/v1.1/Datastreams({id})/Observations"),
+        new("GET", "/sta/v1.1/Observations"),
+        new("GET", "/sta/v1.1/Observations({id})"),
+
         // Hosted samples
         new("GET", "/samples/stac-ops"),
 

@@ -92,6 +92,8 @@
 
     <ProjectReference Include="..\Honua.Protocols.Stac\Honua.Protocols.Stac.csproj" />
 
+    <ProjectReference Include="..\Honua.Protocols.SensorThings\Honua.Protocols.SensorThings.csproj" />
+
     <ProjectReference Include="..\Honua.Protocols.GeoServices\Honua.Protocols.GeoServices.csproj" />
 
     <ProjectReference Include="..\Honua.Plugins\Honua.Plugins.csproj" />

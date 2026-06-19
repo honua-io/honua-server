@@ -321,6 +321,12 @@ public enum MetadataV2ServiceType
     OData,
 
     /// <summary>
+    /// An OGC SensorThings API (STA) service.
+    /// </summary>
+    [JsonStringEnumMemberName("sensorthings")]
+    SensorThings,
+
+    /// <summary>
     /// A custom or extension-defined service.
     /// </summary>
     [JsonStringEnumMemberName("custom")]
@@ -404,6 +410,12 @@ public enum MetadataV2PublicationType
     /// </summary>
     [JsonStringEnumMemberName("odata-entity-set")]
     ODataEntitySet,
+
+    /// <summary>
+    /// An OGC SensorThings API Datastream publication (a time-series-backed resource).
+    /// </summary>
+    [JsonStringEnumMemberName("sensorthings-datastream")]
+    SensorThingsDatastream,
 
     /// <summary>
     /// A custom or extension-defined publication.

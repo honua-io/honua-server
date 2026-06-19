@@ -205,6 +205,11 @@ public static class ProtocolNames
     public const string Stac = "STAC";
 
     /// <summary>
+    /// OGC SensorThings API (STA) v1.1.
+    /// </summary>
+    public const string SensorThings = "SensorThings-1.1";
+
+    /// <summary>
     /// Pro-tier spatial analytics endpoints (clustering, spatial join, buffer
     /// aggregate, density binning). Mirrored under both REST and OGC route families.
     /// </summary>
