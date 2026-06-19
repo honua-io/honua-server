@@ -26,7 +26,15 @@ public enum MultidimensionalCoverageFormat
     /// NetCDF-4 (.nc/.nc4), the HDF5-backed enhanced NetCDF data model.
     /// Coordinate discovery follows CF-1.x conventions.
     /// </summary>
-    NetCdf4 = 2
+    NetCdf4 = 2,
+
+    /// <summary>
+    /// GRIB / GRIB2 (.grib/.grb/.grb2/.grib2), the WMO gridded binary format
+    /// used for numerical weather and climate products. Served via the shared
+    /// convert-to-Zarr path (ADR-0039 Path B): the GDAL worker translates the
+    /// source to a derived Zarr store that the existing Zarr reader range-reads.
+    /// </summary>
+    Grib = 3
 }
 
 /// <summary>

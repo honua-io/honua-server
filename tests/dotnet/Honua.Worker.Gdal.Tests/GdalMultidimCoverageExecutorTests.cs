@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Domain;
@@ -63,12 +64,51 @@ public sealed class GdalMultidimCoverageExecutorTests
     }
 
     [UnitTest]
+    public async Task Execute_GribSource_ConvertsToZarr_FormatAgnostic()
+    {
+        // The executor passes the source straight to gdalmdiminfo + gdal_translate
+        // -of Zarr, so a .grib2 object is converted exactly like NetCDF — proving
+        // GRIB needs no executor change (#1795).
+        var runner = new FakeGdalCommandRunner((_, _, _) =>
+            new GdalCommandResult { ExitCode = 0, StandardOutput = GdalMdimInfoJson });
+        var executor = NewExecutor(runner, out _);
+
+        var job = GdalJobFactory.Job(
+            GdalMultidimCoverageMetadataJobExecutor.HandledProcessId,
+            ("provider", "AwsS3"),
+            ("bucket", "noaa-gfs"),
+            ("objectKey", "gfs/wind.grib2"));
+        var context = new RecordingJobExecutionContext(job.OperationId);
+
+        var result = await executor.ExecuteAsync(job, context, default);
+
+        result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
+
+        var convert = runner.Invocations.Should().ContainSingle(i => i.Tool == "gdal_translate").Subject;
+        convert.Arguments.Should().ContainInOrder(
+            "-of", "Zarr", "/vsis3/noaa-gfs/gfs/wind.grib2", "/vsis3/noaa-gfs/gfs/wind.zarr");
+
+        // The artifact carries the derived Zarr root so the server can register it.
+        var artifact = context.Artifacts.Should().ContainSingle().Subject;
+        artifact.Should().StartWith("data:application/json");
+        DecodeDataUriJson(artifact).Should().Contain("\"rootPath\":\"gfs/wind.zarr\"");
+    }
+
+    [UnitTest]
     public void DeriveZarrRootPath_ReplacesExtensionWithZarr()
     {
         GdalMultidimCoverageMetadataJobExecutor.DeriveZarrRootPath("maui/sst.nc").Should().Be("maui/sst.zarr");
         GdalMultidimCoverageMetadataJobExecutor.DeriveZarrRootPath("granule.nc4").Should().Be("granule.zarr");
         GdalMultidimCoverageMetadataJobExecutor.DeriveZarrRootPath("/leading/slash.h5").Should().Be("leading/slash.zarr");
+        GdalMultidimCoverageMetadataJobExecutor.DeriveZarrRootPath("gfs/wind.grib2").Should().Be("gfs/wind.zarr");
         GdalMultidimCoverageMetadataJobExecutor.DeriveZarrRootPath("noext").Should().Be("noext.zarr");
+    }
+
+    private static string DecodeDataUriJson(string dataUri)
+    {
+        const string marker = ";base64,";
+        var index = dataUri.IndexOf(marker, StringComparison.Ordinal);
+        return Encoding.UTF8.GetString(Convert.FromBase64String(dataUri[(index + marker.Length)..]));
     }
 
     [UnitTest]
