@@ -174,6 +174,8 @@ internal static class StartupConfigurationHelpers
     public static void RegisterConfigurationValidators(IServiceCollection services)
     {
         services.AddSingleton<IValidateOptions<LimitsOptions>>(new LimitsOptionsValidator());
+        services.AddSingleton<IValidateOptions<Honua.Core.Features.Tiles.TileMatrixSetDefinitionOptions>>(
+            new Honua.Core.Features.Tiles.TileMatrixSetOptionsValidator());
         services.AddSingleton<IValidateOptions<CacheOptions>>(new CacheOptionsValidator());
         services.AddSingleton<IValidateOptions<CloudStorageOptions>>(new CloudStorageOptionsValidator());
         services.AddSingleton<IValidateOptions<OidcAuthenticationOptions>>(new OidcAuthenticationOptionsValidator());

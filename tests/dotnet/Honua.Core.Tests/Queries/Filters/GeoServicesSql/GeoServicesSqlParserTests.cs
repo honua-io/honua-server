@@ -128,6 +128,46 @@ public class GeoServicesSqlParserTests
     }
 
     [Fact]
+    public void Parse_CastVarcharWithLength_PreservesLengthInTypeName()
+    {
+        var expression = _parser.Parse("CAST(objectid AS VARCHAR(20)) LIKE '%'");
+
+        var binary = (BinaryExpression)expression;
+        var function = (FunctionCall)binary.Left;
+        function.FunctionName.Should().Be("CAST");
+        ((PropertyReference)function.Arguments[0]).PropertyName.Should().Be("objectid");
+        ((Literal)function.Arguments[1]).Value.Should().Be("VARCHAR(20)");
+    }
+
+    [Fact]
+    public void Parse_CastCharWithLength_PreservesLengthInTypeName()
+    {
+        var expression = _parser.Parse("CAST(code AS CHAR(8)) = 'A'");
+
+        var binary = (BinaryExpression)expression;
+        var function = (FunctionCall)binary.Left;
+        ((Literal)function.Arguments[1]).Value.Should().Be("CHAR(8)");
+    }
+
+    [Fact]
+    public void Parse_CastDecimalWithPrecisionAndScale_PreservesArguments()
+    {
+        var expression = _parser.Parse("CAST(value AS DECIMAL(10, 2)) > 1");
+
+        var binary = (BinaryExpression)expression;
+        var function = (FunctionCall)binary.Left;
+        ((Literal)function.Arguments[1]).Value.Should().Be("DECIMAL(10,2)");
+    }
+
+    [Fact]
+    public void Parse_CastWithNonIntegerLength_ThrowsArgumentException()
+    {
+        var act = () => _parser.Parse("CAST(value AS VARCHAR(x)) = '1'");
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
     public void Parse_ExtractYearFrom_MapsToYearFunction()
     {
         var expression = _parser.Parse("EXTRACT(YEAR FROM created) >= 2024");
