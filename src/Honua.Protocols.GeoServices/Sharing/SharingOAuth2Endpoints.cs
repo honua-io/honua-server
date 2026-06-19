@@ -213,6 +213,11 @@ internal static class SharingOAuth2Endpoints
             return OAuth2Error("invalid_request", "grant_type is required.");
         }
 
+        // The client_credentials grant (ADR-0053) binds the issued token to the
+        // calling service's IP, so resolve it from the connection here where the
+        // HttpContext is available.
+        request = request with { ClientIp = context.Connection.RemoteIpAddress?.ToString() };
+
         var binding = ResolveBinding(context, request.RedirectUri);
         var result = await tokenService.ExchangeAsync(request, binding, context.RequestAborted).ConfigureAwait(false);
 
@@ -240,6 +245,8 @@ internal static class SharingOAuth2Endpoints
         string? clientId;
         string? refreshToken;
         string? expiration;
+        string? clientSecret;
+        string? scope;
 
         if (HttpMethods.IsPost(context.Request.Method) && context.Request.HasFormContentType)
         {
@@ -251,6 +258,8 @@ internal static class SharingOAuth2Endpoints
             clientId = ReadFirst(form["client_id"]);
             refreshToken = ReadFirst(form["refresh_token"]);
             expiration = ReadFirst(form["expiration"]);
+            clientSecret = ReadFirst(form["client_secret"]);
+            scope = ReadFirst(form["scope"]);
         }
         else
         {
@@ -262,6 +271,18 @@ internal static class SharingOAuth2Endpoints
             clientId = ReadFirst(query["client_id"]);
             refreshToken = ReadFirst(query["refresh_token"]);
             expiration = ReadFirst(query["expiration"]);
+            clientSecret = ReadFirst(query["client_secret"]);
+            scope = ReadFirst(query["scope"]);
+        }
+
+        // RFC 6749 §2.3.1: a confidential client MAY present its credentials via HTTP
+        // Basic auth instead of the request body. When present and the body omitted
+        // them, use the Basic-auth client_id/client_secret (body values win when both
+        // are supplied, matching the existing body-first parsing above).
+        if (TryReadBasicCredentials(context, out var basicClientId, out var basicClientSecret))
+        {
+            clientId ??= basicClientId;
+            clientSecret ??= basicClientSecret;
         }
 
         // ArcGIS clients omit grant_type when sending a refresh_token; default
@@ -281,7 +302,47 @@ internal static class SharingOAuth2Endpoints
             // ArcGIS Pro/Field Maps request a refresh token by sending the issuance
             // expiration on the authorization-code grant; we always offer one for the
             // authorization-code grant so long-lived clients work without a re-login.
-            IncludeRefreshToken: true);
+            IncludeRefreshToken: true,
+            ClientSecret: clientSecret,
+            Scope: scope,
+            // ClientIp is resolved from the connection in HandleTokenAsync where the
+            // HttpContext is available.
+            ClientIp: null);
+    }
+
+    private static bool TryReadBasicCredentials(HttpContext context, out string? clientId, out string? clientSecret)
+    {
+        clientId = null;
+        clientSecret = null;
+
+        var header = context.Request.Headers.Authorization.FirstOrDefault();
+        const string basicPrefix = "Basic ";
+        if (string.IsNullOrWhiteSpace(header) ||
+            !header.StartsWith(basicPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        string decoded;
+        try
+        {
+            decoded = System.Text.Encoding.UTF8.GetString(
+                Convert.FromBase64String(header[basicPrefix.Length..].Trim()));
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+
+        var separator = decoded.IndexOf(':', StringComparison.Ordinal);
+        if (separator < 0)
+        {
+            return false;
+        }
+
+        clientId = decoded[..separator];
+        clientSecret = decoded[(separator + 1)..];
+        return !string.IsNullOrWhiteSpace(clientSecret);
     }
 
     private static IResult OAuth2Error(string error, string description)

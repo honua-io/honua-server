@@ -21,10 +21,12 @@ namespace Honua.Infrastructure.Authentication;
 internal sealed class PortalOAuthTokenService(
     IPortalTokenIssuer tokenIssuer,
     PortalOAuthStore store,
+    IAdminApiKeyStore apiKeyStore,
     IOptions<PortalTokenAuthenticationOptions> tokenOptions)
 {
     private const string AuthorizationCodeGrant = "authorization_code";
     private const string RefreshTokenGrant = "refresh_token";
+    private const string ClientCredentialsGrant = "client_credentials";
 
     // ArcGIS OAuth2 refresh tokens are long lived; clamp to the portal max-token
     // lifetime so a refresh token never outlives the operator's configured ceiling
@@ -33,6 +35,7 @@ internal sealed class PortalOAuthTokenService(
 
     private readonly IPortalTokenIssuer _tokenIssuer = tokenIssuer;
     private readonly PortalOAuthStore _store = store;
+    private readonly IAdminApiKeyStore _apiKeyStore = apiKeyStore;
     private readonly PortalTokenAuthenticationOptions _tokenOptions = tokenOptions.Value;
 
     /// <summary>Exchanges a grant for an Esri-shaped token envelope.</summary>
@@ -47,8 +50,92 @@ internal sealed class PortalOAuthTokenService(
         {
             AuthorizationCodeGrant => await ExchangeAuthorizationCodeAsync(request, requestBinding, cancellationToken).ConfigureAwait(false),
             RefreshTokenGrant => await ExchangeRefreshTokenAsync(request, requestBinding, cancellationToken).ConfigureAwait(false),
-            _ => PortalOAuthTokenResult.Failure("unsupported_grant_type", "Only authorization_code and refresh_token grants are supported."),
+            // client_credentials is only honored when the operator has explicitly
+            // opted in (ADR-0053, #1860). With the flag off the grant falls through to
+            // the unsupported_grant_type default below — byte-for-byte the prior
+            // behavior — so no existing deployment gains a credential path implicitly.
+            ClientCredentialsGrant when _tokenOptions.OAuth2.EnableClientCredentials
+                => await ExchangeClientCredentialsAsync(request, cancellationToken).ConfigureAwait(false),
+            _ => PortalOAuthTokenResult.Failure(
+                "unsupported_grant_type",
+                "Only authorization_code and refresh_token grants are supported."),
         };
+    }
+
+    private async Task<PortalOAuthTokenResult> ExchangeClientCredentialsAsync(
+        PortalOAuthTokenRequest request,
+        CancellationToken cancellationToken)
+    {
+        // The client_secret is the service client's credential. Per ADR-0049/0053 it
+        // is validated against the existing Admin API-key store rather than a new
+        // secret store: the same SHA-256-hashed, expiry-aware, revocable key that
+        // X-API-Key automation already uses. client_id is a human-readable label, not
+        // a second secret — the secret alone authenticates.
+        var secret = request.ClientSecret;
+        if (string.IsNullOrWhiteSpace(secret))
+        {
+            // RFC 6749 §5.2: a missing/invalid client credential is invalid_client.
+            return PortalOAuthTokenResult.Failure("invalid_client", "client_secret is required for the client_credentials grant.");
+        }
+
+        var validation = await _apiKeyStore.ValidateAsync(secret, cancellationToken).ConfigureAwait(false);
+        if (validation is null)
+        {
+            // Do not distinguish unknown-client from bad-secret (RFC 6749 §5.2).
+            return PortalOAuthTokenResult.Failure("invalid_client", "Client authentication failed.");
+        }
+
+        // Bind the token to the issuing client's IP: service clients have no browser
+        // referer, so an IP binding mirrors how API-key automation reaches the request
+        // path and is validated by PortalTokenAuthenticationHandler (binding.ClientIp).
+        var clientIp = request.ClientIp;
+        if (string.IsNullOrWhiteSpace(clientIp))
+        {
+            return PortalOAuthTokenResult.Failure("invalid_request", "Client IP could not be determined for token binding.");
+        }
+
+        // Identity is the API-key record: its name labels the principal and its
+        // permissions become the principal's roles, so the existing RBAC resolver
+        // (#1375) makes the per-operation decision exactly as for any other principal.
+        var roles = ResolveRoles(validation.Record.Permissions, request.Scope);
+
+        var ttlMinutes = ResolveExpirationMinutes(requested: null);
+        var expiresAt = DateTimeOffset.UtcNow.AddMinutes(ttlMinutes);
+
+        var issuance = await _tokenIssuer.IssueAsync(
+            new PortalTokenIssueRequest(
+                PrincipalId: validation.Record.Name,
+                DisplayName: validation.Record.Name,
+                TenantId: null,
+                Roles: roles,
+                ClientType: PortalTokenClientType.Ip,
+                BindingValue: clientIp,
+                ExpiresAt: expiresAt),
+            cancellationToken).ConfigureAwait(false);
+
+        var expiresInSeconds = (long)Math.Max(0, (issuance.ExpiresAt - DateTimeOffset.UtcNow).TotalSeconds);
+
+        // No refresh token for client_credentials (RFC 6749 §4.4.3): the client simply
+        // re-requests with its own secret, avoiding a long-lived secondary credential.
+        return PortalOAuthTokenResult.Success(issuance.Token, expiresInSeconds, refreshToken: null);
+    }
+
+    private static IReadOnlyList<string> ResolveRoles(IReadOnlyList<string> keyPermissions, string? requestedScope)
+    {
+        // scope may only NARROW to roles the key already holds — a requested scope the
+        // key lacks is dropped, never escalated (ADR-0053). Absent any usable scope,
+        // the principal gets exactly the key's permissions.
+        if (string.IsNullOrWhiteSpace(requestedScope))
+        {
+            return keyPermissions;
+        }
+
+        var requested = requestedScope.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var narrowed = requested
+            .Where(scope => keyPermissions.Contains(scope, StringComparer.OrdinalIgnoreCase))
+            .ToArray();
+
+        return narrowed.Length == 0 ? keyPermissions : narrowed;
     }
 
     private async Task<PortalOAuthTokenResult> ExchangeAuthorizationCodeAsync(
@@ -271,7 +358,12 @@ internal sealed record PortalOAuthTokenRequest(
     string? RedirectUri,
     string? ClientId,
     string? RefreshToken,
-    bool IncludeRefreshToken);
+    bool IncludeRefreshToken,
+    // client_credentials grant (ADR-0053): the client secret authenticates against
+    // the Admin API-key store; scope may only narrow; ClientIp binds the token.
+    string? ClientSecret = null,
+    string? Scope = null,
+    string? ClientIp = null);
 
 /// <summary>Result of a token exchange, ready to serialize as the Esri envelope.</summary>
 internal sealed record PortalOAuthTokenResult(
