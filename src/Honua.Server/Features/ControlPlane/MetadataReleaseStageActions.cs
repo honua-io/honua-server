@@ -9,6 +9,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Honua.ControlPlane;
 
@@ -254,12 +255,30 @@ internal sealed class MetadataReleaseActivator(IServiceScopeFactory scopeFactory
 /// (<see cref="IFeatureReader.QueryAsync"/>) and asserts rows return and the activated revision's
 /// schema includes the new field. Records nothing itself — the reconciler captures the evidence ref.
 /// </summary>
-internal sealed class MetadataReleaseSmokeChecker(IServiceScopeFactory scopeFactory) : IMetadataReleaseSmokeChecker
+internal sealed class MetadataReleaseSmokeChecker(
+    IServiceScopeFactory scopeFactory,
+    IOptions<MetadataReleaseOperationOptions> options) : IMetadataReleaseSmokeChecker
 {
+    private readonly MetadataReleaseFaultInjectionOptions _faultInjection = options.Value.FaultInjection;
+
     public async Task<MetadataReleaseSmokeResult> RunAsync(
         MetadataReleaseExecutionPlan plan,
         CancellationToken cancellationToken = default)
     {
+        // Demo-only deterministic fault injection: when explicitly enabled for an allowed (non-prod)
+        // target environment, report smoke failure so the reversible-rollback closed loop runs. This
+        // is hard-fenced — ShouldFailSmoke returns false unless Enabled+ForceSmokeFailure and the
+        // target environment is on the allow-list — so it can never fail a real release.
+        if (_faultInjection.ShouldFailSmoke(plan.TargetEnvironment))
+        {
+            return new MetadataReleaseSmokeResult
+            {
+                Passed = false,
+                NewFieldPresent = true,
+                Message = _faultInjection.Reason
+            };
+        }
+
         await using var scope = scopeFactory.CreateAsyncScope();
         var provider = scope.ServiceProvider.GetRequiredService<IMetadataV2GraphProvider>();
         var reader = scope.ServiceProvider.GetRequiredService<IFeatureReader>();

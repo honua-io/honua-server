@@ -120,6 +120,42 @@ public sealed class MetadataReleaseReconcilerTests
     }
 
     [Fact]
+    public async Task ReconcileAsync_InjectedSmokeFailure_DrivesReversibleRollbackClosedLoop()
+    {
+        // Demo B closed loop: a deterministically injected smoke failure (what the
+        // MetadataReleaseSmokeChecker returns when fault injection is enabled for a non-prod target)
+        // must drive the same reversible-rollback path — reactivate the prior revision AND run the
+        // down-script — proving the metadata + DB-inclusive revert without a naturally broken layer.
+        var store = new InMemoryWorkflowOperationStore();
+        var operation = CreateOperation(WorkflowOperationStatus.Submitted, MetadataReleaseStage.Preflight);
+        await store.TryCreateAsync(operation);
+
+        var script = new RecordingScriptExecutor();
+        var activator = new RecordingActivator(currentRevision: 12);
+        var injectedSmoke = new FakeSmokeChecker(
+            passed: false,
+            message: "Injected smoke failure (Demo B safe-rollback fault injection).");
+        var reconciler = CreateReconciler(
+            store,
+            new FakePreflightGate(MetadataRollbackReadinessClassification.ScriptReversible, canProceed: true),
+            script,
+            new FakeDataJobDispatcher(dispatched: true),
+            activator,
+            injectedSmoke);
+
+        var final = await DriveToTerminalAsync2(reconciler, store, operation.OperationId);
+
+        // The deploy was health-gated, failed, and rolled back metadata + DB (down-script).
+        final.Status.Should().Be(WorkflowOperationStatus.RolledBack);
+        final.CurrentPhase.Should().Contain("Reversible rollback complete");
+        final.MetadataRelease!.EvidenceRefs.Should().ContainSingle(evidence => evidence.Kind == "smoke");
+        script.ForwardCalls.Should().Be(1);
+        script.InverseCalls.Should().Be(1, "the down-script (drop-added-column) reverts the schema");
+        activator.ReactivateCalls.Should().Be(1, "the prior metadata revision is reactivated");
+        activator.ReactivatedRevision.Should().Be(12);
+    }
+
+    [Fact]
     public async Task ReconcileAsync_WhenSnapshotRequired_RefusesAtPreflight()
     {
         var store = new InMemoryWorkflowOperationStore();
