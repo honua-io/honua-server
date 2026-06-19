@@ -145,9 +145,23 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
             }
 
             cancellationToken.ThrowIfCancellationRequested();
+            await context.ReportProgressAsync(80, "Converting to Zarr", cancellationToken).ConfigureAwait(false);
+
+            // Best-effort convert so pixel slices resolve through the existing Zarr
+            // reader (ADR-0039 Path B). Writes a derived Zarr beside the source via
+            // GDAL's VSI layer; a failure here leaves metadata serving intact.
+            string? zarrRootPath = DeriveZarrRootPath(objectKey);
+            var vsiOut = GdalVsiPath.Build(provider, bucket, zarrRootPath);
+            var convertResult = await RunConvertAsync(runner, vsiPath, vsiOut, workspace, linked.Token).ConfigureAwait(false);
+            if (convertResult is not { Succeeded: true })
+            {
+                zarrRootPath = null;
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
             await context.ReportProgressAsync(85, "Publishing coverage metadata", cancellationToken).ConfigureAwait(false);
 
-            var payload = Encoding.UTF8.GetBytes(BuildCombinedArtifact(result.StandardOutput, infoJson));
+            var payload = Encoding.UTF8.GetBytes(BuildCombinedArtifact(result.StandardOutput, infoJson, zarrRootPath));
             if (payload.Length > opts.MaxArtifactBytes)
             {
                 Log.ArtifactTooLarge(logger, job.OperationId, payload.Length, opts.MaxArtifactBytes);
@@ -185,7 +199,40 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
         }
     }
 
-    private static string BuildCombinedArtifact(string mdimJson, string? infoJson)
+    private static async Task<GdalCommandResult?> RunConvertAsync(
+        IGdalCommandRunner runner,
+        string vsiIn,
+        string vsiOut,
+        string workspace,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await runner
+                .RunAsync("gdal_translate", new List<string> { "-of", "Zarr", vsiIn, vsiOut }, workspace, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Derives the Zarr store key beside the source object: the source key with its
+    /// final extension replaced by <c>.zarr</c> (e.g. <c>maui/sst.nc</c> -&gt;
+    /// <c>maui/sst.zarr</c>).
+    /// </summary>
+    internal static string DeriveZarrRootPath(string objectKey)
+    {
+        var trimmed = objectKey.TrimStart('/');
+        var lastSlash = trimmed.LastIndexOf('/');
+        var lastDot = trimmed.LastIndexOf('.');
+        var stem = lastDot > lastSlash ? trimmed[..lastDot] : trimmed;
+        return stem + ".zarr";
+    }
+
+    private static string BuildCombinedArtifact(string mdimJson, string? infoJson, string? zarrRootPath)
     {
         using var stream = new MemoryStream();
         using (var writer = new Utf8JsonWriter(stream))
@@ -210,6 +257,13 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
                 {
                     // gdalinfo emitted non-JSON; skip enrichment payload.
                 }
+            }
+
+            if (!string.IsNullOrWhiteSpace(zarrRootPath))
+            {
+                writer.WriteStartObject("zarr");
+                writer.WriteString("rootPath", zarrRootPath);
+                writer.WriteEndObject();
             }
 
             writer.WriteEndObject();

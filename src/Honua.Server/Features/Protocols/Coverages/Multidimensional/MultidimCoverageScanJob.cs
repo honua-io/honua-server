@@ -6,8 +6,12 @@ using System.Text.Json;
 using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Raster.Abstractions;
+using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Raster.Multidimensional.Domain;
 using Honua.Core.Features.Raster.Multidimensional.Services;
+using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Features.Protocols.Coverages.Multidimensional;
 
@@ -168,6 +172,105 @@ internal static class MultidimCoverageScanJob
             // MultidimensionalCoverageUnsupportedLayoutException et al. — the worker
             // produced output the mapper could not interpret. Treat as no metadata.
             return null;
+        }
+    }
+
+    /// <summary>
+    /// Reads the derived Zarr store root the worker wrote (and reported in the
+    /// artifact envelope) when the NetCDF→Zarr convert succeeded.
+    /// </summary>
+    public static bool TryGetZarrRootPath(string? artifactReference, out string rootPath)
+    {
+        rootPath = string.Empty;
+        if (!TryDecodeDataUri(artifactReference, out var json))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            if (document.RootElement.ValueKind == JsonValueKind.Object &&
+                document.RootElement.TryGetProperty("zarr", out var zarr) &&
+                zarr.ValueKind == JsonValueKind.Object &&
+                zarr.TryGetProperty("rootPath", out var rp) &&
+                rp.ValueKind == JsonValueKind.String)
+            {
+                var value = rp.GetString();
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    rootPath = value;
+                    return true;
+                }
+            }
+        }
+        catch (JsonException)
+        {
+            // fall through
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Registers the worker's derived Zarr store as a normal Zarr coverage for the
+    /// same layer so OGC Coverages serves pixel slices through the existing Zarr
+    /// reader. Idempotent across status polls; the metadata scan is best-effort
+    /// (a later Zarr refresh completes it if the cloud read is unavailable here).
+    /// </summary>
+    public static async Task RegisterDerivedZarrAsync(
+        IZarrStore zarrStore,
+        IZarrMetadataReader zarrMetadataReader,
+        IEnumerable<ICloudRangeReader> rangeReaders,
+        MultidimensionalCoverageRegistration registration,
+        string zarrRootPath,
+        ILogger logger,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(zarrStore);
+        ArgumentNullException.ThrowIfNull(registration);
+
+        var existing = await zarrStore.ListByLayerAsync(registration.LayerId, cancellationToken).ConfigureAwait(false);
+        foreach (var candidate in existing)
+        {
+            if (candidate.Provider == registration.Provider &&
+                string.Equals(candidate.Bucket, registration.Bucket, StringComparison.Ordinal) &&
+                string.Equals(candidate.RootPath, zarrRootPath, StringComparison.Ordinal))
+            {
+                return; // Already registered by an earlier poll.
+            }
+        }
+
+        var zarr = await zarrStore.RegisterAsync(
+            new ZarrRegistrationRequest
+            {
+                LayerId = registration.LayerId,
+                Name = $"{registration.Name} (Zarr)",
+                Description = $"Derived from multidimensional coverage {registration.Id}.",
+                Provider = registration.Provider,
+                Bucket = registration.Bucket,
+                RootPath = zarrRootPath,
+            },
+            cancellationToken).ConfigureAwait(false);
+
+        var rangeReader = rangeReaders?.FirstOrDefault(r => r.Provider == registration.Provider);
+        if (rangeReader is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var metadata = await zarrMetadataReader
+                .ReadMetadataAsync(rangeReader, registration.Bucket, zarrRootPath, cancellationToken)
+                .ConfigureAwait(false);
+            await zarrStore.UpdateMetadataAsync(zarr.Id, metadata, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Registration stands; the derived store becomes servable once its
+            // metadata is scanned (e.g. via the Zarr admin refresh).
+            MultidimensionalCoverageLog.DerivedZarrScanDeferred(logger, zarr.Id, ex.Message);
         }
     }
 

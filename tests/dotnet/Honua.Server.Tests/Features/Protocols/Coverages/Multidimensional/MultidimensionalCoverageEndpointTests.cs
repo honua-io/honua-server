@@ -9,6 +9,8 @@ using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Raster.Abstractions;
+using Honua.Server.Features.Protocols.Zarr;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -35,6 +37,7 @@ public class MultidimensionalCoverageEndpointTests : IAsyncLifetime
 
     private readonly RecordingJobStore _jobStore = new();
     private readonly RecordingJobQueue _jobQueue = new();
+    private readonly InMemoryZarrStore _zarrStore = new();
     private readonly WebAppFixture _fixture;
     private HttpClient _client = null!;
 
@@ -46,8 +49,10 @@ public class MultidimensionalCoverageEndpointTests : IAsyncLifetime
             {
                 services.RemoveAll<IExecutionJobStore>();
                 services.RemoveAll<IJobQueue>();
+                services.RemoveAll<IZarrStore>();
                 services.AddSingleton<IExecutionJobStore>(_jobStore);
                 services.AddSingleton<IJobQueue>(_jobQueue);
+                services.AddSingleton<IZarrStore>(_zarrStore);
             });
     }
 
@@ -291,7 +296,7 @@ public class MultidimensionalCoverageEndpointTests : IAsyncLifetime
             // Simulate the GDAL worker completing the job with a gdalmdiminfo artifact.
             var job = await _jobStore.GetAsync(jobId);
             job.Should().NotBeNull();
-            var envelope = $$"""{"mdiminfo":{{GdalMdimInfoJson}}}""";
+            var envelope = """{"mdiminfo":""" + GdalMdimInfoJson + ""","zarr":{"rootPath":"ghrsst/scan-materialize.zarr"}}""";
             var artifact = "data:application/json;base64," +
                 Convert.ToBase64String(Encoding.UTF8.GetBytes(envelope));
             await _jobStore.SetAsync(job! with
@@ -310,6 +315,11 @@ public class MultidimensionalCoverageEndpointTests : IAsyncLifetime
             // The registration is now materialized for subsequent reads.
             using var getDoc = JsonDocument.Parse(await (await _client.GetAsync($"{Route}/{id}")).Content.ReadAsStringAsync());
             getDoc.RootElement.GetProperty("variableCount").GetInt32().Should().Be(1);
+
+            // The derived Zarr store is registered as a Zarr coverage so pixel slices
+            // resolve through the existing Zarr serving path.
+            var zarrRegistrations = await _zarrStore.ListByLayerAsync(1);
+            zarrRegistrations.Should().Contain(z => z.RootPath == "ghrsst/scan-materialize.zarr");
         }
         finally
         {

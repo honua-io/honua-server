@@ -116,6 +116,27 @@ public sealed class MultidimCoverageScanJobTests
     }
 
     [UnitTest]
+    public void TryGetZarrRootPath_ReadsDerivedZarrFromEnvelope()
+    {
+        var envelope = """{"mdiminfo":""" + GdalMdimInfoJson + ""","zarr":{"rootPath":"maui/sst.zarr"}}""";
+        var artifact = "data:application/json;base64," +
+            Convert.ToBase64String(Encoding.UTF8.GetBytes(envelope));
+
+        MultidimCoverageScanJob.TryGetZarrRootPath(artifact, out var rootPath).Should().BeTrue();
+        rootPath.Should().Be("maui/sst.zarr");
+    }
+
+    [UnitTest]
+    public void TryGetZarrRootPath_AbsentZarrBlock_ReturnsFalse()
+    {
+        var envelope = $$"""{"mdiminfo":{{GdalMdimInfoJson}}}""";
+        var artifact = "data:application/json;base64," +
+            Convert.ToBase64String(Encoding.UTF8.GetBytes(envelope));
+
+        MultidimCoverageScanJob.TryGetZarrRootPath(artifact, out _).Should().BeFalse();
+    }
+
+    [UnitTest]
     public void TryMapArtifact_RejectsNonDataUriOrWrongType()
     {
         MultidimCoverageScanJob.TryMapArtifact(

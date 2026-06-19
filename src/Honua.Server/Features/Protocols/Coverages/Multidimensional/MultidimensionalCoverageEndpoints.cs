@@ -3,8 +3,10 @@
 
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Multidimensional.Abstractions;
 using Honua.Core.Features.Raster.Multidimensional.Domain;
 using Honua.Infrastructure.Authentication;
@@ -291,11 +293,54 @@ internal static class MultidimensionalCoverageEndpoints
                     registration = await store.GetAsync(registrationId, cancellationToken).ConfigureAwait(false);
                 }
 
+                await TryRegisterDerivedZarrAsync(context, registration!, artifact, logger, cancellationToken)
+                    .ConfigureAwait(false);
+
                 response = response with { Coverage = ToResponse(registration!) };
             }
         }
 
         return Results.Json(response, MultidimensionalCoverageJsonContext.Default.MultidimensionalCoverageScanJobResponse);
+    }
+
+    /// <summary>
+    /// Best-effort registration of the worker's derived Zarr store as a Zarr
+    /// coverage so OGC Coverages serves pixel slices through the existing reader.
+    /// The job substrate and Zarr services are resolved optionally so the metadata
+    /// path still succeeds where they are absent.
+    /// </summary>
+    private static async Task TryRegisterDerivedZarrAsync(
+        HttpContext context,
+        MultidimensionalCoverageRegistration registration,
+        string? artifact,
+        ILogger logger,
+        CancellationToken cancellationToken)
+    {
+        if (!MultidimCoverageScanJob.TryGetZarrRootPath(artifact, out var zarrRootPath))
+        {
+            return;
+        }
+
+        var zarrStore = context.RequestServices.GetService<IZarrStore>();
+        var zarrMetadataReader = context.RequestServices.GetService<IZarrMetadataReader>();
+        if (zarrStore is null || zarrMetadataReader is null)
+        {
+            return;
+        }
+
+        var rangeReaders = context.RequestServices.GetServices<ICloudRangeReader>();
+
+        try
+        {
+            await MultidimCoverageScanJob.RegisterDerivedZarrAsync(
+                zarrStore, zarrMetadataReader, rangeReaders, registration, zarrRootPath, logger, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Never fail the status read because derived-Zarr registration hiccuped.
+            MultidimensionalCoverageLog.DerivedZarrScanDeferred(logger, registration.Id, ex.Message);
+        }
     }
 
     private static string ToStatusString(ExecutionJobStatus status) => status switch

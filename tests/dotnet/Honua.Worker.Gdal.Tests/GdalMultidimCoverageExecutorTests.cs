@@ -49,14 +49,26 @@ public sealed class GdalMultidimCoverageExecutorTests
 
         result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
 
-        // gdalmdiminfo (structure) runs first, then a best-effort gdalinfo (extent).
+        // gdalmdiminfo (structure) runs first, then best-effort gdalinfo (extent)
+        // and gdal_translate -of Zarr (convert, so pixel slices resolve).
         var mdim = runner.Invocations[0];
         mdim.Tool.Should().Be("gdalmdiminfo");
         mdim.Arguments.Should().ContainSingle().Which.Should().Be("/vsis3/honua-cubes/maui/sst.nc");
         runner.Invocations.Should().Contain(i => i.Tool == "gdalinfo");
+        var convert = runner.Invocations.Should().ContainSingle(i => i.Tool == "gdal_translate").Subject;
+        convert.Arguments.Should().ContainInOrder("-of", "Zarr", "/vsis3/honua-cubes/maui/sst.nc", "/vsis3/honua-cubes/maui/sst.zarr");
 
         context.Artifacts.Should().ContainSingle()
             .Which.Should().StartWith("data:application/json");
+    }
+
+    [UnitTest]
+    public void DeriveZarrRootPath_ReplacesExtensionWithZarr()
+    {
+        GdalMultidimCoverageMetadataJobExecutor.DeriveZarrRootPath("maui/sst.nc").Should().Be("maui/sst.zarr");
+        GdalMultidimCoverageMetadataJobExecutor.DeriveZarrRootPath("granule.nc4").Should().Be("granule.zarr");
+        GdalMultidimCoverageMetadataJobExecutor.DeriveZarrRootPath("/leading/slash.h5").Should().Be("leading/slash.zarr");
+        GdalMultidimCoverageMetadataJobExecutor.DeriveZarrRootPath("noext").Should().Be("noext.zarr");
     }
 
     [UnitTest]
