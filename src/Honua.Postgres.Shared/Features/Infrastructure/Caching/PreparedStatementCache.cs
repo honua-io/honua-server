@@ -631,7 +631,11 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         {
             // Configure parameters exactly once; reuse the result for both value-application
             // and distribution tracking so configureParameters is never called twice per request.
-            using var configured = new NpgsqlCommand();
+            // The scratch command must carry the statement text: some parameter-binding callbacks
+            // gate on CommandText (e.g. only binding OFFSET when the SQL actually emitted an OFFSET
+            // clause). Without it those callbacks silently skip parameters, leaving cloned slots
+            // unset (null) and triggering an Npgsql "Parameter cannot be null" failure at execution.
+            using var configured = new NpgsqlCommand { CommandText = cloned.CommandText };
             configureParameters(configured);
 
             ApplyParameterValues(cloned, configured);
