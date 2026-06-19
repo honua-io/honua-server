@@ -127,7 +127,7 @@ When the user asks to create a ticket, issue, or GitHub issue:
 
 ## Pull Request Policy
 
-Every `honua-server` PR runs a **Validate PR Template Compliance** check (in `ci.yml`) that **gates the entire CI matrix**. If it fails, the **CI Gate fails and every build/test shard is SKIPPED** — the PR then gets no validation and *looks* broken even though nothing in the code is wrong. This is the single most common reason an agent's PR appears stuck. To pass it:
+Every `honua-server` PR runs a **Validate PR Template Compliance** check (in `ci.yml`). As of the template-advisory change it is **advisory only — it never blocks the merge** (it posts a suggestions comment and emits a CI warning, but always succeeds). You no longer need to satisfy it to merge; fill the sections below only to keep the description useful:
 
 - Fill **every** required section of `.github/pull_request_template.md`: an issue link (`Fixes`/`Closes`/`Resolves`/`Related to #N`), a non-empty **Summary**, **Changes Made** as `-` bullet points, **Breaking Changes** (or `None`), at least one `[x]` in the **Gate Impact** and **Testing** sections, and a conventional-commit **title** (`type(scope): description`, e.g. `feat: ...`).
 - **Tick `- [x] Ran scripts/ci/pre-pr-check.sh and all checks passed`.** This exact box is required. Run the script first (it runs the warnings-as-errors Release build, `dotnet format --verify-no-changes`, and the affected tests); do not tick it without running the equivalent — but do not leave it unticked either, or CI never validates the PR.
@@ -145,7 +145,7 @@ The MVP intentionally defers enterprise/operational features to reduce complexit
 
 ### Creating a PR — fill the template (or CI is skipped)
 
-When opening a PR, follow the **Pull Request Policy** section above. The **Validate PR Template Compliance** check **gates the entire CI matrix**: a PR that does not fill every required section of `.github/pull_request_template.md` fails it, and **every build/test shard is SKIPPED** — the PR then looks broken with nothing actually wrong. This is the single most common agent-PR failure. Do **not** hand-roll a freeform `gh pr create --body "..."` (it overrides the template). Instead copy the template, fill **all** sections — conventional-commit title (`type(scope): description`), issue link (`Fixes #N`), non-empty Summary, `-` bullet Changes Made, Breaking Changes (or `None`), one `[x]` in both Gate Impact and Testing, and the `Ran scripts/ci/pre-pr-check.sh` box — and pass it with `--body-file`:
+When opening a PR, follow the **Pull Request Policy** section above. The **Validate PR Template Compliance** check is **advisory only — it does not block the merge** (it posts suggestions and warns, but always succeeds). Real validation (build, format, tests) gates the PR on its own. Still, prefer a well-formed description: don't hand-roll a freeform `gh pr create --body "..."`; copy the template, fill the sections — conventional-commit title (`type(scope): description`), issue link (`Fixes #N`), non-empty Summary, `-` bullet Changes Made, Breaking Changes (or `None`), Gate Impact/Testing boxes — and pass it with `--body-file`:
 
 ```bash
 cp .github/pull_request_template.md /tmp/pr-body.md   # then fill every section in /tmp/pr-body.md
