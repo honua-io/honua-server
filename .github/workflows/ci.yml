@@ -201,7 +201,14 @@ jobs:
 
   pr-readiness:
     name: PR Mergeability & Freshness
-    needs: pr-template-check
+    # Decoupled from pr-template-check (was: `needs: pr-template-check`).
+    # Chaining the build/test graph behind the PR-body template check meant a
+    # single template miss SKIPPED every downstream job and published a RED
+    # "CI Gate" with no actual validation run — the most common reason an
+    # otherwise-correct PR looked broken (see Pull Request Policy in CLAUDE.md;
+    # #1736/#1737 needed a manual re-trigger). pr-template-check is still a
+    # first-class job and still feeds CI Gate (so a template failure still
+    # fails the gate), but it no longer gates whether the code is validated.
     runs-on: ubuntu-latest
     permissions:
       contents: read
