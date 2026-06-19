@@ -751,10 +751,25 @@ internal sealed class QueryFormatter : IQueryFormatter
         return ConvertGeometryToGeoJsonGeometry(geometry);
     }
 
-    private static GeoJsonGeometry ConvertGeometryToGeoJsonGeometry(Geometry geometry)
+    internal static GeoJsonGeometry ConvertGeometryToGeoJsonGeometry(Geometry geometry)
     {
-        if (geometry is GeometryCollection collection)
+        // A multipart Esri geometry surfaces here as an NTS GeometryCollection whose
+        // members are all the same single-part type. RFC 7946 §3.1.4–3.1.7 requires a
+        // homogeneous multipart geometry to be tagged MultiPoint / MultiLineString /
+        // MultiPolygon, not GeometryCollection — strict consumers (QGIS, ogr2ogr) switch
+        // on the geometry `type` and mishandle the GeometryCollection form (#1824). Only a
+        // genuinely mixed-type collection stays a GeometryCollection.
+        if (geometry is GeometryCollection collection && geometry is not (MultiPoint or MultiLineString or MultiPolygon))
         {
+            if (TryCollapseHomogeneousCollection(collection, out var multi))
+            {
+                return new GeoJsonGeometry
+                {
+                    Type = MapGeoJsonType(multi),
+                    Coordinates = BuildGeoJsonCoordinates(multi)
+                };
+            }
+
             return new GeoJsonGeometry
             {
                 Type = "GeometryCollection",
@@ -768,6 +783,43 @@ internal sealed class QueryFormatter : IQueryFormatter
             Type = MapGeoJsonType(geometry),
             Coordinates = BuildGeoJsonCoordinates(geometry)
         };
+    }
+
+    /// <summary>
+    /// Collapses an NTS <see cref="GeometryCollection"/> whose members are all the same
+    /// single-part geometry type into the corresponding RFC 7946 <c>Multi*</c> geometry,
+    /// so a multipart feature serializes as <c>MultiPoint</c>/<c>MultiLineString</c>/
+    /// <c>MultiPolygon</c> rather than a <c>GeometryCollection</c> of single parts (#1824).
+    /// Returns false for empty or mixed-type collections, which remain a GeometryCollection.
+    /// </summary>
+    private static bool TryCollapseHomogeneousCollection(GeometryCollection collection, out Geometry multi)
+    {
+        multi = collection;
+        if (collection.NumGeometries == 0)
+        {
+            return false;
+        }
+
+        var factory = collection.Factory;
+        if (collection.Geometries.All(static g => g is Point))
+        {
+            multi = factory.CreateMultiPoint(collection.Geometries.Cast<Point>().ToArray());
+            return true;
+        }
+
+        if (collection.Geometries.All(static g => g is LineString))
+        {
+            multi = factory.CreateMultiLineString(collection.Geometries.Cast<LineString>().ToArray());
+            return true;
+        }
+
+        if (collection.Geometries.All(static g => g is Polygon))
+        {
+            multi = factory.CreateMultiPolygon(collection.Geometries.Cast<Polygon>().ToArray());
+            return true;
+        }
+
+        return false;
     }
 
     private static string MapGeoJsonType(Geometry geometry)

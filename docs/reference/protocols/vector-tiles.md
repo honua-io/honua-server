@@ -25,6 +25,8 @@ OGC API Tiles offers the standards-based equivalent of the XYZ routes — see [O
 
 Unknown query parameters are rejected with 400. Zoom is validated against the configured `Limits:Tiles` range; out-of-range `x`/`y` return 400. Tiles require the FeatureServer protocol to be enabled on the layer and respect layer access policies.
 
+Cache lifecycle: tile responses carry a `Cache-Control: max-age=N` header. The TTL is resolved per tileset — a per-tileset override from the `TileOptions:TilesetLifecycle` configuration (keyed `serviceId/layerId/tileMatrixSetId`) takes precedence, otherwise the global `TileOptions:CacheMaxAge` applies. Size/LRU eviction, scheduled invalidation, and metatiling are not implemented.
+
 ## PMTiles range proxy
 
 `GET/HEAD /api/v1/tiles/pmtiles/{artifactId}` streams a published PMTiles artifact with `Accept-Ranges: bytes`, `ETag`, and `Last-Modified` headers so MapLibre/PMTiles browser clients can issue HTTP range requests against private object storage. Unknown artifacts return 404. Artifacts are produced by the publish pipeline — see [Publish tiles — PMTiles](../../guides/publish/publish-tiles.md#pmtiles).
