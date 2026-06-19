@@ -305,6 +305,8 @@ public static class FeatureCatalog
             HonuaEdition.Pro, "Configure cloud storage connections for direct raster serving."),
         new("raster.temporal-mosaic", "Temporal Raster Mosaic", Categories.Raster,
             HonuaEdition.Pro, "Select raster mosaics by acquisition timestamp for time-series imagery."),
+        new("raster.multidim-coverage", "Multidimensional Coverage (NetCDF/HDF5/Zarr)", Categories.Raster,
+            HonuaEdition.Pro, "Register and serve cloud-hosted NetCDF4/HDF5/Zarr datacubes as multidimensional coverages (OGC API Coverages / WCS / ImageServer multidimensional)."),
 
         // Analytics — Pro (PostGIS-backed spatial analytics on filtered layer subsets)
         new("analytics.clustering", "Spatial Clustering", Categories.Analytics,

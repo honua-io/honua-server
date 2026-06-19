@@ -355,6 +355,10 @@ def main() -> int:
     ap.add_argument("--list", action="store_true", help="list catalog sources/products and exit")
     ap.add_argument("--fetch-only", action="store_true",
                     help="stop after fetch+clip; print the local GeoJSON path (no server needed)")
+    ap.add_argument("--import-feedstock", action="store_true",
+                    help="import a geocoder/router feedstock product as features "
+                         "(the build-geocoder/build-router GP-on-Batch job consumes the "
+                         "published layer; see docs/guides/open-data-provisioner.md)")
     args = ap.parse_args()
 
     catalog = load_catalog()
@@ -381,13 +385,18 @@ def main() -> int:
             f"is a future slice. See areaParam.notes in the catalog and "
             f"docs/guides/open-data-provisioner.md."
         )
-    if product.get("sourceProduct") in ("geocoder", "router"):
+    if product.get("sourceProduct") in ("geocoder", "router") and not args.import_feedstock:
+        kind = product["sourceProduct"]
+        job = "build-geocoder" if kind == "geocoder" else "build-router"
         raise SystemExit(
-            f"product '{product['product']}' is a {product['sourceProduct']} feedstock. "
-            f"Importing it as features is supported, but building the "
-            f"{product['sourceProduct']} artifact runs on GP-Batch -- see the "
-            f"'Future source-products' section of docs/guides/open-data-provisioner.md.\n"
-            f"  (re-run without this guard once the GP-Batch product job exists)"
+            f"product '{product['product']}' is a {kind} feedstock. This script imports\n"
+            f"the feedstock layer; building the {kind} artifact itself runs on GP-on-Batch\n"
+            f"as the '{job}' job (ExecutionJobKind.{'GeocoderBuild' if kind == 'geocoder' else 'RouterBuild'}).\n"
+            f"  1. import the feedstock features:  re-run with --import-feedstock\n"
+            f"  2. build the {kind} artifact for the area on GP-on-Batch:\n"
+            f"       submit a {job} execution job (area-parameterized) — see the\n"
+            f"       'geocoding and routing on GP-Batch' section of\n"
+            f"       docs/guides/open-data-provisioner.md."
         )
 
     table = args.table or f"od_{source['id'].replace('-', '_')}_{product['product'].replace('-', '_')}"

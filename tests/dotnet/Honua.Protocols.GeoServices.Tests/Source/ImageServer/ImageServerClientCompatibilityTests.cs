@@ -40,7 +40,8 @@ public sealed class ImageServerClientCompatibilityTests
             var catalogCount = await client.QueryCatalogCountAsync();
             var legendCount = await client.GetLegendClassCountAsync();
 
-            metadata.CurrentVersion.Should().Be(10.81);
+            // Honua does not advertise an ArcGIS Server version (see NoArcGisServerVersionTests).
+            metadata.HasCurrentVersion.Should().BeFalse();
             metadata.BandCount.Should().Be(1);
             metadata.PixelType.Should().Be("U8");
             metadata.Capabilities.Should().Contain("Image");
@@ -205,7 +206,7 @@ public sealed class ImageServerClientCompatibilityTests
             using var doc = await ReadJsonAsync(response);
             var root = doc.RootElement;
             return new ImageServiceInfo(
-                root.GetProperty("currentVersion").GetDouble(),
+                root.TryGetProperty("currentVersion", out _),
                 root.GetProperty("bandCount").GetInt32(),
                 root.GetProperty("pixelType").GetString()!,
                 root.GetProperty("capabilities").GetString()!);
@@ -259,7 +260,7 @@ public sealed class ImageServerClientCompatibilityTests
             => JsonDocument.Parse(await response.Content.ReadAsStringAsync());
     }
 
-    private sealed record ImageServiceInfo(double CurrentVersion, int BandCount, string PixelType, string Capabilities);
+    private sealed record ImageServiceInfo(bool HasCurrentVersion, int BandCount, string PixelType, string Capabilities);
 
     private sealed record ImageBytes(string ContentType, byte[] Data);
 

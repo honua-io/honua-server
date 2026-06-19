@@ -2103,8 +2103,9 @@ public class ImageServerEndpointsTests
 
             var root = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
 
-            // conf.json returns the service descriptor.
-            root.TryGetProperty("currentVersion", out _).Should().BeTrue();
+            // conf.json returns the service descriptor. Honua does not advertise an ArcGIS
+            // Server version (see NoArcGisServerVersionTests).
+            root.TryGetProperty("currentVersion", out _).Should().BeFalse();
             root.TryGetProperty("extent", out _).Should().BeTrue();
 
             // allowedMosaicMethods must serialize as a string, not an array.

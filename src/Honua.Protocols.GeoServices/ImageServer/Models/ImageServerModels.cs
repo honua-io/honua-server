@@ -11,8 +11,9 @@ namespace Honua.Protocols.GeoServices.ImageServer.Models;
 /// </summary>
 public sealed class ImageServerServiceInfo
 {
-    [JsonPropertyName("currentVersion")]
-    public required double CurrentVersion { get; init; }
+    // No ArcGIS Server version (currentVersion/fullVersion) is advertised. Honua is an
+    // independent, Esri-compatible server and must not impersonate a specific ArcGIS Server
+    // release. Do NOT add a currentVersion/fullVersion field (guarded by NoArcGisServerVersionTests).
 
     [JsonPropertyName("serviceDescription")]
     public required string ServiceDescription { get; init; }

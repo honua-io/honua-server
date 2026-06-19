@@ -10,11 +10,9 @@ namespace Honua.Protocols.GeoServices.MapServer.Models;
 /// </summary>
 internal sealed class MapServerResponse
 {
-    /// <summary>
-    /// ArcGIS service version number.
-    /// </summary>
-    [JsonPropertyName("currentVersion")]
-    public double CurrentVersion { get; init; } = 10.81;
+    // No ArcGIS Server version (currentVersion/fullVersion) is advertised. Honua is an
+    // independent, Esri-compatible server and must not impersonate a specific ArcGIS Server
+    // release. Do NOT add a currentVersion/fullVersion field (guarded by NoArcGisServerVersionTests).
 
     /// <summary>
     /// Service description displayed by ArcGIS clients.
@@ -506,11 +504,9 @@ internal sealed class MapServerTableInfo
 /// </summary>
 internal sealed class MapServerLayerResponse
 {
-    /// <summary>
-    /// ArcGIS service version number.
-    /// </summary>
-    [JsonPropertyName("currentVersion")]
-    public double CurrentVersion { get; init; } = 10.81;
+    // No ArcGIS Server version (currentVersion/fullVersion) is advertised. Honua is an
+    // independent, Esri-compatible server and must not impersonate a specific ArcGIS Server
+    // release. Do NOT add a currentVersion/fullVersion field (guarded by NoArcGisServerVersionTests).
 
     /// <summary>
     /// Layer identifier.
