@@ -105,6 +105,7 @@ public static class EndpointRegistry
         new("GET", "/api/v1/admin/metadata/release-packages/{packageId}"),
         new("GET", "/api/v1/admin/metadata/release-packages/{packageId}/gitops-manifest"),
         new("GET", "/api/v1/admin/metadata/releases/{packageId}/operation"),
+        new("POST", "/api/v1/admin/metadata/releases/operations"),
         new("POST", "/api/v1/admin/metadata/prevalidate"),
         new("GET", "/api/v1/admin/deploy/preflight"),
         new("POST", "/api/v1/admin/deploy/plan"),
