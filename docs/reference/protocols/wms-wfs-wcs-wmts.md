@@ -72,8 +72,8 @@ curl -o coverage.tif "https://server.example.com/rest/services/0/ImageServer/WCS
 
 | Operation | Notes |
 | --- | --- |
-| `GetCapabilities` | KVP and RESTful (`.../WMTS/1.0.0/WMTSCapabilities.xml` style paths via `{**restPath}`). |
-| `GetTile` | `LAYER`, `STYLE`, `TILEMATRIXSET`, `TILEMATRIX`, `TILEROW`, `TILECOL`, `FORMAT`; RESTful tile paths also supported. |
+| `GetCapabilities` | KVP and RESTful (`.../WMTS/1.0.0/WMTSCapabilities.xml` style paths via `{**restPath}`). Advertises the reserved built-in gridsets (`WebMercatorQuad`, `WorldCRS84Quad`, byte-identical to before) plus any operator-defined custom gridsets from the `TileMatrixSets` configuration section, with per-layer links. |
+| `GetTile` | `LAYER`, `STYLE`, `TILEMATRIXSET`, `TILEMATRIX`, `TILEROW`, `TILECOL`, `FORMAT`, optional `TIME` (temporal layers) and `ELEVATION` (elevation-aware layers); serves built-in and custom gridsets. RESTful tile paths also supported. |
 | `GetFeatureInfo` | Tile-coordinate identify with `I`/`J` and `INFOFORMAT`. |
 
 ```bash
@@ -82,7 +82,7 @@ curl -o tile.png "https://server.example.com/ogc/services/roads/wmts?SERVICE=WMT
 
 ## Conformance
 
-All four classic services are OGC CITE certified at 100% (WMS 1.3: 199/199, WFS 1.0/1.1/2.0: 162/39/167, WCS 2.0: 82/82, WMTS 1.0: 60/60). Authoritative status: [API standards summary](../compatibility/ogc-conformance.md) and [cite-status.md](../../cite-status.md).
+All four classic services are OGC CITE certified at 100% (WMS 1.3: 199/199, WFS 1.0/1.1/2.0: 162/39/167, WCS 2.0: 82/82, WMTS 1.0: 60/60). The certified counts cover the built-in gridsets and parameters; custom-gridset and elevation-dimension behaviour is additive and CITE-neutral (re-validation pending). Authoritative status: [API standards summary](../compatibility/ogc-conformance.md) and [cite-status.md](../../cite-status.md).
 
 ## Guides that use this
 
