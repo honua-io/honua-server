@@ -106,9 +106,10 @@ public sealed class QueryParameters
     public string? GeometryType { get; init; }
 
     /// <summary>
-    /// Spatial relationship for filter (esriSpatialRelIntersects, esriSpatialRelContains, esriSpatialRelWithin,
-    /// esriSpatialRelCrosses, esriSpatialRelTouches, esriSpatialRelOverlaps, esriSpatialRelDisjoint,
-    /// esriSpatialRelEquals, esriSpatialRelWithinDistance, esriSpatialRelBeyondDistance)
+    /// Spatial relationship for filter (esriSpatialRelIntersects, esriSpatialRelIndexIntersects,
+    /// esriSpatialRelContains, esriSpatialRelWithin, esriSpatialRelCrosses, esriSpatialRelTouches,
+    /// esriSpatialRelOverlaps, esriSpatialRelDisjoint, esriSpatialRelEquals,
+    /// esriSpatialRelWithinDistance, esriSpatialRelBeyondDistance)
     /// </summary>
     public string? SpatialRel { get; init; }
 
