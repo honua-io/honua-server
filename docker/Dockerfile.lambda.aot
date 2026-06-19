@@ -35,6 +35,9 @@ COPY src/Honua.Server/*.csproj src/Honua.Server/
 COPY src/Honua.DuckDB/*.csproj src/Honua.DuckDB/
 COPY src/Honua.SqlServer/*.csproj src/Honua.SqlServer/
 COPY src/Honua.MySql/*.csproj src/Honua.MySql/
+COPY src/Honua.Redshift/*.csproj src/Honua.Redshift/
+COPY src/Honua.Snowflake/*.csproj src/Honua.Snowflake/
+COPY src/Honua.Databricks/*.csproj src/Honua.Databricks/
 COPY src/Honua.ArcGisRest/*.csproj src/Honua.ArcGisRest/
 COPY src/Honua.Oracle/*.csproj src/Honua.Oracle/
 COPY src/Honua.Hosting/*.csproj src/Honua.Hosting/
