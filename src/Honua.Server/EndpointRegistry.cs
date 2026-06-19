@@ -781,6 +781,9 @@ public static class EndpointRegistry
         // CityGML/BIM scene ingest admin endpoint (#1207).
         new("POST", "/api/v1/admin/scenes/ingest/citygml"),
 
+        // LAS/LAZ/COPC point-cloud scene ingest admin endpoint (#1201).
+        new("POST", "/api/v1/admin/scenes/ingest/pointcloud"),
+
         new("GET", "/elevation/{datasetId}/value"),
         new("GET", "/elevation/{datasetId}/profile"),
 
