@@ -313,6 +313,24 @@ internal ref struct ProtobufWriter
         inner.Dispose();
     }
 
+    /// <summary>Writes a packed repeated uint64 field.</summary>
+    public void WritePackedUInt64(int fieldNumber, ReadOnlySpan<ulong> values)
+    {
+        if (values.IsEmpty)
+            return;
+
+        var inner = new ProtobufWriter(values.Length * 10);
+        foreach (ulong v in values)
+            inner.WriteRawVarint(v);
+
+        WriteTag(fieldNumber, 2);
+        WriteRawVarint((uint)inner.Position);
+        EnsureCapacity(inner.Position);
+        inner.WrittenMemory.Span.CopyTo(_buffer.AsSpan(_position));
+        _position += inner.Position;
+        inner.Dispose();
+    }
+
     /// <summary>Writes a packed repeated sint64 field.</summary>
     public void WritePackedSInt64(int fieldNumber, ReadOnlySpan<long> values)
     {
