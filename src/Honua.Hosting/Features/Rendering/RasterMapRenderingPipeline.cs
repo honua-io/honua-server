@@ -152,9 +152,9 @@ internal static class RasterMapRenderingPipeline
             context,
             serviceSrid,
             renderLayers,
-            z, y, x,
+            TileSrid,
+            TileMath.GetTileBounds(x, y, z),
             maxFeatures,
-            TileGridKind.WebMercatorQuad,
             cancellationToken,
             layerTemporalFilters);
 
@@ -177,18 +177,32 @@ internal static class RasterMapRenderingPipeline
         TileGridKind grid,
         CancellationToken cancellationToken,
         IReadOnlyList<TemporalFilter?>? layerTemporalFilters = null)
-        => RenderRasterTileCoreAsync(
+    {
+        var isGeographicGrid = grid == TileGridKind.WorldCrs84Quad;
+        var tileSrid = isGeographicGrid ? GeographicTileSrid : TileSrid;
+        var tileBounds = isGeographicGrid
+            ? TileMath.GetTileBoundsGeographic(x, y, z)
+            : TileMath.GetTileBounds(x, y, z);
+        return RenderRasterTileCoreAsync(
             context,
             serviceSrid,
             renderLayers,
-            z, y, x,
+            tileSrid,
+            tileBounds,
             maxFeatures,
-            grid,
             cancellationToken,
             layerTemporalFilters);
+    }
 
-#pragma warning disable CA1068 // legacy callers/tests pass cancellation before optional temporal filters
-    private static async Task<RasterTileRenderResult> RenderRasterTileCoreAsync(
+    /// <summary>
+    /// Renders a raster tile for an operator-defined custom tile matrix set described by a
+    /// <see cref="GridGeometry"/>. The tile envelope is computed from the grid origin / cell size
+    /// (in the gridset CRS) and the canonical query pipeline reprojects from the storage CRS as
+    /// needed. The two built-in gridsets continue to flow through the <see cref="TileGridKind"/>
+    /// overload so their output stays byte-identical; this overload exists because the enum cannot
+    /// represent operator-defined gridsets.
+    /// </summary>
+    internal static Task<RasterTileRenderResult> RenderRasterTileForGridAsync(
         HttpContext context,
         int serviceSrid,
         IReadOnlyList<RenderLayerDescriptor> renderLayers,
@@ -196,16 +210,36 @@ internal static class RasterMapRenderingPipeline
         int y,
         int x,
         int maxFeatures,
-        TileGridKind grid,
+        GridGeometry gridGeometry,
+        CancellationToken cancellationToken,
+        IReadOnlyList<TemporalFilter?>? layerTemporalFilters = null)
+    {
+        ArgumentNullException.ThrowIfNull(gridGeometry);
+        var tileBounds = gridGeometry.GetTileBounds(x, y, z)
+            ?? throw new ArgumentOutOfRangeException(nameof(z), "Requested level is not part of the tile matrix set.");
+        return RenderRasterTileCoreAsync(
+            context,
+            serviceSrid,
+            renderLayers,
+            gridGeometry.Srid,
+            tileBounds,
+            maxFeatures,
+            cancellationToken,
+            layerTemporalFilters);
+    }
+
+#pragma warning disable CA1068 // legacy callers/tests pass cancellation before optional temporal filters
+    private static async Task<RasterTileRenderResult> RenderRasterTileCoreAsync(
+        HttpContext context,
+        int serviceSrid,
+        IReadOnlyList<RenderLayerDescriptor> renderLayers,
+        int tileSrid,
+        TileBounds tileBounds,
+        int maxFeatures,
         CancellationToken cancellationToken,
         IReadOnlyList<TemporalFilter?>? layerTemporalFilters)
 #pragma warning restore CA1068
     {
-        var isGeographicGrid = grid == TileGridKind.WorldCrs84Quad;
-        var tileSrid = isGeographicGrid ? GeographicTileSrid : TileSrid;
-        var tileBounds = isGeographicGrid
-            ? TileMath.GetTileBoundsGeographic(x, y, z)
-            : TileMath.GetTileBounds(x, y, z);
         var renderExtent = new SkiaMapRenderer.RenderExtent(
             tileBounds.XMin,
             tileBounds.YMin,

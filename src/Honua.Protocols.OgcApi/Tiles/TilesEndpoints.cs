@@ -163,7 +163,11 @@ internal static partial class TilesEndpoints
             return CreateFormatError(context, f);
         }
 
-        if (!OgcTilesUtilities.IsSupportedTileMatrixSet(tileMatrixSetId))
+        // The dataset/collection tileset-metadata documents advertise vector + PNG tiles for the
+        // two built-in gridsets only (the MVT tile provider understands those pyramids). Custom
+        // gridsets are advertised through /ogc/tiles/tileMatrixSets and served via GetTile (PNG);
+        // their per-dataset tileset documents are a deferred follow-up.
+        if (!OgcTileMatrixSetDescriptors.TryGet(tileMatrixSetId, out _))
         {
             return StandardErrorHelpers.CreateNotFound(context, $"Tile matrix set '{tileMatrixSetId}' not found.");
         }
@@ -215,7 +219,8 @@ internal static partial class TilesEndpoints
         [FromServices] IMetadataV2GraphProvider graphProvider,
         [FromServices] ITileProvider tileProvider,
         [FromServices] IOptions<TileOptions> tileOptions,
-        [FromServices] IOptions<LimitsOptions> limitsOptions)
+        [FromServices] IOptions<LimitsOptions> limitsOptions,
+        [FromServices] ITileMatrixSetRegistry tileMatrixSetRegistry)
     {
         if (!TryRequireTenantContext(context, out var tenantError))
         {
@@ -245,7 +250,8 @@ internal static partial class TilesEndpoints
             cancellationToken => ResolveDatasetLayersAsync(collections, graphProvider, context, cancellationToken),
             tileProvider,
             tileOptions,
-            limitsOptions);
+            limitsOptions,
+            tileMatrixSetRegistry);
     }
 
     private static async Task<IResult> HandleGetCollectionTilesets(
@@ -312,7 +318,11 @@ internal static partial class TilesEndpoints
             return CreateFormatError(context, f);
         }
 
-        if (!OgcTilesUtilities.IsSupportedTileMatrixSet(tileMatrixSetId))
+        // The dataset/collection tileset-metadata documents advertise vector + PNG tiles for the
+        // two built-in gridsets only (the MVT tile provider understands those pyramids). Custom
+        // gridsets are advertised through /ogc/tiles/tileMatrixSets and served via GetTile (PNG);
+        // their per-dataset tileset documents are a deferred follow-up.
+        if (!OgcTileMatrixSetDescriptors.TryGet(tileMatrixSetId, out _))
         {
             return StandardErrorHelpers.CreateNotFound(context, $"Tile matrix set '{tileMatrixSetId}' not found.");
         }
@@ -356,7 +366,8 @@ internal static partial class TilesEndpoints
         [FromServices] IMetadataV2GraphProvider graphProvider,
         [FromServices] ITileProvider tileProvider,
         [FromServices] IOptions<TileOptions> tileOptions,
-        [FromServices] IOptions<LimitsOptions> limitsOptions)
+        [FromServices] IOptions<LimitsOptions> limitsOptions,
+        [FromServices] ITileMatrixSetRegistry tileMatrixSetRegistry)
     {
         if (!TryRequireTenantContext(context, out var tenantError))
         {
@@ -395,7 +406,8 @@ internal static partial class TilesEndpoints
             },
             tileProvider,
             tileOptions,
-            limitsOptions);
+            limitsOptions,
+            tileMatrixSetRegistry);
     }
 
     private static async Task<IResult> HandleTileRequestAsync(
@@ -413,7 +425,8 @@ internal static partial class TilesEndpoints
         Func<CancellationToken, Task<(TileRequestLayer[] Layers, IResult? Error)>> resolveLayersAsync,
         ITileProvider tileProvider,
         IOptions<TileOptions> tileOptions,
-        IOptions<LimitsOptions> limitsOptions)
+        IOptions<LimitsOptions> limitsOptions,
+        ITileMatrixSetRegistry tileMatrixSetRegistry)
     {
         var request = context.Request;
         var validationError = OgcCommonUtilities.ValidateQueryParameters(request, allowedQueryParameters);
@@ -439,12 +452,12 @@ internal static partial class TilesEndpoints
             }
         }
 
-        if (!OgcTilesUtilities.IsSupportedTileMatrixSet(tileMatrixSetId))
+        if (!tileMatrixSetRegistry.TryGet(tileMatrixSetId, out var tileMatrixSetEntry))
         {
             return StandardErrorHelpers.CreateNotFound(context, $"Tile matrix set '{tileMatrixSetId}' not found.");
         }
 
-        var isGeographic = OgcTilesUtilities.IsWorldCrs84Quad(tileMatrixSetId);
+        var isGeographic = tileMatrixSetEntry.IsGeographic;
 
         if (!int.TryParse(tileMatrix, NumberStyles.Integer, CultureInfo.InvariantCulture, out var zoomLevel))
         {
@@ -453,14 +466,37 @@ internal static partial class TilesEndpoints
 
         var tileOptionsValue = tileOptions.Value;
         var tileLimits = limitsOptions.Value.Tiles;
-        if (zoomLevel < tileLimits.MinTileZoom || zoomLevel > tileLimits.MaxTileZoom)
+
+        // Resolve the grid geometry. Built-in gridsets generate levels for the configured zoom
+        // range and are still subject to the server-wide tile-zoom limits; custom gridsets are
+        // validated against their own configured level set.
+        if (!tileMatrixSetRegistry.TryGetGeometry(tileMatrixSetEntry.Id, Math.Max(0, tileLimits.MaxTileZoom), out var gridGeometry))
         {
-            return StandardErrorHelpers.CreateBadRequest(context, $"Tile matrix '{tileMatrix}' is outside supported range.");
+            return StandardErrorHelpers.CreateNotFound(context, $"Tile matrix set '{tileMatrixSetId}' not found.");
         }
 
-        var validCoords = isGeographic
-            ? TileMath.ValidateTileCoordinatesGeographic(tileCol, tileRow, zoomLevel)
-            : TileMath.ValidateTileCoordinates(tileCol, tileRow, zoomLevel);
+        bool validCoords;
+        if (tileMatrixSetEntry.IsBuiltIn)
+        {
+            if (zoomLevel < tileLimits.MinTileZoom || zoomLevel > tileLimits.MaxTileZoom)
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, $"Tile matrix '{tileMatrix}' is outside supported range.");
+            }
+
+            validCoords = isGeographic
+                ? TileMath.ValidateTileCoordinatesGeographic(tileCol, tileRow, zoomLevel)
+                : TileMath.ValidateTileCoordinates(tileCol, tileRow, zoomLevel);
+        }
+        else
+        {
+            if (gridGeometry.FindLevel(zoomLevel) is not { } customLevel)
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, $"Tile matrix '{tileMatrix}' is outside supported range.");
+            }
+
+            validCoords = tileCol >= 0 && tileRow >= 0 &&
+                tileCol < customLevel.MatrixWidth && tileRow < customLevel.MatrixHeight;
+        }
 
         if (!validCoords)
         {
@@ -528,6 +564,18 @@ internal static partial class TilesEndpoints
             // datacube render is the deferred Shape B follow-up (after #1790). Direct endpoint
             // tests cover this record-but-don't-render behavior.
 
+            // Tile envelope in the gridset CRS. For the two built-ins this is byte-identical to
+            // the legacy TileMath.GetTileBounds / GetTileBoundsGeographic output (the registry
+            // seeds those geometries from the same formulas); for custom gridsets the envelope is
+            // derived from the configured origin / cell size.
+            var tileBounds = gridGeometry.GetTileBounds(tileCol, tileRow, zoomLevel);
+            if (tileBounds is null)
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, $"Invalid tile coordinates: row={tileRow}, col={tileCol}, matrix={tileMatrix}.");
+            }
+
+            var filterSrid = gridGeometry.Srid;
+
             // Raster (PNG) tile path
             if (isRaster)
             {
@@ -535,10 +583,8 @@ internal static partial class TilesEndpoints
                     ? await HandleRasterTileAsync(
                         context,
                         layer,
-                        tileCol,
-                        tileRow,
-                        zoomLevel,
-                        isGeographic,
+                        tileBounds,
+                        filterSrid,
                         GetTemporalFilterForLayer(layer, temporalFilters),
                         GetVerticalSelectionForLayer(layer, verticalSelections),
                         tileLimits,
@@ -548,15 +594,25 @@ internal static partial class TilesEndpoints
                     : await HandleDatasetRasterTileAsync(
                         context,
                         layers,
-                        tileCol,
-                        tileRow,
-                        zoomLevel,
-                        isGeographic,
+                        tileBounds,
+                        filterSrid,
                         temporalFilters,
                         tileLimits,
                         tileOptionsValue,
                         activity,
                         cancellationToken);
+            }
+
+            // Vector tiles flow through the shared MVT tile provider, which generates tiles against
+            // the standard WebMercatorQuad / WorldCRS84Quad pyramids only. Operator-defined custom
+            // gridsets are advertised + served as PNG (raster) tiles; vector tiles for a custom
+            // gridset are not supported (request PNG with f=png). This keeps the MVT pipeline from
+            // silently emitting tiles in the wrong grid.
+            if (!tileMatrixSetEntry.IsBuiltIn)
+            {
+                return StandardErrorHelpers.CreateNotAcceptable(
+                    context,
+                    $"Vector tiles are not available for tile matrix set '{tileMatrixSetId}'. Request PNG tiles (f=png).");
             }
 
             // Vector tile path. Record-but-don't-render the vertical selection (see the
@@ -623,10 +679,8 @@ internal static partial class TilesEndpoints
     private static async Task<IResult> HandleRasterTileAsync(
         HttpContext context,
         TileRequestLayer layer,
-        int tileCol,
-        int tileRow,
-        int zoomLevel,
-        bool isGeographic,
+        TileBounds bounds,
+        int filterSrid,
         TemporalFilter? temporalFilter,
         VerticalSelection? verticalSelection,
         TileLimits tileLimits,
@@ -643,11 +697,6 @@ internal static partial class TilesEndpoints
             activity?.SetTag("honua.tile.vertical_selection", selection.RawValue);
         }
 
-        var bounds = isGeographic
-            ? TileMath.GetTileBoundsGeographic(tileCol, tileRow, zoomLevel)
-            : TileMath.GetTileBounds(tileCol, tileRow, zoomLevel);
-
-        var filterSrid = isGeographic ? 4326 : 3857;
         var spatialFilter = CreateBboxSpatialFilter(bounds, filterSrid);
 
         var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
@@ -732,21 +781,14 @@ internal static partial class TilesEndpoints
     private static async Task<IResult> HandleDatasetRasterTileAsync(
         HttpContext context,
         TileRequestLayer[] layers,
-        int tileCol,
-        int tileRow,
-        int zoomLevel,
-        bool isGeographic,
+        TileBounds bounds,
+        int filterSrid,
         IReadOnlyDictionary<int, TemporalFilter?> temporalFilters,
         TileLimits tileLimits,
         TileOptions tileOptionsValue,
         Activity? activity,
         CancellationToken cancellationToken)
     {
-        var bounds = isGeographic
-            ? TileMath.GetTileBoundsGeographic(tileCol, tileRow, zoomLevel)
-            : TileMath.GetTileBounds(tileCol, tileRow, zoomLevel);
-
-        var filterSrid = isGeographic ? 4326 : 3857;
         var spatialFilter = CreateBboxSpatialFilter(bounds, filterSrid);
         var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
         var renderedLayers = new List<TileRenderer.TileRenderLayer>(layers.Length);
