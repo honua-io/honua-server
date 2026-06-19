@@ -531,5 +531,36 @@ public sealed class AdvancedSpatialQueryTests : IAsyncLifetime
         queryResponse!.Features.Should().NotBeNull();
     }
 
+    /// <summary>
+    /// esriSpatialRelIndexIntersects is the index-accelerated form of
+    /// esriSpatialRelIntersects and must be accepted (GeoServices REST conformance,
+    /// honua-server#1772) rather than rejected with HTTP 400.
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_IndexIntersects_IsAcceptedLikeIntersects()
+    {
+        // Arrange - a point geometry combined with the index-intersects operator.
+        var pointGeometry = @"{""x"":-122.4194,""y"":37.7749}";
+
+        // Act
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query" +
+            $"?geometry={Uri.EscapeDataString(pointGeometry)}" +
+            $"&spatialRel=esriSpatialRelIndexIntersects" +
+            $"&f=json");
+
+        // Assert - identical intersects predicate, so a clean 200 (not a 400).
+        response.Be200Ok();
+
+        var content = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize<QueryResponse>(
+            content, FeatureServerJsonContext.Default.QueryResponse);
+
+        queryResponse.Should().NotBeNull();
+        queryResponse!.Features.Should().NotBeNull();
+    }
+
     #endregion
 }

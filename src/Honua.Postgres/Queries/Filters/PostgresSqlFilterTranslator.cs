@@ -606,12 +606,21 @@ internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBa
         var value = TranslateExpression(function.Arguments[0], context);
         var targetType = targetTypeRaw.Trim('\'', '"').ToUpperInvariant();
 
-        return targetType switch
+        // Split an optional length/precision argument list off the base type token,
+        // e.g. VARCHAR(20) -> ("VARCHAR", "(20)"), DECIMAL(10,2) -> ("DECIMAL", "(10,2)").
+        // The parser only emits all-digit (and comma) arguments, but re-validate here so
+        // the suffix can be safely interpolated into the cast for length-bearing types.
+        var (baseType, typeArgs) = SplitCastType(targetType);
+
+        return baseType switch
         {
             "INTEGER" or "INT" => $"({value})::INTEGER",
-            "NUMERIC" or "DECIMAL" => $"({value})::NUMERIC",
+            "NUMERIC" or "DECIMAL" => $"({value})::NUMERIC{typeArgs}",
             "REAL" or "FLOAT" => $"({value})::REAL",
             "DOUBLE" or "DOUBLE PRECISION" => $"({value})::DOUBLE PRECISION",
+            // CHAR/VARCHAR keep their length so a Esri `CAST(x AS VARCHAR(n))` truncates
+            // exactly as ArcGIS does; bare VARCHAR (no length) maps to unbounded TEXT.
+            "VARCHAR" or "CHAR" when typeArgs.Length > 0 => $"({value})::{baseType}{typeArgs}",
             "TEXT" or "STRING" or "VARCHAR" => $"({value})::TEXT",
             "BOOLEAN" or "BOOL" => $"({value})::BOOLEAN",
             "DATE" => $"({value})::DATE",
@@ -620,6 +629,64 @@ internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBa
             "GEOGRAPHY" => $"({value})::GEOGRAPHY",
             _ => throw new NotSupportedException($"Unsupported cast target type: {targetType}")
         };
+    }
+
+    // Separates a CAST target type into its base token and an optional, validated
+    // length/precision suffix. The suffix is preserved verbatim (e.g. "(20)",
+    // "(10,2)") for types that support it; everything inside the parentheses must be
+    // digits, an optional single comma, and whitespace so nothing unsafe is emitted.
+    private static (string BaseType, string TypeArgs) SplitCastType(string targetType)
+    {
+        var open = targetType.IndexOf('(', StringComparison.Ordinal);
+        if (open < 0)
+        {
+            return (targetType, string.Empty);
+        }
+
+        if (!targetType.EndsWith(')'))
+        {
+            throw new ArgumentException($"Malformed cast target type: {targetType}");
+        }
+
+        var baseType = targetType[..open].TrimEnd();
+        var inner = targetType[(open + 1)..^1];
+        var normalized = new System.Text.StringBuilder("(");
+        var commaCount = 0;
+        var hasDigit = false;
+        foreach (var ch in inner)
+        {
+            if (char.IsWhiteSpace(ch))
+            {
+                continue;
+            }
+
+            if (ch == ',')
+            {
+                if (++commaCount > 1 || !hasDigit)
+                {
+                    throw new ArgumentException($"Malformed cast target type: {targetType}");
+                }
+
+                normalized.Append(',');
+                continue;
+            }
+
+            if (!char.IsAsciiDigit(ch))
+            {
+                throw new ArgumentException($"Malformed cast target type: {targetType}");
+            }
+
+            hasDigit = true;
+            normalized.Append(ch);
+        }
+
+        if (!hasDigit)
+        {
+            throw new ArgumentException($"Malformed cast target type: {targetType}");
+        }
+
+        normalized.Append(')');
+        return (baseType, normalized.ToString());
     }
 
     private string TranslateGeoDistance(FunctionCall function, FilterTranslationContext context)
