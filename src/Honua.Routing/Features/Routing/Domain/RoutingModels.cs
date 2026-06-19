@@ -13,6 +13,48 @@ namespace Honua.Routing.Features.Routing.Domain;
 public readonly record struct RoutePoint(double Lon, double Lat);
 
 /// <summary>
+/// Classifies a routing barrier by the Esri geometry family it was supplied as.
+/// A barrier restricts traversal: edges that interact with the barrier geometry
+/// are excluded from the routing graph for the solve.
+/// </summary>
+public enum RouteBarrierKind
+{
+    /// <summary>
+    /// A point barrier (Esri <c>barriers</c>). Restricts the single graph edge
+    /// nearest the point — a blocked intersection / incident location.
+    /// </summary>
+    Point = 0,
+
+    /// <summary>
+    /// A polyline barrier (Esri <c>polylineBarriers</c>). Restricts every edge
+    /// the barrier line crosses — a road closure drawn along/across streets.
+    /// </summary>
+    Line = 1,
+
+    /// <summary>
+    /// A polygon barrier (Esri <c>polygonBarriers</c>). Restricts every edge that
+    /// intersects the barrier area — a flood zone / event-closure region.
+    /// </summary>
+    Polygon = 2,
+}
+
+/// <summary>
+/// A single routing barrier expressed as a GeoJSON geometry in the request's input
+/// spatial reference. Protocol-neutral: the NAServer adapter maps Esri barrier
+/// inputs onto this model and the provider threads it into the solve by excluding
+/// the graph edges the barrier restricts. The geometry is transformed from
+/// <see cref="RouteSolveRequest.InSrid"/> to the graph SRID by the provider before
+/// the edge-exclusion predicate runs.
+/// </summary>
+/// <param name="Kind">The barrier geometry family (point/line/polygon).</param>
+/// <param name="GeometryGeoJson">
+/// The barrier geometry as a GeoJSON string (<c>Point</c>/<c>MultiPoint</c>,
+/// <c>LineString</c>/<c>MultiLineString</c>, or <c>Polygon</c>/<c>MultiPolygon</c>)
+/// in the request's input SRID.
+/// </param>
+public sealed record RouteBarrier(RouteBarrierKind Kind, string GeometryGeoJson);
+
+/// <summary>
 /// Direction of travel relative to a service-area facility.
 /// </summary>
 public enum ServiceAreaTravelDirection
@@ -66,14 +108,21 @@ public sealed record RouteSolveRequest(
     }
 
     /// <summary>
-    /// Point/line barriers to avoid. MVP-stubbed: accepted but ignored by the
-    /// current providers. Reserved so the NAServer adapter can pass barriers
-    /// through once barrier support lands.
+    /// Point/line/polygon barriers to honour. The provider excludes the graph
+    /// edges each barrier restricts before solving. Empty when no barriers are
+    /// supplied. Providers that do not advertise a barrier kind in
+    /// <see cref="RoutingProviderCapabilities.SupportedBarrierKinds"/> have the
+    /// request rejected by the adapter before solving, so a provider only ever
+    /// receives barrier kinds it supports.
     /// </summary>
-    public IReadOnlyList<RoutePoint> Barriers { get; init; } = [];
+    public IReadOnlyList<RouteBarrier> Barriers { get; init; } = [];
 
     /// <summary>
-    /// Esri-style travel-mode identifier. MVP-stubbed: accepted but ignored.
+    /// Esri-style travel-mode identifier (e.g. <c>driving</c>, <c>walking</c>).
+    /// <c>null</c> selects the provider default. The adapter validates the value
+    /// against <see cref="RoutingProviderCapabilities.SupportedTravelModes"/> and
+    /// rejects unsupported modes, so a provider only ever receives a mode it
+    /// advertises (or <c>null</c>).
     /// </summary>
     public string? TravelMode { get; init; }
 }
@@ -151,6 +200,22 @@ public sealed record ServiceAreaSolveRequest(
         get => _inSrid ?? OutSrid;
         init => _inSrid = value;
     }
+
+    /// <summary>
+    /// Point/line/polygon barriers to honour. The provider excludes the graph
+    /// edges each barrier restricts before computing reachability. Empty when no
+    /// barriers are supplied. Only barrier kinds the provider advertises ever
+    /// reach the provider (the adapter rejects unsupported kinds first).
+    /// </summary>
+    public IReadOnlyList<RouteBarrier> Barriers { get; init; } = [];
+
+    /// <summary>
+    /// Esri-style travel-mode identifier. <c>null</c> selects the provider
+    /// default. Validated against
+    /// <see cref="RoutingProviderCapabilities.SupportedTravelModes"/> by the
+    /// adapter before solving.
+    /// </summary>
+    public string? TravelMode { get; init; }
 }
 
 /// <summary>

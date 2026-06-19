@@ -41,4 +41,11 @@ public sealed class RoutingConfiguration
     /// facility (DoS guard).
     /// </summary>
     public int MaxBreaks { get; set; } = 50;
+
+    /// <summary>
+    /// Maximum number of barriers (across point/line/polygon families) accepted on
+    /// a single solve. Each barrier widens the edge-exclusion predicate, so this
+    /// bounds the cost of the spatial filter (DoS guard).
+    /// </summary>
+    public int MaxBarriers { get; set; } = 1000;
 }

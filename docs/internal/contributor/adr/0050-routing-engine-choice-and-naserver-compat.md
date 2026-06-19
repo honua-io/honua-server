@@ -162,11 +162,30 @@ Explicitly deferred:
 - Location-allocation
 - Closest facility (`ClosestFacility/solveClosestFacility`)
 - Network-dataset editing
-- Multiple travel modes
-- Barriers (point/line/polygon)
 
 These are recorded as out of scope for the first slice so the routing capability
 ships against a bounded, reviewable contract.
+
+**Update (post-MVP, #1862 / #1863).** Two deferrals from the original first slice
+are now delivered:
+
+- **Barriers (point/line/polygon)** are implemented. The NAServer adapter parses
+  `barriers` / `polylineBarriers` / `polygonBarriers` Esri FeatureSets into a
+  protocol-neutral `RouteBarrier` (kind + GeoJSON) and threads them into both
+  Route and ServiceArea solves. The pgRouting provider honours them by excluding
+  the graph edges each barrier restricts (point → nearest edge via the GiST `<->`
+  KNN; line/polygon → every `ST_Intersects` edge), recomputing the edges-SQL for
+  `pgr_dijkstra` / `pgr_drivingDistance`. A provider that does not advertise a
+  barrier kind (e.g. the straight-line mock) returns a GeoServices 400 rather than
+  silently dropping the barrier. Bounded by `Routing:MaxBarriers` (default 1000).
+- **Multiple travel modes** are partially delivered: the request surface
+  (`travelMode`, bare token or Esri object `name`), validation against the
+  provider's advertised `SupportedTravelModes`, and capability advertisement are
+  wired. Because the `ways` topology stores a single `cost` / `reverse_cost`
+  weight pair, only the **driving** mode is genuinely routable; walking / cycling
+  / truck require additional per-mode cost columns and stay deferred. Unsupported
+  modes return a GeoServices 400 — Honua does not fabricate a mode-specific solve
+  it cannot honour.
 
 **Input bounds (DoS guard).** The NAServer adapter caps input counts to bound
 serial DB fan-out (each stop is a Dijkstra leg; each facility×break is a

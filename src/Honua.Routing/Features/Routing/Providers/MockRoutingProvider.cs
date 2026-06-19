@@ -41,6 +41,13 @@ internal sealed class MockRoutingProvider : IRoutingProvider
         // The mock buffers a symmetric circle, so travel direction does not change
         // the geometry; only FromFacility is meaningfully distinct.
         SupportedTravelDirections = [ServiceAreaTravelDirection.FromFacility],
+
+        // The mock routes a straight line / symmetric buffer, so it cannot honour
+        // barriers geometrically — advertise no barrier kinds (honest). It DOES
+        // accept multiple named travel modes (it ignores the impedance difference,
+        // but the request surface and validation are exercised), so the NAServer
+        // travel-mode validation path can be driven without a pgRouting topology.
+        SupportedTravelModes = ["driving", "walking", "trucking"],
     };
 
     /// <inheritdoc />
