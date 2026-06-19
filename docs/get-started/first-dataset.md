@@ -2,7 +2,7 @@
 
 You'll upload a GeoJSON file, publish it as a layer, and query it back over OGC API Features and ArcGIS-compatible FeatureServer in about 10 minutes.
 
-**Prerequisites:** a running server with an admin password set (steps 1–4 of the [quickstart](quickstart.md)), plus `curl`.
+**Prerequisites:** a running server with an admin password set (steps 1–4 of the [quickstart](quickstart.md)), plus `curl` for the admin import/publish calls and (recommended) the `honua` CLI for querying (`npm i -g @honua/sdk-js`).
 
 ## Steps
 
@@ -50,32 +50,49 @@ curl -s -H "X-API-Key: $KEY" -H "Content-Type: application/json" \
 {"success":true,"data":{"layerId":2,"layerName":"hawaii-cities","schema":"honua_data","table":"hawaii_cities",…,"serviceName":"default"},…}
 ```
 
-5. Query it via OGC API Features. List the collections, then set `COLLECTION` to the `id` shown for your layer and fetch items as GeoJSON.
+5. Query it back with the **`honua` CLI** (bundled with the JS SDK: `npm i -g @honua/sdk-js`, or run ad hoc with `npx @honua/sdk-js honua …`). Point it at your server, list the service's layers to find the numeric id, then query — a readable table by default, GeoJSON on request:
 
 ```bash
+export HONUA_BASE_URL=$HONUA
+export HONUA_API_KEY=$KEY   # omit once the service allows anonymous reads
+
+honua layers default                                    # find the layer id (e.g. 0)
+honua query default/0 --limit 5                          # readable table
+honua query default/0 --where "population > 100000" --format geojson
+```
+
+<details><summary>Same queries over raw HTTP (curl)</summary>
+
+```bash
+# OGC API Features — list collections, then fetch items as GeoJSON
 curl -s -H "X-API-Key: $KEY" "$HONUA/ogc/features/collections"
 COLLECTION=hawaii-cities   # use the collection id from the previous response
 curl -s -H "X-API-Key: $KEY" "$HONUA/ogc/features/collections/$COLLECTION/items?limit=5"
-```
 
-6. Query the same layer via FeatureServer. Fetch the service metadata to see the layer's numeric id, then query it.
-
-```bash
+# GeoServices FeatureServer — service metadata, then a query
 curl -s -H "X-API-Key: $KEY" "$HONUA/rest/services/default/FeatureServer?f=json"
 LAYER=0   # use the layer id from the "layers" array in the previous response
 curl -s -H "X-API-Key: $KEY" "$HONUA/rest/services/default/FeatureServer/$LAYER/query?where=population%20%3E%20100000&outFields=*&f=json"
 ```
+
+</details>
 
 > Also available with [honua-sdk-js](https://github.com/honua-io/honua-sdk-js) and [honua-sdk-dotnet](https://github.com/honua-io/honua-sdk-dotnet). Also available in Honua Console — UI guide coming soon.
 
 ## Verify
 
 ```bash
-curl -s -H "X-API-Key: $KEY" "$HONUA/ogc/features/collections/$COLLECTION/items?limit=1"
+honua query default/0 --count
+```
+
+A non-zero count confirms the layer is published and queryable. To inspect a row as GeoJSON:
+
+```bash
+honua query default/0 --limit 1 --format geojson
 ```
 
 ```text
-{"type":"FeatureCollection","features":[{"type":"Feature",…,"properties":{"name":"Honolulu","population":343421}}],…}
+{ "type": "FeatureCollection", "features": [ { "type": "Feature", "properties": { "name": "Honolulu", "population": 343421 } } ] }
 ```
 
 ## Troubleshoot
