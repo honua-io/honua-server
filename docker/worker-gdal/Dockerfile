@@ -14,9 +14,12 @@
 # build or modify them.
 
 ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0
-# GDAL base ships gdalwarp / ogr2ogr / gdal_translate etc. Matches the image
-# family already used by docker/client-compat/gdal.
-ARG GDAL_BASE_IMAGE=ghcr.io/osgeo/gdal:ubuntu-small-latest
+# GDAL base ships gdalwarp / ogr2ogr / gdal_translate / gdalmdiminfo etc.
+# NOTE: must be the `ubuntu-full` variant, not `ubuntu-small` — the small image
+# omits the NetCDF/HDF5 drivers required by the multidimensional coverage
+# reader (ADR-0039 Path B). Verified: gdalmdiminfo reports "not recognized as
+# being in a supported file format" against NetCDF4 on the small image.
+ARG GDAL_BASE_IMAGE=ghcr.io/osgeo/gdal:ubuntu-full-latest
 # Pinned .NET runtime version installed onto the GDAL (Ubuntu) base.
 ARG DOTNET_RUNTIME_VERSION=10.0
 
@@ -80,8 +83,10 @@ RUN apt-get update \
  && ln -sf /usr/share/dotnet/dotnet /usr/local/bin/dotnet \
  && rm -f /tmp/dotnet-install.sh
 
-# Sanity check: the GDAL tools the worker shells out to must be present.
-RUN command -v gdalwarp && command -v ogr2ogr
+# Sanity check: the GDAL tools the worker shells out to must be present, and the
+# NetCDF driver (multidimensional coverage reader) must be compiled in.
+RUN command -v gdalwarp && command -v ogr2ogr && command -v gdalmdiminfo \
+ && gdalinfo --formats | grep -qi netCDF
 
 # Non-root runtime user.
 RUN groupadd --gid 1001 --system honua \
