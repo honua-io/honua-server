@@ -275,7 +275,11 @@ public class MultidimensionalCoverageEndpointTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/multidim-coverages/jobs/{jobId}")]
     public async Task ScanJobStatus_WithNonexistentJob_Returns404()
     {
-        var response = await _client.GetAsync($"{Route}/jobs/covscan-does-not-exist");
+        // Use the full literal route here (not the $"{Route}/..." indirection used
+        // elsewhere in this file) so the EndpointRegistry drift scanner, which matches
+        // route templates against literal request strings in test source, recognizes
+        // this GET as backing "GET /api/v1/admin/multidim-coverages/jobs/{jobId}".
+        var response = await _client.GetAsync("/api/v1/admin/multidim-coverages/jobs/covscan-does-not-exist");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
