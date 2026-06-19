@@ -337,6 +337,143 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/{kind}/{id}/export")]
+    public async Task ExportDeliverable_MapAsPng_ReturnsPngArtifact()
+        => await ExportRoundTripAsync(StudioPackageFamily.Map, "honua_map_package.v1", "map", "png", "image/png", PngMagic);
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/{kind}/{id}/export")]
+    public async Task ExportDeliverable_MapAsPdf_ReturnsPdfArtifact()
+        => await ExportRoundTripAsync(StudioPackageFamily.Map, "honua_map_package.v1", "map", "pdf", "application/pdf", PdfMagic);
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/{kind}/{id}/export")]
+    public async Task ExportDeliverable_DashboardAsPng_ReturnsPngArtifact()
+        => await ExportRoundTripAsync(StudioPackageFamily.Dashboard, "studio_dashboard_package.v1", "dashboard", "png", "image/png", PngMagic);
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/{kind}/{id}/export")]
+    public async Task ExportDeliverable_DashboardAsPdf_ReturnsPdfArtifact()
+        => await ExportRoundTripAsync(StudioPackageFamily.Dashboard, "studio_dashboard_package.v1", "dashboard", "pdf", "application/pdf", PdfMagic);
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/{kind}/{id}/export")]
+    public async Task ExportDeliverable_ReportAsPng_ReturnsPngArtifact()
+        => await ExportRoundTripAsync(StudioPackageFamily.Report, "studio_report_package.v1", "report", "png", "image/png", PngMagic);
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/{kind}/{id}/export")]
+    public async Task ExportDeliverable_ReportAsPdf_ReturnsPdfArtifact()
+        => await ExportRoundTripAsync(StudioPackageFamily.Report, "studio_report_package.v1", "report", "pdf", "application/pdf", PdfMagic);
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/{kind}/{id}/export")]
+    public async Task ExportDeliverable_UnknownItem_ReturnsNotFound()
+    {
+        var response = await _client.PostAsync($"/api/v1/studio/map/{Guid.NewGuid():D}/export?format=png", EmptyJson());
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/{kind}/{id}/export")]
+    public async Task ExportDeliverable_KindMismatch_ReturnsBadRequest()
+    {
+        var itemId = await CreateContentItemAsync(StudioPackageFamily.Map, "honua_map_package.v1");
+
+        // The item is a map; requesting a report deliverable must be rejected.
+        var response = await _client.PostAsync($"/api/v1/studio/report/{itemId:D}/export?format=png", EmptyJson());
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/{kind}/{id}/export")]
+    public async Task ExportDeliverable_WithoutAdmin_ReturnsUnauthorized()
+    {
+        using var unauthenticatedClient = _fixture.CreateClient();
+
+        var response = await unauthenticatedClient.PostAsync(
+            $"/api/v1/studio/map/{Guid.NewGuid():D}/export?format=png",
+            EmptyJson());
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    private async Task ExportRoundTripAsync(
+        StudioPackageFamily family,
+        string format,
+        string kind,
+        string exportFormat,
+        string expectedContentType,
+        byte[] expectedMagic)
+    {
+        var itemId = await CreateContentItemAsync(family, format);
+
+        var response = await _client.PostAsync(
+            $"/api/v1/studio/{kind}/{itemId:D}/export?format={exportFormat}",
+            EmptyJson());
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType!.MediaType.Should().Be(expectedContentType);
+        var bytes = await response.Content.ReadAsByteArrayAsync();
+        bytes.Length.Should().BeGreaterThan(expectedMagic.Length);
+        bytes.Take(expectedMagic.Length).Should().Equal(expectedMagic);
+    }
+
+    private async Task<Guid> CreateContentItemAsync(StudioPackageFamily family, string format)
+    {
+        var createResponse = await PostAsync(
+            "/api/v1/studio/package-drafts",
+            new CreateStudioPackageDraftRequest
+            {
+                PackageKey = $"{family.ToString().ToLowerInvariant()}-export",
+                WorkspaceId = "studio",
+                Envelope = BuildDeliverableEnvelope(family, format),
+            },
+            StudioApiJsonContext.Default.CreateStudioPackageDraftRequest);
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var draft = await ReadAsync<StudioPackageDraft>(
+            createResponse,
+            StudioApiJsonContext.Default.ApiResponseStudioPackageDraft);
+
+        var saveResponse = await PostAsync(
+            $"/api/v1/studio/package-drafts/{draft.DraftId:D}/content-versions",
+            new SaveStudioContentVersionRequest { ChangeNote = "export fixture" },
+            StudioApiJsonContext.Default.SaveStudioContentVersionRequest);
+        saveResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var version = await ReadAsync<StudioContentVersion>(
+            saveResponse,
+            StudioApiJsonContext.Default.ApiResponseStudioContentVersion);
+        return version.ItemId;
+    }
+
+    private static StudioPackageEnvelope BuildDeliverableEnvelope(StudioPackageFamily family, string format)
+    {
+        var bodyJson = family switch
+        {
+            StudioPackageFamily.Map =>
+                $$"""{"format":"{{format}}","title":"Parcels Overview","description":"Parcel coverage map.","layers":[{"title":"Parcels"},{"title":"Roads"}],"basemap":"streets"}""",
+            StudioPackageFamily.Dashboard =>
+                """{"title":"Operations Dashboard","description":"Live operations metrics.","widgets":[{"title":"Throughput","type":"chart"},{"title":"Map","type":"map"}]}""",
+            _ =>
+                """{"title":"Quarterly Report","summary":"GIS deliverable summary.","sections":[{"heading":"Overview"},{"heading":"Findings"}]}""",
+        };
+
+        using var body = JsonDocument.Parse(bodyJson);
+        return new StudioPackageEnvelope
+        {
+            Family = family,
+            SchemaVersion = "1.0",
+            Format = format,
+            Body = body.RootElement.Clone(),
+        };
+    }
+
+    private static readonly byte[] PngMagic = [0x89, 0x50, 0x4E, 0x47];
+    private static readonly byte[] PdfMagic = [0x25, 0x50, 0x44, 0x46]; // %PDF
+
     private async Task<HttpResponseMessage> PostAsync<T>(string path, T body, JsonTypeInfo<T> typeInfo)
         => await _client.PostAsync(path, JsonContent(body, typeInfo));
 

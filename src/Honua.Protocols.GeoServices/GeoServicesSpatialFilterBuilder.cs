@@ -95,6 +95,10 @@ internal static class GeoServicesSpatialFilterBuilder
         return spatialRel?.ToLowerInvariant() switch
         {
             "esrispatialrelintersects" or null => SpatialRelationship.Intersects,
+            // esriSpatialRelIndexIntersects is the index-accelerated form of
+            // esriSpatialRelIntersects; it evaluates the identical intersects
+            // predicate, so it maps to the same canonical relationship.
+            "esrispatialrelindexintersects" => SpatialRelationship.Intersects,
             "esrispatialrelcontains" => SpatialRelationship.Contains,
             "esrispatialrelwithin" => SpatialRelationship.Within,
             "esrispatialrelenvelopeintersects" => SpatialRelationship.EnvelopeIntersects,

@@ -383,10 +383,63 @@ public sealed class OgcTilesEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetTile)]
     [Endpoint("GET /ogc/tiles/collections/{collectionId}/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow:int}/{tileCol:int}")]
-    public async Task GetTile_WithSubset_ReturnsBadRequest()
+    public async Task GetTile_WithUnknownSubsetAxis_ReturnsBadRequest()
     {
+        // CITE guard (#1792 Shape A): the vertical-subset support added for elevation must
+        // NOT accept an unknown / non-vertical axis. The easting axis E(...) must still 400 —
+        // this is the assertion behind CITE API Tiles 16/16 "unknown subset is rejected".
         var response = await _fixture.Client.GetAsync(
             "/ogc/tiles/collections/0/tiles/WebMercatorQuad/0/0/0?subset=E(0:1)");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTile)]
+    [Endpoint("GET /ogc/tiles/collections/{collectionId}/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow:int}/{tileCol:int}")]
+    public async Task GetTile_WithVerticalSubsetValue_IsAccepted()
+    {
+        // #1792 Shape A: a vertical (Z) subset is now accepted and RECORDED (not rendered).
+        // The request must no longer 400; it returns a tile or NoContent like an ordinary
+        // tile request. The vertical selection is record-but-don't-render for vector layers
+        // (documented divergence in TilesEndpoints.cs).
+        var response = await _fixture.Client.GetAsync(
+            "/ogc/tiles/collections/0/tiles/WebMercatorQuad/0/0/0?subset=" + Uri.EscapeDataString("Z(100)"));
+
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NoContent);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTile)]
+    [Endpoint("GET /ogc/tiles/collections/{collectionId}/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow:int}/{tileCol:int}")]
+    public async Task GetTile_WithVerticalSubsetInterval_IsAccepted()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/ogc/tiles/collections/0/tiles/WebMercatorQuad/0/0/0?subset=" + Uri.EscapeDataString("elevation(100:300)"));
+
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NoContent);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTile)]
+    [Endpoint("GET /ogc/tiles/collections/{collectionId}/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow:int}/{tileCol:int}")]
+    public async Task GetTile_WithMalformedVerticalSubset_ReturnsBadRequest()
+    {
+        // A recognized vertical axis with a non-numeric value is malformed and must 400.
+        var response = await _fixture.Client.GetAsync(
+            "/ogc/tiles/collections/0/tiles/WebMercatorQuad/0/0/0?subset=" + Uri.EscapeDataString("Z(abc)"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTile)]
+    [Endpoint("GET /ogc/tiles/collections/{collectionId}/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow:int}/{tileCol:int}")]
+    public async Task GetTile_WithVerticalSubsetInvertedInterval_ReturnsBadRequest()
+    {
+        // Out-of-range / inverted vertical interval is malformed and must 400.
+        var response = await _fixture.Client.GetAsync(
+            "/ogc/tiles/collections/0/tiles/WebMercatorQuad/0/0/0?subset=" + Uri.EscapeDataString("Z(300:100)"));
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }

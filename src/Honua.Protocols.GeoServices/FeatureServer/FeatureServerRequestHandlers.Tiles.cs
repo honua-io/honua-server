@@ -152,7 +152,10 @@ internal static partial class FeatureServerEndpoints
                 query,
                 tileOptions,
                 tileLimits,
-                cancellationToken);
+                cancellationToken,
+                activity: null,
+                serviceId: FeatureServerProtocolName,
+                layerId: layerId.ToString(System.Globalization.CultureInfo.InvariantCulture));
         }
         catch (NotSupportedException) when (temporalFilter is not null)
         {
