@@ -257,6 +257,19 @@ internal static partial class MapServerEndpoints
             .WithTags("MapServer")
             .CacheOutput("LayerMetadata");
 
+        // Esri services accept BOTH GET and POST for queryDomains; clients POST large
+        // layers arrays that exceed URL limits (honua-server#1825). The POST companion
+        // shares the read-only handler (no CacheOutput, matching the other MapServer POST
+        // companions).
+        endpoints.MapPost("/rest/services/{serviceId}/MapServer/queryDomains",
+                static (HttpContext context, CancellationToken cancellationToken) => HandleQueryDomains(context))
+            .WithDisplayName("Query MapServer Domains (POST)")
+            .WithName("MapServerQueryDomainsPost")
+            .WithSummary("Query coded-value and range domains using POST")
+            .WithDescription("Returns the domains referenced by the requested layers")
+            .WithTags("MapServer")
+            .AllowAnonymous();
+
         endpoints.MapGet("/rest/services/{serviceId}/MapServer/dynamicLayer",
                 static (HttpContext context, CancellationToken cancellationToken) => HandleDynamicLayerResource(context))
             .WithDisplayName("Get MapServer Dynamic Layer")
