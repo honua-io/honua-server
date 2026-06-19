@@ -88,6 +88,55 @@ internal static class ZarrFixtureBuilder
         return objects;
     }
 
+    /// <summary>
+    /// Builds a grouped store with a 3D (time, y, x) variable and optional
+    /// temporal <c>.zattrs</c> keys. When <paramref name="includeTemporalAttrs"/>
+    /// is false the time-axis attributes are omitted so the extractor reports a
+    /// null temporal extent. Chunk payloads are not written (metadata-only fixture).
+    /// </summary>
+    public static Dictionary<string, byte[]> BuildGroupedWithTime(
+        string root,
+        int timeSteps,
+        int rows,
+        int cols,
+        bool includeTemporalAttrs)
+    {
+        var objects = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+        objects[root + "/.zgroup"] = Encoding.UTF8.GetBytes("{\"zarr_format\":2}");
+
+        var attrs = new StringBuilder();
+        attrs.Append('{')
+            .Append("\"variables\":[\"temperature\"],")
+            .Append("\"primary_variable\":\"temperature\",")
+            .Append("\"crs_wkid\":4326,")
+            .Append("\"extent\":[-180,-90,180,90],")
+            .Append("\"x_dimension\":\"x\",")
+            .Append("\"y_dimension\":\"y\",")
+            .Append("\"t_dimension\":\"time\"");
+        if (includeTemporalAttrs)
+        {
+            attrs.Append(",\"t_start\":\"2026-01-01T00:00:00Z\"")
+                .Append(",\"t_end\":\"2026-01-05T00:00:00Z\"")
+                .Append(",\"t_step_seconds\":86400");
+        }
+        attrs.Append('}');
+        objects[root + "/.zattrs"] = Encoding.UTF8.GetBytes(attrs.ToString());
+
+        var arrayRoot = root + "/temperature";
+        var zarray = "{"
+            + "\"chunks\":[" + timeSteps + "," + rows + "," + cols + "],"
+            + "\"compressor\":null,"
+            + "\"dtype\":\"<f4\","
+            + "\"fill_value\":0,"
+            + "\"filters\":null,"
+            + "\"order\":\"C\","
+            + "\"shape\":[" + timeSteps + "," + rows + "," + cols + "],"
+            + "\"zarr_format\":2}";
+        objects[arrayRoot + "/.zarray"] = Encoding.UTF8.GetBytes(zarray);
+        objects[arrayRoot + "/.zattrs"] = Encoding.UTF8.GetBytes("{\"_ARRAY_DIMENSIONS\":[\"time\",\"y\",\"x\"]}");
+        return objects;
+    }
+
     public static Dictionary<string, byte[]> BuildInvalidJson(string root)
     {
         var objects = new Dictionary<string, byte[]>(StringComparer.Ordinal);

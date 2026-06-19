@@ -38,7 +38,7 @@ internal sealed class ZarrCoverageService
     private const long MaxCoverageOutputBytes = 16L * 1024L * 1024L;
 
     private static readonly ImmutableHashSet<string> SupportedQueryParameters =
-        ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, "f", "subset", "properties");
+        ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, "f", "subset", "properties", "datetime");
 
     private static readonly string[] AcceptableMediaTypes = [CoverageJsonContentType, MediaTypes.Json];
 
@@ -217,6 +217,11 @@ internal sealed class ZarrCoverageService
         if (!TryParseSubsets(context.Request.Query["subset"], out var subsets, out var subsetError))
         {
             return StandardErrorHelpers.CreateBadRequest(context, subsetError!);
+        }
+
+        if (!TryApplyTemporalSubset(context, metadata, subsets, out var temporalError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, temporalError!);
         }
 
         if (!ZarrCoverageSubsetPlanner.TryPlan(metadata, variable, subsets, MaxCoverageOutputBytes, out var plan, out var planError))
@@ -418,6 +423,71 @@ internal sealed class ZarrCoverageService
         }
 
         variable = tokens[0];
+        return true;
+    }
+
+    /// <summary>
+    /// Translates an OGC <c>datetime</c> query parameter into a synthetic
+    /// grid-index subset over the store's time dimension and appends it to
+    /// <paramref name="subsets"/>. No-ops when <c>datetime</c> is absent. Requires
+    /// the store to declare a resolvable time axis, and rejects a request that
+    /// also subsets the time dimension explicitly via <c>subset=</c>.
+    /// </summary>
+    private static bool TryApplyTemporalSubset(
+        HttpContext context,
+        ZarrStoreMetadata metadata,
+        List<ZarrCoverageDimensionSubset> subsets,
+        out string? error)
+    {
+        error = null;
+        var datetime = OgcCommonUtilities.GetQueryValue(context.Request, "datetime");
+        if (string.IsNullOrWhiteSpace(datetime))
+        {
+            return true;
+        }
+
+        if (metadata.TemporalDimension is not { } timeDimension || metadata.Temporal is not { } temporal)
+        {
+            error = "The datetime parameter is not supported for this coverage collection because it does not declare a time axis.";
+            return false;
+        }
+
+        foreach (var subset in subsets)
+        {
+            if (string.Equals(subset.Dimension, timeDimension, StringComparison.OrdinalIgnoreCase))
+            {
+                error = $"Specify the time dimension '{timeDimension}' with either datetime or subset, not both.";
+                return false;
+            }
+        }
+
+        if (!OgcTemporalFilterParser.TryParseRange(datetime, out var reqStart, out var reqEnd, out var parseError))
+        {
+            error = parseError ?? "Invalid datetime parameter.";
+            return false;
+        }
+
+        if (reqStart is null && reqEnd is null)
+        {
+            return true;
+        }
+
+        if (!CfTimeAxisIndexer.TryResolveTimeIndexRange(
+                temporal.Start,
+                temporal.End,
+                temporal.StepCount,
+                reqStart,
+                reqEnd,
+                out var low,
+                out var high,
+                out var indexError))
+        {
+            error = indexError ?? "The requested datetime could not be resolved against the coverage time axis.";
+            return false;
+        }
+
+        // OGC subset bounds are closed intervals; the planner expects an exclusive stop.
+        subsets.Add(new ZarrCoverageDimensionSubset(timeDimension, low, high + 1));
         return true;
     }
 

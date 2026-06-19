@@ -44,6 +44,54 @@ internal sealed class PbfQueryFormatter
         _geometryLimits = limitsOptions?.Value?.Geometry ?? new GeometryLimits();
     }
 
+    /// <summary>
+    /// Formats a <c>returnCountOnly=true</c> result as an Esri-compatible PBF response
+    /// (<c>FeatureCollectionPBuffer</c> with the <c>countResult</c> arm of the
+    /// <c>QueryResult</c> oneof), mirroring how the feature path emits protobuf so that
+    /// <c>f=pbf</c> on the count path returns <c>application/x-protobuf</c> rather than JSON.
+    /// </summary>
+    public static (byte[] response, string contentType) FormatCountAsPbf(long count)
+    {
+        // Schema (github.com/Esri/arcgis-pbf FeatureCollection.proto):
+        //   FeatureCollectionPBuffer { string version = 1; QueryResult queryResult = 2; }
+        //   QueryResult { oneof Results { ... CountResult countResult = 2; ... } }
+        //   CountResult { uint64 count = 1; }
+        var countMsg = new ProtobufWriter(16);
+        try
+        {
+            // count is the selected oneof arm, so emit it unconditionally (including 0)
+            // to keep the CountResult message present on the wire.
+            countMsg.WriteUInt64Always(1, (ulong)Math.Max(count, 0));
+
+            var queryResult = new ProtobufWriter(countMsg.Position + 8);
+            try
+            {
+                queryResult.WriteMessage(2, ref countMsg);
+
+                var outer = new ProtobufWriter(queryResult.Position + 16);
+                try
+                {
+                    outer.WriteString(1, PbfVersion);
+                    outer.WriteMessage(2, ref queryResult);
+                    return (outer.ToArrayAndDispose(), "application/x-protobuf");
+                }
+                catch
+                {
+                    outer.Dispose();
+                    throw;
+                }
+            }
+            finally
+            {
+                queryResult.Dispose();
+            }
+        }
+        finally
+        {
+            countMsg.Dispose();
+        }
+    }
+
     public (byte[] response, string contentType) FormatAsPbf(
         QueryResult<Feature> result,
         MetadataV2Resource resource,

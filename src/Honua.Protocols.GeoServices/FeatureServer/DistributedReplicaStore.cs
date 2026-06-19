@@ -30,6 +30,13 @@ internal interface IReplicaStore
 
     Task<ReplicaState?> GetAsync(string replicaId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Lists the registered replicas for a service from the live registry. The <c>/replicas</c>
+    /// enumeration is served from here so it reflects createReplica / unRegisterReplica immediately,
+    /// rather than from a lagging cached snapshot.
+    /// </summary>
+    Task<IReadOnlyList<ReplicaState>> ListByServiceAsync(string serviceId, CancellationToken cancellationToken = default);
+
     Task<bool> RemoveAsync(string replicaId, CancellationToken cancellationToken = default);
 }
 
@@ -192,6 +199,32 @@ internal sealed partial class DistributedReplicaStore : IReplicaStore
         }
 
         return null;
+    }
+
+    public Task<IReadOnlyList<ReplicaState>> ListByServiceAsync(string serviceId, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(serviceId);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // IDistributedCache cannot enumerate keys, so the distributed cache tier can only enumerate the
+        // in-process fallback registry. When a distributed cache is configured the authoritative
+        // enumeration is served by CachingReplicaStore through IReplicaRepository.
+        var now = DateTimeOffset.UtcNow;
+        if (_cache != null)
+        {
+            return Task.FromResult<IReadOnlyList<ReplicaState>>([]);
+        }
+
+        CleanupFallback(now, enforceLimit: false);
+        var matches = _fallback.Values
+            .Where(entry => entry.ExpiresAt > now
+                && string.Equals(entry.Replica.ServiceId, serviceId, StringComparison.OrdinalIgnoreCase))
+            .Select(entry => entry.Replica)
+            .OrderByDescending(replica => replica.CreatedAt)
+            .ThenBy(replica => replica.ReplicaId, StringComparer.Ordinal)
+            .ToArray();
+
+        return Task.FromResult<IReadOnlyList<ReplicaState>>(matches);
     }
 
     public async Task<bool> RemoveAsync(string replicaId, CancellationToken cancellationToken = default)

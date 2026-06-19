@@ -70,6 +70,45 @@ public class ZarrMetadataExtractorTests
     }
 
     [Fact]
+    public async Task ReadMetadataAsync_TemporalAttrsPresent_PopulatesTemporalExtent()
+    {
+        var objects = ZarrFixtureBuilder.BuildGroupedWithTime(
+            root: "stores/timeseries",
+            timeSteps: 5,
+            rows: 8,
+            cols: 8,
+            includeTemporalAttrs: true);
+        var reader = new InMemoryZarrRangeReader(objects);
+        var extractor = new ZarrMetadataExtractor();
+
+        var metadata = await extractor.ReadMetadataAsync(reader, "bucket", "stores/timeseries");
+
+        metadata.TemporalDimension.Should().Be("time");
+        metadata.Temporal.Should().NotBeNull();
+        metadata.Temporal!.Start.Should().Be(new System.DateTimeOffset(2026, 1, 1, 0, 0, 0, System.TimeSpan.Zero));
+        metadata.Temporal.End.Should().Be(new System.DateTimeOffset(2026, 1, 5, 0, 0, 0, System.TimeSpan.Zero));
+        metadata.Temporal.StepCount.Should().Be(5);
+    }
+
+    [Fact]
+    public async Task ReadMetadataAsync_TemporalAttrsAbsent_TemporalExtentNull()
+    {
+        var objects = ZarrFixtureBuilder.BuildGroupedWithTime(
+            root: "stores/timeseries-notime",
+            timeSteps: 5,
+            rows: 8,
+            cols: 8,
+            includeTemporalAttrs: false);
+        var reader = new InMemoryZarrRangeReader(objects);
+        var extractor = new ZarrMetadataExtractor();
+
+        var metadata = await extractor.ReadMetadataAsync(reader, "bucket", "stores/timeseries-notime");
+
+        metadata.TemporalDimension.Should().Be("time");
+        metadata.Temporal.Should().BeNull();
+    }
+
+    [Fact]
     public async Task ReadMetadataAsync_InvalidJson_ThrowsInvalidData()
     {
         var objects = ZarrFixtureBuilder.BuildInvalidJson("stores/broken");
