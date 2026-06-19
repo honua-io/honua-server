@@ -162,6 +162,12 @@ internal sealed class ImageServerRasterMetadataHandler
                     Description = "Selects and reorders output bands by 0-based band index (BandIds).",
                     Help = string.Empty,
                 },
+                new RasterFunctionInfoEntry
+                {
+                    Name = "BandArithmetic",
+                    Description = "Derives an analytic band (NDVI) from two source bands selected by 0-based BandIndexes.",
+                    Help = string.Empty,
+                },
             };
 
             var result = Results.Json(

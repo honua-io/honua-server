@@ -207,6 +207,30 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.GetServiceInfo)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}")]
+    public async Task TaskInfo_KnownTask_EveryParameterIncludesDefaultValueKey()
+    {
+        // Regression (#1775): a missing defaultValue key makes
+        // arcgis.geoprocessing.import_toolbox() raise KeyError('defaultValue').
+        // Esri always emits the key (null when unset) on every parameter.
+        var response = await _client.GetAsync($"/rest/services/{ServiceId}/GPServer/geometry.buffer");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        var parameters = doc.RootElement.GetProperty("parameters").EnumerateArray().ToArray();
+        parameters.Should().NotBeEmpty();
+        foreach (var parameter in parameters)
+        {
+            parameter.TryGetProperty("defaultValue", out _)
+                .Should().BeTrue(
+                    "every GP parameter must carry a defaultValue key (parameter '{0}')",
+                    parameter.GetProperty("name").GetString());
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetServiceInfo)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}")]
     public async Task TaskInfo_Post_KnownTask_ReturnsTaskMetadata()
     {

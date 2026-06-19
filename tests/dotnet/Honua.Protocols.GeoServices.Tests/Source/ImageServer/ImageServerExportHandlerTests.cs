@@ -242,6 +242,95 @@ public class ImageServerExportHandlerTests
 
     [UnitTest]
     [Operation(Operations.Export)]
+    public async Task ExportImageAsync_WithBandArithmeticNdviRenderingRule_ThreadsBandArithmeticOntoQuery()
+    {
+        SetupLayerAndRasters();
+        RasterQuery? capturedQuery = null;
+        _rasterStore.ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                capturedQuery = callInfo.ArgAt<RasterQuery>(2);
+                return CreateTestRasterResult();
+            });
+        _temporaryFileService.StoreTemporaryFileAsync(
+            Arg.Any<byte[]>(),
+            Arg.Any<string>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<ClaimsPrincipal?>(),
+            Arg.Any<CancellationToken>())
+            .Returns("/temp/test.png");
+        _rasterStore.GetExtentAsync(1, 100, Arg.Any<CancellationToken>())
+            .Returns(new RasterExtent { XMin = -180, YMin = -90, XMax = 180, YMax = 90, Srid = 4326 });
+
+        var context = CreateImageServerContext();
+        // 0-based [2,3] -> 1-based visible=3, infrared=4.
+        var request = CreateRequest(
+            renderingRule: "{\"rasterFunction\":\"BandArithmetic\",\"rasterFunctionArguments\":{\"Method\":3,\"BandIndexes\":[2,3]}}");
+        var result = await _handler.ExportImageAsync(context, 1, request);
+
+        result.Should().BeOfType<JsonHttpResult<ExportImageResponse>>();
+        capturedQuery.Should().NotBeNull();
+        capturedQuery!.Value.BandArithmetic.Should().NotBeNull();
+        capturedQuery.Value.BandArithmetic!.Value.VisibleBand.Should().Be(3);
+        capturedQuery.Value.BandArithmetic.Value.InfraredBand.Should().Be(4);
+        capturedQuery.Value.BandArithmetic.Value.Method.Should().Be(RasterBandArithmeticMethod.Ndvi);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExportImageAsync_WithBandArithmeticUnsupportedMethod_ReturnsNotImplemented()
+    {
+        SetupLayerAndRasters();
+
+        var context = CreateImageServerContext();
+        var request = CreateRequest(
+            renderingRule: "{\"rasterFunction\":\"BandArithmetic\",\"rasterFunctionArguments\":{\"Method\":1,\"BandIndexes\":[0,1]}}");
+        var result = await _handler.ExportImageAsync(context, 1, request);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status501NotImplemented);
+        await _rasterStore.DidNotReceive()
+            .ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExportImageAsync_WithBandArithmeticWrongBandCount_ReturnsBadRequest()
+    {
+        SetupLayerAndRasters();
+
+        var context = CreateImageServerContext();
+        var request = CreateRequest(
+            renderingRule: "{\"rasterFunction\":\"BandArithmetic\",\"rasterFunctionArguments\":{\"Method\":3,\"BandIndexes\":[0,1,2]}}");
+        var result = await _handler.ExportImageAsync(context, 1, request);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await _rasterStore.DidNotReceive()
+            .ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExportImageAsync_WithBandArithmeticAndBandIds_ReturnsBadRequest()
+    {
+        SetupLayerAndRasters();
+
+        var context = CreateImageServerContext();
+        // BandArithmetic selects its own source bands; combining with bandIds is ambiguous.
+        var request = CreateRequest(
+            renderingRule: "{\"rasterFunction\":\"BandArithmetic\",\"rasterFunctionArguments\":{\"Method\":3,\"BandIndexes\":[0,1]}}",
+            bandIds: "0,1");
+        var result = await _handler.ExportImageAsync(context, 1, request);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await _rasterStore.DidNotReceive()
+            .ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
     public async Task ExportImageAsync_WithExtractBandByName_ReturnsNotImplemented()
     {
         SetupLayerAndRasters();

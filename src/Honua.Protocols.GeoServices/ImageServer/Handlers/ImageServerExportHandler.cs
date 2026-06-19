@@ -274,12 +274,14 @@ internal sealed class ImageServerExportHandler
         out RasterColormap? colormap,
         out RasterClipRegion? clipRegion,
         out int[]? bands,
+        out RasterBandArithmetic? bandArithmetic,
         out ExportParameterParseError error)
     {
         stretch = null;
         colormap = null;
         clipRegion = null;
         bands = null;
+        bandArithmetic = null;
         error = default;
 
         RasterFunctionDocument document;
@@ -307,6 +309,7 @@ internal sealed class ImageServerExportHandler
         colormap = mapping.Colormap;
         clipRegion = mapping.ClipRegion;
         bands = mapping.Bands;
+        bandArithmetic = mapping.BandArithmetic;
         return true;
     }
 
@@ -324,8 +327,9 @@ internal sealed class ImageServerExportHandler
             RasterColormap? renderingColormap = null;
             RasterClipRegion? renderingClip = null;
             int[]? renderingBands = null;
+            RasterBandArithmetic? renderingBandArithmetic = null;
             if (!string.IsNullOrWhiteSpace(request.RenderingRule) &&
-                !TryMapRenderingRule(request.RenderingRule, out renderingStretch, out renderingColormap, out renderingClip, out renderingBands, out error))
+                !TryMapRenderingRule(request.RenderingRule, out renderingStretch, out renderingColormap, out renderingClip, out renderingBands, out renderingBandArithmetic, out error))
             {
                 return false;
             }
@@ -397,6 +401,16 @@ internal sealed class ImageServerExportHandler
             // matching ArcGIS clients that author band selection through the function chain.
             var effectiveBands = renderingBands ?? bands;
 
+            // BandArithmetic selects its own two source bands by index, so it cannot be
+            // combined with an explicit band selection/order (ExtractBand or bandIds) without
+            // an ambiguous band layout. Reject the conflict with a clean 400.
+            if (renderingBandArithmetic is not null && effectiveBands is { Length: > 0 })
+            {
+                error = new ExportParameterParseError(
+                    "BandArithmetic cannot be combined with an explicit band selection (ExtractBand or bandIds).");
+                return false;
+            }
+
             query = new RasterQuery
             {
                 OutputFormat = outputFormat,
@@ -406,6 +420,7 @@ internal sealed class ImageServerExportHandler
                 OutputHeight = requestedHeight,
                 TiffCompression = tiffCompression,
                 Bands = effectiveBands,
+                BandArithmetic = renderingBandArithmetic,
                 Stretch = renderingStretch,
                 Colormap = renderingColormap,
                 RenderingClip = renderingClip,

@@ -20,6 +20,9 @@ public static class ServiceProtocols
     /// <summary>GeoServices GPServer protocol.</summary>
     public const string GPServer = "GPServer";
 
+    /// <summary>GeoServices VectorTileServer protocol.</summary>
+    public const string VectorTileServer = "VectorTileServer";
+
     /// <summary>OGC API Features protocol.</summary>
     public const string OgcFeatures = "OgcFeatures";
 
@@ -68,6 +71,7 @@ public static class ServiceProtocols
         MapServer,
         ImageServer,
         GPServer,
+        VectorTileServer,
         OgcFeatures,
         OgcApiMaps,
         OgcApiCoverages,
@@ -156,6 +160,11 @@ public static class ServiceProtocols
         if (string.Equals(protocol, ImageServer, StringComparison.OrdinalIgnoreCase))
         {
             return publicationType == MetadataV2PublicationType.EsriImageLayer;
+        }
+
+        if (string.Equals(protocol, VectorTileServer, StringComparison.OrdinalIgnoreCase))
+        {
+            return publicationType == MetadataV2PublicationType.EsriVectorTileLayer;
         }
 
         if (string.Equals(protocol, OData, StringComparison.OrdinalIgnoreCase))

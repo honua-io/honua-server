@@ -285,6 +285,9 @@ public static class HonuaTelemetry
         /// <summary>GeoServices Image Server REST API.</summary>
         public const string ImageServer = "ImageServer";
 
+        /// <summary>GeoServices VectorTileServer REST API.</summary>
+        public const string VectorTileServer = "VectorTileServer";
+
         /// <summary>OData v4 protocol.</summary>
         public const string OData = "OData";
 
