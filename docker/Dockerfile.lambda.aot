@@ -35,6 +35,9 @@ COPY src/Honua.Server/*.csproj src/Honua.Server/
 COPY src/Honua.DuckDB/*.csproj src/Honua.DuckDB/
 COPY src/Honua.SqlServer/*.csproj src/Honua.SqlServer/
 COPY src/Honua.MySql/*.csproj src/Honua.MySql/
+COPY src/Honua.Redshift/*.csproj src/Honua.Redshift/
+COPY src/Honua.Snowflake/*.csproj src/Honua.Snowflake/
+COPY src/Honua.Databricks/*.csproj src/Honua.Databricks/
 COPY src/Honua.ArcGisRest/*.csproj src/Honua.ArcGisRest/
 COPY src/Honua.Oracle/*.csproj src/Honua.Oracle/
 COPY src/Honua.Hosting/*.csproj src/Honua.Hosting/
@@ -112,7 +115,8 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
       -p:OptimizationPreference=Speed \
       -p:IlcOptimizationPreference=Speed \
       -p:IlcSingleThreaded="$ILC_SINGLE_THREADED" \
-      -p:HonuaSkipOracleForAotVerification=true && \
+      -p:HonuaSkipOracleForAotVerification=true \
+      -p:HonuaSkipSnowflakeForAotVerification=true && \
     if [ "$HONUA_INCLUDE_STAC_OPS_DEMO" = "true" ]; then \
       dotnet publish samples/Honua.StacOpsDemo/Honua.StacOpsDemo.csproj \
         --configuration "$CONFIGURATION" --no-restore --output /tmp/stac-ops-demo && \
