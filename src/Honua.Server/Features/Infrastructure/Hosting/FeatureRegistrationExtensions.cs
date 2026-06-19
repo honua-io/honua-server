@@ -145,6 +145,15 @@ internal static class FeatureRegistrationExtensions
         // REST read surface (#1371 → #1243).
         services.AddPortalItemProjection();
         services.AddStudioPackageLifecycle();
+        // Server-side deliverable export: render a Studio map/dashboard/report content version to a
+        // shareable PDF/PNG. Reuses the SkiaSharp raster/font surface (the headless Lambda
+        // fontconfig/freetype infra from #1728) and the canonical Studio lifecycle store; PDFs are
+        // composed via SkiaSharp's SKDocument (no new PDF dependency).
+        // Scoped (not Singleton): the exporter consumes the scoped IStudioPackageLifecycleService,
+        // so a singleton registration is a captive dependency that fails DI scope validation at
+        // host build. It is resolved per-request via [FromServices] on the export endpoint.
+        services.TryAddScoped<Honua.Server.Features.Studio.Export.IStudioDeliverableExporter,
+            Honua.Server.Features.Studio.Export.StudioDeliverableExporter>();
         // NL -> map.package generation. Reuses the workflow-generation provider config + chat plumbing
         // (registered by AddWorkflowGeneration above) and a self-contained structural validator (no
         // live metadata DB) so generation never depends on layer/style/source binding (deferred to
