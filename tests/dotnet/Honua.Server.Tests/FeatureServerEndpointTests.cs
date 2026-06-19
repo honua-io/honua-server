@@ -1039,6 +1039,80 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
             ?? throw new Xunit.Sdk.XunitException("countResult.count (field 1) was not present");
     }
 
+    // Decodes the FeatureCollectionPBuffer ids-only response (#1824):
+    //   QueryResult { ObjectIdsResult idsResult = 3; }
+    //   ObjectIdsResult { string objectIdFieldName = 1; repeated uint64 objectIds = 3 [packed]; }
+    private static (string? FieldName, List<ulong> Ids) DecodePbfIds(byte[] bytes)
+    {
+        var queryResult = ReadMessageField(bytes, 2);
+        queryResult.Should().NotBeNull("the outer message must carry queryResult (field 2)");
+        var idsResult = ReadMessageField(queryResult!, 3);
+        idsResult.Should().NotBeNull("queryResult must carry the idsResult arm (field 3)");
+
+        string? fieldName = ReadStringField(idsResult!, 1);
+        var packed = ReadMessageField(idsResult!, 3); // packed repeated uint64 is length-delimited
+        var ids = new List<ulong>();
+        if (packed != null)
+        {
+            int pos = 0;
+            while (pos < packed.Length)
+            {
+                ids.Add(ReadVarint(packed, ref pos));
+            }
+        }
+
+        return (fieldName, ids);
+    }
+
+    // Decodes the FeatureCollectionPBuffer extent-only response (#1824):
+    //   QueryResult { ExtentCountResult extentCountResult = 4; }
+    //   ExtentCountResult { Envelope extent = 1; uint64 count = 2; }
+    //   Envelope { double XMin=1; YMin=2; XMax=3; YMax=4; SpatialReference SpatialReference=5; }
+    private static (double Xmin, double Ymin, double Xmax, double Ymax, uint Wkid, ulong Count) DecodePbfExtent(byte[] bytes)
+    {
+        var queryResult = ReadMessageField(bytes, 2);
+        queryResult.Should().NotBeNull("the outer message must carry queryResult (field 2)");
+        var extentCount = ReadMessageField(queryResult!, 4);
+        extentCount.Should().NotBeNull("queryResult must carry the extentCountResult arm (field 4)");
+        var envelope = ReadMessageField(extentCount!, 1);
+        envelope.Should().NotBeNull("extentCountResult must carry the envelope (field 1)");
+
+        var xmin = ReadDoubleField(envelope!, 1) ?? throw new Xunit.Sdk.XunitException("envelope.XMin missing");
+        var ymin = ReadDoubleField(envelope!, 2) ?? throw new Xunit.Sdk.XunitException("envelope.YMin missing");
+        var xmax = ReadDoubleField(envelope!, 3) ?? throw new Xunit.Sdk.XunitException("envelope.XMax missing");
+        var ymax = ReadDoubleField(envelope!, 4) ?? throw new Xunit.Sdk.XunitException("envelope.YMax missing");
+        var sr = ReadMessageField(envelope!, 5);
+        uint wkid = sr != null ? (uint)(ReadVarintField(sr, 1) ?? 0) : 0;
+        ulong count = ReadVarintField(extentCount!, 2) ?? 0;
+        return (xmin, ymin, xmax, ymax, wkid, count);
+    }
+
+    private static string? ReadStringField(byte[] data, int fieldNumber)
+    {
+        var raw = ReadMessageField(data, fieldNumber);
+        return raw == null ? null : Encoding.UTF8.GetString(raw);
+    }
+
+    private static double? ReadDoubleField(byte[] data, int fieldNumber)
+    {
+        int pos = 0;
+        while (pos < data.Length)
+        {
+            ulong tag = ReadVarint(data, ref pos);
+            int field = (int)(tag >> 3);
+            int wireType = (int)(tag & 0x7);
+            if (wireType == 1 && field == fieldNumber)
+            {
+                double value = BitConverter.ToDouble(data, pos);
+                return value;
+            }
+
+            SkipField(data, ref pos, wireType);
+        }
+
+        return null;
+    }
+
     private static byte[]? ReadMessageField(byte[] data, int fieldNumber)
     {
         int pos = 0;
@@ -1124,6 +1198,85 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         }
 
         return result;
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query?returnIdsOnly=true&f=pbf")]
+    public async Task QueryFeatures_WithReturnIdsOnlyAndPbf_ReturnsProtobufIds()
+    {
+        // Regression (#1824): returnIdsOnly ignored f=pbf and returned JSON. It must emit the
+        // ObjectIdsResult arm of the FeatureCollectionPBuffer QueryResult oneof with
+        // Content-Type application/x-protobuf, mirroring the count-pbf path (#1784).
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?where=1%3D1&returnIdsOnly=true&f=pbf");
+
+        response.Be200Ok();
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/x-protobuf");
+
+        var bytes = await response.Content.ReadAsByteArrayAsync();
+        bytes.Should().NotBeEmpty();
+        var (fieldName, ids) = DecodePbfIds(bytes);
+        fieldName.Should().NotBeNullOrEmpty();
+        ids.Should().HaveCount(5);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query?returnExtentOnly=true&f=pbf")]
+    public async Task QueryFeatures_WithReturnExtentOnlyAndPbf_ReturnsProtobufExtent()
+    {
+        // Regression (#1824): returnExtentOnly ignored f=pbf and returned JSON. It must emit the
+        // ExtentCountResult arm of the FeatureCollectionPBuffer QueryResult oneof with
+        // Content-Type application/x-protobuf.
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?where=1%3D1&returnExtentOnly=true&f=pbf");
+
+        response.Be200Ok();
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/x-protobuf");
+
+        var bytes = await response.Content.ReadAsByteArrayAsync();
+        bytes.Should().NotBeEmpty();
+        var (xmin, ymin, xmax, ymax, wkid, count) = DecodePbfExtent(bytes);
+        xmin.Should().BeLessThanOrEqualTo(xmax);
+        ymin.Should().BeLessThanOrEqualTo(ymax);
+        wkid.Should().BeGreaterThan(0u);
+        count.Should().Be(5);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query?returnCountOnly=true&f=geojson")]
+    public async Task QueryFeatures_WithReturnCountOnlyAndGeoJson_ReturnsBadRequest()
+    {
+        // Regression (#1824): geojson on the secondary modes was silently downgraded to an
+        // Esri-JSON 200; it must be a clean 400 instead.
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?where=1%3D1&returnCountOnly=true&f=geojson");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query?returnIdsOnly=true&f=geojson")]
+    public async Task QueryFeatures_WithReturnIdsOnlyAndGeoJson_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?where=1%3D1&returnIdsOnly=true&f=geojson");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query?returnExtentOnly=true&f=geojson")]
+    public async Task QueryFeatures_WithReturnExtentOnlyAndGeoJson_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?where=1%3D1&returnExtentOnly=true&f=geojson");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [IntegrationTest]

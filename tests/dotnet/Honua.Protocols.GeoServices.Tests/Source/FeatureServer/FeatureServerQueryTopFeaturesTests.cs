@@ -89,6 +89,30 @@ public sealed class FeatureServerQueryTopFeaturesTests : IClassFixture<WebAppFix
     [IntegrationTest]
     [Operation(Operations.QueryTopFeatures)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryTopFeatures")]
+    public async Task QueryTopFeatures_WithPbf_ReturnsProtobuf()
+    {
+        // Regression (#1824): queryTopFeatures rejected f=pbf ("Supported formats: json,
+        // pjson"). ArcGIS supports pbf here, so it must return application/x-protobuf.
+        var topFilter = JsonSerializer.Serialize(new
+        {
+            groupByFields = "category",
+            topCount = 2,
+            orderByFields = "objectid desc"
+        });
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryTopFeatures?topFilter={Uri.EscapeDataString(topFilter)}&f=pbf");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/x-protobuf");
+
+        var bytes = await response.Content.ReadAsByteArrayAsync();
+        bytes.Should().NotBeEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryTopFeatures)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryTopFeatures")]
     public async Task QueryTopFeatures_MissingTopFilter_ReturnsBadRequest()
     {
         var response = await _fixture.Client.GetAsync(

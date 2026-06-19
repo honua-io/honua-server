@@ -82,12 +82,15 @@ internal static partial class FeatureServerEndpoints
         activity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId);
 
         var requestedFormat = GetValueString(values, "f");
-        if (!TryValidateOutputFormat(requestedFormat, JsonOnlyFormats, out _, out var formatError))
+        if (!TryValidateOutputFormat(requestedFormat, TopFeaturesFormats, out var topFeaturesFormat, out var formatError))
         {
             return StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid query parameters",
                 [formatError ?? "Output format is not supported."]);
         }
+
+        var topFeaturesIsPbf = string.Equals(topFeaturesFormat, "pbf", StringComparison.OrdinalIgnoreCase);
+        var topFeaturesIsPretty = string.Equals(requestedFormat?.Trim(), "pjson", StringComparison.OrdinalIgnoreCase);
 
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
@@ -169,10 +172,36 @@ internal static partial class FeatureServerEndpoints
         // SDK with a null total and a TypeError in its paginator.
         if (returnCountOnly)
         {
-            return Results.Json(
+            if (topFeaturesIsPbf)
+            {
+                var (countPayload, countContentType) = PbfQueryFormatter.FormatCountAsPbf(result.Items.Length);
+                return Results.Bytes(countPayload, countContentType);
+            }
+
+            return CreateTopFeaturesJsonResult(
                 new QueryResponse { Count = result.Items.Length, Features = null },
-                FeatureServerJsonContext.Default.QueryResponse,
-                contentType: "application/json");
+                topFeaturesIsPretty);
+        }
+
+        // f=pbf returns the FeatureResult arm of the FeatureCollectionPBuffer; ArcGIS
+        // queryTopFeatures supports pbf, so emit protobuf rather than rejecting it (#1824).
+        if (topFeaturesIsPbf)
+        {
+            var pbfFormatter = context.RequestServices.GetRequiredService<PbfQueryFormatter>();
+            var topSrid = resource.ReadSrid();
+            var (pbfPayload, pbfContentType) = pbfFormatter.FormatAsPbf(
+                result,
+                resource,
+                returnGeometry: true,
+                outputSrid: topSrid,
+                returnZ: false,
+                returnM: false,
+                geometryPrecision: null,
+                maxAllowableOffset: null,
+                outFields: query.OutFields.HasValue && !query.OutFields.Value.IsDefaultOrEmpty
+                    ? [.. query.OutFields.Value]
+                    : null);
+            return Results.Bytes(pbfPayload, pbfContentType);
         }
 
         var responseFeatures = result.Items.Select(feature => new GeoServicesFeature
@@ -200,7 +229,23 @@ internal static partial class FeatureServerEndpoints
             ExceededTransferLimit = result.HasMoreResults
         };
 
-        return Results.Json(response, FeatureServerJsonContext.Default.QueryResponse, contentType: "application/json");
+        return CreateTopFeaturesJsonResult(response, topFeaturesIsPretty);
+    }
+
+    /// <summary>
+    /// Serializes a queryTopFeatures JSON response, emitting indented JSON for
+    /// <c>f=pjson</c> and compact JSON otherwise (#1824).
+    /// </summary>
+    private static IResult CreateTopFeaturesJsonResult(QueryResponse response, bool pretty)
+    {
+        if (!pretty)
+        {
+            return Results.Json(response, FeatureServerJsonContext.Default.QueryResponse, contentType: "application/json");
+        }
+
+        var prettyPayload = JsonReindenter.ToIndentedUtf8Bytes(
+            System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(response, FeatureServerJsonContext.Default.QueryResponse));
+        return Results.Bytes(prettyPayload, "application/json");
     }
 
     private static bool TryParseTopFilter(string json, out TopFilter topFilter, out string? error)
