@@ -90,3 +90,32 @@ internal sealed record MultidimensionalCoverageRegistrationResponse
     /// <summary>Registration timestamp.</summary>
     public DateTimeOffset CreatedAt { get; init; }
 }
+
+/// <summary>
+/// Response for an asynchronous multidimensional-coverage metadata scan job
+/// (ADR-0039 Path B). Returned by the refresh endpoint (202) and the scan-job
+/// status endpoint.
+/// </summary>
+internal sealed record MultidimensionalCoverageScanJobResponse
+{
+    /// <summary>Stable scan job identifier.</summary>
+    public string JobId { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Job status: <c>queued</c>, <c>provisioning</c>, <c>running</c>,
+    /// <c>succeeded</c>, <c>failed</c>, or <c>cancelled</c>.
+    /// </summary>
+    public string Status { get; init; } = string.Empty;
+
+    /// <summary>Relative URL to poll for job status.</summary>
+    public string StatusUrl { get; init; } = string.Empty;
+
+    /// <summary>Failure detail when the job failed; null otherwise.</summary>
+    public string? Error { get; init; }
+
+    /// <summary>
+    /// The refreshed coverage registration, populated once the scan has succeeded
+    /// and its metadata has been materialized. Null while pending.
+    /// </summary>
+    public MultidimensionalCoverageRegistrationResponse? Coverage { get; init; }
+}

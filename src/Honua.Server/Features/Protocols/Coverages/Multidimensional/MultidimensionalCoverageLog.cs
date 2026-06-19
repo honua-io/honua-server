@@ -56,4 +56,10 @@ internal static partial class MultidimensionalCoverageLog
         Level = LogLevel.Information,
         Message = "Multidim coverage {RegistrationId} metadata scan completed: {VariableCount} variables, SRID {Srid}")]
     public static partial void MetadataScanCompleted(ILogger logger, long registrationId, int variableCount, int srid);
+
+    [LoggerMessage(
+        EventId = 8006,
+        Level = LogLevel.Information,
+        Message = "Multidim coverage {RegistrationId} metadata scan dispatched as job {JobId}")]
+    public static partial void ScanJobSubmitted(ILogger logger, long registrationId, string jobId);
 }

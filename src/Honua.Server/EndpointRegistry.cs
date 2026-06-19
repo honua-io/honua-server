@@ -1221,6 +1221,7 @@ public static class EndpointRegistry
         new("GET", "/api/v1/admin/multidim-coverages/{id}"),
         new("DELETE", "/api/v1/admin/multidim-coverages/{id}"),
         new("POST", "/api/v1/admin/multidim-coverages/{id}/refresh"),
+        new("GET", "/api/v1/admin/multidim-coverages/jobs/{jobId}"),
     ];
 }
 

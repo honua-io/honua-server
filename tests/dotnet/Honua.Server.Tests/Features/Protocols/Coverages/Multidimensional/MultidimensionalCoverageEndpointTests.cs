@@ -3,19 +3,28 @@
 
 using System.Net;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Honua.TestKit.Helpers;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.Coverages.Multidimensional;
 
 /// <summary>
 /// Integration tests for the cloud-optimized HDF5 / NetCDF4 coverage admin
-/// surface. The reader is intentionally not enabled in this MVP (see
-/// ADR-0039); refresh is expected to return 501 with a stable problem code.
+/// surface. Per ADR-0039 Path B, a metadata refresh dispatches a GDAL worker job
+/// (202 + status URL); the status endpoint materializes the scanned metadata when
+/// the job succeeds. The job substrate is replaced with in-memory recording
+/// doubles so the async contract is exercised without Redis or the GDAL worker.
 /// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Cog)]
@@ -24,8 +33,23 @@ public class MultidimensionalCoverageEndpointTests : IAsyncLifetime
 {
     private const string Route = "/api/v1/admin/multidim-coverages";
 
-    private readonly WebAppFixture _fixture = new();
+    private readonly RecordingJobStore _jobStore = new();
+    private readonly RecordingJobQueue _jobQueue = new();
+    private readonly WebAppFixture _fixture;
     private HttpClient _client = null!;
+
+    public MultidimensionalCoverageEndpointTests()
+    {
+        _fixture = new WebAppFixture()
+            .WithTestLicense(HonuaEdition.Pro)
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IExecutionJobStore>();
+                services.RemoveAll<IJobQueue>();
+                services.AddSingleton<IExecutionJobStore>(_jobStore);
+                services.AddSingleton<IJobQueue>(_jobQueue);
+            });
+    }
 
     public async Task InitializeAsync()
     {
@@ -211,35 +235,21 @@ public class MultidimensionalCoverageEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/multidim-coverages/{id}/refresh")]
-    public async Task Refresh_WithoutCloudCredentials_RejectsClientError()
+    public async Task Refresh_DispatchesScanJob_Returns202()
     {
-        // In the test environment no AwsS3 / AzureBlob range reader is wired
-        // (no FileStorage credentials in test config). Refresh must reject
-        // with a client error before any reader is invoked. The not-enabled
-        // 501 path is exercised by NotEnabledMultidimensionalCoverageMetadataReaderTests
-        // in Honua.Core.Tests.
-        var request = new
-        {
-            layerId = 1,
-            name = "refresh-no-credentials",
-            format = "NetCdf4",
-            provider = "AwsS3",
-            bucket = "noaa-sst",
-            objectKey = "ghrsst/refresh-no-credentials.nc4",
-            variables = Array.Empty<string>()
-        };
-
-        var createResponse = await _client.PostAsJsonAsync(Route, request);
-        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
-
-        using var createDoc = JsonDocument.Parse(await createResponse.Content.ReadAsStringAsync());
-        var id = createDoc.RootElement.GetProperty("id").GetInt64();
-
+        var id = await RegisterAsync("refresh-dispatch", "ghrsst/refresh-dispatch.nc4");
         try
         {
             var refreshResponse = await _client.PostAsync($"{Route}/{id}/refresh", null);
 
-            ((int)refreshResponse.StatusCode).Should().BeInRange(400, 499);
+            refreshResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);
+            using var doc = JsonDocument.Parse(await refreshResponse.Content.ReadAsStringAsync());
+            var jobId = doc.RootElement.GetProperty("jobId").GetString();
+            jobId.Should().NotBeNullOrEmpty();
+            doc.RootElement.GetProperty("status").GetString().Should().Be("queued");
+            doc.RootElement.GetProperty("statusUrl").GetString().Should().Be($"{Route}/jobs/{jobId}");
+
+            _jobQueue.Enqueued.Should().Contain(jobId!);
         }
         finally
         {
@@ -254,5 +264,159 @@ public class MultidimensionalCoverageEndpointTests : IAsyncLifetime
         var response = await _client.PostAsync("/api/v1/admin/multidim-coverages/99999/refresh", null);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/multidim-coverages/jobs/{jobId}")]
+    public async Task ScanJobStatus_WithNonexistentJob_Returns404()
+    {
+        var response = await _client.GetAsync($"{Route}/jobs/covscan-does-not-exist");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/multidim-coverages/jobs/{jobId}")]
+    public async Task ScanJobStatus_SucceededJob_MaterializesMetadata()
+    {
+        var id = await RegisterAsync("scan-materialize", "ghrsst/scan-materialize.nc4");
+        try
+        {
+            // Dispatch creates the job in the recording store (Queued).
+            var refreshResponse = await _client.PostAsync($"{Route}/{id}/refresh", null);
+            refreshResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);
+            using var refreshDoc = JsonDocument.Parse(await refreshResponse.Content.ReadAsStringAsync());
+            var jobId = refreshDoc.RootElement.GetProperty("jobId").GetString()!;
+
+            // Simulate the GDAL worker completing the job with a gdalmdiminfo artifact.
+            var job = await _jobStore.GetAsync(jobId);
+            job.Should().NotBeNull();
+            var artifact = "data:application/json;base64," +
+                Convert.ToBase64String(Encoding.UTF8.GetBytes(GdalMdimInfoJson));
+            await _jobStore.SetAsync(job! with
+            {
+                Status = ExecutionJobStatus.Succeeded,
+                CompletedAt = DateTimeOffset.UtcNow,
+                ArtifactReferences = new[] { artifact },
+            });
+
+            var statusResponse = await _client.GetAsync($"{Route}/jobs/{jobId}");
+            statusResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var statusDoc = JsonDocument.Parse(await statusResponse.Content.ReadAsStringAsync());
+            statusDoc.RootElement.GetProperty("status").GetString().Should().Be("succeeded");
+            statusDoc.RootElement.GetProperty("coverage").GetProperty("variableCount").GetInt32().Should().Be(1);
+
+            // The registration is now materialized for subsequent reads.
+            using var getDoc = JsonDocument.Parse(await (await _client.GetAsync($"{Route}/{id}")).Content.ReadAsStringAsync());
+            getDoc.RootElement.GetProperty("variableCount").GetInt32().Should().Be(1);
+        }
+        finally
+        {
+            await _client.DeleteAsync($"{Route}/{id}");
+        }
+    }
+
+    private const string GdalMdimInfoJson =
+        """{"type":"group","driver":"netCDF","name":"/","arrays":{"sst":{"datatype":"Float32","dimensions":["/time"],"dimension_size":[3],"block_size":[1],"unit":"degC"}}}""";
+
+    private async Task<long> RegisterAsync(string name, string objectKey)
+    {
+        var request = new
+        {
+            layerId = 1,
+            name,
+            format = "NetCdf4",
+            provider = "AwsS3",
+            bucket = "noaa-sst",
+            objectKey,
+            variables = Array.Empty<string>()
+        };
+
+        var createResponse = await _client.PostAsJsonAsync(Route, request);
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        using var createDoc = JsonDocument.Parse(await createResponse.Content.ReadAsStringAsync());
+        return createDoc.RootElement.GetProperty("id").GetInt64();
+    }
+
+    private sealed class RecordingJobStore : IExecutionJobStore
+    {
+        private readonly Dictionary<string, ExecutionJobRecord> _jobs = new(StringComparer.Ordinal);
+
+        public Task<bool> TryAcquireLeaseAsync(string operationId, string ownerId, TimeSpan leaseDuration, CancellationToken cancellationToken = default)
+            => Task.FromResult(true);
+
+        public Task<bool> RenewLeaseAsync(string operationId, string ownerId, TimeSpan leaseDuration, CancellationToken cancellationToken = default)
+            => Task.FromResult(true);
+
+        public Task ReleaseLeaseAsync(string operationId, string ownerId, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task<bool> TryCreateAsync(ExecutionJobRecord job, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
+        {
+            if (_jobs.ContainsKey(job.OperationId))
+            {
+                return Task.FromResult(false);
+            }
+
+            _jobs[job.OperationId] = job;
+            return Task.FromResult(true);
+        }
+
+        public Task<ExecutionJobRecord?> GetAsync(string operationId, CancellationToken cancellationToken = default)
+            => Task.FromResult(_jobs.TryGetValue(operationId, out var job) ? job : null);
+
+        public Task SetAsync(ExecutionJobRecord job, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
+        {
+            _jobs[job.OperationId] = job;
+            return Task.CompletedTask;
+        }
+
+        public Task<bool> TrySetAsync(ExecutionJobRecord job, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
+        {
+            _jobs[job.OperationId] = job;
+            return Task.FromResult(true);
+        }
+
+        public Task<ExecutionJobPage> QueryAsync(ExecutionJobQuery query, CancellationToken cancellationToken = default)
+            => Task.FromResult(new ExecutionJobPage
+            {
+                Items = _jobs.Values
+                    .Where(job => !query.Kind.HasValue || job.Spec.Kind == query.Kind.Value)
+                    .OrderByDescending(job => job.CreatedAt)
+                    .Take(query.Limit)
+                    .ToArray(),
+                NextCursor = null
+            });
+
+        public Task<IReadOnlyList<ExecutionJobRecord>> ListActiveAsync(ExecutionJobKind? kind = null, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<ExecutionJobRecord>>(
+                _jobs.Values.Where(job => !kind.HasValue || job.Spec.Kind == kind.Value).ToArray());
+    }
+
+    private sealed class RecordingJobQueue : IJobQueue
+    {
+        public List<string> Enqueued { get; } = [];
+
+        public Task EnqueueAsync(string operationId, OperationPriority priority = OperationPriority.Normal, CancellationToken cancellationToken = default)
+        {
+            Enqueued.Add(operationId);
+            return Task.CompletedTask;
+        }
+
+        public Task<string?> TryClaimAsync(
+            string workerId,
+            IReadOnlySet<ExecutionJobKind>? acceptedKinds = null,
+            IReadOnlySet<string>? acceptedRuntimeProfiles = null,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<string?>(null);
+
+        public Task RequeueAsync(string operationId, OperationPriority priority = OperationPriority.Normal, TimeSpan? visibleAfter = null, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task RemoveAsync(string operationId, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task<long> GetQueueDepthAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<long>(0);
     }
 }
