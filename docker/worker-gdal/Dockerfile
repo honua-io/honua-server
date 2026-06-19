@@ -84,9 +84,11 @@ RUN apt-get update \
  && rm -f /tmp/dotnet-install.sh
 
 # Sanity check: the GDAL tools the worker shells out to must be present, and the
-# NetCDF driver (multidimensional coverage reader) must be compiled in.
+# NetCDF + GRIB drivers (multidimensional coverage convert-to-Zarr path) must be
+# compiled in. The ubuntu-full base ships both; this is a build-time guard.
 RUN command -v gdalwarp && command -v ogr2ogr && command -v gdalmdiminfo \
- && gdalinfo --formats | grep -qi netCDF
+ && gdalinfo --formats | grep -qi netCDF \
+ && gdalinfo --formats | grep -qi GRIB
 
 # Non-root runtime user.
 RUN groupadd --gid 1001 --system honua \
