@@ -183,3 +183,40 @@ Map these localizable orphans to owning shards (mirroring the `_comment`'s
 `Import/Features/Migration/` still escalated despite the Migration shard mapping.
 Keep truly-shared infra (`Program.cs`, `Startup/`, shared `FeatureStore` reader)
 escalating — those legitimately need broad runs.
+
+## 5. CI minutes review (2026-06, ~159k Actions-min/mo on honua-server)
+
+Attribution from the GitHub billing usage API + per-run job timing (sample
+window Jun 6–18, n=321 `CI` runs). Numbers are billable Linux-runner minutes.
+
+| Finding | Evidence | Lever |
+|---|---|---|
+| **CI is ~essentially all the cost.** | honua-server burned **158,706** "Actions Linux" min in June (next repo: honua-console at 1,286). macOS/Windows multipliers are negligible (188 + 93 min org-wide). | Everything below is the `CI` workflow. |
+| **A full `CI` run = ~449 billable min across ~50 jobs.** | Measured mean over 19 full runs (range 420–550). Dominated by `.NET Foundation Tests` (~22m) + `Postgres Compatibility` (~17–19m) + the 30-shard `Server Tests` matrix. | — |
+| **~48% of PRs still run the FULL matrix.** | 146 of 304 PR `CI` runs were ≥40 jobs (full `run_all`, 30 shards); the other ~50% ran the scoped ~mid lane (~75 min). Affected-scoping works (docs PRs hit ~0 min, verified on #1736) but most *source* PRs escalate. | Root cause: `unmapped_source_run_all_prefixes` + `infrastructure_paths` in `ci-shards.json` include the most-edited dirs (`src/Honua.Core/`, `src/Honua.Postgres/`, `src/Honua.Server/`, `Core/Models`, `Core/Queries`, `Postgres/Migrations`). Any source change those don't map to a shard's explicit `paths` → `run_all`. Tightening this is the single biggest minute lever; **needs sign-off** (under-testing risk). |
+| **Per-shard fixed build overhead.** | On small shards the `dotnet restore`+`Build server test binaries` step is ~3 min for ~0–4 min of actual testing (Performance 87% overhead, MCP 61%, STAC 40%). 30 shards each rebuild from source (`enable-build-cache` defaults to `false`). | Consolidate the ~8–10 sub-6-min shards into ~3–4; or enable the cross-job binary cache for shards. Wall-clock is set by `Core`/`FeatureServer Endpoints` (long pole), so consolidating tiny shards costs ~0 wall-clock. **Coordinate with in-flight shard work (#1724 follow-ups).** |
+| **Merge-queue lane duplicates full CI per queued PR (~428 min each).** | A `merge_group` event is non-`pull_request` → routes down the full lane unconditionally. The PR already ran (selective or full) on `pull_request`; the queue re-runs full. Currently low volume (6 `merge_group` vs 124 direct trunk pushes in-window), so this is latent, not yet dominant — but each queued PR pays full CI twice. | If queue volume grows, scope the `merge_group` lane to the union of its batched PRs' affected shards instead of `run_all`. |
+| **`ALLGREEN` grouping + 60-min check timeout amplifies queue stalls.** | Ruleset: `max_entries_to_build=5`, `grouping_strategy=ALLGREEN`, `check_response_timeout_minutes=60`. One failing PR in a batch invalidates the whole group → full CI re-runs on the smaller group. A hung shard can hold the group for up to 60 min. | Keep batching; consider lowering `check_response_timeout` once shard timeouts are tightened, and ensure no shard's `timeout_minutes` exceeds it. |
+| **Gate fragility: template-check failure skipped ALL validation and published a RED CI Gate.** | Verified on docs PR #1736: `pr-template-check` failed → `pr-readiness`/`changes`/every build+test job SKIPPED → `CI Gate` FAILED with 0 min of real validation. Documented in CLAUDE.md as the #1 agent-PR failure (#1736/#1737 needed manual re-trigger). | **Fixed in this PR** (§ below): decouple `pr-readiness`/build graph from `pr-template-check` so real validation runs; template-check stays a first-class job feeding CI Gate (a template failure still fails the gate, but now alongside real results). |
+
+### Already-good (no action)
+- Concurrency hygiene is solid: `CI`/`CodeQL`/`trunk-sanity` use
+  `cancel-in-progress: true` (59 of 304 PR runs were correctly cancelled on
+  re-push, saving minutes); deploy/release workflows correctly do *not* cancel.
+- `CodeQL` is path-filtered (`src/**`,`tests/**`,…) and PR-only — it does not
+  re-run in the merge queue and skips docs PRs.
+- `nightly-container-build`: `build-aot` and `build-lambda-aot` both
+  `needs: mirror-base-images` with **separate** GHA cache scopes
+  (`nightly-aot-*` vs `nightly-lambda-aot-*`) — no ordering/cache race; the
+  earlier "missing `needs: build-aot`" follow-up is stale on `trunk`.
+- Adding a `push: [trunk]` trigger to `ci.yml` would *increase* minutes;
+  `trunk-sanity` (5-min build) already covers post-merge push.
+
+### Top-3 by monthly-minute impact
+1. **Tighten `run_all` escalation** (`unmapped_source_run_all_prefixes` /
+   `infrastructure_paths`): if ~half the 146 full PR runs/window drop to the
+   scoped lane (449→~120 min), that is **~24k min/mo**. Needs sign-off.
+2. **Consolidate tiny shards** (~8 sub-6-min shards → ~3): saves ~5 shards ×
+   ~5 min × full-run count ≈ **~6–8k min/mo**, ~0 wall-clock cost.
+3. **Scope the `merge_group` lane** to batched-PR affected shards once queue
+   volume rises: avoids a full ~428-min re-run per queued PR.
