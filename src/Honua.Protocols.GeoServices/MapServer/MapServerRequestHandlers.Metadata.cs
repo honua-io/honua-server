@@ -255,7 +255,10 @@ internal static partial class MapServerEndpoints
                 Name = layer.Name
             })],
             CopyrightText = string.Empty,
-            SupportedImageFormatTypes = "PNG,PNG8,PNG24,PNG32,JPG,GIF",
+            // GIF is intentionally omitted: the SkiaSharp-backed export renderer ships no
+            // GIF encoder and the export handler rejects format=gif, so advertising it here
+            // would let capabilities claim an output the service cannot produce. (#1772)
+            SupportedImageFormatTypes = "PNG,PNG8,PNG24,PNG32,JPG",
             // The current MapServer implementation only accepts a narrow dynamicLayers subset
             // for interoperability; do not advertise the full ArcGIS dynamic-layer contract.
             SupportsDynamicLayers = false,

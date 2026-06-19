@@ -46,6 +46,10 @@ internal static class GeoServicesRequestValueHelpers
             "returnTrueCurves",
             "returnExceededLimitFeatures",
             "time",
+            // The ArcGIS API for Python (arcgis 2.4.x) serializes the query(time_filter=)
+            // kwarg to the "timeFilter" query parameter. Accept it as an alias of "time"
+            // so the Python SDK's time-aware queries are not rejected with HTTP 400 (#1775).
+            "timeFilter",
             "timeRelation",
             "geometryPrecision",
             "maxAllowableOffset",

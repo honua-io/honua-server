@@ -62,6 +62,44 @@ public sealed class GeoServicesTemporalQueryBuilderTests
         expression.Should().NotBeNull();
     }
 
+    [Theory]
+    [InlineData("esriTimeRelationAfterStartTime")]
+    [InlineData("esriTimeRelationBeforeStartTime")]
+    [InlineData("esriTimeRelationAfterEndTime")]
+    [InlineData("esriTimeRelationBeforeEndTime")]
+    [InlineData("esriTimeRelationOverlaps")]
+    [InlineData("esriTimeRelationOverlapsStartWithinEnd")]
+    [Operation(Operations.Query)]
+    public void BuildTemporalExpression_StandardEsriTimeRelations_ProduceAPredicate(string timeRelation)
+    {
+        // All six standard Esri start/end-relative timeRelation spellings must map onto the
+        // interval engine and produce a real predicate (not throw ArgumentException -> 400).
+        var resource = BuildTemporalResource();
+
+        var expression = GeoServicesTemporalQueryBuilder.BuildTemporalExpression(
+            "0,86400000", timeRelation, resource);
+
+        expression.Should().NotBeNull();
+    }
+
+    [Theory]
+    [InlineData("afterStartTime")]
+    [InlineData("beforeStartTime")]
+    [InlineData("afterEndTime")]
+    [InlineData("beforeEndTime")]
+    [Operation(Operations.Query)]
+    public void BuildTemporalExpression_StartEndRelativeShortSpellings_AreAccepted(string timeRelation)
+    {
+        // The short (non-"esriTimeRelation"-prefixed) spellings are also accepted, mirroring
+        // the existing case-insensitive vocabulary; none should throw ArgumentException.
+        var resource = BuildTemporalResource();
+
+        var act = () => GeoServicesTemporalQueryBuilder.BuildTemporalExpression(
+            "0,86400000", timeRelation, resource);
+
+        act.Should().NotThrow();
+    }
+
     private static MetadataV2Resource BuildNonTemporalResource()
         => new()
         {
