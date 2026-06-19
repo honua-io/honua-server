@@ -21,8 +21,8 @@ internal static class GeometryServiceEndpoints
     {
         ArgumentNullException.ThrowIfNull(endpoints);
 
-        // Esri REST clients probe the GeometryServer root for currentVersion and
-        // service description before invoking operations.
+        // Esri REST clients probe the GeometryServer root for the service description
+        // and capabilities before invoking operations.
         endpoints.MapGet(GeometryRoutePrefix, HandleServiceInfo)
             .WithDisplayName("Geometry Service Info")
             .WithName("GeometryServiceInfo")
@@ -302,8 +302,9 @@ internal static class GeometryServiceEndpoints
     // Esri's documented response so probing clients (ArcGIS Pro, JS API) can complete
     // their discovery handshake before invoking buffer/simplify/etc.
     private const string GeometryServerInfoJson =
-        "{\"currentVersion\":11.1,"
-        + "\"serviceDescription\":\"Honua Geometry Service — buffer, simplify, project, intersect, union, clip, difference, areasAndLengths, lengths, distance, relation, densify, convexHull, generalize, labelPoints, cut, trimExtend, offset, autoComplete, reshape, findTransformations, toGeoCoordinateString, fromGeoCoordinateString.\","
+        // No ArcGIS Server version (currentVersion) is advertised — Honua does not impersonate
+        // a specific ArcGIS Server release (guarded by NoArcGisServerVersionTests).
+        "{\"serviceDescription\":\"Honua Geometry Service — buffer, simplify, project, intersect, union, clip, difference, areasAndLengths, lengths, distance, relation, densify, convexHull, generalize, labelPoints, cut, trimExtend, offset, autoComplete, reshape, findTransformations, toGeoCoordinateString, fromGeoCoordinateString.\","
         + "\"maxBufferCount\":1000,"
         + "\"maxSimplifyCount\":1000,"
         + "\"resampled\":true}";

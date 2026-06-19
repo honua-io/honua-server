@@ -42,7 +42,6 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
 
         service.Should().NotBeNull();
         service!.MapName.Should().NotBeNullOrWhiteSpace();
-        service.CurrentVersion.Should().BeGreaterThan(0);
         service.ServiceDescription.Should().NotBeNullOrWhiteSpace();
         service.Layers.Should().NotBeNullOrEmpty();
         service.Tables.Should().NotBeNull();

@@ -8,8 +8,9 @@ namespace Honua.Protocols.GeoServices.GPServer.Models;
 /// </summary>
 internal sealed class GPServiceInfoResponse
 {
-    /// <summary>Service version.</summary>
-    public double CurrentVersion { get; set; } = 10.81;
+    // No ArcGIS Server version (currentVersion/fullVersion) is advertised. Honua is an
+    // independent, Esri-compatible server and must not impersonate a specific ArcGIS Server
+    // release. Do NOT add a currentVersion/fullVersion field (guarded by NoArcGisServerVersionTests).
 
     /// <summary>Service description.</summary>
     public string? ServiceDescription { get; set; }
