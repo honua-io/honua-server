@@ -138,42 +138,83 @@ If a source needs a fetch shape the four `fetch.kind`s don't cover (e.g. a
 WFS/OGC endpoint), add a new `kind` and a small handler branch in
 `fetch_and_prepare()` -- that is the only code touch-point.
 
-## Future source-products: geocoding and routing on GP-Batch
+## Geocoding and routing on GP-Batch (per-area build jobs)
 
-The catalog's `product.sourceProduct` field already distinguishes what a product
-is built into: `features` (this slice), `tiles`, `geocoder`, or `router`. The
-key idea is that **geocoding and routing are just additional build jobs over the
-same imported feature layers, executed on the same GP-on-Batch engine** that
-already runs tiling.
+The catalog's `product.sourceProduct` field distinguishes what a product is
+built into: `features`, `tiles`, `geocoder`, or `router`. The key idea is that
+**geocoding and routing are just additional build jobs over the same imported
+feature layers, executed on the same GP-on-Batch engine** that already runs
+tiling. These two build jobs are now wired (Maui demo): each is an
+area-parameterized OGC Processes / GP job dispatched through the canonical
+execution-job → `IBatchComputeBackend` path (Fargate Spot via `honua-aws-batch`,
+scale-to-zero), exactly like the tile-cache job (#1697).
+
+| Build job | `ExecutionJobKind` | Feedstock (`sourceProduct`) | Artifact | Served by |
+|-----------|--------------------|-----------------------------|----------|-----------|
+| `build-geocoder` | `GeocoderBuild` | `geocoder` (TIGER `addresses`, OSM `addresses`) | Nominatim-importable `.osm.pbf` locator bundle in S3 | `GeocodeServer` via the self-hosted `NominatimGeocodeProvider` (`findAddressCandidates` / `reverseGeocode` / `suggest`) |
+| `build-router` | `RouterBuild` | `router` (TIGER/OSM `routing-roads`) | osm2pgrouting-style `ways` / `ways_vertices_pgr` topology dump in S3 | `NAServer` Route/ServiceArea via `PgRoutingProvider` (`pgr_dijkstra` / `pgr_drivingDistance`) |
+
+Both jobs are **area-parameterized** with the same AREA forms as the feature
+import (`bbox:` or `geoid:`), encoded onto `ExecutionJobSpec.Parameters` by
+`GeocoderBuildExecutionSpecBuilder` / `RouterBuildExecutionSpecBuilder` (mirroring
+`TileCacheExecutionSpecBuilder`). Backend coordinates (AWS Batch
+`batch.job_definition_arn` / `batch.job_queue_arn`, target artifact bucket) are
+merged in from `Provisioner:BuildJobs:Batch` config so an operator pins them per
+deployment without code changes. With batch dispatch disabled (the default) the
+in-process `local` backend runs the same execution-job machinery on one pod, so
+the capability is exercisable without any cloud configuration.
+
+### Maui demo
+
+```bash
+# 1. import the address feedstock for Maui County (GEOID 15009) as features
+python3 scripts/provisioner/provision_area.py \
+  --source census-tiger --product addresses --area geoid:15009 --import-feedstock
+
+# 2. import the routing-roads feedstock for Maui County as features
+python3 scripts/provisioner/provision_area.py \
+  --source census-tiger --product routing-roads --area geoid:15009 --import-feedstock
+
+# 3. build the locator + routing graph for the area on GP-on-Batch:
+#    submit a build-geocoder (GeocoderBuild) and build-router (RouterBuild)
+#    execution job over the published feedstock layers (area: geoid:15009 or a
+#    Maui bbox e.g. bbox:-156.70,20.57,-155.98,21.03). The locator artifact is
+#    served by GeocodeServer; the routing graph by NAServer.
+```
 
 ```
                        imported feature layer (PostGIS)
                                    |
           +------------------------+------------------------+
           |                        |                        |
-     features layer          PMTiles tiling           future products
-     (served today)          (GP-Batch today)         (GP-Batch, next)
-                                                    |              |
-                                            geocoder build   router build
-                                            (locator index)  (routing graph)
+     features layer          PMTiles tiling           build jobs (GP-Batch)
+     (served today)          (GP-Batch)                    |              |
+                                                    build-geocoder   build-router
+                                                    (locator pbf)    (pgRouting graph)
+                                                          |               |
+                                                   GeocodeServer      NAServer
 ```
 
-- **Geocoding** -- TIGER `addresses` (ADDRFEAT, address ranges) and OSM POI are
-  the feedstock. A future `build-geocoder` GP-Batch job consumes the published
-  address layer and emits a locator index (the same object-store + Spot model as
-  tiling). The provisioner already tags `census-tiger/addresses` with
-  `sourceProduct: "geocoder"` and **guards** it: it will import the features but
-  refuse to claim a locator was built until the GP-Batch job exists.
-- **Routing** -- a road-network layer (TIGER `roads` or OSM `roads`) is the
-  feedstock for a future `build-router` GP-Batch job that contracts the network
-  into a routing graph. Same dispatch path as tiling
-  (`TileOperationsEndpoints` → `ITileCacheJobService` batch backend): a new
-  job type (`build-geocoder` / `build-router`) submitted through the
-  execution-job → Batch path, Fargate Spot, scale-to-zero.
+### How the artifacts tie back
 
-Wiring these is deliberately **out of scope for slice 1** -- but the catalog
-schema, the `sourceProduct` taxonomy, and the GP-Batch dispatch they ride are
-all already in place, so each is an additive job type rather than a redesign.
+- **Geocoding** -- TIGER `addresses` (ADDRFEAT address ranges) and OSM
+  `addr:housenumber` points are the feedstock (`sourceProduct: "geocoder"`). The
+  `build-geocoder` job clips the published address layer to the area and emits a
+  Nominatim-importable `.osm.pbf` locator bundle to S3. A self-hosted Nominatim
+  built from that bundle is served through the existing `NominatimGeocodeProvider`
+  — no per-credit external geocoder. The Python provisioner imports the feedstock
+  (`--import-feedstock`) and points at the `build-geocoder` job for the artifact.
+- **Routing** -- a road-network layer (TIGER/OSM `routing-roads`,
+  `sourceProduct: "router"`) is the feedstock. The `build-router` job clips the
+  network to the area and emits an osm2pgrouting-style `ways` /
+  `ways_vertices_pgr` topology dump to S3 that `PgRoutingProvider` solves over via
+  `pgr_dijkstra` / `pgr_drivingDistance` behind the `NAServer` Route / ServiceArea
+  endpoints.
+
+Both jobs ride the same dispatch path as tiling (durable `ExecutionJobRecord` →
+`ExecutionJobReconciler` → `IBatchComputeBackend`), so each is an additive job
+kind rather than a redesign. Cross-refs: geocoding compat epic #1263, GP porting
+#1259, GP-on-Batch honua-devops#97.
 
 ## Files
 
@@ -181,3 +222,6 @@ all already in place, so each is an additive job type rather than a redesign.
 - `data/open-data-catalog/schema.json` -- JSON Schema for the catalog.
 - `data/open-data-catalog/README.md` -- catalog-dir orientation.
 - `scripts/provisioner/provision_area.py` -- the area-import orchestrator.
+- `src/Honua.Server/Features/Provisioner/BuildJobs/` -- the per-area
+  geocoder/router GP-on-Batch build jobs (spec builders, area selector,
+  submission service, backend options).

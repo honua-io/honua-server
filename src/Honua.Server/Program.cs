@@ -36,6 +36,7 @@ using Honua.Server.Features.Console.Collaboration;
 using Honua.Server.Features.Collaboration.Sessions;
 using Honua.Io.Export;
 using Honua.Server.Features.PrintingTools;
+using Honua.Server.Features.Provisioner;
 using Honua.ControlPlane;
 using Honua.FileStorage;
 using Honua.Server.Features.HealthCheck;
@@ -674,6 +675,11 @@ builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IReplic
 //      (Startup/ImportExportTileOperationsRegistration.cs)
 builder.Services.AddHonuaImportExportAndTileOperations(builder.Configuration);
 // ---- End extracted block
+
+// ---- Per-area geocoder/router build jobs (provisioner GP-on-Batch jobs)
+//      (Features/Provisioner/ProvisionerServiceCollectionExtensions.cs)
+builder.Services.AddHonuaProvisionerBuildJobs(builder.Configuration);
+// ---- End block
 
 
 // ---- Extracted: feature-change events, streaming, transactional outbox
