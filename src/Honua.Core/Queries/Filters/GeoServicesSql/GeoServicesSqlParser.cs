@@ -295,7 +295,7 @@ public sealed class GeoServicesSqlParser
             if (Check(TokenType.String))
             {
                 var value = Consume(TokenType.String, "Expected timestamp literal string after TIMESTAMP.").Literal?.ToString();
-                return CreateDateLiteral(value, dateOnly: false);
+                return CreateDateLiteral(value, dateOnly: false, explicitTimestampKeyword: true);
             }
 
             return ParseIdentifierOrFunction(Previous().Lexeme);
@@ -608,7 +608,7 @@ public sealed class GeoServicesSqlParser
         return new ValueList(values);
     }
 
-    private static Literal CreateDateLiteral(string? value, bool? dateOnly = null)
+    private static Literal CreateDateLiteral(string? value, bool? dateOnly = null, bool explicitTimestampKeyword = false)
     {
         if (string.IsNullOrWhiteSpace(value))
         {
@@ -638,7 +638,12 @@ public sealed class GeoServicesSqlParser
                 var hasOffsetIndicator = value.Contains('Z', StringComparison.OrdinalIgnoreCase)
                     || value.LastIndexOf('+') > 0
                     || (value.LastIndexOf('-') > 8); // after the date portion
-                if (!hasOffsetIndicator)
+                // The canonical SQL-92 `TIMESTAMP 'YYYY-MM-DD HH:MM:SS'` literal that the
+                // ArcGIS SDK emits carries no offset; real ArcGIS accepts it and treats it as
+                // naive/UTC. Mirror that for an explicit TIMESTAMP keyword (AssumeUniversal
+                // above already folds it to UTC). Only an unkeyworded date+time string in a
+                // bare comparison still requires an explicit offset to avoid ambiguity.
+                if (!hasOffsetIndicator && !explicitTimestampKeyword)
                 {
                     throw new ArgumentException(
                         $"Datetime literal '{value}' is missing a timezone offset. "
