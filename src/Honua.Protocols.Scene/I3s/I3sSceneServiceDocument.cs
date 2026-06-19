@@ -44,6 +44,11 @@ internal sealed class I3sSceneServiceDocument
 [JsonSerializable(typeof(I3sSpatialReference))]
 [JsonSerializable(typeof(I3sFullExtent))]
 [JsonSerializable(typeof(I3sStore))]
+[JsonSerializable(typeof(I3sHeightModelInfo))]
+[JsonSerializable(typeof(I3sAttributeStorageInfo))]
+[JsonSerializable(typeof(I3sGeometryDefinition))]
+[JsonSerializable(typeof(I3sMaterialDefinition))]
+[JsonSerializable(typeof(I3sTextureSetDefinition))]
 internal sealed partial class I3sServingJsonContext : JsonSerializerContext
 {
 }
