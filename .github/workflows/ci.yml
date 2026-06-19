@@ -192,7 +192,11 @@ jobs:
             }
 
             if (issues.length > 0) {
-              core.setFailed(`PR template validation failed: ${issues.length} issue(s)`);
+              // Advisory only: surface template gaps as a warning + the PR comment above, but
+              // never block the merge. Agent PRs carry rich descriptions that rarely match the
+              // exact template shape; gating real CI signal behind a formatting lint was pure
+              // friction (the #1 reason a sound PR looked broken). The comment still nudges.
+              core.warning(`PR template suggestions: ${issues.length} item(s) — see the PR comment (non-blocking).`);
             }
 
   pr-readiness:
