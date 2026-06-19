@@ -1485,7 +1485,7 @@
         },
         {
           "proofClass": "scenario-depth",
-          "proofMechanism": "Tile data, style/resources, and tileMap routes are declared and stubbed (HTTP 501) in the metadata foundation; the parallel wave fills the handlers under the VectorTileServer epic.",
+          "proofMechanism": "Tile data (tile/{z}/{y}/{x}.pbf), style/resources (default styles + root.json, scoped-minimal sprites and glyph ranges), and tileMap routes are implemented as thin adapters over the shared vector-tile pipeline; sprite/glyphs are referenced from the composed style only when it has symbol layers.",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
             "src/Honua.Protocols.GeoServices/VectorTileServer/VectorTileServerEndpoints.Tile.cs",
@@ -1493,8 +1493,8 @@
             "src/Honua.Protocols.GeoServices/VectorTileServer/VectorTileServerEndpoints.TileMap.cs"
           ],
           "ownerRepo": "honua-server",
-          "status": "bounded-child-ticket",
-          "linkedTicket": "#1776",
+          "status": "implemented",
+          "linkedTicket": null,
           "versionCaptureRule": null
         }
       ]

@@ -371,4 +371,105 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTileMetadata)]
+    [Endpoint("GET /rest/services/{serviceId}/VectorTileServer/resources/sprites/{spriteResource}")]
+    public async Task VectorTileServer_SpriteJson_ReturnsEmptyJsonObject()
+    {
+        foreach (var name in new[] { "sprite.json", "sprite@2x.json" })
+        {
+            var response = await _fixture.Client.GetAsync(
+                $"/rest/services/{WebAppFixture.TestServiceId}/VectorTileServer/resources/sprites/{name}");
+
+            var content = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+            response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+
+            using var document = JsonDocument.Parse(content);
+            document.RootElement.ValueKind.Should().Be(JsonValueKind.Object);
+            document.RootElement.EnumerateObject().Should().BeEmpty($"{name} is an empty sprite index");
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTileMetadata)]
+    [Endpoint("GET /rest/services/{serviceId}/VectorTileServer/resources/sprites/{spriteResource}")]
+    public async Task VectorTileServer_SpritePng_ReturnsTransparentPng()
+    {
+        foreach (var name in new[] { "sprite.png", "sprite@2x.png" })
+        {
+            var response = await _fixture.Client.GetAsync(
+                $"/rest/services/{WebAppFixture.TestServiceId}/VectorTileServer/resources/sprites/{name}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            response.Content.Headers.ContentType!.MediaType.Should().Be("image/png");
+
+            var bytes = await response.Content.ReadAsByteArrayAsync();
+            bytes.Should().NotBeEmpty();
+            // PNG signature.
+            bytes.Take(8).Should().Equal(0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTileMetadata)]
+    [Endpoint("GET /rest/services/{serviceId}/VectorTileServer/resources/sprites/{spriteResource}")]
+    public async Task VectorTileServer_Sprite_UnknownResource_ReturnsNotFound()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/VectorTileServer/resources/sprites/sprite@3x.png");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTileMetadata)]
+    [Endpoint("GET /rest/services/{serviceId}/VectorTileServer/resources/sprites/{spriteResource}")]
+    public async Task VectorTileServer_Sprite_UnknownService_ReturnsNotFound()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/rest/services/does-not-exist/VectorTileServer/resources/sprites/sprite.json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTileMetadata)]
+    [Endpoint("GET /rest/services/{serviceId}/VectorTileServer/resources/fonts/{fontstack}/{range}.pbf")]
+    public async Task VectorTileServer_GlyphRange_ReturnsGlyphPbf()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/VectorTileServer/resources/fonts/Honua%20Default/0-255.pbf");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/x-protobuf");
+
+        var bytes = await response.Content.ReadAsByteArrayAsync();
+        bytes.Should().NotBeEmpty("a valid glyph PBF carries the fontstack message");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTileMetadata)]
+    [Endpoint("GET /rest/services/{serviceId}/VectorTileServer/resources/fonts/{fontstack}/{range}.pbf")]
+    public async Task VectorTileServer_Glyph_OutOfRange_ReturnsNotFound()
+    {
+        // Ranges must be the canonical 256-codepoint windows (0-255, 256-511, …); an
+        // arbitrary range is not served by the minimal embedded glyph stack.
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/VectorTileServer/resources/fonts/Honua%20Default/99-1234.pbf");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTileMetadata)]
+    [Endpoint("GET /rest/services/{serviceId}/VectorTileServer/resources/fonts/{fontstack}/{range}.pbf")]
+    public async Task VectorTileServer_Glyph_UnknownService_ReturnsNotFound()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/rest/services/does-not-exist/VectorTileServer/resources/fonts/Honua%20Default/0-255.pbf");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
 }
