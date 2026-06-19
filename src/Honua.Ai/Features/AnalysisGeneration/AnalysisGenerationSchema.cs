@@ -40,6 +40,7 @@ internal static class AnalysisGenerationSchema
                 "rationale": { "type": "string" },
                 "analysis": {
                   "type": ["object", "null"],
+                  "description": "The proposed analysis package. REQUIRED and non-null whenever status is \"generated\"; omit (null) only for needs-clarification/unsupported/refused. Must always contain a non-null \"plan\".",
                   "properties": {
                     "intent": {
                       "type": ["object", "null"],
@@ -55,11 +56,13 @@ internal static class AnalysisGenerationSchema
                     },
                     "plan": {
                       "type": "object",
+                      "description": "The executable analysis plan. REQUIRED whenever an analysis is produced (status \"generated\"). Must declare planId, intentId, and a non-empty steps array.",
                       "properties": {
                         "planId": { "type": "string" },
                         "intentId": { "type": "string" },
                         "steps": {
                           "type": "array",
+                          "minItems": 1,
                           "items": {
                             "type": "object",
                             "properties": {
