@@ -74,6 +74,23 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
+    // honua-server#1825: a resultRecordCount above maxRecordCount must be silently capped
+    // to maxRecordCount (and the page returned) rather than rejected with a 400 — this is
+    // what ArcGIS does, and clients routinely pass a large "give me everything" count. The
+    // default maxRecordCount in the test host is 10000, so 100000 is over the limit.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithResultRecordCountAboveMaxRecordCount_ClampsInsteadOfBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?where=1%3D1&resultRecordCount=100000&f=json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().NotContain("cannot exceed");
+    }
+
     // BUG C regression: an unknown geometryType must be rejected, not coerced to an envelope.
     [IntegrationTest]
     [Operation(Operations.Query)]

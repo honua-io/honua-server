@@ -136,7 +136,17 @@ internal static partial class MapServerEndpoints
     private static async Task<IResult> HandleQueryDomains(HttpContext context)
     {
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
-        if (!TryValidateMetadataFormat(context.Request.Query, out var formatError))
+
+        // Esri services accept BOTH GET and POST for queryDomains; clients POST large
+        // layers arrays that exceed URL limits (honua-server#1825). Merge the form body
+        // over the query string so both methods share this read-only handler.
+        var (values, readError) = await TryReadMapServerRequestValuesAsync(context);
+        if (values is null)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, readError ?? "Invalid request body.");
+        }
+
+        if (!TryValidateMetadataFormat(values, out var formatError))
         {
             return StandardErrorHelpers.CreateBadRequest(context, formatError ?? "Output format is not supported.");
         }
@@ -173,7 +183,7 @@ internal static partial class MapServerEndpoints
             var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
             var publishedLayers = ResolveMapServerMetadataLayers(snapshot, service);
 
-            if (!TryResolveQueryDomainsLayers(context.Request.Query, publishedLayers, out var selectedLayers, out var selectionError))
+            if (!TryResolveQueryDomainsLayers(values, publishedLayers, out var selectedLayers, out var selectionError))
             {
                 return StandardErrorHelpers.CreateBadRequest(context, selectionError ?? "Invalid layers parameter.");
             }
@@ -308,7 +318,7 @@ internal static partial class MapServerEndpoints
     }
 
     private static bool TryResolveQueryDomainsLayers(
-        IQueryCollection query,
+        Dictionary<string, StringValues> values,
         IReadOnlyList<MapServerMetadataLayerDescriptor> allLayers,
         out MapServerMetadataLayerDescriptor[] selected,
         out string? error)
@@ -316,7 +326,7 @@ internal static partial class MapServerEndpoints
         error = null;
         selected = [.. allLayers];
 
-        if (!query.TryGetValue("layers", out var layersRaw) || StringValues.IsNullOrEmpty(layersRaw))
+        if (!values.TryGetValue("layers", out var layersRaw) || StringValues.IsNullOrEmpty(layersRaw))
         {
             return true;
         }
