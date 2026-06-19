@@ -635,9 +635,14 @@ internal static class WmtsRequestHandlers
         }
 
         var serviceSrid = ResolveServiceSrid(service, layer.Resource);
+
+        // Resolve the optional elevation/vertical selection from the validated `elevation`
+        // dimension and record it on the render descriptor. Shape A (#1792): recorded only —
+        // the render itself does not yet apply the vertical slice (deferred Shape B).
+        var verticalSelection = ResolveWmtsLayerVerticalSelection(layer, query);
         var renderDescriptors = new RenderLayerDescriptor[]
         {
-            BuildRenderDescriptor(layer)
+            BuildRenderDescriptor(layer, verticalSelection)
         };
 
         var renderResult = await RenderRasterTileForGridAsync(
@@ -1082,7 +1087,9 @@ internal static class WmtsRequestHandlers
         return resource.FindPrimaryGeometryField() is not null;
     }
 
-    private static RenderLayerDescriptor BuildRenderDescriptor(WmtsLayer layer)
+    private static RenderLayerDescriptor BuildRenderDescriptor(
+        WmtsLayer layer,
+        VerticalSelection? verticalSelection = null)
     {
         // When the resource's Spatial slot is empty (common in test fixtures that only set
         // a schema-level geometry field), still mark the layer renderable so the renderer
@@ -1090,7 +1097,7 @@ internal static class WmtsRequestHandlers
         var v2GeometryType = layer.Resource.ReadGeometryType();
         var hasGeometry = v2GeometryType != MetadataV2GeometryType.None
             || layer.Resource.FindPrimaryGeometryField() is not null;
-        return CreateRenderLayerDescriptorFromV2(layer.StorageLayerId, hasGeometry, v2GeometryType);
+        return CreateRenderLayerDescriptorFromV2(layer.StorageLayerId, hasGeometry, v2GeometryType, verticalSelection);
     }
 
     private static bool TryResolveWmtsLayer(IReadOnlyList<WmtsLayer> layers, string layerIdOrName, out WmtsLayer layer)
@@ -2131,6 +2138,70 @@ internal static class WmtsRequestHandlers
         }
 
         return (parsed, null);
+    }
+
+    /// <summary>
+    /// Resolves the optional <see cref="VerticalSelection"/> for a WMTS GetTile request from
+    /// the validated <c>elevation</c> dimension value. WMTS GetCapabilities already advertises
+    /// the discrete elevation dimension (see <see cref="GetWmtsDimensionDefinitions"/>) and
+    /// <see cref="TryValidateWmtsDimensionParameters"/> has already accepted (or rejected) the
+    /// supplied value against that dimension's enumerated values / <c>default</c> / <c>current</c>
+    /// tokens. This resolver mirrors <see cref="TryBuildWmtsLayerTemporalFilterAsync"/>: it maps
+    /// the validated token to the concrete advertised value and parses it into a numeric
+    /// selection so it can be RECORDED and threaded through the render call.
+    /// </summary>
+    /// <remarks>
+    /// Shape A (#1792): the returned selection is recorded/telemetry-tagged on the render
+    /// descriptor but does NOT change what is rendered for vector layers — there is no
+    /// Z-aware vector source yet (the Zarr datacube Z-slice render is the deferred Shape B
+    /// follow-up). When the parameter is omitted the dimension's advertised default (100) is
+    /// applied, matching the advertised contract. Layers that do not advertise an elevation
+    /// dimension (everything except CITE Terrain) never reach the resolve branch because the
+    /// validator would already have rejected an unknown <c>elevation</c> key.
+    /// </remarks>
+    private static VerticalSelection? ResolveWmtsLayerVerticalSelection(WmtsLayer layer, IQueryCollection query)
+    {
+        WmtsDimensionDefinition? elevationDimension = null;
+        foreach (var dimension in GetWmtsDimensionDefinitions(layer))
+        {
+            if (string.Equals(dimension.Identifier, "elevation", StringComparison.OrdinalIgnoreCase))
+            {
+                elevationDimension = dimension;
+                break;
+            }
+        }
+
+        if (elevationDimension is not { } elevation)
+        {
+            return null;
+        }
+
+        // Resolve the validated token (or the advertised default when omitted) to the concrete
+        // advertised elevation value, then parse it into a numeric VerticalSelection.
+        string resolvedValue;
+        if (query.ContainsKey("elevation"))
+        {
+            var rawValue = GetQueryValue(query, "elevation");
+            if (string.IsNullOrWhiteSpace(rawValue) ||
+                !TryResolveWmtsDimensionValue(elevation, rawValue, out resolvedValue))
+            {
+                // The validator already guarantees a valid value reaches here; treat any
+                // residual mismatch as "no recorded selection" rather than fabricating one.
+                return null;
+            }
+        }
+        else if (!string.IsNullOrWhiteSpace(elevation.DefaultValue))
+        {
+            resolvedValue = elevation.DefaultValue!;
+        }
+        else
+        {
+            return null;
+        }
+
+        return OgcVerticalSelectionParser.TryParseWmtsElevationValue(resolvedValue, out var selection)
+            ? selection
+            : null;
     }
 
     private static string BuildWmtsMinimalCapabilities()

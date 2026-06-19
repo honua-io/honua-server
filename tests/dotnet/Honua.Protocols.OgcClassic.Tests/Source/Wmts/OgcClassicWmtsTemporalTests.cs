@@ -314,6 +314,44 @@ public sealed class OgcClassicWmtsTemporalTests : IAsyncLifetime
         content.Should().Contain("time");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Wmts)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
+    public async Task Wmts_GetTile_NonTerrainLayer_WithElevation_ReturnsInvalidParameterValue()
+    {
+        // Regression guard for #1792 Shape A: only the CITE Terrain layer advertises an
+        // `elevation` dimension. The dimension validator must continue to reject `elevation=`
+        // on any other layer as an unknown parameter, exactly as before — adding the
+        // elevation RESOLVER must not relax the advertise/validate contract. (elevation=400
+        // is also outside the advertised 100/200/300 set; on Terrain it would be
+        // InvalidParameterValue, on a non-Terrain layer it is an unknown parameter — both 400.)
+        await ClearLayerTemporalAsync();
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER={WebAppFixture.TestLayerId}&STYLE=default&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=0&TILEROW=0&TILECOL=0&FORMAT=image/png&elevation=400");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("InvalidParameterValue");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wmts)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
+    public async Task Wmts_GetTile_NonTerrainLayer_WithoutElevation_ReturnsTile()
+    {
+        // Omitting elevation must behave exactly as before for ordinary layers: the layer
+        // advertises no elevation dimension, so the request is a plain GetTile. (The
+        // "default 100 when omitted" behavior applies only to the Terrain layer that
+        // advertises the dimension and is exercised by the WMTS CITE suite.)
+        await ClearLayerTemporalAsync();
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER={WebAppFixture.TestLayerId}&STYLE=default&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=0&TILEROW=0&TILECOL=0&FORMAT=image/png");
+
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NoContent);
+    }
+
     private Task ConfigureLayerAsTimeAwareAsync()
     {
         // V2 cutover (#1035 72/N): time-info now lives on MetadataV2Resource.Temporal.
