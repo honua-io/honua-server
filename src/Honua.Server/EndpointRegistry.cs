@@ -846,6 +846,16 @@ public static class EndpointRegistry
         new("GET", "/ogc/services/{serviceId}/wms"),
         new("GET", "/ogc/services/{serviceId}/wcs"),
 
+        new("GET", "/rest/services/{serviceId}/VectorTileServer"),
+        new("POST", "/rest/services/{serviceId}/VectorTileServer"),
+        new("GET", "/rest/services/{serviceId}/VectorTileServer/tile/{z}/{y}/{x}.pbf"),
+        new("GET", "/rest/services/{serviceId}/VectorTileServer/resources/styles"),
+        new("GET", "/rest/services/{serviceId}/VectorTileServer/resources/styles/{**resourcePath}"),
+        new("GET", "/rest/services/{serviceId}/VectorTileServer/resources/sprites/{spriteResource}"),
+        new("GET", "/rest/services/{serviceId}/VectorTileServer/resources/fonts/{fontstack}/{range}.pbf"),
+        new("GET", "/rest/services/{serviceId}/VectorTileServer/tilemap/{z}/{y}/{x}/{dimension}/{dimension2}"),
+        new("GET", "/rest/services/{serviceId}/VectorTileServer/tilemap"),
+
         new("GET", "/rest/services/{id}/ImageServer"),
         new("POST", "/rest/services/{id}/ImageServer"),
         new("GET", "/rest/services/{id}/ImageServer/conf.json"),
