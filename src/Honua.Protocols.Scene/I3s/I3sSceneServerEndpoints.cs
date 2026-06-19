@@ -10,6 +10,7 @@ using Honua.Core.Features.Scene.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Validation;
+using Honua.Scene.Assets;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Protocols.Scene.I3s;
@@ -39,13 +40,48 @@ internal static partial class I3sSceneServerEndpoints
     {
         ArgumentNullException.ThrowIfNull(endpoints);
 
+        // Canonical GeoServices REST path (#1806): a registered Enterprise scene
+        // is discoverable as an Esri SceneServer under /rest/services/{id}, the
+        // same addressing every other GeoServices service type uses, so the
+        // catalog (#1807) and ArcGIS clients resolve it without a bespoke route.
+        endpoints.MapGet(
+                "/rest/services/{sceneId}/SceneServer",
+                HandleGetService)
+            .WithName("GetGeoServicesSceneService")
+            .WithDisplayName("Get GeoServices SceneServer Service")
+            .WithSummary("Get the Esri I3S SceneServer service descriptor at the GeoServices path")
+            .WithDescription("Returns the I3S SceneServer service JSON advertising the scene's 3D Object layer for ArcGIS / I3S clients at the canonical /rest/services GeoServices path. Enterprise edition.")
+            .WithTags(ScenesTag)
+            .Produces<I3sSceneServiceDocument>(StatusCodes.Status200OK, contentType: I3sContentType)
+            .Produces(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status403Forbidden)
+            .Produces(StatusCodes.Status404NotFound)
+            .Produces(StatusCodes.Status500InternalServerError);
+
+        endpoints.MapGet(
+                "/rest/services/{sceneId}/SceneServer/layers/{layerId:int}",
+                HandleGetLayer)
+            .WithName("GetGeoServicesSceneLayer")
+            .WithDisplayName("Get GeoServices SceneServer Layer")
+            .WithSummary("Get the Esri I3S scene-layer descriptor at the GeoServices path")
+            .WithDescription("Returns the I3S 3dSceneLayer descriptor (3D Object layer) rooted at the scene extent at the canonical /rest/services GeoServices path. Enterprise edition.")
+            .WithTags(ScenesTag)
+            .Produces<I3sSceneLayerDocument>(StatusCodes.Status200OK, contentType: I3sContentType)
+            .Produces(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status403Forbidden)
+            .Produces(StatusCodes.Status404NotFound)
+            .Produces(StatusCodes.Status500InternalServerError);
+
+        // Legacy /scenes/{id}/SceneServer routes (#1202) retained as a
+        // documented ALIAS of the GeoServices path above so existing clients and
+        // links keep working. Both paths share the same handlers and descriptor.
         endpoints.MapGet(
                 "/scenes/{sceneId}/SceneServer",
                 HandleGetService)
             .WithName("GetI3sSceneService")
             .WithDisplayName("Get I3S Scene Service")
             .WithSummary("Get the Esri I3S SceneServer service descriptor for a hosted scene")
-            .WithDescription("Returns the I3S SceneServer service JSON advertising the scene's 3D Object layer for ArcGIS / I3S clients. Enterprise edition.")
+            .WithDescription("Alias of /rest/services/{sceneId}/SceneServer. Returns the I3S SceneServer service JSON advertising the scene's 3D Object layer for ArcGIS / I3S clients. Enterprise edition.")
             .WithTags(ScenesTag)
             .Produces<I3sSceneServiceDocument>(StatusCodes.Status200OK, contentType: I3sContentType)
             .Produces(StatusCodes.Status400BadRequest)
@@ -59,7 +95,7 @@ internal static partial class I3sSceneServerEndpoints
             .WithName("GetI3sSceneLayer")
             .WithDisplayName("Get I3S Scene Layer")
             .WithSummary("Get the Esri I3S scene-layer descriptor for a hosted scene")
-            .WithDescription("Returns the I3S 3dSceneLayer descriptor (3D Object layer) rooted at the scene extent. Enterprise edition.")
+            .WithDescription("Alias of /rest/services/{sceneId}/SceneServer/layers/{layerId}. Returns the I3S 3dSceneLayer descriptor (3D Object layer) rooted at the scene extent. Enterprise edition.")
             .WithTags(ScenesTag)
             .Produces<I3sSceneLayerDocument>(StatusCodes.Status200OK, contentType: I3sContentType)
             .Produces(StatusCodes.Status400BadRequest)
@@ -135,16 +171,16 @@ internal static partial class I3sSceneServerEndpoints
             }
         }
 
-        var (extent, minHeight, maxHeight) = await ResolveExtentAsync(context, scene.Id, cancellationToken)
+        var extent = await ResolveExtentAsync(context, scene, cancellationToken)
             .ConfigureAwait(false);
 
         if (layerId is null)
         {
-            var service = I3sSceneServiceBuilder.BuildService(scene, extent, minHeight, maxHeight);
+            var service = I3sSceneServiceBuilder.BuildService(scene, extent);
             return SerializeService(service);
         }
 
-        var layer = I3sSceneServiceBuilder.BuildLayer(scene, extent, minHeight, maxHeight);
+        var layer = I3sSceneServiceBuilder.BuildLayer(scene, extent);
         return SerializeLayer(layer);
     }
 
@@ -165,35 +201,87 @@ internal static partial class I3sSceneServerEndpoints
     }
 
     /// <summary>
-    /// Resolves the served layer's horizontal extent (and, when available, its
-    /// vertical extent) for the I3S <c>fullExtent</c>.
+    /// Resolves the served layer's extent for the I3S <c>fullExtent</c>: the
+    /// persisted horizontal envelope plus, when the tileset is loadable, the
+    /// vertical (z) range read from the tileset's root bounding volume.
     /// </summary>
     /// <remarks>
-    /// The vertical extent (zmin/zmax) is intentionally <see langword="null"/>:
-    /// the persisted <c>SceneDatasetRecord</c> only carries a 2D
-    /// <see cref="SceneExtent"/> (XMin/YMin/XMax/YMax) and no min/max height, and
-    /// the config-registry path carries no extent at all. The authoritative
-    /// vertical bounds live on the per-tile bounding volumes served by the gRPC
-    /// <c>TileService</c> (region[4]/region[5]); the I3S descriptor does not have a
-    /// height source at this layer, so per OGC 19-008 it advertises a
-    /// horizontal-only <c>fullExtent</c> (zmin/zmax omitted) rather than fabricating
-    /// a vertical range. If the registration model gains persisted height bounds,
-    /// thread them through the trailing tuple slots here.
+    /// The horizontal envelope comes from the persisted
+    /// <see cref="SceneDatasetRecord"/> (a 2D <see cref="SceneExtent"/>); the
+    /// config-registry path carries no record and so no horizontal extent. The
+    /// vertical bounds are read honestly from the 3D Tiles root
+    /// <c>boundingVolume.region</c> (region[4]/region[5], min/max height in
+    /// metres) — the same authoritative source the gRPC <c>TileService</c> uses.
+    /// When neither a persisted extent nor a loadable tileset z-range is
+    /// available the vertical extent is omitted (per OGC 19-008) rather than
+    /// fabricating a 0..0 range.
     /// </remarks>
-    private static async Task<(SceneExtent? Extent, double? MinHeight, double? MaxHeight)> ResolveExtentAsync(
+    private static async Task<SceneExtent?> ResolveExtentAsync(
         HttpContext context,
-        string sceneId,
+        SceneDataset scene,
         CancellationToken cancellationToken)
     {
+        SceneExtent? horizontal = null;
         var registration = context.RequestServices.GetService<ISceneRegistrationService>();
-        if (registration is null)
+        if (registration is not null)
         {
-            return (null, null, null);
+            var record = await registration.GetBySceneIdAsync(scene.Id, cancellationToken).ConfigureAwait(false);
+            horizontal = record?.Extent;
         }
 
-        var record = await registration.GetBySceneIdAsync(sceneId, cancellationToken).ConfigureAwait(false);
-        return record is null
-            ? (null, null, null)
-            : (record.Extent, null, null);
+        var verticalRange = TryReadTilesetVerticalRange(scene);
+
+        if (horizontal is null)
+        {
+            // No persisted horizontal extent: a vertical range alone is not a
+            // usable fullExtent, so omit the extent entirely.
+            return null;
+        }
+
+        if (verticalRange is not { } range)
+        {
+            return horizontal;
+        }
+
+        return horizontal with { ZMin = range.MinHeight, ZMax = range.MaxHeight };
+    }
+
+    /// <summary>
+    /// Reads the scene tileset's root <c>boundingVolume.region</c> min/max
+    /// height (region[4]/region[5], metres) when the <c>tileset.json</c> is
+    /// loadable under the scene's asset root. Returns <see langword="null"/>
+    /// when the tileset is absent, unparsable, or carries no 6-element region —
+    /// so the descriptor advertises a vertical range only when it is honestly
+    /// known.
+    /// </summary>
+    private static (double MinHeight, double MaxHeight)? TryReadTilesetVerticalRange(SceneDataset scene)
+    {
+        if (!SceneAssetResolver.TryResolve(scene, scene.TilesetFileName, out var resolved, out _))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var stream = resolved.File.OpenRead();
+            var document = JsonSerializer.Deserialize(
+                stream,
+                TilesetJsonContext.Default.TilesetDocument);
+
+            var region = document?.Root.BoundingVolume.Region;
+            if (region is not { Length: >= 6 })
+            {
+                return null;
+            }
+
+            return (region[4], region[5]);
+        }
+        catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
+        {
+            // A missing/locked/corrupt tileset is not fatal to descriptor
+            // serving: fall back to a horizontal-only fullExtent rather than
+            // failing the request.
+            return null;
+        }
     }
 }

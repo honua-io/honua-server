@@ -279,6 +279,88 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
         fullExtent.GetProperty("ymax").GetDouble().Should().BeApproximately(ExtentYMax, 1e-9);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{sceneId}/SceneServer")]
+    public async Task GetService_AtGeoServicesPath_ReturnsI3sServiceDescriptor()
+    {
+        // #1806: the canonical GeoServices path serves the same descriptor as
+        // the legacy /scenes alias.
+        var response = await _enterpriseFixture.Client.GetAsync($"/rest/services/{SceneId}/SceneServer");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = json.RootElement;
+        root.GetProperty("serviceName").GetString().Should().Be("I3S Fixture Scene");
+        root.GetProperty("serviceVersion").GetString().Should().Be("1.7");
+        root.GetProperty("layers").EnumerateArray().Single()
+            .GetProperty("layerType").GetString().Should().Be("3DObject");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{sceneId}/SceneServer/layers/{layerId:int}")]
+    public async Task GetLayer_AtGeoServicesPath_ReturnsThreeDObjectLayer()
+    {
+        var response = await _enterpriseFixture.Client.GetAsync($"/rest/services/{SceneId}/SceneServer/layers/0");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = json.RootElement;
+        root.GetProperty("layerType").GetString().Should().Be("3DObject");
+        root.GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(4326);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{sceneId}/SceneServer")]
+    public async Task GetService_AtGeoServicesPath_CommunityEdition_Returns403()
+    {
+        var response = await _communityFixture.Client.GetAsync($"/rest/services/{SceneId}/SceneServer");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{sceneId}/SceneServer/layers/{layerId:int}")]
+    public async Task GetLayer_DescriptorIsHonest_RichMetadataButNoFetchableNodeStore()
+    {
+        // #1808 descriptor honesty: the enriched 1.7 descriptor carries the
+        // z-bearing fullExtent (read from the tileset root bounding volume),
+        // heightModelInfo, and format definitions/schema — but it must NOT
+        // advertise a fetchable rootNode / nodePages store (#1202): those routes
+        // are the separate hard lane and would 404 for a conformant client.
+        var response = await _enterpriseFixture.Client.GetAsync($"/rest/services/{ExtentSceneId}/SceneServer/layers/0");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = json.RootElement;
+
+        // Vertical extent threaded from the fixture tileset root region (min/max
+        // height 0..20 metres).
+        var fullExtent = root.GetProperty("fullExtent");
+        fullExtent.GetProperty("zmin").GetDouble().Should().BeApproximately(0.0, 1e-9);
+        fullExtent.GetProperty("zmax").GetDouble().Should().BeApproximately(20.0, 1e-9);
+
+        // heightModelInfo + format definitions/schema present (descriptive only).
+        root.GetProperty("heightModelInfo").GetProperty("heightModel").GetString().Should().Be("ellipsoidal");
+        root.TryGetProperty("geometryDefinitions", out var geometryDefinitions).Should().BeTrue();
+        geometryDefinitions.GetArrayLength().Should().BeGreaterThan(0);
+        root.TryGetProperty("materialDefinitions", out _).Should().BeTrue();
+        root.TryGetProperty("textureSetDefinitions", out _).Should().BeTrue();
+        root.TryGetProperty("attributeStorageInfo", out _).Should().BeTrue();
+
+        // Honesty guard: no fetchable node store is advertised.
+        var store = root.GetProperty("store");
+        store.TryGetProperty("rootNode", out _).Should().BeFalse();
+        store.TryGetProperty("nodePages", out _).Should().BeFalse();
+    }
+
     private sealed class StubLicenseStatusProvider : ILicenseStatusProvider
     {
         private readonly HonuaEdition _edition;
