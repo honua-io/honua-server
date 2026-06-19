@@ -330,6 +330,7 @@ internal static class WmtsRequestHandlers
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
             var coordinateTransformService = context.RequestServices.GetService<ICoordinateTransformService>();
             var capabilitiesFeatureReader = context.RequestServices.GetService<IFeatureReader>();
+            var tileMatrixSetRegistry = context.RequestServices.GetService<ITileMatrixSetRegistry>();
             // Capabilities only advertises resources that (a) carry geometry and (b) the caller
             // is allowed to read. V2 carries geometry on Spatial.GeometryType OR via a
             // Geometry/Geography schema field (matches the resolution used by the renderer).
@@ -345,6 +346,7 @@ internal static class WmtsRequestHandlers
                 wmtsMaxZoom,
                 coordinateTransformService,
                 capabilitiesFeatureReader,
+                tileMatrixSetRegistry,
                 cancellationToken).ConfigureAwait(false);
             return Results.Content(xml, responseMimeType);
         }
@@ -585,9 +587,21 @@ internal static class WmtsRequestHandlers
             return CreateWmtsExceptionReport(context, "MissingParameterValue", "TileMatrixSet", "TILEMATRIXSET parameter is required.");
         }
 
-        if (!TryResolveWmtsTileGrid(tileMatrixSet, out var tileGrid))
+        var tileMatrixSetRegistry = context.RequestServices.GetService<ITileMatrixSetRegistry>();
+        var isBuiltInGrid = TryResolveWmtsTileGrid(tileMatrixSet, out var tileGrid);
+        GridGeometry? customGridGeometry = null;
+        if (!isBuiltInGrid)
         {
-            return CreateWmtsExceptionReport(context, "InvalidParameterValue", "TileMatrixSet", "Supported TILEMATRIXSET values are WebMercatorQuad and WorldCRS84Quad.");
+            // Operator-defined custom gridset (advertised in GetCapabilities). The custom grid's
+            // own levels bound the valid TILEMATRIX/TILEROW/TILECOL ranges (the global wmtsMaxZoom
+            // applies only to the built-in pyramids).
+            if (tileMatrixSetRegistry is null ||
+                !tileMatrixSetRegistry.TryGet(tileMatrixSet!, out var customEntry) ||
+                customEntry.IsBuiltIn ||
+                !tileMatrixSetRegistry.TryGetGeometry(customEntry.Id, wmtsMaxZoom, out customGridGeometry))
+            {
+                return CreateWmtsExceptionReport(context, "InvalidParameterValue", "TileMatrixSet", "Supported TILEMATRIXSET values are WebMercatorQuad and WorldCRS84Quad.");
+            }
         }
 
         if (!TryGetRequiredQueryValue(query, "TILEMATRIX", out var tileMatrixValue))
@@ -597,9 +611,19 @@ internal static class WmtsRequestHandlers
 
         if (!int.TryParse(tileMatrixValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var tileMatrix) ||
             tileMatrix < 0 ||
-            tileMatrix > wmtsMaxZoom)
+            (isBuiltInGrid && tileMatrix > wmtsMaxZoom))
         {
             return CreateWmtsExceptionReport(context, "InvalidParameterValue", "TileMatrix", "Invalid TILEMATRIX parameter.");
+        }
+
+        GridLevel? customLevel = null;
+        if (!isBuiltInGrid)
+        {
+            customLevel = customGridGeometry!.FindLevel(tileMatrix);
+            if (customLevel is null)
+            {
+                return CreateWmtsExceptionReport(context, "InvalidParameterValue", "TileMatrix", "Invalid TILEMATRIX parameter.");
+            }
         }
 
         if (!TryGetRequiredQueryValue(query, "TILEROW", out var tileRowValue))
@@ -622,8 +646,12 @@ internal static class WmtsRequestHandlers
             return CreateWmtsExceptionReport(context, "InvalidParameterValue", "TileCol", "Invalid TILECOL parameter.");
         }
 
-        var maxRowIndex = GetWmtsMaxTileRowIndex(tileMatrix);
-        var maxColIndex = GetWmtsMaxTileColIndex(tileGrid, tileMatrix);
+        var maxRowIndex = isBuiltInGrid
+            ? GetWmtsMaxTileRowIndex(tileMatrix)
+            : (int)(customLevel!.Value.MatrixHeight - 1);
+        var maxColIndex = isBuiltInGrid
+            ? GetWmtsMaxTileColIndex(tileGrid, tileMatrix)
+            : (int)(customLevel!.Value.MatrixWidth - 1);
         if (tileRow > maxRowIndex)
         {
             return CreateWmtsExceptionReport(context, "TileOutOfRange", "TileRow", "TILEROW is outside the valid range for TILEMATRIX.");
@@ -635,22 +663,39 @@ internal static class WmtsRequestHandlers
         }
 
         var serviceSrid = ResolveServiceSrid(service, layer.Resource);
+
+        // Resolve the optional elevation/vertical selection from the validated `elevation`
+        // dimension and record it on the render descriptor. Shape A (#1792): recorded only —
+        // the render itself does not yet apply the vertical slice (deferred Shape B).
+        var verticalSelection = ResolveWmtsLayerVerticalSelection(layer, query);
         var renderDescriptors = new RenderLayerDescriptor[]
         {
-            BuildRenderDescriptor(layer)
+            BuildRenderDescriptor(layer, verticalSelection)
         };
 
-        var renderResult = await RenderRasterTileForGridAsync(
-            context,
-            serviceSrid,
-            renderDescriptors,
-            tileMatrix,
-            tileRow,
-            tileCol,
-            MaxFeaturesPerLayer,
-            tileGrid,
-            tileTemporalCancellationToken,
-            tileTemporalFilter is null ? null : [tileTemporalFilter]).ConfigureAwait(false);
+        var renderResult = isBuiltInGrid
+            ? await RenderRasterTileForGridAsync(
+                context,
+                serviceSrid,
+                renderDescriptors,
+                tileMatrix,
+                tileRow,
+                tileCol,
+                MaxFeaturesPerLayer,
+                tileGrid,
+                tileTemporalCancellationToken,
+                tileTemporalFilter is null ? null : [tileTemporalFilter]).ConfigureAwait(false)
+            : await RenderRasterTileForGridAsync(
+                context,
+                serviceSrid,
+                renderDescriptors,
+                tileMatrix,
+                tileRow,
+                tileCol,
+                MaxFeaturesPerLayer,
+                customGridGeometry!,
+                tileTemporalCancellationToken,
+                tileTemporalFilter is null ? null : [tileTemporalFilter]).ConfigureAwait(false);
 
         return renderResult.IsSuccess
             ? Results.Bytes(renderResult.ImageBytes, PngMimeType)
@@ -1082,7 +1127,9 @@ internal static class WmtsRequestHandlers
         return resource.FindPrimaryGeometryField() is not null;
     }
 
-    private static RenderLayerDescriptor BuildRenderDescriptor(WmtsLayer layer)
+    private static RenderLayerDescriptor BuildRenderDescriptor(
+        WmtsLayer layer,
+        VerticalSelection? verticalSelection = null)
     {
         // When the resource's Spatial slot is empty (common in test fixtures that only set
         // a schema-level geometry field), still mark the layer renderable so the renderer
@@ -1090,7 +1137,7 @@ internal static class WmtsRequestHandlers
         var v2GeometryType = layer.Resource.ReadGeometryType();
         var hasGeometry = v2GeometryType != MetadataV2GeometryType.None
             || layer.Resource.FindPrimaryGeometryField() is not null;
-        return CreateRenderLayerDescriptorFromV2(layer.StorageLayerId, hasGeometry, v2GeometryType);
+        return CreateRenderLayerDescriptorFromV2(layer.StorageLayerId, hasGeometry, v2GeometryType, verticalSelection);
     }
 
     private static bool TryResolveWmtsLayer(IReadOnlyList<WmtsLayer> layers, string layerIdOrName, out WmtsLayer layer)
@@ -1256,6 +1303,7 @@ internal static class WmtsRequestHandlers
         int wmtsMaxZoom,
         ICoordinateTransformService? coordinateTransformService,
         IFeatureReader? featureReader,
+        ITileMatrixSetRegistry? tileMatrixSetRegistry,
         CancellationToken cancellationToken)
     {
         var sb = new StringBuilder(4096);
@@ -1440,6 +1488,7 @@ internal static class WmtsRequestHandlers
                 AppendWmtsDimensionElements(sb, dimensions);
                 AppendWmtsTileMatrixSetLink(sb, TileGridKind.WebMercatorQuad, wmtsMaxZoom);
                 AppendWmtsTileMatrixSetLink(sb, TileGridKind.WorldCrs84Quad, wmtsMaxZoom);
+                AppendWmtsCustomTileMatrixSetLinks(sb, tileMatrixSetRegistry, wmtsMaxZoom);
                 sb.Append("      <ResourceURL format=\"image/png\" resourceType=\"tile\" template=\"")
                     .Append(EscapeXml(tileTemplate))
                     .AppendLine("\" />");
@@ -1458,6 +1507,7 @@ internal static class WmtsRequestHandlers
 
             AppendWmtsWebMercatorTileMatrixSet(sb, wmtsMaxZoom);
             AppendWmtsWorldCrs84QuadTileMatrixSet(sb, wmtsMaxZoom);
+            AppendWmtsCustomTileMatrixSets(sb, tileMatrixSetRegistry, wmtsMaxZoom);
             sb.AppendLine("  </Contents>");
         }
 
@@ -2133,6 +2183,70 @@ internal static class WmtsRequestHandlers
         return (parsed, null);
     }
 
+    /// <summary>
+    /// Resolves the optional <see cref="VerticalSelection"/> for a WMTS GetTile request from
+    /// the validated <c>elevation</c> dimension value. WMTS GetCapabilities already advertises
+    /// the discrete elevation dimension (see <see cref="GetWmtsDimensionDefinitions"/>) and
+    /// <see cref="TryValidateWmtsDimensionParameters"/> has already accepted (or rejected) the
+    /// supplied value against that dimension's enumerated values / <c>default</c> / <c>current</c>
+    /// tokens. This resolver mirrors <see cref="TryBuildWmtsLayerTemporalFilterAsync"/>: it maps
+    /// the validated token to the concrete advertised value and parses it into a numeric
+    /// selection so it can be RECORDED and threaded through the render call.
+    /// </summary>
+    /// <remarks>
+    /// Shape A (#1792): the returned selection is recorded/telemetry-tagged on the render
+    /// descriptor but does NOT change what is rendered for vector layers — there is no
+    /// Z-aware vector source yet (the Zarr datacube Z-slice render is the deferred Shape B
+    /// follow-up). When the parameter is omitted the dimension's advertised default (100) is
+    /// applied, matching the advertised contract. Layers that do not advertise an elevation
+    /// dimension (everything except CITE Terrain) never reach the resolve branch because the
+    /// validator would already have rejected an unknown <c>elevation</c> key.
+    /// </remarks>
+    private static VerticalSelection? ResolveWmtsLayerVerticalSelection(WmtsLayer layer, IQueryCollection query)
+    {
+        WmtsDimensionDefinition? elevationDimension = null;
+        foreach (var dimension in GetWmtsDimensionDefinitions(layer))
+        {
+            if (string.Equals(dimension.Identifier, "elevation", StringComparison.OrdinalIgnoreCase))
+            {
+                elevationDimension = dimension;
+                break;
+            }
+        }
+
+        if (elevationDimension is not { } elevation)
+        {
+            return null;
+        }
+
+        // Resolve the validated token (or the advertised default when omitted) to the concrete
+        // advertised elevation value, then parse it into a numeric VerticalSelection.
+        string resolvedValue;
+        if (query.ContainsKey("elevation"))
+        {
+            var rawValue = GetQueryValue(query, "elevation");
+            if (string.IsNullOrWhiteSpace(rawValue) ||
+                !TryResolveWmtsDimensionValue(elevation, rawValue, out resolvedValue))
+            {
+                // The validator already guarantees a valid value reaches here; treat any
+                // residual mismatch as "no recorded selection" rather than fabricating one.
+                return null;
+            }
+        }
+        else if (!string.IsNullOrWhiteSpace(elevation.DefaultValue))
+        {
+            resolvedValue = elevation.DefaultValue!;
+        }
+        else
+        {
+            return null;
+        }
+
+        return OgcVerticalSelectionParser.TryParseWmtsElevationValue(resolvedValue, out var selection)
+            ? selection
+            : null;
+    }
+
     private static string BuildWmtsMinimalCapabilities()
     {
         var sb = new StringBuilder(256);
@@ -2343,6 +2457,95 @@ internal static class WmtsRequestHandlers
         }
 
         sb.AppendLine("    </TileMatrixSet>");
+    }
+
+    /// <summary>
+    /// Emits a per-layer <c>TileMatrixSetLink</c> (with explicit limits) for every operator-defined
+    /// custom gridset in the registry. Built-in links are emitted separately so their XML stays
+    /// byte-identical; this only adds the custom entries.
+    /// </summary>
+    internal static void AppendWmtsCustomTileMatrixSetLinks(
+        StringBuilder sb,
+        ITileMatrixSetRegistry? registry,
+        int wmtsMaxZoom)
+    {
+        if (registry is null)
+        {
+            return;
+        }
+
+        foreach (var entry in registry.All)
+        {
+            if (entry.IsBuiltIn || !registry.TryGetGeometry(entry.Id, wmtsMaxZoom, out var geometry))
+            {
+                continue;
+            }
+
+            sb.AppendLine("      <TileMatrixSetLink>");
+            sb.Append("        <TileMatrixSet>").Append(EscapeXml(entry.Id)).AppendLine("</TileMatrixSet>");
+            sb.AppendLine("        <TileMatrixSetLimits>");
+            foreach (var level in geometry.Levels)
+            {
+                sb.AppendLine("          <TileMatrixLimits>");
+                sb.Append("            <TileMatrix>").Append(level.Level.ToString(CultureInfo.InvariantCulture)).AppendLine("</TileMatrix>");
+                sb.AppendLine("            <MinTileRow>0</MinTileRow>");
+                sb.Append("            <MaxTileRow>").Append((level.MatrixHeight - 1).ToString(CultureInfo.InvariantCulture)).AppendLine("</MaxTileRow>");
+                sb.AppendLine("            <MinTileCol>0</MinTileCol>");
+                sb.Append("            <MaxTileCol>").Append((level.MatrixWidth - 1).ToString(CultureInfo.InvariantCulture)).AppendLine("</MaxTileCol>");
+                sb.AppendLine("          </TileMatrixLimits>");
+            }
+
+            sb.AppendLine("        </TileMatrixSetLimits>");
+            sb.AppendLine("      </TileMatrixSetLink>");
+        }
+    }
+
+    /// <summary>
+    /// Emits the <c>TileMatrixSet</c> definition for every operator-defined custom gridset in the
+    /// registry. The geographic-CRS axis order in <c>TopLeftCorner</c> matches the built-in CRS84
+    /// path (latitude then longitude); projected CRSes use easting then northing.
+    /// </summary>
+    internal static void AppendWmtsCustomTileMatrixSets(
+        StringBuilder sb,
+        ITileMatrixSetRegistry? registry,
+        int wmtsMaxZoom)
+    {
+        if (registry is null)
+        {
+            return;
+        }
+
+        foreach (var entry in registry.All)
+        {
+            if (entry.IsBuiltIn || !registry.TryGetGeometry(entry.Id, wmtsMaxZoom, out var geometry))
+            {
+                continue;
+            }
+
+            sb.AppendLine("    <TileMatrixSet>");
+            sb.Append("      <ows:Identifier>").Append(EscapeXml(entry.Id)).AppendLine("</ows:Identifier>");
+            sb.Append("      <ows:SupportedCRS>").Append(EscapeXml(entry.Crs)).AppendLine("</ows:SupportedCRS>");
+
+            foreach (var level in geometry.Levels)
+            {
+                // WMTS TopLeftCorner axis order follows the CRS: latitude/longitude for geographic
+                // CRSes (matching the built-in CRS84 grid), easting/northing for projected CRSes.
+                var firstAxis = geometry.IsGeographic ? geometry.TopLeftY : geometry.TopLeftX;
+                var secondAxis = geometry.IsGeographic ? geometry.TopLeftX : geometry.TopLeftY;
+
+                sb.AppendLine("      <TileMatrix>");
+                sb.Append("        <ows:Identifier>").Append(level.Level.ToString(CultureInfo.InvariantCulture)).AppendLine("</ows:Identifier>");
+                sb.Append("        <ScaleDenominator>").Append(FormatWmtsScaleDenominator(level.ScaleDenominator)).AppendLine("</ScaleDenominator>");
+                sb.Append("        <TopLeftCorner>").Append(firstAxis.ToString("F6", CultureInfo.InvariantCulture)).Append(' ').Append(secondAxis.ToString("F6", CultureInfo.InvariantCulture)).AppendLine("</TopLeftCorner>");
+                sb.Append("        <TileWidth>").Append(geometry.TileWidth.ToString(CultureInfo.InvariantCulture)).AppendLine("</TileWidth>");
+                sb.Append("        <TileHeight>").Append(geometry.TileHeight.ToString(CultureInfo.InvariantCulture)).AppendLine("</TileHeight>");
+                sb.Append("        <MatrixWidth>").Append(level.MatrixWidth.ToString(CultureInfo.InvariantCulture)).AppendLine("</MatrixWidth>");
+                sb.Append("        <MatrixHeight>").Append(level.MatrixHeight.ToString(CultureInfo.InvariantCulture)).AppendLine("</MatrixHeight>");
+                sb.AppendLine("      </TileMatrix>");
+            }
+
+            sb.AppendLine("    </TileMatrixSet>");
+        }
     }
 
     private static async Task AppendWmtsWgs84BoundingBoxAsync(

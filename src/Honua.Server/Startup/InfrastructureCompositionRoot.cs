@@ -210,6 +210,15 @@ internal static class InfrastructureCompositionRoot
         {
             configuration.GetSection(Honua.Core.Features.Tiles.TileOptions.SectionName).Bind(options);
         });
+
+        // Bind operator-defined custom tile matrix sets and expose the merged built-in +
+        // custom gridset registry consumed by the OGC API Tiles and classic WMTS adapters.
+        // ValidateOnStart drives the registered IValidateOptions<TileMatrixSetDefinitionOptions>
+        // (TileMatrixSetOptionsValidator) so a misconfigured gridset fails the host fast.
+        services.AddOptions<Honua.Core.Features.Tiles.TileMatrixSetDefinitionOptions>()
+            .Bind(configuration.GetSection(Honua.Core.Features.Tiles.TileMatrixSetDefinitionOptions.SectionName))
+            .ValidateOnStart();
+        services.AddSingleton<Honua.Core.Features.Tiles.ITileMatrixSetRegistry, Honua.Core.Features.Tiles.TileMatrixSetRegistry>();
     }
 
     /// <summary>
