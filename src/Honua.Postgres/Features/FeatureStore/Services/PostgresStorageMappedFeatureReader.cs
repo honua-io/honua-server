@@ -361,9 +361,13 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     private SqlBuilder BuildFeatureSelect(FeatureQuery query, bool probeLimit)
     {
         var sql = new SqlBuilder();
+        // Preserve Z/M ordinates through extended WKB when the canonical query requests it (returnZ/
+        // returnM); ST_AsBinary emits 2D OGC WKB and silently drops higher ordinates. EWKB is read
+        // transparently by the WKB consumers, so 2D-only data is unaffected.
+        var geometryEncoder = query.IncludeZ || query.IncludeM ? "ST_AsEWKB" : "ST_AsBinary";
         var geometrySelect = _geometryColumn == null
             ? "NULL"
-            : $"ST_AsBinary({BuildGeometryExpression(query)})";
+            : $"{geometryEncoder}({BuildGeometryExpression(query)})";
         var attributesSelect = BuildAttributesExpression(query);
         var distanceSelect = BuildDistanceSelectExpression(query, sql);
 

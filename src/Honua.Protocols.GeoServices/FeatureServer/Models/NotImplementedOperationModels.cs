@@ -7,9 +7,11 @@ namespace Honua.Protocols.GeoServices.FeatureServer.Models;
 
 /// <summary>
 /// Response model for the service-level <c>queryContingentValues</c> operation.
-/// Honua does not yet model contingent attribute values; the response is shaped per
-/// the Esri specification with empty definition collections so SDK clients parse it
-/// without error and observe that no contingent value rules are configured.
+/// Honua models contingent attribute values through the Metadata v2 graph
+/// (<c>contingentValueGroups</c> on each resource); the response carries one
+/// <see cref="ContingentValuesDefinition"/> per layer that declares contingent values
+/// and an empty collection for services with none, so SDK clients parse it without
+/// error (#1878).
 /// </summary>
 public sealed class QueryContingentValuesResponse
 {
@@ -28,18 +30,98 @@ public sealed class QueryContingentValuesResponse
     ];
 
     /// <summary>
-    /// Domain string dictionaries referenced by contingent value rows.
-    /// Empty until contingent value modeling is implemented.
+    /// Domain string dictionaries referenced by contingent value rows. Empty; Honua emits
+    /// coded/range values inline rather than via a shared string-dictionary table.
     /// </summary>
     [JsonPropertyName("stringDicts")]
     public object[] StringDicts { get; set; } = [];
 
     /// <summary>
-    /// Per-layer contingent value definitions. Empty until contingent value
-    /// modeling is implemented.
+    /// Per-layer contingent value definitions. One entry per layer that declares one or more
+    /// contingent value groups; empty when the service declares none.
     /// </summary>
     [JsonPropertyName("contingentValuesDefinitions")]
-    public object[] ContingentValuesDefinitions { get; set; } = [];
+    public ContingentValuesDefinition[] ContingentValuesDefinitions { get; set; } = [];
+}
+
+/// <summary>
+/// Per-layer contingent value definition: the field groups and their enumerated allowed
+/// value combinations for one FeatureServer layer.
+/// </summary>
+public sealed class ContingentValuesDefinition
+{
+    /// <summary>Layer id the contingent values apply to.</summary>
+    [JsonPropertyName("id")]
+    public int Id { get; set; }
+
+    /// <summary>Field groups (cross-field constraints) declared for the layer.</summary>
+    [JsonPropertyName("fieldGroups")]
+    public ContingentValueFieldGroup[] FieldGroups { get; set; } = [];
+}
+
+/// <summary>
+/// A field group within a <see cref="ContingentValuesDefinition"/>: the constrained fields
+/// and the enumerated allowed value combinations across them.
+/// </summary>
+public sealed class ContingentValueFieldGroup
+{
+    /// <summary>Field group name.</summary>
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>
+    /// When <see langword="true"/> only the enumerated <see cref="ContingentValues"/>
+    /// combinations are valid; when <see langword="false"/> the group is advisory.
+    /// </summary>
+    [JsonPropertyName("restrictive")]
+    public bool Restrictive { get; set; } = true;
+
+    /// <summary>Ordered names of the fields the group constrains.</summary>
+    [JsonPropertyName("fields")]
+    public string[] Fields { get; set; } = [];
+
+    /// <summary>Enumerated allowed value combinations across the group's fields.</summary>
+    [JsonPropertyName("contingentValues")]
+    public ContingentValueRow[] ContingentValues { get; set; } = [];
+}
+
+/// <summary>
+/// A single allowed value combination within a <see cref="ContingentValueFieldGroup"/>.
+/// </summary>
+public sealed class ContingentValueRow
+{
+    /// <summary>Stable id of the combination within its group.</summary>
+    [JsonPropertyName("id")]
+    public int Id { get; set; }
+
+    /// <summary>
+    /// Subtype code the combination applies to, or <c>null</c> when it applies to every subtype.
+    /// </summary>
+    [JsonPropertyName("subtypeCode")]
+    public System.Text.Json.JsonElement? SubtypeCode { get; set; }
+
+    /// <summary>Allowed value for each constrained field, keyed by field name.</summary>
+    [JsonPropertyName("values")]
+    public Dictionary<string, ContingentFieldValue> Values { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+}
+
+/// <summary>
+/// The value a single field may take within a <see cref="ContingentValueRow"/> — a discrete
+/// coded value, a numeric range, any value, or null.
+/// </summary>
+public sealed class ContingentFieldValue
+{
+    /// <summary>Value kind: <c>code</c>, <c>range</c>, <c>any</c>, or <c>null</c>.</summary>
+    [JsonPropertyName("type")]
+    public string Type { get; set; } = "any";
+
+    /// <summary>Discrete coded value when <see cref="Type"/> is <c>code</c>.</summary>
+    [JsonPropertyName("code")]
+    public System.Text.Json.JsonElement? Code { get; set; }
+
+    /// <summary>Two-element [min, max] range when <see cref="Type"/> is <c>range</c>.</summary>
+    [JsonPropertyName("range")]
+    public System.Text.Json.JsonElement[]? Range { get; set; }
 }
 
 /// <summary>

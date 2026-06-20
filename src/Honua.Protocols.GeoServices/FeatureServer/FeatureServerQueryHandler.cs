@@ -1514,7 +1514,12 @@ internal sealed partial class FeatureServerQueryHandler(
         var query = _queryProcessor.ToFeatureQuery(unifiedQuery, resource) with
         {
             Where = validatedParams.Where,
-            PublicIdAttributeName = GeoServicesObjectIdFieldResolver.ResolveObjectIdField(resource)?.Name
+            PublicIdAttributeName = GeoServicesObjectIdFieldResolver.ResolveObjectIdField(resource)?.Name,
+            // returnZ/returnM ask the storage read to carry the higher ordinates through the canonical
+            // WKB (EWKB) so the converter can emit them; without this the 2D OGC WKB read path strips
+            // Z/M before the converter's includeZ/includeM filter ever sees them (#1877).
+            IncludeZ = validatedParams.ReturnZ,
+            IncludeM = validatedParams.ReturnM
         };
 
         // Resolve gdbVersion to a branch VersionContext (#1272, ADR-0051). Absent / SDE.DEFAULT
