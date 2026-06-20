@@ -811,6 +811,9 @@ public static class EndpointRegistry
         new("GET", "/api/v1/tiles/pmtiles/{*artifactId}"),
         new("HEAD", "/api/v1/tiles/pmtiles/{*artifactId}"),
 
+        // Datacube (Zarr coverage) slice -> tile render binding (#1835).
+        new("GET", "/api/v1/datacubes/{layerId}/tiles/{tileMatrixSetId}/{z}/{x}/{y}"),
+
         new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/queryAttachments"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/queryAttachments"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments"),
