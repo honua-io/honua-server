@@ -317,11 +317,31 @@ internal sealed class StacMappingService
             return;
         }
 
-        // No temporal information is available for this feature.  STAC 1.0.0 requires datetime to
-        // be a non-null string OR null with both interval bounds present as non-null strings.
-        // We cannot invent interval bounds, so omit all three keys and let the item be served
-        // without a datetime property.  Clients that strictly require datetime should filter at
-        // ingestion.  Do NOT write datetime=null with null bounds — stac-validator rejects that.
+        // No per-feature temporal information is available.  STAC 1.0.0 still REQUIRES the
+        // "datetime" property on every Item: it must be a non-null RFC 3339 string, OR null with
+        // both start_datetime and end_datetime present as non-null strings.  Emitting
+        // "datetime":null with no bounds — or omitting the key entirely — fails stac-api-validator
+        // (core/features/item-search) and breaks pystac/pystac-client
+        // ("If datetime is None, a start_datetime and end_datetime must be supplied").
+        //
+        // Fall back to a sensible non-null instant rather than violating the invariant: prefer the
+        // collection/resource's declared temporal-extent start (mirroring how the collection extent
+        // is computed), then its end, and as an absolute last resort the Unix epoch — a
+        // deterministic, valid RFC 3339 value that keeps the item parseable by every STAC client.
+        properties["datetime"] = FormatTemporalValue(ResolveFallbackInstant(resource));
+    }
+
+    /// <summary>
+    /// Resolves a deterministic, non-null datetime for an Item that carries no per-feature temporal
+    /// value, so the STAC Item datetime invariant is never violated.  Prefers the resource's declared
+    /// temporal-extent start, then its end, then the Unix epoch.
+    /// </summary>
+    private static DateTimeOffset ResolveFallbackInstant(MetadataV2Resource resource)
+    {
+        var extent = resource.Temporal?.Extent;
+        return extent?.Start
+            ?? extent?.End
+            ?? DateTimeOffset.UnixEpoch;
     }
 
     private static string ResolveItemId(Feature feature)
