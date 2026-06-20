@@ -18,6 +18,18 @@ internal sealed class LicenseOptions
     /// </summary>
     public string? LicenseContent { get; set; }
 
+    /// <summary>
+    /// A secret-store reference (for example <c>aws:secretsmanager:&lt;arn&gt;</c>) whose value is the
+    /// signed license envelope JSON. When set, an <see cref="ILicenseContentSecretResolver"/> resolves
+    /// it at startup and the fetched envelope is validated exactly like <see cref="LicenseContent"/>.
+    /// This is the delivery mechanism for serverless/Lambda hosts where the ~2KB envelope does not fit
+    /// the platform environment-variable size limit and the filesystem is read-only. It takes precedence
+    /// over <see cref="LicenseContent"/> and <see cref="LicensePath"/>. If no resolver is registered, the
+    /// reference is unsupported, or the secret cannot be fetched, the host degrades gracefully to Community
+    /// rather than failing to start.
+    /// </summary>
+    public string? LicenseContentSecretRef { get; set; }
+
     public Dictionary<string, string> TrustedKeys { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
     public bool AllowAdminUpload { get; set; }
