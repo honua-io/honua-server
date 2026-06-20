@@ -193,7 +193,7 @@ CREATE TABLE IF NOT EXISTS honua.raster_statistics (
 );
 
 -- Per-raster sensor/camera/orientation/RPC metadata (#1879/#1880/#1881). Keep in sync
--- with src/Honua.Server/Migrations/059_AddRasterSensorMetadata.sql.
+-- with src/Honua.Server/Migrations/060_AddRasterSensorMetadata.sql.
 CREATE TABLE IF NOT EXISTS honua.raster_sensor_metadata (
     raster_data_id BIGINT PRIMARY KEY REFERENCES honua.raster_data(id) ON DELETE CASCADE,
     sensor_name VARCHAR(255),

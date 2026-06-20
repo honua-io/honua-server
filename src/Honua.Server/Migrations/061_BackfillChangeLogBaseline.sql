@@ -1,7 +1,7 @@
 -- Copyright (c) Honua. All rights reserved.
 -- Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
--- Migration: 059_BackfillChangeLogBaseline.sql
+-- Migration: 061_BackfillChangeLogBaseline.sql
 -- Description: Seeds a baseline change-log entry for every feature that predates change tracking
 --              (migration 012) and therefore has no row in honua.feature_changes. Before this
 --              migration the replica download path special-cased "no change-log coverage" as
