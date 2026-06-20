@@ -185,9 +185,11 @@ public sealed class PostgresMigrationRunCatalogTests(PostgresFixture fixture)
     /// </summary>
     private async Task EnsureMigrationRunsTableAsync()
     {
-        await using var conn = await fixture.GetConnectionAsync();
-        await using var cmd = conn.CreateCommand();
-        cmd.CommandText = """
+        // honua-server#1568 (signature 2): this DDL creates/ALTERs the literal, process-global
+        // honua.migration_runs table (search_path isolation does not scope it), so apply it under
+        // the shared seed advisory lock to keep parallel [Collection("Database")] tests off the
+        // 40P01 deadlock path racing ACCESS EXCLUSIVE catalog locks on the same global object.
+        await fixture.ApplyGlobalSeedSqlAsync("""
             CREATE SCHEMA IF NOT EXISTS honua;
             CREATE TABLE IF NOT EXISTS honua.migration_runs (
                 run_id                      VARCHAR(64)  PRIMARY KEY,
@@ -215,8 +217,14 @@ public sealed class PostgresMigrationRunCatalogTests(PostgresFixture fixture)
                 ON honua.migration_runs (status);
             CREATE INDEX IF NOT EXISTS idx_migration_runs_source_kind
                 ON honua.migration_runs (source_kind);
-            """;
-        await cmd.ExecuteNonQueryAsync();
+            """);
+
+        // honua-server#1568: honua.migration_runs is process-global (not search_path scoped) and
+        // ListAsync_PagesMostRecentFirst asserts over the whole table, so clear it up front. The
+        // class is one xUnit collection (its tests do not run concurrently with each other), and
+        // this keeps the suite correct against a reused/persistent database (HONUA_TEST_DB_URL)
+        // where a prior run's rows would otherwise leak into the paging assertions.
+        await fixture.ApplyGlobalSeedSqlAsync("TRUNCATE TABLE honua.migration_runs RESTART IDENTITY CASCADE;");
     }
 
     private static MigrationRunRecord NewRecord(string runId, MigrationRunStatus status) => new()

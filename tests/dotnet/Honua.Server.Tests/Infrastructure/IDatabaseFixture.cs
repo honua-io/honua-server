@@ -35,4 +35,15 @@ public interface IDatabaseFixture : IAsyncLifetime
     /// <param name="sql">SQL to execute</param>
     /// <param name="schemaName">Schema to execute in (optional)</param>
     Task ExecuteAsync(string sql, string? schemaName = null);
+
+    /// <summary>
+    /// Applies a raw seed/setup script that mutates the literal, process-global <c>honua</c>
+    /// schema while holding the shared seed advisory lock (honua-server#1568, signature 2).
+    /// Use this instead of <see cref="ExecuteAsync"/> for DDL/inserts against the global
+    /// <c>honua.*</c> catalog so parallel <c>[Collection("Database")]</c> tests serialize on one
+    /// lock rather than deadlocking (40P01) on the shared catalog.
+    /// </summary>
+    /// <param name="sql">The raw seed/setup SQL to apply.</param>
+    /// <param name="schemaName">Optional schema to set on <c>search_path</c> before applying the SQL.</param>
+    Task ApplyGlobalSeedSqlAsync(string sql, string? schemaName = null);
 }

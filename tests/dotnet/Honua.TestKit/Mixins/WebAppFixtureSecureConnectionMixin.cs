@@ -4,6 +4,7 @@
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
+using Honua.TestKit.Seeding;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
@@ -186,16 +187,59 @@ internal static class WebAppFixtureSecureConnectionMixin
 
     private static async Task EnsureSecureConnectionProviderColumnAsync(IAdoNetDatabaseConnectionProvider connectionProvider)
     {
+        // honua-server#1568 (signature 2 — 40P01: deadlock detected): WebAppFixture runs this on
+        // every InitializeAsync, and the ALTER targets the literal, process-global
+        // honua.data_connections table (the per-test search_path isolation does not scope it).
+        // Under the parallel [Collection("Database")] shards, dozens of fixtures issue this
+        // ACCESS EXCLUSIVE ALTER against the same global table concurrently and deadlock against
+        // each other (and against the catalog ALTERs the seeds apply). Serialize it on the same
+        // SeedRunner advisory lock every other global-honua mutation now uses, in one transaction,
+        // with a bounded retry on the benign deadlock/serialization victim (the ALTER is
+        // idempotent — ADD COLUMN IF NOT EXISTS — so re-running is safe).
         const string sql = """
             ALTER TABLE IF EXISTS honua.data_connections
                 ADD COLUMN IF NOT EXISTS provider_name TEXT NOT NULL DEFAULT 'postgis';
             """;
 
-        await using var connection = await connectionProvider.OpenConnectionAsync().ConfigureAwait(false);
-        await using var command = connection.CreateCommand();
-        command.CommandText = sql;
-        command.CommandTimeout = 10;
-        await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+        const int maxAttempts = 4;
+        for (var attempt = 1; ; attempt++)
+        {
+            await using var connection = await connectionProvider.OpenConnectionAsync().ConfigureAwait(false);
+            await using var transaction = await connection.BeginTransactionAsync().ConfigureAwait(false);
+            try
+            {
+                await using (var lockCommand = connection.CreateCommand())
+                {
+                    lockCommand.Transaction = transaction;
+                    // SeedApplicationLockKey is an internal compile-time constant (not user input),
+                    // so it is inlined as a literal — the provider exposes a base DbCommand whose
+                    // parameter collection has no AddWithValue helper.
+                    lockCommand.CommandText =
+                        $"SELECT pg_advisory_xact_lock({SeedRunner.SeedApplicationLockKey.ToString(System.Globalization.CultureInfo.InvariantCulture)});";
+                    lockCommand.CommandTimeout = 30;
+                    _ = await lockCommand.ExecuteScalarAsync().ConfigureAwait(false);
+                }
+
+                await using (var command = connection.CreateCommand())
+                {
+                    command.Transaction = transaction;
+                    command.CommandText = sql;
+                    command.CommandTimeout = 10;
+                    await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+                }
+
+                await transaction.CommitAsync().ConfigureAwait(false);
+                return;
+            }
+            catch (PostgresException ex)
+                when (attempt < maxAttempts &&
+                      ex.SqlState is PostgresErrorCodes.DeadlockDetected or PostgresErrorCodes.SerializationFailure)
+            {
+                // Deadlock/serialization victim: the transaction is fully rolled back (including
+                // the advisory xact lock), so retrying the idempotent ALTER is safe.
+                await transaction.RollbackAsync().ConfigureAwait(false);
+            }
+        }
     }
 
     private static bool IsTransientSecureConnectionCheckFailure(Exception ex)

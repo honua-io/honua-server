@@ -121,7 +121,11 @@ public class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
                 ADD COLUMN IF NOT EXISTS storage_options JSONB NOT NULL DEFAULT '{}'::jsonb;
             """;
 
-        await _fixture.ExecuteAsync(createCatalogSql);
+        // honua-server#1568 (signature 2): createCatalogSql creates/ALTERs the literal,
+        // process-global honua.layers table (search_path isolation does not scope it), so apply it
+        // under the shared seed advisory lock to keep parallel [Collection("Database")] tests off
+        // the 40P01 deadlock path racing ACCESS EXCLUSIVE catalog locks on the same global object.
+        await _fixture.ApplyGlobalSeedSqlAsync(createCatalogSql);
 
         var insertSql = $"""
             INSERT INTO honua.layers (
