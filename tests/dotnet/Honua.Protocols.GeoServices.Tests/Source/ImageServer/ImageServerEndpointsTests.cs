@@ -361,7 +361,9 @@ public class ImageServerEndpointsTests
         var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
         try
         {
-            var renderingRule = Uri.EscapeDataString("""{"rasterFunction":"Hillshade"}""");
+            // Hillshade/Slope/Aspect are now implemented terrain functions (#1803); use a name that
+            // is genuinely not a known raster function so the unknown-chain -> 400 path is exercised.
+            var renderingRule = Uri.EscapeDataString("""{"rasterFunction":"NonExistentRasterFunction"}""");
             var response = await fixture.Client.GetAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/exportImage?f=image&bbox=-180,-90,180,90&renderingRule={renderingRule}");
 
