@@ -144,6 +144,58 @@ public class TileMatrixSetRegistryTests
         entry!.IsBuiltIn.Should().BeTrue();
     }
 
+    // The WMTS GetFeatureInfo handler (#1873) computes the clicked pixel's world
+    // coordinate by interpolating (I+0.5)/TileWidth and (J+0.5)/TileHeight across the
+    // tile bounds returned by GridGeometry.GetTileBounds. These tests pin that math for
+    // both the built-in WebMercatorQuad grid (must stay byte-identical to the legacy
+    // inline Web Mercator computation — the CITE guard) and a non-WebMercator grid.
+    private static (double X, double Y) PixelCenter(GridGeometry geometry, int col, int row, int level, int i, int j)
+    {
+        var bounds = geometry.GetTileBounds(col, row, level)!;
+        var spanX = bounds.XMax - bounds.XMin;
+        var spanY = bounds.YMax - bounds.YMin;
+        var x = bounds.XMin + (((i + 0.5) / geometry.TileWidth) * spanX);
+        var y = bounds.YMax - (((j + 0.5) / geometry.TileHeight) * spanY);
+        return (x, y);
+    }
+
+    [Fact]
+    public void GridGeometry_PixelCenter_WebMercatorQuad_MatchesLegacyInlineMath()
+    {
+        var registry = new TileMatrixSetRegistry(new TileMatrixSetDefinitionOptions());
+        registry.TryGetGeometry("WebMercatorQuad", maxLevel: 3, out var geometry).Should().BeTrue();
+
+        const double origin = 20037508.342789244;
+        const int level = 2;
+        const int col = 1;
+        const int row = 3;
+        const int i = 200;
+        const int j = 50;
+
+        // Legacy inline formula previously hardcoded in HandleWmtsGetFeatureInfo.
+        var matrixWidth = 2.0 * origin / (1L << level);
+        var expectedX = (-origin + col * matrixWidth) + (((i + 0.5) / 256.0) * matrixWidth);
+        var expectedY = (origin - row * matrixWidth) - (((j + 0.5) / 256.0) * matrixWidth);
+
+        var (x, y) = PixelCenter(geometry!, col, row, level, i, j);
+        x.Should().BeApproximately(expectedX, 1e-6);
+        y.Should().BeApproximately(expectedY, 1e-6);
+    }
+
+    [Fact]
+    public void GridGeometry_PixelCenter_CustomGrid_UsesGridOriginAndCellSize()
+    {
+        var registry = new TileMatrixSetRegistry(new TileMatrixSetDefinitionOptions { Custom = { SampleCustom() } });
+        registry.TryGetGeometry("HawaiiAlbers", maxLevel: 99, out var geometry).Should().BeTrue();
+
+        // Level 0: single 256px tile, cell size 1120 CRS-units/pixel, origin (-200000, 2400000).
+        // The clicked centre pixel maps to origin + (128.5 * 1120) easting and
+        // origin - (128.5 * 1120) northing.
+        var (x, y) = PixelCenter(geometry!, col: 0, row: 0, level: 0, i: 128, j: 128);
+        x.Should().BeApproximately(-200000.0 + (128.5 * 1120.0), 1e-6);
+        y.Should().BeApproximately(2400000.0 - (128.5 * 1120.0), 1e-6);
+    }
+
     [Fact]
     public void GridGeometry_FindLevel_MissingLevel_ReturnsNull()
     {
