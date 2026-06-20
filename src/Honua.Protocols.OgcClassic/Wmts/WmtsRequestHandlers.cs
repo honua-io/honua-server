@@ -347,6 +347,7 @@ internal static class WmtsRequestHandlers
                 coordinateTransformService,
                 capabilitiesFeatureReader,
                 tileMatrixSetRegistry,
+                logger,
                 cancellationToken).ConfigureAwait(false);
             return Results.Content(xml, responseMimeType);
         }
@@ -1317,6 +1318,7 @@ internal static class WmtsRequestHandlers
         ICoordinateTransformService? coordinateTransformService,
         IFeatureReader? featureReader,
         ITileMatrixSetRegistry? tileMatrixSetRegistry,
+        ILogger logger,
         CancellationToken cancellationToken)
     {
         var sb = new StringBuilder(4096);
@@ -1453,7 +1455,7 @@ internal static class WmtsRequestHandlers
             // Pre-fetch temporal extent ranges for all time-aware layers concurrently so
             // the capabilities layer loop does not issue a sequential DB round-trip per layer.
             var wmtsTemporalRanges = await PrefetchWmtsTemporalRangesAsync(
-                visibleLayers, featureReader, cancellationToken).ConfigureAwait(false);
+                visibleLayers, featureReader, logger, cancellationToken).ConfigureAwait(false);
 
             foreach (var layer in visibleLayers)
             {
@@ -1751,6 +1753,7 @@ internal static class WmtsRequestHandlers
     private static async Task<Dictionary<int, MetadataV2TemporalRange>> PrefetchWmtsTemporalRangesAsync(
         IReadOnlyList<WmtsLayer> layers,
         IFeatureReader? featureReader,
+        ILogger logger,
         CancellationToken cancellationToken)
     {
         if (featureReader is null)
@@ -1767,12 +1770,11 @@ internal static class WmtsRequestHandlers
             return [];
         }
 
+        // A single layer whose temporal column cannot be aggregated must not 500 the
+        // whole GetCapabilities document — skip its TIME dimension and keep the rest
+        // (honua-server#1911).
         var tasks = temporalLayers.Select(layer =>
-            TemporalExtentHelpers.TryResolveTemporalRangeV2Async(
-                layer.Resource,
-                layer.StorageLayerId,
-                featureReader,
-                cancellationToken));
+            ResolveWmtsTemporalRangeSafeAsync(layer, featureReader, logger, cancellationToken));
 
         var results = await Task.WhenAll(tasks).ConfigureAwait(false);
 
@@ -1786,6 +1788,38 @@ internal static class WmtsRequestHandlers
         }
 
         return dict;
+    }
+
+    /// <summary>
+    /// Resolves a single WMTS layer's temporal range, degrading gracefully when the
+    /// underlying aggregate query fails (e.g. the configured time column holds values
+    /// the temporal cast cannot parse). A per-layer failure logs a warning and yields
+    /// <c>null</c> so the layer is advertised without a TIME dimension rather than
+    /// failing the whole capabilities document (honua-server#1911).
+    /// </summary>
+    private static async Task<MetadataV2TemporalRange?> ResolveWmtsTemporalRangeSafeAsync(
+        WmtsLayer layer,
+        IFeatureReader featureReader,
+        ILogger logger,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await TemporalExtentHelpers.TryResolveTemporalRangeV2Async(
+                layer.Resource,
+                layer.StorageLayerId,
+                featureReader,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            OgcClassicLog.TemporalExtentSkipped(logger, layer.StorageLayerId, layer.Identifier, ex);
+            return null;
+        }
     }
 
     private static string BuildWmtsDimensionTemplateSuffix(
