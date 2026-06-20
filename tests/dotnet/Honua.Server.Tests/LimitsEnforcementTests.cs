@@ -97,45 +97,41 @@ public sealed class LimitsEnforcementTests : IAsyncLifetime
 
     #region Query Limits Enforcement
 
+    // honua-server#1825: a resultRecordCount above maxRecordCount is silently capped to
+    // maxRecordCount (the page is returned with exceededTransferLimit:true) rather than
+    // rejected with a 400, matching ArcGIS. Under/at the limit return the page normally;
+    // over the limit clamps. Offsets are still hard-rejected (see QueryGet_OffsetLimit).
     [Theory]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
-    [InlineData(99, true)]   // Under limit
-    [InlineData(100, true)]  // At limit
-    [InlineData(101, false)] // Over limit
-    public async Task QueryGet_RecordCountLimit_EnforcedCorrectly(int requestedCount, bool shouldSucceed)
+    [InlineData(99)]   // Under limit
+    [InlineData(100)]  // At limit
+    [InlineData(101)]  // Over limit — clamped to maxRecordCount
+    public async Task QueryGet_RecordCountLimit_EnforcedCorrectly(int requestedCount)
     {
         // Act
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?resultRecordCount={requestedCount}&f=json");
 
         // Assert
-        if (shouldSucceed)
-        {
-            response.Be200Ok();
-            var content = await response.Content.ReadAsStringAsync();
-            content.Should().NotBeNullOrEmpty();
+        response.Be200Ok();
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().NotBeNullOrEmpty();
 
-            var queryResponse = JsonSerializer.Deserialize<QueryResponse>(
-                content, FeatureServerJsonContext.Default.QueryResponse);
-            queryResponse.Should().NotBeNull();
-        }
-        else
-        {
-            response.Be400BadRequest();
-            var content = await response.Content.ReadAsStringAsync();
-            content.Should().Contain("exceed configured limits");
-            content.Should().Contain("Maximum record count: 100");
-        }
+        var queryResponse = JsonSerializer.Deserialize<QueryResponse>(
+            content, FeatureServerJsonContext.Default.QueryResponse);
+        queryResponse.Should().NotBeNull();
     }
 
+    // honua-server#1825: as with GET, an over-maximum resultRecordCount on POST query is
+    // clamped to maxRecordCount and the page returned, not rejected with a 400.
     [Theory]
     [Operation(Operations.Query)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
-    [InlineData(99, true)]   // Under limit
-    [InlineData(100, true)]  // At limit
-    [InlineData(101, false)] // Over limit
-    public async Task QueryPost_RecordCountLimit_EnforcedCorrectly(int requestedCount, bool shouldSucceed)
+    [InlineData(99)]   // Under limit
+    [InlineData(100)]  // At limit
+    [InlineData(101)]  // Over limit — clamped to maxRecordCount
+    public async Task QueryPost_RecordCountLimit_EnforcedCorrectly(int requestedCount)
     {
         // Arrange
         var queryParams = new QueryParameters
@@ -153,23 +149,13 @@ public sealed class LimitsEnforcementTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query", content);
 
         // Assert
-        if (shouldSucceed)
-        {
-            response.Be200Ok();
-            var responseContent = await response.Content.ReadAsStringAsync();
-            responseContent.Should().NotBeNullOrEmpty();
+        response.Be200Ok();
+        var responseContent = await response.Content.ReadAsStringAsync();
+        responseContent.Should().NotBeNullOrEmpty();
 
-            var queryResponse = JsonSerializer.Deserialize<QueryResponse>(
-                responseContent, FeatureServerJsonContext.Default.QueryResponse);
-            queryResponse.Should().NotBeNull();
-        }
-        else
-        {
-            response.Be400BadRequest();
-            var responseContent = await response.Content.ReadAsStringAsync();
-            responseContent.Should().Contain("exceed configured limits");
-            responseContent.Should().Contain("Maximum record count: 100");
-        }
+        var queryResponse = JsonSerializer.Deserialize<QueryResponse>(
+            responseContent, FeatureServerJsonContext.Default.QueryResponse);
+        queryResponse.Should().NotBeNull();
     }
 
     [Theory]

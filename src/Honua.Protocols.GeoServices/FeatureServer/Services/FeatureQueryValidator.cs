@@ -26,6 +26,14 @@ internal sealed class FeatureQueryValidator : IFeatureQueryValidator
             ClampLimitToMaximum = true
         };
 
+    // queryRelatedRecords keeps the stricter contract: an over-maximum resultRecordCount
+    // is rejected with a 400 ("Query parameters exceed configured limits") rather than
+    // silently clamped. The clamp above is intentionally scoped to the primary feature
+    // query operation (honua-server#1825); the related-records executor does not emit
+    // exceededTransferLimit paging, so a silent cap there would hide truncation.
+    private static readonly PaginationValidationOptions _relatedRecordsPagination =
+        new(MinOffset: 0, MinLimit: 1, OffsetParameterName: "resultOffset", LimitParameterName: "resultRecordCount");
+
     public FeatureQueryValidator(ICommonQueryValidator commonQueryValidator)
     {
         _commonQueryValidator = commonQueryValidator ?? throw new ArgumentNullException(nameof(commonQueryValidator));
@@ -109,7 +117,7 @@ internal sealed class FeatureQueryValidator : IFeatureQueryValidator
         var paginationResult = _commonQueryValidator.ValidateAndNormalizePagination(
             queryParams.ResultOffset,
             queryParams.ResultRecordCount,
-            _featureQueryPagination);
+            _relatedRecordsPagination);
         if (!paginationResult.IsValid)
         {
             return RelatedRecordsValidationResult.Invalid(paginationResult.ErrorMessage ?? "Invalid record count.");
