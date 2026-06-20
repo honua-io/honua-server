@@ -433,10 +433,16 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
         parameters.Add(fieldName);
 
         var attributeValue = DatabaseSchema.BuildJsonPathParameter(fieldParamIndex);
+        // The same date/datetime attribute can be persisted as ISO-8601 text (seeded
+        // rows) or as epoch-milliseconds rendered as text (Esri applyEdits). A bare
+        // ::timestamptz/::date cast on epoch-ms text raises SQLSTATE 22008 and 500s the
+        // WMS/WMTS GetCapabilities document (honua-server#1911). Use the same
+        // epoch-aware cast the order-by/filter paths already apply so MIN/MAX over the
+        // configured time field succeeds regardless of the on-disk encoding.
         var fieldExpression = propertyType switch
         {
-            TemporalPropertyType.DateTime => $"NULLIF({attributeValue}, '')::timestamptz",
-            TemporalPropertyType.Date => $"NULLIF({attributeValue}, '')::date",
+            TemporalPropertyType.DateTime => BuildEpochAwareOrderByCast(attributeValue, "timestamptz"),
+            TemporalPropertyType.Date => BuildEpochAwareOrderByCast(attributeValue, "date"),
             _ => attributeValue
         };
 
