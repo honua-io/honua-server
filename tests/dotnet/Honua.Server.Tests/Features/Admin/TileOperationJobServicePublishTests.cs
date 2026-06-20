@@ -383,6 +383,7 @@ public sealed class TileOperationJobServicePublishTests
                         Arg.Any<Honua.Core.Features.FeatureStore.Domain.FeatureQuery?>(),
                         Arg.Any<Honua.Core.Features.Tiles.TileOptions>(),
                         Arg.Any<TileLimits>(),
+                        Arg.Any<Honua.Core.Features.Tiles.GridGeometry?>(),
                         Arg.Any<CancellationToken>())
                     .Returns(
                         Task.FromResult<byte[]?>([0x01, 0x02, 0x03, 0x04]),
@@ -591,6 +592,7 @@ public sealed class TileOperationJobServicePublishTests
                     Arg.Any<Honua.Core.Features.FeatureStore.Domain.FeatureQuery?>(),
                     Arg.Any<Honua.Core.Features.Tiles.TileOptions>(),
                     Arg.Any<TileLimits>(),
+                    Arg.Any<Honua.Core.Features.Tiles.GridGeometry?>(),
                     Arg.Any<CancellationToken>())
                 .Returns([0x01, 0x02, 0x03, 0x04]);
         }

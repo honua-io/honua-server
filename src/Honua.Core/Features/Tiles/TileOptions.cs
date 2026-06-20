@@ -46,6 +46,49 @@ public sealed class TileOptions
     /// MVT buffer size in pixels (default: 256)
     /// </summary>
     public int TileBuffer { get; init; } = 256;
+
+    /// <summary>
+    /// Metatile factor (N): the seed/render path renders tiles in N×N metatile blocks per pass
+    /// instead of one tile at a time (#1837). A factor of <c>1</c> (the default) disables
+    /// metatiling and preserves the per-tile behavior; larger factors group neighbouring tiles
+    /// so the provider amortizes per-tile setup and reduces edge artifacts at block seams. Values
+    /// below <c>1</c> are treated as <c>1</c>.
+    /// </summary>
+    public int MetatileFactor { get; init; } = 1;
+
+    /// <summary>
+    /// Size-quota / LRU eviction policy for the tile cache (#1837). When
+    /// <see cref="TileCacheEvictionOptions.Enabled" /> is <see langword="false" /> (the default)
+    /// no eviction is applied and the cache grows under the configured TTLs only.
+    /// </summary>
+    public TileCacheEvictionOptions Eviction { get; init; } = new();
+}
+
+/// <summary>
+/// Size-quota / LRU eviction policy for the tile cache key index (#1837). The policy is a pure,
+/// declarative description of when cached tiles should be evicted; an evictor consults it against
+/// the current cache footprint (entry count / byte size) to decide how many least-recently-used
+/// tile entries to drop.
+/// </summary>
+public sealed class TileCacheEvictionOptions
+{
+    /// <summary>
+    /// Whether size-quota / LRU eviction is enabled. Defaults to <see langword="false" /> so the
+    /// baseline serve path is unchanged (TTL-only) until an operator opts in.
+    /// </summary>
+    public bool Enabled { get; init; }
+
+    /// <summary>
+    /// Maximum number of cached tile entries before least-recently-used entries are evicted.
+    /// <c>null</c> or a non-positive value means "no entry-count cap".
+    /// </summary>
+    public long? MaxEntries { get; init; }
+
+    /// <summary>
+    /// Maximum total cached tile bytes before least-recently-used entries are evicted.
+    /// <c>null</c> or a non-positive value means "no byte-size cap".
+    /// </summary>
+    public long? MaxBytes { get; init; }
 }
 
 /// <summary>

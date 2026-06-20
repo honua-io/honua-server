@@ -25,7 +25,13 @@ OGC API Tiles offers the standards-based equivalent of the XYZ routes — see [O
 
 Unknown query parameters are rejected with 400. Zoom is validated against the configured `Limits:Tiles` range; out-of-range `x`/`y` return 400. Tiles require the FeatureServer protocol to be enabled on the layer and respect layer access policies.
 
-Cache lifecycle: tile responses carry a `Cache-Control: max-age=N` header. The TTL is resolved per tileset — a per-tileset override from the `TileOptions:TilesetLifecycle` configuration (keyed `serviceId/layerId/tileMatrixSetId`) takes precedence, otherwise the global `TileOptions:CacheMaxAge` applies. Size/LRU eviction, scheduled invalidation, and metatiling are not implemented.
+Cache lifecycle: tile responses carry a `Cache-Control: max-age=N` header. The TTL is resolved per tileset — a per-tileset override from the `TileOptions:TilesetLifecycle` configuration (keyed `serviceId/layerId/tileMatrixSetId`) takes precedence, otherwise the global `TileOptions:CacheMaxAge` applies.
+
+Metatiling: the seed/render path renders tiles in aligned N×N metatile blocks per pass, controlled by `TileOptions:MetatileFactor` (default `1`, which keeps the per-tile behavior). Larger factors group neighbouring tiles so the provider amortizes per-tile setup.
+
+Size-quota / LRU eviction: `TileOptions:Eviction` (`Enabled`, `MaxEntries`, `MaxBytes`) declares when least-recently-used cached tiles are dropped. The decision policy is built in; for the Redis-backed tile cache, operators can alternatively rely on the infrastructure `maxmemory-policy allkeys-lru`. Disabled by default (TTL-only).
+
+Scheduled invalidation: `TileCacheExpiry` (`Enabled`, `IntervalSeconds`, `Targets[]` of `serviceId`/`layerId`/`tileMatrixSetId`) periodically dispatches an `invalidate` tile operation per target — the time-based complement to the per-tileset TTL. Disabled by default; the sweep interval is clamped to a 60s minimum.
 
 ## PMTiles range proxy
 

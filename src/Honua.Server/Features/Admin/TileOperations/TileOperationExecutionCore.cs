@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Globalization;
+using System.Linq;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -163,46 +164,57 @@ internal sealed partial class TileOperationExecutionCore
         };
         await _progressStore.SetProgressAsync(current.JobId, current, ProgressRetention, cancellationToken).ConfigureAwait(false);
 
+        // Metatiling (#1837): render tiles in aligned N×N metatile blocks per pass so neighbouring
+        // tiles are produced together. With MetatileFactor=1 this degenerates to one tile per block
+        // (the original per-tile order). The provider still renders one tile at a time, but the
+        // block-coherent iteration amortizes setup and keeps adjacent tiles' caches warm together.
+        var metatiles = MetatileGrouping.Group(
+            tileCoordinates.Select(static c => new TileIndex(c.Z, c.X, c.Y)),
+            _tileOptions.MetatileFactor);
+
         foreach (var layerId in layerIds)
         {
-            foreach (var coordinate in tileCoordinates)
+            foreach (var metatile in metatiles)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                try
+                foreach (var member in metatile.Tiles)
                 {
-                    await tileProvider.GetMvtTileAsync(
-                        layerId,
-                        coordinate.X,
-                        coordinate.Y,
-                        coordinate.Z,
-                        query: null,
-                        _tileOptions,
-                        _tileLimits,
-                        cancellationToken).ConfigureAwait(false);
-                    successful++;
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    TileOperationLog.TileGenerationFailed(_logger, layerId, coordinate.Z, coordinate.X, coordinate.Y, ex);
-                    failed++;
-                    if (warningList.Count < 20)
+                    cancellationToken.ThrowIfCancellationRequested();
+                    try
                     {
-                        warningList.Add($"Layer {layerId} tile {coordinate.Z}/{coordinate.X}/{coordinate.Y}: tile generation failed.");
+                        await tileProvider.GetMvtTileAsync(
+                            layerId,
+                            member.X,
+                            member.Y,
+                            member.Z,
+                            query: null,
+                            _tileOptions,
+                            _tileLimits,
+                            cancellationToken: cancellationToken).ConfigureAwait(false);
+                        successful++;
                     }
-                }
-
-                processed++;
-                if (processed % 25 == 0 || processed == total)
-                {
-                    current = current with
+                    catch (Exception ex) when (ex is not OperationCanceledException)
                     {
-                        ProcessedTiles = processed,
-                        SuccessfulTiles = successful,
-                        FailedTiles = failed,
-                        Warnings = warningList.ToArray(),
-                        CurrentPhase = $"{phase} ({processed}/{total})"
-                    };
-                    await _progressStore.SetProgressAsync(current.JobId, current, ProgressRetention, cancellationToken).ConfigureAwait(false);
+                        TileOperationLog.TileGenerationFailed(_logger, layerId, member.Z, member.X, member.Y, ex);
+                        failed++;
+                        if (warningList.Count < 20)
+                        {
+                            warningList.Add($"Layer {layerId} tile {member.Z}/{member.X}/{member.Y}: tile generation failed.");
+                        }
+                    }
+
+                    processed++;
+                    if (processed % 25 == 0 || processed == total)
+                    {
+                        current = current with
+                        {
+                            ProcessedTiles = processed,
+                            SuccessfulTiles = successful,
+                            FailedTiles = failed,
+                            Warnings = warningList.ToArray(),
+                            CurrentPhase = $"{phase} ({processed}/{total})"
+                        };
+                        await _progressStore.SetProgressAsync(current.JobId, current, ProgressRetention, cancellationToken).ConfigureAwait(false);
+                    }
                 }
             }
         }
@@ -560,7 +572,7 @@ internal sealed partial class TileOperationExecutionCore
                     query: null,
                     _tileOptions,
                     _tileLimits,
-                    cancellationToken).ConfigureAwait(false);
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
 
                 if (tileData is { Length: > 0 })
                 {
