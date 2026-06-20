@@ -36,6 +36,9 @@ jobs:
     steps:
       - uses: actions/github-script@v9
         with:
+          # Workflow-scoped token so the train can update-branch / merge PRs whose
+          # delta touches .github/workflows/** (GITHUB_TOKEN is forbidden from that).
+          github-token: ${{ secrets.MERGE_TRAIN_TOKEN }}
           script: |
             const owner = context.repo.owner, repo = context.repo.repo;
             const sleep = ms => new Promise(r => setTimeout(r, ms));
