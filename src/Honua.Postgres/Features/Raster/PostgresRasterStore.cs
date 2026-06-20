@@ -2492,7 +2492,10 @@ internal sealed class PostgresRasterStore : IRasterStore
                 SELECT unnest(@rasterIds) AS raster_id
             ),
             source AS (
-                SELECT {BuildClipExpression("raster", clipSrid)} AS rast
+                SELECT {BuildClipExpression("raster", clipSrid)} AS rast,
+                       id,
+                       created_at,
+                       COALESCE(acquisition_date, created_at) AS effective_acquisition
                 FROM {_rasterDataTable}
                 WHERE layer_id = @layerId AND id IN (SELECT raster_id FROM requested)
             )
@@ -2567,7 +2570,10 @@ internal sealed class PostgresRasterStore : IRasterStore
                 SELECT unnest(@rasterIds) AS raster_id
             ),
             source AS (
-                SELECT {BuildClipExpression("raster", clipSrid)} AS rast
+                SELECT {BuildClipExpression("raster", clipSrid)} AS rast,
+                       id,
+                       created_at,
+                       COALESCE(acquisition_date, created_at) AS effective_acquisition
                 FROM {_rasterDataTable}
                 WHERE layer_id = @layerId AND id IN (SELECT raster_id FROM requested)
             )
