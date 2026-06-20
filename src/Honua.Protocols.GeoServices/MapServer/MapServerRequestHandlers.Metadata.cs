@@ -341,7 +341,8 @@ internal static partial class MapServerEndpoints
         JsonElement? drawingInfo = null,
         int? publicLayerIdOverride = null,
         string? layerNameOverride = null,
-        string? definitionExpression = null)
+        string? definitionExpression = null,
+        IReadOnlyList<MapServerFieldInfo>? extraFields = null)
     {
         var sourcePublicLayerId = publication.LayerIndex
             ?? snapshot.ResolveStorageLayerId(publication)
@@ -374,7 +375,11 @@ internal static partial class MapServerEndpoints
             Extent = ResolveLayerExtent(resource, serviceExtent),
             DisplayField = displayField,
             ObjectIdField = objectIdField,
-            Fields = [.. resource.SchemaFields.Select(field => MapFieldInfoV2(field, objectIdField))],
+            Fields =
+            [
+                .. resource.SchemaFields.Select(field => MapFieldInfoV2(field, objectIdField)),
+                .. extraFields ?? [],
+            ],
             Capabilities = layerCapabilities,
             SupportsAdvancedQueries = true,
             HasAttachments = resource.Editing?.SupportsAttachments ?? false,

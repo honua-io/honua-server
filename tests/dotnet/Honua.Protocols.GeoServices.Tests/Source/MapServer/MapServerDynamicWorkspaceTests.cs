@@ -113,20 +113,43 @@ public sealed class MapServerDynamicWorkspaceTests
     [IntegrationTest]
     [Operation(Operations.Metadata)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/dynamicLayer")]
-    public async Task DynamicLayer_WithJoinDataSource_ReturnsBadRequest()
+    public async Task DynamicLayer_WithQueryTableDataSource_ReturnsBadRequest()
     {
+        // queryTable (raw SQL query table) remains deferred (#1866) and must be rejected.
         using var factory = CreateFactory(workspaceLayersEnabled: true, allowlist: [WorkspaceId]);
         using var client = factory.CreateClient();
 
+        // A queryTable carries a raw SQL string; it is rejected either by the request-level
+        // injection guard or by the dataSource type check. Either way it must never resolve.
         var layer = Uri.EscapeDataString(
-            "{\"id\":42,\"source\":{\"type\":\"dataLayer\",\"dataSource\":{\"type\":\"joinTable\",\"workspaceId\":\""
-            + WorkspaceId + "\"}}}");
+            "{\"id\":42,\"source\":{\"type\":\"dataLayer\",\"dataSource\":{\"type\":\"queryTable\",\"workspaceId\":\""
+            + WorkspaceId + "\",\"oidFields\":\"objectid\"}}}");
         var response = await client.GetAsync(
             $"/rest/services/{ServiceName}/MapServer/dynamicLayer?f=json&layer={layer}");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("joins and query tables are not");
+        content.Should().Contain("not supported");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/dynamicLayer")]
+    public async Task DynamicLayer_WithJoinTableMissingRightSource_ReturnsBadRequest()
+    {
+        using var factory = CreateFactory(workspaceLayersEnabled: true, allowlist: [WorkspaceId]);
+        using var client = factory.CreateClient();
+
+        var layer = Uri.EscapeDataString(
+            "{\"id\":42,\"source\":{\"type\":\"dataLayer\",\"dataSource\":{\"type\":\"joinTable\","
+            + "\"leftTableSource\":{\"type\":\"mapLayer\",\"mapLayerId\":0},"
+            + "\"leftTableKey\":\"objectid\",\"rightTableKey\":\"objectid\"}}}");
+        var response = await client.GetAsync(
+            $"/rest/services/{ServiceName}/MapServer/dynamicLayer?f=json&layer={layer}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("rightTableSource");
     }
 
     [IntegrationTest]
