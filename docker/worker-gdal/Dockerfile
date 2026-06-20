@@ -73,9 +73,16 @@ ARG DOTNET_RUNTIME_VERSION
 
 # Install the .NET runtime onto the GDAL (Ubuntu) base via the dotnet-install
 # script. The GDAL base already provides gdalwarp / ogr2ogr on PATH.
+#
+# PDAL (Point Data Abstraction Library) is added here for the point-cloud
+# decompress + reproject path (#1854): the `pdal translate` CLI decompresses LAZ
+# and Cloud-Optimized Point Cloud (COPC) sources (laz-perf), reprojects via PROJ,
+# and writes uncompressed LAS that the managed tiler (LasPointCloudReader +
+# PointCloudTilesetBuilder) turns into 3D Tiles. Like GDAL, PDAL lives ONLY in
+# this image; the lean serving image stays point-cloud-native-dep-free.
 # hadolint ignore=DL3008,DL3015
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates curl libicu-dev \
+ && apt-get install -y --no-install-recommends ca-certificates curl libicu-dev pdal \
  && rm -rf /var/lib/apt/lists/* \
  && curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh \
  && chmod +x /tmp/dotnet-install.sh \
@@ -86,9 +93,14 @@ RUN apt-get update \
 # Sanity check: the GDAL tools the worker shells out to must be present, and the
 # NetCDF + GRIB drivers (multidimensional coverage convert-to-Zarr path) must be
 # compiled in. The ubuntu-full base ships both; this is a build-time guard.
+# `pdal` must also be on PATH with the LAS reader + reprojection filter compiled
+# in (LAZ/COPC decompress + reproject, #1854).
 RUN command -v gdalwarp && command -v ogr2ogr && command -v gdalmdiminfo \
  && gdalinfo --formats | grep -qi netCDF \
- && gdalinfo --formats | grep -qi GRIB
+ && gdalinfo --formats | grep -qi GRIB \
+ && command -v pdal \
+ && pdal --drivers | grep -qi readers.las \
+ && pdal --drivers | grep -qi filters.reprojection
 
 # Non-root runtime user.
 RUN groupadd --gid 1001 --system honua \
@@ -105,7 +117,7 @@ ENV DOTNET_RUNNING_IN_CONTAINER=true \
     GdalWorker__ScratchRoot=/tmp/honua-gdal-worker
 
 LABEL org.opencontainers.image.title="honua-worker-etl" \
-      org.opencontainers.image.description="Honua heavyweight GP/ETL worker (GDAL-equipped, native runtime profile)" \
+      org.opencontainers.image.description="Honua heavyweight GP/ETL worker (GDAL + PDAL equipped, native runtime profile)" \
       org.opencontainers.image.licenses="Elastic-2.0" \
       honua.runtime.profile="native" \
       security.non-root="true" \
