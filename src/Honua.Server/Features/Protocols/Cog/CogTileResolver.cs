@@ -240,42 +240,29 @@ internal sealed class CogTileResolver : ICogTileResolver
         }
 
         var requestedBounds = TileMath.GetTileBounds(0, 0, requestedLevel);
-        var requestedPixelWidth = (requestedBounds.XMax - requestedBounds.XMin) / metadata.TileWidth;
-        var requestedPixelHeight = (requestedBounds.YMax - requestedBounds.YMin) / metadata.TileHeight;
-        if (requestedPixelWidth <= 0 || requestedPixelHeight <= 0)
+        var tileSpanX = requestedBounds.XMax - requestedBounds.XMin;
+        var tileSpanY = requestedBounds.YMax - requestedBounds.YMin;
+        if (tileSpanX <= 0 || tileSpanY <= 0)
         {
             return metadata.OverviewLevels[0];
         }
 
-        CogOverviewLevel? bestMatch = null;
-        var bestScore = double.MaxValue;
-
-        foreach (var overview in metadata.OverviewLevels)
+        // Score each overview by its ground sample distance against the requested tile geometry
+        // using the shared selector so the COG and PostGIS-pyramid read paths rank levels
+        // identically (#1836).
+        var candidateResolutions = new (double ResolutionX, double ResolutionY)[metadata.OverviewLevels.Length];
+        for (var i = 0; i < metadata.OverviewLevels.Length; i++)
         {
-            if (overview.Width <= 0 || overview.Height <= 0)
-            {
-                continue;
-            }
-
-            var overviewPixelWidth = extentWidth / overview.Width;
-            var overviewPixelHeight = extentHeight / overview.Height;
-            var widthScore = Math.Abs(((requestedBounds.XMax - requestedBounds.XMin) / overviewPixelWidth) - metadata.TileWidth);
-            var heightScore = Math.Abs(((requestedBounds.YMax - requestedBounds.YMin) / overviewPixelHeight) - metadata.TileHeight);
-            var score = widthScore + heightScore;
-
-            if (score < bestScore)
-            {
-                bestScore = score;
-                bestMatch = overview;
-
-                if (score <= 1e-6)
-                {
-                    break;
-                }
-            }
+            var overview = metadata.OverviewLevels[i];
+            candidateResolutions[i] = overview.Width > 0 && overview.Height > 0
+                ? (extentWidth / overview.Width, extentHeight / overview.Height)
+                : (0d, 0d);
         }
 
-        return bestMatch ?? metadata.OverviewLevels[0];
+        var bestIndex = OverviewLevelSelector.SelectBestIndex(
+            tileSpanX, tileSpanY, metadata.TileWidth, metadata.TileHeight, candidateResolutions);
+
+        return bestIndex >= 0 ? metadata.OverviewLevels[bestIndex] : metadata.OverviewLevels[0];
     }
 
     private static bool TryResolveAlignedTileIndex(

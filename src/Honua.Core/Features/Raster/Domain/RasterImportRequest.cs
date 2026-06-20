@@ -63,4 +63,12 @@ public sealed record RasterImportRequest
     /// Zoom levels for tile pre-generation. Empty to skip tile generation.
     /// </summary>
     public int[] TileZoomLevels { get; init; } = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+
+    /// <summary>
+    /// Power-of-two reduction factors for persisted overview pyramids (2 = half resolution,
+    /// 4 = quarter, ...). The dynamic tile read path reuses the closest persisted level instead
+    /// of recomputing an <c>ST_Rescale</c> reduction on every low-zoom request (#1836). Empty to
+    /// skip overview persistence. Requires a known CRS (SRID &gt; 0) just like tile pre-generation.
+    /// </summary>
+    public int[] OverviewFactors { get; init; } = [2, 4, 8, 16];
 }

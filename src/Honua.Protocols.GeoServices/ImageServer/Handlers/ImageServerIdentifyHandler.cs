@@ -249,8 +249,11 @@ internal sealed class ImageServerIdentifyHandler
         }
 
         // An Identity-only / StretchType=0 chain is an executable no-op: preserve the raw-value
-        // contract by leaving rendering null so the store samples the source pixel.
-        var resolved = new RasterIdentifyRendering(mapping.Stretch, mapping.Colormap, mapping.ClipRegion);
+        // contract by leaving rendering null so the store samples the source pixel. Band
+        // arithmetic and terrain functions are now threaded through so the sampled value matches
+        // the rendered exportImage output (identify parity, #1803).
+        var resolved = new RasterIdentifyRendering(
+            mapping.Stretch, mapping.Colormap, mapping.ClipRegion, mapping.BandArithmetic, mapping.Terrain);
         rendering = resolved.HasRendering ? resolved : null;
         return true;
     }

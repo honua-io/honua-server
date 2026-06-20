@@ -66,7 +66,16 @@ public enum RasterMosaicOrdering
     /// locked-id filtering happens upstream of the store; the union itself orders by newest
     /// acquisition so the contested pixel resolves deterministically among the locked rasters.
     /// </summary>
-    LockOrder = 3
+    LockOrder = 3,
+
+    /// <summary>
+    /// Each raster is clipped to its persisted seamline (cutline) before the union, so a
+    /// contested pixel is resolved by the per-raster seamline geometry rather than by raster
+    /// ordering alone (Esri <c>esriMosaicSeamline</c>, #1804). Among the seamline-clipped pieces
+    /// the union orders by newest acquisition. Requires a per-raster seamline in the footprint
+    /// store; rasters without one contribute their full footprint.
+    /// </summary>
+    Seamline = 4
 }
 
 /// <summary>

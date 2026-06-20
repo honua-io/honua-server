@@ -9,9 +9,9 @@ namespace Honua.Protocols.GeoServices.ImageServer.Services;
 /// <summary>
 /// The Esri <c>mosaicMethod</c> that an ImageServer <c>mosaicRule</c> selects, normalized to
 /// the subset this service understands. <see cref="Unsupported"/> covers recognized-but-not-yet
-/// implemented methods (for example <c>esriMosaicSeamline</c>, <c>esriMosaicNadir</c>, or an
-/// <c>esriMosaicByAttribute</c> over a non-acquisition field) which must surface a clean 501
-/// when more than one raster would be composited.
+/// implemented methods (for example <c>esriMosaicNadir</c>, or an <c>esriMosaicByAttribute</c>
+/// over a non-acquisition field) which must surface a clean 501 when more than one raster would
+/// be composited.
 /// </summary>
 public enum MosaicMethod
 {
@@ -42,11 +42,18 @@ public enum MosaicMethod
     Northwest = 4,
 
     /// <summary>
-    /// A recognized Esri mosaic method this service does not yet implement (seamline, nadir,
-    /// center, arbitrary non-date attribute sort). Surfaces a 501 when it would affect
+    /// <c>esriMosaicSeamline</c> — each raster is clipped to its persisted seamline (cutline)
+    /// before the union, so a contested pixel is resolved by the per-raster seamline geometry
+    /// rather than by raster ordering alone (#1804).
+    /// </summary>
+    Seamline = 5,
+
+    /// <summary>
+    /// A recognized Esri mosaic method this service does not yet implement (nadir, center,
+    /// viewpoint, arbitrary non-date attribute sort). Surfaces a 501 when it would affect
     /// multi-raster pixel selection.
     /// </summary>
-    Unsupported = 5
+    Unsupported = 6
 }
 
 /// <summary>
@@ -93,6 +100,7 @@ public readonly record struct ImageServerMosaicRule
     {
         MosaicMethod.Northwest => RasterMosaicOrdering.Northwest,
         MosaicMethod.LockRaster => RasterMosaicOrdering.LockOrder,
+        MosaicMethod.Seamline => RasterMosaicOrdering.Seamline,
         MosaicMethod.Attribute or MosaicMethod.ByDate =>
             Ascending ? RasterMosaicOrdering.AcquisitionOldest : RasterMosaicOrdering.AcquisitionNewest,
         _ => RasterMosaicOrdering.AcquisitionNewest
@@ -220,6 +228,11 @@ public readonly record struct ImageServerMosaicRule
             return MosaicMethod.Northwest;
         }
 
+        if (methodName.Equals("esriMosaicSeamline", StringComparison.OrdinalIgnoreCase))
+        {
+            return MosaicMethod.Seamline;
+        }
+
         if (methodName.Equals("esriMosaicAttribute", StringComparison.OrdinalIgnoreCase) ||
             methodName.Equals("esriMosaicByAttribute", StringComparison.OrdinalIgnoreCase))
         {
@@ -228,7 +241,7 @@ public readonly record struct ImageServerMosaicRule
             return IsDateSortField(sortField) ? MosaicMethod.ByDate : MosaicMethod.Unsupported;
         }
 
-        // esriMosaicSeamline, esriMosaicNadir, esriMosaicCenter, esriMosaicViewpoint, etc.
+        // esriMosaicNadir, esriMosaicCenter, esriMosaicViewpoint, etc. remain unimplemented.
         return MosaicMethod.Unsupported;
     }
 

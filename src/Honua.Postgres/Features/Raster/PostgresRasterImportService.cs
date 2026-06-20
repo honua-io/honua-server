@@ -52,6 +52,8 @@ internal sealed class PostgresRasterImportService : IRasterImportService
     private readonly string _rasterDataTable;
     private readonly string _rasterStatisticsTable;
     private readonly string _rasterTilesTable;
+    private readonly string _rasterOverviewsTable;
+    private readonly string _rasterFootprintsTable;
 
     public PostgresRasterImportService(
         IAdoNetDatabaseConnectionProvider connectionProvider,
@@ -66,6 +68,8 @@ internal sealed class PostgresRasterImportService : IRasterImportService
         _rasterDataTable = SchemaSearchPath.QualifyTable("raster_data", schemaName);
         _rasterStatisticsTable = SchemaSearchPath.QualifyTable("raster_statistics", schemaName);
         _rasterTilesTable = SchemaSearchPath.QualifyTable("raster_tiles", schemaName);
+        _rasterOverviewsTable = SchemaSearchPath.QualifyTable("raster_overviews", schemaName);
+        _rasterFootprintsTable = SchemaSearchPath.QualifyTable("raster_footprints", schemaName);
     }
 
     /// <inheritdoc />
@@ -183,6 +187,30 @@ internal sealed class PostgresRasterImportService : IRasterImportService
                 else if (request.TileZoomLevels.Length > 0 && srid <= 0)
                 {
                     warnings.Add("Tile pre-generation skipped: raster has no known CRS (SRID 0). Set 'srid' explicitly to enable tiling.");
+                }
+
+                // Phase 5: Build persisted overview pyramids (reduced-resolution copies in
+                // EPSG:3857) so the dynamic tile read path reuses a pyramid level instead of
+                // recomputing an ST_Rescale reduction per low-zoom request (#1836). Best-effort:
+                // a missing raster_overviews table (schema predates migration 061) is tolerated.
+                if (request.OverviewFactors.Length > 0 && srid > 0)
+                {
+                    await GenerateAndStoreOverviewsAsync(
+                        connection, transaction, rasterId, request.OverviewFactors, warnings, cancellationToken).ConfigureAwait(false);
+                }
+                else if (request.OverviewFactors.Length > 0 && srid <= 0)
+                {
+                    warnings.Add("Overview pyramid build skipped: raster has no known CRS (SRID 0). Set 'srid' explicitly to enable overviews.");
+                }
+
+                // Phase 6: Persist the per-raster footprint (and a default seamline equal to the
+                // footprint) so esriMosaicSeamline can clip each raster to its cutline before the
+                // union (#1804). Best-effort: a missing raster_footprints table (schema predates
+                // migration 062) is tolerated; seamline mosaics then fall back to the footprint.
+                if (srid > 0)
+                {
+                    await GenerateAndStoreFootprintAsync(
+                        connection, transaction, rasterId, srid, warnings, cancellationToken).ConfigureAwait(false);
                 }
 
                 await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
@@ -814,6 +842,141 @@ internal sealed class PostgresRasterImportService : IRasterImportService
         }
 
         return totalTiles;
+    }
+
+    // =============================================================================
+    // Overview pyramids (#1836)
+    // =============================================================================
+
+    /// <summary>
+    /// Builds and persists power-of-two reduced-resolution overview rasters (reprojected to
+    /// EPSG:3857) into <c>raster_overviews</c>. Only factors that actually coarsen the source
+    /// (target ground resolution &gt; the source's 3857 resolution) are stored, so a finer factor
+    /// than the source already provides is skipped rather than producing an upsampled copy.
+    /// Best-effort: a missing table (schema predates migration 061) downgrades to a warning.
+    /// </summary>
+    private async Task GenerateAndStoreOverviewsAsync(
+        DbConnection connection,
+        DbTransaction transaction,
+        long rasterId,
+        int[] overviewFactors,
+        List<string> warnings,
+        CancellationToken cancellationToken)
+    {
+        // Distinct, ascending, power-of-two-ish factors >= 2. Anything < 2 cannot coarsen.
+        var factors = overviewFactors.Where(f => f >= 2).Distinct().Order().ToArray();
+        if (factors.Length == 0)
+        {
+            return;
+        }
+
+        var built = 0;
+        foreach (var factor in factors)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            try
+            {
+                await using var command = connection.CreateCommand();
+                command.Transaction = transaction;
+                command.CommandTimeout = OverviewComputeTimeoutSeconds;
+                // Reproject the source to the tile CRS once, then rescale to factor x its 3857
+                // ground resolution. ground_resolution caches the resulting metres/pixel so the
+                // read path can pick a level without detoasting the raster payload. The factor is
+                // skipped when it would not coarsen the source (target res <= source res).
+                command.CommandText = $"""
+                    WITH src AS (
+                        SELECT ST_Transform(raster, 3857) AS rast
+                        FROM {_rasterDataTable}
+                        WHERE id = @rasterId
+                    ),
+                    scaled AS (
+                        SELECT
+                            GREATEST(abs(ST_ScaleX(rast)) * @factor, abs(ST_ScaleX(rast))) AS target_res,
+                            rast
+                        FROM src
+                    )
+                    INSERT INTO {_rasterOverviewsTable} (raster_data_id, overview_factor, raster, ground_resolution)
+                    SELECT @rasterId, @factor,
+                           ST_Rescale(rast, target_res, -target_res, 'NearestNeighbor'),
+                           target_res
+                    FROM scaled
+                    WHERE target_res > abs(ST_ScaleX(rast))
+                    ON CONFLICT (raster_data_id, overview_factor) DO UPDATE SET
+                        raster = EXCLUDED.raster,
+                        ground_resolution = EXCLUDED.ground_resolution,
+                        created_at = NOW()
+                    """;
+                command.AddParameter("@rasterId", rasterId);
+                command.AddParameter("@factor", factor);
+
+                built += await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UndefinedTable)
+            {
+                // Schema predates migration 061. Persisted overviews are an optimisation; the
+                // on-the-fly overview reduction (#1793) keeps low-zoom tiles correct without them.
+                warnings.Add("Overview pyramid build skipped: raster_overviews table is not provisioned (apply migration 061).");
+                return;
+            }
+        }
+
+        PostgresRasterImportLog.OverviewsBuilt(_logger, rasterId, built, factors.Length);
+    }
+
+    // Building a pyramid level runs ST_Rescale across the full raster; give it the same generous
+    // budget the statistics backfill uses so county-scale imagery finishes within the import.
+    private const int OverviewComputeTimeoutSeconds = 300;
+
+    // =============================================================================
+    // Footprint / seamline store (#1804)
+    // =============================================================================
+
+    /// <summary>
+    /// Persists the per-raster footprint (the convex hull of the raster's valid-data envelope)
+    /// and a default seamline equal to that footprint into <c>raster_footprints</c>. The default
+    /// seamline gives <c>esriMosaicSeamline</c> a deterministic per-raster clip even before a
+    /// hand-authored cutline is supplied; a later operation can replace the seamline geometry.
+    /// Best-effort: a missing table (schema predates migration 062) downgrades to a warning, and
+    /// seamline mosaics then contribute each raster's full footprint.
+    /// </summary>
+    private async Task GenerateAndStoreFootprintAsync(
+        DbConnection connection,
+        DbTransaction transaction,
+        long rasterId,
+        int srid,
+        List<string> warnings,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = $"""
+                INSERT INTO {_rasterFootprintsTable} (raster_data_id, footprint, seamline, srid, updated_at)
+                SELECT @rasterId, hull, hull, @srid, NOW()
+                FROM (
+                    SELECT ST_ConvexHull(raster) AS hull
+                    FROM {_rasterDataTable}
+                    WHERE id = @rasterId
+                ) AS f
+                WHERE hull IS NOT NULL
+                ON CONFLICT (raster_data_id) DO UPDATE SET
+                    footprint = EXCLUDED.footprint,
+                    seamline = EXCLUDED.seamline,
+                    srid = EXCLUDED.srid,
+                    updated_at = NOW()
+                """;
+            command.AddParameter("@rasterId", rasterId);
+            command.AddParameter("@srid", srid);
+
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UndefinedTable)
+        {
+            // Schema predates migration 062. Seamline mosaics fall back to the full footprint.
+            warnings.Add("Footprint/seamline store skipped: raster_footprints table is not provisioned (apply migration 062).");
+        }
     }
 
     // =============================================================================

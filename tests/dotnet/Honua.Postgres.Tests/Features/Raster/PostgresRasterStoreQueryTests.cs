@@ -309,11 +309,201 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
         }
     }
 
+    [IntegrationTest]
+    public async Task ExportMosaicAsync_SeamlineOrdering_RasterClippedToSeamlineYieldsSeamWinner()
+    {
+        var (schemaName, ids) = await SeedMosaicStackAsync();
+        try
+        {
+            await CreateFootprintsTableAsync(schemaName);
+
+            // Default newest-wins gives 5 (overlap-newest) at the contested (1.5, 1.5) pixel.
+            // Constrain overlap-newest's seamline to x[2,3] so it no longer covers the overlap
+            // column; the seamline mosaic must then fall through to west (value 20).
+            await InsertFootprintAsync(schemaName, ids.West, seamlineEnvelope: (0, 1, 2, 3));
+            await InsertFootprintAsync(schemaName, ids.OverlapNewest, seamlineEnvelope: (2, 1, 3, 3));
+            await InsertFootprintAsync(schemaName, ids.East, seamlineEnvelope: (2, 1, 4, 3));
+
+            var store = CreateStore(schemaName);
+
+            var winner = await ExportAndSampleOverlapPixelAsync(
+                store, [ids.West, ids.OverlapNewest, ids.East],
+                RasterMergeStrategy.Newest, RasterMosaicOrdering.Seamline);
+
+            winner.Should().Be(20, "the seamline clips overlap-newest out of the contested column");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task ExportMosaicAsync_SeamlineOrdering_MissingSeamlineContributesFullFootprint()
+    {
+        var (schemaName, ids) = await SeedMosaicStackAsync();
+        try
+        {
+            await CreateFootprintsTableAsync(schemaName);
+            // No footprint rows at all: every raster contributes its full pixels, so the seamline
+            // ordering degrades to the default newest-wins result (5).
+            var store = CreateStore(schemaName);
+
+            var winner = await ExportAndSampleOverlapPixelAsync(
+                store, [ids.West, ids.OverlapNewest, ids.East],
+                RasterMergeStrategy.Newest, RasterMosaicOrdering.Seamline);
+
+            winner.Should().Be(5, "with no seamline rows the newest raster still wins the overlap");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task ExportImageAsync_WithSlopeTerrainFunction_ProducesSingleAnalyticBand()
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreQueryTests));
+        try
+        {
+            await CreateRasterTableAsync(schemaName);
+            var rasterId = await InsertFloatRasterAsync(schemaName);
+            var store = CreateStore(schemaName);
+
+            // The 2x2 elevation gradient (0/10/20/30) yields a non-flat slope surface. The
+            // inline terrain function must collapse it to one analytic band via ST_Slope.
+            var result = await store.ExportImageAsync(
+                    LayerId,
+                    rasterId,
+                    new RasterQuery
+                    {
+                        OutputFormat = RasterFormat.TIFF,
+                        Terrain = new RasterTerrainFunction { Method = RasterTerrainMethod.Slope },
+                    })
+                .ConfigureAwait(false);
+
+            result.Data.Should().NotBeEmpty();
+            var bandCount = await GetExportedBandCountAsync(schemaName, result.Data);
+            bandCount.Should().Be(1);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task ExportMosaicAsync_WithBandArithmeticNdvi_CollapsesToSingleAnalyticBand()
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreQueryTests));
+        try
+        {
+            await CreateRasterTableAsync(schemaName);
+            // Two overlapping 2-band rasters so the mosaic path (not the single-raster path) runs.
+            var first = await InsertTwoBandRasterAsync(schemaName, upperLeftX: 0, visible: 50, infrared: 200);
+            var second = await InsertTwoBandRasterAsync(schemaName, upperLeftX: 1, visible: 60, infrared: 180);
+            var store = CreateStore(schemaName);
+
+            // NDVI over band1 (visible) and band2 (infrared): the mosaic export previously ignored
+            // band math entirely (#1803). The output must be a single analytic band.
+            var result = await store.ExportMosaicAsync(
+                    LayerId,
+                    [first, second],
+                    RasterMergeStrategy.Newest,
+                    new RasterQuery
+                    {
+                        OutputFormat = RasterFormat.TIFF,
+                        BandArithmetic = new RasterBandArithmetic
+                        {
+                            VisibleBand = 1,
+                            InfraredBand = 2,
+                            Method = RasterBandArithmeticMethod.Ndvi,
+                        },
+                    })
+                .ConfigureAwait(false);
+
+            result.Data.Should().NotBeEmpty();
+            var bandCount = await GetExportedBandCountAsync(schemaName, result.Data);
+            bandCount.Should().Be(1);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    private async Task<long> InsertTwoBandRasterAsync(
+        string schemaName, double upperLeftX, double visible, double infrared)
+    {
+        await using var connection = await fixture.GetConnectionAsync(schemaName);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO raster_data (layer_id, name, raster, acquisition_date, created_at)
+            SELECT @layerId,
+                   'two-band',
+                   ST_AddBand(
+                       ST_AddBand(
+                           ST_MakeEmptyRaster(2, 2, @upperLeftX, 2, 1, -1, 0, 0, 4326),
+                           '32BF'::text, @visible, NULL),
+                       '32BF'::text, @infrared, NULL),
+                   NOW(),
+                   NOW()
+            RETURNING id;
+            """;
+        command.Parameters.AddWithValue("layerId", LayerId);
+        command.Parameters.AddWithValue("upperLeftX", upperLeftX);
+        command.Parameters.AddWithValue("visible", visible);
+        command.Parameters.AddWithValue("infrared", infrared);
+        return (long)(await command.ExecuteScalarAsync().ConfigureAwait(false))!;
+    }
+
     private PostgresRasterStore CreateStore(string schemaName)
         => new(
             new FixtureConnectionProvider(fixture.DataSource),
             NullLogger<PostgresRasterStore>.Instance,
             schemaName);
+
+    private async Task CreateFootprintsTableAsync(string schemaName)
+    {
+        await using var connection = await fixture.GetConnectionAsync(schemaName);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            CREATE TABLE IF NOT EXISTS raster_footprints (
+                raster_data_id BIGINT PRIMARY KEY,
+                footprint geometry NOT NULL,
+                seamline geometry,
+                srid INTEGER NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ
+            );
+            """;
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private async Task InsertFootprintAsync(
+        string schemaName,
+        long rasterId,
+        (double MinX, double MinY, double MaxX, double MaxY) seamlineEnvelope)
+    {
+        await using var connection = await fixture.GetConnectionAsync(schemaName);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO raster_footprints (raster_data_id, footprint, seamline, srid)
+            VALUES (
+                @rasterId,
+                ST_MakeEnvelope(@minX, @minY, @maxX, @maxY, 4326),
+                ST_MakeEnvelope(@minX, @minY, @maxX, @maxY, 4326),
+                4326
+            );
+            """;
+        command.Parameters.AddWithValue("rasterId", rasterId);
+        command.Parameters.AddWithValue("minX", seamlineEnvelope.MinX);
+        command.Parameters.AddWithValue("minY", seamlineEnvelope.MinY);
+        command.Parameters.AddWithValue("maxX", seamlineEnvelope.MaxX);
+        command.Parameters.AddWithValue("maxY", seamlineEnvelope.MaxY);
+        await command.ExecuteNonQueryAsync();
+    }
 
     // Exports the full mosaic (no clip, so original raster envelopes drive Northwest ordering),
     // re-imports the GeoTIFF, and samples the contested pixel in the west↔overlap-newest overlap
