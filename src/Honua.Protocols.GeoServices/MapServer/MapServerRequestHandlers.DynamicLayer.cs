@@ -26,7 +26,8 @@ internal static partial class MapServerEndpoints
         int MapLayerId,
         string? DefinitionExpression,
         string? DrawingInfoJson,
-        string? Name);
+        string? Name,
+        DynamicLayerJoinDefinition? Join = null);
 
     /// <summary>
     /// Handle MapServer dynamicLayer metadata resource requests.
@@ -107,11 +108,43 @@ internal static partial class MapServerEndpoints
                 return accessError;
             }
 
+            // For a joinTable source the right (secondary) layer must also be access-policy gated:
+            // its fields are surfaced (qualified) in this metadata response, so a caller without
+            // access to the right layer must not see its schema.
+            MapServerMetadataLayerDescriptor? joinRightLayer = null;
+            if (parsedDynamicLayer.Join is { } joinDefinition)
+            {
+                joinRightLayer = publishedLayers.FirstOrDefault(
+                    layer => layer.PublicLayerId == joinDefinition.RightMapLayerId);
+                if (joinRightLayer is null)
+                {
+                    return StandardErrorHelpers.CreateBadRequest(
+                        context,
+                        "dynamicLayer join references an unknown right layer.");
+                }
+
+                var rightAccessError = AccessPolicyHelpers.RequireResourceAccess(
+                    context,
+                    joinRightLayer.Resource,
+                    service);
+                if (rightAccessError != null)
+                {
+                    return rightAccessError;
+                }
+            }
+
             var limitsOptions = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value;
             var drawingInfo = ResolveDynamicLayerDrawingInfo(
                 sourceLayer.Resource,
                 snapshot,
                 parsedDynamicLayer.DrawingInfoJson);
+
+            IReadOnlyList<MapServerFieldInfo>? joinedFields = null;
+            if (parsedDynamicLayer.Join is { } join && joinRightLayer is not null)
+            {
+                joinedFields = BuildJoinedFields(joinRightLayer.Resource, join.RightQualifier);
+            }
+
             var response = MapLayerToMapServerLayerResponse(
                 service,
                 sourceLayer.Publication,
@@ -121,7 +154,8 @@ internal static partial class MapServerEndpoints
                 drawingInfo,
                 parsedDynamicLayer.Id,
                 parsedDynamicLayer.Name,
-                parsedDynamicLayer.DefinitionExpression);
+                parsedDynamicLayer.DefinitionExpression,
+                joinedFields);
 
             stopwatch.Stop();
             scope.SetSuccess(1);
@@ -173,10 +207,12 @@ internal static partial class MapServerEndpoints
                 return false;
             }
 
-            if (!sourceResolver.TryResolveMapLayerId(sourceElement, "dynamicLayer", out var mapLayerId, out error))
+            if (!sourceResolver.TryResolveSource(sourceElement, "dynamicLayer", out var resolvedSource, out error))
             {
                 return false;
             }
+
+            var mapLayerId = resolvedSource.MapLayerId;
 
             var id = TryGetJsonInt(element, "id", out var requestedId)
                 ? requestedId
@@ -209,7 +245,8 @@ internal static partial class MapServerEndpoints
                 mapLayerId,
                 string.IsNullOrWhiteSpace(definitionExpression) ? null : definitionExpression,
                 string.IsNullOrWhiteSpace(drawingInfoJson) ? null : drawingInfoJson,
-                string.IsNullOrWhiteSpace(layerName) ? null : layerName);
+                string.IsNullOrWhiteSpace(layerName) ? null : layerName,
+                resolvedSource.Join);
             return true;
         }
         catch (JsonException)
@@ -323,6 +360,43 @@ internal static partial class MapServerEndpoints
                !string.IsNullOrWhiteSpace(nestedName)
             ? nestedName
             : null;
+    }
+
+    /// <summary>
+    /// Builds the Esri field definitions for a join's right (secondary) source. Each field is
+    /// qualified as <c>{qualifier}.{field}</c> to match the joined attribute names emitted by the
+    /// identify/export merge. Geometry and declared-Hidden fields are excluded so the right layer's
+    /// geometry column and sensitive fields are never surfaced through the join.
+    /// </summary>
+    private static List<MapServerFieldInfo> BuildJoinedFields(
+        MetadataV2Resource rightResource,
+        string qualifier)
+    {
+        var rightObjectIdField = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(rightResource);
+        var fields = new List<MapServerFieldInfo>();
+        foreach (var field in rightResource.SchemaFields)
+        {
+            if (field.Hidden ||
+                field.Type is MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography)
+            {
+                continue;
+            }
+
+            var baseField = MapFieldInfoV2(field, rightObjectIdField);
+            fields.Add(new MapServerFieldInfo
+            {
+                Name = $"{qualifier}.{field.Name}",
+                Type = baseField.Type,
+                Alias = baseField.Alias,
+                Length = baseField.Length,
+                Nullable = baseField.Nullable,
+                // Joined right-source attributes are read-only projections, never editable.
+                Editable = false,
+                DefaultValue = baseField.DefaultValue,
+            });
+        }
+
+        return fields;
     }
 
     private static JsonElement? ResolveDynamicLayerDrawingInfo(
