@@ -163,6 +163,79 @@ public sealed class PostgresRasterStoreStatisticsTests(PostgresFixture fixture)
         }
     }
 
+    [IntegrationTest]
+    public async Task GetClippedMosaicStatisticsAsync_MultibandRasters_ReturnsPerBandStatisticsForClip()
+    {
+        // Regression for #1920: the clipped-mosaic compute path (computeStatisticsHistograms
+        // over multiple rasters with an AOI geometry) failed with Postgres 42703
+        // ("column effective_acquisition does not exist") because the clip `source` CTE did
+        // not project the columns the ST_Union ORDER BY references.
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreStatisticsTests));
+        try
+        {
+            await CreateRasterTablesAsync(schemaName);
+            var west = await InsertThreeBandRasterAsync(schemaName, "west", band1: 200, band2: 120, band3: 60, upperLeftX: 0);
+            var east = await InsertThreeBandRasterAsync(schemaName, "east", band1: 210, band2: 130, band3: 70, upperLeftX: 2);
+            var store = CreateStore(schemaName);
+
+            // AOI envelope falling strictly inside the west raster's footprint (one pixel),
+            // so the clipped mosaic resolves to west's constant per-band values only.
+            var clip = await MakeEnvelopeAsync(schemaName, 0, 0, 1, 1);
+
+            var statistics = await store.GetClippedMosaicStatisticsAsync(
+                LayerId,
+                [west, east],
+                RasterMergeStrategy.Newest,
+                clip,
+                clipSrid: 4326);
+
+            statistics.Should().HaveCount(3, "the clipped mosaic must report all three bands");
+            statistics[0].Band.Should().Be(1);
+            statistics[0].MeanValue.Should().Be(200);
+            statistics[1].Band.Should().Be(2);
+            statistics[1].MeanValue.Should().Be(120);
+            statistics[2].Band.Should().Be(3);
+            statistics[2].MeanValue.Should().Be(60);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task GetClippedMosaicHistogramsAsync_MultibandRasters_ReturnsPerBandHistogramsForClip()
+    {
+        // Regression for #1920: the clipped-mosaic histogram path threw the same 42703 error.
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreStatisticsTests));
+        try
+        {
+            await CreateRasterTablesAsync(schemaName);
+            var west = await InsertThreeBandRasterAsync(schemaName, "west", band1: 200, band2: 120, band3: 60, upperLeftX: 0);
+            var east = await InsertThreeBandRasterAsync(schemaName, "east", band1: 210, band2: 130, band3: 70, upperLeftX: 2);
+            var store = CreateStore(schemaName);
+
+            var clip = await MakeEnvelopeAsync(schemaName, 0, 0, 4, 2);
+
+            var histograms = await store.GetClippedMosaicHistogramsAsync(
+                LayerId,
+                [west, east],
+                RasterMergeStrategy.Newest,
+                clip,
+                clipSrid: 4326,
+                bands: null,
+                binCount: 16);
+
+            histograms.Should().HaveCount(3, "the clipped mosaic must report all three bands");
+            histograms.Select(h => h.Band).Should().Equal(1, 2, 3);
+            histograms.Should().OnlyContain(h => h.Counts.Sum() > 0);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
     private PostgresRasterStore CreateStore(string schemaName)
         => new(
             new FixtureConnectionProvider(fixture.DataSource),
@@ -256,6 +329,64 @@ public sealed class PostgresRasterStoreStatisticsTests(PostgresFixture fixture)
             """;
         command.Parameters.AddWithValue("layerId", LayerId);
         return (long)(await command.ExecuteScalarAsync())!;
+    }
+
+    private async Task<long> InsertThreeBandRasterAsync(
+        string schemaName,
+        string name,
+        double band1,
+        double band2,
+        double band3,
+        double upperLeftX)
+    {
+        await using var connection = await fixture.GetConnectionAsync(schemaName);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO raster_data (layer_id, name, raster, acquisition_date, created_at)
+            SELECT @layerId,
+                   @name,
+                   ST_AddBand(
+                       ST_AddBand(
+                           ST_AddBand(
+                               ST_MakeEmptyRaster(2, 2, @upperLeftX, 2, 1, -1, 0, 0, 4326),
+                               '32BF'::text,
+                               @band1,
+                               NULL
+                           ),
+                           '32BF'::text,
+                           @band2,
+                           NULL
+                       ),
+                       '32BF'::text,
+                       @band3,
+                       NULL
+                   ),
+                   NOW(),
+                   NOW()
+            RETURNING id;
+            """;
+        command.Parameters.AddWithValue("layerId", LayerId);
+        command.Parameters.AddWithValue("name", name);
+        command.Parameters.AddWithValue("upperLeftX", upperLeftX);
+        command.Parameters.AddWithValue("band1", band1);
+        command.Parameters.AddWithValue("band2", band2);
+        command.Parameters.AddWithValue("band3", band3);
+        return (long)(await command.ExecuteScalarAsync())!;
+    }
+
+    // Produces a clip envelope as WKB so it round-trips through the store's
+    // ST_GeomFromWKB(@clipGeom, srid) parameter exactly as the handler supplies it.
+    // Built via PostGIS to avoid taking a direct NetTopologySuite dependency in this project.
+    private async Task<byte[]> MakeEnvelopeAsync(string schemaName, double xmin, double ymin, double xmax, double ymax)
+    {
+        await using var connection = await fixture.GetConnectionAsync(schemaName);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT ST_AsBinary(ST_MakeEnvelope(@xmin, @ymin, @xmax, @ymax, 4326))";
+        command.Parameters.AddWithValue("xmin", xmin);
+        command.Parameters.AddWithValue("ymin", ymin);
+        command.Parameters.AddWithValue("xmax", xmax);
+        command.Parameters.AddWithValue("ymax", ymax);
+        return (byte[])(await command.ExecuteScalarAsync())!;
     }
 
     private async Task<long> CountAsync(string schemaName, string sql)
