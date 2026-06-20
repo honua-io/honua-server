@@ -23,6 +23,12 @@ internal static partial class OgcClassicLog
     public static partial void WmsFailed(ILogger logger, string serviceId, string errorMessage, Exception? exception = null);
 
     [LoggerMessage(
+        EventId = 5644,
+        Level = LogLevel.Warning,
+        Message = "OGC capabilities: skipping time dimension for layer {LayerId} ({LayerName}); temporal extent resolution failed and the layer will be advertised without a TIME dimension")]
+    public static partial void TemporalExtentSkipped(ILogger logger, int layerId, string layerName, Exception? exception = null);
+
+    [LoggerMessage(
         EventId = 5642,
         Level = LogLevel.Information,
         Message = "OGC WMTS {RequestType} requested: {ServiceId}")]
