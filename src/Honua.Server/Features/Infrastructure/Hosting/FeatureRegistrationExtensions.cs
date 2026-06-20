@@ -61,6 +61,7 @@ using Honua.Protocols.Scene;
 using Honua.Protocols.Scene.I3s;
 using Honua.Server.Features.Protocols.SpatialAnalytics;
 using Honua.Server.Features.Protocols.Elevation;
+using Honua.Protocols.SensorThings;
 using Honua.Protocols.Stac;
 using Honua.Server.Features.Protocols.Terrain;
 using Honua.Server.Features.Reporting;
@@ -114,6 +115,7 @@ internal static class FeatureRegistrationExtensions
         services.AddNlQuery(configuration);
         services.AddWorkflowGeneration(configuration);
         services.AddStac();
+        services.AddSensorThings();
         services.AddStaticMap();
         services.AddTerrain();
         services.AddScene(configuration);
@@ -249,6 +251,7 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapODataEndpoints();
         endpoints.MapGeometryServiceEndpoints();
         endpoints.MapStacEndpoints();
+        endpoints.MapSensorThingsEndpoints();
         endpoints.MapStaticMapEndpoints();
         endpoints.MapNAServerEndpoints();
         endpoints.MapPrintingToolsEndpoints();

@@ -56,6 +56,9 @@ public static class ServiceProtocols
     /// <summary>STAC (SpatioTemporal Asset Catalog) protocol.</summary>
     public const string Stac = "Stac";
 
+    /// <summary>OGC SensorThings API (STA) v1.1 protocol.</summary>
+    public const string SensorThings = "SensorThings";
+
     /// <summary>Terrain-RGB elevation tile protocol.</summary>
     public const string Terrain = "Terrain";
 
@@ -83,6 +86,7 @@ public static class ServiceProtocols
         OData,
         Grpc,
         Stac,
+        SensorThings,
         Terrain,
         Elevation
     ];
@@ -170,6 +174,11 @@ public static class ServiceProtocols
         if (string.Equals(protocol, OData, StringComparison.OrdinalIgnoreCase))
         {
             return publicationType == MetadataV2PublicationType.ODataEntitySet;
+        }
+
+        if (string.Equals(protocol, SensorThings, StringComparison.OrdinalIgnoreCase))
+        {
+            return publicationType == MetadataV2PublicationType.SensorThingsDatastream;
         }
 
         if (string.Equals(protocol, Wms, StringComparison.OrdinalIgnoreCase))

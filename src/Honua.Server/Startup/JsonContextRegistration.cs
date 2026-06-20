@@ -99,6 +99,7 @@ internal static class JsonContextRegistration
                 Honua.Protocols.GeoServices.NAServer.Models.NAServerJsonContext.Default,
                 Honua.Io.Export.ExportJsonContext.Default,
                 Honua.Protocols.Stac.StacJsonContext.Default,
+                Honua.Protocols.SensorThings.SensorThingsJsonContext.Default,
                 Honua.Server.Features.Protocols.Cog.CogJsonContext.Default,
                 Honua.Server.Features.Protocols.Coverages.Multidimensional.MultidimensionalCoverageJsonContext.Default,
                 Honua.Server.Features.Protocols.Zarr.ZarrJsonContext.Default,
