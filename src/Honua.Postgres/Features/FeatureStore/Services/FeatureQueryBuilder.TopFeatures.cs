@@ -37,16 +37,11 @@ internal sealed partial class FeatureQueryBuilder
             // Select columns: objectid, geometry, attributes (must match ReadFeatureAsync ordinal positions)
             sql.Append(DatabaseSchema.ObjectIdColumn);
 
-            if (geometryStorageType == CoreGeometryStorageType.Geometry)
-            {
-                sql.Append(CultureInfo.InvariantCulture,
-                    $", ST_AsBinary({DatabaseSchema.GeometryColumn}) AS {DatabaseSchema.GeometryColumn}");
-            }
-            else
-            {
-                sql.Append(CultureInfo.InvariantCulture,
-                    $", ST_AsBinary({DatabaseSchema.GeometryColumn}::geometry) AS {DatabaseSchema.GeometryColumn}");
-            }
+            // Honor outSR (query.OutputSrid) by routing geometry through the shared
+            // geometry-select expression, which applies ST_Transform when an output SRID
+            // is requested — mirroring the normal query path (#1906).
+            sql.Append(", ");
+            sql.Append(_geometryProcessor.GetGeometrySelectExpression(geometryStorageType, query));
 
             sql.Append(CultureInfo.InvariantCulture, $", {DatabaseSchema.AttributesColumn}");
 
@@ -71,6 +66,21 @@ internal sealed partial class FeatureQueryBuilder
             parameters.Add(topFilter.TopCount);
             sql.Append(CultureInfo.InvariantCulture,
                 $") sub WHERE sub.rn <= ${topCountParameter}");
+
+            // resultRecordCount / resultOffset paging. The LIMIT/OFFSET values are bound by
+            // AddQueryParameters (AddRegularPaginationParameters / AddOffsetParameterIfEmitted)
+            // after the where/topCount parameters, so the placeholders must be the trailing
+            // ones and emitted only when the corresponding value is present, keeping the bound
+            // parameter count aligned with the placeholders (#1906).
+            if (query.Limit.HasValue)
+            {
+                sql.Append(CultureInfo.InvariantCulture, $" LIMIT ${paramIndex++}");
+            }
+
+            if (query.Offset.HasValue)
+            {
+                sql.Append(CultureInfo.InvariantCulture, $" OFFSET ${paramIndex++}");
+            }
 
             return new CoreParameterizedQuery(sql.ToString(), parameters);
         }
