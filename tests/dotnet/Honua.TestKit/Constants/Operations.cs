@@ -183,6 +183,10 @@ public static class Operations
     public const string QueryBufferAggregate = "QueryBufferAggregate";
     public const string QueryDensity = "QueryDensity";
 
+    // Data Enrichment Operations (Pro tier, #374)
+    public const string EnrichCatalog = "EnrichCatalog";
+    public const string Enrich = "Enrich";
+
     // OGC API Processes Operations
     public const string ProcessDiscovery = "ProcessDiscovery";
     public const string ProcessExecution = "ProcessExecution";
