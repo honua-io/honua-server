@@ -101,4 +101,15 @@ public sealed class PortalOAuth2Options
     /// refreshed token.
     /// </summary>
     public bool RotateRefreshTokens { get; set; } = true;
+
+    /// <summary>
+    /// When <see langword="true"/> the <c>oauth2/token</c> endpoint accepts the
+    /// <c>client_credentials</c> grant for service-to-service clients (ADR-0053,
+    /// #1860). The presented <c>client_secret</c> is validated against the existing
+    /// Admin API-key store and an opaque, IP-bound portal access token is minted via
+    /// the shared portal-token issuer. Defaults to <see langword="false"/>: with the
+    /// flag off the grant is rejected with <c>unsupported_grant_type</c>, exactly as
+    /// before, so no existing deployment gains a new credential path implicitly.
+    /// </summary>
+    public bool EnableClientCredentials { get; set; }
 }
