@@ -74,8 +74,52 @@ public sealed class StacItemsTests : IAsyncLifetime
                 .Should()
                 .Contain(link => link.GetProperty("rel").GetString() == "parent");
 
-            // STAC requires "datetime" in properties (may be null)
-            item.GetProperty("properties").TryGetProperty("datetime", out _).Should().BeTrue();
+            // STAC 1.0.0 requires the Item datetime invariant: "datetime" must be present and either
+            // be a non-null RFC 3339 string, or null with both start_datetime + end_datetime present.
+            AssertDatetimeInvariant(item);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /stac/collections/{collectionId}/items")]
+    public async Task GetItems_FeatureWithoutTemporalAttributes_SatisfiesDatetimeInvariant()
+    {
+        // A feature with no temporal field, no start/end attributes, and no created/updated
+        // timestamps must still satisfy the STAC datetime invariant — never datetime:null without
+        // bounds, and never an omitted datetime key (both break pystac and stac-api-validator).
+        var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
+        var featureId = await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, "Temporal-less Item");
+
+        var response = await _fixture.Client.GetAsync(
+            $"/stac/collections/{collectionId}/items/{featureId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonDocument.Parse(content);
+
+        AssertDatetimeInvariant(json.RootElement);
+    }
+
+    private static void AssertDatetimeInvariant(JsonElement item)
+    {
+        var properties = item.GetProperty("properties");
+        properties.TryGetProperty("datetime", out var datetime).Should().BeTrue(
+            "STAC 1.0.0 requires every Item to carry a \"datetime\" property");
+
+        if (datetime.ValueKind == JsonValueKind.Null)
+        {
+            // datetime may be null ONLY when both interval bounds are present as non-null strings.
+            properties.TryGetProperty("start_datetime", out var start).Should().BeTrue();
+            properties.TryGetProperty("end_datetime", out var end).Should().BeTrue();
+            start.ValueKind.Should().Be(JsonValueKind.String);
+            end.ValueKind.Should().Be(JsonValueKind.String);
+        }
+        else
+        {
+            datetime.ValueKind.Should().Be(JsonValueKind.String);
+            datetime.GetString().Should().NotBeNullOrWhiteSpace();
         }
     }
 
