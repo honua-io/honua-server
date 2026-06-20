@@ -30,6 +30,18 @@ internal static class LicensingRegistration
         services.Configure<LicenseCapacityOptions>(
             configuration.GetSection(LicenseCapacityOptions.SectionName));
         services.AddSingleton<IEd25519Verifier, BouncyCastleEd25519Verifier>();
+
+        // Register the provider-specific license-content secret resolver so the license
+        // service can load a signed envelope from a secret store (e.g. AWS Secrets Manager)
+        // via Licensing:LicenseContentSecretRef. The AWSSDK surface stays confined to
+        // Honua.Aws (cloud-SDK isolation contract); the cloud-neutral pipeline consumes only
+        // the ILicenseContentSecretResolver abstraction and falls back to Community when none
+        // is registered.
+#if !HONUA_EXCLUDE_AWS
+        Honua.Aws.Features.Licensing.AwsLicenseSecretResolverServiceCollectionExtensions
+            .AddAwsLicenseSecretResolver(services, configuration);
+#endif
+
         services.AddSingleton<FileBackedLicenseService>();
         services.AddSingleton<ILicenseEntitlementService>(sp =>
             sp.GetRequiredService<FileBackedLicenseService>());
