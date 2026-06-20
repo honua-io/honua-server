@@ -37,15 +37,17 @@ internal sealed partial class FeatureQueryBuilder
             // Select columns: objectid, geometry, attributes (must match ReadFeatureAsync ordinal positions)
             sql.Append(DatabaseSchema.ObjectIdColumn);
 
+            // Preserve Z/M through extended WKB when the query requests it; ST_AsBinary drops them.
+            var geometryEncoder = query.IncludeZ || query.IncludeM ? "ST_AsEWKB" : "ST_AsBinary";
             if (geometryStorageType == CoreGeometryStorageType.Geometry)
             {
                 sql.Append(CultureInfo.InvariantCulture,
-                    $", ST_AsBinary({DatabaseSchema.GeometryColumn}) AS {DatabaseSchema.GeometryColumn}");
+                    $", {geometryEncoder}({DatabaseSchema.GeometryColumn}) AS {DatabaseSchema.GeometryColumn}");
             }
             else
             {
                 sql.Append(CultureInfo.InvariantCulture,
-                    $", ST_AsBinary({DatabaseSchema.GeometryColumn}::geometry) AS {DatabaseSchema.GeometryColumn}");
+                    $", {geometryEncoder}({DatabaseSchema.GeometryColumn}::geometry) AS {DatabaseSchema.GeometryColumn}");
             }
 
             sql.Append(CultureInfo.InvariantCulture, $", {DatabaseSchema.AttributesColumn}");

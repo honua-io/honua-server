@@ -102,6 +102,25 @@ public readonly record struct FeatureQuery
     public bool IncludeNullGeometry { get; init; }
 
     /// <summary>
+    /// Preserve Z (elevation) ordinates in the geometry read from storage. When
+    /// <see langword="false"/> (the default) the storage read uses 2D OGC WKB; when
+    /// <see langword="true"/> the read uses extended WKB (EWKB) so the Z ordinate
+    /// survives to the output formatter. Output adapters still decide whether to emit
+    /// Z (e.g. FeatureServer <c>returnZ</c>); this flag only governs whether storage
+    /// carries Z through the canonical <see cref="Feature"/> WKB at all. Layers with
+    /// no stored Z are unaffected (EWKB of a 2D geometry is byte-equivalent apart from
+    /// the dimension flag, which the reader handles transparently).
+    /// </summary>
+    public bool IncludeZ { get; init; }
+
+    /// <summary>
+    /// Preserve M (measure) ordinates in the geometry read from storage. See
+    /// <see cref="IncludeZ"/> for the storage-read semantics; this flag governs the M
+    /// ordinate.
+    /// </summary>
+    public bool IncludeM { get; init; }
+
+    /// <summary>
     /// Number of records to skip for pagination
     /// </summary>
     public int? Offset { get; init; }

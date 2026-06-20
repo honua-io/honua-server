@@ -275,6 +275,21 @@ public sealed class WebAppFixture : IAsyncLifetime
             cancellationToken);
 
     /// <summary>
+    /// Sets (or clears with <c>null</c>) the Esri contingent-value groups on the resource
+    /// published at <paramref name="layerIndex"/>. Delegates to
+    /// <see cref="Mixins.WebAppFixtureMetadataV2GraphMutationMixin"/>.
+    /// </summary>
+    public Task UpdateV2ResourceContingentValueGroupsAsync(
+        int layerIndex,
+        IReadOnlyList<MetadataV2ContingentValueGroup>? contingentValueGroups,
+        CancellationToken cancellationToken = default)
+        => Honua.TestKit.Mixins.WebAppFixtureMetadataV2GraphMutationMixin.UpdateResourceContingentValueGroupsAsync(
+            this,
+            layerIndex,
+            contingentValueGroups,
+            cancellationToken);
+
+    /// <summary>
     /// V2-aware helper that renames the canonical resource bound to the publication with
     /// <paramref name="layerIndex"/>. Delegates to
     /// <see cref="Mixins.WebAppFixtureMetadataV2GraphMutationMixin"/>.

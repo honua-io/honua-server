@@ -5,6 +5,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
+using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Validation;
@@ -42,15 +43,28 @@ internal static partial class FeatureServerEndpoints
             return formatError;
         }
 
-        var accessError = await RequireServiceReadAccessAsync(serviceId, context);
+        // Resolve the service and its accessible layers through the shared validation/access
+        // pipeline, then project each layer's Metadata v2 contingent value groups onto the Esri
+        // queryContingentValues definition shape. Layers without contingent values, and services
+        // with none at all, yield an empty contingentValuesDefinitions collection (#1878).
+        var (accessibleLayers, accessError) = await ResolveAccessibleServiceLayersAsync(serviceId, context);
         if (accessError != null)
         {
             return accessError;
         }
 
-        scope.SetSuccess(0);
+        var definitions = accessibleLayers!
+            .Select(layer => GeoServicesContingentValueMapper.Map(
+                layer.PublicLayerId,
+                layer.Resource.ContingentValueGroups))
+            .Where(definition => definition is not null)
+            .Select(definition => definition!)
+            .OrderBy(definition => definition.Id)
+            .ToArray();
+
+        scope.SetSuccess(definitions.Length);
         return Results.Json(
-            new QueryContingentValuesResponse(),
+            new QueryContingentValuesResponse { ContingentValuesDefinitions = definitions },
             FeatureServerJsonContext.Default.QueryContingentValuesResponse,
             contentType: "application/json");
     }
@@ -241,6 +255,60 @@ internal static partial class FeatureServerEndpoints
             context,
             allPairs.Select(pair => pair.Resource),
             service);
+    }
+
+    /// <summary>
+    /// Resolves the service through the shared V2 validation pipeline, enforces read access, and
+    /// returns the accessible layers as <c>(PublicLayerId, Resource)</c> pairs. The public layer id
+    /// is the publication's layer index (the same id the FeatureServer layer metadata advertises),
+    /// falling back to the resolved storage layer id. Returns an error <see cref="IResult"/> when the
+    /// service is unknown or the caller cannot read any layer; otherwise the layers and a
+    /// <see langword="null"/> error.
+    /// </summary>
+    private static async Task<((int PublicLayerId, MetadataV2Resource Resource)[]? Layers, IResult? Error)>
+        ResolveAccessibleServiceLayersAsync(string serviceId, HttpContext context)
+    {
+        var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
+        var cancellationToken = GetTimeoutAwareCancellationToken(context);
+        var serviceValidationResult = await FeatureServerResourceValidationHelpers.ValidateServiceV2Async(
+            resourceValidator,
+            serviceId,
+            context,
+            logger: null,
+            cancellationToken: cancellationToken);
+        if (!serviceValidationResult.IsValid)
+        {
+            return (null, serviceValidationResult.ErrorResult!);
+        }
+
+        var service = serviceValidationResult.Service!;
+        var snapshotProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
+        var snapshot = await snapshotProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+
+        var allPairs = snapshot.Index.PublicationsByService[service.Metadata.Id]
+            .Select(pub => (Publication: pub, Resource: snapshot.ResolveResource(pub)))
+            .Where(pair => pair.Resource is not null)
+            .Select(pair => (pair.Publication, Resource: pair.Resource!))
+            .ToArray();
+
+        var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
+            context,
+            allPairs.Select(pair => pair.Resource),
+            service);
+        if (accessError != null)
+        {
+            return (null, accessError);
+        }
+
+        var layers = allPairs
+            .Where(pair => AccessPolicyHelpers.IsResourceAccessible(context, pair.Resource, service))
+            .Select(pair => (
+                PublicLayerId: pair.Publication.LayerIndex ?? snapshot.ResolveStorageLayerId(pair.Resource) ?? -1,
+                pair.Resource))
+            .Where(pair => pair.PublicLayerId >= 0)
+            .ToArray();
+
+        return (layers, null);
     }
 
     /// <summary>
