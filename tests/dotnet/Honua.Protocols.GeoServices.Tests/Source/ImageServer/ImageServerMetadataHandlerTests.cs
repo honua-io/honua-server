@@ -79,7 +79,7 @@ public class ImageServerMetadataHandlerTests
     {
         _rasterStore.ListRastersAsync(1, Arg.Any<CancellationToken>())
             .Returns([CreateTestRasterInfo() with { Extent = null }]);
-        _rasterStore.GetStatisticsAsync(1, 100, null, Arg.Any<CancellationToken>())
+        _rasterStore.GetStatisticsAsync(1, 100, null, Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
             .Returns(Array.Empty<RasterStatistics>());
 
         var context = CreateImageServerContext();
@@ -288,7 +288,7 @@ public class ImageServerMetadataHandlerTests
     public async Task GetServiceInfoAsync_EmptyStatistics_ReturnsOk()
     {
         SetupLayerAndRasters();
-        _rasterStore.GetStatisticsAsync(1, 100, null, Arg.Any<CancellationToken>())
+        _rasterStore.GetStatisticsAsync(1, 100, null, Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
             .Returns(Array.Empty<RasterStatistics>());
         _rasterStore.GetExtentAsync(1, 100, Arg.Any<CancellationToken>())
             .Returns(CreateTestExtent());
@@ -307,7 +307,7 @@ public class ImageServerMetadataHandlerTests
     public async Task GetServiceInfoAsync_NullStatisticValues_UsesDefaultZero()
     {
         SetupLayerAndRasters();
-        _rasterStore.GetStatisticsAsync(1, 100, null, Arg.Any<CancellationToken>())
+        _rasterStore.GetStatisticsAsync(1, 100, null, Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
             .Returns(new[]
             {
                 new RasterStatistics { Band = 1, MinValue = null, MaxValue = null, MeanValue = null, StandardDeviation = null }
@@ -358,7 +358,7 @@ public class ImageServerMetadataHandlerTests
     public async Task GetServiceInfoAsync_NullSrid_DefaultsToWgs84()
     {
         SetupLayerAndRasters(srid: null);
-        _rasterStore.GetStatisticsAsync(1, 100, null, Arg.Any<CancellationToken>())
+        _rasterStore.GetStatisticsAsync(1, 100, null, Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
             .Returns(Array.Empty<RasterStatistics>());
         _rasterStore.GetExtentAsync(1, 100, Arg.Any<CancellationToken>())
             .Returns(new RasterExtent { XMin = 0, YMin = 0, XMax = 1, YMax = 1, Srid = null });
@@ -477,7 +477,7 @@ public class ImageServerMetadataHandlerTests
     private void SetupSuccessfulMetadata()
     {
         SetupLayerAndRasters();
-        _rasterStore.GetStatisticsAsync(1, 100, null, Arg.Any<CancellationToken>())
+        _rasterStore.GetStatisticsAsync(1, 100, null, Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
             .Returns(new[]
             {
                 new RasterStatistics { Band = 1, MinValue = 0, MaxValue = 255, MeanValue = 128, StandardDeviation = 45 },

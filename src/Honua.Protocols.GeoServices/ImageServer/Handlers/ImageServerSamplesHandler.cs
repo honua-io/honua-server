@@ -86,6 +86,27 @@ internal sealed class ImageServerSamplesHandler
                 return StandardErrorHelpers.CreateBadRequest(context, timeError ?? "Invalid time.");
             }
 
+            // multidimensionalDefinition selects a per-slice (time/StdZ coordinate) view of a
+            // registered multidimensional cube. We parse and validate its shape here, but
+            // resolving a slice to an actual pixel read is deferred (#1869): an ImageServer layer
+            // exposes multidimensional descriptor metadata only and has no readable per-slice
+            // backing store wired into the getSamples path, so an honest 501 is returned for any
+            // supplied definition rather than silently sampling the collapsed raster.
+            if (!ImageServerMultidimensionalDefinition.TryParse(
+                    GetString(values, "multidimensionalDefinition"), out var dimensionConstraints, out var multidimError))
+            {
+                ImageServerLog.InvalidIdentifyParameters(_logger, layerId, multidimError ?? "Invalid multidimensionalDefinition");
+                return StandardErrorHelpers.CreateBadRequest(context, multidimError ?? "Invalid multidimensionalDefinition.");
+            }
+
+            if (dimensionConstraints.Count > 0)
+            {
+                const string multidimMessage =
+                    "getSamples multidimensionalDefinition (per-slice sampling of a multidimensional cube) is not implemented on this service.";
+                ImageServerLog.InvalidIdentifyParameters(_logger, layerId, multidimMessage);
+                return StandardErrorHelpers.CreateNotImplemented(context, multidimMessage);
+            }
+
             var editionError = ImageServerMosaicHelpers.RequireTemporalMosaicAccess(context, timestamp);
             if (editionError != null)
             {

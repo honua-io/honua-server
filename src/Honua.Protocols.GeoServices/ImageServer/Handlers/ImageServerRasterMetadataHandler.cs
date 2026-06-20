@@ -85,13 +85,13 @@ internal sealed class ImageServerRasterMetadataHandler
             if (rasters.Length == 1)
             {
                 histograms = await _rasterStore.GetHistogramsAsync(
-                    layerId, rasters[0].Id, bands: null, DefaultBinCount, cancellationToken);
+                    layerId, rasters[0].Id, bands: null, DefaultBinCount, cancellationToken: cancellationToken);
             }
             else
             {
                 var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, mosaicRule: null);
                 histograms = await _rasterStore.GetMosaicHistogramsAsync(
-                    layerId, rasters.Select(r => r.Id).ToArray(), mergeStrategy, bands: null, DefaultBinCount, cancellationToken);
+                    layerId, rasters.Select(r => r.Id).ToArray(), mergeStrategy, bands: null, DefaultBinCount, cancellationToken: cancellationToken);
             }
 
             var entries = new BandHistogram[histograms.Length];
@@ -220,12 +220,12 @@ internal sealed class ImageServerRasterMetadataHandler
 
         if (rasters.Length == 1)
         {
-            return await _rasterStore.GetStatisticsAsync(layerId, rasters[0].Id, bands: null, cancellationToken);
+            return await _rasterStore.GetStatisticsAsync(layerId, rasters[0].Id, bands: null, cancellationToken: cancellationToken);
         }
 
         var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, mosaicRule: null);
         return await _rasterStore.GetMosaicStatisticsAsync(
-            layerId, rasters.Select(r => r.Id).ToArray(), mergeStrategy, bands: null, cancellationToken);
+            layerId, rasters.Select(r => r.Id).ToArray(), mergeStrategy, bands: null, cancellationToken: cancellationToken);
     }
 
     private async Task<IResult> ExecuteAsync(

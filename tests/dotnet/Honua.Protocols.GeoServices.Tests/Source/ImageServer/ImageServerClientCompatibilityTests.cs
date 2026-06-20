@@ -167,7 +167,7 @@ public sealed class ImageServerClientCompatibilityTests
                 BandCount = 1,
                 PixelType = "8BUI",
             });
-        store.GetStatisticsAsync(Arg.Is(TestLayerId), Arg.Is<long>(100), Arg.Any<int[]?>(), Arg.Any<CancellationToken>())
+        store.GetStatisticsAsync(Arg.Is(TestLayerId), Arg.Is<long>(100), Arg.Any<int[]?>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
             .Returns(
             [
                 new RasterStatistics
@@ -181,7 +181,7 @@ public sealed class ImageServerClientCompatibilityTests
                     NoDataPixelCount = 0,
                 },
             ]);
-        store.GetHistogramsAsync(Arg.Is(TestLayerId), Arg.Is<long>(100), Arg.Any<int[]?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+        store.GetHistogramsAsync(Arg.Is(TestLayerId), Arg.Is<long>(100), Arg.Any<int[]?>(), Arg.Any<int>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
             .Returns(
             [
                 new RasterHistogram

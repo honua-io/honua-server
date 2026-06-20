@@ -113,12 +113,12 @@ public class ImageServerStatisticsHistogramsHandlerTests
     {
         _rasterStore.QueryRastersAsync(default, default, default)
             .ReturnsForAnyArgs([CreateTestRasterInfo()]);
-        _rasterStore.GetStatisticsAsync(1, 100, Arg.Any<int[]?>(), Arg.Any<CancellationToken>())
+        _rasterStore.GetStatisticsAsync(1, 100, Arg.Any<int[]?>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
             .Returns(new[]
             {
                 new RasterStatistics { Band = 1, MinValue = null, MaxValue = null, MeanValue = null, StandardDeviation = null }
             });
-        _rasterStore.GetHistogramsAsync(1, 100, Arg.Any<int[]?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+        _rasterStore.GetHistogramsAsync(1, 100, Arg.Any<int[]?>(), Arg.Any<int>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
             .Returns(Array.Empty<RasterHistogram>());
 
         var context = CreateImageServerContext();
@@ -152,6 +152,7 @@ public class ImageServerStatisticsHistogramsHandlerTests
             100,
             Arg.Any<int[]?>(),
             64,
+            Arg.Any<RasterIdentifyRendering?>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -175,6 +176,7 @@ public class ImageServerStatisticsHistogramsHandlerTests
             100,
             Arg.Any<int[]?>(),
             1024,
+            Arg.Any<RasterIdentifyRendering?>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -222,7 +224,7 @@ public class ImageServerStatisticsHistogramsHandlerTests
         var rasterB = CreateTestRasterInfo() with { Id = 200 };
         _rasterStore.GetRasterInfoAsync(1, 100, Arg.Any<CancellationToken>()).Returns(rasterA);
         _rasterStore.GetRasterInfoAsync(1, 200, Arg.Any<CancellationToken>()).Returns(rasterB);
-        _rasterStore.GetStatisticsAsync(1, 200, Arg.Any<int[]?>(), Arg.Any<CancellationToken>())
+        _rasterStore.GetStatisticsAsync(1, 200, Arg.Any<int[]?>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
             .Returns(new[]
             {
                 new RasterStatistics
@@ -236,7 +238,7 @@ public class ImageServerStatisticsHistogramsHandlerTests
                     NoDataPixelCount = 0,
                 }
             });
-        _rasterStore.GetHistogramsAsync(1, 200, Arg.Any<int[]?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+        _rasterStore.GetHistogramsAsync(1, 200, Arg.Any<int[]?>(), Arg.Any<int>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
             .Returns(new[]
             {
                 new RasterHistogram
@@ -261,8 +263,8 @@ public class ImageServerStatisticsHistogramsHandlerTests
         // Primary raster fallback must NOT be used when rasterIds is supplied.
         await _rasterStore.DidNotReceive().QueryRastersAsync(1, Arg.Any<RasterSelectionQuery>(), Arg.Any<CancellationToken>());
         // Both catalog rasters should be analysed (no band filter when bandIds omitted).
-        await _rasterStore.Received(1).GetStatisticsAsync(1, 100, null, Arg.Any<CancellationToken>());
-        await _rasterStore.Received(1).GetStatisticsAsync(1, 200, null, Arg.Any<CancellationToken>());
+        await _rasterStore.Received(1).GetStatisticsAsync(1, 100, null, Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>());
+        await _rasterStore.Received(1).GetStatisticsAsync(1, 200, null, Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -283,7 +285,7 @@ public class ImageServerStatisticsHistogramsHandlerTests
 
         result.Should().BeOfType<JsonHttpResult<ComputeStatisticsHistogramsResponse>>();
         await _rasterStore.DidNotReceive().QueryRastersAsync(1, Arg.Any<RasterSelectionQuery>(), Arg.Any<CancellationToken>());
-        await _rasterStore.Received(1).GetStatisticsAsync(1, 100, null, Arg.Any<CancellationToken>());
+        await _rasterStore.Received(1).GetStatisticsAsync(1, 100, null, Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -305,6 +307,7 @@ public class ImageServerStatisticsHistogramsHandlerTests
             1,
             100,
             Arg.Is<int[]>(b => b != null && b.Length == 2 && b[0] == 1 && b[1] == 3),
+            Arg.Any<RasterIdentifyRendering?>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -327,6 +330,7 @@ public class ImageServerStatisticsHistogramsHandlerTests
             1,
             100,
             Arg.Is<int[]>(b => b != null && b.Length == 2 && b[0] == 2 && b[1] == 4),
+            Arg.Any<RasterIdentifyRendering?>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -344,7 +348,7 @@ public class ImageServerStatisticsHistogramsHandlerTests
 
         // Stats: returned in DB ascending order (band 1, then band 3) — mimics the
         // PostgresRasterStore behaviour where the SQL ORDER BY band_number wins.
-        _rasterStore.GetStatisticsAsync(1, 100, Arg.Any<int[]?>(), Arg.Any<CancellationToken>())
+        _rasterStore.GetStatisticsAsync(1, 100, Arg.Any<int[]?>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
             .Returns(new[]
             {
                 new RasterStatistics
@@ -368,7 +372,7 @@ public class ImageServerStatisticsHistogramsHandlerTests
             });
 
         // Histograms: returned in caller-supplied order (band 3, then band 1).
-        _rasterStore.GetHistogramsAsync(1, 100, Arg.Any<int[]?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+        _rasterStore.GetHistogramsAsync(1, 100, Arg.Any<int[]?>(), Arg.Any<int>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
             .Returns(new[]
             {
                 new RasterHistogram
@@ -481,7 +485,7 @@ public class ImageServerStatisticsHistogramsHandlerTests
     {
         _rasterStore.QueryRastersAsync(default, default, default)
             .ReturnsForAnyArgs([CreateTestRasterInfo()]);
-        _rasterStore.GetStatisticsAsync(1, 100, Arg.Any<int[]?>(), Arg.Any<CancellationToken>())
+        _rasterStore.GetStatisticsAsync(1, 100, Arg.Any<int[]?>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
             .Returns<Task<RasterStatistics[]>>(_ => throw new InvalidOperationException("boom"));
 
         var context = CreateImageServerContext();
@@ -491,11 +495,111 @@ public class ImageServerStatisticsHistogramsHandlerTests
         context.Response.StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
     }
 
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task ComputeAsync_WithStretchRenderingRule_PassesRenderingToStore()
+    {
+        SetupSuccessfulCompute();
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            // MinMax stretch (StretchType 5) — the cleanest supported rendering chain.
+            ["renderingRule"] = "{\"rasterFunction\":\"Stretch\",\"rasterFunctionArguments\":{\"StretchType\":5}}",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.ComputeAsync(context, 1, values, CancellationToken.None);
+
+        result.Should().BeOfType<JsonHttpResult<ComputeStatisticsHistogramsResponse>>();
+        // The renderingRule must reach the store as a non-null rendering so statistics describe
+        // the rendered pixels (#1871).
+        await _rasterStore.Received(1).GetStatisticsAsync(
+            1, 100, Arg.Any<int[]?>(), Arg.Is<RasterIdentifyRendering?>(r => r != null && r.Value.HasRendering), Arg.Any<CancellationToken>());
+        await _rasterStore.Received(1).GetHistogramsAsync(
+            1, 100, Arg.Any<int[]?>(), Arg.Any<int>(), Arg.Is<RasterIdentifyRendering?>(r => r != null && r.Value.HasRendering), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task ComputeAsync_WithIdentityRenderingRule_PassesNullRenderingToStore()
+    {
+        SetupSuccessfulCompute();
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["renderingRule"] = "{\"rasterFunction\":\"Identity\"}",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.ComputeAsync(context, 1, values, CancellationToken.None);
+
+        result.Should().BeOfType<JsonHttpResult<ComputeStatisticsHistogramsResponse>>();
+        // An Identity-only chain is a no-op: the raw-source statistics contract is preserved.
+        await _rasterStore.Received(1).GetStatisticsAsync(
+            1, 100, Arg.Any<int[]?>(), Arg.Is<RasterIdentifyRendering?>(r => r == null), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task ComputeAsync_WithUnsupportedStretchType_ReturnsNotImplemented()
+    {
+        SetupSuccessfulCompute();
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            // Histogram-equalize (StretchType 4) is recognized but not implemented.
+            ["renderingRule"] = "{\"rasterFunction\":\"Stretch\",\"rasterFunctionArguments\":{\"StretchType\":4}}",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.ComputeAsync(context, 1, values, CancellationToken.None);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status501NotImplemented);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task ComputeAsync_WithUnknownRasterFunction_ReturnsBadRequest()
+    {
+        SetupSuccessfulCompute();
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["renderingRule"] = "{\"rasterFunction\":\"Bogus\"}",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.ComputeAsync(context, 1, values, CancellationToken.None);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task ComputeAsync_WithExtractBandRenderingRule_ReturnsNotImplemented()
+    {
+        SetupSuccessfulCompute();
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["renderingRule"] = "{\"rasterFunction\":\"ExtractBand\",\"rasterFunctionArguments\":{\"BandIds\":[0]}}",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.ComputeAsync(context, 1, values, CancellationToken.None);
+        await result.ExecuteAsync(context);
+
+        // ExtractBand changes the band set; computeStatisticsHistograms does not yet honour it.
+        context.Response.StatusCode.Should().Be(StatusCodes.Status501NotImplemented);
+    }
+
     private void SetupSuccessfulCompute()
     {
         _rasterStore.QueryRastersAsync(default, default, default)
             .ReturnsForAnyArgs([CreateTestRasterInfo()]);
-        _rasterStore.GetStatisticsAsync(1, 100, Arg.Any<int[]?>(), Arg.Any<CancellationToken>())
+        _rasterStore.GetStatisticsAsync(1, 100, Arg.Any<int[]?>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
             .Returns(new[]
             {
                 new RasterStatistics
@@ -509,7 +613,7 @@ public class ImageServerStatisticsHistogramsHandlerTests
                     NoDataPixelCount = 0,
                 }
             });
-        _rasterStore.GetHistogramsAsync(1, 100, Arg.Any<int[]?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+        _rasterStore.GetHistogramsAsync(1, 100, Arg.Any<int[]?>(), Arg.Any<int>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
             .Returns(new[]
             {
                 new RasterHistogram

@@ -103,13 +103,13 @@ internal sealed class ImageServerLegendHandler
             else
             {
                 var statistics = rasters.Length == 1
-                    ? await _rasterStore.GetStatisticsAsync(layerId, rasters[0].Id, bands: null, cancellationToken)
+                    ? await _rasterStore.GetStatisticsAsync(layerId, rasters[0].Id, bands: null, cancellationToken: cancellationToken)
                     : await _rasterStore.GetMosaicStatisticsAsync(
                         layerId,
                         rasters.Select(r => r.Id).ToArray(),
                         mergeStrategy,
                         bands: null,
-                        cancellationToken);
+                        cancellationToken: cancellationToken);
                 swatches = BuildSwatches(statistics);
             }
 

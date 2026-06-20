@@ -67,6 +67,12 @@ public interface IRasterStore
     /// composites them ordered by newest acquisition and bypasses the timestamp newest-batch
     /// snapshot filter that <see cref="QueryRastersAsync"/> would otherwise apply.
     /// </param>
+    /// <param name="attributeSort">
+    /// Optional non-date attribute ordering for an <c>esriMosaicByAttribute</c> mosaic. When
+    /// supplied (and <paramref name="ordering"/> is <see cref="RasterMosaicOrdering.Attribute"/>),
+    /// the contested pixel is resolved by the allowlisted raster-catalog column it names rather
+    /// than by acquisition date. Ignored for the other ordering modes.
+    /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     Task<RasterResult> ExportMosaicAsync(
         int layerId,
@@ -74,6 +80,7 @@ public interface IRasterStore
         RasterMergeStrategy mergeStrategy,
         RasterQuery query,
         RasterMosaicOrdering ordering = RasterMosaicOrdering.AcquisitionNewest,
+        RasterMosaicAttributeSort? attributeSort = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -158,24 +165,36 @@ public interface IRasterStore
     /// <param name="layerId">Layer identifier containing the raster</param>
     /// <param name="rasterId">Raster identifier to analyze</param>
     /// <param name="bands">Specific bands to analyze (1-based indexing). If null, all bands are analyzed.</param>
+    /// <param name="rendering">
+    /// Optional rendering rule (clip/stretch/colormap). When supplied, statistics are computed
+    /// over the rendered pixels (post clip/stretch/colormap) rather than the raw source raster,
+    /// matching the Esri ImageServer <c>computeStatisticsHistograms</c> <c>renderingRule</c>
+    /// behaviour. When supplied the values are always computed fresh (the persisted whole-raster
+    /// statistics describe the raw source and cannot be reused). When <c>null</c> the persisted
+    /// raw-source statistics are returned (the default behaviour).
+    /// </param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Statistics for each requested band</returns>
     Task<RasterStatistics[]> GetStatisticsAsync(
         int layerId,
         long rasterId,
         int[]? bands = null,
+        RasterIdentifyRendering? rendering = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Gets statistics for a composited layer mosaic. Implementations must persist computed
     /// values keyed by the layer's raster-id set and serve subsequent reads from the persisted
-    /// rows; the snapshot is invalidated when the layer's raster membership changes.
+    /// rows; the snapshot is invalidated when the layer's raster membership changes. When
+    /// <paramref name="rendering"/> is supplied the statistics are computed fresh over the
+    /// rendered mosaic pixels instead.
     /// </summary>
     Task<RasterStatistics[]> GetMosaicStatisticsAsync(
         int layerId,
         long[] rasterIds,
         RasterMergeStrategy mergeStrategy,
         int[]? bands = null,
+        RasterIdentifyRendering? rendering = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -210,6 +229,12 @@ public interface IRasterStore
     /// <param name="rasterId">Raster identifier to analyze.</param>
     /// <param name="bands">Optional 1-based band selection. <c>null</c> requests every band.</param>
     /// <param name="binCount">Number of bins per band; clamped at the implementation level.</param>
+    /// <param name="rendering">
+    /// Optional rendering rule (clip/stretch/colormap). When supplied, the histogram is computed
+    /// over the rendered pixels (post clip/stretch/colormap) instead of the raw source raster,
+    /// matching the Esri ImageServer <c>computeStatisticsHistograms</c> <c>renderingRule</c>
+    /// behaviour. When <c>null</c> the raw source histogram is returned (the default behaviour).
+    /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>One histogram per requested band.</returns>
     Task<RasterHistogram[]> GetHistogramsAsync(
@@ -217,10 +242,12 @@ public interface IRasterStore
         long rasterId,
         int[]? bands = null,
         int binCount = 256,
+        RasterIdentifyRendering? rendering = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Computes histograms for a composited layer mosaic.
+    /// Computes histograms for a composited layer mosaic. When <paramref name="rendering"/> is
+    /// supplied the histogram is computed over the rendered mosaic pixels instead.
     /// </summary>
     Task<RasterHistogram[]> GetMosaicHistogramsAsync(
         int layerId,
@@ -228,6 +255,7 @@ public interface IRasterStore
         RasterMergeStrategy mergeStrategy,
         int[]? bands = null,
         int binCount = 256,
+        RasterIdentifyRendering? rendering = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -241,6 +269,11 @@ public interface IRasterStore
     /// <param name="clipGeometry">Clip geometry in Well-Known Binary form.</param>
     /// <param name="clipSrid">SRID of <paramref name="clipGeometry"/>; <c>null</c> assumes the raster SRID.</param>
     /// <param name="bands">Optional 1-based band selection; <c>null</c> requests every band.</param>
+    /// <param name="rendering">
+    /// Optional rendering rule (stretch/colormap) applied to the clipped pixels before the
+    /// statistics are computed, so computeStatisticsHistograms with both an AOI geometry and a
+    /// <c>renderingRule</c> reports the rendered values inside the AOI.
+    /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     Task<RasterStatistics[]> GetClippedStatisticsAsync(
         int layerId,
@@ -248,11 +281,13 @@ public interface IRasterStore
         byte[] clipGeometry,
         int? clipSrid,
         int[]? bands = null,
+        RasterIdentifyRendering? rendering = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Computes per-band histograms over the portion of a raster clipped to an
-    /// area-of-interest geometry (WKB). Always computed fresh.
+    /// area-of-interest geometry (WKB). Always computed fresh. When <paramref name="rendering"/>
+    /// is supplied the histogram is computed over the rendered clipped pixels.
     /// </summary>
     Task<RasterHistogram[]> GetClippedHistogramsAsync(
         int layerId,
@@ -261,11 +296,13 @@ public interface IRasterStore
         int? clipSrid,
         int[]? bands = null,
         int binCount = 256,
+        RasterIdentifyRendering? rendering = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Computes per-band statistics over a composited layer mosaic clipped to an
-    /// area-of-interest geometry (WKB).
+    /// area-of-interest geometry (WKB). When <paramref name="rendering"/> is supplied the
+    /// statistics are computed over the rendered clipped mosaic pixels.
     /// </summary>
     Task<RasterStatistics[]> GetClippedMosaicStatisticsAsync(
         int layerId,
@@ -274,11 +311,13 @@ public interface IRasterStore
         byte[] clipGeometry,
         int? clipSrid,
         int[]? bands = null,
+        RasterIdentifyRendering? rendering = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Computes per-band histograms over a composited layer mosaic clipped to an
-    /// area-of-interest geometry (WKB).
+    /// area-of-interest geometry (WKB). When <paramref name="rendering"/> is supplied the
+    /// histogram is computed over the rendered clipped mosaic pixels.
     /// </summary>
     Task<RasterHistogram[]> GetClippedMosaicHistogramsAsync(
         int layerId,
@@ -288,6 +327,7 @@ public interface IRasterStore
         int? clipSrid,
         int[]? bands = null,
         int binCount = 256,
+        RasterIdentifyRendering? rendering = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
