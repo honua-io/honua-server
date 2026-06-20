@@ -60,9 +60,11 @@ curl "https://server.example.com/wfs?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeatur
 | --- | --- |
 | `GetCapabilities` | `ACCEPTVERSIONS` (must include `2.0.1` when supplied), `SECTIONS`. |
 | `DescribeCoverage` | `COVERAGEID` — one or more bare integer layer ids (`COVERAGEID=0,1`). |
-| `GetCoverage` | `COVERAGEID` (exactly one), `FORMAT` (default `image/tiff`; also GeoTIFF/PNG/JPEG aliases), `SUBSET=axis(low,high)` trims, `BBOX` (convenience alias, not combinable with `SUBSET`), `SUBSETTINGCRS`/`BBOXCRS`, `OUTPUTCRS`. |
+| `GetCoverage` | `COVERAGEID` (exactly one), `FORMAT` (default `image/tiff`; also GeoTIFF/PNG/JPEG aliases), `SUBSET=axis(low,high)` trims, `BBOX` (convenience alias, not combinable with `SUBSET`), `SUBSETTINGCRS`/`BBOXCRS`, `OUTPUTCRS`. `SUBSET` also accepts `phenomenonTime(...)` temporal slices; any other named axis (e.g. a vertical/elevation axis) is validated against the coverage's registered dimension axes. |
 
 Unsupported `GetCoverage` extensions (`RANGESUBSET`, scaling, interpolation, `MEDIATYPE`, time slicing, XML POST) return a 501 OWS `ExceptionReport` rather than being silently ignored. Errors use OWS 2.0 `ExceptionReport` XML with stable exception codes.
+
+`SUBSET` axis labels resolve in three tiers: the spatial axes (`x`/`E`/`Long`/`Lon` and `y`/`N`/`Lat`) trim the grid; `phenomenonTime` slices against the coverage acquisition time; and any further named axis is treated as an additional dimension subset. Because the primary-raster coverage carries no additional (non-spatial, non-temporal) dimension axes, a well-formed slice on such an axis returns `InvalidAxisLabel` and a malformed one returns `InvalidSubsetting`. Wiring multidimensional (Zarr) coverages so a vertical/named-axis slice is served end-to-end is tracked on issue #1872.
 
 ```bash
 curl -o coverage.tif "https://server.example.com/rest/services/0/ImageServer/WCS?SERVICE=WCS&VERSION=2.0.1&REQUEST=GetCoverage&COVERAGEID=0&FORMAT=image/tiff&SUBSET=Long(-122.4,-122.3)&SUBSET=Lat(37.7,37.8)"
@@ -74,7 +76,7 @@ curl -o coverage.tif "https://server.example.com/rest/services/0/ImageServer/WCS
 | --- | --- |
 | `GetCapabilities` | KVP and RESTful (`.../WMTS/1.0.0/WMTSCapabilities.xml` style paths via `{**restPath}`). Advertises the reserved built-in gridsets (`WebMercatorQuad`, `WorldCRS84Quad`, byte-identical to before) plus any operator-defined custom gridsets from the `TileMatrixSets` configuration section, with per-layer links. |
 | `GetTile` | `LAYER`, `STYLE`, `TILEMATRIXSET`, `TILEMATRIX`, `TILEROW`, `TILECOL`, `FORMAT`, optional `TIME` (temporal layers) and `ELEVATION` (elevation-aware layers); serves built-in and custom gridsets. RESTful tile paths also supported. |
-| `GetFeatureInfo` | Tile-coordinate identify with `I`/`J` and `INFOFORMAT`. |
+| `GetFeatureInfo` | Tile-coordinate identify with `I`/`J` and `INFOFORMAT`; resolves the requested gridset through the same `ITileMatrixSetRegistry` as `GetTile`, so the built-in `WebMercatorQuad`/`WorldCRS84Quad` gridsets and operator-defined custom gridsets are supported. The clicked pixel is mapped to a world coordinate using the gridset's own origin, cell size and matrix dimensions (WebMercatorQuad stays byte-identical to before); unsupported gridsets are rejected with `InvalidParameterValue`. |
 
 ```bash
 curl -o tile.png "https://server.example.com/ogc/services/roads/wmts?SERVICE=WMTS&VERSION=1.0.0&REQUEST=GetTile&LAYER=0&STYLE=default&TILEMATRIXSET=EPSG:3857&TILEMATRIX=12&TILEROW=1586&TILECOL=655&FORMAT=image/png"
