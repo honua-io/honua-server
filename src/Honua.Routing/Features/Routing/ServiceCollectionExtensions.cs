@@ -60,6 +60,13 @@ public static class ServiceCollectionExtensions
             .ValidateOnStart();
         services.AddSingleton<IValidateOptions<RoutingConfiguration>, RoutingConfigurationValidator>();
 
+        // Network-dataset registry (Phase 0 of #1882): resolves the active dataset's
+        // edge/vertex table names. Backed by the honua.network_datasets registry table
+        // when present, falling back to the built-in default (public.ways topology) so
+        // the default deployment is unchanged. Registered unconditionally; only the
+        // pgRouting provider consumes it.
+        services.AddScoped<INetworkDatasetResolver, NetworkDatasetRegistry>();
+
         // Resolve the selected provider. The Routing:Provider key remains the
         // authoritative selector; the bound RoutingConfiguration.Provider mirrors it.
         var providerName = configuration[ProviderConfigurationKey];

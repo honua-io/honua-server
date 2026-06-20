@@ -197,4 +197,59 @@ public sealed class NAServerPgRoutingEndToEndTests : IClassFixture<PgRoutingFixt
         features[0].GetProperty("geometry").GetProperty("rings").GetArrayLength().Should().BeGreaterThan(0);
         features[1].GetProperty("geometry").GetProperty("rings").GetArrayLength().Should().BeGreaterThan(0);
     }
+
+    [RoutingTest(RoutingTestEnv)]
+    public async Task ClosestFacility_OverRealPgRouting_RanksNearestFacility()
+    {
+        // Incident at vertex 1 (SW corner). Two facilities: vertex 2 (1 hop) and
+        // vertex 9 (NE corner, 4 hops). The nearest (vertex 2) must rank 1.
+        var payload = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("f", "json"),
+            new KeyValuePair<string, string>("incidents", "0.0,0.0"),
+            new KeyValuePair<string, string>("facilities", "0.01,0.0;0.02,0.02"),
+            new KeyValuePair<string, string>("defaultTargetFacilityCount", "1"),
+        ]);
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{ServiceId}/NAServer/ClosestFacility/solveClosestFacility",
+            payload,
+            CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync(CancellationToken.None));
+        var feature = document.RootElement.GetProperty("routes").GetProperty("features")[0];
+        feature.GetProperty("attributes").GetProperty("FacilityRank").GetInt32().Should().Be(1);
+        // Facility index 0 (vertex 2, 1 hop) is closest -> Esri 1-based FacilityID 1.
+        feature.GetProperty("attributes").GetProperty("FacilityID").GetInt32().Should().Be(1);
+        feature.GetProperty("geometry").GetProperty("paths").GetArrayLength().Should().BeGreaterThan(0);
+    }
+
+    [RoutingTest(RoutingTestEnv)]
+    public async Task OdCostMatrix_OverRealPgRouting_ReturnsCostCells()
+    {
+        // 2x2 over the uniform-cost lattice: origins at vertices 1 & 3, destinations
+        // at vertices 7 & 9. Every edge cost = 1, so each pair has an integer cost.
+        var payload = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("f", "json"),
+            new KeyValuePair<string, string>("origins", "0.0,0.0;0.02,0.0"),
+            new KeyValuePair<string, string>("destinations", "0.0,0.02;0.02,0.02"),
+        ]);
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{ServiceId}/NAServer/ODCostMatrix/solveODCostMatrix",
+            payload,
+            CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync(CancellationToken.None));
+        var features = document.RootElement.GetProperty("odLines").GetProperty("features");
+
+        // 2 origins x 2 destinations => 4 cost cells.
+        features.GetArrayLength().Should().Be(4);
+        features[0].GetProperty("attributes").GetProperty("Total_Time").GetDouble().Should().BeGreaterThan(0);
+    }
 }

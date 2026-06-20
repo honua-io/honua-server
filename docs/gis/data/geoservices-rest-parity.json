@@ -2823,17 +2823,19 @@
       "implementedSurface": [
         "Route solve",
         "ServiceArea solveServiceArea",
+        "ClosestFacility solveClosestFacility (canonical cost-matrix solver)",
+        "ODCostMatrix solveODCostMatrix (cost-only)",
+        "LocationAllocation solveLocationAllocation (minimize-impedance + maximize-coverage)",
         "Point/line/polygon barriers (pgRouting edge exclusion)",
         "travelMode parsing and capability validation (driving routable)",
-        "ClosestFacility solveClosestFacility compatibility envelope"
+        "Addressable network-dataset registry (Phase 0 of editing)"
       ],
       "knownGaps": [
         "GET solve routes",
-        "ClosestFacility canonical solver",
-        "OD cost matrix",
-        "location-allocation",
+        "OD cost matrix line geometry (cost-only output today)",
+        "Location-allocation problem types beyond minimize-impedance/maximize-coverage",
         "non-driving travel modes (single stored cost weight)",
-        "network-dataset editing"
+        "network-dataset editing (Phase 2: edge/vertex CRUD + topology rebuild)"
       ],
       "evidence": {
         "code": [

@@ -141,6 +141,192 @@ internal static class NAServerResultMapping
         };
     }
 
+    /// <summary>
+    /// Maps a closest-facility solve result into the NAServer closest-facility
+    /// response: ranked incident→facility routes with geometry plus directions.
+    /// </summary>
+    public static NAServerClosestFacilityResponse MapClosestFacility(
+        ClosestFacilitySolveResult result,
+        int outSrid,
+        bool includeDirections)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        var spatialReference = BuildSpatialReference(outSrid);
+        var features = new List<NAServerCfRouteFeature>(result.Routes.Count);
+        var directions = new List<NAServerDirection>();
+
+        foreach (var route in result.Routes)
+        {
+            var paths = GeoJsonToEsri.ToPaths(route.RouteGeometryGeoJson);
+            features.Add(new NAServerCfRouteFeature
+            {
+                Geometry = paths.Length > 0
+                    ? new NAServerPolylineGeometry { Paths = paths, SpatialReference = spatialReference }
+                    : null,
+                Attributes = new NAServerCfRouteAttributes
+                {
+                    // Esri identifiers are 1-based; canonical ids are 0-based.
+                    Name = $"Incident {route.IncidentId + 1} - Facility {route.FacilityId + 1}",
+                    IncidentId = route.IncidentId + 1,
+                    FacilityId = route.FacilityId + 1,
+                    FacilityRank = route.Rank,
+                    TotalLength = route.TotalLengthMeters,
+                    TotalTravelTime = route.TotalTimeMinutes,
+                },
+            });
+
+            if (includeDirections && route.Directions.Count > 0)
+            {
+                directions.AddRange(MapDirections(route.Directions));
+            }
+        }
+
+        NAServerMessage[]? messages = null;
+        if (features.Count == 0)
+        {
+            messages =
+            [
+                new NAServerMessage
+                {
+                    Type = 50,
+                    Description = "No closest facility could be solved for the supplied incidents and facilities.",
+                },
+            ];
+        }
+
+        return new NAServerClosestFacilityResponse
+        {
+            Routes = new NAServerCfRouteFeatureSet
+            {
+                GeometryType = "esriGeometryPolyline",
+                SpatialReference = spatialReference,
+                Features = [.. features],
+            },
+            Directions = [.. directions],
+            Messages = messages,
+        };
+    }
+
+    /// <summary>
+    /// Maps an OD cost matrix solve result into the NAServer OD cost matrix response
+    /// (attribute-only origin→destination lines).
+    /// </summary>
+    public static NAServerOdCostMatrixResponse MapOdCostMatrix(OdCostMatrixSolveResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        var features = new NAServerOdLineFeature[result.Lines.Count];
+        for (var i = 0; i < result.Lines.Count; i++)
+        {
+            var line = result.Lines[i];
+            features[i] = new NAServerOdLineFeature
+            {
+                Attributes = new NAServerOdLineAttributes
+                {
+                    // Esri identifiers are 1-based; canonical ids are 0-based.
+                    OriginId = line.OriginId + 1,
+                    DestinationId = line.DestinationId + 1,
+                    DestinationRank = line.DestinationRank,
+                    TotalTime = line.TotalCostMinutes,
+                    TotalDistance = line.TotalLengthMeters,
+                },
+            };
+        }
+
+        NAServerMessage[]? messages = null;
+        if (features.Length == 0)
+        {
+            messages =
+            [
+                new NAServerMessage
+                {
+                    Type = 50,
+                    Description = "No reachable origin/destination pairs were found for the supplied inputs.",
+                },
+            ];
+        }
+
+        return new NAServerOdCostMatrixResponse
+        {
+            OdLines = new NAServerOdLinesFeatureSet { Features = features },
+            Messages = messages,
+        };
+    }
+
+    /// <summary>
+    /// Maps a location-allocation solve result into the NAServer location-allocation
+    /// response: chosen facilities (with allocated demand weight) and per-demand-point
+    /// allocations.
+    /// </summary>
+    public static NAServerLocationAllocationResponse MapLocationAllocation(LocationAllocationSolveResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        // Sum allocated weight per chosen facility for the facility feature output.
+        var weightByFacility = new Dictionary<int, double>();
+        foreach (var allocation in result.Allocations)
+        {
+            if (allocation.AllocatedFacilityId >= 0)
+            {
+                weightByFacility.TryGetValue(allocation.AllocatedFacilityId, out var existing);
+                weightByFacility[allocation.AllocatedFacilityId] = existing + allocation.Weight;
+            }
+        }
+
+        var facilityFeatures = new NAServerLaFacilityFeature[result.ChosenFacilityIds.Count];
+        for (var i = 0; i < result.ChosenFacilityIds.Count; i++)
+        {
+            var facilityId = result.ChosenFacilityIds[i];
+            weightByFacility.TryGetValue(facilityId, out var demandWeight);
+            facilityFeatures[i] = new NAServerLaFacilityFeature
+            {
+                Attributes = new NAServerLaFacilityAttributes
+                {
+                    FacilityId = facilityId + 1,
+                    DemandWeight = demandWeight,
+                },
+            };
+        }
+
+        var demandFeatures = new NAServerLaDemandPointFeature[result.Allocations.Count];
+        for (var i = 0; i < result.Allocations.Count; i++)
+        {
+            var allocation = result.Allocations[i];
+            var allocated = allocation.AllocatedFacilityId >= 0;
+            demandFeatures[i] = new NAServerLaDemandPointFeature
+            {
+                Attributes = new NAServerLaDemandPointAttributes
+                {
+                    DemandOid = allocation.DemandPointId + 1,
+                    FacilityId = allocated ? allocation.AllocatedFacilityId + 1 : 0,
+                    Weight = allocation.Weight,
+                    AllocatedTime = allocated ? allocation.ImpedanceMinutes : -1,
+                },
+            };
+        }
+
+        NAServerMessage[]? messages = null;
+        if (facilityFeatures.Length == 0)
+        {
+            messages =
+            [
+                new NAServerMessage
+                {
+                    Type = 50,
+                    Description = "No facilities could be chosen for the supplied candidates and demand points.",
+                },
+            ];
+        }
+
+        return new NAServerLocationAllocationResponse
+        {
+            Facilities = new NAServerLaFacilitiesFeatureSet { Features = facilityFeatures },
+            DemandPoints = new NAServerLaDemandPointsFeatureSet { Features = demandFeatures },
+            Messages = messages,
+        };
+    }
+
     private static NAServerDirection[] MapDirections(IReadOnlyList<RouteDirectionStep> steps)
     {
         if (steps.Count == 0)
