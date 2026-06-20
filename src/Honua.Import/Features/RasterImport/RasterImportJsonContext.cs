@@ -26,6 +26,8 @@ namespace Honua.Import.RasterImport;
 [JsonSerializable(typeof(RasterImportResult))]
 [JsonSerializable(typeof(RasterImportProgress))]
 [JsonSerializable(typeof(RasterImportEndpoints.RasterFormatsResponse))]
+[JsonSerializable(typeof(RasterImportEndpoints.UpdateRasterRequest))]
+[JsonSerializable(typeof(RasterImportEndpoints.RasterMetadataResponse))]
 [JsonSerializable(typeof(SupportedRasterFormat))]
 [JsonSerializable(typeof(RasterImportPhase))]
 [JsonSerializable(typeof(OperationType))]
