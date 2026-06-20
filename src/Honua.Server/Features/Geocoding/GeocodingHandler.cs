@@ -111,13 +111,33 @@ internal sealed class GeocodingHandler(
             return StandardErrorHelpers.CreateBadRequest(context, "Output format must be json or pjson.");
         }
 
-        var query = BuildForwardQuery(values);
+        // A magicKey (issued by a prior suggest) deterministically identifies the suggestion the
+        // caller picked: it carries the resolvable text, the originating provider, and the category.
+        // When supplied, it resolves that suggestion directly rather than treating free text as the
+        // query. An opaque-but-unverifiable token is rejected (it was not minted by this service).
+        var rawMagicKey = GetValue(values, "magicKey");
+        GeocodeMagicKey? decodedMagicKey = null;
+        if (!string.IsNullOrWhiteSpace(rawMagicKey))
+        {
+            if (!GeocodeMagicKeyCodec.TryDecode(rawMagicKey, out decodedMagicKey) || decodedMagicKey is null)
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, "magicKey is invalid or was not issued by this service.");
+            }
+        }
+
+        // magicKey carries the resolvable suggestion text; fall back to singleLine/structured input.
+        var query = decodedMagicKey?.Text ?? BuildForwardQuery(values);
         if (string.IsNullOrWhiteSpace(query))
         {
             return StandardErrorHelpers.CreateBadRequest(
                 context,
                 "singleLine is required, or provide structured fields: address, city, region, postal, countryCode.");
         }
+
+        // The forward category filter narrows candidates by their provider-supplied address type.
+        // A magicKey's encoded category is honored when the request itself carries no explicit one.
+        var requestedCategories = GeocodeCategoryFilter.ParseCategories(GetValue(values, "category"))
+            ?? GeocodeCategoryFilter.ParseCategories(decodedMagicKey?.Category);
 
         if (!TryParsePositiveInt(
             GetValue(values, "maxLocations"),
@@ -140,7 +160,9 @@ internal sealed class GeocodingHandler(
 
         try
         {
-            var requestedProviderName = GetValue(values, "provider");
+            // An explicit provider parameter wins; otherwise the magicKey's originating provider is
+            // used so the suggestion resolves against the same provider that issued it.
+            var requestedProviderName = GetValue(values, "provider") ?? decodedMagicKey?.Provider;
             var providerName = NormalizeProviderName(requestedProviderName);
             var resolvedProviderName = ResolveProviderName(requestedProviderName);
 
@@ -159,7 +181,11 @@ internal sealed class GeocodingHandler(
                 MaxResults: maxLocations,
                 SpatialReferenceWkid: _options.DefaultSpatialReferenceWkid,
                 CountryCodes: GetValue(values, "countryCodes") ?? GetValue(values, "countryCode"),
-                SearchBounds: searchBounds);
+                SearchBounds: searchBounds)
+            {
+                CategoryFilter = requestedCategories is null ? null : string.Join(',', requestedCategories),
+                MagicKey = string.IsNullOrWhiteSpace(rawMagicKey) ? null : rawMagicKey
+            };
 
             var stopwatch = Stopwatch.StartNew();
             var result = await _coordinatorService.ForwardGeocodeAsync(providerRequest, providerName, cancellationToken).ConfigureAwait(false);
@@ -176,6 +202,14 @@ internal sealed class GeocodingHandler(
             var reprojectedCandidates = new List<GeocodeCandidateResponse>(candidates.Count);
             foreach (var candidate in candidates)
             {
+                // category filtering narrows candidates by the provider-supplied address type. This
+                // runs on the shared interface after the provider returns, so every provider that
+                // labels its candidates (Nominatim, Azure Maps, Amazon Location) is filtered honestly.
+                if (!GeocodeCategoryFilter.Matches(candidate.AddressType, requestedCategories))
+                {
+                    continue;
+                }
+
                 var projected = await TryReprojectGeocodePointAsync(context, candidate.X, candidate.Y, outSrid, cancellationToken).ConfigureAwait(false);
                 if (projected is null)
                 {
@@ -434,10 +468,13 @@ internal sealed class GeocodingHandler(
                 biasLocation = new Honua.Geocoding.Features.Geocoding.Domain.GeocodePoint(biasX, biasY, _options.DefaultSpatialReferenceWkid);
             }
 
+            var requestedCategories = GeocodeCategoryFilter.ParseCategories(GetValue(values, "category"));
+
             var providerRequest = new Honua.Geocoding.Features.Geocoding.Domain.SuggestGeocodeRequest(
                 Text: text.Trim(),
                 MaxResults: maxSuggestions,
-                CountryCodes: GetValue(values, "countryCodes") ?? GetValue(values, "countryCode"))
+                CountryCodes: GetValue(values, "countryCodes") ?? GetValue(values, "countryCode"),
+                CategoryFilter: requestedCategories is null ? null : string.Join(',', requestedCategories))
             {
                 SearchBounds = suggestBounds,
                 BiasLocation = biasLocation
@@ -456,14 +493,25 @@ internal sealed class GeocodingHandler(
             }
 
             var suggestions = result.Data ?? [];
+            var producingProvider = result.ProviderName;
+
+            // Re-mint each suggestion's magicKey as a self-issued, signed, opaque token that encodes
+            // the suggestion's resolvable identity (text + category + provider). The provider-internal
+            // magicKey (an OSM/Azure/Amazon id) is not resolvable by findAddressCandidates, so the
+            // service issues its own token that round-trips deterministically through that operation.
+            // category filtering, when requested, narrows the suggestions by the provider-supplied
+            // category on the shared interface (no provider exposes a suggest category parameter).
             var response = new SuggestResponse
             {
-                Suggestions = [.. suggestions.Select(suggestion => new GeocodeSuggestionResponse
-                {
-                    Text = suggestion.Text,
-                    MagicKey = suggestion.MagicKey,
-                    IsCollection = suggestion.IsCollection
-                })]
+                Suggestions = [.. suggestions
+                    .Where(suggestion => GeocodeCategoryFilter.Matches(suggestion.Category, requestedCategories))
+                    .Select(suggestion => new GeocodeSuggestionResponse
+                    {
+                        Text = suggestion.Text,
+                        MagicKey = GeocodeMagicKeyCodec.Encode(
+                            new GeocodeMagicKey(suggestion.Text, suggestion.Category, producingProvider)),
+                        IsCollection = suggestion.IsCollection
+                    })]
             };
 
             GeocodingLog.OperationCompleted(_logger, "suggest", result.ProviderName, response.Suggestions.Length, stopwatch.Elapsed.TotalMilliseconds);
