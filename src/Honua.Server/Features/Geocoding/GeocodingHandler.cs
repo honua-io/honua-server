@@ -1159,6 +1159,13 @@ internal sealed class GeocodingHandler(
         return projected;
     }
 
+    // Parses the GeoServices outSR parameter. Esri clients (ArcGIS Maps SDK for
+    // JavaScript locator.addressesToLocations, ArcGIS Pro) serialize a configured
+    // output spatial reference as the canonical Esri JSON object —
+    // outSR={"wkid":4326} or {"latestWkid":...} — not just a bare WKID integer.
+    // Delegate to the shared SpatialReferenceHelpers parser so both the bare-int
+    // and JSON spatial-reference forms are accepted consistently with the rest of
+    // the GeoServices surface (#1263). Missing/blank selects the default WKID.
     private static bool TryParseSpatialReference(string? rawOutSpatialReference, int defaultWkid, out int wkid)
     {
         if (string.IsNullOrWhiteSpace(rawOutSpatialReference))
@@ -1167,8 +1174,10 @@ internal sealed class GeocodingHandler(
             return true;
         }
 
-        if (int.TryParse(rawOutSpatialReference, NumberStyles.Integer, CultureInfo.InvariantCulture, out wkid) && wkid > 0)
+        var parsed = Honua.Infrastructure.Services.SpatialReferenceHelpers.TryParseSrid(rawOutSpatialReference);
+        if (parsed is > 0)
         {
+            wkid = parsed.Value;
             return true;
         }
 
