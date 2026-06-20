@@ -270,10 +270,11 @@ public sealed class ImportDatumTransformationTests(PostgresFixture fixture)
 
     private async Task EnsureImportFunctionsAsync()
     {
-        await using var conn = await fixture.DataSource.OpenConnectionAsync();
-        await using var cmd = conn.CreateCommand();
-        cmd.CommandText = "CREATE SCHEMA IF NOT EXISTS honua;\n" + CreateImportFunctionsSql;
-        await cmd.ExecuteNonQueryAsync();
+        // honua-server#1568 (signature 2): this creates the literal, process-global honua schema
+        // and import functions (search_path isolation does not scope them), so apply it under the
+        // shared seed advisory lock to keep parallel [Collection("Database")] tests off the 40P01
+        // deadlock path racing locks on the same global schema/pg_proc objects.
+        await fixture.ApplyGlobalSeedSqlAsync("CREATE SCHEMA IF NOT EXISTS honua;\n" + CreateImportFunctionsSql);
     }
 
     /// <summary>

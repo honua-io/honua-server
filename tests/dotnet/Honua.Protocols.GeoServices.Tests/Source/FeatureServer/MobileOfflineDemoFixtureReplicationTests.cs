@@ -53,10 +53,11 @@ public sealed class MobileOfflineDemoFixtureReplicationTests : IAsyncLifetime
         var seedPath = RepositoryPaths.Resolve("tests", "seed", "mobile-offline-demo-v1.sql");
         var seedSql = await File.ReadAllTextAsync(seedPath);
 
-        await using var connection = await _fixture.Postgres.GetConnectionAsync(schema);
-        await using var command = connection.CreateCommand();
-        command.CommandText = seedSql;
-        await command.ExecuteNonQueryAsync();
+        // honua-server#1568 (signature 2): the seed runs ALTER/INSERT DDL against the literal,
+        // process-global honua schema, which the per-test search_path isolation does not scope.
+        // Apply it under the shared seed advisory lock so parallel [Collection("Database")] tests
+        // do not deadlock (40P01) racing ACCESS EXCLUSIVE locks on the same global honua.* objects.
+        await _fixture.Postgres.ApplyGlobalSeedSqlAsync(seedSql, schema);
 
         await PublishMobileOfflineMetadataV2Async();
     }

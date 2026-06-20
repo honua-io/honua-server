@@ -254,6 +254,43 @@ public sealed class PostgresFixture : IAsyncLifetime
         }
     }
 
+    /// <summary>
+    /// Applies a raw SQL seed/setup script that mutates the literal, process-global
+    /// <c>honua</c>/<c>honua_data</c> schemas (e.g. <c>CREATE SCHEMA IF NOT EXISTS honua</c>,
+    /// <c>ALTER TABLE honua.layers ...</c>, <c>INSERT INTO honua.scene_datasets ...</c>) while
+    /// holding the shared <see cref="Seeding.SeedRunner.SeedApplicationLockKey"/> advisory lock,
+    /// optionally scoping the connection's <c>search_path</c> to <paramref name="schemaName"/>.
+    /// </summary>
+    /// <remarks>
+    /// honua-server#1568 (signature 2 — <c>40P01: deadlock detected</c>): the
+    /// <c>mobile-offline-demo-v1.sql</c> and <c>base-schema.sql</c> seeds run idempotent DDL
+    /// (<c>CREATE TABLE/INDEX</c>, repeated <c>ALTER TABLE ... ADD COLUMN IF NOT EXISTS</c>) and
+    /// inserts against the literal, schema-qualified <c>honua</c> tables. Those tables are NOT
+    /// scoped by the per-test <c>search_path</c> isolation, so several <c>[Collection("Database")]</c>
+    /// tests applying the seed in parallel take <c>ACCESS EXCLUSIVE</c> catalog/table locks on the
+    /// same global <c>honua.layers</c>/<c>honua.services</c>/<c>honua.scene_datasets</c> objects in
+    /// interleaved order and deadlock. <see cref="Seeding.SeedRunner"/> already serializes its YAML
+    /// seeds on this advisory lock; raw <c>.sql</c> seed application must use the same lock so all
+    /// global-schema mutation serializes on one ordering rather than racing the catalog.
+    /// </remarks>
+    /// <param name="sql">The raw seed/setup SQL to apply.</param>
+    /// <param name="schemaName">Optional schema to set on <c>search_path</c> before applying the SQL.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public Task ApplyGlobalSeedSqlAsync(string sql, string? schemaName = null, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sql);
+
+        return RunUnderSchemaMutationLockAsync(
+            async () =>
+            {
+                await using var connection = await GetConnectionAsync(schemaName).ConfigureAwait(false);
+                await using var command = connection.CreateCommand();
+                command.CommandText = sql;
+                await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            },
+            cancellationToken);
+    }
+
     private static async Task ExecuteAdvisoryLockCommandAsync(NpgsqlConnection connection, string sql, CancellationToken cancellationToken)
     {
         await using var cmd = connection.CreateCommand();
