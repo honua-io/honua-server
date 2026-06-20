@@ -18,6 +18,21 @@ public sealed record ForwardGeocodeRequest(
     /// Structured address components for providers that support it
     /// </summary>
     public StructuredAddress? StructuredAddress { get; init; }
+
+    /// <summary>
+    /// Optional comma-delimited category tokens (e.g. <c>Address</c>, <c>POI</c>,
+    /// <c>StreetName</c>) that the result set is narrowed to. Candidates are filtered by
+    /// their <see cref="GeocodeCandidate.AddressType"/> against these tokens. A
+    /// <see langword="null"/> or empty value applies no category filter.
+    /// </summary>
+    public string? CategoryFilter { get; init; }
+
+    /// <summary>
+    /// Optional opaque <c>magicKey</c> token issued by a prior <c>suggest</c> call (see
+    /// <see cref="GeocodeMagicKeyCodec"/>). When present, the forward geocode resolves the
+    /// exact suggestion the token encodes rather than treating <see cref="Query"/> as free text.
+    /// </summary>
+    public string? MagicKey { get; init; }
 }
 
 /// <summary>
