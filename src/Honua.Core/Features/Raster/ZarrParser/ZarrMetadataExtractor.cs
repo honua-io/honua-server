@@ -14,9 +14,10 @@ using Honua.Core.Features.Raster.Multidimensional.Domain;
 namespace Honua.Core.Features.Raster.ZarrParser;
 
 /// <summary>
-/// AOT-safe Zarr v2 metadata reader. Discovers arrays under a root prefix by reading
-/// <c>.zgroup</c>, <c>.zattrs</c> (with an optional <c>variables</c> manifest), and
-/// <c>.zarray</c> JSON documents through <see cref="ICloudRangeReader"/>.
+/// AOT-safe Zarr metadata reader. Reads Zarr v2 stores via <c>.zgroup</c>,
+/// <c>.zattrs</c> (with an optional <c>variables</c> manifest), and <c>.zarray</c>
+/// documents, and Zarr v3 stores via consolidated <c>zarr.json</c> documents
+/// (<c>node_type</c> group/array), all through <see cref="ICloudRangeReader"/>.
 /// </summary>
 public sealed class ZarrMetadataExtractor : IZarrMetadataReader
 {
@@ -35,6 +36,20 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
         ArgumentNullException.ThrowIfNull(rootPath);
 
         var normalizedRoot = NormalizeRootPath(rootPath);
+
+        // Zarr v3 stores keep all node metadata in `zarr.json`. Detect it at the
+        // root before falling back to the v2 `.zgroup`/`.zarray` layout.
+        var v3RootDoc = await TryReadJsonDocumentAsync(reader, bucket, JoinKey(normalizedRoot, "zarr.json"), cancellationToken)
+            .ConfigureAwait(false);
+        if (v3RootDoc is not null)
+        {
+            using (v3RootDoc)
+            {
+                return await ReadV3MetadataAsync(reader, bucket, normalizedRoot, v3RootDoc, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+        }
+
         var groupDoc = await TryReadJsonDocumentAsync(reader, bucket, JoinKey(normalizedRoot, ".zgroup"), cancellationToken)
             .ConfigureAwait(false);
         var attrsDoc = await TryReadJsonDocumentAsync(reader, bucket, JoinKey(normalizedRoot, ".zattrs"), cancellationToken)
@@ -73,7 +88,8 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
             throw new InvalidDataException("Zarr store contains no arrays.");
         }
 
-        var (srid, extent, primary, xDim, yDim, tDim, temporal) = ResolveStoreGeoreferencing(attrsDoc, arrays);
+        var (srid, extent, primary, xDim, yDim, tDim, temporal) =
+            ResolveStoreGeoreferencing(attrsDoc?.RootElement, arrays);
 
         return new ZarrStoreMetadata(
             ZarrFormat: arrays[0].ZarrFormat,
@@ -267,6 +283,358 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
         }
     }
 
+    // ---- Zarr v3 (zarr.json) ----------------------------------------------
+
+    /// <summary>
+    /// Reads a Zarr v3 store rooted at a <c>zarr.json</c> document. The root may be
+    /// a v3 group (variables discovered from a <c>variables</c> attribute manifest)
+    /// or a single v3 array.
+    /// </summary>
+    private static async Task<ZarrStoreMetadata> ReadV3MetadataAsync(
+        ICloudRangeReader reader,
+        string bucket,
+        string normalizedRoot,
+        JsonDocument rootDoc,
+        CancellationToken cancellationToken)
+    {
+        var root = rootDoc.RootElement;
+        if (root.ValueKind != JsonValueKind.Object)
+        {
+            throw new InvalidDataException("Zarr v3 zarr.json document is malformed.");
+        }
+
+        if (root.TryGetProperty("zarr_format", out var fmtEl) &&
+            fmtEl.ValueKind == JsonValueKind.Number &&
+            fmtEl.TryGetInt32(out var fmt) &&
+            fmt != 3)
+        {
+            throw new InvalidDataException($"zarr.json declares unsupported zarr_format '{fmt}'; expected 3.");
+        }
+
+        var nodeType = root.TryGetProperty("node_type", out var nodeEl) && nodeEl.ValueKind == JsonValueKind.String
+            ? nodeEl.GetString()
+            : null;
+
+        var storeAttrs = root.TryGetProperty("attributes", out var attrsEl) && attrsEl.ValueKind == JsonValueKind.Object
+            ? attrsEl
+            : default;
+
+        var arrays = new List<ZarrArrayMetadata>();
+        if (string.Equals(nodeType, "array", StringComparison.Ordinal))
+        {
+            arrays.Add(ReadV3Array(root, ResolveSingleName(normalizedRoot), relativePath: string.Empty));
+        }
+        else
+        {
+            // Group node: resolve member arrays from the attributes `variables` manifest.
+            var variables = ResolveV3Variables(storeAttrs);
+            foreach (var name in variables)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var arrayPath = JoinKey(normalizedRoot, name);
+                var arrayDoc = await TryReadJsonDocumentAsync(reader, bucket, JoinKey(arrayPath, "zarr.json"), cancellationToken)
+                    .ConfigureAwait(false);
+                if (arrayDoc is null)
+                {
+                    throw new InvalidDataException($"Zarr v3 array '{name}' is missing a zarr.json at '{arrayPath}/zarr.json'.");
+                }
+                using (arrayDoc)
+                {
+                    arrays.Add(ReadV3Array(arrayDoc.RootElement, name, relativePath: name));
+                }
+            }
+        }
+
+        if (arrays.Count == 0)
+        {
+            throw new InvalidDataException("Zarr v3 store contains no arrays.");
+        }
+
+        var (srid, extent, primary, xDim, yDim, tDim, temporal) =
+            ResolveStoreGeoreferencing(storeAttrs.ValueKind == JsonValueKind.Object ? storeAttrs : (JsonElement?)null, arrays);
+
+        return new ZarrStoreMetadata(
+            ZarrFormat: ZarrFormatVersion.V3,
+            Srid: srid,
+            Extent: extent,
+            Arrays: arrays.ToArray(),
+            PrimaryVariable: primary,
+            SpatialXDimension: xDim,
+            SpatialYDimension: yDim,
+            TemporalDimension: tDim,
+            Temporal: temporal);
+    }
+
+    private static List<string> ResolveV3Variables(JsonElement attributes)
+    {
+        var variables = new List<string>();
+        if (attributes.ValueKind != JsonValueKind.Object ||
+            !attributes.TryGetProperty("variables", out var variablesEl) ||
+            variablesEl.ValueKind != JsonValueKind.Array)
+        {
+            return variables;
+        }
+
+        foreach (var entry in variablesEl.EnumerateArray())
+        {
+            if (variables.Count >= MaxVariables)
+            {
+                throw new InvalidDataException($"Zarr store exposes more than {MaxVariables} variables; reduce the manifest or split the store.");
+            }
+            if (entry.ValueKind != JsonValueKind.String)
+            {
+                continue;
+            }
+            var name = entry.GetString();
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                continue;
+            }
+            if (ContainsUnsafeSegment(name))
+            {
+                throw new InvalidDataException($"Variable name '{name}' contains path traversal characters.");
+            }
+            variables.Add(name!);
+        }
+
+        return variables;
+    }
+
+    private static ZarrArrayMetadata ReadV3Array(JsonElement root, string name, string relativePath)
+    {
+        if (root.ValueKind != JsonValueKind.Object)
+        {
+            throw new InvalidDataException($"Zarr v3 array '{name}' has a malformed zarr.json document.");
+        }
+
+        if (!root.TryGetProperty("node_type", out var nodeEl) ||
+            nodeEl.ValueKind != JsonValueKind.String ||
+            !string.Equals(nodeEl.GetString(), "array", StringComparison.Ordinal))
+        {
+            throw new InvalidDataException($"Zarr v3 node '{name}' is not an array.");
+        }
+
+        var shape = ReadIntArray(root, "shape", name);
+        if (shape.Length == 0)
+        {
+            throw new InvalidDataException($"Zarr v3 array '{name}' has an empty shape.");
+        }
+        foreach (var dim in shape)
+        {
+            if (dim <= 0)
+            {
+                throw new InvalidDataException($"Zarr v3 array '{name}' has non-positive shape entry.");
+            }
+        }
+
+        var chunks = ReadV3ChunkShape(root, shape.Length, name);
+
+        var dataType = NormalizeV3DataType(ReadRequiredString(root, "data_type", name), name);
+
+        var (compressor, separatorPrefixed) = ResolveV3Codecs(root, name);
+
+        object? fillValue = null;
+        if (root.TryGetProperty("fill_value", out var fillEl))
+        {
+            fillValue = fillEl.ValueKind switch
+            {
+                JsonValueKind.Number => fillEl.TryGetDouble(out var d) ? d : null,
+                JsonValueKind.String => fillEl.GetString(),
+                _ => null
+            };
+        }
+
+        var chunkKeyEncoding = ResolveV3ChunkKeyEncoding(root, name);
+        var dimNames = ReadV3DimensionNames(root, shape.Length);
+
+        return new ZarrArrayMetadata(
+            Name: name,
+            ZarrFormat: ZarrFormatVersion.V3,
+            RelativePath: relativePath,
+            Shape: shape,
+            Chunks: chunks,
+            DataType: dataType,
+            Order: "C",
+            Compressor: compressor,
+            FillValue: fillValue,
+            DimensionNames: dimNames,
+            ChunkKeyEncoding: chunkKeyEncoding);
+    }
+
+    private static int[] ReadV3ChunkShape(JsonElement root, int rank, string name)
+    {
+        if (!root.TryGetProperty("chunk_grid", out var gridEl) || gridEl.ValueKind != JsonValueKind.Object)
+        {
+            throw new InvalidDataException($"Zarr v3 array '{name}' is missing chunk_grid.");
+        }
+
+        var gridName = gridEl.TryGetProperty("name", out var gridNameEl) && gridNameEl.ValueKind == JsonValueKind.String
+            ? gridNameEl.GetString()
+            : null;
+        if (!string.Equals(gridName, "regular", StringComparison.Ordinal))
+        {
+            throw new InvalidDataException($"Zarr v3 array '{name}' uses unsupported chunk_grid '{gridName}'; only 'regular' is supported.");
+        }
+
+        if (!gridEl.TryGetProperty("configuration", out var configEl) || configEl.ValueKind != JsonValueKind.Object)
+        {
+            throw new InvalidDataException($"Zarr v3 array '{name}' chunk_grid is missing its configuration.");
+        }
+
+        var chunks = ReadIntArray(configEl, "chunk_shape", name);
+        if (chunks.Length != rank)
+        {
+            throw new InvalidDataException($"Zarr v3 array '{name}' chunk_shape rank does not match shape rank.");
+        }
+        foreach (var chunk in chunks)
+        {
+            if (chunk <= 0)
+            {
+                throw new InvalidDataException($"Zarr v3 array '{name}' has non-positive chunk entry.");
+            }
+        }
+
+        return chunks;
+    }
+
+    /// <summary>
+    /// Resolves the chunk key encoding for a v3 array. Supports the v3 <c>default</c>
+    /// encoding (<c>c</c>-prefixed, configurable separator) and <c>v2</c> encoding
+    /// (dotted, no prefix). Defaults to the v3 <c>default</c> encoding when omitted.
+    /// </summary>
+    private static ZarrChunkKeyEncoding ResolveV3ChunkKeyEncoding(JsonElement root, string name)
+    {
+        if (!root.TryGetProperty("chunk_key_encoding", out var encEl) || encEl.ValueKind != JsonValueKind.Object)
+        {
+            return ZarrChunkKeyEncoding.V3Default;
+        }
+
+        var encName = encEl.TryGetProperty("name", out var encNameEl) && encNameEl.ValueKind == JsonValueKind.String
+            ? encNameEl.GetString()
+            : "default";
+
+        var separator = encEl.TryGetProperty("configuration", out var cfgEl) &&
+                        cfgEl.ValueKind == JsonValueKind.Object &&
+                        cfgEl.TryGetProperty("separator", out var sepEl) &&
+                        sepEl.ValueKind == JsonValueKind.String
+            ? sepEl.GetString()
+            : null;
+
+        switch (encName)
+        {
+            case "default":
+                separator ??= "/";
+                return new ZarrChunkKeyEncoding(separator, "c", "c" + separator + "0");
+            case "v2":
+                separator ??= ".";
+                return new ZarrChunkKeyEncoding(separator, string.Empty, "0");
+            default:
+                throw new InvalidDataException($"Zarr v3 array '{name}' uses unsupported chunk_key_encoding '{encName}'.");
+        }
+    }
+
+    /// <summary>
+    /// Inspects the v3 codec pipeline. Requires a leading <c>bytes</c> (endianness)
+    /// codec and at most one trailing compression codec. <c>gzip</c> is zlib-wire
+    /// compatible and maps to the existing zlib decoder; uncompressed arrays return a
+    /// null compressor. Rejects blosc, sharding, and other unsupported codecs cleanly.
+    /// </summary>
+    private static (string? Compressor, bool _) ResolveV3Codecs(JsonElement root, string name)
+    {
+        if (!root.TryGetProperty("codecs", out var codecsEl) || codecsEl.ValueKind != JsonValueKind.Array)
+        {
+            throw new InvalidDataException($"Zarr v3 array '{name}' is missing its codec pipeline.");
+        }
+
+        string? compressor = null;
+        foreach (var codec in codecsEl.EnumerateArray())
+        {
+            if (codec.ValueKind != JsonValueKind.Object ||
+                !codec.TryGetProperty("name", out var codecNameEl) ||
+                codecNameEl.ValueKind != JsonValueKind.String)
+            {
+                throw new InvalidDataException($"Zarr v3 array '{name}' has a malformed codec entry.");
+            }
+
+            var codecName = codecNameEl.GetString();
+            switch (codecName)
+            {
+                case "bytes":
+                    // Array->bytes codec. Reject big-endian; the subset reader is little-endian only.
+                    if (codec.TryGetProperty("configuration", out var bytesCfg) &&
+                        bytesCfg.ValueKind == JsonValueKind.Object &&
+                        bytesCfg.TryGetProperty("endian", out var endianEl) &&
+                        endianEl.ValueKind == JsonValueKind.String &&
+                        string.Equals(endianEl.GetString(), "big", StringComparison.Ordinal))
+                    {
+                        throw new InvalidDataException($"Zarr v3 array '{name}' declares big-endian bytes codec; only little-endian is supported.");
+                    }
+                    break;
+                case "gzip":
+                    // Zarr v3 gzip codec: RFC 1952 gzip container over DEFLATE.
+                    compressor = "gzip";
+                    break;
+                case "zstd":
+                case "blosc":
+                case "sharding_indexed":
+                case "crc32c":
+                    throw new InvalidDataException($"Zarr v3 array '{name}' uses codec '{codecName}', which is not supported by the reader. Use uncompressed or gzip-coded chunks.");
+                default:
+                    throw new InvalidDataException($"Zarr v3 array '{name}' uses unsupported codec '{codecName}'.");
+            }
+        }
+
+        return (compressor, false);
+    }
+
+    /// <summary>
+    /// Normalizes a Zarr v3 <c>data_type</c> name (e.g. <c>float32</c>) to the
+    /// numpy little-endian dtype string the subset reader and CoverageJSON writer
+    /// consume (e.g. <c>&lt;f4</c>). Rejects unsupported data types cleanly.
+    /// </summary>
+    internal static string NormalizeV3DataType(string dataType, string name) => dataType switch
+    {
+        "bool" => "|b1",
+        "int8" => "|i1",
+        "uint8" => "|u1",
+        "int16" => "<i2",
+        "uint16" => "<u2",
+        "int32" => "<i4",
+        "uint32" => "<u4",
+        "int64" => "<i8",
+        "uint64" => "<u8",
+        "float32" => "<f4",
+        "float64" => "<f8",
+        _ => throw new InvalidDataException($"Zarr v3 array '{name}' uses unsupported data_type '{dataType}'.")
+    };
+
+    private static string[] ReadV3DimensionNames(JsonElement root, int rank)
+    {
+        if (root.TryGetProperty("dimension_names", out var dimsEl) && dimsEl.ValueKind == JsonValueKind.Array)
+        {
+            var names = new List<string>();
+            var i = 0;
+            foreach (var entry in dimsEl.EnumerateArray())
+            {
+                names.Add(entry.ValueKind == JsonValueKind.String && !string.IsNullOrEmpty(entry.GetString())
+                    ? entry.GetString()!
+                    : "dim_" + i.ToString(CultureInfo.InvariantCulture));
+                i++;
+            }
+            if (names.Count == rank)
+            {
+                return names.ToArray();
+            }
+        }
+
+        var fallback = new string[rank];
+        for (var i = 0; i < rank; i++)
+        {
+            fallback[i] = "dim_" + i.ToString(CultureInfo.InvariantCulture);
+        }
+        return fallback;
+    }
+
     private static ZarrFormatVersion ResolveZarrFormat(JsonElement root, string arrayName)
     {
         if (!root.TryGetProperty("zarr_format", out var formatEl))
@@ -384,7 +752,7 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
     }
 
     private static (int Srid, RasterExtent Extent, string? PrimaryVariable, string? XDim, string? YDim, string? TDim, TemporalExtent? Temporal)
-        ResolveStoreGeoreferencing(JsonDocument? attrsDoc, List<ZarrArrayMetadata> arrays)
+        ResolveStoreGeoreferencing(JsonElement? attrsElement, List<ZarrArrayMetadata> arrays)
     {
         var srid = 0;
         double xMin = 0, yMin = 0, xMax = 0, yMax = 0;
@@ -395,9 +763,8 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
         string? tDim = null;
         TemporalExtent? temporal = null;
 
-        if (attrsDoc is not null && attrsDoc.RootElement.ValueKind == JsonValueKind.Object)
+        if (attrsElement is { ValueKind: JsonValueKind.Object } root)
         {
-            var root = attrsDoc.RootElement;
             if (root.TryGetProperty("crs_wkid", out var crsEl) && crsEl.ValueKind == JsonValueKind.Number && crsEl.TryGetInt32(out var crsValue))
             {
                 srid = crsValue;
