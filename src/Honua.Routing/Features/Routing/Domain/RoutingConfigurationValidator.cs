@@ -41,6 +41,11 @@ public sealed class RoutingConfigurationValidator : IValidateOptions<RoutingConf
             errors.Add("Routing:MaxBreaks must be greater than 0.");
         }
 
+        if (options.MaxBarriers <= 0)
+        {
+            errors.Add("Routing:MaxBarriers must be greater than 0.");
+        }
+
         return errors.Count == 0
             ? ValidateOptionsResult.Success
             : ValidateOptionsResult.Fail(errors);

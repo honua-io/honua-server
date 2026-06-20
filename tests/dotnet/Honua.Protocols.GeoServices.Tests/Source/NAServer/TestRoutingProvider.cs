@@ -22,10 +22,22 @@ internal sealed class TestRoutingProvider : IRoutingProvider
 
     /// <summary>
     /// Creates a provider advertising full capabilities (route + service area, both
-    /// travel directions). Used by the happy-path NAServer integration tests.
+    /// travel directions, all barrier kinds, and driving/walking travel modes).
+    /// Used by the happy-path NAServer integration tests. The mock geometry ignores
+    /// barriers and the mode impedance, but advertising the capability lets the
+    /// adapter's accept/validate/thread surface be exercised end-to-end.
     /// </summary>
     public TestRoutingProvider()
-        : this(new RoutingProviderCapabilities())
+        : this(new RoutingProviderCapabilities
+        {
+            SupportedBarrierKinds =
+            [
+                RouteBarrierKind.Point,
+                RouteBarrierKind.Line,
+                RouteBarrierKind.Polygon,
+            ],
+            SupportedTravelModes = ["driving", "walking"],
+        })
     {
     }
 

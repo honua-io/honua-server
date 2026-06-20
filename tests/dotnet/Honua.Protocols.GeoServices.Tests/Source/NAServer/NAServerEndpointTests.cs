@@ -245,6 +245,114 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
         }
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Directions)]
+    [Endpoint("POST /rest/services/{serviceId}/NAServer/Route/solve")]
+    public async Task RouteSolve_WithBarriersAndTravelMode_OnCapableProvider_Solves()
+    {
+        // The shared fixture's TestRoutingProvider advertises all barrier kinds and
+        // driving/walking modes, so a barrier+mode request is accepted and solved.
+        var payload = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("f", "json"),
+            new KeyValuePair<string, string>("stops", "-157.858333,21.306944;-157.862,21.31"),
+            new KeyValuePair<string, string>("travelMode", "walking"),
+            new KeyValuePair<string, string>(
+                "barriers",
+                """{ "features": [ { "geometry": { "x": -157.86, "y": 21.308 } } ] }"""),
+            new KeyValuePair<string, string>(
+                "polygonBarriers",
+                """{ "features": [ { "geometry": { "rings": [ [ [-157.87,21.30],[-157.86,21.30],[-157.86,21.31],[-157.87,21.30] ] ] } } ] }"""),
+        ]);
+
+        var response = await _fixture.Client.PostAsync("/rest/services/Routing/NAServer/Route/solve", payload);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("routes").GetProperty("features").GetArrayLength().Should().BeGreaterThan(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Directions)]
+    [Endpoint("POST /rest/services/{serviceId}/NAServer/Route/solve")]
+    public async Task RouteSolve_WithBarriers_OnProviderWithoutBarrierSupport_Returns400()
+    {
+        // Provider advertises route+service-area but no barrier kinds.
+        var capabilities = new RoutingProviderCapabilities(SupportsRoute: true, SupportsServiceArea: true);
+        var fixture = await CreateFixtureWithCapabilitiesAsync(capabilities);
+        try
+        {
+            var payload = new FormUrlEncodedContent(
+            [
+                new KeyValuePair<string, string>("f", "json"),
+                new KeyValuePair<string, string>("stops", "-157.858333,21.306944;-157.862,21.31"),
+                new KeyValuePair<string, string>(
+                    "barriers",
+                    """{ "features": [ { "geometry": { "x": -157.86, "y": 21.308 } } ] }"""),
+            ]);
+
+            var response = await fixture.Client.PostAsync("/rest/services/Routing/NAServer/Route/solve", payload);
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var error = document.RootElement.GetProperty("error");
+            error.GetProperty("code").GetInt32().Should().Be(400);
+            error.GetProperty("details").EnumerateArray().Select(d => d.GetString())
+                .Should().Contain(d => d!.Contains("barriers are not supported"));
+            document.RootElement.TryGetProperty("routes", out _).Should().BeFalse();
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Directions)]
+    [Endpoint("POST /rest/services/{serviceId}/NAServer/Route/solve")]
+    public async Task RouteSolve_WithUnsupportedTravelMode_Returns400()
+    {
+        // The shared fixture provider advertises only driving/walking; trucking is rejected.
+        var payload = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("f", "json"),
+            new KeyValuePair<string, string>("stops", "-157.858333,21.306944;-157.862,21.31"),
+            new KeyValuePair<string, string>("travelMode", "trucking"),
+        ]);
+
+        var response = await _fixture.Client.PostAsync("/rest/services/Routing/NAServer/Route/solve", payload);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var error = document.RootElement.GetProperty("error");
+        error.GetProperty("code").GetInt32().Should().Be(400);
+        error.GetProperty("details").EnumerateArray().Select(d => d.GetString())
+            .Should().Contain(d => d!.Contains("travelMode"));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ServiceArea)]
+    [Endpoint("POST /rest/services/{serviceId}/NAServer/ServiceArea/solveServiceArea")]
+    public async Task ServiceArea_WithUnsupportedTravelMode_Returns400()
+    {
+        var payload = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("f", "json"),
+            new KeyValuePair<string, string>("facilities", "-157.858333,21.306944"),
+            new KeyValuePair<string, string>("defaultBreaks", "5,10"),
+            new KeyValuePair<string, string>("travelMode", "trucking"),
+        ]);
+
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/Routing/NAServer/ServiceArea/solveServiceArea",
+            payload);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("error").GetProperty("details").EnumerateArray()
+            .Select(d => d.GetString()).Should().Contain(d => d!.Contains("travelMode"));
+    }
+
     private static async Task<WebAppFixture> CreateFixtureWithCapabilitiesAsync(RoutingProviderCapabilities capabilities)
     {
         var fixture = new WebAppFixture()

@@ -146,6 +146,13 @@ internal static class NAServerEndpoints
             var includeRoutes = ReadBool(parameters, "returnRoutes", defaultValue: true);
             var includeDirections = ReadBool(parameters, "returnDirections", defaultValue: false);
 
+            var capabilityError = ValidateProviderCapabilities(
+                context, routing, request.Barriers, request.TravelMode);
+            if (capabilityError is not null)
+            {
+                return capabilityError;
+            }
+
             var result = await routing.SolveRouteAsync(request, ct);
             var response = NAServerResultMapping.MapRoute(
                 result, request.OutSrid, includeRoutes, includeDirections);
@@ -207,6 +214,13 @@ internal static class NAServerEndpoints
                     "NAServer travelDirection unsupported by provider");
             }
 
+            var capabilityError = ValidateProviderCapabilities(
+                context, routing, request.Barriers, request.TravelMode);
+            if (capabilityError is not null)
+            {
+                return capabilityError;
+            }
+
             var result = await routing.SolveServiceAreaAsync(request, ct);
             var response = NAServerResultMapping.MapServiceArea(result, request.OutSrid);
 
@@ -222,6 +236,59 @@ internal static class NAServerEndpoints
                 StandardErrorHelpers.CreateBadRequest(context, "Invalid NAServer service-area parameters."),
                 "Invalid NAServer service-area parameters");
         }
+    }
+
+    /// <summary>
+    /// Gates barrier and travel-mode inputs against the provider's advertised
+    /// capabilities. Returns a GeoServices 400 envelope when the request asks for a
+    /// barrier kind the provider does not honour, or a travel mode it does not
+    /// route — being honest about what actually works rather than silently
+    /// ignoring the input and returning an unrestricted/default solve. Returns
+    /// <c>null</c> when the request is within the provider's capabilities.
+    /// </summary>
+    private static IResult? ValidateProviderCapabilities(
+        HttpContext context,
+        IRoutingProvider routing,
+        IReadOnlyList<RouteBarrier> barriers,
+        string? travelMode)
+    {
+        var capabilities = routing.Capabilities;
+
+        // Barriers: every requested barrier kind must be advertised. If any kind is
+        // unsupported (or barriers are supplied to a provider that supports none),
+        // reject rather than dropping the barrier and returning an unsafe solve.
+        if (barriers.Count > 0)
+        {
+            foreach (var kind in barriers.Select(b => b.Kind).Distinct())
+            {
+                if (!capabilities.SupportedBarrierKinds.Contains(kind))
+                {
+                    return SetSpanErrorAndReturn(
+                        StandardErrorHelpers.CreateBadRequest(
+                            context,
+                            $"{kind} barriers are not supported by the configured routing provider."),
+                        "NAServer barrier kind unsupported by provider");
+                }
+            }
+        }
+
+        // Travel mode: an absent mode always uses the provider default. A supplied
+        // mode must be one the provider advertises (case-insensitive).
+        if (!string.IsNullOrWhiteSpace(travelMode))
+        {
+            var supported = capabilities.SupportedTravelModes
+                .Any(m => string.Equals(m, travelMode, StringComparison.OrdinalIgnoreCase));
+            if (!supported)
+            {
+                return SetSpanErrorAndReturn(
+                    StandardErrorHelpers.CreateBadRequest(
+                        context,
+                        $"travelMode '{travelMode}' is not supported by the configured routing provider."),
+                    "NAServer travelMode unsupported by provider");
+            }
+        }
+
+        return null;
     }
 
     /// <summary>

@@ -14,13 +14,14 @@ namespace Honua.Protocols.GeoServices.NAServer;
 /// <param name="MaxStops">Maximum number of stops on a route solve.</param>
 /// <param name="MaxFacilities">Maximum number of facilities on a service-area solve.</param>
 /// <param name="MaxBreaks">Maximum number of distinct breaks on a service-area solve.</param>
-internal readonly record struct NAServerInputCaps(int MaxStops, int MaxFacilities, int MaxBreaks)
+/// <param name="MaxBarriers">Maximum number of barriers (point/line/polygon combined) on a solve.</param>
+internal readonly record struct NAServerInputCaps(int MaxStops, int MaxFacilities, int MaxBreaks, int MaxBarriers)
 {
     /// <summary>
     /// Conservative defaults used when no <see cref="RoutingConfiguration"/> is
     /// supplied (e.g. focused unit tests that do not exercise the cap path).
     /// </summary>
-    public static NAServerInputCaps Default => new(1000, 1000, 50);
+    public static NAServerInputCaps Default => new(1000, 1000, 50, 1000);
 
     /// <summary>
     /// Builds caps from the bound routing configuration.
@@ -30,7 +31,11 @@ internal readonly record struct NAServerInputCaps(int MaxStops, int MaxFacilitie
     public static NAServerInputCaps FromConfiguration(RoutingConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(configuration);
-        return new NAServerInputCaps(configuration.MaxStops, configuration.MaxFacilities, configuration.MaxBreaks);
+        return new NAServerInputCaps(
+            configuration.MaxStops,
+            configuration.MaxFacilities,
+            configuration.MaxBreaks,
+            configuration.MaxBarriers);
     }
 }
 
@@ -83,7 +88,15 @@ internal static class NAServerParameterTranslation
                 $"'stops' count {stops.Count} exceeds the maximum of {caps.MaxStops}.");
         }
 
-        return new RouteSolveRequest(stops, OutSrid: outSrid) { InSrid = inSrid };
+        var barriers = ParseBarriers(parameters, caps);
+        var travelMode = ParseTravelMode(parameters);
+
+        return new RouteSolveRequest(stops, OutSrid: outSrid)
+        {
+            InSrid = inSrid,
+            Barriers = barriers,
+            TravelMode = travelMode,
+        };
     }
 
     /// <summary>
@@ -134,7 +147,274 @@ internal static class NAServerParameterTranslation
         }
 
         var travelDirection = ParseTravelDirection(GetValue(parameters, "travelDirection"));
-        return new ServiceAreaSolveRequest(facilities, breaks, travelDirection, outSrid) { InSrid = inSrid };
+        var barriers = ParseBarriers(parameters, caps);
+        var travelMode = ParseTravelMode(parameters);
+
+        return new ServiceAreaSolveRequest(facilities, breaks, travelDirection, outSrid)
+        {
+            InSrid = inSrid,
+            Barriers = barriers,
+            TravelMode = travelMode,
+        };
+    }
+
+    /// <summary>
+    /// Reads the Esri <c>travelMode</c> parameter. Returns <c>null</c> when absent
+    /// (the provider default applies). The value may be a bare mode token
+    /// (<c>driving</c>) or an Esri travel-mode JSON object, in which case the
+    /// object's <c>name</c> is used. The adapter validates the resolved token
+    /// against the provider's advertised modes.
+    /// </summary>
+    public static string? ParseTravelMode(IReadOnlyDictionary<string, string> parameters)
+    {
+        ArgumentNullException.ThrowIfNull(parameters);
+
+        var value = GetValue(parameters, "travelMode");
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var trimmed = value.Trim();
+        if (trimmed[0] != '{')
+        {
+            return trimmed;
+        }
+
+        // Esri travel-mode object: { "name": "Driving Time", "type": ... }. Use the
+        // name as the mode token so SDK clients that POST the full object resolve to
+        // the same advertised mode as a bare token.
+        try
+        {
+            using var doc = JsonDocument.Parse(trimmed);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object &&
+                doc.RootElement.TryGetProperty("name", out var name) &&
+                name.ValueKind == JsonValueKind.String)
+            {
+                var resolved = name.GetString();
+                return string.IsNullOrWhiteSpace(resolved) ? null : resolved.Trim();
+            }
+        }
+        catch (JsonException)
+        {
+            throw new NAServerParameterException(
+                "'travelMode' value is not a valid mode token or travel-mode object.");
+        }
+
+        throw new NAServerParameterException(
+            "'travelMode' object did not contain a 'name'.");
+    }
+
+    /// <summary>
+    /// Parses the Esri barrier parameters into canonical <see cref="RouteBarrier"/>s:
+    /// <c>barriers</c> (points), <c>polylineBarriers</c> (lines), and
+    /// <c>polygonBarriers</c> (areas). Each is an Esri FeatureSet whose feature
+    /// geometries are converted to GeoJSON. The combined count is capped by
+    /// <paramref name="caps"/> (DoS guard).
+    /// </summary>
+    public static IReadOnlyList<RouteBarrier> ParseBarriers(
+        IReadOnlyDictionary<string, string> parameters,
+        NAServerInputCaps caps)
+    {
+        ArgumentNullException.ThrowIfNull(parameters);
+
+        var barriers = new List<RouteBarrier>();
+        AppendBarriers(barriers, GetValue(parameters, "barriers"), RouteBarrierKind.Point, "barriers");
+        AppendBarriers(barriers, GetValue(parameters, "polylineBarriers"), RouteBarrierKind.Line, "polylineBarriers");
+        AppendBarriers(barriers, GetValue(parameters, "polygonBarriers"), RouteBarrierKind.Polygon, "polygonBarriers");
+
+        if (barriers.Count > caps.MaxBarriers)
+        {
+            throw new NAServerParameterException(
+                $"barrier count {barriers.Count} exceeds the maximum of {caps.MaxBarriers}.");
+        }
+
+        return barriers;
+    }
+
+    private static void AppendBarriers(
+        List<RouteBarrier> sink,
+        string? value,
+        RouteBarrierKind kind,
+        string parameterName)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return;
+        }
+
+        JsonDocument doc;
+        try
+        {
+            doc = JsonDocument.Parse(value.Trim());
+        }
+        catch (JsonException ex)
+        {
+            throw new NAServerParameterException(
+                $"'{parameterName}' is not valid JSON: {ex.Message}");
+        }
+
+        using (doc)
+        {
+            var root = doc.RootElement;
+
+            // Esri FeatureSet: { "features": [ { "geometry": {...} }, ... ] }.
+            if (root.ValueKind == JsonValueKind.Object &&
+                root.TryGetProperty("features", out var features) &&
+                features.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var feature in features.EnumerateArray())
+                {
+                    if (feature.ValueKind == JsonValueKind.Object &&
+                        feature.TryGetProperty("geometry", out var geometry))
+                    {
+                        sink.Add(new RouteBarrier(kind, EsriGeometryToGeoJson(geometry, kind, parameterName)));
+                    }
+                }
+
+                return;
+            }
+
+            // A bare geometry object (no FeatureSet wrapper).
+            sink.Add(new RouteBarrier(kind, EsriGeometryToGeoJson(root, kind, parameterName)));
+        }
+    }
+
+    /// <summary>
+    /// Converts an Esri JSON geometry (point <c>{x,y}</c>, polyline <c>{paths}</c>,
+    /// or polygon <c>{rings}</c>) into a GeoJSON geometry string for the barrier's
+    /// declared <paramref name="kind"/>.
+    /// </summary>
+    private static string EsriGeometryToGeoJson(JsonElement geometry, RouteBarrierKind kind, string parameterName)
+    {
+        if (geometry.ValueKind != JsonValueKind.Object)
+        {
+            throw new NAServerParameterException($"'{parameterName}' contains a non-object geometry.");
+        }
+
+        return kind switch
+        {
+            RouteBarrierKind.Point => PointToGeoJson(geometry, parameterName),
+            RouteBarrierKind.Line => PathsToGeoJson(geometry, parameterName),
+            RouteBarrierKind.Polygon => RingsToGeoJson(geometry, parameterName),
+            _ => throw new NAServerParameterException($"'{parameterName}' has an unsupported barrier kind."),
+        };
+    }
+
+    private static string PointToGeoJson(JsonElement geometry, string parameterName)
+    {
+        if (!geometry.TryGetProperty("x", out var x) || x.ValueKind != JsonValueKind.Number ||
+            !geometry.TryGetProperty("y", out var y) || y.ValueKind != JsonValueKind.Number)
+        {
+            throw new NAServerParameterException($"'{parameterName}' point geometry must have numeric 'x' and 'y'.");
+        }
+
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"{{\"type\":\"Point\",\"coordinates\":[{x.GetDouble()},{y.GetDouble()}]}}");
+    }
+
+    private static string PathsToGeoJson(JsonElement geometry, string parameterName)
+    {
+        if (!geometry.TryGetProperty("paths", out var paths) || paths.ValueKind != JsonValueKind.Array)
+        {
+            throw new NAServerParameterException($"'{parameterName}' polyline geometry must have a 'paths' array.");
+        }
+
+        var builder = new System.Text.StringBuilder();
+        builder.Append("{\"type\":\"MultiLineString\",\"coordinates\":");
+        AppendCoordinateArray(builder, paths, parameterName);
+        builder.Append('}');
+        return builder.ToString();
+    }
+
+    private static string RingsToGeoJson(JsonElement geometry, string parameterName)
+    {
+        if (!geometry.TryGetProperty("rings", out var rings) || rings.ValueKind != JsonValueKind.Array)
+        {
+            throw new NAServerParameterException($"'{parameterName}' polygon geometry must have a 'rings' array.");
+        }
+
+        // Esri rings collapse to a single GeoJSON Polygon whose ring list is taken
+        // as-is. Barrier semantics only need the area for ST_Intersects, so exact
+        // outer/hole winding is not material to edge exclusion.
+        var builder = new System.Text.StringBuilder();
+        builder.Append("{\"type\":\"Polygon\",\"coordinates\":");
+        AppendCoordinateArray(builder, rings, parameterName);
+        builder.Append('}');
+        return builder.ToString();
+    }
+
+    /// <summary>
+    /// Serializes a nested Esri coordinate array (<c>paths</c>/<c>rings</c>: an
+    /// array of arrays of <c>[x, y]</c> vertices) into GeoJSON coordinate JSON,
+    /// emitting only the first two ordinates of each vertex.
+    /// </summary>
+    private static void AppendCoordinateArray(System.Text.StringBuilder builder, JsonElement partArray, string parameterName)
+    {
+        builder.Append('[');
+        var firstPart = true;
+        foreach (var part in partArray.EnumerateArray())
+        {
+            if (part.ValueKind != JsonValueKind.Array)
+            {
+                throw new NAServerParameterException($"'{parameterName}' contains a malformed coordinate part.");
+            }
+
+            if (!firstPart)
+            {
+                builder.Append(',');
+            }
+
+            firstPart = false;
+
+            builder.Append('[');
+            var firstVertex = true;
+            foreach (var vertex in part.EnumerateArray())
+            {
+                if (vertex.ValueKind != JsonValueKind.Array)
+                {
+                    throw new NAServerParameterException($"'{parameterName}' contains a malformed vertex.");
+                }
+
+                double? vx = null;
+                double? vy = null;
+                foreach (var ordinate in vertex.EnumerateArray())
+                {
+                    if (ordinate.ValueKind != JsonValueKind.Number)
+                    {
+                        break;
+                    }
+
+                    if (vx is null)
+                    {
+                        vx = ordinate.GetDouble();
+                    }
+                    else
+                    {
+                        vy = ordinate.GetDouble();
+                        break;
+                    }
+                }
+
+                if (vx is not { } xv || vy is not { } yv)
+                {
+                    throw new NAServerParameterException($"'{parameterName}' vertex is missing x/y ordinates.");
+                }
+
+                if (!firstVertex)
+                {
+                    builder.Append(',');
+                }
+
+                firstVertex = false;
+                builder.Append(string.Create(CultureInfo.InvariantCulture, $"[{xv},{yv}]"));
+            }
+
+            builder.Append(']');
+        }
+
+        builder.Append(']');
     }
 
     private static string? GetValue(IReadOnlyDictionary<string, string> parameters, string key)

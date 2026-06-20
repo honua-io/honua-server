@@ -29,14 +29,31 @@ public sealed record RoutingProviderCapabilities(
     ];
 
     /// <summary>
-    /// Whether point/line barriers are honored. MVP providers do not yet support
-    /// barriers; the request model accepts them but they are ignored.
+    /// Barrier kinds the provider honours by excluding the graph edges each
+    /// barrier restricts. An empty set means barriers are not supported; the
+    /// NAServer adapter then rejects any barrier-bearing request with a 400 rather
+    /// than silently ignoring the barrier and returning an unrestricted solve.
     /// </summary>
-    public bool SupportsBarriers { get; init; }
+    public IReadOnlyList<RouteBarrierKind> SupportedBarrierKinds { get; init; } = [];
 
     /// <summary>
-    /// Whether multiple named travel modes are honored. MVP providers route on the
-    /// topology's stored cost weights regardless of mode.
+    /// Whether the provider honours any barrier kind. Derived from
+    /// <see cref="SupportedBarrierKinds"/>.
     /// </summary>
-    public bool SupportsTravelModes { get; init; }
+    public bool SupportsBarriers => SupportedBarrierKinds.Count > 0;
+
+    /// <summary>
+    /// Named travel modes the provider can route, compared case-insensitively. An
+    /// empty set means the provider does not differentiate modes; the adapter then
+    /// accepts only an absent/empty <c>travelMode</c> and routes on the topology's
+    /// stored cost weights. When non-empty, the adapter rejects any
+    /// <c>travelMode</c> not in this set with a 400.
+    /// </summary>
+    public IReadOnlyList<string> SupportedTravelModes { get; init; } = [];
+
+    /// <summary>
+    /// Whether the provider differentiates multiple named travel modes. Derived
+    /// from <see cref="SupportedTravelModes"/>.
+    /// </summary>
+    public bool SupportsTravelModes => SupportedTravelModes.Count > 0;
 }
