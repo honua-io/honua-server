@@ -671,6 +671,8 @@ public sealed class GdalRasterExecutorTests
             "raster.histogram", "raster.zonal-statistics",
             // Internal multidimensional-coverage metadata scan (ADR-0039 Path B).
             "coverage.multidim.metadata",
+            // LAZ/COPC decompress + reproject (#1854).
+            "pcloud.translate",
             // Existing native-routed ids must still be present.
             "gdal.gdalwarp", "gdal.ogr2ogr",
         };
@@ -725,6 +727,7 @@ public sealed class GdalRasterExecutorTests
             new GdalRasterStatisticsJobExecutor(runner, options, NullLogger<GdalRasterStatisticsJobExecutor>.Instance),
             new GdalRasterZonalStatisticsJobExecutor(runner, options, NullLogger<GdalRasterZonalStatisticsJobExecutor>.Instance),
             new GdalMultidimCoverageMetadataJobExecutor(runner, options, NullLogger<GdalMultidimCoverageMetadataJobExecutor>.Instance),
+            new PdalPointCloudConvertJobExecutor(runner, options, NullLogger<PdalPointCloudConvertJobExecutor>.Instance),
             NullLogger<GdalDispatchJobExecutor>.Instance);
     }
 
