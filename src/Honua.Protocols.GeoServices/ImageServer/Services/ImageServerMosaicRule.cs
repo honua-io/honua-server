@@ -19,8 +19,9 @@ public enum MosaicMethod
     None = 0,
 
     /// <summary>
-    /// <c>esriMosaicAttribute</c> over a recognized acquisition/date field — composites newest
-    /// or oldest first depending on the requested sort direction.
+    /// <c>esriMosaicByAttribute</c> over an allowlisted NON-date raster attribute — composites by
+    /// the named attribute value (ascending or descending). The resolved physical column is
+    /// carried on <see cref="ImageServerMosaicRule.AttributeSortColumn"/>.
     /// </summary>
     Attribute = 1,
 
@@ -79,6 +80,15 @@ public readonly record struct ImageServerMosaicRule
     public string? SortValue { get; init; }
 
     /// <summary>
+    /// The allowlisted physical raster-catalog column an <c>esriMosaicByAttribute</c> rule sorts
+    /// on when <see cref="Method"/> is <see cref="MosaicMethod.Attribute"/> over a non-date
+    /// field; <c>null</c> for date-attribute and all other methods. Always a vetted physical
+    /// column name (never the caller's raw <see cref="SortField"/>), so it is safe to thread into
+    /// the mosaic ORDER BY.
+    /// </summary>
+    public string? AttributeSortColumn { get; init; }
+
+    /// <summary>
     /// The pixel-resolution merge strategy resolved from the rule's
     /// <c>mergeStrategy</c>/<c>operation</c> token, or <c>null</c> when the rule carries no such
     /// token (the caller then falls back to the resource/default strategy).
@@ -93,10 +103,20 @@ public readonly record struct ImageServerMosaicRule
     {
         MosaicMethod.Northwest => RasterMosaicOrdering.Northwest,
         MosaicMethod.LockRaster => RasterMosaicOrdering.LockOrder,
-        MosaicMethod.Attribute or MosaicMethod.ByDate =>
+        MosaicMethod.Attribute => RasterMosaicOrdering.Attribute,
+        MosaicMethod.ByDate =>
             Ascending ? RasterMosaicOrdering.AcquisitionOldest : RasterMosaicOrdering.AcquisitionNewest,
         _ => RasterMosaicOrdering.AcquisitionNewest
     };
+
+    /// <summary>
+    /// Builds the non-date attribute ordering passed to the raster store when this rule is an
+    /// <c>esriMosaicByAttribute</c> over an allowlisted non-date column; <c>null</c> otherwise.
+    /// </summary>
+    public RasterMosaicAttributeSort? ToAttributeSort()
+        => Method == MosaicMethod.Attribute && !string.IsNullOrEmpty(AttributeSortColumn)
+            ? new RasterMosaicAttributeSort(AttributeSortColumn, Ascending)
+            : null;
 
     /// <summary>
     /// Parses an ImageServer <c>mosaicRule</c> request string.
@@ -164,7 +184,7 @@ public readonly record struct ImageServerMosaicRule
             var sortValue = ReadString(root, "sortValue");
 
             var methodName = ReadString(root, "mosaicMethod");
-            var method = ClassifyMethod(methodName, sortField);
+            var method = ClassifyMethod(methodName, sortField, out var attributeSortColumn);
 
             if (method == MosaicMethod.LockRaster)
             {
@@ -192,14 +212,17 @@ public readonly record struct ImageServerMosaicRule
                 Ascending = ascending,
                 SortField = sortField,
                 SortValue = sortValue,
+                AttributeSortColumn = attributeSortColumn,
                 Operation = operation
             };
             return true;
         }
     }
 
-    private static MosaicMethod ClassifyMethod(string? methodName, string? sortField)
+    private static MosaicMethod ClassifyMethod(string? methodName, string? sortField, out string? attributeSortColumn)
     {
+        attributeSortColumn = null;
+
         if (string.IsNullOrWhiteSpace(methodName))
         {
             return MosaicMethod.None;
@@ -223,13 +246,69 @@ public readonly record struct ImageServerMosaicRule
         if (methodName.Equals("esriMosaicAttribute", StringComparison.OrdinalIgnoreCase) ||
             methodName.Equals("esriMosaicByAttribute", StringComparison.OrdinalIgnoreCase))
         {
-            // Only a date/acquisition attribute sort is implemented; any other field is a
-            // recognized-but-unsupported attribute mosaic.
-            return IsDateSortField(sortField) ? MosaicMethod.ByDate : MosaicMethod.Unsupported;
+            // A date/acquisition attribute sort uses the temporal ordering path.
+            if (IsDateSortField(sortField))
+            {
+                return MosaicMethod.ByDate;
+            }
+
+            // A non-date attribute sort over an allowlisted catalog column is now executable
+            // (#1870). Any other field remains a recognized-but-unsupported attribute mosaic.
+            if (TryResolveAttributeSortColumn(sortField, out attributeSortColumn))
+            {
+                return MosaicMethod.Attribute;
+            }
+
+            return MosaicMethod.Unsupported;
         }
 
         // esriMosaicSeamline, esriMosaicNadir, esriMosaicCenter, esriMosaicViewpoint, etc.
         return MosaicMethod.Unsupported;
+    }
+
+    // Maps an Esri esriMosaicByAttribute sortField onto a strictly allowlisted physical raster
+    // catalog column. Only stable, numeric/sortable columns the catalog actually carries are
+    // permitted; everything else (including sensor/nadir-style fields that are not modeled) is
+    // rejected so an arbitrary, injectable, or meaningless sort never reaches the SQL ORDER BY.
+    // Accepts the Esri canonical catalog field names and their physical aliases. Sensor- and
+    // orientation-derived fields (e.g. nadir/off-nadir) are intentionally absent: esriMosaicNadir
+    // and sensor-attribute sorts stay deferred until that metadata is modeled.
+    private static bool TryResolveAttributeSortColumn(string? sortField, out string? column)
+    {
+        column = null;
+        if (string.IsNullOrWhiteSpace(sortField))
+        {
+            return false;
+        }
+
+        switch (sortField.Trim().ToLowerInvariant())
+        {
+            case "objectid":
+            case "oid":
+            case "id":
+                column = "id";
+                return true;
+            case "bandcount":
+            case "band_count":
+            case "num_bands":
+            case "numbands":
+                column = "band_count";
+                return true;
+            case "width":
+            case "columns":
+                column = "width";
+                return true;
+            case "height":
+            case "rows":
+                column = "height";
+                return true;
+            case "srid":
+            case "wkid":
+                column = "srid";
+                return true;
+            default:
+                return false;
+        }
     }
 
     // An attribute mosaic is treated as a date ordering when it sorts on a recognized

@@ -872,7 +872,7 @@ internal sealed class OgcCoveragesHandler
         RasterStatistics[] statistics = [];
         try
         {
-            statistics = await _rasterStore.GetStatisticsAsync(storageLayerId, raster.Id, null, cancellationToken).ConfigureAwait(false);
+            statistics = await _rasterStore.GetStatisticsAsync(storageLayerId, raster.Id, null, cancellationToken: cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
         {

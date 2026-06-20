@@ -66,8 +66,28 @@ public enum RasterMosaicOrdering
     /// locked-id filtering happens upstream of the store; the union itself orders by newest
     /// acquisition so the contested pixel resolves deterministically among the locked rasters.
     /// </summary>
-    LockOrder = 3
+    LockOrder = 3,
+
+    /// <summary>
+    /// A contested pixel is resolved by an arbitrary allowlisted raster attribute (Esri
+    /// <c>esriMosaicByAttribute</c> over a non-date field). The attribute column and sort
+    /// direction are carried separately on <see cref="RasterMosaicAttributeSort"/>, since the
+    /// ordering enum cannot encode an arbitrary column name.
+    /// </summary>
+    Attribute = 4
 }
+
+/// <summary>
+/// Describes an <c>esriMosaicByAttribute</c> ordering over a non-date raster attribute. The
+/// <see cref="Column"/> is a strictly allowlisted physical raster-catalog column name (never
+/// caller-supplied free text) so it can be safely interpolated into the mosaic <c>ORDER BY</c>.
+/// </summary>
+/// <param name="Column">The allowlisted physical raster-catalog column to order by.</param>
+/// <param name="Ascending">
+/// When <c>true</c> the lowest attribute value wins a contested pixel; when <c>false</c> the
+/// highest value wins (the Esri descending default).
+/// </param>
+public readonly record struct RasterMosaicAttributeSort(string Column, bool Ascending);
 
 /// <summary>
 /// Selection filter applied before a raster mosaic is built.

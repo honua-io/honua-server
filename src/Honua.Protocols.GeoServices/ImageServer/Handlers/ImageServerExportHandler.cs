@@ -160,6 +160,7 @@ internal sealed class ImageServerExportHandler
                     mergeStrategy,
                     exportQuery,
                     ordering,
+                    mosaicRule.ToAttributeSort(),
                     cancellationToken);
 
             if (WantsInlineImageResponse(request.F))

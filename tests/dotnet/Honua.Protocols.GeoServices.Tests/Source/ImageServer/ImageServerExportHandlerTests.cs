@@ -412,6 +412,7 @@ public class ImageServerExportHandlerTests
                 RasterMergeStrategy.Max,
                 Arg.Any<RasterQuery>(),
                 Arg.Any<RasterMosaicOrdering>(),
+                Arg.Any<RasterMosaicAttributeSort?>(),
                 Arg.Any<CancellationToken>());
         await _rasterStore.DidNotReceive()
             .ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>());
@@ -546,6 +547,7 @@ public class ImageServerExportHandlerTests
                 Arg.Any<RasterMergeStrategy>(),
                 Arg.Any<RasterQuery>(),
                 Arg.Any<RasterMosaicOrdering>(),
+                Arg.Any<RasterMosaicAttributeSort?>(),
                 Arg.Any<CancellationToken>());
     }
 
@@ -593,6 +595,7 @@ public class ImageServerExportHandlerTests
                 Arg.Any<RasterMergeStrategy>(),
                 Arg.Any<RasterQuery>(),
                 Arg.Any<RasterMosaicOrdering>(),
+                Arg.Any<RasterMosaicAttributeSort?>(),
                 Arg.Any<CancellationToken>());
     }
 
@@ -1143,6 +1146,7 @@ public class ImageServerExportHandlerTests
                 Arg.Any<RasterMergeStrategy>(),
                 Arg.Any<RasterQuery>(),
                 Arg.Any<RasterMosaicOrdering>(),
+                Arg.Any<RasterMosaicAttributeSort?>(),
                 Arg.Any<CancellationToken>())
             .Returns(callInfo =>
             {

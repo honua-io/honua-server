@@ -27,9 +27,15 @@ internal static class RasterMosaicSql
     /// <param name="ordering">
     /// Ordering applied to the LAST/FIRST union so a single raster wins each contested pixel.
     /// </param>
+    /// <param name="attributeSort">
+    /// Optional non-date attribute ordering for an <c>esriMosaicByAttribute</c> mosaic. Used only
+    /// when <paramref name="ordering"/> is <see cref="RasterMosaicOrdering.Attribute"/>; names the
+    /// allowlisted catalog column and direction that resolve a contested pixel.
+    /// </param>
     public static string CreateMosaicAggregateExpression(
         RasterMergeStrategy mergeStrategy,
-        RasterMosaicOrdering ordering = RasterMosaicOrdering.AcquisitionNewest) => mergeStrategy switch
+        RasterMosaicOrdering ordering = RasterMosaicOrdering.AcquisitionNewest,
+        RasterMosaicAttributeSort? attributeSort = null) => mergeStrategy switch
         {
             // MEAN/MAX/MIN are order-independent; the ordering clause is meaningless for them.
             RasterMergeStrategy.Average => "ST_Union(rast, 'MEAN')",
@@ -38,17 +44,26 @@ internal static class RasterMosaicSql
 
             // Oldest is an explicit FIRST/oldest-acquisition selection regardless of the
             // requested ordering; ordering only refines the newest/Northwest/lock cases below.
-            RasterMergeStrategy.Oldest => $"ST_Union(rast, 'FIRST' ORDER BY {OrderByClause(ordering)})",
+            RasterMergeStrategy.Oldest => $"ST_Union(rast, 'FIRST' ORDER BY {OrderByClause(ordering, attributeSort)})",
 
             // Newest (and the default) honour the requested ordering via a LAST union: the row
             // sorted last in the ORDER BY wins the contested pixel.
-            _ => $"ST_Union(rast, 'LAST' ORDER BY {OrderByClause(ordering)})"
+            _ => $"ST_Union(rast, 'LAST' ORDER BY {OrderByClause(ordering, attributeSort)})"
         };
 
     // The ORDER BY orients the union so the desired raster sorts LAST (and therefore wins a
     // LAST union). 'id ASC' is always appended as a unique tiebreaker for determinism.
-    private static string OrderByClause(RasterMosaicOrdering ordering) => ordering switch
+    private static string OrderByClause(RasterMosaicOrdering ordering, RasterMosaicAttributeSort? attributeSort) => ordering switch
     {
+        // esriMosaicByAttribute over a non-date attribute: the raster with the winning attribute
+        // value must sort LAST. Esri's default sort is descending (the highest value wins), so an
+        // ascending request sorts the lowest value last (DESC) while a descending request sorts
+        // the highest value last (ASC). The column is a strictly allowlisted physical column name
+        // resolved upstream, never caller free text, so it is safe to interpolate. 'id ASC' keeps
+        // the result deterministic on ties.
+        RasterMosaicOrdering.Attribute when attributeSort is { } sort =>
+            $"{sort.Column} {(sort.Ascending ? "DESC" : "ASC")}, id ASC",
+
         // Oldest-first: ascending acquisition means the newest sorts last. For a FIRST union
         // this keeps the oldest pixel; for a LAST union it keeps the newest.
         RasterMosaicOrdering.AcquisitionOldest => "effective_acquisition ASC, created_at ASC, id ASC",

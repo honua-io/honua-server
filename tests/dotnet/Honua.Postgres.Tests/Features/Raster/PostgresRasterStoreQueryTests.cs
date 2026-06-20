@@ -309,6 +309,53 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
         }
     }
 
+    [IntegrationTest]
+    public async Task ExportMosaicAsync_ByAttributeDescending_HighestAttributeRasterWinsOverlapPixel()
+    {
+        var (schemaName, ids) = await SeedMosaicStackAsync();
+        try
+        {
+            var store = CreateStore(schemaName);
+
+            // esriMosaicByAttribute over a non-date attribute (#1870): sort by the catalog "id"
+            // column. west and overlap-newest are inserted first/second so overlap-newest has the
+            // higher id. Descending (Esri default, highest value wins) keeps overlap-newest (5) in
+            // the x[1,2] overlap pixel.
+            var winner = await ExportAndSampleOverlapPixelAsync(
+                store, [ids.West, ids.OverlapNewest, ids.East],
+                RasterMergeStrategy.Newest, RasterMosaicOrdering.Attribute,
+                new RasterMosaicAttributeSort("id", Ascending: false));
+
+            winner.Should().Be(5);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task ExportMosaicAsync_ByAttributeAscending_LowestAttributeRasterWinsOverlapPixel()
+    {
+        var (schemaName, ids) = await SeedMosaicStackAsync();
+        try
+        {
+            var store = CreateStore(schemaName);
+
+            // Ascending sort by "id": the lowest id (west) wins the x[1,2] overlap pixel (value 20).
+            var winner = await ExportAndSampleOverlapPixelAsync(
+                store, [ids.West, ids.OverlapNewest, ids.East],
+                RasterMergeStrategy.Newest, RasterMosaicOrdering.Attribute,
+                new RasterMosaicAttributeSort("id", Ascending: true));
+
+            winner.Should().Be(20);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
     private PostgresRasterStore CreateStore(string schemaName)
         => new(
             new FixtureConnectionProvider(fixture.DataSource),
@@ -322,14 +369,16 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
         PostgresRasterStore store,
         long[] rasterIds,
         RasterMergeStrategy mergeStrategy,
-        RasterMosaicOrdering ordering)
+        RasterMosaicOrdering ordering,
+        RasterMosaicAttributeSort? attributeSort = null)
     {
         var result = await store.ExportMosaicAsync(
                 LayerId,
                 rasterIds,
                 mergeStrategy,
                 new RasterQuery { OutputFormat = RasterFormat.TIFF },
-                ordering)
+                ordering,
+                attributeSort)
             .ConfigureAwait(false);
 
         result.Data.Should().NotBeEmpty();
