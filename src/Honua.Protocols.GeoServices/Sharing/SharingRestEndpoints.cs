@@ -55,7 +55,7 @@ public static class SharingRestEndpoints
             .WithDisplayName("ArcGIS Portal Generate Token")
             .WithName("SharingRestGenerateTokenPost")
             .WithSummary("Issue an ArcGIS-compatible portal token")
-            .WithDescription("Issues an opaque bearer token bound to either the supplied referer or client IP for the configured TTL.")
+            .WithDescription("Issues an opaque bearer token bound to either the supplied referer (client=referer) or the request's client IP (client=ip / client=requestip) for the configured TTL.")
             .WithTags("GeoServices Sharing")
             .AllowAnonymous()
             .Produces<GenerateTokenResponse>(StatusCodes.Status200OK, JsonContentType)
@@ -705,7 +705,15 @@ public static class SharingRestEndpoints
 
     private static PortalTokenClientType ParseClientType(string? raw)
     {
-        if (string.Equals(raw, "ip", StringComparison.OrdinalIgnoreCase))
+        // ArcGIS clients request an IP-bound token with client=requestip (the
+        // default many SDKs send) and also accept the explicit client=ip form.
+        // Both bind the token to the request's source IP, which is exactly what
+        // PortalTokenClientType.Ip does (it always binds to the connection's
+        // RemoteIpAddress), so accept "requestip" as an alias of "ip" rather than
+        // falling through to the referer path and rejecting the request with a
+        // misleading "referer required" error (#1912).
+        if (string.Equals(raw, "ip", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(raw, "requestip", StringComparison.OrdinalIgnoreCase))
         {
             return PortalTokenClientType.Ip;
         }
