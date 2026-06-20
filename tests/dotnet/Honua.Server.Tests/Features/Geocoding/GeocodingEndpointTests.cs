@@ -492,6 +492,66 @@ public sealed class GeocodingEndpointTests
         Assert.True(locations[0].TryGetProperty("score", out _));
     }
 
+    // Regression (#1263): the ArcGIS Maps SDK for JavaScript locator.addressesToLocations
+    // (and ArcGIS Pro) serialize a configured output spatial reference as the canonical
+    // Esri JSON object, e.g. outSR={"wkid":4326}, not a bare WKID integer. The batch
+    // geocodeAddresses op must accept that JSON spatial-reference shape rather than
+    // rejecting it with "Invalid outSR parameter." (HTTP 400).
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{locatorName}/GeocodeServer/geocodeAddresses")]
+    public async Task BatchGeocode_Post_WithEsriJsonOutSr_AcceptsSpatialReferenceObject()
+    {
+        using var factory = CreateFactory(new FakeGeocodeProvider(new CoreGeocodeProviderCapabilities(
+            SupportsSuggest: true,
+            SupportsBatch: true,
+            SupportsStructuredInput: false,
+            SupportsBiasing: true)));
+        using var client = factory.CreateClient();
+
+        var addresses = """{"records":[{"attributes":{"OBJECTID":1,"SingleLine":"1600 Pennsylvania Ave NW"}}]}""";
+        var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["addresses"] = addresses,
+            // Canonical Esri spatial-reference JSON object, as the JS SDK / Pro send it.
+            ["outSR"] = """{"wkid":4326}""",
+            ["f"] = "json"
+        });
+
+        using var response = await client.PostAsync("/rest/services/World/GeocodeServer/geocodeAddresses", content);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = payload.RootElement;
+        Assert.True(root.TryGetProperty("spatialReference", out var spatialReference));
+        Assert.Equal(4326, spatialReference.GetProperty("wkid").GetInt32());
+        Assert.True(root.TryGetProperty("locations", out var locations));
+        Assert.Equal(1, locations.GetArrayLength());
+    }
+
+    // Regression (#1263): findAddressCandidates must likewise accept the Esri JSON
+    // spatial-reference object for outSR (latestWkid form), reprojecting candidate
+    // locations to that WKID rather than rejecting the request with HTTP 400.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
+    public async Task FindAddressCandidates_WithEsriJsonOutSr_AcceptsSpatialReferenceObject()
+    {
+        using var factory = CreateDefaultFactory();
+        using var client = factory.CreateClient();
+
+        var outSr = Uri.EscapeDataString("""{"latestWkid":3857}""");
+        using var response = await client.GetAsync(
+            $"/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=1600+Pennsylvania+Ave+NW&outSR={outSr}&f=json");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = payload.RootElement;
+        Assert.Equal(3857, root.GetProperty("spatialReference").GetProperty("wkid").GetInt32());
+    }
+
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /rest/services/{locatorName}/GeocodeServer/geocodeAddresses")]

@@ -7,7 +7,10 @@ using FluentAssertions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Sharing;
 
@@ -25,6 +28,12 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
     private const string TokenEndpoint = "/sharing/rest/generateToken";
     private const string SecureRefererA = "https://app.example.com/maps/";
 
+    // The in-process WebApplicationFactory transport leaves Connection.RemoteIpAddress
+    // unset, which a real Kestrel deployment always populates. IP-bound token issuance
+    // (client=ip / client=requestip) needs that address, so the fixture installs a
+    // startup filter that stamps a loopback IP onto every request.
+    private static readonly IPAddress ClientIp = IPAddress.Parse("203.0.113.10");
+
     private readonly WebAppFixture _fixture;
 
     public SharingRestTokenTests()
@@ -38,7 +47,27 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
                 // Allow the in-process test transport to issue tokens; production
                 // defaults remain RequireHttps=true.
                 builder.UseSetting("Authentication:PortalToken:RequireHttps", "false");
+                builder.ConfigureServices(services =>
+                    services.AddSingleton<IStartupFilter>(new RemoteIpStartupFilter(ClientIp)));
             });
+    }
+
+    /// <summary>
+    /// Stamps a fixed remote IP onto each request so IP-bound token flows behave as they
+    /// do behind Kestrel, where Connection.RemoteIpAddress is always populated.
+    /// </summary>
+    private sealed class RemoteIpStartupFilter(IPAddress remoteIp) : IStartupFilter
+    {
+        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next)
+            => app =>
+            {
+                app.Use(async (context, nextMiddleware) =>
+                {
+                    context.Connection.RemoteIpAddress = remoteIp;
+                    await nextMiddleware(context).ConfigureAwait(false);
+                });
+                next(app);
+            };
     }
 
     public Task InitializeAsync() => _fixture.InitializeAsync();
@@ -122,6 +151,60 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
             ("client", "referer"), ("f", "json"));
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /sharing/rest/generateToken")]
+    public async Task GenerateToken_WithClientRequestIp_ReturnsToken()
+    {
+        // ArcGIS clients request an IP-bound token with client=requestip (the
+        // default for many SDKs). It must be accepted and IP-bind the token,
+        // not be rejected with the misleading "referer required" error (#1912).
+        using var client = _fixture.CreateClient();
+        using var response = await PostFormAsync(client,
+            ("username", "admin"), ("password", AdminPassword),
+            ("client", "requestip"), ("f", "json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await ReadTokenPayloadAsync(response);
+        payload.Token.Should().NotBeNullOrWhiteSpace();
+        payload.Expires.Should().BeGreaterThan(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        payload.Ssl.Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /sharing/rest/generateToken")]
+    public async Task GenerateToken_WithClientIp_ReturnsToken()
+    {
+        // The explicit client=ip alias behaves identically to client=requestip: the
+        // token binds to the request's source IP without requiring a referer.
+        using var client = _fixture.CreateClient();
+        var query = $"/sharing/rest/generateToken?username=admin" +
+            $"&password={Uri.EscapeDataString(AdminPassword)}&client=ip&f=json";
+        using var response = await client.GetAsync(query);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await ReadTokenPayloadAsync(response);
+        payload.Token.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
+    public async Task IssuedRequestIpToken_AuthenticatesSubsequentRestRequest()
+    {
+        // An IP-bound token issued via client=requestip must authenticate later
+        // requests from the same client IP end-to-end (issue -> validate path).
+        using var client = _fixture.CreateClient();
+        var token = await IssueTokenAsync(client, ("client", "requestip"));
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/rest/services/test/FeatureServer?f=json&token={token}");
+        using var response = await client.SendAsync(request);
+
+        // Authenticated (not 401); status is 200/404 depending on the seeded layer.
+        response.StatusCode.Should().NotBe(HttpStatusCode.Unauthorized);
     }
 
     [IntegrationTest]

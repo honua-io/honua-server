@@ -382,7 +382,12 @@ internal static partial class MapServerEndpoints
             ],
             Capabilities = layerCapabilities,
             SupportsAdvancedQueries = true,
-            HasAttachments = resource.Editing?.SupportsAttachments ?? false,
+            // Mirror hasAttachments + relationships from the same source the FeatureServer
+            // layer metadata uses (annotation-driven attachments + the canonical resource
+            // relationships) so a MapServer sublayer advertises the related records and
+            // attachments the equivalent FeatureServer layer does (#1923).
+            HasAttachments = FeatureServerEndpoints.ResourceSupportsAttachmentsV2(resource),
+            Relationships = FeatureServerEndpoints.BuildRelationshipResponseV2(resource, snapshot),
             MinScale = resource.Display?.MinScale ?? 0,
             MaxScale = resource.Display?.MaxScale ?? 0,
             DefaultVisibility = resource.Display?.DefaultVisibility ?? true,
