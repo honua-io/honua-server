@@ -797,9 +797,18 @@ internal static class WmtsRequestHandlers
             return CreateWmtsExceptionReport(context, "MissingParameterValue", "TileMatrixSet", "TILEMATRIXSET parameter is required.");
         }
 
-        if (!string.Equals(tileMatrixSet, "WebMercatorQuad", StringComparison.OrdinalIgnoreCase))
+        // Resolve the requested gridset to a protocol-neutral GridGeometry so the pixel->world
+        // math is driven by the registry (#1873) rather than hardcoded WebMercator constants.
+        // Built-in WebMercatorQuad geometry is seeded from the same extent/formulas as the
+        // legacy inline math, so WebMercatorQuad behaviour stays byte-identical (the CITE guard);
+        // WorldCRS84Quad and operator-defined custom gridsets are now resolved end-to-end too.
+        var tileMatrixSetRegistry = context.RequestServices.GetService<ITileMatrixSetRegistry>();
+        var isBuiltInGrid = TryResolveWmtsTileGrid(tileMatrixSet, out _);
+        if (tileMatrixSetRegistry is null ||
+            !tileMatrixSetRegistry.TryGet(tileMatrixSet!, out var gridEntry) ||
+            !tileMatrixSetRegistry.TryGetGeometry(gridEntry.Id, wmtsMaxZoom, out var gridGeometry))
         {
-            return CreateWmtsExceptionReport(context, "InvalidParameterValue", "TileMatrixSet", "Only TILEMATRIXSET=WebMercatorQuad is supported.");
+            return CreateWmtsExceptionReport(context, "InvalidParameterValue", "TileMatrixSet", "Supported TILEMATRIXSET values are WebMercatorQuad, WorldCRS84Quad, and any operator-defined gridset.");
         }
 
         if (!TryGetRequiredQueryValue(query, "TILEMATRIX", out var tileMatrixValue))
@@ -809,7 +818,12 @@ internal static class WmtsRequestHandlers
 
         if (!int.TryParse(tileMatrixValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var tileMatrix) ||
             tileMatrix < 0 ||
-            tileMatrix > wmtsMaxZoom)
+            (isBuiltInGrid && tileMatrix > wmtsMaxZoom))
+        {
+            return CreateWmtsExceptionReport(context, "InvalidParameterValue", "TileMatrix", "Invalid TILEMATRIX parameter.");
+        }
+
+        if (gridGeometry.FindLevel(tileMatrix) is not { } gridLevel)
         {
             return CreateWmtsExceptionReport(context, "InvalidParameterValue", "TileMatrix", "Invalid TILEMATRIX parameter.");
         }
@@ -834,26 +848,19 @@ internal static class WmtsRequestHandlers
             return CreateWmtsExceptionReport(context, "InvalidParameterValue", "TileCol", "Invalid TILECOL parameter.");
         }
 
-        var maxTileIndex = (1L << tileMatrix) - 1;
-        if (tileRow > maxTileIndex)
+        // The gridset's own matrix dimensions bound the valid TILEROW/TILECOL ranges. For the
+        // built-in WebMercatorQuad pyramid this is the same 2^z square as before; WorldCRS84Quad
+        // (2*2^z cols x 2^z rows) and custom grids use their configured matrix dimensions.
+        var maxTileRowIndex = (int)(gridLevel.MatrixHeight - 1);
+        var maxTileColIndex = (int)(gridLevel.MatrixWidth - 1);
+        if (tileRow > maxTileRowIndex)
         {
             return CreateWmtsExceptionReport(context, "TileOutOfRange", "TileRow", "TILEROW is outside the valid range for TILEMATRIX.");
         }
 
-        if (tileCol > maxTileIndex)
+        if (tileCol > maxTileColIndex)
         {
             return CreateWmtsExceptionReport(context, "TileOutOfRange", "TileCol", "TILECOL is outside the valid range for TILEMATRIX.");
-        }
-
-        var tileMatrixLimitMax = GetWmtsTileMatrixLimitMax(tileMatrix);
-        if (tileRow > tileMatrixLimitMax)
-        {
-            return CreateWmtsExceptionReport(context, "TileOutOfRange", "TileRow", "TILEROW is outside the TileMatrixSetLimits for TILEMATRIX.");
-        }
-
-        if (tileCol > tileMatrixLimitMax)
-        {
-            return CreateWmtsExceptionReport(context, "TileOutOfRange", "TileCol", "TILECOL is outside the TileMatrixSetLimits for TILEMATRIX.");
         }
 
         if (!TryGetRequiredQueryValue(query, "I", out var iValue))
@@ -866,9 +873,9 @@ internal static class WmtsRequestHandlers
             return CreateWmtsExceptionReport(context, "InvalidParameterValue", "I", "I must be a non-negative integer.");
         }
 
-        if (pixelI >= TileSize)
+        if (pixelI >= gridGeometry.TileWidth)
         {
-            return CreateWmtsExceptionReport(context, "TileOutOfRange", "I", $"I must be less than {TileSize}.");
+            return CreateWmtsExceptionReport(context, "TileOutOfRange", "I", $"I must be less than {gridGeometry.TileWidth}.");
         }
 
         if (!TryGetRequiredQueryValue(query, "J", out var jValue))
@@ -881,9 +888,9 @@ internal static class WmtsRequestHandlers
             return CreateWmtsExceptionReport(context, "InvalidParameterValue", "J", "J must be a non-negative integer.");
         }
 
-        if (pixelJ >= TileSize)
+        if (pixelJ >= gridGeometry.TileHeight)
         {
-            return CreateWmtsExceptionReport(context, "TileOutOfRange", "J", $"J must be less than {TileSize}.");
+            return CreateWmtsExceptionReport(context, "TileOutOfRange", "J", $"J must be less than {gridGeometry.TileHeight}.");
         }
 
         if (!TryGetRequiredQueryValue(query, "INFOFORMAT", out var infoFormatValue))
@@ -911,28 +918,34 @@ internal static class WmtsRequestHandlers
             }
         }
 
-        var matrixWidth = 2.0 * WebMercatorOrigin / (1L << tileMatrix);
-        var tileMinX = -WebMercatorOrigin + (tileCol * matrixWidth);
-        var tileMaxX = tileMinX + matrixWidth;
-        var tileMaxY = WebMercatorOrigin - (tileRow * matrixWidth);
-        var tileMinY = tileMaxY - matrixWidth;
+        // Tile bounds in the gridset CRS, derived from the registry geometry (origin, cell size,
+        // tile pixel dimensions). For WebMercatorQuad this is identical to the previous inline
+        // computation; for other gridsets it uses the grid's own origin and per-level cell size.
+        if (gridGeometry.GetTileBounds(tileCol, tileRow, tileMatrix) is not { } tileBounds)
+        {
+            return CreateWmtsExceptionReport(context, "InvalidParameterValue", "TileMatrix", "Invalid TILEMATRIX parameter.");
+        }
 
-        var mapX = tileMinX + (((pixelI + 0.5) / TileSize) * matrixWidth);
-        var mapY = tileMaxY - (((pixelJ + 0.5) / TileSize) * matrixWidth);
-        var tolerance = Math.Max((matrixWidth / TileSize) * DefaultFeatureInfoTolerancePixels, 0.000001);
+        var tileSpanX = tileBounds.XMax - tileBounds.XMin;
+        var tileSpanY = tileBounds.YMax - tileBounds.YMin;
+        var mapX = tileBounds.XMin + (((pixelI + 0.5) / gridGeometry.TileWidth) * tileSpanX);
+        var mapY = tileBounds.YMax - (((pixelJ + 0.5) / gridGeometry.TileHeight) * tileSpanY);
+        var toleranceX = Math.Max((tileSpanX / gridGeometry.TileWidth) * DefaultFeatureInfoTolerancePixels, 0.000001);
+        var toleranceY = Math.Max((tileSpanY / gridGeometry.TileHeight) * DefaultFeatureInfoTolerancePixels, 0.000001);
         var clickExtent = new SkiaMapRenderer.RenderExtent(
-            mapX - tolerance,
-            mapY - tolerance,
-            mapX + tolerance,
-            mapY + tolerance);
+            mapX - toleranceX,
+            mapY - toleranceY,
+            mapX + toleranceX,
+            mapY + toleranceY);
 
+        var gridSrid = gridGeometry.Srid;
         var serviceSrid = ResolveServiceSrid(service, layer.Resource);
-        if (serviceSrid != TileSrid)
+        if (serviceSrid != gridSrid)
         {
             var clickExtentTransform = await TryTransformExtentAsync(
                 context,
                 clickExtent,
-                TileSrid,
+                gridSrid,
                 serviceSrid,
                 cancellationToken);
             if (!clickExtentTransform.IsSuccess)
@@ -2342,13 +2355,6 @@ internal static class WmtsRequestHandlers
     private static string FormatWmtsScaleDenominator(double value)
     {
         return value.ToString("0.################", CultureInfo.InvariantCulture);
-    }
-
-    private static int GetWmtsTileMatrixLimitMax(int tileMatrix)
-    {
-        return tileMatrix < 0
-            ? 0
-            : (int)((1L << tileMatrix) - 1);
     }
 
     /// <summary>
