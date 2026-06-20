@@ -527,7 +527,8 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         FeatureQuery? query,
         TileOptions tileOptions,
         TileLimits tileLimits,
-        GeometryStorageType geometryStorageType = GeometryStorageType.Geometry)
+        GeometryStorageType geometryStorageType = GeometryStorageType.Geometry,
+        Honua.Core.Features.Tiles.GridGeometry? gridGeometry = null)
     {
         throw new NotSupportedException("DuckDB provider does not support native MVT tile generation (no ST_AsMVT).");
     }

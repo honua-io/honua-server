@@ -117,6 +117,12 @@ internal static class ImportExportTileOperationsRegistration
         services.AddHostedService<TileCacheWarmingHostedService>();
         services.AddHostedService<TileOperationBackgroundService>();
 
+        // Scheduled tile-cache expiry/invalidation (#1837): the time-based complement to the
+        // per-tileset Cache-Control TTL (#1794). Disabled unless TileCacheExpiry:Enabled is set.
+        services.Configure<TileCacheExpiryOptions>(
+            configuration.GetSection(TileCacheExpiryOptions.SectionName));
+        services.AddHostedService<TileCacheExpiryHostedService>();
+
         // Batch-dispatched tile-cache / PMTiles execution jobs (issue #1697).
         // The worker-side executor is registered unconditionally so any worker host
         // can claim ExecutionJobKind.TileCache jobs; it is only invoked when the

@@ -171,7 +171,10 @@ internal interface IFeatureQueryBuilder
         GeometryStorageType geometryStorageType = GeometryStorageType.Geometry);
 
     /// <summary>
-    /// Builds an MVT tile query
+    /// Builds an MVT tile query. When <paramref name="gridGeometry"/> is supplied the tile
+    /// envelope and target SRID are derived from the operator-defined custom gridset (#1839)
+    /// rather than the two built-in pyramids; passing <see langword="null"/> keeps the
+    /// byte-identical built-in WebMercatorQuad / WorldCRS84Quad behavior.
     /// </summary>
     ParameterizedQuery BuildMvtTileQuery(
         int layerId,
@@ -181,7 +184,8 @@ internal interface IFeatureQueryBuilder
         FeatureQuery? query,
         TileOptions tileOptions,
         TileLimits tileLimits,
-        GeometryStorageType geometryStorageType = GeometryStorageType.Geometry);
+        GeometryStorageType geometryStorageType = GeometryStorageType.Geometry,
+        Honua.Core.Features.Tiles.GridGeometry? gridGeometry = null);
 
     /// <summary>
     /// Builds an H3 hexagonal grid aggregation query that groups features into

@@ -470,9 +470,21 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
         FeatureQuery? query,
         TileOptions tileOptions,
         TileLimits tileLimits,
-        CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
+        CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry,
+        Honua.Core.Features.Tiles.GridGeometry? gridGeometry = null)
     {
         GuardVersionedReadSupported(query, "mvt-tile");
+
+        // Operator-defined custom gridset (#1839): the caller only supplies a gridGeometry for
+        // custom gridsets (the two built-in pyramids are passed as null), so the tile envelope and
+        // target SRID come from the gridset geometry. The built-in pyramids keep the original
+        // byte-identical path below so the OGC CITE snapshot guard stays green.
+        if (gridGeometry is not null)
+        {
+            return BuildCustomGridsetMvtTileQuery(
+                layerId, x, y, z, query, tileOptions, tileLimits, geometryStorageType, gridGeometry);
+        }
+
         var sql = _stringBuilderPool.Get();
         try
         {
@@ -556,6 +568,124 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
                         {tileEnvelope},
                         $6,
                         $7
+                    ) AS geom
+                FROM {_tableName} f
+                WHERE {DatabaseSchema.LayerIdColumn} = $1");
+
+            if (query != null)
+            {
+                AppendWhereClause(sql, (FeatureQuery)query, ref paramIndex, parameters);
+                AppendTemporalFilter(sql, (FeatureQuery)query, ref paramIndex, parameters);
+                AppendSpatialFilter(sql, (FeatureQuery)query, geometryStorageType, ref paramIndex, parameters);
+            }
+
+            sql.Append(CultureInfo.InvariantCulture, $@"
+                    AND {filterGeometryOperand} && {tileEnvelopeForFilter}
+                    AND ST_Intersects({filterGeometryOperand}, {tileEnvelopeForFilter})");
+
+            if (tileLimits.MaxFeaturesPerTile > 0)
+            {
+                var limitParam = $"${paramIndex++}";
+                parameters.Add(tileLimits.MaxFeaturesPerTile);
+                sql.Append(CultureInfo.InvariantCulture, $" LIMIT {limitParam}");
+            }
+
+            sql.Append(@"
+                ) AS tile");
+
+            return new CoreParameterizedQuery(sql.ToString(), parameters);
+        }
+        finally
+        {
+            _stringBuilderPool.Return(sql);
+        }
+    }
+
+    /// <summary>
+    /// Builds the MVT tile query for an operator-defined custom gridset (#1839). The tile envelope
+    /// is derived from the gridset geometry (origin + per-level cell size) in the gridset CRS, and
+    /// the stored geometry is reprojected into the gridset SRID with <c>ST_Transform</c> before
+    /// <c>ST_AsMVTGeom</c> rasterizes it into tile space. The buffer is expressed in gridset-CRS
+    /// units (pixels → map units via the level cell size) and the tile-envelope filter is pushed
+    /// down in the layer's storage SRID so the spatial index is still used.
+    /// </summary>
+    private CoreParameterizedQuery BuildCustomGridsetMvtTileQuery(
+        int layerId,
+        int x,
+        int y,
+        int z,
+        FeatureQuery? query,
+        TileOptions tileOptions,
+        TileLimits tileLimits,
+        CoreGeometryStorageType geometryStorageType,
+        Honua.Core.Features.Tiles.GridGeometry gridGeometry)
+    {
+        var tileBounds = gridGeometry.GetTileBounds(x, y, z)
+            ?? throw new ArgumentOutOfRangeException(
+                nameof(z),
+                $"Tile matrix level '{z}' is not part of gridset '{gridGeometry.Id}'.");
+
+        var sql = _stringBuilderPool.Get();
+        try
+        {
+            var paramIndex = 1;
+            var parameters = new List<object>();
+            var geometryOperand = _geometryProcessor.GetGeometryOperand(geometryStorageType, "f.geometry", query?.SpatialReferenceSrid);
+
+            var targetTileSrid = gridGeometry.Srid;
+            var tileExtent = tileOptions.TileExtent > 0 ? tileOptions.TileExtent : 4096;
+            var tileSpanX = tileBounds.XMax - tileBounds.XMin;
+            // Buffer in gridset-CRS units: pixels of buffer / tile extent * tile span (CRS units).
+            var bufferMapUnits = tileOptions.TileBuffer > 0
+                ? (tileOptions.TileBuffer / (double)tileExtent) * tileSpanX
+                : 0d;
+
+            var tileEnvelope = FormattableString.Invariant(
+                $"ST_MakeEnvelope({SqlDouble(tileBounds.XMin)}, {SqlDouble(tileBounds.YMin)}, {SqlDouble(tileBounds.XMax)}, {SqlDouble(tileBounds.YMax)}, {targetTileSrid})");
+
+            // $1 layerId, $2 bufferMapUnits, $3 tileExtent, $4 tileBuffer (pixels).
+            parameters.Add(layerId);
+            parameters.Add(bufferMapUnits);
+            parameters.Add(tileExtent);
+            parameters.Add(tileOptions.TileBuffer);
+            paramIndex = 5;
+
+            // The buffered tile envelope, expressed in the gridset CRS.
+            var tileEnvelopeWithBuffer = $"ST_Expand({tileEnvelope}, $2)";
+
+            // Reproject the stored geometry into the gridset SRID for tile rasterization, and push
+            // the spatial filter down in the layer's storage SRID so the GiST index is usable.
+            var geometryForTile = $"ST_Transform({geometryOperand}, {targetTileSrid})";
+            string filterGeometryOperand;
+            string tileEnvelopeForFilter;
+            if (query.HasValue && query.Value.SpatialReferenceSrid is { } layerSrid && layerSrid != targetTileSrid)
+            {
+                filterGeometryOperand = geometryOperand;
+                tileEnvelopeForFilter = $"ST_Transform({tileEnvelopeWithBuffer}, {layerSrid})";
+            }
+            else if (query.HasValue && query.Value.SpatialReferenceSrid is { } sameSrid && sameSrid == targetTileSrid)
+            {
+                filterGeometryOperand = geometryOperand;
+                tileEnvelopeForFilter = tileEnvelopeWithBuffer;
+            }
+            else
+            {
+                // Storage SRID unknown: filter in the reprojected (gridset) space.
+                filterGeometryOperand = geometryForTile;
+                tileEnvelopeForFilter = tileEnvelopeWithBuffer;
+            }
+
+            sql.Append(CultureInfo.InvariantCulture, $@"
+            SELECT ST_AsMVT(tile, 'layer', $3, 'geom') AS mvt
+            FROM (
+                SELECT
+                    {DatabaseSchema.ObjectIdColumn},
+                    {DatabaseSchema.AttributesColumn},
+                    ST_AsMVTGeom(
+                        {geometryForTile},
+                        {tileEnvelope},
+                        $3,
+                        $4
                     ) AS geom
                 FROM {_tableName} f
                 WHERE {DatabaseSchema.LayerIdColumn} = $1");

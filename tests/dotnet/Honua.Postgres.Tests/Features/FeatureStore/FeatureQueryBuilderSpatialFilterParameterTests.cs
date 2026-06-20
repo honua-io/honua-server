@@ -227,4 +227,79 @@ public sealed class FeatureQueryBuilderSpatialFilterParameterTests
         result.WhereParameters.Should().Contain(distanceInMeters);
         result.Sql.Should().Contain("ST_DWithin");
     }
+
+    [Fact]
+    public void BuildMvtTileQuery_WithCustomGridset_UsesGridsetSridEnvelopeAndTransform()
+    {
+        // #1839: a custom gridset (here British National Grid, SRID 27700) must rasterize the tile
+        // in the gridset CRS — ST_MakeEnvelope(..., 27700) and ST_Transform(geom, 27700) — rather
+        // than the WebMercator (3857) / WorldCRS84Quad (4326) built-in paths.
+        var poolProvider = new DefaultObjectPoolProvider();
+        var stringBuilderPool = poolProvider.Create(new FeatureStoreStringBuilderPooledObjectPolicy());
+        var geometryProcessor = new GeometryProcessor();
+        var queryBuilder = new FeatureQueryBuilder(stringBuilderPool, geometryProcessor);
+
+        var gridGeometry = new GridGeometry
+        {
+            Id = "BritishNationalGrid",
+            Srid = 27700,
+            IsGeographic = false,
+            TopLeftX = 0,
+            TopLeftY = 1_300_000,
+            TileWidth = 256,
+            TileHeight = 256,
+            Levels =
+            [
+                new GridLevel(0, ScaleDenominator: 10_000_000, CellSize: 5000, MatrixWidth: 1, MatrixHeight: 1)
+            ]
+        };
+
+        var query = new FeatureQuery { SpatialReferenceSrid = 4326 };
+        var tileOptions = new TileOptions { SimplifyZoom = 0, TileBuffer = 0, TileExtent = 4096 };
+        var tileLimits = new TileLimits { MaxFeaturesPerTile = 0 };
+
+        var result = queryBuilder.BuildMvtTileQuery(
+            layerId: 1,
+            x: 0,
+            y: 0,
+            z: 0,
+            query: query,
+            tileOptions: tileOptions,
+            tileLimits: tileLimits,
+            gridGeometry: gridGeometry);
+
+        result.Sql.Should().Contain("ST_AsMVT");
+        result.Sql.Should().Contain("ST_MakeEnvelope");
+        result.Sql.Should().Contain("27700");
+        result.Sql.Should().Contain("ST_Transform");
+        // Built-in tile-envelope helpers must not appear on the custom path.
+        result.Sql.Should().NotContain("ST_TileEnvelope");
+    }
+
+    [Fact]
+    public void BuildMvtTileQuery_WithNullGridGeometry_KeepsBuiltInWebMercatorPath()
+    {
+        // Guard the byte-identical built-in path: a null gridGeometry must still emit the
+        // ST_TileEnvelope-based WebMercator query (the CITE snapshot guard depends on this).
+        var poolProvider = new DefaultObjectPoolProvider();
+        var stringBuilderPool = poolProvider.Create(new FeatureStoreStringBuilderPooledObjectPolicy());
+        var geometryProcessor = new GeometryProcessor();
+        var queryBuilder = new FeatureQueryBuilder(stringBuilderPool, geometryProcessor);
+
+        var query = new FeatureQuery { SpatialReferenceSrid = 3857 };
+        var tileOptions = new TileOptions { SimplifyZoom = 0, TileBuffer = 0, TileExtent = 4096 };
+        var tileLimits = new TileLimits { MaxFeaturesPerTile = 0 };
+
+        var result = queryBuilder.BuildMvtTileQuery(
+            layerId: 1,
+            x: 0,
+            y: 0,
+            z: 5,
+            query: query,
+            tileOptions: tileOptions,
+            tileLimits: tileLimits,
+            gridGeometry: null);
+
+        result.Sql.Should().Contain("ST_TileEnvelope");
+    }
 }

@@ -110,29 +110,41 @@ public class TilesetTtlResolverTests
     }
 
     // ---------------------------------------------------------------------
-    // DEFERRED SEAMS (#1794) — placeholder stubs marking work intentionally
-    // out of scope for this PR. These are skipped so they show up as pending
-    // in the test report without failing the suite.
+    // Formerly-deferred seams (#1794) now implemented in #1837. The dedicated
+    // behavior is covered by TileCacheQuotaPolicyTests (size-quota / LRU
+    // eviction) and MetatileGroupingTests (metatiling); scheduled invalidation
+    // is covered by TileCacheExpiryHostedServiceTests. These guards keep the
+    // resolver / options seam wired so a future refactor cannot silently drop
+    // the eviction / metatiling configuration.
     // ---------------------------------------------------------------------
 
-    [Fact(Skip = "Deferred (#1794): size-quota / LRU eviction is not implemented on the serve path yet.")]
-    public void SizeQuotaLruEviction_NotYetImplemented()
+    [Fact]
+    public void TileOptions_ExposesEvictionAndMetatilingSeams()
     {
-        // TODO(#1794): when cache size-quota / LRU eviction lands, assert the
-        // resolver (or its successor) honours per-tileset max-bytes / entry caps.
+        var options = new TileOptions
+        {
+            MetatileFactor = 4,
+            Eviction = new TileCacheEvictionOptions
+            {
+                Enabled = true,
+                MaxEntries = 1000,
+                MaxBytes = 50_000_000
+            }
+        };
+
+        options.MetatileFactor.Should().Be(4);
+        options.Eviction.Enabled.Should().BeTrue();
+        options.Eviction.MaxEntries.Should().Be(1000);
+        options.Eviction.MaxBytes.Should().Be(50_000_000);
     }
 
-    [Fact(Skip = "Deferred (#1794): scheduled time-based cache invalidation is not implemented yet.")]
-    public void ScheduledInvalidation_NotYetImplemented()
+    [Fact]
+    public void TileOptions_DefaultEvictionDisabled_AndMetatilingOff()
     {
-        // TODO(#1794): when scheduled invalidation lands, assert expiry windows
-        // (absolute / cron-style) drive cache purges for a tileset.
-    }
+        var options = new TileOptions();
 
-    [Fact(Skip = "Deferred (#1794): metatiling is not implemented yet.")]
-    public void Metatiling_NotYetImplemented()
-    {
-        // TODO(#1794): when metatiling lands, assert the meta-tile grouping /
-        // sub-tile slicing interacts correctly with the resolved TTL.
+        options.MetatileFactor.Should().Be(1);
+        options.Eviction.Should().NotBeNull();
+        options.Eviction.Enabled.Should().BeFalse();
     }
 }
