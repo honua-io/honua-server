@@ -49,3 +49,26 @@ public class DatabaseGeoServicesRasterCollection
 public class DatabaseGeoServicesCatalogCollection
 {
 }
+
+/// <summary>
+/// Serialized database-backed collection for the GeoServices SceneServer catalog tests.
+/// </summary>
+/// <remarks>
+/// honua-server#1568 (signature 2 — cross-collection visibility): unlike services,
+/// layers, and the rest of the catalog (read through the schema-partitioned in-memory
+/// Metadata v2 graph), the Esri I3S scene registry persists to and reads from the
+/// literal, process-global <c>honua.scene_datasets</c> table — schema-qualified, so the
+/// per-test <c>search_path</c> isolation does NOT scope it. Two scene-catalog tests that
+/// register a fixed-id scene and then assert the directory contains <em>exactly one</em>
+/// SceneServer therefore race each other across schemas: the second registration hits the
+/// <c>scene_datasets_id_unique</c> constraint, or one test's row leaks into the other's
+/// <c>ContainSingle()</c> assertion (or, after a failed/rolled-back peer, the read sees an
+/// empty directory). These tests run in their own <c>DisableParallelization</c> collection
+/// and truncate the global table around each case so the global registry state is
+/// deterministic, without serializing the rest of the parallel catalog shard.
+/// </remarks>
+[CollectionDefinition("Database.GeoServicesSceneCatalog", DisableParallelization = true)]
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1711:Identifiers should not have incorrect suffix", Justification = "This is an xUnit collection definition which requires the Collection suffix")]
+public class DatabaseGeoServicesSceneCatalogCollection
+{
+}
