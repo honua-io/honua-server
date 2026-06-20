@@ -380,6 +380,84 @@ public sealed class FeatureServerMaintenanceTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
+    // Regression for #1901: the layer-level validateSQL must accept the same canonical Esri
+    // clause-type sqlType enum (esriSQLTypeWhere/OrderBy/Expression) and short forms
+    // (where/orderBy/expression) that real ArcGIS clients and the service-level endpoint use,
+    // in addition to the SQL-dialect aliases (standard/native).
+    [IntegrationTest]
+    [Operation(Operations.ValidateSql)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/validateSQL")]
+    public async Task ValidateSql_ClauseTypeWhere_ReturnsIsValid()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/validateSQL?sql={Uri.EscapeDataString("1=1")}&sqlType=where&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("isValidSQL").GetBoolean().Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ValidateSql)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/validateSQL")]
+    public async Task ValidateSql_EsriSqlTypeWhereEnum_ReturnsIsValid()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/validateSQL?sql={Uri.EscapeDataString("1=1")}&sqlType=esriSQLTypeWhere&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("isValidSQL").GetBoolean().Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ValidateSql)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/validateSQL")]
+    public async Task ValidateSql_EsriSqlTypeExpressionEnum_ReturnsIsValid()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/validateSQL?sql={Uri.EscapeDataString("objectid = 1")}&sqlType=esriSQLTypeExpression&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("isValidSQL").GetBoolean().Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ValidateSql)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/validateSQL")]
+    public async Task ValidateSql_EsriSqlTypeOrderByEnum_ReturnsIsValid()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/validateSQL?sql={Uri.EscapeDataString("objectid DESC")}&sqlType=esriSQLTypeOrderBy&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("isValidSQL").GetBoolean().Should().BeTrue();
+    }
+
+    // The ArcGIS API for Python sends sqlType=statement; treat it as expression validation.
+    [IntegrationTest]
+    [Operation(Operations.ValidateSql)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/validateSQL")]
+    public async Task ValidateSql_StatementType_ReturnsIsValid()
+    {
+        var content = new FormUrlEncodedContent(new[]
+        {
+            new KeyValuePair<string, string>("sql", "objectid = 1"),
+            new KeyValuePair<string, string>("sqlType", "statement"),
+            new KeyValuePair<string, string>("f", "json"),
+        });
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/validateSQL",
+            content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("isValidSQL").GetBoolean().Should().BeTrue();
+    }
+
     [IntegrationTest]
     [Operation(Operations.ValidateSql)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/validateSQL")]
@@ -509,6 +587,21 @@ public sealed class FeatureServerMaintenanceTests : IAsyncLifetime
     {
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/validateSQL?sql={Uri.EscapeDataString("objectid = 1")}&sqlType=esriSQLTypeExpression&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("isValidSQL").GetBoolean().Should().BeTrue();
+    }
+
+    // #1901: the ArcGIS API for Python sends sqlType=statement; both endpoints map it to
+    // expression validation.
+    [IntegrationTest]
+    [Operation(Operations.ValidateSql)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/validateSQL")]
+    public async Task ServiceValidateSql_StatementType_ReturnsIsValid()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/validateSQL?sql={Uri.EscapeDataString("objectid = 1")}&sqlType=statement&f=json");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
