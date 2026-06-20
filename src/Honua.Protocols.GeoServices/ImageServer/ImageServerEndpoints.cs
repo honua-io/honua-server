@@ -216,7 +216,8 @@ internal static class ImageServerEndpoints
             .WithDescription("ArcGIS ImageServer computeStatisticsHistograms contract. Requires geometry and geometryType; returns per-band statistics and histograms for the rasters intersecting the AOI.")
             .Produces<ComputeStatisticsHistogramsResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(400)
-            .Produces(404);
+            .Produces(404)
+            .Produces(501);
 
         group.MapPost("/computeStatisticsHistograms", ComputeStatisticsHistogramsPost)
             .WithDisplayName("Compute Statistics Histograms (POST)")
@@ -225,7 +226,8 @@ internal static class ImageServerEndpoints
             .WithDescription("POST equivalent of the ArcGIS ImageServer computeStatisticsHistograms endpoint")
             .Produces<ComputeStatisticsHistogramsResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(400)
-            .Produces(404);
+            .Produces(404)
+            .Produces(501);
 
         // Compute histograms only for the layer's primary raster
         group.MapGet("/computeHistograms", ComputeHistogramsGet)
@@ -235,7 +237,8 @@ internal static class ImageServerEndpoints
             .WithDescription("ArcGIS ImageServer computeHistograms contract. Requires geometry and geometryType; returns per-band histograms for the rasters intersecting the AOI.")
             .Produces<ComputeHistogramsResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(400)
-            .Produces(404);
+            .Produces(404)
+            .Produces(501);
 
         group.MapPost("/computeHistograms", ComputeHistogramsPost)
             .WithDisplayName("Compute Histograms (POST)")
@@ -244,7 +247,8 @@ internal static class ImageServerEndpoints
             .WithDescription("POST equivalent of the ArcGIS ImageServer computeHistograms endpoint")
             .Produces<ComputeHistogramsResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(400)
-            .Produces(404);
+            .Produces(404)
+            .Produces(501);
 
         // Sample pixel values at points / along a geometry
         group.MapGet("/getSamples", GetSamplesGet)
@@ -254,7 +258,8 @@ internal static class ImageServerEndpoints
             .WithDescription("ArcGIS ImageServer getSamples contract. Returns sampled pixel values at the points of (or vertices along) the supplied geometry.")
             .Produces<GetSamplesResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(400)
-            .Produces(404);
+            .Produces(404)
+            .Produces(501);
 
         group.MapPost("/getSamples", GetSamplesPost)
             .WithDisplayName("Get Samples (POST)")
@@ -263,7 +268,8 @@ internal static class ImageServerEndpoints
             .WithDescription("POST equivalent of the ArcGIS ImageServer getSamples endpoint")
             .Produces<GetSamplesResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(400)
-            .Produces(404);
+            .Produces(404)
+            .Produces(501);
 
         group.MapGet("/computeCacheInfo", ComputeCacheInfoGet)
             .WithDisplayName("Compute Cache Info (GET)")
@@ -692,14 +698,16 @@ internal static class ImageServerEndpoints
             .WithSummary("Compute per-band statistics and histograms")
             .Produces<ComputeStatisticsHistogramsResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(400)
-            .Produces(404);
+            .Produces(404)
+            .Produces(501);
         serviceGroup.MapPost("/computeStatisticsHistograms", ComputeStatisticsHistogramsPostByService)
             .WithDisplayName("Compute Statistics Histograms by Service (POST)")
             .WithName("ComputeStatisticsHistogramsPostByService")
             .WithSummary("Compute per-band statistics and histograms")
             .Produces<ComputeStatisticsHistogramsResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(400)
-            .Produces(404);
+            .Produces(404)
+            .Produces(501);
 
         serviceGroup.MapGet("/computeHistograms", ComputeHistogramsGetByService)
             .WithDisplayName("Compute Histograms by Service (GET)")
@@ -707,14 +715,16 @@ internal static class ImageServerEndpoints
             .WithSummary("Compute per-band histograms")
             .Produces<ComputeHistogramsResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(400)
-            .Produces(404);
+            .Produces(404)
+            .Produces(501);
         serviceGroup.MapPost("/computeHistograms", ComputeHistogramsPostByService)
             .WithDisplayName("Compute Histograms by Service (POST)")
             .WithName("ComputeHistogramsPostByService")
             .WithSummary("Compute per-band histograms")
             .Produces<ComputeHistogramsResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(400)
-            .Produces(404);
+            .Produces(404)
+            .Produces(501);
 
         serviceGroup.MapGet("/getSamples", GetSamplesGetByService)
             .WithDisplayName("Get Samples by Service (GET)")
@@ -722,14 +732,16 @@ internal static class ImageServerEndpoints
             .WithSummary("Sample pixel values at points")
             .Produces<GetSamplesResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(400)
-            .Produces(404);
+            .Produces(404)
+            .Produces(501);
         serviceGroup.MapPost("/getSamples", GetSamplesPostByService)
             .WithDisplayName("Get Samples by Service (POST)")
             .WithName("GetSamplesPostByService")
             .WithSummary("Sample pixel values at points")
             .Produces<GetSamplesResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(400)
-            .Produces(404);
+            .Produces(404)
+            .Produces(501);
 
         serviceGroup.MapGet("/computeCacheInfo", ComputeCacheInfoGetByService)
             .WithDisplayName("Compute Cache Info by Service (GET)")

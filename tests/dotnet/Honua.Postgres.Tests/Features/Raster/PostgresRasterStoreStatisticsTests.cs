@@ -3,6 +3,7 @@
 
 using System.Data;
 using System.Data.Common;
+using System.Linq;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Raster.Domain;
@@ -204,6 +205,39 @@ public sealed class PostgresRasterStoreStatisticsTests(PostgresFixture fixture)
     }
 
     [IntegrationTest]
+    public async Task GetStatisticsAsync_WithStretchRendering_ComputesStatsOverRenderedPixels()
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreStatisticsTests));
+        try
+        {
+            await CreateRasterTablesAsync(schemaName);
+            var rasterId = await InsertGradientRasterAsync(schemaName);
+            var store = CreateStore(schemaName);
+
+            // Raw source statistics span the gradient 0..300.
+            var raw = await store.GetStatisticsAsync(LayerId, rasterId);
+            raw.Should().ContainSingle();
+            raw[0].MinValue.Should().Be(0);
+            raw[0].MaxValue.Should().Be(300);
+
+            // A MinMax stretch (#1871) rescales the band to 8-bit, so the rendered statistics must
+            // be bounded to [0, 255] — proving the renderingRule was applied BEFORE stats.
+            var rendering = new RasterIdentifyRendering(
+                new RasterStretch { StretchType = RasterStretchType.MinMax }, null, null);
+            var rendered = await store.GetStatisticsAsync(LayerId, rasterId, bands: null, rendering: rendering);
+
+            rendered.Should().ContainSingle();
+            rendered[0].MaxValue.Should().Be(255);
+            rendered[0].MinValue.Should().BeInRange(0, 255);
+            rendered[0].MinValue.Should().BeLessThan(255);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [IntegrationTest]
     public async Task GetClippedMosaicHistogramsAsync_MultibandRasters_ReturnsPerBandHistogramsForClip()
     {
         // Regression for #1920: the clipped-mosaic histogram path threw the same 42703 error.
@@ -236,11 +270,67 @@ public sealed class PostgresRasterStoreStatisticsTests(PostgresFixture fixture)
         }
     }
 
+    [IntegrationTest]
+    public async Task GetHistogramsAsync_WithStretchRendering_BinsRenderedPixels()
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreStatisticsTests));
+        try
+        {
+            await CreateRasterTablesAsync(schemaName);
+            var rasterId = await InsertGradientRasterAsync(schemaName);
+            var store = CreateStore(schemaName);
+
+            var rendering = new RasterIdentifyRendering(
+                new RasterStretch { StretchType = RasterStretchType.MinMax }, null, null);
+            var histograms = await store.GetHistogramsAsync(
+                LayerId, rasterId, bands: null, binCount: 4, rendering: rendering);
+
+            histograms.Should().ContainSingle();
+            // The rendered (8-bit) histogram is bounded to 0..255, not the raw 0..300 source range,
+            // proving the renderingRule was applied before binning.
+            histograms[0].Max.Should().BeLessThanOrEqualTo(255);
+            histograms[0].Counts.Sum().Should().BeGreaterThan(0, "the rendered gradient pixels are binned");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
     private PostgresRasterStore CreateStore(string schemaName)
         => new(
             new FixtureConnectionProvider(fixture.DataSource),
             NullLogger<PostgresRasterStore>.Instance,
             schemaName);
+
+    // A 2x2 raster whose four pixels are 0, 100, 200, 300 so a stretch has a real range to map.
+    private async Task<long> InsertGradientRasterAsync(string schemaName)
+    {
+        await using var connection = await fixture.GetConnectionAsync(schemaName);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO raster_data (layer_id, name, raster, acquisition_date, created_at)
+            SELECT @layerId,
+                   'gradient',
+                   ST_SetValues(
+                       ST_AddBand(
+                           ST_MakeEmptyRaster(2, 2, 0, 2, 1, -1, 0, 0, 4326),
+                           '32BF'::text,
+                           0,
+                           NULL
+                       ),
+                       1,
+                       1, 1,
+                       ARRAY[ARRAY[0::double precision, 100::double precision],
+                             ARRAY[200::double precision, 300::double precision]]
+                   ),
+                   NOW(),
+                   NOW()
+            RETURNING id;
+            """;
+        command.Parameters.AddWithValue("layerId", LayerId);
+        return (long)(await command.ExecuteScalarAsync())!;
+    }
 
     private async Task CreateRasterTablesAsync(string schemaName)
     {

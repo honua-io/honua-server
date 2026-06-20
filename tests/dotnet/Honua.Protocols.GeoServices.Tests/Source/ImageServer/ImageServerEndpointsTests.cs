@@ -56,7 +56,7 @@ public class ImageServerEndpointsTests
             .Returns(rasterInfo);
         store.ListRastersAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns([rasterInfo]);
-        store.GetStatisticsAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<int[]?>(), Arg.Any<CancellationToken>())
+        store.GetStatisticsAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<int[]?>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
             .Returns(new[]
             {
                 new RasterStatistics
@@ -70,7 +70,7 @@ public class ImageServerEndpointsTests
                     NoDataPixelCount = 0,
                 },
             });
-        store.GetHistogramsAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<int[]?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+        store.GetHistogramsAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<int[]?>(), Arg.Any<int>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
             .Returns(new[]
             {
                 new RasterHistogram
@@ -85,7 +85,7 @@ public class ImageServerEndpointsTests
 
         // AOI-clipped statistics/histograms (computeStatisticsHistograms with a geometry)
         // mirror the whole-raster substitute payloads for these single-raster fixtures.
-        store.GetClippedStatisticsAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<byte[]>(), Arg.Any<int?>(), Arg.Any<int[]?>(), Arg.Any<CancellationToken>())
+        store.GetClippedStatisticsAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<byte[]>(), Arg.Any<int?>(), Arg.Any<int[]?>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
             .Returns(new[]
             {
                 new RasterStatistics
@@ -99,7 +99,7 @@ public class ImageServerEndpointsTests
                     NoDataPixelCount = 0,
                 },
             });
-        store.GetClippedHistogramsAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<byte[]>(), Arg.Any<int?>(), Arg.Any<int[]?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+        store.GetClippedHistogramsAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<byte[]>(), Arg.Any<int?>(), Arg.Any<int[]?>(), Arg.Any<int>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
             .Returns(new[]
             {
                 new RasterHistogram
@@ -1051,9 +1051,9 @@ public class ImageServerEndpointsTests
 
             // The AOI geometry must route to the clipped store path, not the whole-raster one.
             await store.Received().GetClippedStatisticsAsync(
-                Arg.Any<int>(), Arg.Any<long>(), Arg.Is<byte[]>(g => g.Length > 0), Arg.Any<int?>(), Arg.Any<int[]?>(), Arg.Any<CancellationToken>());
+                Arg.Any<int>(), Arg.Any<long>(), Arg.Is<byte[]>(g => g.Length > 0), Arg.Any<int?>(), Arg.Any<int[]?>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>());
             await store.DidNotReceive().GetStatisticsAsync(
-                Arg.Any<int>(), Arg.Any<long>(), Arg.Any<int[]?>(), Arg.Any<CancellationToken>());
+                Arg.Any<int>(), Arg.Any<long>(), Arg.Any<int[]?>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>());
         }
         finally
         {

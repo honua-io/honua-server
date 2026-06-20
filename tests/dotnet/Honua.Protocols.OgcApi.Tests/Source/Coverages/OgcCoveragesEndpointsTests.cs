@@ -278,6 +278,7 @@ public sealed class OgcCoveragesEndpointsTests : IAsyncLifetime
                 WebAppFixture.TestLayerId,
                 TestRasterId,
                 Arg.Any<int[]?>(),
+                Arg.Any<RasterIdentifyRendering?>(),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new[]
             {

@@ -147,7 +147,7 @@ public class ImageServerLegendHandlerTests
     {
         _rasterStore.ListRastersAsync(default, default)
             .ReturnsForAnyArgs([CreateTestRasterInfo()]);
-        _rasterStore.GetStatisticsAsync(1, 100, null, Arg.Any<CancellationToken>())
+        _rasterStore.GetStatisticsAsync(1, 100, null, Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
             .Returns(Array.Empty<RasterStatistics>());
 
         var context = CreateImageServerContext();
@@ -179,7 +179,7 @@ public class ImageServerLegendHandlerTests
     {
         _rasterStore.ListRastersAsync(default, default)
             .ReturnsForAnyArgs([CreateTestRasterInfo()]);
-        _rasterStore.GetStatisticsAsync(1, 100, null, Arg.Any<CancellationToken>())
+        _rasterStore.GetStatisticsAsync(1, 100, null, Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
             .Returns(new[]
             {
                 new RasterStatistics

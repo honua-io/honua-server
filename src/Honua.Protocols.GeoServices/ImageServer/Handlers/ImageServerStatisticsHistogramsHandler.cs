@@ -126,6 +126,24 @@ internal sealed class ImageServerStatisticsHistogramsHandler
                 return editionError;
             }
 
+            // A renderingRule applies the same clip/stretch/colormap chain exportImage/identify
+            // execute to the pixels BEFORE statistics/histograms are computed, so the reported
+            // per-band values describe the rendered output (#1871). Omitting renderingRule
+            // preserves the raw-source statistics contract. Unsupported chains surface 400/501
+            // exactly as on exportImage.
+            RasterIdentifyRendering? rendering = null;
+            var rawRenderingRule = GetString(values, "renderingRule");
+            if (!string.IsNullOrWhiteSpace(rawRenderingRule))
+            {
+                if (!TryMapRenderingRule(rawRenderingRule, out rendering, out var renderingError, out var notImplemented))
+                {
+                    ImageServerLog.InvalidStatisticsHistogramsParameters(_logger, layerId, renderingError ?? "Invalid renderingRule");
+                    return notImplemented
+                        ? StandardErrorHelpers.CreateNotImplemented(context, renderingError ?? "renderingRule is not implemented.")
+                        : StandardErrorHelpers.CreateBadRequest(context, renderingError ?? "renderingRule is not supported.");
+                }
+            }
+
             // When the caller supplies an AOI geometry we scope raster selection to the rasters
             // intersecting its bounding envelope (the shared raster selection path), rather than
             // building a parallel geometry-clipped raster reader.
@@ -198,11 +216,11 @@ internal sealed class ImageServerStatisticsHistogramsHandler
             {
                 var mosaicIds = targetRasters.Select(r => r.Id).ToArray();
                 var statistics = hasAoi
-                    ? await _rasterStore.GetClippedMosaicStatisticsAsync(layerId, mosaicIds, mergeStrategy, selectionGeometry!, selectionSrid, bands, cancellationToken)
-                    : await _rasterStore.GetMosaicStatisticsAsync(layerId, mosaicIds, mergeStrategy, bands, cancellationToken);
+                    ? await _rasterStore.GetClippedMosaicStatisticsAsync(layerId, mosaicIds, mergeStrategy, selectionGeometry!, selectionSrid, bands, rendering, cancellationToken)
+                    : await _rasterStore.GetMosaicStatisticsAsync(layerId, mosaicIds, mergeStrategy, bands, rendering, cancellationToken);
                 var histograms = hasAoi
-                    ? await _rasterStore.GetClippedMosaicHistogramsAsync(layerId, mosaicIds, mergeStrategy, selectionGeometry!, selectionSrid, bands, binCount, cancellationToken)
-                    : await _rasterStore.GetMosaicHistogramsAsync(layerId, mosaicIds, mergeStrategy, bands, binCount, cancellationToken);
+                    ? await _rasterStore.GetClippedMosaicHistogramsAsync(layerId, mosaicIds, mergeStrategy, selectionGeometry!, selectionSrid, bands, binCount, rendering, cancellationToken)
+                    : await _rasterStore.GetMosaicHistogramsAsync(layerId, mosaicIds, mergeStrategy, bands, binCount, rendering, cancellationToken);
                 AppendAlignedBandResults(statisticsList, histogramsList, bands, statistics, histograms);
             }
             else
@@ -210,11 +228,11 @@ internal sealed class ImageServerStatisticsHistogramsHandler
                 foreach (var raster in targetRasters)
                 {
                     var statistics = hasAoi
-                        ? await _rasterStore.GetClippedStatisticsAsync(layerId, raster.Id, selectionGeometry!, selectionSrid, bands, cancellationToken)
-                        : await _rasterStore.GetStatisticsAsync(layerId, raster.Id, bands, cancellationToken);
+                        ? await _rasterStore.GetClippedStatisticsAsync(layerId, raster.Id, selectionGeometry!, selectionSrid, bands, rendering, cancellationToken)
+                        : await _rasterStore.GetStatisticsAsync(layerId, raster.Id, bands, rendering, cancellationToken);
                     var histograms = hasAoi
-                        ? await _rasterStore.GetClippedHistogramsAsync(layerId, raster.Id, selectionGeometry!, selectionSrid, bands, binCount, cancellationToken)
-                        : await _rasterStore.GetHistogramsAsync(layerId, raster.Id, bands, binCount, cancellationToken);
+                        ? await _rasterStore.GetClippedHistogramsAsync(layerId, raster.Id, selectionGeometry!, selectionSrid, bands, binCount, rendering, cancellationToken)
+                        : await _rasterStore.GetHistogramsAsync(layerId, raster.Id, bands, binCount, rendering, cancellationToken);
 
                     // The store implementations do not guarantee a shared band order:
                     // GetStatisticsAsync streams cached rows in DB ascending order while
@@ -524,6 +542,64 @@ internal sealed class ImageServerStatisticsHistogramsHandler
         => string.IsNullOrWhiteSpace(format) ||
            string.Equals(format, "json", StringComparison.OrdinalIgnoreCase) ||
            string.Equals(format, "pjson", StringComparison.OrdinalIgnoreCase);
+
+    // Translates an Esri renderingRule into the canonical RasterIdentifyRendering threaded onto
+    // the statistics/histogram store calls. Reuses the shared raster-function planner so
+    // computeStatisticsHistograms honours the exact same Stretch/Colormap/Clip support matrix
+    // (and 400/501 error semantics) as exportImage and identify.
+    private static bool TryMapRenderingRule(
+        string renderingRuleJson,
+        out RasterIdentifyRendering? rendering,
+        out string? error,
+        out bool notImplemented)
+    {
+        rendering = null;
+        error = null;
+        notImplemented = false;
+
+        RasterFunctionDocument document;
+        try
+        {
+            document = System.Text.Json.JsonSerializer.Deserialize(renderingRuleJson, ImageServerJsonContext.Default.RasterFunctionDocument)
+                ?? throw new System.Text.Json.JsonException("Empty renderingRule document.");
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            error = "renderingRule must be a valid raster function document.";
+            return false;
+        }
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+        if (!mapping.Supported)
+        {
+            error = mapping.Reason ?? "renderingRule is not supported on this service.";
+            notImplemented = mapping.IsNotImplemented;
+            return false;
+        }
+
+        // ExtractBand / BandArithmetic change the band set rather than the per-band display
+        // values; the statistics store path does not yet honour them, so reject explicitly
+        // rather than silently ignoring them and reporting source-band statistics.
+        if (mapping.Bands is { Length: > 0 })
+        {
+            error = "renderingRule ExtractBand is not implemented for computeStatisticsHistograms.";
+            notImplemented = true;
+            return false;
+        }
+
+        if (mapping.BandArithmetic is not null)
+        {
+            error = "renderingRule BandArithmetic is not implemented for computeStatisticsHistograms.";
+            notImplemented = true;
+            return false;
+        }
+
+        // An Identity-only / StretchType=0 chain is an executable no-op: leave rendering null so
+        // the persisted raw-source statistics contract is preserved.
+        var resolved = new RasterIdentifyRendering(mapping.Stretch, mapping.Colormap, mapping.ClipRegion);
+        rendering = resolved.HasRendering ? resolved : null;
+        return true;
+    }
 
     private static string? GetString(IReadOnlyDictionary<string, StringValues> values, string key)
         => values.TryGetValue(key, out var raw) ? raw.ToString() : null;
