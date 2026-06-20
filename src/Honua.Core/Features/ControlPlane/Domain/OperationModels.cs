@@ -26,7 +26,13 @@ public enum WorkflowOperationKind
     /// <summary>
     /// Track a GitOps metadata release package through deploy, evidence, and rollback lifecycle stages.
     /// </summary>
-    MetadataRelease
+    MetadataRelease,
+
+    /// <summary>
+    /// Conduct a coordinated platform-upgrade release that composes a container rollout, an additive DB
+    /// script migration, and a metadata-v2 activation as one ordered, gated, rollback-able operation.
+    /// </summary>
+    CoordinatedRelease
 }
 
 /// <summary>
@@ -820,6 +826,12 @@ public sealed record WorkflowOperationRecord
     /// Metadata-release-specific desired state and rollback context.
     /// </summary>
     public MetadataReleaseContext? MetadataRelease { get; init; }
+
+    /// <summary>
+    /// Coordinated-release context for <see cref="WorkflowOperationKind.CoordinatedRelease"/> operations
+    /// that conduct a container rollout, a DB script migration, and a metadata-v2 activation as one op.
+    /// </summary>
+    public CoordinatedReleaseContext? CoordinatedRelease { get; init; }
 }
 
 /// <summary>
