@@ -27,15 +27,29 @@ internal static class SensorThingsEndpoints
     }
 
     /// <summary>Maps all SensorThings API read endpoints.</summary>
+    /// <remarks>
+    /// Routes are declared with literal path strings (not interpolated over
+    /// the <c>BasePath</c>/entity-set variables) so the source-scan governance
+    /// in <c>EndpointRegistryDriftTests</c> can anchor every
+    /// <c>EndpointRegistry</c> entry to a concrete <c>MapGet</c> call.
+    /// </remarks>
     public static IEndpointRouteBuilder MapSensorThingsEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        MapEntityCollection(endpoints, "Things", HandleListThings, HandleGetThing);
-        MapEntityCollection(endpoints, "Sensors", HandleListSensors, HandleGetSensor);
-        MapEntityCollection(endpoints, "ObservedProperties", HandleListObservedProperties, HandleGetObservedProperty);
-        MapEntityCollection(endpoints, "Datastreams", HandleListDatastreams, HandleGetDatastream);
-        MapEntityCollection(endpoints, "Observations", HandleListObservations, HandleGetObservation);
+        // Each route is a literal first argument to MapGet so the source-scan
+        // governance can anchor every EndpointRegistry entry to a concrete
+        // MapGet call; the typed {id:long} constraint normalises to {id}.
+        ConfigureCollection(endpoints.MapGet("/sta/v1.1/Things", HandleListThings), "Things");
+        ConfigureById(endpoints.MapGet("/sta/v1.1/Things({id:long})", HandleGetThing), "Things");
+        ConfigureCollection(endpoints.MapGet("/sta/v1.1/Sensors", HandleListSensors), "Sensors");
+        ConfigureById(endpoints.MapGet("/sta/v1.1/Sensors({id:long})", HandleGetSensor), "Sensors");
+        ConfigureCollection(endpoints.MapGet("/sta/v1.1/ObservedProperties", HandleListObservedProperties), "ObservedProperties");
+        ConfigureById(endpoints.MapGet("/sta/v1.1/ObservedProperties({id:long})", HandleGetObservedProperty), "ObservedProperties");
+        ConfigureCollection(endpoints.MapGet("/sta/v1.1/Datastreams", HandleListDatastreams), "Datastreams");
+        ConfigureById(endpoints.MapGet("/sta/v1.1/Datastreams({id:long})", HandleGetDatastream), "Datastreams");
+        ConfigureCollection(endpoints.MapGet("/sta/v1.1/Observations", HandleListObservations), "Observations");
+        ConfigureById(endpoints.MapGet("/sta/v1.1/Observations({id:long})", HandleGetObservation), "Observations");
 
-        endpoints.MapGet($"{BasePath}/Datastreams({{id:long}})/Observations", HandleDatastreamObservations)
+        endpoints.MapGet("/sta/v1.1/Datastreams({id:long})/Observations", HandleDatastreamObservations)
             .WithDisplayName("STA Datastream Observations")
             .WithName("StaDatastreamObservations")
             .WithSummary("Get the Observations of a Datastream")
@@ -46,13 +60,8 @@ internal static class SensorThingsEndpoints
         return endpoints;
     }
 
-    private static void MapEntityCollection(
-        IEndpointRouteBuilder endpoints,
-        string entitySet,
-        Delegate listHandler,
-        Delegate byIdHandler)
-    {
-        endpoints.MapGet($"{BasePath}/{entitySet}", listHandler)
+    private static void ConfigureCollection(RouteHandlerBuilder builder, string entitySet) =>
+        builder
             .WithDisplayName($"STA {entitySet}")
             .WithName($"Sta{entitySet}")
             .WithSummary($"List {entitySet}")
@@ -60,14 +69,14 @@ internal static class SensorThingsEndpoints
             .Produces(200, contentType: "application/json")
             .Produces(400);
 
-        endpoints.MapGet($"{BasePath}/{entitySet}({{id:long}})", byIdHandler)
+    private static void ConfigureById(RouteHandlerBuilder builder, string entitySet) =>
+        builder
             .WithDisplayName($"STA {entitySet} by id")
             .WithName($"Sta{entitySet}ById")
             .WithSummary($"Get a single {entitySet} entity by id")
             .WithTags("SensorThings")
             .Produces(200, contentType: "application/json")
             .Produces(404);
-    }
 
     private static string StaBase(HttpContext context) => $"{BaseUrlResolver.GetBaseUrl(context)}{BasePath}";
 
