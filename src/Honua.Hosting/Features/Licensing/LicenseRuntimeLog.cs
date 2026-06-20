@@ -77,4 +77,34 @@ internal static partial class LicenseRuntimeLog
         string featureName,
         HonuaEdition edition,
         LicenseValidationState validationState);
+
+    [LoggerMessage(
+        EventId = 10010,
+        Level = LogLevel.Warning,
+        Message = "Licensing:LicenseContentSecretRef is set but no license secret resolver is registered; running in Community mode.")]
+    public static partial void LicenseSecretResolverUnavailable(ILogger logger);
+
+    [LoggerMessage(
+        EventId = 10011,
+        Level = LogLevel.Warning,
+        Message = "Configured Licensing:LicenseContentSecretRef is not supported by the registered license secret resolver; running in Community mode.")]
+    public static partial void LicenseSecretReferenceUnsupported(ILogger logger);
+
+    [LoggerMessage(
+        EventId = 10012,
+        Level = LogLevel.Warning,
+        Message = "License secret reference resolved to an empty value; running in Community mode.")]
+    public static partial void LicenseSecretResolutionEmpty(ILogger logger);
+
+    [LoggerMessage(
+        EventId = 10013,
+        Level = LogLevel.Warning,
+        Message = "Failed to resolve license from secret reference; running in Community mode. reason={Reason}")]
+    public static partial void LicenseSecretResolutionFailed(ILogger logger, string reason);
+
+    [LoggerMessage(
+        EventId = 10014,
+        Level = LogLevel.Information,
+        Message = "License loaded from secret reference.")]
+    public static partial void LicenseLoadedFromSecret(ILogger logger);
 }
