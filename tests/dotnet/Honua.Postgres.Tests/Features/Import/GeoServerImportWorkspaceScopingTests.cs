@@ -286,6 +286,11 @@ public sealed class GeoServerImportWorkspaceScopingTests
                     created_at TIMESTAMPTZ DEFAULT NOW(),
                     updated_at TIMESTAMPTZ DEFAULT NOW()
                 );
+                -- honua-server#1568: keep column-compatible with base-schema.sql /
+                -- server.yaml when a peer test created honua.services first under the
+                -- shared seed advisory lock (max_record_count is in the canonical schema).
+                ALTER TABLE honua.services
+                    ADD COLUMN IF NOT EXISTS max_record_count INT NOT NULL DEFAULT 1000;
                 ALTER TABLE honua.services
                     ADD COLUMN IF NOT EXISTS metadata JSONB;
                 ALTER TABLE honua.services
