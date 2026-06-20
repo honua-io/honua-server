@@ -1,13 +1,18 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Core.Features.Raster.ZarrParser;
+using Honua.Core.Features.Tiles;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
+using Honua.Protocols.Ogc.Common;
 using Honua.Server.Features.Protocols.Zarr.Models;
 using Microsoft.AspNetCore.Mvc;
 
@@ -58,6 +63,153 @@ internal static class ZarrEndpoints
         group.MapPost("/{id:long}/refresh", HandleRefresh)
             .WithDisplayName("Refresh Zarr Metadata")
             .WithSummary("Re-scan Zarr metadata from the backing store");
+
+        // Public datacube tile serving (#1835, Shape B): bind a registered Zarr
+        // coverage slice to a map tile. Read-only; does not advertise an OGC
+        // conformance class, so it leaves the CITE tile surfaces untouched.
+        var tiles = endpoints.MapGroup("/api/v{version:apiVersion}/datacubes/{layerId:int}/tiles")
+            .WithApiVersionSet()
+            .HasApiVersion(1, 0)
+            .WithTags("Datacubes", "Tiles");
+
+        tiles.MapGet("/{tileMatrixSetId}/{z:int}/{x:int}/{y:int}", HandleDatacubeTile)
+            .WithDisplayName("Datacube Tile")
+            .WithSummary("Render a registered Zarr coverage slice as a PNG map tile");
+    }
+
+    /// <summary>
+    /// Decoded payload cap for a single tile slice. A 256x256 float64 grid plus a
+    /// little headroom; the planner rejects anything larger before any read happens.
+    /// </summary>
+    private const long MaxTileSliceBytes = 4L * 1024L * 1024L;
+
+    private static async Task<IResult> HandleDatacubeTile(
+        HttpContext context,
+        int layerId,
+        string tileMatrixSetId,
+        int z,
+        int x,
+        int y,
+        [FromServices] IZarrStore store,
+        [FromServices] IZarrSubsetReader subsetReader,
+        [FromServices] IEnumerable<ICloudRangeReader> rangeReaders,
+        [FromServices] ITileMatrixSetRegistry tileMatrixSets,
+        ILogger<ZarrEndpointsLog> logger,
+        CancellationToken cancellationToken)
+    {
+        if (x < 0 || y < 0 || z < 0)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, "Tile coordinates must be non-negative.");
+        }
+
+        var registrations = await store.ListByLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+        ZarrRegistration? servable = null;
+        foreach (var candidate in registrations)
+        {
+            if (candidate.Metadata is not null)
+            {
+                servable = candidate;
+                break;
+            }
+        }
+
+        if (servable is null || servable.Metadata is null)
+        {
+            return StandardErrorHelpers.CreateNotFound(context, "No servable Zarr coverage is registered for this layer.");
+        }
+
+        var metadata = servable.Metadata;
+
+        if (!tileMatrixSets.TryGetGeometry(tileMatrixSetId, z, out var geometry))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, $"Tile matrix set '{tileMatrixSetId}' is not supported.");
+        }
+
+        // Resolvable case: the gridset CRS matches the coverage storage CRS so the
+        // tile bbox maps directly to grid indices. Cross-CRS reprojection of the
+        // tile window is deferred (#1835 follow-up).
+        if (geometry.Srid != metadata.Srid)
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                $"Tile matrix set '{tileMatrixSetId}' (EPSG:{geometry.Srid.ToString(CultureInfo.InvariantCulture)}) does not match the coverage CRS (EPSG:{metadata.Srid.ToString(CultureInfo.InvariantCulture)}). Request a matching gridset.");
+        }
+
+        if (geometry.GetTileBounds(x, y, z) is not { } bounds)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, $"Tile level {z.ToString(CultureInfo.InvariantCulture)} is not part of '{tileMatrixSetId}'.");
+        }
+
+        var variable = OgcCommonUtilities.GetQueryValue(context.Request, "variable");
+        var datetimeRaw = OgcCommonUtilities.GetQueryValue(context.Request, "datetime");
+        (DateTimeOffset? Start, DateTimeOffset? End)? datetime = null;
+        if (!string.IsNullOrWhiteSpace(datetimeRaw))
+        {
+            if (!OgcTemporalFilterParser.TryParseRange(datetimeRaw, out var start, out var end, out var dtError))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, dtError ?? "Invalid datetime parameter.");
+            }
+            datetime = (start, end);
+        }
+
+        int? verticalIndex = null;
+        var elevationRaw = OgcCommonUtilities.GetQueryValue(context.Request, "elevation");
+        if (!string.IsNullOrWhiteSpace(elevationRaw))
+        {
+            if (!int.TryParse(elevationRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) || parsed < 0)
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, "The elevation parameter must be a non-negative grid index.");
+            }
+            verticalIndex = parsed;
+        }
+
+        var tileBounds = new ZarrTileBounds(bounds.XMin, bounds.YMin, bounds.XMax, bounds.YMax);
+        if (!ZarrTileSlicePlanner.TryPlan(metadata, variable, tileBounds, datetime, verticalIndex, MaxTileSliceBytes, out var slice, out var planError))
+        {
+            // A tile that misses the coverage extent is an empty (transparent) tile,
+            // which clients expect as a 204 rather than an error.
+            if (planError is { } message && message.Contains("does not intersect", StringComparison.Ordinal))
+            {
+                return Results.NoContent();
+            }
+            return StandardErrorHelpers.CreateBadRequest(context, planError ?? "The tile could not be resolved against the coverage.");
+        }
+
+        var rangeReader = rangeReaders.FirstOrDefault(reader => reader.Provider == servable.Provider);
+        if (rangeReader is null)
+        {
+            return StandardErrorHelpers.CreateInternalServerError(context, "The storage backend for this coverage is not configured.");
+        }
+
+        ZarrSubsetResult result;
+        try
+        {
+            result = await subsetReader.ReadSubsetAsync(
+                    rangeReader,
+                    servable.Bucket,
+                    servable.RootPath,
+                    metadata,
+                    slice!.Plan.Request,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, ex.Message);
+        }
+        catch (InvalidDataException)
+        {
+            return StandardErrorHelpers.CreateInternalServerError(context, "The Zarr store returned invalid data for this tile.");
+        }
+
+        var fillValue = slice.Plan.Array.FillValue as double?;
+        var png = ZarrTileRenderer.Render(result, slice, ZarrTileRenderer.DefaultTileSize, colormap: null, fillValue: fillValue);
+        ZarrLog.DatacubeTileRendered(logger, layerId, result.Variable, z, x, y, png.Length);
+        return Results.Bytes(png, "image/png");
     }
 
     private static async Task<IResult> HandleRegister(
