@@ -963,20 +963,37 @@ internal static partial class FeatureServerEndpoints
                 "sql parameter is required");
         }
 
-        // sqlType is optional (standard|native). Only the value is validated; both map to the
-        // ArcGIS SQL filter dialect for parsing/validation purposes.
+        // sqlType is optional and overloaded across two distinct Esri concepts (#1901):
+        //   * a SQL-dialect selector (standard|native): standardized SQL vs native DBMS SQL;
+        //   * the canonical validateSQL clause-type enum the real ArcGIS clients send
+        //     (esriSQLTypeWhere/OrderBy/Expression) plus its short forms (where/orderBy/
+        //     expression) and the ArcGIS API for Python's `statement` alias.
+        // Accept both vocabularies uniformly with the service-level endpoint. Dialect values
+        // (and an omitted sqlType) validate as a where-style ArcGIS SQL expression; clause-type
+        // values route through the shared service validator so orderBy is validated correctly.
         var sqlType = GetValueString(values, "sqlType");
-        if (!string.IsNullOrWhiteSpace(sqlType) &&
-            !string.Equals(sqlType, "standard", StringComparison.OrdinalIgnoreCase) &&
-            !string.Equals(sqlType, "native", StringComparison.OrdinalIgnoreCase))
+        var filterService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
+
+        if (!string.IsNullOrWhiteSpace(sqlType) && !IsSqlDialectType(sqlType))
         {
-            return StandardErrorHelpers.CreateBadRequest(context,
-                "Invalid sqlType parameter",
-                ["sqlType must be 'standard' or 'native'."]);
+            var clauseType = NormalizeServiceSqlType(sqlType);
+            if (!IsSupportedServiceSqlType(clauseType))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context,
+                    "Invalid sqlType parameter",
+                    ["sqlType must be a SQL dialect ('standard'/'native') or a clause type ('where'/'orderBy'/'expression', or the canonical 'esriSQLType*' enum)."]);
+            }
+
+            var (isValid, validationError) = ValidateServiceSql(filterService, sqlExpression, clauseType, resource);
+            var clauseResponse = new ValidateSqlResponse
+            {
+                IsValidSql = isValid,
+                ValidationError = isValid ? null : validationError
+            };
+            return Results.Json(clauseResponse, FeatureServerJsonContext.Default.ValidateSqlResponse, contentType: "application/json");
         }
 
-        // Attempt to parse the SQL expression using the filter service
-        var filterService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
+        // Dialect (standard|native) or omitted: parse the SQL expression using the filter service.
         var parseResult = filterService.Parse(FilterLanguage.ArcGisSql, sqlExpression);
 
         if (!parseResult.IsSuccess)
@@ -996,6 +1013,16 @@ internal static partial class FeatureServerEndpoints
         };
         return Results.Json(validResponse, FeatureServerJsonContext.Default.ValidateSqlResponse, contentType: "application/json");
     }
+
+    /// <summary>
+    /// Returns <see langword="true"/> when <paramref name="sqlType"/> names a SQL dialect
+    /// (<c>standard</c> = standardized SQL, <c>native</c> = native DBMS SQL) rather than a
+    /// validateSQL clause type. Both dialects map to the ArcGIS SQL filter dialect for
+    /// parsing/validation purposes.
+    /// </summary>
+    private static bool IsSqlDialectType(string sqlType)
+        => string.Equals(sqlType, "standard", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(sqlType, "native", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Service-level <c>validateSQL</c> (#1446). Esri's canonical validateSQL lives at the
@@ -1129,8 +1156,9 @@ internal static partial class FeatureServerEndpoints
     /// Maps the canonical Esri <c>sqlType</c> enum values
     /// (<c>esriSQLTypeWhere</c>/<c>esriSQLTypeOrderBy</c>/<c>esriSQLTypeExpression</c>) that real
     /// ArcGIS clients send to the short forms (<c>where</c>/<c>orderBy</c>/<c>expression</c>) the
-    /// rest of the pipeline uses. Short forms and any unrecognized value pass through unchanged so
-    /// the caller still validates them (#1858).
+    /// rest of the pipeline uses. The ArcGIS API for Python's <c>statement</c> alias maps to
+    /// <c>expression</c> (full-statement validation). Short forms and any unrecognized value pass
+    /// through unchanged so the caller still validates them (#1858, #1901).
     /// </summary>
     private static string NormalizeServiceSqlType(string sqlType)
     {
@@ -1144,7 +1172,8 @@ internal static partial class FeatureServerEndpoints
             return "orderBy";
         }
 
-        if (string.Equals(sqlType, "esriSQLTypeExpression", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(sqlType, "esriSQLTypeExpression", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(sqlType, "statement", StringComparison.OrdinalIgnoreCase))
         {
             return "expression";
         }

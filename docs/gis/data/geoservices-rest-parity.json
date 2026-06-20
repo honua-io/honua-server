@@ -1716,7 +1716,8 @@
             "name": "Legend",
             "esriPath": "/rest/services/{id}/ImageServer/legend",
             "honuaEndpoints": [
-              "GET /rest/services/{id}/ImageServer/legend"
+              "GET /rest/services/{id}/ImageServer/legend",
+              "POST /rest/services/{id}/ImageServer/legend"
             ],
             "notes": "Returns Esri-shaped layers[].legend[] swatches as base64 PNGs (image/png). Renders a 5-class equal-interval ramp keyed off the resolved layer mosaic's band-1 statistics by default; a renderingRule with an explicit Colormap is honoured (one swatch per colour stop). Per-layer renderer persistence and non-colormap renderer overrides are not yet honoured. Only f=json/f=pjson is accepted."
           },
