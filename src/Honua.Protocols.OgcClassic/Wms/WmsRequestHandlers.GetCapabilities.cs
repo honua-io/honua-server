@@ -13,6 +13,7 @@ using Honua.Infrastructure.Services;
 using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Ogc.Classic;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using static Honua.Infrastructure.Rendering.RasterMapRenderingPipeline;
 using static Honua.Protocols.Ogc.Classic.OgcClassicRequestHelpers;
 
@@ -132,13 +133,17 @@ internal static partial class WmsRequestHandlers
             return [];
         }
 
+        var logger = context.RequestServices
+            .GetRequiredService<ILoggerFactory>()
+            .CreateLogger("Honua.Protocols.Ogc.Classic.Wms.WmsRequestHandlers");
+
         // Fan out DB aggregate queries concurrently; each is a MIN/MAX scan on one table.
+        // Resolve each layer defensively: a single layer whose temporal column cannot be
+        // aggregated (e.g. data stored in an encoding the cast cannot parse) must not 500
+        // the whole GetCapabilities document — skip its TIME dimension and keep the rest
+        // (honua-server#1911).
         var tasks = temporalLayers.Select(layer =>
-            TemporalExtentHelpers.TryResolveTemporalRangeV2Async(
-                layer.Resource,
-                layer.StorageLayerId,
-                featureReader,
-                cancellationToken));
+            ResolveTemporalRangeSafeAsync(layer, featureReader, logger, cancellationToken));
 
         var results = await Task.WhenAll(tasks).ConfigureAwait(false);
 
@@ -152,6 +157,42 @@ internal static partial class WmsRequestHandlers
         }
 
         return dict;
+    }
+
+    /// <summary>
+    /// Resolves a single layer's temporal range, degrading gracefully when the
+    /// underlying aggregate query fails (e.g. the configured time column holds
+    /// values the temporal cast cannot parse). A per-layer failure logs a warning
+    /// and yields <c>null</c> so the layer is advertised without a TIME dimension
+    /// rather than failing the whole capabilities document (honua-server#1911).
+    /// </summary>
+    private static async Task<MetadataV2TemporalRange?> ResolveTemporalRangeSafeAsync(
+        WmsLayer layer,
+        IFeatureReader featureReader,
+        ILogger logger,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await TemporalExtentHelpers.TryResolveTemporalRangeV2Async(
+                layer.Resource,
+                layer.StorageLayerId,
+                featureReader,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            OgcClassicLog.TemporalExtentSkipped(
+                logger,
+                layer.StorageLayerId,
+                GetWmsLayerDisplayName(layer),
+                ex);
+            return null;
+        }
     }
 
     private static void AppendWmsTemporalDimension(
