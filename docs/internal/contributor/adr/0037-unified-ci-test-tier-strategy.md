@@ -101,25 +101,75 @@ emits a JSON descriptor consumed by the `server-tests` matrix:
 
 - If the diff touches **shared infrastructure**
   (`infrastructure_paths` in `ci-shards.json` —
-  `tests/dotnet/Honua.TestKit/`, `src/Honua.Core/`, `src/Honua.Postgres/`,
-  `src/Honua.ServiceDefaults/`, `src/Honua.Server/Features/Infrastructure/`,
-  `Honua.sln`, `.github/`, `scripts/ci/`), the script short-circuits to
+  `tests/dotnet/Honua.TestKit/` (the `PostgresFixture`/`SeedRunner` harness),
+  the shared canonical query/filter/paging/CRS pipeline and shared
+  models/config/exceptions in `src/Honua.Core/` (`Queries/`, `Models/`,
+  `Configuration/`, `Exceptions/`, `Features/Infrastructure/`,
+  `Features/Shared/`, `Honua.Core.csproj`), the Postgres connection/migration
+  layer (`src/Honua.Postgres/Migrations/`, `Queries/`, `Features/Infrastructure/`,
+  `ServiceCollectionExtensions.cs`, `Honua.Postgres.csproj`),
+  `src/Honua.ServiceDefaults/`, the cross-cutting server hosting/middleware/
+  monitoring infrastructure (`src/Honua.Server/Features/Infrastructure/{Hosting,
+  Middleware,Services,Monitoring}/`, `src/Honua.Server/Startup/`), and
+  `src/Honua.Hosting/Honua.Hosting.csproj`), the script short-circuits to
   `{"run_all": true, "reason": "infrastructure_change"}` and the matrix
   runs every shard.
-- If the diff touches a **watched source prefix** (`unmapped_source_run_all_prefixes`
-  — `src/Honua.Server/`, `src/Honua.DuckDB/`, `tests/dotnet/Honua.Server.Tests/`)
+- **`Honua.sln` is intentionally NOT an `infrastructure_path` (#1897).** A
+  project add/remove modifies the solution on nearly every feature PR; treating
+  it as shared infrastructure forced `run_all` on every new module and was a
+  primary driver of full-suite-per-PR. A sln-only diff (no other signal) now
+  routes to the smoke shard via `default_shards_when_no_match` (reason
+  `no_path_match`); the actual added project's source still routes to its
+  owning shard(s) on its own. Likewise `src/Honua.Aws/` / `src/Honua.Azure/`
+  moved out of `infrastructure_paths` (they are not exercised by every shard)
+  into the `unmapped_source_run_all_prefixes` safety net.
+- If the diff touches a **watched source prefix** (`unmapped_source_run_all_prefixes`)
   but the changed path is **not** matched by any shard's `paths`, the script
-  emits `{"run_all": true, "reason": "unmapped_source_change"}`. This catches
-  new feature directories whose tests are not yet routed to a specific shard
-  — the alternative would be to silently fall back to the Core shard whose
-  filter excludes `Honua.Server.Tests.Features.*`. New features land green
-  on a full matrix until a follow-up shards them.
+  emits `{"run_all": true, "reason": "unmapped_source_change"}`. Post-#1897 this
+  set is the safety net for two cases: (a) genuinely cross-cutting source with
+  no single owning shard — the shared `Honua.Core`/`Honua.Postgres`/`Honua.Server`
+  runtime, `Honua.Geometry`, `Honua.Jobs`, `Honua.Routing`, `Honua.Hosting`,
+  and the cloud providers `Honua.Aws`/`Honua.Azure`; and (b) a brand-new,
+  not-yet-mapped TOP-LEVEL source area (e.g. a future
+  `src/Honua.Protocols.SensorThings/` landing before its shard is added). The
+  alternative would be to silently fall back to the Core shard whose filter
+  excludes `Honua.Server.Tests.Features.*`. New modules land green on a full
+  matrix until a follow-up adds their shard + `paths`.
+- **The protocol source dirs route targeted, not run_all (#1897).** Each
+  protocol-specific subdir is claimed by its owning shard(s)' `paths`:
+  `src/Honua.Protocols.GeoServices/FeatureServer/` → the six FeatureServer
+  shards; `ImageServer/` → GeoServices ImageServer; `MapServer/`, `GPServer/`,
+  `NAServer/`, `GeometryService/`, `Catalog/` → their owning shards;
+  `src/Honua.Protocols.OData/` → the four OData shards;
+  `src/Honua.Protocols.OgcApi/{Features,Maps,Records,Tiles,Coverages,Processes}/`,
+  `src/Honua.Protocols.OgcClassic/{Wfs20,Wcs20,Wms,Wmts}/`,
+  `src/Honua.Protocols.Stac/`, `src/Honua.Protocols.Scene/` + `src/Honua.Scene/`,
+  and `src/Honua.Ai/` → their respective shards. So a normal single-protocol
+  feature PR matches a shard (targeted) instead of tripping the unmapped net.
+  Code directly under a protocol project ROOT (shared across all that
+  project's shards, e.g. `GeoServicesGeometryParser.cs`, the GeoServices
+  `VectorTileServer/`/`VersionManagementServer/` whose tests are currently
+  unfiltered, the `OgcClassicEndpoints.cs` shared dispatcher, or
+  `Honua.Protocols.Ogc.Shared/`) is left in the safety net and over-includes to
+  run_all rather than risk under-testing a sibling shard.
 - Otherwise, the script emits `{"run_all": false, "shards": [...]}` with the
   matched shard names.
 - The script never emits an empty matrix. When no source under a watched
-  prefix was touched (e.g. doc-only diffs), it defaults to
+  prefix was touched (e.g. doc-only, CI-only, or sln-only diffs), it defaults to
   `{"run_all": false, "shards": ["Core"], "reason": "no_path_match"}` so a
   smoke shard still runs.
+
+**Correctness invariant (#1897).** Every `src/` prefix is either (a) claimed by
+the shard(s) whose `filter` selects the tests that exercise it, or (b)
+intentionally in `infrastructure_paths` / `unmapped_source_run_all_prefixes` as
+cross-cutting. The mapping must never cause a PR to skip a shard that genuinely
+tests the changed code; when a source area's tests span several shards it is
+over-included to all of them. `scripts/ci/validate-ci-router.sh` is the guard:
+it dry-runs the router against representative synthetic diffs and asserts a
+single-protocol change is `targeted` and excludes unrelated shards, while a
+shared-harness / shared-query-pipeline / `Honua.sln` / new-unmapped-module diff
+routes correctly (run_all for the cross-cutting ones, smoke shard for sln-only).
+This guard runs as the `ci-router-validation` job on every PR.
 
 The `targeted-shards` job then projects the selected shard names into a
 `matrix_include` JSON array by joining against the rich shard records in
