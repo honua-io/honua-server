@@ -110,6 +110,59 @@ public sealed class NAServerPgRoutingEndToEndTests : IClassFixture<PgRoutingFixt
     }
 
     [RoutingTest(RoutingTestEnv)]
+    public async Task RouteSolve_WithPolygonBarrier_OverRealPgRouting_StillSolves()
+    {
+        // A polygon barrier over the central vertex (5) excludes the edges that
+        // touch it. The 3x3 lattice still has a perimeter path between the SW (1)
+        // and NE (9) corners, so the route solves but must avoid the blocked edges.
+        var payload = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("f", "json"),
+            new KeyValuePair<string, string>("stops", "0.0,0.0;0.02,0.02"),
+            new KeyValuePair<string, string>("returnRoutes", "true"),
+            new KeyValuePair<string, string>(
+                "polygonBarriers",
+                """{ "features": [ { "geometry": { "rings": [ [ [0.008,0.008],[0.012,0.008],[0.012,0.012],[0.008,0.012],[0.008,0.008] ] ] } } ] }"""),
+        ]);
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{ServiceId}/NAServer/Route/solve",
+            payload,
+            CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync(CancellationToken.None));
+        var root = document.RootElement;
+
+        // The route still solves over the perimeter; geometry is present and the
+        // blocked central edges did not produce a 500.
+        var paths = root.GetProperty("routes").GetProperty("features")[0]
+            .GetProperty("geometry").GetProperty("paths");
+        paths.GetArrayLength().Should().BeGreaterThan(0);
+    }
+
+    [RoutingTest(RoutingTestEnv)]
+    public async Task RouteSolve_WithUnsupportedTravelMode_OverRealPgRouting_Returns400()
+    {
+        // The PgRoutingProvider advertises driving only; cycling is rejected with a
+        // GeoServices 400 envelope (no fabricated solve).
+        var payload = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("f", "json"),
+            new KeyValuePair<string, string>("stops", "0.0,0.0;0.02,0.02"),
+            new KeyValuePair<string, string>("travelMode", "cycling"),
+        ]);
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{ServiceId}/NAServer/Route/solve",
+            payload,
+            CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [RoutingTest(RoutingTestEnv)]
     public async Task ServiceAreaSolve_OverRealPgRouting_ReturnsSaPolygons()
     {
         // One facility at vertex 1 (SW corner) with breaks at cost 1 and 2.

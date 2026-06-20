@@ -130,7 +130,7 @@ public sealed class NAServerTranslationUnitTests
     public void BuildRouteSolveRequest_TooManyStops_Throws()
     {
         // Two stops over a cap of 1 must be rejected (DoS guard).
-        var caps = new NAServerInputCaps(MaxStops: 1, MaxFacilities: 10, MaxBreaks: 10);
+        var caps = new NAServerInputCaps(MaxStops: 1, MaxFacilities: 10, MaxBreaks: 10, MaxBarriers: 10);
         var parameters = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             ["stops"] = "-157.85,21.30;-157.86,21.31;-157.87,21.32",
@@ -146,7 +146,7 @@ public sealed class NAServerTranslationUnitTests
     [Operation(Operations.ServiceArea)]
     public void BuildServiceAreaSolveRequest_TooManyBreaks_Throws()
     {
-        var caps = new NAServerInputCaps(MaxStops: 10, MaxFacilities: 10, MaxBreaks: 2);
+        var caps = new NAServerInputCaps(MaxStops: 10, MaxFacilities: 10, MaxBreaks: 2, MaxBarriers: 10);
         var parameters = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             ["facilities"] = "-157.85,21.30",
@@ -163,7 +163,7 @@ public sealed class NAServerTranslationUnitTests
     [Operation(Operations.ServiceArea)]
     public void BuildServiceAreaSolveRequest_TooManyFacilities_Throws()
     {
-        var caps = new NAServerInputCaps(MaxStops: 10, MaxFacilities: 1, MaxBreaks: 10);
+        var caps = new NAServerInputCaps(MaxStops: 10, MaxFacilities: 1, MaxBreaks: 10, MaxBarriers: 10);
         var parameters = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             ["facilities"] = "-157.85,21.30;-157.86,21.31",
@@ -229,6 +229,120 @@ public sealed class NAServerTranslationUnitTests
         }
 
         area.Should().BeLessThan(0, "Esri outer rings must be clockwise");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Directions)]
+    public void ParseTravelMode_BareToken_ReturnsToken()
+    {
+        var parameters = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["travelMode"] = " walking ",
+        };
+
+        NAServerParameterTranslation.ParseTravelMode(parameters).Should().Be("walking");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Directions)]
+    public void ParseTravelMode_EsriObject_UsesName()
+    {
+        var parameters = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["travelMode"] = """{ "name": "Driving Time", "type": "AUTOMOBILE" }""",
+        };
+
+        NAServerParameterTranslation.ParseTravelMode(parameters).Should().Be("Driving Time");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Directions)]
+    public void ParseTravelMode_Absent_ReturnsNull()
+    {
+        var parameters = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        NAServerParameterTranslation.ParseTravelMode(parameters).Should().BeNull();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Directions)]
+    public void ParseBarriers_PointFeatureSet_ProducesPointGeoJson()
+    {
+        var parameters = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["barriers"] = """
+            { "features": [ { "geometry": { "x": -157.85, "y": 21.30 } } ] }
+            """,
+        };
+
+        var barriers = NAServerParameterTranslation.ParseBarriers(parameters, NAServerInputCaps.Default);
+
+        barriers.Should().ContainSingle();
+        barriers[0].Kind.Should().Be(RouteBarrierKind.Point);
+        barriers[0].GeometryGeoJson.Should().Contain("\"type\":\"Point\"");
+        barriers[0].GeometryGeoJson.Should().Contain("-157.85");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Directions)]
+    public void ParseBarriers_PolylineAndPolygon_ProduceLineAndPolygonGeoJson()
+    {
+        var parameters = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["polylineBarriers"] = """
+            { "features": [ { "geometry": { "paths": [ [ [0,0], [1,1] ] ] } } ] }
+            """,
+            ["polygonBarriers"] = """
+            { "features": [ { "geometry": { "rings": [ [ [0,0], [1,0], [1,1], [0,0] ] ] } } ] }
+            """,
+        };
+
+        var barriers = NAServerParameterTranslation.ParseBarriers(parameters, NAServerInputCaps.Default);
+
+        barriers.Should().HaveCount(2);
+        var line = barriers.Should().ContainSingle(b => b.Kind == RouteBarrierKind.Line).Subject;
+        line.GeometryGeoJson.Should().Contain("\"type\":\"MultiLineString\"");
+        var polygon = barriers.Should().ContainSingle(b => b.Kind == RouteBarrierKind.Polygon).Subject;
+        polygon.GeometryGeoJson.Should().Contain("\"type\":\"Polygon\"");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Directions)]
+    public void ParseBarriers_OverCap_Throws()
+    {
+        var caps = new NAServerInputCaps(MaxStops: 10, MaxFacilities: 10, MaxBreaks: 10, MaxBarriers: 1);
+        var parameters = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["barriers"] = """
+            { "features": [
+                { "geometry": { "x": 0, "y": 0 } },
+                { "geometry": { "x": 1, "y": 1 } }
+            ] }
+            """,
+        };
+
+        var act = () => NAServerParameterTranslation.ParseBarriers(parameters, caps);
+
+        act.Should().Throw<NAServerParameterTranslation.NAServerParameterException>()
+            .WithMessage("*exceeds the maximum*");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Directions)]
+    public void BuildRouteSolveRequest_ThreadsBarriersAndTravelMode()
+    {
+        var parameters = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["stops"] = "-157.85,21.30;-157.86,21.31",
+            ["travelMode"] = "driving",
+            ["barriers"] = """{ "features": [ { "geometry": { "x": -157.855, "y": 21.305 } } ] }""",
+        };
+
+        var request = NAServerParameterTranslation.BuildRouteSolveRequest(parameters);
+
+        request.TravelMode.Should().Be("driving");
+        request.Barriers.Should().ContainSingle();
+        request.Barriers[0].Kind.Should().Be(RouteBarrierKind.Point);
     }
 
     [UnitTest]

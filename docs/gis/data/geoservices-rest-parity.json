@@ -2823,6 +2823,8 @@
       "implementedSurface": [
         "Route solve",
         "ServiceArea solveServiceArea",
+        "Point/line/polygon barriers (pgRouting edge exclusion)",
+        "travelMode parsing and capability validation (driving routable)",
         "ClosestFacility solveClosestFacility compatibility envelope"
       ],
       "knownGaps": [
@@ -2830,8 +2832,7 @@
         "ClosestFacility canonical solver",
         "OD cost matrix",
         "location-allocation",
-        "barriers",
-        "multiple travel modes",
+        "non-driving travel modes (single stored cost weight)",
         "network-dataset editing"
       ],
       "evidence": {
@@ -2857,7 +2858,7 @@
             "honuaEndpoints": [
               "POST /rest/services/{serviceId}/NAServer/Route/solve"
             ],
-            "notes": "Parses stops, inSR/outSR, returnRoutes, and returnDirections, delegates to the configured IRoutingProvider, and returns Esri route and directions feature sets."
+            "notes": "Parses stops, inSR/outSR, returnRoutes, returnDirections, barriers/polylineBarriers/polygonBarriers, and travelMode, delegates to the configured IRoutingProvider, and returns Esri route and directions feature sets."
           },
           {
             "name": "ServiceArea solveServiceArea",
@@ -2868,10 +2869,34 @@
             "honuaEndpoints": [
               "POST /rest/services/{serviceId}/NAServer/ServiceArea/solveServiceArea"
             ],
-            "notes": "Parses facilities, defaultBreaks, inSR/outSR, and travelDirection, validates provider-advertised travel-direction support, and returns Esri saPolygons."
+            "notes": "Parses facilities, defaultBreaks, inSR/outSR, travelDirection, barriers/polylineBarriers/polygonBarriers, and travelMode, validates provider-advertised travel-direction/barrier/mode support, and returns Esri saPolygons."
+          },
+          {
+            "name": "Barriers (point/line/polygon)",
+            "esriPath": "/rest/services/{serviceId}/NAServer/{Route,ServiceArea}/*",
+            "methods": [
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "POST /rest/services/{serviceId}/NAServer/Route/solve",
+              "POST /rest/services/{serviceId}/NAServer/ServiceArea/solveServiceArea"
+            ],
+            "notes": "barriers (points), polylineBarriers (lines), and polygonBarriers (areas) are parsed from Esri FeatureSets and threaded into the solve; the pgRouting provider excludes the graph edges each barrier restricts (point=nearest edge, line/polygon=every intersecting edge). Providers that do not advertise a barrier kind return a GeoServices 400. Bounded by Routing:MaxBarriers."
           }
         ],
         "partial": [
+          {
+            "name": "Multiple travel modes",
+            "esriPath": "/rest/services/{serviceId}/NAServer/*",
+            "methods": [
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "POST /rest/services/{serviceId}/NAServer/Route/solve",
+              "POST /rest/services/{serviceId}/NAServer/ServiceArea/solveServiceArea"
+            ],
+            "notes": "travelMode (bare token or Esri travel-mode object name) is parsed and validated against the provider's advertised modes; unsupported modes return a GeoServices 400. The pgRouting topology stores a single cost weight pair, so only the driving mode is genuinely routable today; the request surface and capability advertisement are wired for multi-mode providers."
+          },
           {
             "name": "ClosestFacility solveClosestFacility",
             "esriPath": "/rest/services/{serviceId}/NAServer/ClosestFacility/solveClosestFacility",
@@ -2886,7 +2911,7 @@
         ],
         "notImplemented": [
           {
-            "name": "OD cost matrix, location-allocation, barriers, multiple travel modes, network-dataset editing",
+            "name": "OD cost matrix, location-allocation, network-dataset editing",
             "esriPath": "/rest/services/{serviceId}/NAServer/*",
             "methods": [
               "GET",
@@ -2898,7 +2923,8 @@
       "knownLimitations": [
         "NAServer route and service-area solves are POST-only.",
         "ClosestFacility is a deterministic compatibility envelope until a canonical closest-facility contract lands.",
-        "Unsupported provider capabilities return GeoServices 400 error envelopes."
+        "Only the driving travel mode is genuinely routable (single stored cost weight); other modes are validated and rejected.",
+        "Unsupported provider capabilities (barrier kinds, travel modes, travel directions) return GeoServices 400 error envelopes."
       ]
     }
   ]

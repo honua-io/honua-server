@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
+using System.Globalization;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Routing.Features.Routing.Abstractions;
 using Honua.Routing.Features.Routing.Domain;
@@ -57,10 +58,33 @@ internal sealed class PgRoutingProvider : IRoutingProvider
     /// <inheritdoc />
     public string Name => ProviderName;
 
+    /// <summary>
+    /// The single travel mode pgRouting can route: the topology stores one
+    /// <c>cost</c>/<c>reverse_cost</c> weight pair, so there is no per-mode
+    /// impedance. The MVP weight is documented as a driving cost, so the provider
+    /// advertises <c>driving</c> only. Walking/cycling/truck require additional
+    /// per-mode cost columns (deferred — see ADR-0050 and the parity doc).
+    /// </summary>
+    public const string DrivingTravelMode = "driving";
+
     /// <inheritdoc />
     public RoutingProviderCapabilities Capabilities { get; } = new(
         SupportsRoute: true,
-        SupportsServiceArea: true);
+        SupportsServiceArea: true)
+    {
+        // pgRouting honours all three barrier families by excluding the graph
+        // edges each barrier geometry interacts with (see BuildBlockedEdgeFilter).
+        SupportedBarrierKinds =
+        [
+            RouteBarrierKind.Point,
+            RouteBarrierKind.Line,
+            RouteBarrierKind.Polygon,
+        ],
+
+        // Single stored cost weight => driving only. The request surface accepts
+        // and validates travelMode, but only this mode is genuinely routable.
+        SupportedTravelModes = [DrivingTravelMode],
+    };
 
     /// <inheritdoc />
     public async Task<RouteSolveResult> SolveRouteAsync(
@@ -84,6 +108,14 @@ internal sealed class PgRoutingProvider : IRoutingProvider
             }
 
             await using var session = await _sessionFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
+
+            // Resolve barrier-restricted edges first so the same exclusion set
+            // applies to every leg. Empty when no barriers are supplied.
+            var blockedEdges = await ResolveBlockedEdgesAsync(
+                session, request.Barriers, request.InSrid, cancellationToken).ConfigureAwait(false);
+            activity?.SetTag("honua.routing.barriers", request.Barriers.Count);
+            activity?.SetTag("honua.routing.blocked_edges", blockedEdges.Count);
+            var edgesSql = BuildRouteEdgesSql(blockedEdges);
 
             // Snap each stop to its nearest graph vertex (input transformed from the
             // request SRID to the graph SRID 4326 before the KNN snap).
@@ -110,7 +142,7 @@ internal sealed class PgRoutingProvider : IRoutingProvider
             var totalCost = 0.0;
             for (var i = 0; i < vertexIds.Length - 1; i++)
             {
-                var leg = await SolveDijkstraLegAsync(session, vertexIds[i], vertexIds[i + 1], cancellationToken)
+                var leg = await SolveDijkstraLegAsync(session, edgesSql, vertexIds[i], vertexIds[i + 1], cancellationToken)
                     .ConfigureAwait(false);
                 if (leg is null)
                 {
@@ -184,12 +216,20 @@ internal sealed class PgRoutingProvider : IRoutingProvider
 
             await using var session = await _sessionFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
 
+            // Resolve barrier-restricted edges once and exclude them from the
+            // reachability graph for every facility/break.
+            var blockedEdges = await ResolveBlockedEdgesAsync(
+                session, request.Barriers, request.InSrid, cancellationToken).ConfigureAwait(false);
+            activity?.SetTag("honua.routing.barriers", request.Barriers.Count);
+            activity?.SetTag("honua.routing.blocked_edges", blockedEdges.Count);
+
             // ToFacility coverage runs driving-distance over the reversed graph
             // (source/target swapped) so it computes who can reach the facility
             // within the cost cutoff; FromFacility uses the outbound graph.
-            var edgesSql = request.TravelDirection == ServiceAreaTravelDirection.ToFacility
+            var baseEdgesSql = request.TravelDirection == ServiceAreaTravelDirection.ToFacility
                 ? ReversedEdgesSql
                 : OutboundEdgesSql;
+            var edgesSql = ApplyBlockedEdgeFilter(baseEdgesSql, blockedEdges);
 
             var polygons = new List<ServiceAreaPolygon>();
 
@@ -272,19 +312,22 @@ internal sealed class PgRoutingProvider : IRoutingProvider
 
     private static async Task<(IReadOnlyList<RouteStep> Steps, double Cost)?> SolveDijkstraLegAsync(
         IDatabaseSession session,
+        string edgesSql,
         long sourceVertex,
         long targetVertex,
         CancellationToken cancellationToken)
     {
-        // pgr_dijkstra over the ways edge table. The inner edges_sql is a constant
-        // (no user values); source/target are bound parameters. edge = -1 marks the
-        // synthetic final row pgr_dijkstra appends, which we skip. We capture the
-        // per-step node alongside the edge so geometry can be threaded in traversal
-        // order with correct orientation.
-        const string sql = """
+        // pgr_dijkstra over the ways edge table. The inner edges_sql is built by
+        // BuildRouteEdgesSql from a constant base plus a barrier-exclusion clause
+        // that lists only server-derived integer edge gids (never a user string),
+        // so no user value is interpolated. source/target are bound parameters.
+        // edge = -1 marks the synthetic final row pgr_dijkstra appends, which we
+        // skip. We capture the per-step node alongside the edge so geometry can be
+        // threaded in traversal order with correct orientation.
+        var sql = $"""
             SELECT node, edge, cost
             FROM pgr_dijkstra(
-                'SELECT gid AS id, source, target, cost, reverse_cost FROM public.ways',
+                '{edgesSql}',
                 @source, @target, directed => true)
             WHERE edge <> -1
             ORDER BY seq;
@@ -429,6 +472,129 @@ internal sealed class PgRoutingProvider : IRoutingProvider
                 },
                 cancellationToken)
             .ConfigureAwait(false) ?? string.Empty;
+    }
+
+    /// <summary>
+    /// Resolves the set of graph edge gids restricted by the supplied barriers by
+    /// transforming each barrier geometry to the graph SRID and testing it against
+    /// the <c>ways</c> edges. Point barriers block the single nearest edge; line
+    /// and polygon barriers block every edge they intersect. Returns an empty list
+    /// when there are no barriers (the common case), so the unrestricted graph is
+    /// used unchanged.
+    /// </summary>
+    /// <remarks>
+    /// Barrier geometries are passed as a parallel pair of bound array parameters
+    /// (GeoJSON text + per-barrier kind code) and reconstructed in SQL via
+    /// <c>ST_GeomFromGeoJSON</c>; no user value is interpolated into SQL. The
+    /// returned gids are server-derived integers, safe to embed in the inner
+    /// pgr_dijkstra edges-SQL string (which cannot reference bound parameters).
+    /// </remarks>
+    private static async Task<IReadOnlyList<long>> ResolveBlockedEdgesAsync(
+        IDatabaseSession session,
+        IReadOnlyList<RouteBarrier> barriers,
+        int inSrid,
+        CancellationToken cancellationToken)
+    {
+        if (barriers.Count == 0)
+        {
+            return [];
+        }
+
+        // Per-barrier parallel arrays: GeoJSON geometry text and the integer kind
+        // code (0=point, 1=line, 2=polygon). Both bind as array parameters.
+        var geoJson = new string[barriers.Count];
+        var kinds = new int[barriers.Count];
+        for (var i = 0; i < barriers.Count; i++)
+        {
+            geoJson[i] = barriers[i].GeometryGeoJson;
+            kinds[i] = (int)barriers[i].Kind;
+        }
+
+        // Each barrier is transformed from the request SRID to the graph SRID
+        // (4326). A point barrier (kind 0) restricts the single nearest edge (KNN
+        // <-> on the GiST index); a line/polygon barrier (kind 1/2) restricts every
+        // edge it intersects. DISTINCT collapses overlapping barriers.
+        const string sql = """
+            WITH input AS (
+                SELECT
+                    ST_Transform(ST_SetSRID(ST_GeomFromGeoJSON(g.geojson), @in_srid), 4326) AS geom,
+                    k.kind AS kind
+                FROM unnest(@geojson) WITH ORDINALITY AS g(geojson, ord)
+                JOIN unnest(@kinds)   WITH ORDINALITY AS k(kind, ord) USING (ord)
+            ),
+            point_blocked AS (
+                SELECT nearest.gid
+                FROM input i
+                CROSS JOIN LATERAL (
+                    SELECT w.gid
+                    FROM public.ways w
+                    ORDER BY w.the_geom <-> i.geom
+                    LIMIT 1
+                ) AS nearest
+                WHERE i.kind = 0
+            ),
+            shape_blocked AS (
+                SELECT w.gid
+                FROM input i
+                JOIN public.ways w ON ST_Intersects(w.the_geom, i.geom)
+                WHERE i.kind <> 0
+            )
+            SELECT gid FROM point_blocked
+            UNION
+            SELECT gid FROM shape_blocked;
+            """;
+
+        var gids = new List<long>();
+        await foreach (var gid in session.QueryAsync(
+                           sql,
+                           static row => row.GetFieldValue<long>(0),
+                           new Dictionary<string, object?>
+                           {
+                               ["geojson"] = geoJson,
+                               ["kinds"] = kinds,
+                               ["in_srid"] = inSrid,
+                           },
+                           cancellationToken).ConfigureAwait(false))
+        {
+            gids.Add(gid);
+        }
+
+        return gids;
+    }
+
+    // Constant base edges-SQL for route solves (no barriers).
+    private const string RouteBaseEdgesSql =
+        "SELECT gid AS id, source, target, cost, reverse_cost FROM public.ways";
+
+    /// <summary>
+    /// Builds the inner pgr_dijkstra edges-SQL, appending a barrier-exclusion
+    /// <c>WHERE</c> clause listing the server-derived blocked edge gids. Only
+    /// integers (formatted invariantly) are embedded; no user string ever enters
+    /// the SQL text.
+    /// </summary>
+    private static string BuildRouteEdgesSql(IReadOnlyList<long> blockedEdges)
+        => ApplyBlockedEdgeFilter(RouteBaseEdgesSql, blockedEdges);
+
+    /// <summary>
+    /// Appends a <c>WHERE gid NOT IN (...)</c> exclusion of the blocked edge gids to
+    /// a base edges-SQL. The base SQL has no existing <c>WHERE</c>, so a fresh
+    /// clause is appended. Returns the base SQL unchanged when nothing is blocked.
+    /// </summary>
+    private static string ApplyBlockedEdgeFilter(string baseEdgesSql, IReadOnlyList<long> blockedEdges)
+    {
+        if (blockedEdges.Count == 0)
+        {
+            return baseEdgesSql;
+        }
+
+        // gids are server-derived BIGINTs; format invariantly and join. This is the
+        // pgRouting-idiomatic exclusion: the inner edges-SQL is a string the
+        // function re-parses, so it cannot reference bound parameters — only safe,
+        // server-derived integer literals are embedded here.
+        var idList = string.Join(
+            ",",
+            blockedEdges.Select(id => id.ToString(CultureInfo.InvariantCulture)));
+        return $"{baseEdgesSql} WHERE gid NOT IN ({idList})";
     }
 
     /// <summary>
