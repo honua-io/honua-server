@@ -975,4 +975,131 @@ public class PostgresSqlFilterTranslatorTests
         result.Parameters[0].Should().Be(" ");
         result.Parameters[1].Should().Be("a b");
     }
+
+    // ------------------------------------------------------------------
+    // #1865 — LIKE ESCAPE, extended EXTRACT fields, CASE.
+    // Every test asserts the literal payloads remain bound parameters so the
+    // SQL-injection boundary is preserved.
+    // ------------------------------------------------------------------
+
+    [Fact]
+    public void Translate_ArcGisLikeEscape_EmitsEscapeClauseWithBoundParameters()
+    {
+        var expression = new GeoServicesSqlParser().Parse("name LIKE '%50!%%' ESCAPE '!'");
+
+        var result = _translator.Translate(expression, _resource);
+
+        // Both the pattern and the escape character are bound; only the column and
+        // the LIKE/ESCAPE keywords are interpolated.
+        result.Sql.Should().Be("\"name\" LIKE @p0 ESCAPE @p1");
+        result.Parameters.Should().HaveCount(2);
+        result.Parameters[0].Should().Be("%50!%%");
+        result.Parameters[1].Should().Be("!");
+    }
+
+    [Fact]
+    public void Translate_ArcGisNotLikeEscape_EmitsNotLikeEscapeClause()
+    {
+        var expression = new GeoServicesSqlParser().Parse("name NOT LIKE 'a!_b' ESCAPE '!'");
+
+        var result = _translator.Translate(expression, _resource);
+
+        result.Sql.Should().Be("\"name\" NOT LIKE @p0 ESCAPE @p1");
+        result.Parameters.Should().HaveCount(2);
+        result.Parameters[0].Should().Be("a!_b");
+        result.Parameters[1].Should().Be("!");
+    }
+
+    [Theory]
+    [InlineData("DOW", "DOW")]
+    [InlineData("DOY", "DOY")]
+    [InlineData("QUARTER", "QUARTER")]
+    [InlineData("WEEK", "WEEK")]
+    [InlineData("EPOCH", "EPOCH")]
+    public void Translate_ArcGisExtendedExtractField_EmitsExtractWithBoundComparand(string field, string sqlField)
+    {
+        var expression = new GeoServicesSqlParser().Parse($"EXTRACT({field} FROM timestamp) >= 1");
+
+        var result = _translator.Translate(expression, _resource);
+
+        result.Sql.Should().Be($"EXTRACT({sqlField} FROM \"timestamp\") >= @p0");
+        result.Parameters.Should().ContainSingle().Which.Should().Be(1L);
+    }
+
+    [Fact]
+    public void Translate_ArcGisSearchedCase_EmitsCaseExpressionWithBoundResults()
+    {
+        var expression = new GeoServicesSqlParser().Parse(
+            "CASE WHEN age >= 18 THEN 'adult' ELSE 'minor' END = 'adult'");
+
+        var result = _translator.Translate(expression, _resource);
+
+        result.Sql.Should().Be("(CASE WHEN \"age\" >= @p0 THEN @p1 ELSE @p2 END) = @p3");
+        result.Parameters.Should().HaveCount(4);
+        result.Parameters[0].Should().Be(18L);
+        result.Parameters[1].Should().Be("adult");
+        result.Parameters[2].Should().Be("minor");
+        result.Parameters[3].Should().Be("adult");
+    }
+
+    [Fact]
+    public void Translate_ArcGisSearchedCaseWithoutElse_OmitsElseBranch()
+    {
+        var expression = new GeoServicesSqlParser().Parse(
+            "CASE WHEN active = TRUE THEN 1 END > 0");
+
+        var result = _translator.Translate(expression, _resource);
+
+        result.Sql.Should().Be("(CASE WHEN \"active\" = @p0 THEN @p1 END) > @p2");
+        result.Parameters.Should().HaveCount(3);
+        result.Parameters[0].Should().Be(true);
+        result.Parameters[1].Should().Be(1L);
+        result.Parameters[2].Should().Be(0L);
+    }
+
+    [Fact]
+    public void Translate_ArcGisSimpleCase_DesugarsSelectorEqualityWithBoundValues()
+    {
+        var expression = new GeoServicesSqlParser().Parse(
+            "CASE status WHEN 'A' THEN 1 WHEN 'B' THEN 2 ELSE 0 END = 1");
+
+        var result = _translator.Translate(expression, _resource);
+
+        result.Sql.Should().Be(
+            "(CASE WHEN \"status\" = @p0 THEN @p1 WHEN \"status\" = @p2 THEN @p3 ELSE @p4 END) = @p5");
+        result.Parameters.Should().HaveCount(6);
+        result.Parameters[0].Should().Be("A");
+        result.Parameters[2].Should().Be("B");
+    }
+
+    // ---- Injection-safety proofs ----
+
+    [Fact]
+    public void Translate_LikeEscapeWithInjectionPayload_BindsPayloadNotInterpolated()
+    {
+        var expression = new GeoServicesSqlParser().Parse(
+            "name LIKE ''' OR 1=1 --' ESCAPE '!'");
+
+        var result = _translator.Translate(expression, _resource);
+
+        // The tautology payload never appears in the SQL string — it is a bound parameter.
+        result.Sql.Should().Be("\"name\" LIKE @p0 ESCAPE @p1");
+        result.Sql.Should().NotContain("OR 1=1");
+        result.Parameters[0].Should().Be("' OR 1=1 --");
+    }
+
+    [Fact]
+    public void Translate_CaseWithInjectionPayload_BindsAllBranchLiterals()
+    {
+        var expression = new GeoServicesSqlParser().Parse(
+            "CASE WHEN name = ''' OR 1=1 --' THEN 'x'' ; DROP TABLE features --' ELSE 'safe' END = 'safe'");
+
+        var result = _translator.Translate(expression, _resource);
+
+        result.Sql.Should().Be("(CASE WHEN \"name\" = @p0 THEN @p1 ELSE @p2 END) = @p3");
+        result.Sql.Should().NotContain("DROP TABLE");
+        result.Sql.Should().NotContain("OR 1=1");
+        result.Parameters[0].Should().Be("' OR 1=1 --");
+        result.Parameters[1].Should().Be("x' ; DROP TABLE features --");
+    }
 }

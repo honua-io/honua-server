@@ -221,7 +221,9 @@ public class GeoServicesSqlParserTests
     [Fact]
     public void Parse_ExtractUnsupportedField_ThrowsArgumentException()
     {
-        var act = () => _parser.Parse("EXTRACT(WEEK FROM created) >= 1");
+        // MILLENNIUM is a real Postgres field but is intentionally outside the allowlist,
+        // so it must still be rejected. (WEEK/DOW/etc. became supported in #1865.)
+        var act = () => _parser.Parse("EXTRACT(MILLENNIUM FROM created) >= 1");
 
         act.Should().Throw<ArgumentException>()
             .WithMessage("*Unsupported EXTRACT field*");
@@ -287,13 +289,173 @@ public class GeoServicesSqlParserTests
         function.Arguments.Should().HaveCount(1);
     }
 
+    // ------------------------------------------------------------------
+    // #1865 — extended grammar: LIKE ESCAPE, extra EXTRACT fields, CASE.
+    // ------------------------------------------------------------------
+
     [Fact]
-    public void Parse_LikeEscapeClause_ThrowsArgumentException()
+    public void Parse_LikeEscapeClause_ProducesLikeEscapeFunction()
     {
-        // LIKE ... ESCAPE is intentionally re-deferred (no ESCAPE node in the shared AST);
-        // it must be rejected rather than silently dropped.
-        var act = () => _parser.Parse("name LIKE '%50!%%' ESCAPE '!'");
+        var expression = _parser.Parse("name LIKE '%50!%%' ESCAPE '!'");
+
+        var function = (FunctionCall)expression;
+        function.FunctionName.Should().Be("LIKE_ESCAPE");
+        function.Arguments.Should().HaveCount(3);
+        ((PropertyReference)function.Arguments[0]).PropertyName.Should().Be("name");
+        ((Literal)function.Arguments[1]).Value.Should().Be("%50!%%");
+        ((Literal)function.Arguments[2]).Value.Should().Be("!");
+    }
+
+    [Fact]
+    public void Parse_NotLikeEscapeClause_ProducesNotLikeEscapeFunction()
+    {
+        var expression = _parser.Parse("name NOT LIKE 'a!_b' ESCAPE '!'");
+
+        var function = (FunctionCall)expression;
+        function.FunctionName.Should().Be("NOT_LIKE_ESCAPE");
+        function.Arguments.Should().HaveCount(3);
+        ((Literal)function.Arguments[2]).Value.Should().Be("!");
+    }
+
+    [Fact]
+    public void Parse_LikeWithoutEscape_StillProducesBinaryExpression()
+    {
+        var expression = _parser.Parse("name LIKE 'abc%'");
+
+        var binary = (BinaryExpression)expression;
+        binary.Operator.Should().Be(BinaryOperator.Like);
+    }
+
+    [Fact]
+    public void Parse_LikeEscapeMultiCharacter_ThrowsArgumentException()
+    {
+        var act = () => _parser.Parse("name LIKE 'a' ESCAPE '!!'");
+
+        act.Should().Throw<ArgumentException>()
+            .WithMessage("*single-character*");
+    }
+
+    [Fact]
+    public void Parse_LikeEscapeNonStringChar_ThrowsArgumentException()
+    {
+        var act = () => _parser.Parse("name LIKE 'a' ESCAPE 5");
+
+        act.Should().Throw<ArgumentException>()
+            .WithMessage("*single-character*");
+    }
+
+    [Theory]
+    [InlineData("DOW")]
+    [InlineData("DOY")]
+    [InlineData("QUARTER")]
+    [InlineData("WEEK")]
+    [InlineData("EPOCH")]
+    public void Parse_ExtendedExtractField_MapsToPrefixedFunction(string field)
+    {
+        var expression = _parser.Parse($"EXTRACT({field} FROM created) >= 1");
+
+        var binary = (BinaryExpression)expression;
+        var function = (FunctionCall)binary.Left;
+        function.FunctionName.Should().Be($"EXTRACT_{field}");
+        function.Arguments.Should().HaveCount(1);
+        ((PropertyReference)function.Arguments[0]).PropertyName.Should().Be("created");
+    }
+
+    [Fact]
+    public void Parse_ExtractTrulyUnsupportedField_StillThrows()
+    {
+        var act = () => _parser.Parse("EXTRACT(MILLENNIUM FROM created) >= 1");
+
+        act.Should().Throw<ArgumentException>()
+            .WithMessage("*Unsupported EXTRACT field*");
+    }
+
+    [Fact]
+    public void Parse_SearchedCase_ProducesCaseFunctionWithBranchesAndElse()
+    {
+        var expression = _parser.Parse(
+            "CASE WHEN age >= 18 THEN 'adult' WHEN age >= 13 THEN 'teen' ELSE 'child' END = 'adult'");
+
+        var binary = (BinaryExpression)expression;
+        var function = (FunctionCall)binary.Left;
+        function.FunctionName.Should().Be("CASE");
+        // 2 WHEN/THEN pairs (4) + ELSE (1) = 5 args (odd => trailing ELSE).
+        function.Arguments.Should().HaveCount(5);
+        ((BinaryExpression)function.Arguments[0]).Operator.Should().Be(BinaryOperator.GreaterThanOrEqual);
+        ((Literal)function.Arguments[1]).Value.Should().Be("adult");
+        ((Literal)function.Arguments[4]).Value.Should().Be("child");
+    }
+
+    [Fact]
+    public void Parse_SearchedCaseWithoutElse_ProducesEvenArgumentCount()
+    {
+        var expression = _parser.Parse("CASE WHEN active = TRUE THEN 1 END > 0");
+
+        var binary = (BinaryExpression)expression;
+        var function = (FunctionCall)binary.Left;
+        function.FunctionName.Should().Be("CASE");
+        function.Arguments.Should().HaveCount(2); // one WHEN/THEN, no ELSE
+    }
+
+    [Fact]
+    public void Parse_SimpleCase_DesugarsSelectorIntoEqualityConditions()
+    {
+        var expression = _parser.Parse(
+            "CASE status WHEN 'A' THEN 1 WHEN 'B' THEN 2 ELSE 0 END = 1");
+
+        var binary = (BinaryExpression)expression;
+        var function = (FunctionCall)binary.Left;
+        function.FunctionName.Should().Be("CASE");
+        function.Arguments.Should().HaveCount(5);
+
+        // Each WHEN value becomes `status = value`.
+        var firstCondition = (BinaryExpression)function.Arguments[0];
+        firstCondition.Operator.Should().Be(BinaryOperator.Equal);
+        ((PropertyReference)firstCondition.Left).PropertyName.Should().Be("status");
+        ((Literal)firstCondition.Right).Value.Should().Be("A");
+        ((Literal)function.Arguments[1]).Value.Should().Be(1L);
+    }
+
+    [Fact]
+    public void Parse_CaseMissingThen_ThrowsArgumentException()
+    {
+        var act = () => _parser.Parse("CASE WHEN age >= 18 'adult' END = 'adult'");
+
+        act.Should().Throw<ArgumentException>()
+            .WithMessage("*THEN*");
+    }
+
+    [Fact]
+    public void Parse_CaseMissingEnd_ThrowsArgumentException()
+    {
+        var act = () => _parser.Parse("CASE WHEN age >= 18 THEN 'adult'");
+
+        act.Should().Throw<ArgumentException>()
+            .WithMessage("*END*");
+    }
+
+    [Fact]
+    public void Parse_CaseWithNoBranches_ThrowsArgumentException()
+    {
+        var act = () => _parser.Parse("CASE ELSE 'x' END = 'x'");
 
         act.Should().Throw<ArgumentException>();
+    }
+
+    // Injection-attempt: a classic tautology / comment payload smuggled through string
+    // literals must survive intact inside string Literal nodes (it is the parser's job to
+    // keep it a value; the translator binds it as a parameter — proven in the translator
+    // injection tests).
+    [Fact]
+    public void Parse_CaseWithInjectionPayloadInLiterals_KeepsPayloadAsLiteralValues()
+    {
+        var expression = _parser.Parse(
+            "CASE WHEN name = ''' OR 1=1 --' THEN 'x'' ; DROP TABLE features --' ELSE 'safe' END = 'safe'");
+
+        var binary = (BinaryExpression)expression;
+        var function = (FunctionCall)binary.Left;
+        var condition = (BinaryExpression)function.Arguments[0];
+        ((Literal)condition.Right).Value.Should().Be("' OR 1=1 --");
+        ((Literal)function.Arguments[1]).Value.Should().Be("x' ; DROP TABLE features --");
     }
 }
