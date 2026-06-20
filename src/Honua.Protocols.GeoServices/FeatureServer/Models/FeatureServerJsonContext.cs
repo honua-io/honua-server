@@ -144,6 +144,10 @@ namespace Honua.Protocols.GeoServices.FeatureServer.Models;
 [JsonSerializable(typeof(ValidateSqlResponse))]
 // Not-implemented operation surfaces (spec-shaped honest responses)
 [JsonSerializable(typeof(QueryContingentValuesResponse))]
+[JsonSerializable(typeof(ContingentValuesDefinition))]
+[JsonSerializable(typeof(ContingentValueFieldGroup))]
+[JsonSerializable(typeof(ContingentValueRow))]
+[JsonSerializable(typeof(ContingentFieldValue))]
 [JsonSerializable(typeof(SharedTemplatesResponse))]
 [JsonSerializable(typeof(HtmlPopupResponse))]
 [JsonSerializable(typeof(HasAssetsResponse))]

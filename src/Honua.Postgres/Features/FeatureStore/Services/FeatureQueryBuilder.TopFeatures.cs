@@ -39,7 +39,9 @@ internal sealed partial class FeatureQueryBuilder
 
             // Honor outSR (query.OutputSrid) by routing geometry through the shared
             // geometry-select expression, which applies ST_Transform when an output SRID
-            // is requested — mirroring the normal query path (#1906).
+            // is requested (#1906) AND preserves Z/M through ST_AsEWKB when the query asks
+            // for it (#1907) — mirroring the normal query path. The shared expression
+            // already chooses ST_AsEWKB vs ST_AsBinary based on query.IncludeZ/IncludeM.
             sql.Append(", ");
             sql.Append(_geometryProcessor.GetGeometrySelectExpression(geometryStorageType, query));
 

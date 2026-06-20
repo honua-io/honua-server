@@ -324,7 +324,12 @@ public sealed class ReplicationDurabilityTests : IAsyncLifetime
 
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             var content = await response.Content.ReadAsStringAsync();
-            content.Should().Contain("initial extract exceeds the configured per-layer record limit");
+            // After the change-log baseline (migration 059), a gen-0 baseline replica resolves through
+            // the incremental change-log delta path rather than the all-features snapshot fallback, so an
+            // over-limit first sync is rejected as a per-layer *change* limit overflow. Both are correct
+            // 400s; assert on the stable "per-layer ... limit" semantics rather than the exact path text.
+            content.Should().Contain("exceeds the configured per-layer");
+            content.Should().Contain("limit");
         }
         finally
         {

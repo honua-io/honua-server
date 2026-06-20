@@ -66,6 +66,133 @@ internal static partial class RasterImportEndpoints
         _ = v1Group.MapGet("/formats", HandleGetRasterFormats)
             .WithName("GetRasterFormatsV1")
             .WithSummary("Get supported raster file formats");
+
+        _ = v1Group.MapDelete("/{rasterId:long}", HandleDeleteRaster)
+            .WithName("DeleteRasterV1")
+            .WithSummary("Delete an imported raster and its dependent statistics/tiles");
+
+        _ = v1Group.MapPatch("/{rasterId:long}", HandleUpdateRaster)
+            .WithName("UpdateRasterV1")
+            .WithSummary("Update an imported raster's name, description, or acquisition date")
+            .DisableAntiforgery();
+    }
+
+    /// <summary>
+    /// Delete an imported raster by id (#1875). Cascades to raster_statistics, raster_tiles, and
+    /// raster_sensor_metadata via the FK ON DELETE CASCADE. Returns 204 on success, 404 when the
+    /// raster does not exist.
+    /// </summary>
+    private static async Task<IResult> HandleDeleteRaster(long rasterId, HttpContext context)
+    {
+        var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
+        var store = context.RequestServices.GetRequiredService<IRasterStore>();
+
+        var layerId = await store.GetRasterLayerIdAsync(rasterId, cancellationToken);
+        if (layerId is null)
+        {
+            return Results.NotFound();
+        }
+
+        var deleted = await store.DeleteRasterAsync(layerId.Value, rasterId, cancellationToken);
+        if (!deleted)
+        {
+            return Results.NotFound();
+        }
+
+        var cacheInvalidator = context.RequestServices.GetService<OutputCacheInvalidationService>();
+        if (cacheInvalidator != null)
+        {
+            await cacheInvalidator.InvalidateLayerAsync(null, layerId.Value, cancellationToken);
+        }
+
+        return Results.NoContent();
+    }
+
+    /// <summary>
+    /// Update an imported raster's mutable descriptive metadata (#1875): name, description,
+    /// acquisition date. Returns the updated metadata on success, 404 when the raster does not
+    /// exist, 400 when the body carries no recognised fields or an invalid value.
+    /// </summary>
+    private static async Task<IResult> HandleUpdateRaster(
+        long rasterId,
+        UpdateRasterRequest request,
+        HttpContext context)
+    {
+        var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
+        var store = context.RequestServices.GetRequiredService<IRasterStore>();
+
+        if (request is null)
+        {
+            return Results.BadRequest("Request body is required.");
+        }
+
+        if (request.Name is not null && string.IsNullOrWhiteSpace(request.Name))
+        {
+            return Results.BadRequest("'name' must be non-empty when provided.");
+        }
+
+        // PATCH semantics: a property present in the body is applied; absent (null) is left
+        // unchanged. To clear the description or acquisition date, send the sentinel empty string
+        // (description) or the empty string (acquisitionDate), which maps to a null column value.
+        Optional<DateTimeOffset?> acquisitionUpdate = Optional.Unset<DateTimeOffset?>();
+        if (request.AcquisitionDate is { } rawAcquisition)
+        {
+            if (string.IsNullOrWhiteSpace(rawAcquisition))
+            {
+                acquisitionUpdate = Optional.Of<DateTimeOffset?>(null);
+            }
+            else if (DateTimeOffset.TryParse(
+                rawAcquisition, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsed))
+            {
+                acquisitionUpdate = Optional.Of<DateTimeOffset?>(parsed);
+            }
+            else
+            {
+                return Results.BadRequest("'acquisitionDate' must be a valid ISO 8601 timestamp.");
+            }
+        }
+
+        var update = new RasterMetadataUpdate
+        {
+            Name = request.Name,
+            Description = request.Description is null
+                ? Optional.Unset<string?>()
+                : Optional.Of<string?>(request.Description.Length == 0 ? null : request.Description),
+            AcquisitionDate = acquisitionUpdate,
+        };
+
+        if (!update.HasAnyChange)
+        {
+            return Results.BadRequest("At least one of 'name', 'description', or 'acquisitionDate' must be provided.");
+        }
+
+        var layerId = await store.GetRasterLayerIdAsync(rasterId, cancellationToken);
+        if (layerId is null)
+        {
+            return Results.NotFound();
+        }
+
+        var updated = await store.UpdateRasterMetadataAsync(layerId.Value, rasterId, update, cancellationToken);
+        if (updated is not { } info)
+        {
+            return Results.NotFound();
+        }
+
+        var cacheInvalidator = context.RequestServices.GetService<OutputCacheInvalidationService>();
+        if (cacheInvalidator != null)
+        {
+            await cacheInvalidator.InvalidateLayerAsync(null, layerId.Value, cancellationToken);
+        }
+
+        var response = new RasterMetadataResponse
+        {
+            RasterId = info.Id,
+            LayerId = info.LayerId,
+            Name = info.Name,
+            AcquisitionDate = info.AcquisitionDate,
+            ModifiedAt = info.ModifiedAt,
+        };
+        return Results.Json(response, RasterImportJsonContext.Default.RasterMetadataResponse);
     }
 
     /// <summary>
@@ -438,6 +565,52 @@ internal static partial class RasterImportEndpoints
         /// Format descriptions keyed by extension.
         /// </summary>
         public required Dictionary<string, string> FormatDescriptions { get; init; }
+    }
+
+    /// <summary>
+    /// PATCH body for updating an imported raster's mutable descriptive metadata (#1875). Each
+    /// field is optional (PATCH semantics): a field omitted from the JSON body (deserialized as
+    /// <c>null</c>) is left unchanged. To clear <see cref="Description"/> send an empty string; to
+    /// clear <see cref="AcquisitionDate"/> send an empty string.
+    /// </summary>
+    public sealed record UpdateRasterRequest
+    {
+        /// <summary>
+        /// New display name. Omit to leave unchanged; must be non-empty when present.
+        /// </summary>
+        public string? Name { get; init; }
+
+        /// <summary>
+        /// New description. Omit to leave unchanged; send an empty string to clear it.
+        /// </summary>
+        public string? Description { get; init; }
+
+        /// <summary>
+        /// New acquisition date as an ISO 8601 timestamp. Omit to leave unchanged; send an empty
+        /// string to clear it.
+        /// </summary>
+        public string? AcquisitionDate { get; init; }
+    }
+
+    /// <summary>
+    /// Response describing an imported raster's metadata after an update (#1875).
+    /// </summary>
+    public sealed record RasterMetadataResponse
+    {
+        /// <summary>Raster identifier.</summary>
+        public required long RasterId { get; init; }
+
+        /// <summary>Owning layer identifier.</summary>
+        public required int LayerId { get; init; }
+
+        /// <summary>Display name.</summary>
+        public required string Name { get; init; }
+
+        /// <summary>Acquisition timestamp, when set.</summary>
+        public DateTimeOffset? AcquisitionDate { get; init; }
+
+        /// <summary>Last modification timestamp.</summary>
+        public DateTimeOffset? ModifiedAt { get; init; }
     }
 
     private sealed record RasterImportParseResult

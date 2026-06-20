@@ -83,9 +83,23 @@ internal sealed class ImageServerFindHandler
                 return StandardErrorHelpers.CreateBadRequest(context, "Invalid ImageServer find filter.");
             }
 
-            var images = page.Items
-                .OrderBy(item => DistanceSortKey(item, target))
-                .ThenBy(static item => item.ObjectId)
+            // Orientation-ranked selection (#1880): when any candidate carries exterior
+            // orientation (off-nadir angle), prefer the most nadir-looking images at the target,
+            // breaking ties by footprint distance. Falls back to pure distance ranking when no
+            // candidate has orientation metadata (the common case for plain COGs).
+            var useOrientationRanking = page.Items.Any(static item =>
+                ImageServerSensorModel.TryReadOffNadirAngle(item.SensorMetadata) is not null);
+
+            var ordered = useOrientationRanking
+                ? page.Items
+                    .OrderBy(item => OffNadirSortKey(item))
+                    .ThenBy(item => DistanceSortKey(item, target))
+                    .ThenBy(static item => item.ObjectId)
+                : page.Items
+                    .OrderBy(item => DistanceSortKey(item, target))
+                    .ThenBy(static item => item.ObjectId);
+
+            var images = ordered
                 .Take(maxCount)
                 .Select(BuildImage)
                 .ToArray();
@@ -334,6 +348,14 @@ internal sealed class ImageServerFindHandler
             Cols = item.Width,
         };
     }
+
+    /// <summary>
+    /// Orientation sort key: the image's off-nadir angle (degrees from straight-down). Smaller is
+    /// better (more nadir, less oblique distortion over the target). Images without an off-nadir
+    /// angle sort last so metadata-bearing candidates are preferred.
+    /// </summary>
+    private static double OffNadirSortKey(ImageServerCatalogItem item)
+        => ImageServerSensorModel.TryReadOffNadirAngle(item.SensorMetadata) ?? double.MaxValue;
 
     private static double DistanceSortKey(ImageServerCatalogItem item, FindPoint target)
     {

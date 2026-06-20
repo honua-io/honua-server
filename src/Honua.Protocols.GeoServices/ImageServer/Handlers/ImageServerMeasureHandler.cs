@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Raster.Abstractions;
+using Honua.Core.Features.Raster.Domain;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Services;
 using Honua.Protocols.GeoServices.ImageServer.Models;
@@ -31,13 +32,16 @@ internal sealed class ImageServerMeasureHandler
 
     private readonly IRasterStore _rasterStore;
     private readonly ILogger<ImageServerMeasureHandler> _logger;
+    private readonly IElevationService? _elevationService;
 
     public ImageServerMeasureHandler(
         IRasterStore rasterStore,
-        ILogger<ImageServerMeasureHandler> logger)
+        ILogger<ImageServerMeasureHandler> logger,
+        IElevationService? elevationService = null)
     {
         _rasterStore = rasterStore ?? throw new ArgumentNullException(nameof(rasterStore));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _elevationService = elevationService;
     }
 
     /// <summary>
@@ -70,6 +74,20 @@ internal sealed class ImageServerMeasureHandler
             {
                 ImageServerLog.InvalidMeasureParameters(_logger, layerId, error ?? "Invalid measure parameter.");
                 return StandardErrorHelpers.CreateBadRequest(context, error ?? "Invalid measure parameter.");
+            }
+
+            var normalizedOperation = operation.ToLowerInvariant();
+
+            // DEM-backed height mensuration (#1879): heightFromBaseAndTop differences the ground
+            // elevation at the base point and the top point against the raster's associated DEM
+            // (raster_sensor_metadata.dem_source). Shadow-based height and pure-3D operations still
+            // require sensor exterior orientation / shadow geometry that is not modeled, so they
+            // keep the honest 501. Height ops with no DEM metadata also return 501.
+            if (normalizedOperation == "esrimensurationheightfrombaseandtop" && toGeometry is not null)
+            {
+                return await MeasureDemHeightAsync(
+                    context, layerId, raster, fromGeometry.Points[0], toGeometry.Value.Points[0],
+                    GetString(values, "linearUnit") ?? "esriMeters", cancellationToken).ConfigureAwait(false);
             }
 
             if (IsSensorDependentOperation(operation))
@@ -356,6 +374,81 @@ internal sealed class ImageServerMeasureHandler
             Area = CreateValue(area, responseAreaUnit),
             Perimeter = CreateValue(perimeter, responseLinearUnit),
         };
+    }
+
+    /// <summary>
+    /// DEM-backed height mensuration (#1879). Resolves the raster's associated DEM layer from
+    /// <c>raster_sensor_metadata.dem_source</c>, samples the ground elevation at the base and top
+    /// points, and returns their difference as the measured height. Returns 501 when no DEM is
+    /// modeled for the raster, when the DEM source is not a resolvable layer id, when no elevation
+    /// service is configured, or when either point falls outside the DEM coverage — never a faked
+    /// value.
+    /// </summary>
+    private async Task<IResult> MeasureDemHeightAsync(
+        HttpContext context,
+        int layerId,
+        RasterInfo raster,
+        MeasurePoint basePoint,
+        MeasurePoint topPoint,
+        string linearUnit,
+        CancellationToken cancellationToken)
+    {
+        const string SensorMetadataMissing =
+            "Height mensuration requires DEM/sensor metadata that is not modeled for this raster.";
+
+        if (_elevationService is null)
+        {
+            return StandardErrorHelpers.CreateNotImplemented(context, SensorMetadataMissing);
+        }
+
+        var metadata = await _rasterStore.GetSensorMetadataAsync([raster.Id], cancellationToken).ConfigureAwait(false);
+        var sensor = metadata.TryGetValue(raster.Id, out var meta) ? meta : raster.SensorMetadata;
+        var demSource = sensor?.DemSource;
+        if (string.IsNullOrWhiteSpace(demSource) ||
+            !int.TryParse(demSource, NumberStyles.Integer, CultureInfo.InvariantCulture, out var demLayerId))
+        {
+            // No DEM modeled (or a non-layer-id source we cannot resolve yet): be honest with 501.
+            return StandardErrorHelpers.CreateNotImplemented(context, SensorMetadataMissing);
+        }
+
+        ElevationPointResult baseElevation;
+        ElevationPointResult topElevation;
+        try
+        {
+            baseElevation = await _elevationService.QueryPointAsync(
+                demLayerId, basePoint.X, basePoint.Y, basePoint.Srid, RasterMergeStrategy.Newest, cancellationToken)
+                .ConfigureAwait(false);
+            topElevation = await _elevationService.QueryPointAsync(
+                demLayerId, topPoint.X, topPoint.Y, topPoint.Srid, RasterMergeStrategy.Newest, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (ElevationQueryException ex)
+        {
+            ImageServerLog.InvalidMeasureParameters(_logger, layerId, ex.Message);
+            return StandardErrorHelpers.CreateNotImplemented(context, SensorMetadataMissing);
+        }
+
+        if (baseElevation.Elevation is not { } baseValue || topElevation.Elevation is not { } topValue)
+        {
+            // The DEM does not cover one of the points: return 501 rather than a fabricated height.
+            return StandardErrorHelpers.CreateNotImplemented(
+                context,
+                "Height mensuration could not sample the DEM at the supplied base/top points.");
+        }
+
+        var heightMeters = Math.Abs(topValue - baseValue);
+        var (height, unit) = ConvertLinear(heightMeters, linearUnit);
+
+        var sensorName = sensor?.SensorName ?? "Unknown";
+        var response = new ImageServerMeasureResponse
+        {
+            Name = raster.Name,
+            SensorName = sensorName,
+            Height = CreateValue(height, unit),
+        };
+
+        ImageServerLog.MeasureCompleted(_logger, layerId, "esriMensurationHeightFromBaseAndTop", 0);
+        return Results.Json(response, ImageServerJsonContext.Default.ImageServerMeasureResponse);
     }
 
     private static bool IsSensorDependentOperation(string operation)

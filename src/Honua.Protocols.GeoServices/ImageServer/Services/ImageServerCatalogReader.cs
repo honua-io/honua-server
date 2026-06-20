@@ -89,6 +89,14 @@ internal sealed record ImageServerCatalogItem
     /// SRID of the footprint coordinates. Equal to the source raster extent SRID.
     /// </summary>
     public int? FootprintSrid { get; init; }
+
+    /// <summary>
+    /// Optional sensor/camera/orientation/RPC metadata hydrated from the
+    /// <c>raster_sensor_metadata</c> companion table. <c>null</c> for plain rasters with no
+    /// modeled sensor metadata (the common case). Used by orientation-ranked find (#1880),
+    /// height mensuration (#1879), and image-coordinate-system project warps (#1881).
+    /// </summary>
+    public RasterSensorMetadata? SensorMetadata { get; init; }
 }
 
 /// <summary>
@@ -207,13 +215,21 @@ internal sealed class ImageServerCatalogReader : IImageServerCatalogReader
             !query.ReturnCountOnly &&
             !query.ReturnExtentOnly;
 
+        // Hydrate sensor/orientation metadata for the layer's rasters in a single batch. Most
+        // rasters carry none, so this is usually an empty lookup; the catalog item exposes it
+        // for orientation-ranked find, height mensuration, and image-coordinate-system warps.
+        var sensorMetadata = await _rasterStore
+            .GetSensorMetadataAsync(rasters.Select(static r => r.Id).ToArray(), cancellationToken)
+            .ConfigureAwait(false);
+
         // Project each raster row into the catalog item shape Esri expects.
         // We need to retain the source raster reference so the aggregate extent uses the
         // same filtered set as the returned features.
         var projected = new List<(ImageServerCatalogItem Item, RasterInfo Source)>(rasters.Length);
         foreach (var raster in rasters)
         {
-            projected.Add((ProjectRaster(raster, includeGeometry), raster));
+            var sensor = sensorMetadata.TryGetValue(raster.Id, out var meta) ? meta : raster.SensorMetadata;
+            projected.Add((ProjectRaster(raster, includeGeometry, sensor), raster));
         }
 
         if (query.Time.HasValue)
@@ -619,7 +635,10 @@ internal sealed class ImageServerCatalogReader : IImageServerCatalogReader
         return (minX, minY, maxX, maxY);
     }
 
-    private static ImageServerCatalogItem ProjectRaster(RasterInfo raster, bool includeGeometry)
+    private static ImageServerCatalogItem ProjectRaster(
+        RasterInfo raster,
+        bool includeGeometry,
+        RasterSensorMetadata? sensorMetadata)
     {
         var pixelSizeX = 0d;
         var pixelSizeY = 0d;
@@ -676,7 +695,8 @@ internal sealed class ImageServerCatalogReader : IImageServerCatalogReader
             AcquisitionDate = raster.AcquisitionDate ?? raster.CreatedAt,
             CreatedAt = raster.CreatedAt,
             FootprintRings = rings,
-            FootprintSrid = extent?.Srid
+            FootprintSrid = extent?.Srid,
+            SensorMetadata = sensorMetadata,
         };
     }
 }

@@ -141,6 +141,7 @@ public sealed record MetadataV2Resource
     private IReadOnlyList<MetadataV2Relationship>? _relationships;
     private IReadOnlyList<string>? _styleResourceIds;
     private IReadOnlyList<MetadataV2AttributeRule>? _attributeRules;
+    private IReadOnlyList<MetadataV2ContingentValueGroup>? _contingentValueGroups;
     private IReadOnlyDictionary<string, JsonElement>? _extensions;
 
     /// <summary>
@@ -266,6 +267,19 @@ public sealed record MetadataV2Resource
     {
         get => _attributeRules ?? Array.Empty<MetadataV2AttributeRule>();
         init => _attributeRules = value;
+    }
+
+    /// <summary>
+    /// Esri-style contingent-value groups attached to this resource — cross-field value-combination
+    /// constraints layered on top of the per-field coded-value/range domains. Imported alongside
+    /// domains and subtypes from an Esri source layer and served on the FeatureServer service-level
+    /// <c>queryContingentValues</c> operation. Empty for resources with no contingent values (#1878).
+    /// </summary>
+    [JsonPropertyName("contingentValueGroups")]
+    public IReadOnlyList<MetadataV2ContingentValueGroup> ContingentValueGroups
+    {
+        get => _contingentValueGroups ?? Array.Empty<MetadataV2ContingentValueGroup>();
+        init => _contingentValueGroups = value;
     }
 
     /// <summary>

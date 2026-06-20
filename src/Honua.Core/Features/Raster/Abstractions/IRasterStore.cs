@@ -223,6 +223,56 @@ public interface IRasterStore
     Task<RasterInfo[]> ListRastersAsync(int layerId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Retrieves the sensor/camera/orientation/RPC metadata rows for the supplied rasters
+    /// from the <c>raster_sensor_metadata</c> companion table, keyed by raster id. Rasters
+    /// without a companion row are omitted from the result. Returns an empty dictionary when
+    /// the companion table is not provisioned (degraded-deployment guard), so callers degrade
+    /// gracefully to the no-sensor-metadata path.
+    /// </summary>
+    /// <param name="rasterIds">Raster identifiers to hydrate.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Sensor metadata keyed by raster id; entries are present only when modeled.</returns>
+    Task<IReadOnlyDictionary<long, RasterSensorMetadata>> GetSensorMetadataAsync(
+        IReadOnlyCollection<long> rasterIds,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Resolves the layer that owns a raster, given only the raster id. Returns
+    /// <see langword="null"/> when no raster with that id exists. Used by the admin raster CRUD
+    /// surface where the route is keyed by raster id.
+    /// </summary>
+    /// <param name="rasterId">Raster identifier to resolve.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The owning layer id, or <see langword="null"/> when the raster does not exist.</returns>
+    Task<int?> GetRasterLayerIdAsync(long rasterId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Deletes a raster and all dependent rows (statistics, tiles, sensor metadata cascade)
+    /// from a layer.
+    /// </summary>
+    /// <param name="layerId">Layer identifier containing the raster.</param>
+    /// <param name="rasterId">Raster identifier to delete.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns><see langword="true"/> when a row was deleted; <see langword="false"/> when no matching raster existed.</returns>
+    Task<bool> DeleteRasterAsync(int layerId, long rasterId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Updates the mutable descriptive metadata (name, description, acquisition date) of a
+    /// raster. Only the fields present in <paramref name="update"/> are modified; absent fields
+    /// are left unchanged.
+    /// </summary>
+    /// <param name="layerId">Layer identifier containing the raster.</param>
+    /// <param name="rasterId">Raster identifier to update.</param>
+    /// <param name="update">Fields to update; unset fields are left unchanged.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The updated raster metadata, or <see langword="null"/> when no matching raster existed.</returns>
+    Task<RasterInfo?> UpdateRasterMetadataAsync(
+        int layerId,
+        long rasterId,
+        RasterMetadataUpdate update,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Computes histograms for the requested bands of a raster.
     /// </summary>
     /// <param name="layerId">Layer identifier containing the raster.</param>

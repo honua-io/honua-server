@@ -334,6 +334,57 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
     }
 
     /// <summary>
+    /// Sets (or clears) the Esri contingent-value groups on the resource published at
+    /// <paramref name="layerIndex"/> so the FeatureServer service-level
+    /// <c>queryContingentValues</c> serving can be exercised end-to-end against the served
+    /// graph (honua-server#1878).
+    /// </summary>
+    internal static async Task UpdateResourceContingentValueGroupsAsync(
+        WebAppFixture fixture,
+        int layerIndex,
+        IReadOnlyList<MetadataV2ContingentValueGroup>? contingentValueGroups,
+        CancellationToken cancellationToken = default)
+    {
+        var provider = RequireProvider(fixture);
+
+        var snapshot = await provider.GetCurrentAsync(cancellationToken);
+        var pub = snapshot.Graph.Publications.FirstOrDefault(p => p.LayerIndex == layerIndex);
+        if (pub is null)
+        {
+            throw new InvalidOperationException(
+                $"No publication for layer {layerIndex} in the test V2 graph.");
+        }
+
+        var resources = snapshot.Graph.Resources.ToArray();
+        var mutated = false;
+        for (var i = 0; i < resources.Length; i++)
+        {
+            if (!string.Equals(resources[i].Metadata.Id, pub.ResourceId, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            resources[i] = resources[i] with
+            {
+                ContingentValueGroups = contingentValueGroups ?? Array.Empty<MetadataV2ContingentValueGroup>()
+            };
+            mutated = true;
+        }
+
+        if (!mutated)
+        {
+            throw MissingResourceMutation(layerIndex, pub.ResourceId, nameof(UpdateResourceContingentValueGroupsAsync));
+        }
+
+        var updatedGraph = snapshot.Graph with
+        {
+            Resources = resources,
+            Revision = snapshot.Graph.Revision + 1,
+        };
+        provider.SetGraph(updatedGraph);
+    }
+
+    /// <summary>
     /// Renames the resource bound to the publication with <paramref name="layerIndex"/>.
     /// Mirrors the v1 layer-rename behaviour CITE-conformance tests depend on.
     /// </summary>

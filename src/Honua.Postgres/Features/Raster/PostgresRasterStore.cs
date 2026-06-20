@@ -51,6 +51,7 @@ internal sealed class PostgresRasterStore : IRasterStore
     private readonly string _rasterStatisticsTable;
     private readonly string _rasterLayerStatisticsTable;
     private readonly string _rasterTilesTable;
+    private readonly string _rasterSensorMetadataTable;
     private readonly string _featuresTable;
 
     public PostgresRasterStore(
@@ -65,6 +66,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         _rasterStatisticsTable = SchemaSearchPath.QualifyTable("raster_statistics", schemaName);
         _rasterLayerStatisticsTable = SchemaSearchPath.QualifyTable("raster_layer_statistics", schemaName);
         _rasterTilesTable = SchemaSearchPath.QualifyTable("raster_tiles", schemaName);
+        _rasterSensorMetadataTable = SchemaSearchPath.QualifyTable("raster_sensor_metadata", schemaName);
         _featuresTable = SchemaSearchPath.QualifyTable(DatabaseSchema.FeaturesTable, schemaName);
     }
 
@@ -3435,6 +3437,180 @@ internal sealed class PostgresRasterStore : IRasterStore
         return rasters.ToArray();
     }
 
+    /// <inheritdoc />
+    public async Task<IReadOnlyDictionary<long, RasterSensorMetadata>> GetSensorMetadataAsync(
+        IReadOnlyCollection<long> rasterIds,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(rasterIds);
+        if (rasterIds.Count == 0)
+        {
+            return EmptySensorMetadata;
+        }
+
+        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT raster_data_id, sensor_name, camera_model,
+                   interior_orientation::text AS interior_orientation,
+                   exterior_orientation::text AS exterior_orientation,
+                   rpc::text AS rpc,
+                   dem_source, created_at
+            FROM {_rasterSensorMetadataTable}
+            WHERE raster_data_id = ANY(@rasterIds)
+            """;
+        AddParameter(command, "@rasterIds", rasterIds.ToArray());
+
+        var result = new Dictionary<long, RasterSensorMetadata>(rasterIds.Count);
+        try
+        {
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            var idOrd = reader.GetOrdinal("raster_data_id");
+            var sensorNameOrd = reader.GetOrdinal("sensor_name");
+            var cameraModelOrd = reader.GetOrdinal("camera_model");
+            var interiorOrd = reader.GetOrdinal("interior_orientation");
+            var exteriorOrd = reader.GetOrdinal("exterior_orientation");
+            var rpcOrd = reader.GetOrdinal("rpc");
+            var demOrd = reader.GetOrdinal("dem_source");
+            var createdOrd = reader.GetOrdinal("created_at");
+
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                var id = reader.GetInt64(idOrd);
+                result[id] = new RasterSensorMetadata
+                {
+                    RasterDataId = id,
+                    SensorName = reader.IsDBNull(sensorNameOrd) ? null : reader.GetString(sensorNameOrd),
+                    CameraModel = reader.IsDBNull(cameraModelOrd) ? null : reader.GetString(cameraModelOrd),
+                    InteriorOrientationJson = reader.IsDBNull(interiorOrd) ? null : reader.GetString(interiorOrd),
+                    ExteriorOrientationJson = reader.IsDBNull(exteriorOrd) ? null : reader.GetString(exteriorOrd),
+                    RpcJson = reader.IsDBNull(rpcOrd) ? null : reader.GetString(rpcOrd),
+                    DemSource = reader.IsDBNull(demOrd) ? null : reader.GetString(demOrd),
+                    CreatedAt = reader.GetDateTime(createdOrd),
+                };
+            }
+        }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UndefinedTable)
+        {
+            // Companion table not provisioned on this deployment: degrade gracefully to the
+            // no-sensor-metadata path rather than failing the read.
+            PostgresRasterLog.SensorMetadataTableMissing(_logger, ex);
+            return EmptySensorMetadata;
+        }
+
+        return result;
+    }
+
+    /// <inheritdoc />
+    public async Task<int?> GetRasterLayerIdAsync(long rasterId, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT layer_id
+            FROM {_rasterDataTable}
+            WHERE id = @rasterId
+            """;
+        AddParameter(command, "@rasterId", rasterId);
+
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return result is null or DBNull ? null : Convert.ToInt32(result, CultureInfo.InvariantCulture);
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> DeleteRasterAsync(int layerId, long rasterId, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+        // raster_statistics, raster_tiles, and raster_sensor_metadata all FK to raster_data
+        // with ON DELETE CASCADE, so a single delete removes the dependent rows atomically.
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            DELETE FROM {_rasterDataTable}
+            WHERE layer_id = @layerId AND id = @rasterId
+            """;
+        AddParameter(command, "@layerId", layerId);
+        AddParameter(command, "@rasterId", rasterId);
+
+        var affected = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        if (affected > 0)
+        {
+            PostgresRasterLog.RasterDeleted(_logger, layerId, rasterId);
+        }
+        else
+        {
+            PostgresRasterLog.RasterNotFound(_logger, layerId, rasterId);
+        }
+
+        return affected > 0;
+    }
+
+    /// <inheritdoc />
+    public async Task<RasterInfo?> UpdateRasterMetadataAsync(
+        int layerId,
+        long rasterId,
+        RasterMetadataUpdate update,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(update);
+        if (!update.HasAnyChange)
+        {
+            // Nothing to change; return the current row (or null when absent).
+            return await GetRasterInfoAsync(layerId, rasterId, cancellationToken).ConfigureAwait(false);
+        }
+
+        var setClauses = new List<string>();
+        var parameters = new List<(string Name, object? Value)>();
+
+        if (update.Name is { } name)
+        {
+            setClauses.Add("name = @name");
+            parameters.Add(("@name", name));
+        }
+
+        if (update.Description.IsSet)
+        {
+            setClauses.Add("description = @description");
+            parameters.Add(("@description", update.Description.Value));
+        }
+
+        if (update.AcquisitionDate.IsSet)
+        {
+            setClauses.Add("acquisition_date = @acquisitionDate");
+            parameters.Add(("@acquisitionDate", update.AcquisitionDate.Value?.UtcDateTime));
+        }
+
+        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            UPDATE {_rasterDataTable}
+            SET {string.Join(", ", setClauses)}
+            WHERE layer_id = @layerId AND id = @rasterId
+            """;
+        AddParameter(command, "@layerId", layerId);
+        AddParameter(command, "@rasterId", rasterId);
+        foreach (var (parameterName, value) in parameters)
+        {
+            AddNullableParameter(command, parameterName, value);
+        }
+
+        var affected = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        if (affected == 0)
+        {
+            PostgresRasterLog.RasterNotFound(_logger, layerId, rasterId);
+            return null;
+        }
+
+        PostgresRasterLog.RasterMetadataUpdated(_logger, layerId, rasterId);
+        return await GetRasterInfoAsync(layerId, rasterId, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static readonly IReadOnlyDictionary<long, RasterSensorMetadata> EmptySensorMetadata =
+        new Dictionary<long, RasterSensorMetadata>();
+
     // =============================================================================
     // Private helpers
     // =============================================================================
@@ -3560,4 +3736,12 @@ internal sealed class PostgresRasterStore : IRasterStore
 
     private static void AddParameter(DbCommand command, string name, object value)
         => command.AddParameter(name, value);
+
+    private static void AddNullableParameter(DbCommand command, string name, object? value)
+    {
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = name;
+        parameter.Value = value ?? DBNull.Value;
+        command.Parameters.Add(parameter);
+    }
 }

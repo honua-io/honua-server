@@ -257,6 +257,141 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task DbUpMigrations_RasterSensorMetadata_CreatesCompanionTableAndCascades()
+    {
+        // Arrange — run the full Server migration set. Migration 060 guards on raster_data, which
+        // is provisioned outside the Server set, so on a fresh schema it is a no-op until the raster
+        // schema exists. After provisioning raster_data we re-run the embedded 060 script (it is
+        // idempotent / IF NOT EXISTS) and assert the companion table + FK cascade.
+        var connectionStringBuilder = new Npgsql.NpgsqlConnectionStringBuilder(_connectionString)
+        {
+            SearchPath = $"{_schemaName},public"
+        };
+
+        var upgrader = DeployChanges.To
+            .PostgresqlDatabase(connectionStringBuilder.ToString(), _schemaName)
+            .JournalToPostgresqlTable(_schemaName, "schema_versions")
+            .WithScriptsEmbeddedInAssembly(Assembly.GetAssembly(typeof(Program))!)
+            .WithTransaction()
+            .Build();
+
+        DbUp.Engine.DatabaseUpgradeResult migrationResult = null!;
+        await _postgres.RunUnderSchemaMutationLockAsync(() =>
+        {
+            migrationResult = upgrader.PerformUpgrade();
+            return Task.CompletedTask;
+        });
+        migrationResult.Successful.Should().BeTrue($"migrations should complete successfully. Error: {migrationResult.Error}");
+
+        await using var connection = await _postgres.GetConnectionAsync(_schemaName);
+
+        // Provision the raster_data parent (normally created with the raster schema), then apply
+        // the embedded 060 migration SQL so the guarded companion table is created.
+        await using (var createParent = connection.CreateCommand())
+        {
+            createParent.CommandText = $"""
+                CREATE TABLE IF NOT EXISTS {_schemaName}.raster_data (
+                    id BIGSERIAL PRIMARY KEY,
+                    layer_id INTEGER NOT NULL,
+                    name VARCHAR(255) NOT NULL,
+                    raster raster NOT NULL
+                );
+                """;
+            await createParent.ExecuteNonQueryAsync();
+        }
+
+        // The shipped migration hard-codes the honua.* schema (matching the runtime deployment).
+        // Retarget it to the isolated test schema so this round-trip stays parallel-safe and does
+        // not collide with the shared honua schema other tests use.
+        var migrationSql = (await ReadEmbeddedMigrationAsync("060_AddRasterSensorMetadata.sql"))
+            .Replace("honua.", $"{_schemaName}.", StringComparison.Ordinal);
+        await using (var apply = connection.CreateCommand())
+        {
+            apply.CommandText = $"SET search_path TO {_schemaName}, public; {migrationSql}";
+            await apply.ExecuteNonQueryAsync();
+        }
+
+        // Assert the companion table exists.
+        await using (var tableCmd = connection.CreateCommand())
+        {
+            tableCmd.CommandText = $"""
+                SELECT COUNT(*)::int FROM information_schema.tables
+                WHERE table_schema = '{_schemaName}' AND table_name = 'raster_sensor_metadata'
+                """;
+            var exists = (int)(await tableCmd.ExecuteScalarAsync())!;
+            exists.Should().Be(1, "the raster_sensor_metadata companion table should be created");
+        }
+
+        // Insert a parent raster + a sensor metadata row, then delete the parent and assert the
+        // ON DELETE CASCADE removed the companion row (round-trip).
+        long rasterId;
+        await using (var insertParent = connection.CreateCommand())
+        {
+            insertParent.CommandText = $"""
+                INSERT INTO {_schemaName}.raster_data (layer_id, name, raster)
+                SELECT 4242, 'sensor-raster',
+                       ST_AddBand(ST_MakeEmptyRaster(1, 1, 0, 1, 1, -1, 0, 0, 4326), '8BUI'::text, 1, NULL)
+                RETURNING id;
+                """;
+            rasterId = (long)(await insertParent.ExecuteScalarAsync())!;
+        }
+
+        await using (var insertSensor = connection.CreateCommand())
+        {
+            insertSensor.CommandText = $"""
+                INSERT INTO {_schemaName}.raster_sensor_metadata
+                    (raster_data_id, sensor_name, exterior_orientation, rpc, dem_source)
+                VALUES (@id, 'WorldView-3', @exterior::jsonb, @rpc::jsonb, '99');
+                """;
+            insertSensor.Parameters.AddWithValue("id", rasterId);
+            insertSensor.Parameters.AddWithValue("exterior", """{"offNadirAngle": 12.5}""");
+            insertSensor.Parameters.AddWithValue("rpc", """{"sampOff": 0}""");
+            await insertSensor.ExecuteNonQueryAsync();
+        }
+
+        await using (var readback = connection.CreateCommand())
+        {
+            readback.CommandText = $"""
+                SELECT sensor_name, exterior_orientation ->> 'offNadirAngle', dem_source
+                FROM {_schemaName}.raster_sensor_metadata WHERE raster_data_id = @id
+                """;
+            readback.Parameters.AddWithValue("id", rasterId);
+            await using var reader = await readback.ExecuteReaderAsync();
+            (await reader.ReadAsync()).Should().BeTrue();
+            reader.GetString(0).Should().Be("WorldView-3");
+            reader.GetString(1).Should().Be("12.5");
+            reader.GetString(2).Should().Be("99");
+        }
+
+        await using (var deleteParent = connection.CreateCommand())
+        {
+            deleteParent.CommandText = $"DELETE FROM {_schemaName}.raster_data WHERE id = @id";
+            deleteParent.Parameters.AddWithValue("id", rasterId);
+            await deleteParent.ExecuteNonQueryAsync();
+        }
+
+        await using (var cascadeCmd = connection.CreateCommand())
+        {
+            cascadeCmd.CommandText = $"""
+                SELECT COUNT(*)::int FROM {_schemaName}.raster_sensor_metadata WHERE raster_data_id = @id
+                """;
+            cascadeCmd.Parameters.AddWithValue("id", rasterId);
+            var remaining = (int)(await cascadeCmd.ExecuteScalarAsync())!;
+            remaining.Should().Be(0, "deleting the parent raster should cascade-delete the sensor metadata row");
+        }
+    }
+
+    private static async Task<string> ReadEmbeddedMigrationAsync(string scriptName)
+    {
+        var assembly = Assembly.GetAssembly(typeof(Program))!;
+        var resourceName = assembly.GetManifestResourceNames()
+            .Single(name => name.EndsWith(scriptName, StringComparison.Ordinal));
+        await using var stream = assembly.GetManifestResourceStream(resourceName)!;
+        using var streamReader = new StreamReader(stream);
+        return await streamReader.ReadToEndAsync();
+    }
+
+    [Fact]
     public async Task DbUpMigrations_WithInvalidConnectionString_FailsGracefully()
     {
         // Arrange

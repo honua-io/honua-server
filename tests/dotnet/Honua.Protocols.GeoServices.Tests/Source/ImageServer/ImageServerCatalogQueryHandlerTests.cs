@@ -906,6 +906,8 @@ public class ImageServerCatalogQueryHandlerTests
     {
         _rasterStore.ListRastersAsync(1, Arg.Any<CancellationToken>())
             .Returns(rasters);
+        _rasterStore.GetSensorMetadataAsync(Arg.Any<IReadOnlyCollection<long>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<long, RasterSensorMetadata>());
     }
 
     private static Dictionary<string, StringValues> EmptyValues()

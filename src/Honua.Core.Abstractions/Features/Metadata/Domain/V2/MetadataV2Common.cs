@@ -617,6 +617,104 @@ public sealed record MetadataV2SubtypeFieldOverride
 }
 
 /// <summary>
+/// Esri-style contingent-value group attached to a resource. A contingent-value group
+/// constrains the combinations of values that two or more fields may take together,
+/// layered on top of the per-field coded-value/range domains already modeled by
+/// <see cref="MetadataV2FieldDomain"/> and <see cref="MetadataV2Subtypes"/>. Each
+/// <see cref="ContingentValues"/> row enumerates an allowed combination of the group's
+/// <see cref="Fields"/> for an optional subtype. A group marked <see cref="Restrictive"/>
+/// permits only the enumerated combinations; a non-restrictive group is advisory. Imported
+/// alongside domains and subtypes from an Esri source layer and served on the FeatureServer
+/// service-level <c>queryContingentValues</c> operation. Empty for resources with no
+/// contingent values, where the operation returns an empty definition collection (#1878).
+/// </summary>
+public sealed record MetadataV2ContingentValueGroup
+{
+    /// <summary>Stable contingent-value group name (unique within the resource).</summary>
+    [JsonPropertyName("name")]
+    public string Name { get; init; } = string.Empty;
+
+    /// <summary>
+    /// When <see langword="true"/> only the enumerated <see cref="ContingentValues"/>
+    /// combinations are valid; when <see langword="false"/> the group is advisory and edits
+    /// outside the enumerated combinations are permitted. Defaults to restrictive, matching
+    /// the common Esri authoring intent.
+    /// </summary>
+    [JsonPropertyName("restrictive")]
+    public bool Restrictive { get; init; } = true;
+
+    /// <summary>
+    /// Ordered names of the fields whose value combinations this group constrains. Each entry
+    /// references a declared <see cref="MetadataV2Resource.SchemaFields"/> entry.
+    /// </summary>
+    [JsonPropertyName("fields")]
+    public IReadOnlyList<string> Fields { get; init; } = Array.Empty<string>();
+
+    /// <summary>
+    /// Enumerated allowed value combinations for the group's <see cref="Fields"/>. Ordered
+    /// deterministically by <see cref="MetadataV2ContingentValue.Id"/> so the served document
+    /// and the compat-compile snapshot are stable.
+    /// </summary>
+    [JsonPropertyName("contingentValues")]
+    public IReadOnlyList<MetadataV2ContingentValue> ContingentValues { get; init; }
+        = Array.Empty<MetadataV2ContingentValue>();
+}
+
+/// <summary>
+/// A single allowed value combination within a <see cref="MetadataV2ContingentValueGroup"/>.
+/// The <see cref="Values"/> dictionary maps each constrained field name to the value (a coded
+/// value or a numeric range) it may take in this combination.
+/// </summary>
+public sealed record MetadataV2ContingentValue
+{
+    /// <summary>Stable integer id of the combination within its owning group.</summary>
+    [JsonPropertyName("id")]
+    public int Id { get; init; }
+
+    /// <summary>
+    /// Subtype code this combination applies to, or <c>null</c> when the combination applies to
+    /// every subtype (or the resource declares no subtypes). JSON-typed to match the subtype
+    /// field's value type.
+    /// </summary>
+    [JsonPropertyName("subtypeCode")]
+    public JsonElement? SubtypeCode { get; init; }
+
+    /// <summary>
+    /// The allowed value for each constrained field in this combination, keyed by field name
+    /// (case-insensitive). Empty maps are not expected; a combination always constrains its
+    /// group's fields.
+    /// </summary>
+    [JsonPropertyName("values")]
+    public IReadOnlyDictionary<string, MetadataV2ContingentFieldValue> Values { get; init; }
+        = new Dictionary<string, MetadataV2ContingentFieldValue>(StringComparer.OrdinalIgnoreCase);
+}
+
+/// <summary>
+/// The value a single field may take within a <see cref="MetadataV2ContingentValue"/>
+/// combination — either a discrete <see cref="Code"/> (referencing the field's coded-value
+/// domain), a numeric <see cref="Range"/> (two-element [min, max]), <c>any</c> value, or
+/// <c>null</c>. Exactly one of the value-carrying members is set; <see cref="Type"/> selects which.
+/// </summary>
+public sealed record MetadataV2ContingentFieldValue
+{
+    /// <summary>
+    /// Value kind. Canonical values: <c>code</c> (discrete coded value in <see cref="Code"/>),
+    /// <c>range</c> (numeric range in <see cref="Range"/>), <c>any</c> (any value permitted), or
+    /// <c>null</c> (only null permitted). Defaults to <c>any</c>.
+    /// </summary>
+    [JsonPropertyName("type")]
+    public string Type { get; init; } = "any";
+
+    /// <summary>Discrete coded value when <see cref="Type"/> is <c>code</c>, JSON-typed to match the field.</summary>
+    [JsonPropertyName("code")]
+    public JsonElement? Code { get; init; }
+
+    /// <summary>Two-element [min, max] range when <see cref="Type"/> is <c>range</c>, JSON-typed to match the field.</summary>
+    [JsonPropertyName("range")]
+    public IReadOnlyList<JsonElement>? Range { get; init; }
+}
+
+/// <summary>
 /// Esri-style attribute rule attached to a resource. Attribute rules are the modern
 /// sibling to coded-value/range domains: they fire on the edit path to either compute
 /// a field value (<c>calculation</c>), reject a violating edit (<c>constraint</c>), or
