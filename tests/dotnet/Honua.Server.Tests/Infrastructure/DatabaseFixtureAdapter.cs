@@ -50,4 +50,9 @@ public sealed class DatabaseFixtureAdapter : IDatabaseFixture
     {
         await _postgresFixture.ExecuteAsync(sql, schemaName);
     }
+
+    public async Task ApplyGlobalSeedSqlAsync(string sql, string? schemaName = null)
+    {
+        await _postgresFixture.ApplyGlobalSeedSqlAsync(sql, schemaName);
+    }
 }
