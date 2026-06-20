@@ -63,7 +63,8 @@ internal sealed class ImageServerLegendHandler
     public async Task<IResult> GetLegendAsync(
         HttpContext context,
         int layerId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? renderingRule = null)
     {
         using var scope = HonuaTelemetryScope.StartFeature(
             "legend",
@@ -91,8 +92,11 @@ internal sealed class ImageServerLegendHandler
 
             // When a renderingRule supplies a Colormap, the legend reflects that colormap so
             // it matches the rendered image; otherwise fall back to the default class breaks.
+            // The renderingRule arrives via the query string on GET and via the merged
+            // form/query values on POST (#1900); callers pass the resolved value in.
+            var renderingRuleValue = renderingRule ?? context.Request.Query["renderingRule"].ToString();
             LegendEntry[] swatches;
-            if (TryGetColormap(context.Request.Query["renderingRule"].ToString(), out var colormap))
+            if (TryGetColormap(renderingRuleValue, out var colormap))
             {
                 swatches = BuildColormapSwatches(colormap);
             }
