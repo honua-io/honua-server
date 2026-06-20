@@ -35,6 +35,12 @@ public sealed class ImageServerMeasureResponse
     public ImageServerMeasureValue? AzimuthAngle { get; init; }
 
     /// <summary>
+    /// Measured height (DEM-backed base/top elevation difference).
+    /// </summary>
+    [JsonPropertyName("height")]
+    public ImageServerMeasureValue? Height { get; init; }
+
+    /// <summary>
     /// Measured area.
     /// </summary>
     [JsonPropertyName("area")]

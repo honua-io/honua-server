@@ -56,6 +56,8 @@ public class ImageServerEndpointsTests
             .Returns(rasterInfo);
         store.ListRastersAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns([rasterInfo]);
+        store.GetSensorMetadataAsync(Arg.Any<IReadOnlyCollection<long>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<long, RasterSensorMetadata>());
         store.GetStatisticsAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<int[]?>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
             .Returns(new[]
             {
@@ -181,6 +183,8 @@ public class ImageServerEndpointsTests
         // Returned in deliberately unsorted order so orderByFields has work to do.
         var rasters = new[] { Build(200, "b"), Build(100, "a"), Build(300, "c") };
         store.ListRastersAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(rasters);
+        store.GetSensorMetadataAsync(Arg.Any<IReadOnlyCollection<long>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<long, RasterSensorMetadata>());
         return store;
     }
 
@@ -188,6 +192,20 @@ public class ImageServerEndpointsTests
     {
         var fixture = new WebAppFixture()
             .ConfigureServices(services => services.AddSingleton(rasterStore));
+        await fixture.InitializeAsync();
+        return fixture;
+    }
+
+    private static async Task<WebAppFixture> CreateFixtureAsync(
+        IRasterStore rasterStore,
+        IElevationService elevationService)
+    {
+        var fixture = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.AddSingleton(rasterStore);
+                services.AddSingleton(elevationService);
+            });
         await fixture.InitializeAsync();
         return fixture;
     }
@@ -824,6 +842,44 @@ public class ImageServerEndpointsTests
     [IntegrationTest]
     [Endpoint("GET /rest/services/{id}/ImageServer/find")]
     [Operation(Operations.Query)]
+    public async Task Find_WithOrientationMetadata_RanksByOffNadirAngle()
+    {
+        // Three overlapping rasters (200/100/300) carry off-nadir angles 30/5/18 degrees. The
+        // most nadir image (id 100, 5 deg) must rank first regardless of footprint distance (#1880).
+        var store = CreateMultiRasterStoreSubstitute();
+        store.GetSensorMetadataAsync(Arg.Any<IReadOnlyCollection<long>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<long, RasterSensorMetadata>
+            {
+                [200] = new RasterSensorMetadata { RasterDataId = 200, ExteriorOrientationJson = """{"offNadirAngle":30}""" },
+                [100] = new RasterSensorMetadata { RasterDataId = 100, ExteriorOrientationJson = """{"offNadirAngle":5}""" },
+                [300] = new RasterSensorMetadata { RasterDataId = 300, ExteriorOrientationJson = """{"offNadirAngle":18}""" },
+            });
+
+        var fixture = await CreateFixtureAsync(store);
+        try
+        {
+            const string targetGeometry = """{"x":0,"y":0,"spatialReference":{"wkid":4326}}""";
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/find?f=json&toGeometry={Uri.EscapeDataString(targetGeometry)}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var find = JsonSerializer.Deserialize(
+                await response.Content.ReadAsStringAsync(),
+                ImageServerJsonContext.Default.ImageServerFindResponse);
+            find.Should().NotBeNull();
+            find!.Images.Should().NotBeNullOrEmpty();
+            // Most-nadir image first.
+            find.Images![0].Id.Should().Be(100);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/find")]
+    [Operation(Operations.Query)]
     public async Task Find_MissingToGeometry_ReturnsBadRequest()
     {
         var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
@@ -949,7 +1005,120 @@ public class ImageServerEndpointsTests
     [Operation(Operations.Distance)]
     public async Task Measure_HeightOperation_ReturnsNotImplemented()
     {
+        // No DEM/sensor metadata on the default substitute, so height is honestly 501.
         var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            const string fromGeometry = """{"x":0,"y":0,"spatialReference":{"wkid":3857}}""";
+            const string toGeometry = """{"x":3,"y":4,"spatialReference":{"wkid":3857}}""";
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/measure?f=json&measureOperation=esriMensurationHeightFromBaseAndTop&geometryType=esriGeometryPoint&fromGeometry={Uri.EscapeDataString(fromGeometry)}&toGeometry={Uri.EscapeDataString(toGeometry)}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/measure")]
+    [Operation(Operations.Distance)]
+    public async Task Measure_HeightOperation_WithDemMetadata_ReturnsDifferencedHeight()
+    {
+        // The raster carries a DEM source; the elevation service returns 50m at the base point
+        // and 130m at the top point, so the measured height is 80m (#1879).
+        var store = CreateRasterStoreSubstitute();
+        store.GetSensorMetadataAsync(Arg.Any<IReadOnlyCollection<long>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<long, RasterSensorMetadata>
+            {
+                [100] = new RasterSensorMetadata
+                {
+                    RasterDataId = 100,
+                    SensorName = "TestSensor",
+                    DemSource = "777",
+                },
+            });
+
+        var elevation = Substitute.For<IElevationService>();
+        elevation.QueryPointAsync(777, 0, 0, Arg.Any<int?>(), Arg.Any<RasterMergeStrategy>(), Arg.Any<CancellationToken>())
+            .Returns(new ElevationPointResult
+            {
+                Elevation = 50,
+                NoData = false,
+                OutOfBounds = false,
+                LayerId = 777,
+                RasterIds = [1],
+                X = 0,
+                Y = 0,
+            });
+        elevation.QueryPointAsync(777, 3, 4, Arg.Any<int?>(), Arg.Any<RasterMergeStrategy>(), Arg.Any<CancellationToken>())
+            .Returns(new ElevationPointResult
+            {
+                Elevation = 130,
+                NoData = false,
+                OutOfBounds = false,
+                LayerId = 777,
+                RasterIds = [1],
+                X = 3,
+                Y = 4,
+            });
+
+        var fixture = await CreateFixtureAsync(store, elevation);
+        try
+        {
+            const string fromGeometry = """{"x":0,"y":0,"spatialReference":{"wkid":3857}}""";
+            const string toGeometry = """{"x":3,"y":4,"spatialReference":{"wkid":3857}}""";
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/measure?f=json&measureOperation=esriMensurationHeightFromBaseAndTop&geometryType=esriGeometryPoint&fromGeometry={Uri.EscapeDataString(fromGeometry)}&toGeometry={Uri.EscapeDataString(toGeometry)}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var measure = JsonSerializer.Deserialize(
+                await response.Content.ReadAsStringAsync(),
+                ImageServerJsonContext.Default.ImageServerMeasureResponse);
+            measure.Should().NotBeNull();
+            measure!.Height.Should().NotBeNull();
+            measure.Height!.Value.Should().BeApproximately(80, 1e-6);
+            measure.SensorName.Should().Be("TestSensor");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/measure")]
+    [Operation(Operations.Distance)]
+    public async Task Measure_HeightOperation_WithDemMetadata_ButPointOutsideDem_ReturnsNotImplemented()
+    {
+        // DEM is modeled but does not cover the top point: return 501 rather than a faked height.
+        var store = CreateRasterStoreSubstitute();
+        store.GetSensorMetadataAsync(Arg.Any<IReadOnlyCollection<long>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<long, RasterSensorMetadata>
+            {
+                [100] = new RasterSensorMetadata
+                {
+                    RasterDataId = 100,
+                    DemSource = "777",
+                },
+            });
+
+        var elevation = Substitute.For<IElevationService>();
+        elevation.QueryPointAsync(777, Arg.Any<double>(), Arg.Any<double>(), Arg.Any<int?>(), Arg.Any<RasterMergeStrategy>(), Arg.Any<CancellationToken>())
+            .Returns(new ElevationPointResult
+            {
+                Elevation = null,
+                NoData = true,
+                OutOfBounds = true,
+                LayerId = 777,
+                RasterIds = [],
+                X = 0,
+                Y = 0,
+            });
+
+        var fixture = await CreateFixtureAsync(store, elevation);
         try
         {
             const string fromGeometry = """{"x":0,"y":0,"spatialReference":{"wkid":3857}}""";
@@ -1478,10 +1647,11 @@ public class ImageServerEndpointsTests
     [Operation(Operations.Project)]
     public async Task Project_WithImageCoordinateSystemTransformation_Returns400()
     {
+        // The default raster substitute carries no RPC/sensor metadata, so the image-coordinate
+        // -system `transformation` parameter is genuinely unsupported for it and returns 400.
         var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
         try
         {
-            // The image-coordinate-system `transformation` parameter remains unsupported.
             const string geometries = """{"geometryType":"esriGeometryPoint","geometries":[{"x":0,"y":0,"spatialReference":{"wkid":4326}}]}""";
             var encoded = Uri.EscapeDataString(geometries);
 
@@ -1489,6 +1659,54 @@ public class ImageServerEndpointsTests
                 $"/rest/services/{TestLayerId}/ImageServer/project?f=json&inSR=4326&outSR=3857&transformation=1&geometries={encoded}");
 
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/project")]
+    [Operation(Operations.Project)]
+    public async Task Project_WithImageCoordinateSystemTransformation_AndRpcMetadata_WarpsImageToMap()
+    {
+        // A raster carrying RPC metadata supports the image-coordinate-system warp (#1881):
+        // image (sample, line) coordinates map to ground (lon/lat) and then to outSR.
+        var store = CreateRasterStoreSubstitute();
+        store.GetSensorMetadataAsync(Arg.Any<IReadOnlyCollection<long>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<long, RasterSensorMetadata>
+            {
+                [100] = new RasterSensorMetadata
+                {
+                    RasterDataId = 100,
+                    SensorName = "TestSensor",
+                    RpcJson = """
+                    {
+                        "sampleOffset": 0, "lineOffset": 0,
+                        "longOffset": -120.0, "latOffset": 35.0,
+                        "sampleScale": 1, "lineScale": 1,
+                        "longScale": 0.001, "latScale": 0.001
+                    }
+                    """,
+                },
+            });
+
+        var fixture = await CreateFixtureAsync(store);
+        try
+        {
+            // Image origin (0,0) maps to the ground offset (-120, 35); outSR=4326 keeps it as-is.
+            const string geometries = """{"geometryType":"esriGeometryPoint","geometries":[{"x":0,"y":0}]}""";
+            var encoded = Uri.EscapeDataString(geometries);
+
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/project?f=json&outSR=4326&transformation=image&geometries={encoded}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var geometry = json.RootElement.GetProperty("geometries")[0];
+            geometry.GetProperty("x").GetDouble().Should().BeApproximately(-120.0, 1e-6);
+            geometry.GetProperty("y").GetDouble().Should().BeApproximately(35.0, 1e-6);
         }
         finally
         {

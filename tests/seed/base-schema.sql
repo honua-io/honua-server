@@ -192,6 +192,19 @@ CREATE TABLE IF NOT EXISTS honua.raster_statistics (
     CONSTRAINT raster_statistics_unique_band UNIQUE (raster_data_id, band_number)
 );
 
+-- Per-raster sensor/camera/orientation/RPC metadata (#1879/#1880/#1881). Keep in sync
+-- with src/Honua.Server/Migrations/059_AddRasterSensorMetadata.sql.
+CREATE TABLE IF NOT EXISTS honua.raster_sensor_metadata (
+    raster_data_id BIGINT PRIMARY KEY REFERENCES honua.raster_data(id) ON DELETE CASCADE,
+    sensor_name VARCHAR(255),
+    camera_model VARCHAR(255),
+    interior_orientation JSONB,
+    exterior_orientation JSONB,
+    rpc JSONB,
+    dem_source VARCHAR(512),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- Layer-level (mosaic) band statistics persisted by PostgresRasterStore so ImageServer
 -- service metadata is served from persisted values instead of per-request ST_SummaryStats
 -- (#1639). Keep in sync with src/Honua.Postgres/Migrations/003_CreateRasterLayerStatistics.sql.

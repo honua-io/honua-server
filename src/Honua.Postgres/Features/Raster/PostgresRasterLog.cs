@@ -154,4 +154,22 @@ internal static partial class PostgresRasterLog
         Level = LogLevel.Warning,
         Message = "Failed to persist mosaic statistics for layer {LayerId}; serving computed values without persistence")]
     public static partial void LayerStatisticsPersistFailed(ILogger logger, Exception ex, int layerId);
+
+    [LoggerMessage(
+        EventId = 7824,
+        Level = LogLevel.Debug,
+        Message = "raster_sensor_metadata table not provisioned; serving no sensor metadata")]
+    public static partial void SensorMetadataTableMissing(ILogger logger, Exception ex);
+
+    [LoggerMessage(
+        EventId = 7825,
+        Level = LogLevel.Information,
+        Message = "Deleted raster for layer {LayerId}, raster {RasterId}")]
+    public static partial void RasterDeleted(ILogger logger, int layerId, long rasterId);
+
+    [LoggerMessage(
+        EventId = 7826,
+        Level = LogLevel.Information,
+        Message = "Updated raster metadata for layer {LayerId}, raster {RasterId}")]
+    public static partial void RasterMetadataUpdated(ILogger logger, int layerId, long rasterId);
 }

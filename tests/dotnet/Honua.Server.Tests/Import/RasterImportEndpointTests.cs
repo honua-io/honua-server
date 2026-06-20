@@ -440,6 +440,108 @@ public class RasterImportEndpointTests : IAsyncLifetime
         }
     }
 
+    [IntegrationTest]
+    [Endpoint("DELETE /api/v1/admin/import/raster/{rasterId}")]
+    public async Task DeleteRaster_ExistingRaster_Returns204()
+    {
+        var store = Substitute.For<IRasterStore>();
+        store.GetRasterLayerIdAsync(42, Arg.Any<CancellationToken>()).Returns(1);
+        store.DeleteRasterAsync(1, 42, Arg.Any<CancellationToken>()).Returns(true);
+
+        var fixture = new WebAppFixture()
+            .ConfigureServices(services => services.AddSingleton(store));
+        await fixture.InitializeAsync();
+        try
+        {
+            var response = await fixture.Client.DeleteAsync("/api/v1/admin/import/raster/42");
+            response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("DELETE /api/v1/admin/import/raster/{rasterId}")]
+    public async Task DeleteRaster_MissingRaster_Returns404()
+    {
+        var store = Substitute.For<IRasterStore>();
+        store.GetRasterLayerIdAsync(Arg.Any<long>(), Arg.Any<CancellationToken>()).Returns((int?)null);
+
+        var fixture = new WebAppFixture()
+            .ConfigureServices(services => services.AddSingleton(store));
+        await fixture.InitializeAsync();
+        try
+        {
+            var response = await fixture.Client.DeleteAsync("/api/v1/admin/import/raster/999");
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("PATCH /api/v1/admin/import/raster/{rasterId}")]
+    public async Task UpdateRaster_WithName_Returns200WithUpdatedMetadata()
+    {
+        var store = Substitute.For<IRasterStore>();
+        store.GetRasterLayerIdAsync(42, Arg.Any<CancellationToken>()).Returns(1);
+        store.UpdateRasterMetadataAsync(1, 42, Arg.Any<RasterMetadataUpdate>(), Arg.Any<CancellationToken>())
+            .Returns(new RasterInfo
+            {
+                Id = 42,
+                LayerId = 1,
+                Name = "renamed",
+                Width = 1,
+                Height = 1,
+                BandCount = 1,
+                PixelType = "8BUI",
+                CreatedAt = DateTimeOffset.UtcNow,
+            });
+
+        var fixture = new WebAppFixture()
+            .ConfigureServices(services => services.AddSingleton(store));
+        await fixture.InitializeAsync();
+        try
+        {
+            var body = new StringContent(
+                """{"name":"renamed"}""", System.Text.Encoding.UTF8, "application/json");
+            var response = await fixture.Client.PatchAsync("/api/v1/admin/import/raster/42", body);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            (await response.Content.ReadAsStringAsync()).Should().Contain("renamed");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("PATCH /api/v1/admin/import/raster/{rasterId}")]
+    public async Task UpdateRaster_WithNoFields_Returns400()
+    {
+        var store = Substitute.For<IRasterStore>();
+
+        var fixture = new WebAppFixture()
+            .ConfigureServices(services => services.AddSingleton(store));
+        await fixture.InitializeAsync();
+        try
+        {
+            var body = new StringContent("{}", System.Text.Encoding.UTF8, "application/json");
+            var response = await fixture.Client.PatchAsync("/api/v1/admin/import/raster/42", body);
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
     // =============================================================================
     // Test data helpers
     // =============================================================================
