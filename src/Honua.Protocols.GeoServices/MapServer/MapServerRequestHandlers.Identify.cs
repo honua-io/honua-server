@@ -63,7 +63,8 @@ internal static partial class MapServerEndpoints
     private sealed record IdentifyRenderLayer(
         IdentifyLayerDescriptor Layer,
         int Id,
-        string? DefinitionExpression);
+        string? DefinitionExpression,
+        DynamicLayerJoinDefinition? Join = null);
 
     private sealed record IdentifyGeometryInput(
         string RawValue,
@@ -388,6 +389,32 @@ internal static partial class MapServerEndpoints
                     continue;
                 }
 
+                // Resolve a joinTable source's right side into a key-indexed attribute lookup. The
+                // right layer is access-policy gated exactly like the left layer; a denied right
+                // layer fails the whole identify rather than silently dropping the join.
+                DynamicJoinLookup? joinLookup = null;
+                if (renderLayer.Join is { } join)
+                {
+                    if (!TryResolveIdentifyJoinRightLayer(
+                            publishedLayers,
+                            service,
+                            context,
+                            join,
+                            out var rightLayer,
+                            out var joinError))
+                    {
+                        return StandardErrorHelpers.CreateBadRequest(context, joinError ?? "Invalid join source.");
+                    }
+
+                    joinLookup = await DynamicJoinLookup.BuildAsync(
+                        featureReader,
+                        rightLayer!.StorageLayerId,
+                        join.RightKey,
+                        ExtractJoinKeyValues(queryResult.Items, join.LeftKey),
+                        maxIdentifyResults,
+                        cancellationToken).ConfigureAwait(false);
+                }
+
                 var objectIdField = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(layer.Resource);
                 var displayField = ResolveDisplayField(layer.Resource, objectIdField);
                 // esriFieldTypeDate attributes must serialize as epoch-ms integers uniformly across
@@ -397,8 +424,25 @@ internal static partial class MapServerEndpoints
 
                 foreach (var feature in queryResult.Items)
                 {
+                    IReadOnlyDictionary<string, object?> sourceAttributes = feature.Attributes;
+                    if (renderLayer.Join is { } featureJoin && joinLookup is { } lookup)
+                    {
+                        var joined = ApplyDynamicJoinAttributes(
+                            sourceAttributes,
+                            featureJoin.LeftKey,
+                            featureJoin,
+                            lookup);
+                        if (joined is null)
+                        {
+                            // Inner join with no matching right row drops the left feature.
+                            continue;
+                        }
+
+                        sourceAttributes = joined;
+                    }
+
                     var attributes = new Dictionary<string, object?>();
-                    foreach (var kvp in feature.Attributes)
+                    foreach (var kvp in sourceAttributes)
                     {
                         if (FeatureAttributeVisibility.IsInternalAttribute(kvp.Key))
                         {
@@ -1078,7 +1122,7 @@ internal static partial class MapServerEndpoints
                     continue;
                 }
 
-                renderLayers.Add(new IdentifyRenderLayer(layer, dl.Id, dl.DefinitionExpression));
+                renderLayers.Add(new IdentifyRenderLayer(layer, dl.Id, dl.DefinitionExpression, dl.Join));
             }
 
             var effectiveMode = hasExplicitMode && mode == IdentifyLayerMode.Top
@@ -1449,6 +1493,67 @@ internal static partial class MapServerEndpoints
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Resolves the right (secondary) layer of an identify <c>joinTable</c> source and enforces its
+    /// access policy. The right layer must be a published layer in the same service and must be
+    /// accessible to the caller — otherwise the join is rejected rather than leaking right-source
+    /// attributes the caller is not entitled to read.
+    /// </summary>
+    private static bool TryResolveIdentifyJoinRightLayer(
+        IReadOnlyList<IdentifyLayerDescriptor> publishedLayers,
+        MetadataV2Service service,
+        HttpContext context,
+        DynamicLayerJoinDefinition join,
+        out IdentifyLayerDescriptor? rightLayer,
+        out string? error)
+    {
+        rightLayer = null;
+        error = null;
+
+        foreach (var candidate in publishedLayers)
+        {
+            if (candidate.PublicLayerId == join.RightMapLayerId)
+            {
+                rightLayer = candidate;
+                break;
+            }
+        }
+
+        if (rightLayer is null)
+        {
+            error = "dynamicLayers join references an unknown right layer.";
+            return false;
+        }
+
+        if (!AccessPolicyHelpers.IsResourceAccessible(context, rightLayer.Resource, service))
+        {
+            error = "dynamicLayers join references an inaccessible right layer.";
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Extracts the left-source join-key value from each left feature.
+    /// </summary>
+    private static List<object?> ExtractJoinKeyValues(
+        System.Collections.Immutable.ImmutableArray<Feature> features,
+        string leftKeyField)
+    {
+        var values = new List<object?>(features.Length);
+        foreach (var feature in features)
+        {
+            if (feature.Attributes.TryGetValue(leftKeyField, out var value) ||
+                TryGetAttributeCaseInsensitive(feature.Attributes, leftKeyField, out value))
+            {
+                values.Add(value);
+            }
+        }
+
+        return values;
     }
 
     private static string? GetDisplayFieldValue(Feature feature, string displayField)
