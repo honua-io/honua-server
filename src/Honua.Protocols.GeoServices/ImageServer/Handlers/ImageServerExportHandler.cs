@@ -132,7 +132,7 @@ internal sealed class ImageServerExportHandler
                 return StandardErrorHelpers.CreateNotFound(context, "No rasters found for layer.");
             }
 
-            // A genuinely-unsupported mosaic method (seamline, nadir, arbitrary non-date
+            // A genuinely-unsupported mosaic method (nadir, center, arbitrary non-date
             // attribute sort) can only affect output when more than one raster is composited;
             // with a single raster the method cannot change pixel selection, so it is accepted.
             if (mosaicRule.Method == MosaicMethod.Unsupported && selectedRasters.Length > 1)
@@ -276,6 +276,7 @@ internal sealed class ImageServerExportHandler
         out RasterClipRegion? clipRegion,
         out int[]? bands,
         out RasterBandArithmetic? bandArithmetic,
+        out RasterTerrainFunction? terrain,
         out ExportParameterParseError error)
     {
         stretch = null;
@@ -283,6 +284,7 @@ internal sealed class ImageServerExportHandler
         clipRegion = null;
         bands = null;
         bandArithmetic = null;
+        terrain = null;
         error = default;
 
         RasterFunctionDocument document;
@@ -311,6 +313,7 @@ internal sealed class ImageServerExportHandler
         clipRegion = mapping.ClipRegion;
         bands = mapping.Bands;
         bandArithmetic = mapping.BandArithmetic;
+        terrain = mapping.Terrain;
         return true;
     }
 
@@ -329,8 +332,9 @@ internal sealed class ImageServerExportHandler
             RasterClipRegion? renderingClip = null;
             int[]? renderingBands = null;
             RasterBandArithmetic? renderingBandArithmetic = null;
+            RasterTerrainFunction? renderingTerrain = null;
             if (!string.IsNullOrWhiteSpace(request.RenderingRule) &&
-                !TryMapRenderingRule(request.RenderingRule, out renderingStretch, out renderingColormap, out renderingClip, out renderingBands, out renderingBandArithmetic, out error))
+                !TryMapRenderingRule(request.RenderingRule, out renderingStretch, out renderingColormap, out renderingClip, out renderingBands, out renderingBandArithmetic, out renderingTerrain, out error))
             {
                 return false;
             }
@@ -422,6 +426,7 @@ internal sealed class ImageServerExportHandler
                 TiffCompression = tiffCompression,
                 Bands = effectiveBands,
                 BandArithmetic = renderingBandArithmetic,
+                Terrain = renderingTerrain,
                 Stretch = renderingStretch,
                 Colormap = renderingColormap,
                 RenderingClip = renderingClip,

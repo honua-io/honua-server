@@ -17,6 +17,23 @@ public enum RasterBandArithmeticMethod
     /// zero-denominator guard. Pairs naturally with a pseudocolour colormap.
     /// </summary>
     Ndvi = 0,
+
+    /// <summary>
+    /// Normalized Difference Water Index (McFeeters):
+    /// <c>(GREEN - NIR) / (GREEN + NIR)</c>, zero-denominator guarded. The first
+    /// operand band (<see cref="RasterBandArithmetic.InfraredBand"/>) carries the
+    /// green band and the second (<see cref="RasterBandArithmetic.VisibleBand"/>)
+    /// the NIR band, matching the two-operand <c>[a, b]</c> ordering of the formula.
+    /// </summary>
+    Ndwi = 1,
+
+    /// <summary>
+    /// Soil-Adjusted Vegetation Index:
+    /// <c>((NIR - VIS) * (1 + L)) / (NIR + VIS + L)</c> with the soil-brightness
+    /// correction factor <c>L</c> fixed at the canonical 0.5, zero-denominator
+    /// guarded. Reduces soil-background influence relative to NDVI.
+    /// </summary>
+    Savi = 2,
 }
 
 /// <summary>

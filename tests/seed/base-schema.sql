@@ -192,6 +192,34 @@ CREATE TABLE IF NOT EXISTS honua.raster_statistics (
     CONSTRAINT raster_statistics_unique_band UNIQUE (raster_data_id, band_number)
 );
 
+-- Persisted reduced-resolution overview pyramids reused on the low-zoom tile read path (#1836).
+-- Keep in sync with src/Honua.Server/Migrations/063_CreateRasterOverviews.sql.
+CREATE TABLE IF NOT EXISTS honua.raster_overviews (
+    id BIGSERIAL PRIMARY KEY,
+    raster_data_id BIGINT NOT NULL REFERENCES honua.raster_data(id) ON DELETE CASCADE,
+    overview_factor INTEGER NOT NULL,
+    raster raster NOT NULL,
+    ground_resolution DOUBLE PRECISION NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT raster_overviews_unique_factor UNIQUE (raster_data_id, overview_factor),
+    CONSTRAINT raster_overviews_factor_positive CHECK (overview_factor >= 2)
+);
+ALTER TABLE honua.raster_overviews ALTER COLUMN raster SET STORAGE EXTERNAL;
+CREATE INDEX IF NOT EXISTS idx_raster_overviews_raster_data_id ON honua.raster_overviews(raster_data_id);
+CREATE INDEX IF NOT EXISTS idx_raster_overviews_lookup ON honua.raster_overviews(raster_data_id, ground_resolution);
+
+-- Per-raster footprint + optional seamline (cutline) for esriMosaicSeamline (#1804).
+-- Keep in sync with src/Honua.Server/Migrations/064_CreateRasterFootprints.sql.
+CREATE TABLE IF NOT EXISTS honua.raster_footprints (
+    raster_data_id BIGINT PRIMARY KEY REFERENCES honua.raster_data(id) ON DELETE CASCADE,
+    footprint geometry NOT NULL,
+    seamline geometry,
+    srid INTEGER NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_raster_footprints_footprint ON honua.raster_footprints USING GIST (footprint);
+
 -- Per-raster sensor/camera/orientation/RPC metadata (#1879/#1880/#1881). Keep in sync
 -- with src/Honua.Server/Migrations/060_AddRasterSensorMetadata.sql.
 CREATE TABLE IF NOT EXISTS honua.raster_sensor_metadata (

@@ -131,12 +131,124 @@ public sealed class ImageServerRenderingRuleMappingTests
     [UnitTest]
     public void MapRenderingRule_UnknownFunction_IsInvalid()
     {
-        var document = Parse("""{"rasterFunction":"Hillshade"}""");
+        var document = Parse("""{"rasterFunction":"TotallyMadeUpFunction"}""");
 
         var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
 
         mapping.Supported.Should().BeFalse();
         mapping.IsNotImplemented.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void MapRenderingRule_HillshadeDefaults_ResolvesTerrainFunction()
+    {
+        var document = Parse("""{"rasterFunction":"Hillshade"}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeTrue();
+        mapping.Terrain.Should().NotBeNull();
+        mapping.Terrain!.Value.Method.Should().Be(RasterTerrainMethod.Hillshade);
+        // Esri defaults: azimuth 315, altitude 45, z-factor 1, band 1.
+        mapping.Terrain.Value.AzimuthDegrees.Should().Be(315.0);
+        mapping.Terrain.Value.AltitudeDegrees.Should().Be(45.0);
+        mapping.Terrain.Value.Band.Should().Be(1);
+    }
+
+    [UnitTest]
+    public void MapRenderingRule_HillshadeWithArguments_CapturesAzimuthAltitudeBand()
+    {
+        var document = Parse(
+            """{"rasterFunction":"Hillshade","rasterFunctionArguments":{"Azimuth":270,"Altitude":30,"ZFactor":2,"BandId":2}}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeTrue();
+        mapping.Terrain!.Value.AzimuthDegrees.Should().Be(270);
+        mapping.Terrain.Value.AltitudeDegrees.Should().Be(30);
+        mapping.Terrain.Value.ZFactor.Should().Be(2);
+        // 0-based BandId 2 -> 1-based band 3.
+        mapping.Terrain.Value.Band.Should().Be(3);
+    }
+
+    [UnitTest]
+    public void MapRenderingRule_Slope_ResolvesSlopeTerrain()
+    {
+        var document = Parse("""{"rasterFunction":"Slope"}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeTrue();
+        mapping.Terrain!.Value.Method.Should().Be(RasterTerrainMethod.Slope);
+    }
+
+    [UnitTest]
+    public void MapRenderingRule_Aspect_ResolvesAspectTerrain()
+    {
+        var document = Parse("""{"rasterFunction":"Aspect"}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeTrue();
+        mapping.Terrain!.Value.Method.Should().Be(RasterTerrainMethod.Aspect);
+    }
+
+    [UnitTest]
+    public void MapRenderingRule_HillshadeAzimuthOutOfRange_IsInvalid()
+    {
+        var document = Parse(
+            """{"rasterFunction":"Hillshade","rasterFunctionArguments":{"Azimuth":400}}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeFalse();
+        mapping.IsNotImplemented.Should().BeFalse();
+        mapping.Reason.Should().Contain("Azimuth");
+    }
+
+    [UnitTest]
+    public void MapRenderingRule_BandArithmeticAndTerrainCombined_IsInvalid()
+    {
+        var document = Parse(
+            """{"rasterFunction":"Hillshade","rasterFunctionArguments":{"Raster":{"rasterFunction":"BandArithmetic","rasterFunctionArguments":{"Method":3,"BandIndexes":[0,1]}}}}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeFalse();
+        mapping.IsNotImplemented.Should().BeFalse();
+        mapping.Reason.Should().Contain("cannot combine");
+    }
+
+    [UnitTest]
+    public void MapRenderingRule_BandArithmeticNdwi_MapsGreenNirOrdering()
+    {
+        var document = Parse(
+            """{"rasterFunction":"BandArithmetic","rasterFunctionArguments":{"Method":9,"BandIndexes":[1,3]}}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeTrue();
+        mapping.BandArithmetic!.Value.Method.Should().Be(RasterBandArithmeticMethod.Ndwi);
+        // NDWI: [green, NIR] -> green (index 1, 1-based 2) is InfraredBand (rast1),
+        // NIR (index 3, 1-based 4) is VisibleBand (rast2).
+        mapping.BandArithmetic.Value.InfraredBand.Should().Be(2);
+        mapping.BandArithmetic.Value.VisibleBand.Should().Be(4);
+    }
+
+    [UnitTest]
+    public void MapRenderingRule_BandArithmeticSavi_MapsVisibleInfraredOrdering()
+    {
+        var document = Parse(
+            """{"rasterFunction":"BandArithmetic","rasterFunctionArguments":{"Method":5,"BandIndexes":[2,3]}}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeTrue();
+        mapping.BandArithmetic!.Value.Method.Should().Be(RasterBandArithmeticMethod.Savi);
+        // SAVI: [visible, infrared] -> visible (index 2, 1-based 3) is VisibleBand (rast2),
+        // infrared (index 3, 1-based 4) is InfraredBand (rast1).
+        mapping.BandArithmetic.Value.VisibleBand.Should().Be(3);
+        mapping.BandArithmetic.Value.InfraredBand.Should().Be(4);
     }
 
     [UnitTest]
