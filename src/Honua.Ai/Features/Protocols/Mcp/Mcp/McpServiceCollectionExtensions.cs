@@ -40,12 +40,14 @@ internal static class McpServiceCollectionExtensions
 
         services.AddGroundingServices(configuration);
 
-        // PlanAnalysisTool uses the fixture-replay implementation of
-        // IPlanAnalysisService by default. Hosts wiring a live planner should
-        // call services.Replace(...) after AddMcpOperatorSurface to swap in
-        // their implementation; the catalog itself is harmless to keep around
-        // either way because it lazily loads embedded fixtures.
-        services.AddAiBuilderPlanAnalysis();
+        // PlanAnalysisTool resolves its IPlanAnalysisService config-driven:
+        // the live (Bedrock-backed) planner when WorkflowGeneration is enabled
+        // with a live default provider, otherwise the deterministic fixture
+        // replay. The fixture catalog is always registered as the fallback, so
+        // CI (no provider configured) stays AI-credit-free. Hosts can still call
+        // services.Replace(...) after AddMcpOperatorSurface to force a specific
+        // implementation.
+        services.AddAiBuilderPlanAnalysis(configuration);
 
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ValidatePlanTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, DryRunPlanTool>());
