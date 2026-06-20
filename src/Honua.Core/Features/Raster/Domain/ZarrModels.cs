@@ -17,9 +17,27 @@ public enum ZarrFormatVersion
     V2 = 2,
 
     /// <summary>
-    /// Zarr v3 specification (read-only support deferred).
+    /// Zarr v3 specification.
     /// </summary>
     V3 = 3
+}
+
+/// <summary>
+/// Chunk key encoding for locating a chunk object from its grid coordinate.
+/// </summary>
+/// <param name="Separator">Separator placed between per-dimension chunk indices.</param>
+/// <param name="Prefix">
+/// Prefix prepended to the chunk key (the Zarr v3 <c>default</c> encoding prepends
+/// <c>c</c>, e.g. <c>c/0/1</c>); empty for the Zarr v2 dotted form (<c>0.1</c>).
+/// </param>
+/// <param name="RankZeroKey">Key used for a zero-dimensional (scalar) array.</param>
+public sealed record ZarrChunkKeyEncoding(string Separator, string Prefix, string RankZeroKey)
+{
+    /// <summary>Zarr v2 chunk key encoding: dotted indices, no prefix (<c>0.1</c>).</summary>
+    public static ZarrChunkKeyEncoding V2 { get; } = new(".", string.Empty, "0");
+
+    /// <summary>Zarr v3 <c>default</c> chunk key encoding: <c>c</c>-prefixed, slash-separated (<c>c/0/1</c>).</summary>
+    public static ZarrChunkKeyEncoding V3Default { get; } = new("/", "c", "c/0");
 }
 
 /// <summary>
@@ -34,7 +52,8 @@ public enum ZarrFormatVersion
 /// <param name="Order">Memory layout order (<c>C</c> or <c>F</c>).</param>
 /// <param name="Compressor">Compressor codec id (e.g. <c>zlib</c>); null when uncompressed.</param>
 /// <param name="FillValue">Fill value or null when unset.</param>
-/// <param name="DimensionNames">CF-style dimension names from <c>_ARRAY_DIMENSIONS</c> when present.</param>
+/// <param name="DimensionNames">CF-style dimension names from <c>_ARRAY_DIMENSIONS</c> (v2) or <c>dimension_names</c> (v3) when present.</param>
+/// <param name="ChunkKeyEncoding">How chunk objects are keyed from their grid coordinate (v2 dotted vs. v3 <c>c/</c>-prefixed).</param>
 public sealed record ZarrArrayMetadata(
     string Name,
     ZarrFormatVersion ZarrFormat,
@@ -45,7 +64,28 @@ public sealed record ZarrArrayMetadata(
     string Order,
     string? Compressor,
     object? FillValue,
-    string[] DimensionNames);
+    string[] DimensionNames,
+    ZarrChunkKeyEncoding ChunkKeyEncoding)
+{
+    /// <summary>
+    /// Backwards-compatible constructor for Zarr v2 arrays that defaults the chunk
+    /// key encoding to the v2 dotted form.
+    /// </summary>
+    public ZarrArrayMetadata(
+        string Name,
+        ZarrFormatVersion ZarrFormat,
+        string RelativePath,
+        int[] Shape,
+        int[] Chunks,
+        string DataType,
+        string Order,
+        string? Compressor,
+        object? FillValue,
+        string[] DimensionNames)
+        : this(Name, ZarrFormat, RelativePath, Shape, Chunks, DataType, Order, Compressor, FillValue, DimensionNames, ZarrChunkKeyEncoding.V2)
+    {
+    }
+}
 
 /// <summary>
 /// Parsed Zarr store metadata covering one or more arrays.

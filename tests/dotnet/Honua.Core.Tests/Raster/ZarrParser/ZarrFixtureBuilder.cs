@@ -137,6 +137,170 @@ internal static class ZarrFixtureBuilder
         return objects;
     }
 
+    /// <summary>
+    /// Builds a Zarr v3 single-array store (root <c>zarr.json</c> with
+    /// <c>node_type: array</c>), little-endian float32, the default
+    /// <c>c/</c>-prefixed chunk key encoding, optionally gzip-coded chunks.
+    /// </summary>
+    public static Dictionary<string, byte[]> BuildV3SingleArray(
+        string root,
+        int rows,
+        int cols,
+        int chunkRows,
+        int chunkCols,
+        Func<int, int, float> sample,
+        bool gzip)
+    {
+        var objects = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+        var codecs = gzip
+            ? "[{\"name\":\"bytes\",\"configuration\":{\"endian\":\"little\"}},{\"name\":\"gzip\",\"configuration\":{\"level\":5}}]"
+            : "[{\"name\":\"bytes\",\"configuration\":{\"endian\":\"little\"}}]";
+        var json = "{"
+            + "\"zarr_format\":3,"
+            + "\"node_type\":\"array\","
+            + "\"shape\":[" + rows + "," + cols + "],"
+            + "\"data_type\":\"float32\","
+            + "\"chunk_grid\":{\"name\":\"regular\",\"configuration\":{\"chunk_shape\":[" + chunkRows + "," + chunkCols + "]}},"
+            + "\"chunk_key_encoding\":{\"name\":\"default\",\"configuration\":{\"separator\":\"/\"}},"
+            + "\"fill_value\":0,"
+            + "\"codecs\":" + codecs + ","
+            + "\"dimension_names\":[\"y\",\"x\"]"
+            + "}";
+        objects[root + "/zarr.json"] = Encoding.UTF8.GetBytes(json);
+
+        AppendV3ChunksFloat32(root, rows, cols, chunkRows, chunkCols, sample, gzip, separator: "/", objects);
+        return objects;
+    }
+
+    /// <summary>
+    /// Builds a Zarr v3 group store (root <c>zarr.json</c> with
+    /// <c>node_type: group</c> and a <c>variables</c> attribute manifest) holding a
+    /// single georeferenced float32 array.
+    /// </summary>
+    public static Dictionary<string, byte[]> BuildV3Group(
+        string root,
+        int rows,
+        int cols,
+        int chunkRows,
+        int chunkCols,
+        Func<int, int, float> sample,
+        int srid,
+        double xMin,
+        double yMin,
+        double xMax,
+        double yMax)
+    {
+        var objects = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+        var groupJson = "{"
+            + "\"zarr_format\":3,"
+            + "\"node_type\":\"group\","
+            + "\"attributes\":{"
+                + "\"variables\":[\"temperature\"],"
+                + "\"primary_variable\":\"temperature\","
+                + "\"crs_wkid\":" + srid + ","
+                + "\"extent\":[" +
+                    xMin.ToString("R", CultureInfo.InvariantCulture) + "," +
+                    yMin.ToString("R", CultureInfo.InvariantCulture) + "," +
+                    xMax.ToString("R", CultureInfo.InvariantCulture) + "," +
+                    yMax.ToString("R", CultureInfo.InvariantCulture) + "],"
+                + "\"x_dimension\":\"x\","
+                + "\"y_dimension\":\"y\""
+            + "}}";
+        objects[root + "/zarr.json"] = Encoding.UTF8.GetBytes(groupJson);
+
+        var arrayRoot = root + "/temperature";
+        var arrayJson = "{"
+            + "\"zarr_format\":3,"
+            + "\"node_type\":\"array\","
+            + "\"shape\":[" + rows + "," + cols + "],"
+            + "\"data_type\":\"float32\","
+            + "\"chunk_grid\":{\"name\":\"regular\",\"configuration\":{\"chunk_shape\":[" + chunkRows + "," + chunkCols + "]}},"
+            + "\"chunk_key_encoding\":{\"name\":\"default\",\"configuration\":{\"separator\":\"/\"}},"
+            + "\"fill_value\":0,"
+            + "\"codecs\":[{\"name\":\"bytes\",\"configuration\":{\"endian\":\"little\"}}],"
+            + "\"dimension_names\":[\"y\",\"x\"]"
+            + "}";
+        objects[arrayRoot + "/zarr.json"] = Encoding.UTF8.GetBytes(arrayJson);
+
+        AppendV3ChunksFloat32(arrayRoot, rows, cols, chunkRows, chunkCols, sample, gzip: false, separator: "/", objects);
+        return objects;
+    }
+
+    /// <summary>
+    /// Builds a Zarr v3 single array declaring an unsupported codec (blosc) so the
+    /// reader's codec-pipeline gating can be asserted.
+    /// </summary>
+    public static Dictionary<string, byte[]> BuildV3UnsupportedCodec(string root)
+    {
+        var objects = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+        var json = "{"
+            + "\"zarr_format\":3,"
+            + "\"node_type\":\"array\","
+            + "\"shape\":[4,4],"
+            + "\"data_type\":\"float32\","
+            + "\"chunk_grid\":{\"name\":\"regular\",\"configuration\":{\"chunk_shape\":[4,4]}},"
+            + "\"chunk_key_encoding\":{\"name\":\"default\",\"configuration\":{\"separator\":\"/\"}},"
+            + "\"fill_value\":0,"
+            + "\"codecs\":[{\"name\":\"bytes\",\"configuration\":{\"endian\":\"little\"}},{\"name\":\"blosc\",\"configuration\":{}}],"
+            + "\"dimension_names\":[\"y\",\"x\"]"
+            + "}";
+        objects[root + "/zarr.json"] = Encoding.UTF8.GetBytes(json);
+        return objects;
+    }
+
+    private static void AppendV3ChunksFloat32(
+        string arrayRoot,
+        int rows,
+        int cols,
+        int chunkRows,
+        int chunkCols,
+        Func<int, int, float> sample,
+        bool gzip,
+        string separator,
+        Dictionary<string, byte[]> objects)
+    {
+        var chunkRowCount = (rows + chunkRows - 1) / chunkRows;
+        var chunkColCount = (cols + chunkCols - 1) / chunkCols;
+        for (var cr = 0; cr < chunkRowCount; cr++)
+        {
+            for (var cc = 0; cc < chunkColCount; cc++)
+            {
+                var startRow = cr * chunkRows;
+                var startCol = cc * chunkCols;
+                var raw = new byte[chunkRows * chunkCols * sizeof(float)];
+                for (var r = 0; r < chunkRows; r++)
+                {
+                    for (var c = 0; c < chunkCols; c++)
+                    {
+                        var globalRow = startRow + r;
+                        var globalCol = startCol + c;
+                        var value = (globalRow < rows && globalCol < cols) ? sample(globalRow, globalCol) : 0f;
+                        var offset = (r * chunkCols + c) * sizeof(float);
+                        Buffer.BlockCopy(BitConverter.GetBytes(value), 0, raw, offset, sizeof(float));
+                    }
+                }
+
+                // v3 default chunk key encoding: "c" + separator + dotted indices.
+                var chunkKey = arrayRoot + "/c" + separator
+                    + cr.ToString(CultureInfo.InvariantCulture) + separator
+                    + cc.ToString(CultureInfo.InvariantCulture);
+                if (gzip)
+                {
+                    using var output = new MemoryStream();
+                    using (var deflate = new GZipStream(output, CompressionLevel.Optimal, leaveOpen: true))
+                    {
+                        deflate.Write(raw, 0, raw.Length);
+                    }
+                    objects[chunkKey] = output.ToArray();
+                }
+                else
+                {
+                    objects[chunkKey] = raw;
+                }
+            }
+        }
+    }
+
     public static Dictionary<string, byte[]> BuildInvalidJson(string root)
     {
         var objects = new Dictionary<string, byte[]>(StringComparer.Ordinal);

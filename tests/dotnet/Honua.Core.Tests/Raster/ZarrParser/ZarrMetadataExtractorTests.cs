@@ -121,15 +121,88 @@ public class ZarrMetadataExtractorTests
     }
 
     [Fact]
-    public async Task ReadMetadataAsync_UnsupportedV3_Rejected()
+    public async Task ReadMetadataAsync_V3ArrayWithoutZarrJson_Rejected()
     {
-        var objects = ZarrFixtureBuilder.BuildUnsupportedV3("stores/v3");
+        // A `.zarray` (v2 layout) that declares zarr_format:3 is malformed: real v3
+        // stores carry metadata in zarr.json. The reader must reject it.
+        var objects = ZarrFixtureBuilder.BuildUnsupportedV3("stores/v3-bad");
         var reader = new InMemoryZarrRangeReader(objects);
         var extractor = new ZarrMetadataExtractor();
 
-        var act = () => extractor.ReadMetadataAsync(reader, "bucket", "stores/v3");
+        var act = () => extractor.ReadMetadataAsync(reader, "bucket", "stores/v3-bad");
 
         (await act.Should().ThrowAsync<InvalidDataException>()).WithMessage("*v3*");
+    }
+
+    [Fact]
+    public async Task ReadMetadataAsync_V3SingleArray_DiscoversShapeAndNormalizesDtype()
+    {
+        var objects = ZarrFixtureBuilder.BuildV3SingleArray(
+            root: "stores/v3-single",
+            rows: 8,
+            cols: 8,
+            chunkRows: 4,
+            chunkCols: 4,
+            sample: (r, c) => r * 10 + c,
+            gzip: false);
+        var reader = new InMemoryZarrRangeReader(objects);
+        var extractor = new ZarrMetadataExtractor();
+
+        var metadata = await extractor.ReadMetadataAsync(reader, "bucket", "stores/v3-single");
+
+        metadata.ZarrFormat.Should().Be(ZarrFormatVersion.V3);
+        metadata.Arrays.Should().HaveCount(1);
+        var array = metadata.Arrays[0];
+        array.Name.Should().Be("v3-single");
+        array.Shape.Should().Equal(8, 8);
+        array.Chunks.Should().Equal(4, 4);
+        array.DataType.Should().Be("<f4");
+        array.Compressor.Should().BeNull();
+        array.DimensionNames.Should().Equal("y", "x");
+        array.ChunkKeyEncoding.Prefix.Should().Be("c");
+        array.ChunkKeyEncoding.Separator.Should().Be("/");
+    }
+
+    [Fact]
+    public async Task ReadMetadataAsync_V3Group_PopulatesGeoreferencing()
+    {
+        var objects = ZarrFixtureBuilder.BuildV3Group(
+            root: "stores/v3-group",
+            rows: 8,
+            cols: 8,
+            chunkRows: 4,
+            chunkCols: 4,
+            sample: (r, c) => r + c,
+            srid: 4326,
+            xMin: -180,
+            yMin: -90,
+            xMax: 180,
+            yMax: 90);
+        var reader = new InMemoryZarrRangeReader(objects);
+        var extractor = new ZarrMetadataExtractor();
+
+        var metadata = await extractor.ReadMetadataAsync(reader, "bucket", "stores/v3-group");
+
+        metadata.ZarrFormat.Should().Be(ZarrFormatVersion.V3);
+        metadata.Srid.Should().Be(4326);
+        metadata.Extent.XMin.Should().Be(-180);
+        metadata.Extent.YMax.Should().Be(90);
+        metadata.PrimaryVariable.Should().Be("temperature");
+        metadata.Arrays.Should().HaveCount(1);
+        metadata.Arrays[0].RelativePath.Should().Be("temperature");
+        metadata.Arrays[0].DimensionNames.Should().Equal("y", "x");
+    }
+
+    [Fact]
+    public async Task ReadMetadataAsync_V3UnsupportedCodec_Rejected()
+    {
+        var objects = ZarrFixtureBuilder.BuildV3UnsupportedCodec("stores/v3-blosc");
+        var reader = new InMemoryZarrRangeReader(objects);
+        var extractor = new ZarrMetadataExtractor();
+
+        var act = () => extractor.ReadMetadataAsync(reader, "bucket", "stores/v3-blosc");
+
+        (await act.Should().ThrowAsync<InvalidDataException>()).WithMessage("*blosc*");
     }
 
     [Fact]
