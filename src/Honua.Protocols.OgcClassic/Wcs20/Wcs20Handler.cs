@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using System.Globalization;
 using System.Text;
 using System.Xml;
@@ -943,10 +944,19 @@ internal sealed class Wcs20Handler
 
         rasterQuery = rasterQuery with { OutputSrid = outputSrid };
 
-        // SUBSET carries both spatial trims (x/y axes) and temporal slices
-        // (phenomenonTime). Temporal subsets are validated separately against the
-        // coverage acquisition time, so split them out before spatial parsing.
+        // SUBSET carries spatial trims (x/y axes), temporal slices (phenomenonTime),
+        // and — for multidimensional coverages — additional named dimension axes
+        // (e.g. a vertical/elevation axis). Temporal subsets are validated separately
+        // against the coverage acquisition time; additional dimension axes are parsed
+        // and validated here (#1872) before spatial parsing so that a well-formed
+        // slice on an axis the coverage does not carry surfaces a precise
+        // InvalidAxisLabel, and a malformed one surfaces InvalidSubsetting.
         var allSubsetValues = GetQueryValues(query, Wcs20Utilities.Parameters.Subset);
+        if (!TryValidateAdditionalDimensionSubsets(allSubsetValues, raster, out error))
+        {
+            return false;
+        }
+
         var spatialSubsetValues = FilterSpatialSubsets(allSubsetValues);
         var bbox = GetQueryValue(query, Wcs20Utilities.Parameters.BBox);
         if (spatialSubsetValues.Count > 0 && !string.IsNullOrWhiteSpace(bbox))
@@ -1049,6 +1059,127 @@ internal sealed class Wcs20Handler
         }
 
         return Wcs20Utilities.TemporalAxisLabels.Contains(trimmed[..open].Trim());
+    }
+
+    // Recognises the spatial subset axis labels handled by TryParseSubsetEnvelope
+    // (the X/E/Long/Lon and Y/N/Lat aliases). Used to single out additional,
+    // non-spatial dimension axes for separate validation.
+    private static bool IsSpatialAxisLabel(string axisLabel)
+        => axisLabel.ToLowerInvariant() switch
+        {
+            "x" or "e" or "long" or "lon" or "y" or "n" or "lat" => true,
+            _ => false,
+        };
+
+    // #1872: WCS 2.0 additional-dimension subsetting beyond phenomenonTime.
+    //
+    // Coverages may declare named dimension axes in addition to the two spatial axes
+    // and the temporal axis — for example a vertical/elevation axis on a
+    // multidimensional (Zarr) coverage resolved through the same coordinate/time-axis
+    // indexer the OGC API Coverages `datetime` path uses (#1790). This pass parses
+    // and validates any SUBSET entry that targets neither a spatial axis nor the
+    // temporal axis, and resolves it against the coverage's registered additional
+    // dimension axes.
+    //
+    // The classic WCS GetCoverage path serves over the primary 2D raster via
+    // IRasterStore, which carries no non-spatial dimension axes today, so the set of
+    // registered additional axes is empty: any well-formed additional-dimension slice
+    // therefore names an axis this coverage does not offer and yields InvalidAxisLabel,
+    // while a malformed one yields InvalidSubsetting. When the multidimensional (Zarr)
+    // read path is wired into classic WCS, the resolved axis index would be carried on
+    // the canonical raster query here instead of being rejected. See the plan note on
+    // ticket #1872.
+    private static bool TryValidateAdditionalDimensionSubsets(
+        StringValues subsetValues,
+        RasterInfo raster,
+        out WcsParameterError error)
+    {
+        error = default;
+
+        // Registered additional (non-spatial, non-temporal) dimension axes for this
+        // coverage. Empty for the primary-raster path; this is the extension point for
+        // multidimensional coverages.
+        var additionalAxes = ResolveAdditionalDimensionAxes(raster);
+
+        foreach (var rawValue in subsetValues)
+        {
+            if (string.IsNullOrWhiteSpace(rawValue) || IsTemporalSubset(rawValue))
+            {
+                continue;
+            }
+
+            if (!TryParseSingleSubset(rawValue, out var normalizedAxis, out _, out _, out _))
+            {
+                // Could not parse axis(low) / axis(low,high). If the raw label is a
+                // recognised spatial axis the spatial parser will surface the precise
+                // error; otherwise treat the malformed value as invalid subsetting.
+                if (LooksLikeSpatialAxis(rawValue))
+                {
+                    continue;
+                }
+
+                error = new WcsParameterError(
+                    Wcs20Utilities.ExceptionCodes.InvalidSubsetting,
+                    "SUBSET values must use axis(low) or axis(low,high) syntax.",
+                    Wcs20Utilities.Parameters.Subset);
+                return false;
+            }
+
+            if (IsSpatialAxisLabel(normalizedAxis))
+            {
+                // Spatial axes are handled by TryParseSubsetEnvelope.
+                continue;
+            }
+
+            // A well-formed slice/trim on a named axis that is neither spatial nor
+            // temporal. Resolve it against the coverage's additional dimension axes.
+            if (!additionalAxes.Contains(normalizedAxis))
+            {
+                error = new WcsParameterError(
+                    Wcs20Utilities.ExceptionCodes.InvalidAxisLabel,
+                    $"Unsupported SUBSET axis label '{normalizedAxis}'. This coverage offers the spatial axes (x, y and their E/N/Long/Lat aliases)" +
+                    (raster.AcquisitionDate is null ? "." : " and the temporal axis (phenomenonTime).") +
+                    " No additional dimension axes are available for this coverage.",
+                    Wcs20Utilities.Parameters.Subset);
+                return false;
+            }
+
+            // A registered additional axis was matched but the multidimensional read
+            // path is not wired into classic WCS yet; surface a precise, spec-correct
+            // error rather than silently ignoring the requested slice (#1872).
+            error = new WcsParameterError(
+                Wcs20Utilities.ExceptionCodes.InvalidSubsetting,
+                $"SUBSET on the '{normalizedAxis}' dimension axis is recognised but not yet served by this coverage endpoint.",
+                Wcs20Utilities.Parameters.Subset);
+            return false;
+        }
+
+        return true;
+    }
+
+    // The set of additional (non-spatial, non-temporal) dimension axes a coverage
+    // offers. The primary-raster IRasterStore path exposes none; this is the hook for
+    // multidimensional (Zarr) coverages once their slice read path is wired into
+    // classic WCS (#1872).
+    private static ImmutableHashSet<string> ResolveAdditionalDimensionAxes(RasterInfo raster)
+    {
+        _ = raster;
+        return ImmutableHashSet<string>.Empty;
+    }
+
+    // True when the trimmed SUBSET value's axis label (the text before the first
+    // parenthesis) is a recognised spatial axis, regardless of whether the value
+    // portion parses — lets the spatial parser own the precise spatial error message.
+    private static bool LooksLikeSpatialAxis(string subsetValue)
+    {
+        var trimmed = subsetValue.Trim();
+        var open = trimmed.IndexOf('(', StringComparison.Ordinal);
+        if (open <= 0)
+        {
+            return false;
+        }
+
+        return IsSpatialAxisLabel(trimmed[..open].Trim());
     }
 
     // WCS 2.0 temporal subsetting. The primary raster carries a single effective
