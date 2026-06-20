@@ -290,6 +290,7 @@ public class ImageServerBasicTests : IClassFixture<WebAppFixture>
     [Endpoint("GET /rest/services/{serviceId}/ImageServer/keyProperties")]
     [Endpoint("POST /rest/services/{serviceId}/ImageServer/keyProperties")]
     [Endpoint("GET /rest/services/{serviceId}/ImageServer/legend")]
+    [Endpoint("POST /rest/services/{serviceId}/ImageServer/legend")]
     [Endpoint("GET /rest/services/{serviceId}/ImageServer/computeClassStatistics")]
     [Endpoint("POST /rest/services/{serviceId}/ImageServer/computeClassStatistics")]
     [Endpoint("GET /rest/services/{serviceId}/ImageServer/multidimensionalInfo")]
@@ -405,6 +406,12 @@ public class ImageServerBasicTests : IClassFixture<WebAppFixture>
             // #1344: the service-level POST keyProperties route (added in #1338)
             // needs integration coverage for the ApiSurfaceCoverage arch test.
             ($"/rest/services/{serviceId}/ImageServer/keyProperties",
+            [
+                new("f", "json")
+            ]),
+            // #1900: the service-level POST legend route needs integration coverage for the
+            // ApiSurfaceCoverage arch test.
+            ($"/rest/services/{serviceId}/ImageServer/legend",
             [
                 new("f", "json")
             ]),

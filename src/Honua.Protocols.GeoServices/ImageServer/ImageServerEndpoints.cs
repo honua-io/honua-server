@@ -406,6 +406,17 @@ internal static class ImageServerEndpoints
             .Produces(400)
             .Produces(404);
 
+        // POST mirror of legend. The ArcGIS API for Python ImageryLayer.legend() and the JS API
+        // POST to /legend; without this route the SDK receives a 405 (#1900).
+        group.MapPost("/legend", GetLegendPost)
+            .WithDisplayName("Get Image Server Legend (POST)")
+            .WithName("GetImageServerLegendPost")
+            .WithSummary("Get raster legend swatches using POST")
+            .WithDescription("POST equivalent of the ArcGIS ImageServer legend endpoint")
+            .Produces<LegendResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+
         // Compute class statistics - public ArcGIS route. The internal raster-function
         // analyzer is not exposed here because /computeClass is not an ArcGIS ImageServer
         // contract.
@@ -832,6 +843,15 @@ internal static class ImageServerEndpoints
             .WithDisplayName("Get Image Server Legend by Service")
             .WithName("GetImageServerLegendByService")
             .WithSummary("Get raster legend swatches")
+            .Produces<LegendResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+
+        serviceGroup.MapPost("/legend", GetLegendPostByService)
+            .WithDisplayName("Get Image Server Legend by Service (POST)")
+            .WithName("GetImageServerLegendByServicePost")
+            .WithSummary("Get raster legend swatches using POST")
+            .WithDescription("POST equivalent of the ArcGIS ImageServer legend endpoint")
             .Produces<LegendResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(400)
             .Produces(404);
@@ -2359,6 +2379,47 @@ internal static class ImageServerEndpoints
     {
         var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
         return resolution.ErrorResult ?? await GetLegend(resolution.LayerId, f, context, handler, cancellationToken);
+    }
+
+    // POST mirror of /legend. The ArcGIS API for Python ImageryLayer.legend() and the JS API
+    // POST to /legend; without this route the SDK receives a 405 (#1900). Merge form/body over
+    // the query like the other dual-method ImageServer operations so f and renderingRule can
+    // arrive via either transport, then defer to the same legend handler as GET.
+    private static async Task<IResult> GetLegendPost(
+        int id,
+        HttpContext context,
+        ImageServerLegendHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        if (layerError is not null)
+        {
+            return layerError;
+        }
+
+        var bodyValues = await ReadPostValuesAsync(context, cancellationToken);
+        if (bodyValues.Error != null)
+        {
+            return bodyValues.Error;
+        }
+
+        var merged = MergeQueryAndBodyValues(context, bodyValues.Values!);
+        if (!IsSupportedJsonResponseFormat(GetString(merged, "f")))
+        {
+            return CreateUnsupportedJsonFormatResult(context);
+        }
+
+        return await handler.GetLegendAsync(context, id, cancellationToken, GetString(merged, "renderingRule"));
+    }
+
+    private static async Task<IResult> GetLegendPostByService(
+        string serviceId,
+        HttpContext context,
+        ImageServerLegendHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        return resolution.ErrorResult ?? await GetLegendPost(resolution.LayerId, context, handler, cancellationToken);
     }
 
     /// <summary>
