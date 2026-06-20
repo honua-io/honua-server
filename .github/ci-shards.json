@@ -938,6 +938,25 @@
         "tests/dotnet/Honua.Protocols.Stac.Tests/Source/",
         "src/Honua.Core/Features/Validation/"
       ]
+    },
+    {
+      "name": "Geocoding",
+      "shard_name": "Geocoding",
+      "artifact_suffix": "geocoding",
+      "log_name": "server-tests-geocoding",
+      "timeout_minutes": 25,
+      "test_timeout_minutes": 15,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "_comment": "ADR-0037: GeocodeServer feature tests (Honua.Server.Tests.Features.Geocoding) were claimed by NO shard filter, so they only ran under run_all (orphaned — same class as #1899). This shard claims those tests and the geocoding source dirs (including the standalone Honua.Geocoding project) so a geocoding-only change targets one shard instead of falling through the unmapped-source net to run_all.",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Geocoding",
+      "paths": [
+        "src/Honua.Geocoding/",
+        "src/Honua.Server/Features/Geocoding/",
+        "tests/dotnet/Honua.Server.Tests/Features/Geocoding/"
+      ],
+      "csproj": ""
     }
   ]
 }
