@@ -63,14 +63,19 @@ public static class LasPointCloudReader
         var rawPointFormat = source[104];
 
         // Bit 7 (0x80) of the point data record format byte is the LAZ
-        // compression flag set by laszip. We do not decode the arithmetic-coded
-        // chunk table, so reject compressed inputs explicitly.
+        // compression flag set by laszip. The pure-managed reader does not decode
+        // the arithmetic-coded chunk table; LAZ/COPC decompression is handled
+        // out-of-process by the heavyweight worker's `pcloud.translate` job
+        // (PDAL, #1854), which emits uncompressed LAS that flows back through this
+        // same reader. So a compressed buffer reaching the managed reader directly
+        // is rejected with a stable code the caller maps to the worker route.
         var isCompressed = (rawPointFormat & 0x80) != 0 || (rawPointFormat & 0x40) != 0;
         if (isCompressed)
         {
             throw new LasFormatException(
                 SceneGenerationErrorCodes.ModelAssetInvalid,
-                "LAZ-compressed point clouds are not yet supported; supply an uncompressed LAS file.");
+                "LAZ/COPC-compressed point clouds must be decompressed by the point-cloud worker " +
+                "(pcloud.translate) before managed tiling; this reader accepts uncompressed LAS only.");
         }
 
         var pointFormat = (byte)(rawPointFormat & 0x3F);

@@ -41,6 +41,7 @@ internal sealed partial class GdalDispatchJobExecutor : IJobExecutor
         GdalRasterStatisticsJobExecutor rasterStatistics,
         GdalRasterZonalStatisticsJobExecutor rasterZonalStatistics,
         GdalMultidimCoverageMetadataJobExecutor multidimCoverageMetadata,
+        PdalPointCloudConvertJobExecutor pointCloudConvert,
         ILogger<GdalDispatchJobExecutor> logger)
     {
         ArgumentNullException.ThrowIfNull(vectorConvert);
@@ -51,6 +52,7 @@ internal sealed partial class GdalDispatchJobExecutor : IJobExecutor
         ArgumentNullException.ThrowIfNull(rasterStatistics);
         ArgumentNullException.ThrowIfNull(rasterZonalStatistics);
         ArgumentNullException.ThrowIfNull(multidimCoverageMetadata);
+        ArgumentNullException.ThrowIfNull(pointCloudConvert);
         ArgumentNullException.ThrowIfNull(logger);
 
         var handlers = new Dictionary<string, IJobExecutor>(StringComparer.Ordinal)
@@ -61,6 +63,7 @@ internal sealed partial class GdalDispatchJobExecutor : IJobExecutor
             [GdalRasterReprojectCatalogJobExecutor.HandledProcessId] = rasterReprojectCatalog,
             [GdalRasterZonalStatisticsJobExecutor.HandledProcessId] = rasterZonalStatistics,
             [GdalMultidimCoverageMetadataJobExecutor.HandledProcessId] = multidimCoverageMetadata,
+            [PdalPointCloudConvertJobExecutor.HandledProcessId] = pointCloudConvert,
         };
 
         // surface.* and raster.statistics/histogram each fan out a single executor
