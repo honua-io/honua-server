@@ -90,6 +90,27 @@ internal static class Wcs20Utilities
         internal const string ScaleFactor = "SCALEFACTOR";
         internal const string ScaleAxes = "SCALEAXES";
         internal const string ScaleExtent = "SCALEEXTENT";
+
+        /// <summary>WCS 2.0 Interpolation extension: resampling method selection.</summary>
+        internal const string Interpolation = "INTERPOLATION";
+
+        /// <summary>OGC API-style temporal subset alias accepted alongside <c>SUBSET=phenomenonTime(...)</c>.</summary>
+        internal const string DateTime = "DATETIME";
+
+        /// <summary>Classic WCS temporal subset alias accepted alongside <c>SUBSET=phenomenonTime(...)</c>.</summary>
+        internal const string Time = "TIME";
+    }
+
+    /// <summary>
+    /// WCS 2.0 Interpolation extension method identifiers. The canonical forms are
+    /// the OGC interpolation-method URIs; the trailing token (e.g. <c>nearest</c>)
+    /// and common Esri-style aliases are also accepted for convenience.
+    /// </summary>
+    internal static class InterpolationMethods
+    {
+        internal const string NearestUri = "http://www.opengis.net/def/interpolation/OGC/1/nearest";
+        internal const string LinearUri = "http://www.opengis.net/def/interpolation/OGC/1/linear";
+        internal const string CubicUri = "http://www.opengis.net/def/interpolation/OGC/1/cubic";
     }
 
     /// <summary>
@@ -113,5 +134,8 @@ internal static class Wcs20Utilities
         internal const string OperationNotSupported = "OperationNotSupported";
         internal const string NoSuchCoverage = "NoSuchCoverage";
         internal const string NoApplicableCode = "NoApplicableCode";
+
+        /// <summary>WCS 2.0 Interpolation extension exception for an unsupported method.</summary>
+        internal const string InterpolationMethodNotSupported = "InterpolationMethodNotSupported";
     }
 }

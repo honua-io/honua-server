@@ -54,6 +54,10 @@ internal readonly record struct RasterFunctionPlan(
 /// The resolved two-band arithmetic operation (e.g. NDVI) from a <c>BandArithmetic</c>
 /// function, when one applies; <c>null</c> when no band arithmetic is in the chain.
 /// </param>
+/// <param name="Terrain">
+/// The resolved inline terrain function (hillshade/slope/aspect) from a <c>Hillshade</c>,
+/// <c>Slope</c>, or <c>Aspect</c> function, when one applies; <c>null</c> otherwise.
+/// </param>
 /// <param name="Reason">Explanation surfaced to the client when not supported.</param>
 /// <param name="IsNotImplemented">
 /// When unsupported, distinguishes a recognized-but-unimplemented function/option
@@ -66,6 +70,7 @@ internal readonly record struct RenderingRuleMapping(
     RasterClipRegion? ClipRegion,
     int[]? Bands,
     RasterBandArithmetic? BandArithmetic,
+    RasterTerrainFunction? Terrain,
     string? Reason,
     bool IsNotImplemented)
 {
@@ -74,14 +79,15 @@ internal readonly record struct RenderingRuleMapping(
         RasterColormap? colormap = null,
         RasterClipRegion? clipRegion = null,
         int[]? bands = null,
-        RasterBandArithmetic? bandArithmetic = null)
-        => new(true, stretch, colormap, clipRegion, bands, bandArithmetic, null, false);
+        RasterBandArithmetic? bandArithmetic = null,
+        RasterTerrainFunction? terrain = null)
+        => new(true, stretch, colormap, clipRegion, bands, bandArithmetic, terrain, null, false);
 
     public static RenderingRuleMapping Invalid(string reason)
-        => new(false, null, null, null, null, null, reason, false);
+        => new(false, null, null, null, null, null, null, reason, false);
 
     public static RenderingRuleMapping NotImplemented(string reason)
-        => new(false, null, null, null, null, null, reason, true);
+        => new(false, null, null, null, null, null, null, reason, true);
 }
 
 /// <summary>
@@ -112,7 +118,13 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
         "Clip",
         "ExtractBand",
         "BandArithmetic",
+        "Hillshade",
+        "Slope",
+        "Aspect",
     };
+
+    private static readonly string SupportedFunctionsText =
+        "Identity, Stretch, Colormap, Clip, ExtractBand, BandArithmetic, Hillshade, Slope, Aspect.";
 
     public RasterFunctionPlan Plan(RasterFunctionDocument document)
     {
@@ -143,7 +155,7 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
         if (!SupportedFunctions.Contains(document.RasterFunction))
         {
             throw new ImageServerRasterFunctionException(
-                $"Unsupported raster function '{document.RasterFunction}'. Supported functions: Identity, Stretch, Colormap, Clip, ExtractBand, BandArithmetic.");
+                $"Unsupported raster function '{document.RasterFunction}'. Supported functions: {SupportedFunctionsText}");
         }
 
         executed.Add(document.RasterFunction);
@@ -186,8 +198,12 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
                 break;
             case "IDENTITY":
             case "COLORMAP":
+            case "HILLSHADE":
+            case "SLOPE":
+            case "ASPECT":
                 // Identity has no required arguments beyond the optional Raster nesting;
-                // Colormap validation is enforced on the executable mapping path.
+                // Colormap validation is enforced on the executable mapping path; the terrain
+                // functions accept optional numeric arguments with vetted defaults.
                 break;
         }
     }
@@ -323,6 +339,7 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
         RasterClipRegion? clipRegion = null;
         int[]? bands = null;
         RasterBandArithmetic? bandArithmetic = null;
+        RasterTerrainFunction? terrain = null;
         var current = document;
         for (var depth = 1; ; depth++)
         {
@@ -392,10 +409,23 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
                 // A later (outer) BandArithmetic supersedes an inner one.
                 bandArithmetic = mapping.BandArithmetic ?? bandArithmetic;
             }
+            else if (string.Equals(current.RasterFunction, "Hillshade", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(current.RasterFunction, "Slope", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(current.RasterFunction, "Aspect", StringComparison.OrdinalIgnoreCase))
+            {
+                var mapping = MapTerrainArguments(current.RasterFunction, arguments);
+                if (!mapping.Supported)
+                {
+                    return mapping;
+                }
+
+                // A later (outer) terrain function supersedes an inner one.
+                terrain = mapping.Terrain ?? terrain;
+            }
             else if (!string.Equals(current.RasterFunction, "Identity", StringComparison.OrdinalIgnoreCase))
             {
                 return RenderingRuleMapping.Invalid(
-                    $"Unsupported raster function '{current.RasterFunction}'. Supported functions: Identity, Stretch, Colormap, Clip, ExtractBand, BandArithmetic.");
+                    $"Unsupported raster function '{current.RasterFunction}'. Supported functions: {SupportedFunctionsText}");
             }
 
             if (!TryGetNestedFunction(arguments, "Raster", out var nested))
@@ -406,30 +436,120 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
             current = nested;
         }
 
-        return RenderingRuleMapping.Executable(stretch, colormap, clipRegion, bands, bandArithmetic);
+        // Band arithmetic and terrain both reshape the band layout to a single analytic band, so
+        // they cannot be composed in one chain without an ambiguous result.
+        if (bandArithmetic is not null && terrain is not null)
+        {
+            return RenderingRuleMapping.Invalid(
+                "A renderingRule cannot combine BandArithmetic with a terrain function (Hillshade/Slope/Aspect).");
+        }
+
+        return RenderingRuleMapping.Executable(stretch, colormap, clipRegion, bands, bandArithmetic, terrain);
     }
+
+    // Translates a Hillshade/Slope/Aspect raster function into the canonical
+    // RasterTerrainFunction. Esri encodes hillshade illumination as Azimuth/Altitude and a
+    // ZFactor; the elevation band is taken from BandId (0-based) when supplied, defaulting to
+    // band 1. The numeric arguments are validated against the same ranges the store enforces so
+    // an out-of-range value surfaces a clean 400 rather than aborting the PostGIS function.
+    private static RenderingRuleMapping MapTerrainArguments(string function, Dictionary<string, object?> arguments)
+    {
+        var method = function.ToUpperInvariant() switch
+        {
+            "HILLSHADE" => RasterTerrainMethod.Hillshade,
+            "SLOPE" => RasterTerrainMethod.Slope,
+            "ASPECT" => RasterTerrainMethod.Aspect,
+            _ => RasterTerrainMethod.Hillshade,
+        };
+
+        var band = 1;
+        if (TryGetInt(arguments, "BandId", out var zeroBasedBand) || TryGetInt(arguments, "BandIndex", out zeroBasedBand))
+        {
+            if (zeroBasedBand < 0)
+            {
+                return RenderingRuleMapping.Invalid($"{function} BandId must be a non-negative band index.");
+            }
+
+            band = zeroBasedBand + 1;
+        }
+
+        var terrain = new RasterTerrainFunction { Method = method, Band = band };
+
+        if (TryGetDouble(arguments, "ZFactor", out var zFactor))
+        {
+            if (!double.IsFinite(zFactor) || zFactor <= 0)
+            {
+                return RenderingRuleMapping.Invalid($"{function} ZFactor must be a finite number greater than zero.");
+            }
+
+            terrain = terrain with { ZFactor = zFactor };
+        }
+
+        if (method == RasterTerrainMethod.Hillshade)
+        {
+            if (TryGetDouble(arguments, "Azimuth", out var azimuth))
+            {
+                if (!double.IsFinite(azimuth) || azimuth < 0 || azimuth > 360)
+                {
+                    return RenderingRuleMapping.Invalid("Hillshade Azimuth must be between 0 and 360 degrees.");
+                }
+
+                terrain = terrain with { AzimuthDegrees = azimuth };
+            }
+
+            if (TryGetDouble(arguments, "Altitude", out var altitude))
+            {
+                if (!double.IsFinite(altitude) || altitude < 0 || altitude > 90)
+                {
+                    return RenderingRuleMapping.Invalid("Hillshade Altitude must be between 0 and 90 degrees.");
+                }
+
+                terrain = terrain with { AltitudeDegrees = altitude };
+            }
+        }
+
+        return RenderingRuleMapping.Executable(null, null, null, null, null, terrain);
+    }
+
+    // Esri esriBandArithmeticMethod integer values for the supported indices.
+    private const int BandArithmeticMethodNdvi = 3;
+    private const int BandArithmeticMethodSavi = 5;
+    private const int BandArithmeticMethodNdwi = 9;
 
     // BandArithmetic derives a single analytic band from two source bands. Esri encodes the
     // two operands as a BandIndexes (or BandIDs) array of 0-based band indices and selects the
-    // formula with Method (NDVI = 3). The canonical raster pipeline uses 1-based bands, so each
-    // index is shifted by one. Exactly two band indices are required (visible + infrared). Only
-    // the NDVI method is implemented; other Esri band-arithmetic methods surface a clean
-    // not-implemented result. By Esri's NDVI convention BandIndexes is [visible, infrared].
+    // formula with Method (NDVI = 3, SAVI = 5, NDWI = 9). The canonical raster pipeline uses
+    // 1-based bands, so each index is shifted by one. Exactly two band indices are required.
+    // Each supported method maps to a vetted hardcoded formula in the store; other Esri
+    // band-arithmetic methods surface a clean not-implemented result.
     private static RenderingRuleMapping MapBandArithmeticArguments(Dictionary<string, object?> arguments)
     {
-        // Method: Esri esriBandArithmeticMethod (3 = NDVI). Default to NDVI when omitted so a
-        // bare BandArithmetic with band indices behaves as the common vegetation-index request.
-        const int MethodNdvi = 3;
-        var method = MethodNdvi;
+        // Default to NDVI when omitted so a bare BandArithmetic with band indices behaves as the
+        // common vegetation-index request.
+        var method = BandArithmeticMethodNdvi;
         if (TryGetInt(arguments, "Method", out var parsedMethod))
         {
             method = parsedMethod;
         }
 
-        if (method != MethodNdvi)
+        // The operand ordering convention differs per index. By Esri convention BandIndexes for
+        // NDVI/SAVI is [visible, infrared]; for NDWI (McFeeters) it is [green, NIR]. The store
+        // maps InfraredBand -> first operand (rast1), VisibleBand -> second operand (rast2).
+        RasterBandArithmeticMethod resolvedMethod;
+        switch (method)
         {
-            return RenderingRuleMapping.NotImplemented(
-                $"BandArithmetic Method {method.ToString(CultureInfo.InvariantCulture)} is not implemented on this service. Supported method: NDVI (3).");
+            case BandArithmeticMethodNdvi:
+                resolvedMethod = RasterBandArithmeticMethod.Ndvi;
+                break;
+            case BandArithmeticMethodSavi:
+                resolvedMethod = RasterBandArithmeticMethod.Savi;
+                break;
+            case BandArithmeticMethodNdwi:
+                resolvedMethod = RasterBandArithmeticMethod.Ndwi;
+                break;
+            default:
+                return RenderingRuleMapping.NotImplemented(
+                    $"BandArithmetic Method {method.ToString(CultureInfo.InvariantCulture)} is not implemented on this service. Supported methods: NDVI (3), SAVI (5), NDWI (9).");
         }
 
         if (!TryGetBandArithmeticIndexes(arguments, out var element))
@@ -457,15 +577,27 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
         if (indices.Count != 2)
         {
             return RenderingRuleMapping.Invalid(
-                "BandArithmetic NDVI requires exactly two band indices: [visible, infrared].");
+                "BandArithmetic requires exactly two band indices.");
         }
 
-        var bandArithmetic = new RasterBandArithmetic
-        {
-            VisibleBand = indices[0],
-            InfraredBand = indices[1],
-            Method = RasterBandArithmeticMethod.Ndvi,
-        };
+        // indices[0] is the first listed operand (visible/green), indices[1] the second
+        // (infrared/NIR). The store's formulas read InfraredBand as the first operand (rast1)
+        // and VisibleBand as the second (rast2):
+        //   NDVI = (NIR - VIS)/(NIR + VIS): rast1 = NIR = indices[1], rast2 = VIS = indices[0]
+        //   NDWI = (GREEN - NIR)/(GREEN + NIR): rast1 = GREEN = indices[0], rast2 = NIR = indices[1]
+        var bandArithmetic = resolvedMethod == RasterBandArithmeticMethod.Ndwi
+            ? new RasterBandArithmetic
+            {
+                InfraredBand = indices[0], // GREEN -> rast1
+                VisibleBand = indices[1],  // NIR   -> rast2
+                Method = resolvedMethod,
+            }
+            : new RasterBandArithmetic
+            {
+                VisibleBand = indices[0],  // VIS -> rast2
+                InfraredBand = indices[1], // NIR -> rast1
+                Method = resolvedMethod,
+            };
 
         return RenderingRuleMapping.Executable(null, null, null, null, bandArithmetic);
     }

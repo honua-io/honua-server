@@ -537,7 +537,7 @@ internal static partial class TilesEndpoints
                 subset,
                 crs,
                 subsetCrs,
-                tileMatrixSetId,
+                tileMatrixSetEntry,
                 out var temporalFilters,
                 out var verticalSelections);
             if (validationResult is not null)
@@ -603,21 +603,17 @@ internal static partial class TilesEndpoints
                         cancellationToken);
             }
 
-            // Vector tiles flow through the shared MVT tile provider, which generates tiles against
-            // the standard WebMercatorQuad / WorldCRS84Quad pyramids only. Operator-defined custom
-            // gridsets are advertised + served as PNG (raster) tiles; vector tiles for a custom
-            // gridset are not supported (request PNG with f=png). This keeps the MVT pipeline from
-            // silently emitting tiles in the wrong grid.
-            if (!tileMatrixSetEntry.IsBuiltIn)
-            {
-                return StandardErrorHelpers.CreateNotAcceptable(
-                    context,
-                    $"Vector tiles are not available for tile matrix set '{tileMatrixSetId}'. Request PNG tiles (f=png).");
-            }
+            // Vector tile path. Built-in gridsets render against the standard WebMercatorQuad /
+            // WorldCRS84Quad pyramids (gridGeometry stays null so the byte-identical built-in MVT
+            // path is used). Operator-defined custom gridsets (#1839) now also serve vector tiles:
+            // the resolved gridGeometry is threaded into the MVT provider, which derives the tile
+            // envelope and target SRID from the gridset and reprojects the stored geometry into the
+            // gridset CRS (ST_Transform).
+            var vectorGridGeometry = tileMatrixSetEntry.IsBuiltIn ? null : gridGeometry;
 
-            // Vector tile path. Record-but-don't-render the vertical selection (see the
-            // documented divergence above): tag it on the trace; the vector query itself is
-            // unchanged because there is no Z-aware vector source yet (deferred Shape B).
+            // Record-but-don't-render the vertical selection (see the documented divergence above):
+            // tag it on the trace; the vector query itself is unchanged because there is no Z-aware
+            // vector source yet (deferred Shape B).
             if (GetVerticalSelectionForLayer(layer, verticalSelections) is { } vectorVerticalSelection)
             {
                 activity?.SetTag("honua.tile.vertical_selection", vectorVerticalSelection.RawValue);
@@ -634,11 +630,14 @@ internal static partial class TilesEndpoints
                     CreateVectorTileQuery(
                         layer.SpatialReferenceSrid,
                         isGeographic,
-                        temporalFilter: GetTemporalFilterForLayer(layer, temporalFilters)),
+                        temporalFilter: GetTemporalFilterForLayer(layer, temporalFilters),
+                        gridGeometry: vectorGridGeometry),
                     tileOptionsValue,
                     tileLimits,
                     cancellationToken,
-                    activity)
+                    activity,
+                    tileMatrixSetId: tileMatrixSetEntry.Id,
+                    gridGeometry: vectorGridGeometry)
                 : await ExecuteDatasetVectorTileAsync(
                     context,
                     tileProvider,
@@ -651,7 +650,8 @@ internal static partial class TilesEndpoints
                     tileOptionsValue,
                     tileLimits,
                     activity,
-                    cancellationToken);
+                    cancellationToken,
+                    vectorGridGeometry);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -741,7 +741,8 @@ internal static partial class TilesEndpoints
         TileOptions tileOptionsValue,
         TileLimits tileLimits,
         Activity? activity,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        GridGeometry? gridGeometry = null)
     {
         if (layers.Length > 1)
         {
@@ -760,7 +761,8 @@ internal static partial class TilesEndpoints
             temporalFilter,
             tileOptionsValue,
             tileLimits,
-            cancellationToken);
+            cancellationToken,
+            gridGeometry);
 
         if (mergedTile == null || mergedTile.Length == 0)
         {
@@ -850,7 +852,8 @@ internal static partial class TilesEndpoints
         TemporalFilter? temporalFilter,
         TileOptions tileOptionsValue,
         TileLimits tileLimits,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        GridGeometry? gridGeometry = null)
     {
         List<byte[]>? tileParts = null;
         var totalLength = 0;
@@ -860,7 +863,8 @@ internal static partial class TilesEndpoints
             var query = CreateVectorTileQuery(
                 layer.SpatialReferenceSrid,
                 isGeographic,
-                temporalFilter: temporalFilter);
+                temporalFilter: temporalFilter,
+                gridGeometry: gridGeometry);
             var tileData = await tileProvider.GetMvtTileAsync(
                 layer.StorageLayerId,
                 tileCol,
@@ -869,6 +873,7 @@ internal static partial class TilesEndpoints
                 query,
                 tileOptionsValue,
                 tileLimits,
+                gridGeometry,
                 cancellationToken);
 
             if (tileData == null || tileData.Length == 0)
@@ -905,12 +910,19 @@ internal static partial class TilesEndpoints
     private static FeatureQuery CreateVectorTileQuery(
         int spatialReferenceSrid,
         bool isGeographic,
-        TemporalFilter? temporalFilter)
+        TemporalFilter? temporalFilter,
+        GridGeometry? gridGeometry = null)
         => VectorTileExecution.CreateQuery(
             spatialReferenceSrid,
             temporalFilter: temporalFilter) with
         {
-            OutputSrid = isGeographic ? 4326 : 3857
+            // For built-in pyramids the MVT provider keys off OutputSrid (4326 → geographic path,
+            // else WebMercator). For custom gridsets (#1839) the provider derives the target SRID
+            // from the gridGeometry instead, but we still advertise the gridset SRID here so the
+            // filter-transform branch sees the correct storage→gridset reprojection.
+            OutputSrid = gridGeometry is not null
+                ? gridGeometry.Srid
+                : (isGeographic ? 4326 : 3857)
         };
 
     private static SpatialFilter CreateBboxSpatialFilter(TileBounds bounds, int srid)
@@ -1495,7 +1507,7 @@ internal static partial class TilesEndpoints
         string? subset,
         string? crs,
         string? subsetCrs,
-        string tileMatrixSetId,
+        TileMatrixSetEntry tileMatrixSetEntry,
         out IReadOnlyDictionary<int, TemporalFilter?> temporalFilters,
         out IReadOnlyDictionary<int, VerticalSelection?> verticalSelections)
     {
@@ -1533,14 +1545,14 @@ internal static partial class TilesEndpoints
             }
         }
 
-        if (!IsSupportedCrs(crs, tileMatrixSetId))
+        if (!IsSupportedCrs(crs, tileMatrixSetEntry))
         {
             return StandardErrorHelpers.CreateBadRequest(
                 context,
                 $"Unsupported crs '{crs}'. Only the CRS matching the tile matrix set is supported.");
         }
 
-        if (!IsSupportedCrs(subsetCrs, tileMatrixSetId))
+        if (!IsSupportedCrs(subsetCrs, tileMatrixSetEntry))
         {
             return StandardErrorHelpers.CreateBadRequest(
                 context,
@@ -1610,7 +1622,7 @@ internal static partial class TilesEndpoints
         IReadOnlyDictionary<int, VerticalSelection?> verticalSelections)
         => verticalSelections.TryGetValue(layer.StorageLayerId, out var verticalSelection) ? verticalSelection : null;
 
-    private static bool IsSupportedCrs(string? crs, string tileMatrixSetId)
+    private static bool IsSupportedCrs(string? crs, TileMatrixSetEntry tileMatrixSetEntry)
     {
         if (string.IsNullOrWhiteSpace(crs))
         {
@@ -1625,14 +1637,31 @@ internal static partial class TilesEndpoints
             normalized = $"http://www.opengis.net/def/crs/EPSG/0/{epsg}";
         }
 
-        if (OgcTilesUtilities.IsWorldCrs84Quad(tileMatrixSetId))
+        // Built-in gridsets keep their exact accepted-CRS sets so the CITE Tiles assertions and
+        // existing snapshot guards stay byte-identical.
+        if (tileMatrixSetEntry.IsBuiltIn)
         {
-            return string.Equals(normalized, OgcTilesUtilities.Crs84, StringComparison.OrdinalIgnoreCase)
-                   || string.Equals(normalized, "http://www.opengis.net/def/crs/EPSG/0/4326", StringComparison.OrdinalIgnoreCase)
-                   || string.Equals(normalized, "http://www.opengis.net/def/crs/OGC/1.3/CRS84", StringComparison.OrdinalIgnoreCase);
+            if (OgcTilesUtilities.IsWorldCrs84Quad(tileMatrixSetEntry.Id))
+            {
+                return string.Equals(normalized, OgcTilesUtilities.Crs84, StringComparison.OrdinalIgnoreCase)
+                       || string.Equals(normalized, "http://www.opengis.net/def/crs/EPSG/0/4326", StringComparison.OrdinalIgnoreCase)
+                       || string.Equals(normalized, "http://www.opengis.net/def/crs/OGC/1.3/CRS84", StringComparison.OrdinalIgnoreCase);
+            }
+
+            return string.Equals(normalized, OgcTilesUtilities.WebMercatorCrs, StringComparison.OrdinalIgnoreCase);
         }
 
-        return string.Equals(normalized, OgcTilesUtilities.WebMercatorCrs, StringComparison.OrdinalIgnoreCase);
+        // Custom gridset (#1839): tiles are delivered in the gridset CRS, so accept the gridset's
+        // own CRS URI or the equivalent EPSG code form.
+        if (string.Equals(normalized, tileMatrixSetEntry.Crs, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return string.Equals(
+            normalized,
+            $"http://www.opengis.net/def/crs/EPSG/0/{tileMatrixSetEntry.Srid}",
+            StringComparison.OrdinalIgnoreCase);
     }
 
     private static IResult CreateFormatError(HttpContext context, string? formatParameter)

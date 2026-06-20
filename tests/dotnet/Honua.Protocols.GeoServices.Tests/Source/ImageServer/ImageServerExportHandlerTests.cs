@@ -573,7 +573,7 @@ public class ImageServerExportHandlerTests
 
     [UnitTest]
     [Operation(Operations.Export)]
-    public async Task ExportImageAsync_WithSeamlineMosaicMethodAndMultipleRasters_ReturnsNotImplemented()
+    public async Task ExportImageAsync_WithSeamlineMosaicMethodAndMultipleRasters_CompositesWithSeamlineOrdering()
     {
         _rasterStore.QueryRastersAsync(default, default, default)
             .ReturnsForAnyArgs(
@@ -582,21 +582,18 @@ public class ImageServerExportHandlerTests
                 CreateTestRasterInfo() with { Id = 101, Name = "second-raster" }
             ]);
 
+        RasterMosaicOrdering capturedOrdering = RasterMosaicOrdering.AcquisitionNewest;
+        SetupMosaicCapture(callInfo => capturedOrdering = callInfo.ArgAt<RasterMosaicOrdering>(4));
+        SetupTemporaryStorage();
+
         var context = CreateImageServerContext();
         var request = CreateRequest(mosaicRule: "{\"mosaicMethod\":\"esriMosaicSeamline\"}");
         var result = await _handler.ExportImageAsync(context, 1, request);
-        await result.ExecuteAsync(context);
 
-        context.Response.StatusCode.Should().Be(StatusCodes.Status501NotImplemented);
-        await _rasterStore.DidNotReceive()
-            .ExportMosaicAsync(
-                1,
-                Arg.Any<long[]>(),
-                Arg.Any<RasterMergeStrategy>(),
-                Arg.Any<RasterQuery>(),
-                Arg.Any<RasterMosaicOrdering>(),
-                Arg.Any<RasterMosaicAttributeSort?>(),
-                Arg.Any<CancellationToken>());
+        // esriMosaicSeamline is now implemented (#1804): it composites via the seamline ordering
+        // so each raster is clipped to its persisted cutline before the union.
+        result.Should().BeOfType<JsonHttpResult<ExportImageResponse>>();
+        capturedOrdering.Should().Be(RasterMosaicOrdering.Seamline);
     }
 
     [UnitTest]

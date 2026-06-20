@@ -52,7 +52,8 @@ internal static class VectorTileExecution
         Activity? activity = null,
         string? serviceId = null,
         string? layerId = null,
-        string? tileMatrixSetId = null)
+        string? tileMatrixSetId = null,
+        GridGeometry? gridGeometry = null)
     {
         var ttlSeconds = TilesetTtlResolver.Resolve(
             tileOptions,
@@ -69,6 +70,7 @@ internal static class VectorTileExecution
             query,
             tileOptions,
             tileLimits,
+            gridGeometry,
             cancellationToken);
 
         if (tileData == null || tileData.Length == 0)

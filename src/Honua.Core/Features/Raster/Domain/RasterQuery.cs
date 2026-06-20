@@ -76,6 +76,15 @@ public readonly record struct RasterQuery
     public RasterBandArithmetic? BandArithmetic { get; init; }
 
     /// <summary>
+    /// Optional inline terrain (focal) raster function (hillshade/slope/aspect) applied
+    /// to a single elevation band before <see cref="Stretch"/>. Distinct from the
+    /// per-pixel <see cref="BandArithmetic"/> case: it reads a 3x3 neighbourhood via a
+    /// vetted PostGIS surface function. <see cref="BandArithmetic"/> and this property are
+    /// mutually exclusive. When <c>null</c> no terrain function is applied.
+    /// </summary>
+    public RasterTerrainFunction? Terrain { get; init; }
+
+    /// <summary>
     /// Optional display stretch applied to pixel values before encoding. When
     /// set, each selected band is linearly rescaled to the 8-bit display range
     /// using bounds derived from the chosen <see cref="RasterStretchType"/>.

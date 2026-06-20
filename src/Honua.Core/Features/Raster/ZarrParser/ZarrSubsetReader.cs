@@ -147,13 +147,14 @@ public sealed class ZarrSubsetReader : IZarrSubsetReader
             return;
         }
 
-        if (string.Equals(compressor, "zlib", StringComparison.Ordinal))
+        if (string.Equals(compressor, "zlib", StringComparison.Ordinal) ||
+            string.Equals(compressor, "gzip", StringComparison.Ordinal))
         {
             return;
         }
 
         throw new InvalidOperationException(
-            $"Zarr compressor '{compressor}' is not supported by the MVP reader. Use uncompressed or zlib chunks.");
+            $"Zarr compressor '{compressor}' is not supported by the MVP reader. Use uncompressed, zlib, or gzip chunks.");
     }
 
     /// <summary>
@@ -210,7 +211,7 @@ public sealed class ZarrSubsetReader : IZarrSubsetReader
         CancellationToken cancellationToken)
     {
         var rank = array.Shape.Length;
-        var chunkPath = JoinKey(arrayPath, BuildChunkKey(chunkIndex));
+        var chunkPath = JoinKey(arrayPath, BuildChunkKey(chunkIndex, array.ChunkKeyEncoding));
         byte[]? raw;
         try
         {
@@ -365,17 +366,21 @@ public sealed class ZarrSubsetReader : IZarrSubsetReader
             return;
         }
 
-        if (string.Equals(compressor, "zlib", StringComparison.Ordinal))
+        if (string.Equals(compressor, "zlib", StringComparison.Ordinal) ||
+            string.Equals(compressor, "gzip", StringComparison.Ordinal))
         {
             // MemoryStream(byte[]) is a non-copying wrapper; the destination buffer is supplied
             // by the caller (already pool-friendly), so we decompress straight into it via the
             // Span<byte> overload, avoiding any intermediate MemoryStream/ToArray() allocation.
+            // zlib (v2 zlib codec) and gzip (v3 gzip codec) differ only in container framing.
             using var input = new MemoryStream(raw);
-            using var zlib = new ZLibStream(input, CompressionMode.Decompress);
+            using Stream decoder = string.Equals(compressor, "gzip", StringComparison.Ordinal)
+                ? new GZipStream(input, CompressionMode.Decompress)
+                : new ZLibStream(input, CompressionMode.Decompress);
             var totalRead = 0;
             while (totalRead < destination.Length)
             {
-                var read = zlib.Read(destination.AsSpan(totalRead));
+                var read = decoder.Read(destination.AsSpan(totalRead));
                 if (read <= 0)
                 {
                     break;
@@ -385,7 +390,7 @@ public sealed class ZarrSubsetReader : IZarrSubsetReader
             if (totalRead < destination.Length)
             {
                 throw new InvalidDataException(
-                    $"Zarr zlib chunk decoded to {totalRead} bytes; expected {destination.Length}.");
+                    $"Zarr {compressor} chunk decoded to {totalRead} bytes; expected {destination.Length}.");
             }
             return;
         }
@@ -448,19 +453,23 @@ public sealed class ZarrSubsetReader : IZarrSubsetReader
         return false;
     }
 
-    private static string BuildChunkKey(int[] chunkIndex)
+    private static string BuildChunkKey(int[] chunkIndex, ZarrChunkKeyEncoding encoding)
     {
-        // Zarr v2 default separator is '.'.
+        // v2 dotted form ("0.1"); v3 default form is "c"-prefixed and slash-separated ("c/0/1").
         if (chunkIndex.Length == 0)
         {
-            return "0";
+            return encoding.RankZeroKey;
         }
         var sb = new System.Text.StringBuilder();
+        if (encoding.Prefix.Length > 0)
+        {
+            sb.Append(encoding.Prefix).Append(encoding.Separator);
+        }
         for (var i = 0; i < chunkIndex.Length; i++)
         {
             if (i > 0)
             {
-                sb.Append('.');
+                sb.Append(encoding.Separator);
             }
             sb.Append(chunkIndex[i].ToString(CultureInfo.InvariantCulture));
         }

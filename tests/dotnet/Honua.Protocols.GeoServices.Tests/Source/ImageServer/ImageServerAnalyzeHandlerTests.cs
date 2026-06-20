@@ -104,10 +104,12 @@ public class ImageServerAnalyzeHandlerTests
     {
 
         var context = CreateImageServerContext();
+        // Hillshade is now an implemented terrain function (#1803); use a genuinely-unknown
+        // function name so the unsupported-function -> 400 path is exercised.
         var result = await _handler.AnalyzeAsync(
             context,
             1,
-            Values(("renderingRule", "{\"rasterFunction\":\"Hillshade\"}")),
+            Values(("renderingRule", "{\"rasterFunction\":\"NonExistentRasterFunction\"}")),
             CancellationToken.None);
         await result.ExecuteAsync(context);
 

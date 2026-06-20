@@ -23,6 +23,14 @@ public interface ITileProvider
     /// <param name="tileOptions">Tile rendering options (extent, buffer, simplification, etc.)</param>
     /// <param name="tileLimits">Tile generation limits</param>
     /// <param name="cancellationToken">Cancellation token</param>
+    /// <param name="gridGeometry">
+    /// Optional gridset geometry for operator-defined custom tile matrix sets (#1839). When
+    /// <see langword="null"/> the provider renders against the two built-in pyramids
+    /// (WebMercatorQuad / WorldCRS84Quad) exactly as before — output stays byte-identical. When
+    /// supplied, the provider derives the tile envelope and target SRID from the gridset so it can
+    /// serve vector tiles for arbitrary custom gridsets (reprojecting the stored geometry into the
+    /// gridset CRS via <c>ST_Transform</c>).
+    /// </param>
     /// <returns>MVT tile data as byte array, null if no features in tile</returns>
     Task<byte[]?> GetMvtTileAsync(
         int layerId,
@@ -32,6 +40,7 @@ public interface ITileProvider
         FeatureQuery? query,
         Honua.Core.Features.Tiles.TileOptions tileOptions,
         TileLimits tileLimits,
+        Honua.Core.Features.Tiles.GridGeometry? gridGeometry = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

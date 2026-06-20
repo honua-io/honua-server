@@ -38,6 +38,7 @@ public sealed class ReadOnlyTileProvider : ITileProvider
         FeatureQuery? query,
         TileOptions tileOptions,
         TileLimits tileLimits,
+        GridGeometry? gridGeometry = null,
         CancellationToken cancellationToken = default)
         => throw new NotSupportedException($"{_providerName} provider does not support MVT tile generation.");
 

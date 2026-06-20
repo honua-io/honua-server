@@ -94,7 +94,8 @@ internal sealed partial class MySqlFeatureQueryBuilder
     /// <inheritdoc />
     public ParameterizedQuery BuildMvtTileQuery(
         int layerId, int x, int y, int z, FeatureQuery? query, TileOptions tileOptions, TileLimits tileLimits,
-        GeometryStorageType geometryStorageType = GeometryStorageType.Geometry)
+        GeometryStorageType geometryStorageType = GeometryStorageType.Geometry,
+        Honua.Core.Features.Tiles.GridGeometry? gridGeometry = null)
         => ThrowNotSupported();
 
     /// <inheritdoc />

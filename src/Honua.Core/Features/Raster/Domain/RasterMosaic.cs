@@ -74,7 +74,16 @@ public enum RasterMosaicOrdering
     /// direction are carried separately on <see cref="RasterMosaicAttributeSort"/>, since the
     /// ordering enum cannot encode an arbitrary column name.
     /// </summary>
-    Attribute = 4
+    Attribute = 4,
+
+    /// <summary>
+    /// Each raster is clipped to its persisted seamline (cutline) before the union, so a
+    /// contested pixel is resolved by the per-raster seamline geometry rather than by raster
+    /// ordering alone (Esri <c>esriMosaicSeamline</c>, #1804). Among the seamline-clipped pieces
+    /// the union orders by newest acquisition. Requires a per-raster seamline in the footprint
+    /// store; rasters without one contribute their full footprint.
+    /// </summary>
+    Seamline = 5
 }
 
 /// <summary>

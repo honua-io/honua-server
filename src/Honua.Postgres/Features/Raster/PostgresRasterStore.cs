@@ -52,6 +52,8 @@ internal sealed class PostgresRasterStore : IRasterStore
     private readonly string _rasterLayerStatisticsTable;
     private readonly string _rasterTilesTable;
     private readonly string _rasterSensorMetadataTable;
+    private readonly string _rasterOverviewsTable;
+    private readonly string _rasterFootprintsTable;
     private readonly string _featuresTable;
 
     public PostgresRasterStore(
@@ -67,6 +69,8 @@ internal sealed class PostgresRasterStore : IRasterStore
         _rasterLayerStatisticsTable = SchemaSearchPath.QualifyTable("raster_layer_statistics", schemaName);
         _rasterTilesTable = SchemaSearchPath.QualifyTable("raster_tiles", schemaName);
         _rasterSensorMetadataTable = SchemaSearchPath.QualifyTable("raster_sensor_metadata", schemaName);
+        _rasterOverviewsTable = SchemaSearchPath.QualifyTable("raster_overviews", schemaName);
+        _rasterFootprintsTable = SchemaSearchPath.QualifyTable("raster_footprints", schemaName);
         _featuresTable = SchemaSearchPath.QualifyTable(DatabaseSchema.FeaturesTable, schemaName);
     }
 
@@ -242,6 +246,13 @@ internal sealed class PostgresRasterStore : IRasterStore
         if (query.BandArithmetic is { } bandArithmetic)
         {
             rasterExpr = BuildBandArithmeticExpression(rasterExpr, bandArithmetic);
+        }
+
+        // 1a-ii. Apply an inline terrain function (renderingRule Hillshade/Slope/Aspect) over the
+        // elevation band. Mutually exclusive with band arithmetic (validated by the planner).
+        if (query.Terrain is { } terrain)
+        {
+            rasterExpr = BuildTerrainExpression(rasterExpr, terrain);
         }
 
         // 1b. Apply display stretch (renderingRule Stretch) on the selected bands.
@@ -518,19 +529,90 @@ internal sealed class PostgresRasterStore : IRasterStore
             throw new ArgumentException("Band arithmetic band numbers must be positive.", nameof(ba));
         }
 
-        var nir = ba.InfraredBand.ToString(CultureInfo.InvariantCulture);
-        var vis = ba.VisibleBand.ToString(CultureInfo.InvariantCulture);
+        var a = ba.InfraredBand.ToString(CultureInfo.InvariantCulture);
+        var b = ba.VisibleBand.ToString(CultureInfo.InvariantCulture);
 
         // The formula text is a compile-time constant; only the band ordinals vary.
+        // [rast1.val] is the first operand band (InfraredBand), [rast2.val] the second
+        // (VisibleBand). The two-band normalized-difference indices share the
+        // (a - b) / (a + b) shape with a zero-denominator guard; SAVI adds the canonical
+        // soil-brightness factor L = 0.5.
         var formula = ba.Method switch
         {
+            // NDVI = (NIR - VIS) / (NIR + VIS)
             RasterBandArithmeticMethod.Ndvi =>
                 "([rast1.val] - [rast2.val]) / NULLIF(([rast1.val] + [rast2.val]), 0)",
+
+            // NDWI (McFeeters) = (GREEN - NIR) / (GREEN + NIR); operand a = GREEN, b = NIR.
+            RasterBandArithmeticMethod.Ndwi =>
+                "([rast1.val] - [rast2.val]) / NULLIF(([rast1.val] + [rast2.val]), 0)",
+
+            // SAVI = ((NIR - VIS) * 1.5) / (NIR + VIS + 0.5); operand a = NIR, b = VIS.
+            RasterBandArithmeticMethod.Savi =>
+                "(([rast1.val] - [rast2.val]) * 1.5) / NULLIF(([rast1.val] + [rast2.val] + 0.5), 0)",
+
             _ => throw new ArgumentException(
                 $"Unsupported band arithmetic method: {ba.Method}", nameof(ba)),
         };
 
-        return $"ST_MapAlgebra({baseExpr}, {nir}, {baseExpr}, {vis}, '{formula}', '32BF', 'INTERSECTION', NULL, NULL)";
+        return $"ST_MapAlgebra({baseExpr}, {a}, {baseExpr}, {b}, '{formula}', '32BF', 'INTERSECTION', NULL, NULL)";
+    }
+
+    // ----- Inline terrain execution (renderingRule Hillshade/Slope/Aspect) -----
+    // Composes a non-persisting PostGIS surface function over a single elevation band. Unlike
+    // band arithmetic (a per-pixel ST_MapAlgebra), terrain functions read a 3x3 neighbourhood,
+    // so they use ST_HillShade/ST_Slope/ST_Aspect directly. The PostGIS function name and the
+    // band ordinal/units are compile-time constants; the only varying tokens are the numeric
+    // azimuth/altitude/z-factor, which are validated finite and formatted with InvariantCulture,
+    // so this stays injection-safe (matching the stretch/colormap/band-math convention).
+
+    /// <summary>
+    /// Wraps <paramref name="baseExpr"/> in the PostGIS surface function selected by
+    /// <paramref name="terrain"/>, reading the configured elevation band. Hillshade honours the
+    /// azimuth/altitude/z-factor; slope/aspect emit degrees. The output is a single 32-bit-float
+    /// analytic band that composes with the downstream stretch/colormap steps.
+    /// </summary>
+    internal static string BuildTerrainExpression(string baseExpr, RasterTerrainFunction terrain)
+    {
+        if (terrain.Band <= 0)
+        {
+            throw new ArgumentException("Terrain band number must be positive.", nameof(terrain));
+        }
+
+        if (!double.IsFinite(terrain.ZFactor) || terrain.ZFactor <= 0)
+        {
+            throw new ArgumentException("Terrain z-factor must be a finite number greater than zero.", nameof(terrain));
+        }
+
+        var band = terrain.Band.ToString(CultureInfo.InvariantCulture);
+        var zFactor = FormatStretchNumber(terrain.ZFactor);
+
+        switch (terrain.Method)
+        {
+            case RasterTerrainMethod.Hillshade:
+                if (!double.IsFinite(terrain.AzimuthDegrees) || terrain.AzimuthDegrees < 0 || terrain.AzimuthDegrees > 360)
+                {
+                    throw new ArgumentException("Terrain azimuth must be between 0 and 360 degrees.", nameof(terrain));
+                }
+
+                if (!double.IsFinite(terrain.AltitudeDegrees) || terrain.AltitudeDegrees < 0 || terrain.AltitudeDegrees > 90)
+                {
+                    throw new ArgumentException("Terrain altitude must be between 0 and 90 degrees.", nameof(terrain));
+                }
+
+                var azimuth = FormatStretchNumber(terrain.AzimuthDegrees);
+                var altitude = FormatStretchNumber(terrain.AltitudeDegrees);
+                return $"ST_HillShade({baseExpr}, {band}, '32BF', {azimuth}, {altitude}, 255, {zFactor}, FALSE)";
+
+            case RasterTerrainMethod.Slope:
+                return $"ST_Slope({baseExpr}, {band}, '32BF', 'DEGREES', {zFactor}, FALSE)";
+
+            case RasterTerrainMethod.Aspect:
+                return $"ST_Aspect({baseExpr}, {band}, '32BF', 'DEGREES', FALSE)";
+
+            default:
+                throw new ArgumentException($"Unsupported terrain method: {terrain.Method}", nameof(terrain));
+        }
     }
 
     // Persisted band statistics describe the source pixels, not a band-math output. When
@@ -538,6 +620,16 @@ internal sealed class PostgresRasterStore : IRasterStore
     // rule) is meaningful over the derived band; auto-derived bounds are skipped.
     private static bool CanResolveStretchBounds(RasterStretch stretch, RasterBandArithmetic? bandArithmetic)
         => bandArithmetic is null || (stretch.StatisticsMin is not null && stretch.StatisticsMax is not null);
+
+    // Mosaic equivalent of CanResolveStretchBounds: when band arithmetic OR an inline terrain
+    // function has reshaped the band semantics, the persisted whole-mosaic statistics no longer
+    // describe the analytic band, so only an explicitly-supplied stretch range is honoured.
+    private static bool CanResolveMosaicStretchBounds(
+        RasterStretch stretch,
+        RasterBandArithmetic? bandArithmetic,
+        RasterTerrainFunction? terrain)
+        => (bandArithmetic is null && terrain is null)
+            || (stretch.StatisticsMin is not null && stretch.StatisticsMax is not null);
 
     // ----- On-the-fly overview selection for dynamic tile generation ----------
     // Low-zoom raster tiles cover a huge ground area at coarse resolution (a z=0 tile
@@ -603,6 +695,80 @@ internal sealed class PostgresRasterStore : IRasterStore
             $"GREATEST(abs(ST_ScaleX({transformed})), {mpp}), " +
             $"-GREATEST(abs(ST_ScaleY({transformed})), {mpp}), " +
             "'NearestNeighbor')";
+    }
+
+    /// <summary>
+    /// Tile ground resolution (metres/pixel in EPSG:3857) for a WebMercatorQuad tile at
+    /// <paramref name="level"/>: world span / (256 px * 2^level).
+    /// </summary>
+    internal static double TileGroundResolutionMeters(int level)
+        => WebMercatorWorldSpanMeters / (256.0 * Math.Pow(2, level));
+
+    /// <summary>
+    /// Resolves the best persisted overview row id for a raster at the requested tile zoom, or
+    /// <c>null</c> when no persisted overview is coarser-or-equal to the tile resolution (or the
+    /// overview table is not provisioned). The selection reuses the shared
+    /// <see cref="OverviewLevelSelector"/> scoring so the persisted-pyramid read path ranks levels
+    /// the same way the COG read path does (#1836). Persisted overviews are already in EPSG:3857,
+    /// so reading one skips both the full-resolution scan and the on-the-fly reduction.
+    /// </summary>
+    private async Task<long?> ResolveBestOverviewIdAsync(
+        DbConnection connection,
+        long rasterId,
+        int level,
+        CancellationToken cancellationToken)
+    {
+        // Native/finer zoom reads full resolution: never substitute an overview.
+        if (level >= OverviewMaxZoom)
+        {
+            return null;
+        }
+
+        var tileResolution = TileGroundResolutionMeters(level);
+
+        var candidates = new List<(long Id, double Resolution)>();
+        try
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"""
+                SELECT id, ground_resolution
+                FROM {_rasterOverviewsTable}
+                WHERE raster_data_id = @rasterId
+                ORDER BY ground_resolution
+                """;
+            AddParameter(command, "@rasterId", rasterId);
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                candidates.Add((reader.GetInt64(0), reader.GetDouble(1)));
+            }
+        }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UndefinedTable)
+        {
+            // Schema predates migration 061: fall back to the on-the-fly reduction.
+            return null;
+        }
+
+        if (candidates.Count == 0)
+        {
+            return null;
+        }
+
+        // Only consider overviews that do not over-coarsen relative to the tile (resolution
+        // <= tile resolution), so a tile never reads a level coarser than it needs and loses
+        // detail. Among those, pick the closest match via the shared selector. A 256x256 tile
+        // spans 256 * tileResolution metres on each axis.
+        var usable = candidates.Where(c => c.Resolution <= tileResolution * (1 + 1e-9)).ToList();
+        if (usable.Count == 0)
+        {
+            return null;
+        }
+
+        var tileSpan = 256.0 * tileResolution;
+        var resolutions = usable.Select(c => (c.Resolution, c.Resolution)).ToList();
+        var bestIndex = OverviewLevelSelector.SelectBestIndex(tileSpan, tileSpan, 256, 256, resolutions);
+        return bestIndex >= 0 ? usable[bestIndex].Id : null;
     }
 
     // ----- Clip execution (export bbox + renderingRule Clip raster function) ---
@@ -673,6 +839,18 @@ internal sealed class PostgresRasterStore : IRasterStore
         {
             rasterExpr = BuildClipExpression(
                 rasterExpr, clip, rasterColumnExpr, "@identifyClipGeom", "@identifyClipSrid", extraParams);
+        }
+
+        // Band arithmetic / terrain reshape the band(s) before the stretch so the sampled value
+        // matches the rendered output (identify parity, #1803).
+        if (rendering.BandArithmetic is { } bandArithmetic)
+        {
+            rasterExpr = BuildBandArithmeticExpression(rasterExpr, bandArithmetic);
+        }
+
+        if (rendering.Terrain is { } terrain)
+        {
+            rasterExpr = BuildTerrainExpression(rasterExpr, terrain);
         }
 
         if (rendering.Stretch is { } stretch)
@@ -1236,8 +1414,26 @@ internal sealed class PostgresRasterStore : IRasterStore
             sourceRasterExpr = BuildClipExpression(sourceRasterExpr, renderClip, "raster", "@renderClipGeom", "@renderClipSrid", extraParams);
         }
 
-        // Apply display stretch (renderingRule Stretch) on the merged mosaic bands.
-        if (query.Stretch is { } stretch)
+        // Apply band arithmetic (renderingRule BandArithmetic) on the merged mosaic, collapsing
+        // two bands into a single analytic band (e.g. NDVI) before the stretch — previously the
+        // mosaic path silently ignored band-math renderingRules (#1803).
+        if (query.BandArithmetic is { } mosaicBandArithmetic)
+        {
+            postMergeRasterExpr = BuildBandArithmeticExpression(postMergeRasterExpr, mosaicBandArithmetic);
+        }
+
+        // Apply an inline terrain function (renderingRule Hillshade/Slope/Aspect) over the merged
+        // elevation band. Mutually exclusive with band arithmetic (validated by the planner).
+        if (query.Terrain is { } mosaicTerrain)
+        {
+            postMergeRasterExpr = BuildTerrainExpression(postMergeRasterExpr, mosaicTerrain);
+        }
+
+        // Apply display stretch (renderingRule Stretch) on the merged mosaic bands. When band
+        // arithmetic or a terrain function reshaped the band semantics the persisted mosaic
+        // statistics no longer describe the analytic band, so only an explicitly-supplied stretch
+        // range is honoured (mirrors the single-raster CanResolveStretchBounds guard).
+        if (query.Stretch is { } stretch && CanResolveMosaicStretchBounds(stretch, query.BandArithmetic, query.Terrain))
         {
             var stretchBounds = await ResolveMosaicStretchBoundsAsync(
                 stretch, layerId, rasterIds, mergeStrategy, cancellationToken).ConfigureAwait(false);
@@ -1299,10 +1495,36 @@ internal sealed class PostgresRasterStore : IRasterStore
             creationOptionsClause = BuildCreationOptionsClause(BuildExportCreationOptions(query, effectiveFormat));
         }
 
+        // esriMosaicSeamline (#1804): clip each raster to its persisted seamline (cutline) before
+        // the union so a contested pixel is resolved by the per-raster seamline geometry rather
+        // than ordering alone. A raster without a seamline row contributes its full pixels
+        // (COALESCE to the raw clip expression). Other orderings read the raster column directly.
+        var seamlineRequested = ordering == RasterMosaicOrdering.Seamline;
+        var (sourceFromClause, sourceSelectExpr) = seamlineRequested
+            ? ($"""
+                {_rasterDataTable} rd
+                LEFT JOIN {_rasterFootprintsTable} fp ON fp.raster_data_id = rd.id
+               """,
+               // The seamline geometry carries its own SRID; transform it into the raster SRID so
+               // the clip aligns. The seamline column name is a compile-time constant.
+               $"CASE WHEN fp.seamline IS NOT NULL " +
+               $"THEN ST_Clip({sourceRasterExpr}, ST_Transform(ST_SetSRID(fp.seamline, fp.srid), ST_SRID(rd.raster))) " +
+               $"ELSE {sourceRasterExpr} END")
+            : ($"{_rasterDataTable}", sourceRasterExpr);
+
+        // The seamline JOIN aliases the raster table as rd; the non-seamline path keeps the bare
+        // column references the other clip/band expressions were built against.
+        var idColumn = seamlineRequested ? "rd.id" : "id";
+        var createdAtColumn = seamlineRequested ? "rd.created_at" : "created_at";
+        var acquisitionColumn = seamlineRequested ? "rd.acquisition_date" : "acquisition_date";
+        var layerIdColumn = seamlineRequested ? "rd.layer_id" : "layer_id";
+
         // esriMosaicByAttribute over a non-date attribute needs the allowlisted attribute column
         // projected into the source CTE so the union's ORDER BY can reference it. The column name
         // is strictly allowlisted upstream (never caller free text). 'id' is already projected, so
-        // skip the extra projection to avoid a duplicate column.
+        // skip the extra projection to avoid a duplicate column. Attribute ordering and seamline
+        // ordering are mutually exclusive (single `ordering` value), so under the attribute path
+        // the source FROM is always the bare raster table and the column needs no `rd.` alias.
         var attributeProjection = ordering == RasterMosaicOrdering.Attribute
             && attributeSort is { } sort
             && !string.Equals(sort.Column, "id", StringComparison.OrdinalIgnoreCase)
@@ -1315,13 +1537,13 @@ internal sealed class PostgresRasterStore : IRasterStore
                 SELECT unnest(@rasterIds) AS raster_id
             ),
             source AS (
-                SELECT {sourceRasterExpr} AS rast,
-                       id,
-                       created_at,
-                       COALESCE(acquisition_date, created_at) AS effective_acquisition{attributeProjection}
-                FROM {_rasterDataTable}
-                WHERE layer_id = @layerId
-                  AND id IN (SELECT raster_id FROM requested)
+                SELECT {sourceSelectExpr} AS rast,
+                       {idColumn} AS id,
+                       {createdAtColumn} AS created_at,
+                       COALESCE({acquisitionColumn}, {createdAtColumn}) AS effective_acquisition{attributeProjection}
+                FROM {sourceFromClause}
+                WHERE {layerIdColumn} = @layerId
+                  AND {idColumn} IN (SELECT raster_id FROM requested)
             ),
             merged AS (
                 SELECT {CreateMosaicAggregateExpression(mergeStrategy, ordering, attributeSort)} AS rast
@@ -1647,18 +1869,20 @@ internal sealed class PostgresRasterStore : IRasterStore
             tileClipExpr = BuildStretchedRasterExpression(tileClipExpr, tileStretchBounds);
         }
 
-        // On-the-fly overview: reduce the source toward the tile's ground resolution at low
-        // zoom (no-op at native/finer zoom) so wide tiles do not resample full-res pixels.
-        var overviewSource = BuildOverviewSourceExpression(level);
+        // Prefer a persisted overview pyramid (#1836): if one was built at import time whose
+        // resolution matches this tile's ground resolution, read it directly (it is already in
+        // EPSG:3857) instead of scanning the full-resolution raster + reducing on the fly.
+        var overviewId = await ResolveBestOverviewIdAsync(connection, rasterId, level, cancellationToken).ConfigureAwait(false);
 
         await using var dynCommand = connection.CreateCommand();
+
         // Build a 256×256 reference raster exactly aligned to the WebMercatorQuad tile
         // envelope (EPSG:3857). ST_Resample reprojects the source raster onto that grid so
         // the output PNG covers exactly ST_TileEnvelope(z,x,y) with nodata for uncovered
         // pixels — correcting both the projection and the spatial registration that the
         // previous ST_Clip+ST_Resize approach got wrong (it preserved the clipped source
         // extent rather than the tile envelope, stretching edge tiles and ignoring CRS).
-        dynCommand.CommandText = $"""
+        const string tileBoundsCte = """
             WITH tile_bounds AS (
                 SELECT ST_TileEnvelope(@level, @col, @row) AS geom
             ),
@@ -1673,14 +1897,41 @@ internal sealed class PostgresRasterStore : IRasterStore
                 ) AS rast
                 FROM tile_bounds tb
             )
-            SELECT ST_AsGDALRaster(
-                ST_Resample(ST_Transform({overviewSource}, 3857), tile_ref.rast),
-                '{effectiveTileFormat}'{tileCreationOptions}
-            ) AS data
-            FROM {_rasterDataTable}, tile_bounds tb, tile_ref
-            WHERE layer_id = @layerId AND id = @rasterId
-              AND ST_Intersects(ST_ConvexHull(raster), ST_Transform(tb.geom, ST_SRID(raster)))
             """;
+
+        if (overviewId is { } persistedOverviewId)
+        {
+            // The persisted overview is already EPSG:3857, so ST_Transform is the identity and the
+            // intersect uses 3857 directly. This reads the reduced pyramid level — no full-res scan.
+            dynCommand.CommandText = $"""
+                {tileBoundsCte}
+                SELECT ST_AsGDALRaster(
+                    ST_Resample(raster, tile_ref.rast),
+                    '{effectiveTileFormat}'{tileCreationOptions}
+                ) AS data
+                FROM {_rasterOverviewsTable}, tile_bounds tb, tile_ref
+                WHERE id = @overviewId
+                  AND ST_Intersects(ST_ConvexHull(raster), tb.geom)
+                """;
+            AddParameter(dynCommand, "@overviewId", persistedOverviewId);
+        }
+        else
+        {
+            // No persisted overview: reduce the source toward the tile's ground resolution at low
+            // zoom (no-op at native/finer zoom) so wide tiles do not resample full-res pixels.
+            var overviewSource = BuildOverviewSourceExpression(level);
+            dynCommand.CommandText = $"""
+                {tileBoundsCte}
+                SELECT ST_AsGDALRaster(
+                    ST_Resample(ST_Transform({overviewSource}, 3857), tile_ref.rast),
+                    '{effectiveTileFormat}'{tileCreationOptions}
+                ) AS data
+                FROM {_rasterDataTable}, tile_bounds tb, tile_ref
+                WHERE layer_id = @layerId AND id = @rasterId
+                  AND ST_Intersects(ST_ConvexHull(raster), ST_Transform(tb.geom, ST_SRID(raster)))
+                """;
+        }
+
         AddParameter(dynCommand, "@layerId", layerId);
         AddParameter(dynCommand, "@rasterId", rasterId);
         AddParameter(dynCommand, "@level", level);
