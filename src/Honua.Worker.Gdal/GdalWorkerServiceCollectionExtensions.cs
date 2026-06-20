@@ -93,6 +93,7 @@ public static class GdalWorkerServiceCollectionExtensions
         services.TryAddSingleton<GdalRasterStatisticsJobExecutor>();
         services.TryAddSingleton<GdalRasterZonalStatisticsJobExecutor>();
         services.TryAddSingleton<GdalMultidimCoverageMetadataJobExecutor>();
+        services.TryAddSingleton<PdalPointCloudConvertJobExecutor>();
 
         // Register the native dispatcher as the single IJobExecutor for the
         // Geoprocessing kind in this host. It declares AcceptedRuntimeProfiles =

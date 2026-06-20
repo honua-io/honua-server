@@ -87,6 +87,7 @@ public sealed class GdalWorkerExecutorTests
             new GdalRasterStatisticsJobExecutor(runner, options, NullLogger<GdalRasterStatisticsJobExecutor>.Instance),
             new GdalRasterZonalStatisticsJobExecutor(runner, options, NullLogger<GdalRasterZonalStatisticsJobExecutor>.Instance),
             new GdalMultidimCoverageMetadataJobExecutor(runner, options, NullLogger<GdalMultidimCoverageMetadataJobExecutor>.Instance),
+            new PdalPointCloudConvertJobExecutor(runner, options, NullLogger<PdalPointCloudConvertJobExecutor>.Instance),
             NullLogger<GdalDispatchJobExecutor>.Instance);
     }
 
