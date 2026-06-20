@@ -6,6 +6,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Abstractions;
 using Honua.Core.Features.Guardrails.Domain;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.ControlPlane;
 
@@ -21,7 +22,7 @@ internal sealed partial class OperationGateway : IOperationGateway
     private readonly IGuardrailLadder _ladder;
     private readonly IOperationProposalStore _proposalStore;
     private readonly Dictionary<OperationClass, IOperationExecutor> _executors;
-    private readonly IAuditLog _auditLog;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly IProposalNotifier _notifier;
     private readonly ILogger<OperationGateway> _logger;
 
@@ -29,7 +30,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         IGuardrailLadder ladder,
         IOperationProposalStore proposalStore,
         IEnumerable<IOperationExecutor> executors,
-        IAuditLog auditLog,
+        IServiceScopeFactory scopeFactory,
         IProposalNotifier notifier,
         ILogger<OperationGateway> logger)
     {
@@ -37,7 +38,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         _ladder = ladder;
         _proposalStore = proposalStore;
         _executors = executors.ToDictionary(executor => executor.OperationClass);
-        _auditLog = auditLog;
+        _scopeFactory = scopeFactory;
         _notifier = notifier;
         _logger = logger;
     }
@@ -286,13 +287,21 @@ internal sealed partial class OperationGateway : IOperationGateway
         ExecutionPayload = proposal.Plan.ExecutionPayload,
     };
 
-    private Task WriteAuditAsync(
+    // The gateway is a singleton but IAuditLog is scoped (PostgresAuditLog needs a
+    // per-operation DB connection), so resolve it from a fresh scope per audit write
+    // rather than capturing it as a constructor dependency. Capturing the scoped
+    // service would be a captive dependency and fails DI scope validation at startup
+    // under the durable control-plane path (honua-server#1908).
+    private async Task WriteAuditAsync(
         OperationProposal proposal,
         string action,
         string actor,
         AuditOutcome outcome,
         CancellationToken cancellationToken)
-        => _auditLog.RecordAsync(
+    {
+        await using var scope = _scopeFactory.CreateAsyncScope();
+        var auditLog = scope.ServiceProvider.GetRequiredService<IAuditLog>();
+        await auditLog.RecordAsync(
             new AuditEvent
             {
                 Timestamp = DateTimeOffset.UtcNow,
@@ -306,7 +315,8 @@ internal sealed partial class OperationGateway : IOperationGateway
                 CorrelationId = proposal.Audit.CorrelationId ?? proposal.ProposalId,
                 Details = $"{{\"kind\":\"{proposal.Kind}\",\"status\":\"{proposal.Status}\"}}",
             },
-            cancellationToken);
+            cancellationToken).ConfigureAwait(false);
+    }
 
     private static partial class Log
     {
