@@ -1841,6 +1841,71 @@ public class ImageServerEndpointsTests
         }
     }
 
+    // Regression for #1900: the ArcGIS API for Python ImageryLayer.legend() (and the JS API)
+    // POST to /legend. The POST mirror must return the same payload as GET.
+    [IntegrationTest]
+    [Endpoint("POST /rest/services/{id}/ImageServer/legend")]
+    [Operation(Operations.Metadata)]
+    public async Task GetLegend_Post_ReturnsSwatches()
+    {
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            var content = new FormUrlEncodedContent(new[]
+            {
+                new KeyValuePair<string, string>("f", "json"),
+            });
+
+            var response = await fixture.Client.PostAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/legend",
+                content);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+            var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            json.RootElement.TryGetProperty("layers", out var layers).Should().BeTrue();
+            layers.GetArrayLength().Should().BeGreaterThan(0);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    // #1900: a renderingRule supplied in the POST body must drive the legend just like the
+    // GET query parameter does.
+    [IntegrationTest]
+    [Endpoint("POST /rest/services/{id}/ImageServer/legend")]
+    [Operation(Operations.Metadata)]
+    public async Task GetLegend_PostWithColormapRenderingRule_ReflectsColormapStops()
+    {
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            var content = new FormUrlEncodedContent(new[]
+            {
+                new KeyValuePair<string, string>("f", "json"),
+                new KeyValuePair<string, string>(
+                    "renderingRule",
+                    """{"rasterFunction":"Colormap","rasterFunctionArguments":{"Colormap":[[0,0,0,0],[128,255,0,0],[255,255,255,255]]}}"""),
+            });
+
+            var response = await fixture.Client.PostAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/legend",
+                content);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var legend = json.RootElement.GetProperty("layers")[0].GetProperty("legend");
+            legend.GetArrayLength().Should().Be(3);
+            legend[0].GetProperty("label").GetString().Should().Be("0");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
     [IntegrationTest]
     [Endpoint("GET /rest/services/{id}/ImageServer/legend")]
     [Operation(Operations.Metadata)]
