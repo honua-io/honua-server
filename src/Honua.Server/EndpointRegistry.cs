@@ -662,6 +662,9 @@ public static class EndpointRegistry
         new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/query"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/query"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/query"),
+        // Esri clients POST large layerDefs/layers arrays that exceed URL limits, so the
+        // service-level query operation accepts both GET and POST (#1825).
+        new("POST", "/rest/services/{serviceId}/FeatureServer/query"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/applyEdits"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/addFeatures"),
@@ -697,6 +700,8 @@ public static class EndpointRegistry
         new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/calculate"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/calculate"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/queryDomains"),
+        // queryDomains also accepts POST so clients can submit large layers arrays (#1825).
+        new("POST", "/rest/services/{serviceId}/FeatureServer/queryDomains"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/relationships"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/validateSQL"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/validateSQL"),
@@ -841,6 +846,8 @@ public static class EndpointRegistry
         new("GET", "/rest/services/{serviceId}/MapServer/allLayersAndTables"),
         new("GET", "/rest/services/{serviceId}/MapServer/layers"),
         new("GET", "/rest/services/{serviceId}/MapServer/queryDomains"),
+        // queryDomains also accepts POST so clients can submit large layers arrays (#1825).
+        new("POST", "/rest/services/{serviceId}/MapServer/queryDomains"),
         new("GET", "/rest/services/{serviceId}/MapServer/dynamicLayer"),
         new("GET", "/rest/services/{serviceId}/MapServer/generateRenderer"),
         new("POST", "/rest/services/{serviceId}/MapServer/generateRenderer"),
