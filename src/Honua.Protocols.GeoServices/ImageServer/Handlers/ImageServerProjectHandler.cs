@@ -6,11 +6,14 @@ using System.Text.Json;
 using Honua.Core.Features.GeometryService.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Crs;
+using Honua.Core.Features.Raster.Abstractions;
+using Honua.Core.Features.Raster.Domain;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Services;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Protocols.GeoServices.ImageServer.Models;
+using Honua.Protocols.GeoServices.ImageServer.Services;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Primitives;
@@ -30,19 +33,22 @@ internal sealed class ImageServerProjectHandler
     private readonly IDatumTransformationCatalog _datumTransformationCatalog;
     private readonly ILogger<ImageServerProjectHandler> _logger;
     private readonly ICoordinateTransformService? _transformService;
+    private readonly IRasterStore? _rasterStore;
 
     public ImageServerProjectHandler(
         IGeometryOperationService operationService,
         SpatialReferenceResolver spatialReferenceResolver,
         IDatumTransformationCatalog datumTransformationCatalog,
         ILogger<ImageServerProjectHandler> logger,
-        ICoordinateTransformService? transformService = null)
+        ICoordinateTransformService? transformService = null,
+        IRasterStore? rasterStore = null)
     {
         _operationService = operationService ?? throw new ArgumentNullException(nameof(operationService));
         _spatialReferenceResolver = spatialReferenceResolver ?? throw new ArgumentNullException(nameof(spatialReferenceResolver));
         _datumTransformationCatalog = datumTransformationCatalog ?? throw new ArgumentNullException(nameof(datumTransformationCatalog));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _transformService = transformService;
+        _rasterStore = rasterStore;
     }
 
     /// <summary>
@@ -62,14 +68,17 @@ internal sealed class ImageServerProjectHandler
 
         try
         {
-            // The image-coordinate-system `transformation` parameter (sensor/raster image
-            // CS warps) remains a documented gap; only the geographic `datumTransformation`
-            // is honored here, routed through the shared WKID -> PROJ pipeline.
-            if (!string.IsNullOrWhiteSpace(GetString(values, "transformation")))
+            // The image-coordinate-system `transformation` parameter warps geometries between
+            // image (pixel/sample-line) space and map space using the raster's RPC sensor model
+            // (#1881). When the layer's raster carries RPC metadata, the geometries are treated as
+            // image coordinates and mapped to ground (and then reprojected into outSR). When the
+            // raster has no RPC metadata, the operation is genuinely unsupported and we keep the
+            // 400 with a clear "no image CS metadata" message.
+            var transformation = GetString(values, "transformation");
+            if (!string.IsNullOrWhiteSpace(transformation))
             {
-                const string error = "The 'transformation' (image coordinate system) parameter is not yet supported by ImageServer project.";
-                ImageServerLog.InvalidProjectParameters(_logger, layerId, error);
-                return StandardErrorHelpers.CreateBadRequest(context, error);
+                return await ProjectImageCoordinatesAsync(context, layerId, values, scope, cancellationToken)
+                    .ConfigureAwait(false);
             }
 
             var (inSrid, inSridError) = await ResolveRequiredSpatialReferenceAsync(values, "inSR", cancellationToken)
@@ -177,6 +186,136 @@ internal sealed class ImageServerProjectHandler
                 context,
                 "An error occurred while projecting geometries.");
         }
+    }
+
+    /// <summary>
+    /// Projects geometries between image (pixel sample/line) space and map space using the
+    /// resolved raster's RPC sensor model (#1881). The supplied geometries are interpreted as
+    /// image coordinates and mapped to ground (longitude/latitude, EPSG:4326), then reprojected
+    /// into <c>outSR</c> when it differs and a transform service is available. Returns 400 when
+    /// the raster carries no RPC metadata (the image CS is genuinely unsupported for that raster).
+    /// </summary>
+    private async Task<IResult> ProjectImageCoordinatesAsync(
+        HttpContext context,
+        int layerId,
+        IReadOnlyDictionary<string, StringValues> values,
+        HonuaTelemetryScope scope,
+        CancellationToken cancellationToken)
+    {
+        const int GroundSrid = 4326;
+
+        if (_rasterStore is null)
+        {
+            return StandardErrorHelpers.CreateNotImplemented(
+                context,
+                "Image-coordinate-system projection requires a configured raster store.");
+        }
+
+        var rpc = await ResolveRpcModelAsync(layerId, cancellationToken).ConfigureAwait(false);
+        if (rpc is not { } rpcModel)
+        {
+            var error = $"The 'transformation' (image coordinate system) parameter is not supported for layer {layerId.ToString(CultureInfo.InvariantCulture)}: the raster carries no RPC/sensor metadata.";
+            ImageServerLog.InvalidProjectParameters(_logger, layerId, error);
+            return StandardErrorHelpers.CreateBadRequest(context, error);
+        }
+
+        var (outSrid, outSridError) = await ResolveRequiredSpatialReferenceAsync(values, "outSR", cancellationToken)
+            .ConfigureAwait(false);
+        if (outSridError is not null || !outSrid.HasValue)
+        {
+            var error = outSridError ?? "outSR must be a supported spatial reference.";
+            ImageServerLog.InvalidProjectParameters(_logger, layerId, error);
+            return StandardErrorHelpers.CreateBadRequest(context, error);
+        }
+
+        if (!TryParseGeometries(GetString(values, "geometries"), out var request, out var geometryError))
+        {
+            ImageServerLog.InvalidProjectParameters(_logger, layerId, geometryError ?? "Invalid geometries.");
+            return StandardErrorHelpers.CreateBadRequest(context, geometryError ?? "Invalid geometries.");
+        }
+
+        if (!string.Equals(request.GeometryType, "esriGeometryPoint", StringComparison.OrdinalIgnoreCase))
+        {
+            const string error = "Image-coordinate-system projection currently supports point geometries only.";
+            ImageServerLog.InvalidProjectParameters(_logger, layerId, error);
+            return StandardErrorHelpers.CreateBadRequest(context, error);
+        }
+
+        var reprojectToOut = outSrid.Value != GroundSrid;
+        if (reprojectToOut && _transformService is null)
+        {
+            return StandardErrorHelpers.CreateNotImplemented(
+                context,
+                "Image-coordinate-system projection into the requested outSR requires a configured coordinate transform service.");
+        }
+
+        var projected = new List<JsonElement>(request.GeometryJsonStrings.Count);
+        foreach (var geometryJson in request.GeometryJsonStrings)
+        {
+            using var document = JsonDocument.Parse(geometryJson);
+            var root = document.RootElement;
+            if (!TryGetGeometryDouble(root, "x", out var sample) ||
+                !TryGetGeometryDouble(root, "y", out var line))
+            {
+                const string error = "Each image-space geometry must include numeric x (sample) and y (line).";
+                ImageServerLog.InvalidProjectParameters(_logger, layerId, error);
+                return StandardErrorHelpers.CreateBadRequest(context, error);
+            }
+
+            var (longitude, latitude) = rpcModel.ImageToGround(sample, line);
+
+            var outX = longitude;
+            var outY = latitude;
+            if (reprojectToOut)
+            {
+                var transformResult = await _transformService!.TransformExtentAsync(
+                    longitude, latitude, longitude, latitude,
+                    GroundSrid, outSrid.Value, cancellationToken).ConfigureAwait(false);
+                if (transformResult is null)
+                {
+                    return StandardErrorHelpers.CreateBadRequest(
+                        context,
+                        "Image-space ground coordinate could not be projected into the requested outSR.");
+                }
+
+                outX = transformResult.Value.MinX;
+                outY = transformResult.Value.MinY;
+            }
+
+            var geometry = new GeoServicesGeometry
+            {
+                X = outX,
+                Y = outY,
+                SpatialReference = new GeoServicesSpatialReference { Wkid = outSrid.Value, LatestWkid = outSrid.Value },
+            };
+            projected.Add(ToJsonElement(geometry));
+        }
+
+        var response = new ImageServerProjectResponse { Geometries = projected.ToArray() };
+        ImageServerLog.ProjectCompleted(_logger, layerId, projected.Count, 0, outSrid.Value);
+        scope.SetSuccess(projected.Count);
+        return Results.Json(response, ImageServerJsonContext.Default.ImageServerProjectResponse);
+    }
+
+    private async Task<RpcModel?> ResolveRpcModelAsync(int layerId, CancellationToken cancellationToken)
+    {
+        var primary = await _rasterStore!.GetPrimaryRasterInfoAsync(layerId, cancellationToken).ConfigureAwait(false);
+        if (primary is not { } raster || raster.Id <= 0)
+        {
+            return null;
+        }
+
+        var metadata = await _rasterStore.GetSensorMetadataAsync([raster.Id], cancellationToken).ConfigureAwait(false);
+        var sensor = metadata.TryGetValue(raster.Id, out var meta) ? meta : raster.SensorMetadata;
+        return ImageServerSensorModel.TryReadRpc(sensor);
+    }
+
+    private static bool TryGetGeometryDouble(JsonElement root, string propertyName, out double value)
+    {
+        value = 0;
+        return root.TryGetProperty(propertyName, out var property) &&
+               property.ValueKind == JsonValueKind.Number &&
+               property.TryGetDouble(out value);
     }
 
     private async Task<JsonElement> ProjectGeometryAsync(

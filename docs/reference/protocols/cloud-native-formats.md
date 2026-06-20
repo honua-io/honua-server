@@ -28,6 +28,10 @@ curl -s -H "X-API-Key: $ADMIN_KEY" -H "Content-Type: application/json" \
 
 The registered raster serves through the same pipeline as imported rasters: GeoServices ImageServer, WCS 2.0.1, and OGC API Coverages. Workflow detail: [Publish rasters](../../guides/publish/publish-rasters.md).
 
+Imported rasters can be deleted (`DELETE /api/v1/admin/import/raster/{rasterId}`) and have their descriptive metadata updated (`PATCH /api/v1/admin/import/raster/{rasterId}` — `name`/`description`/`acquisitionDate`); cloud-registered COGs use `DELETE /api/v1/admin/cloud-rasters/{id}`. These admin operations are the canonical equivalents of Esri ImageServer's `deleteRasters`/`updateRaster` — see the [ImageServer admin-op mapping](../compatibility/imageserver-admin-mapping.md).
+
+Optional per-raster **sensor metadata** (sensor name, camera model, interior/exterior orientation, RPC, DEM source) can be modeled in the `raster_sensor_metadata` companion table. When present it powers ImageServer DEM-backed height mensuration, orientation-ranked `find`, and RPC image-coordinate-system `project` warps; plain rasters with no sensor metadata serve normally and those features degrade gracefully.
+
 ## PMTiles
 
 Tile-operations jobs can `archive` a layer's tiles into a single PMTiles file and `publish` it; the artifact is served with HTTP range support at `/api/v1/tiles/pmtiles/{artifactId}`, which makes it suitable for CDN fronting or serverless map hosting. Workflow detail and URL strategies: [Publish tiles](../../guides/publish/publish-tiles.md#pmtiles).
