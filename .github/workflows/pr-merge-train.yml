@@ -80,19 +80,28 @@ jobs:
               }
             }
 
-            // 2) Nothing clean — freshen the oldest green-but-behind PR to tee up
-            //    the next merge (its CI completion re-triggers the train).
+            // 2) Nothing clean to merge — freshen EVERY green-but-behind PR so none
+            //    sits out of date. Updating a branch only rebases that PR onto trunk
+            //    (it re-stales nothing else — only a merge moves trunk), so batch all
+            //    of them in one run instead of one-per-run, which couldn't keep up with
+            //    PR volume and left PRs lingering behind. Each PR's CI completion
+            //    re-triggers the train, which then merges whichever became clean.
+            let freshened = 0;
             for (const pr of open) {
               const full = await fullState(pr.number);
               if (full.mergeable_state === 'behind') {
                 try {
                   await github.rest.pulls.updateBranch({ owner, repo, pull_number: pr.number });
                   core.info(`Updated #${pr.number} to trunk — ${pr.title}`);
-                  return;
+                  freshened++;
                 } catch (e) {
                   core.warning(`Update #${pr.number} failed: ${e.message}`);
                 }
               }
+            }
+            if (freshened > 0) {
+              core.info(`Freshened ${freshened} behind PR(s) onto trunk.`);
+              return;
             }
 
             core.info('Merge train idle: nothing clean to merge or behind to update.');
