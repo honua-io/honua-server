@@ -634,6 +634,70 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Wmts)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
+    [InterfaceOperation(TestProtocols.Wmts10, "GetFeatureInfo")]
+    public async Task Wmts_GetFeatureInfo_WorldCrs84Quad_ReturnsPlainText()
+    {
+        // #1873: GetFeatureInfo now resolves the clicked pixel for non-WebMercatorQuad
+        // gridsets through the tile matrix set registry. WorldCRS84Quad is 2 cols x 1 row
+        // at level 0, so TILECOL up to 1 is valid and the pixel->world math uses the
+        // gridset's own (CRS84) origin and cell size rather than Web Mercator constants.
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetFeatureInfo&VERSION=1.0.0&LAYER={WebAppFixture.TestLayerId}&STYLE=default&FORMAT=image/png&TILEMATRIXSET=WorldCRS84Quad&TILEMATRIX=0&TILEROW=0&TILECOL=0&I=128&J=128&INFOFORMAT=text/plain");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("text/plain");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wmts)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
+    [InterfaceOperation(TestProtocols.Wmts10, "GetFeatureInfo")]
+    public async Task Wmts_GetFeatureInfo_WorldCrs84Quad_SecondColumn_ReturnsPlainText()
+    {
+        // WorldCRS84Quad has 2 columns at level 0 (the world is two tiles wide); a request
+        // for TILECOL=1 must be accepted (WebMercatorQuad would reject it as out of range),
+        // proving the per-gridset matrix-dimension bounds are honoured.
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetFeatureInfo&VERSION=1.0.0&LAYER={WebAppFixture.TestLayerId}&STYLE=default&FORMAT=image/png&TILEMATRIXSET=WorldCRS84Quad&TILEMATRIX=0&TILEROW=0&TILECOL=1&I=10&J=10&INFOFORMAT=application/json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wmts)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
+    public async Task Wmts_GetFeatureInfo_UnknownTileMatrixSet_ReturnsInvalidParameterValue()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetFeatureInfo&VERSION=1.0.0&LAYER={WebAppFixture.TestLayerId}&STYLE=default&FORMAT=image/png&TILEMATRIXSET=NoSuchGrid&TILEMATRIX=0&TILEROW=0&TILECOL=0&I=128&J=128&INFOFORMAT=text/plain");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
+        content.Should().Contain("locator=\"TileMatrixSet\"");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wmts)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
+    public async Task Wmts_GetFeatureInfo_WorldCrs84Quad_ColumnOutsideRange_ReturnsTileOutOfRange()
+    {
+        // WorldCRS84Quad has 2 columns at level 0, so TILECOL=2 is out of range.
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetFeatureInfo&VERSION=1.0.0&LAYER={WebAppFixture.TestLayerId}&STYLE=default&FORMAT=image/png&TILEMATRIXSET=WorldCRS84Quad&TILEMATRIX=0&TILEROW=0&TILECOL=2&I=10&J=10&INFOFORMAT=text/plain");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("exceptionCode=\"TileOutOfRange\"");
+        content.Should().Contain("locator=\"TileCol\"");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wmts)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
     public async Task Wmts_GetFeatureInfo_IOutsideTile_ReturnsTileOutOfRange()
     {
         var response = await _fixture.Client.GetAsync(
