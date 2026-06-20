@@ -55,6 +55,7 @@ public sealed class CrossProtocolIsolationTests
         "OData" => "Honua.Protocols.OData",
         "Scene" => "Honua.Protocols.Scene",
         "Stac" => "Honua.Protocols.Stac",
+        "SensorThings" => "Honua.Protocols.SensorThings",
         "GeoServices" => "Honua.Protocols.GeoServices",
         "Ogc" => "Honua.Protocols.Ogc",
         "Mcp" => "Honua.Ai.Protocols.Mcp",
@@ -79,6 +80,7 @@ public sealed class CrossProtocolIsolationTests
         "OData",
         "Ogc",
         "Scene",
+        "SensorThings",
         "SpatialAnalytics",
         "Stac",
         "Terrain",
@@ -169,6 +171,7 @@ public sealed class CrossProtocolIsolationTests
             ["OData"] = new[] { Path.Combine("src", "Honua.Protocols.OData") },
             ["Scene"] = new[] { Path.Combine("src", "Honua.Protocols.Scene") },
             ["Stac"] = new[] { Path.Combine("src", "Honua.Protocols.Stac") },
+            ["SensorThings"] = new[] { Path.Combine("src", "Honua.Protocols.SensorThings") },
             ["GeoServices"] = new[] { Path.Combine("src", "Honua.Protocols.GeoServices") },
             // MCP is the AI module's protocol surface (consolidated into Honua.Ai
             // rather than a standalone Honua.Protocols.Mcp, because Ai and Mcp are

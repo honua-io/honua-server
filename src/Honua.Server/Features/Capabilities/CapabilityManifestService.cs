@@ -793,6 +793,7 @@ internal sealed class CapabilityManifestService(
             MetadataV2PublicationType.DcatDistribution => "dcat-distribution",
             MetadataV2PublicationType.OgcRecord => "ogc-record",
             MetadataV2PublicationType.ODataEntitySet => "odata-entity-set",
+            MetadataV2PublicationType.SensorThingsDatastream => "sensorthings-datastream",
             MetadataV2PublicationType.Custom => "custom",
             _ => value.ToString()
         };
