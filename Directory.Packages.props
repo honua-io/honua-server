@@ -19,6 +19,7 @@
     <PackageVersion Include="AWSSDK.Lambda" Version="4.0.14.1" />
     <PackageVersion Include="AWSSDK.LocationService" Version="4.0.3.25" />
     <PackageVersion Include="AWSSDK.S3" Version="4.0.21.2" />
+    <PackageVersion Include="AWSSDK.SecretsManager" Version="4.0.5.6" />
     <PackageVersion Include="AWSSDK.SimpleNotificationService" Version="4.0.2.27" />
     <PackageVersion Include="AWSSDK.SQS" Version="4.0.2.25" />
     <PackageVersion Include="Azure.Identity" Version="1.21.0" />

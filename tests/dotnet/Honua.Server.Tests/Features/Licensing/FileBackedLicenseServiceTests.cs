@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text;
 using FluentAssertions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Licensing;
@@ -274,6 +275,128 @@ public sealed class FileBackedLicenseServiceTests
     }
 
     [UnitTest]
+    public async Task StartAsync_LicenseContentSecretRef_ResolvedSignedLicense_ActivatesPro()
+    {
+        // Relabel the keyId to a hyphen-free token, exactly as the demo Lambda env requires
+        // (Lambda env var names cannot contain hyphens). The signature is over the payload only,
+        // so relabeling the envelope keyId keeps the license valid as long as TrustedKeys maps
+        // the new label to the same public key.
+        const string relabeledKeyId = "honuademo2026q2";
+        var license = LicenseTestSupport.CreateSignedLicense(
+            HonuaEdition.Pro,
+            expiresAt: DateTimeOffset.UtcNow.AddDays(365),
+            entitlements: ["editing.featureserver-edits", "analytics.clustering"],
+            keyId: relabeledKeyId);
+        var envelopeJson = Encoding.UTF8.GetString(license.LicenseData);
+        var resolver = new FakeLicenseSecretResolver(envelopeJson);
+
+        var logger = new RecordingLogger<FileBackedLicenseService>();
+        var service = CreateService(
+            new LicenseOptions
+            {
+                LicenseContentSecretRef = "aws:secretsmanager:arn:aws:secretsmanager:us-east-1:111122223333:secret:honua-demo-demo/license-pro-AbCdEf",
+                TrustedKeys = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    [relabeledKeyId] = license.PublicKeySetting
+                }
+            },
+            logger,
+            resolver);
+
+        await service.StartAsync(CancellationToken.None);
+
+        var snapshot = service.GetSnapshot();
+        snapshot.Edition.Should().Be(HonuaEdition.Pro);
+        snapshot.IsValid.Should().BeTrue();
+        snapshot.ValidationState.Should().Be(LicenseValidationState.Valid);
+        snapshot.KeyId.Should().Be(relabeledKeyId);
+        snapshot.HasEntitlement("editing.featureserver-edits").Should().BeTrue();
+        service.CheckEntitlement("editing.featureserver-edits").IsActive.Should().BeTrue();
+        resolver.ResolveCallCount.Should().Be(1);
+        logger.Entries.Should().Contain(entry => entry.EventId == 10014 && entry.Level == LogLevel.Information);
+        logger.Entries.Should().Contain(entry => entry.EventId == 10006 && entry.Level == LogLevel.Information);
+    }
+
+    [UnitTest]
+    public async Task StartAsync_LicenseContentSecretRef_NoResolverRegistered_FallsBackToCommunity()
+    {
+        var logger = new RecordingLogger<FileBackedLicenseService>();
+        var service = CreateService(
+            new LicenseOptions
+            {
+                LicenseContentSecretRef = "aws:secretsmanager:honua-demo-demo/license-pro"
+            },
+            logger,
+            secretResolver: null);
+
+        await service.StartAsync(CancellationToken.None);
+
+        var snapshot = service.GetSnapshot();
+        snapshot.Edition.Should().Be(HonuaEdition.Community);
+        snapshot.IsValid.Should().BeTrue();
+        snapshot.ValidationState.Should().Be(LicenseValidationState.NoLicenseConfigured);
+        logger.Entries.Should().Contain(entry => entry.EventId == 10010 && entry.Level == LogLevel.Warning);
+    }
+
+    [UnitTest]
+    public async Task StartAsync_LicenseContentSecretRef_ResolverThrows_FallsBackToCommunity()
+    {
+        var resolver = new FakeLicenseSecretResolver(
+            content: null,
+            failure: new InvalidOperationException("secret unreachable"));
+        var logger = new RecordingLogger<FileBackedLicenseService>();
+        var service = CreateService(
+            new LicenseOptions
+            {
+                LicenseContentSecretRef = "aws:secretsmanager:honua-demo-demo/license-pro"
+            },
+            logger,
+            resolver);
+
+        await service.StartAsync(CancellationToken.None);
+
+        var snapshot = service.GetSnapshot();
+        snapshot.Edition.Should().Be(HonuaEdition.Community);
+        snapshot.IsValid.Should().BeTrue();
+        snapshot.ValidationState.Should().Be(LicenseValidationState.NoLicenseConfigured);
+        logger.Entries.Should().Contain(entry => entry.EventId == 10013 && entry.Level == LogLevel.Warning);
+    }
+
+    [UnitTest]
+    public async Task StartAsync_LicenseContentSecretRef_UnsupportedReference_FallsBackToInlineContent()
+    {
+        // Resolver only understands aws:secretsmanager: refs; an env: ref is unsupported, so the
+        // service must fall through to the inline LicenseContent rather than failing.
+        var license = LicenseTestSupport.CreateSignedLicense(
+            HonuaEdition.Pro,
+            expiresAt: DateTimeOffset.UtcNow.AddDays(30),
+            entitlements: ["analytics.clustering"]);
+        var resolver = new FakeLicenseSecretResolver("ignored");
+        var logger = new RecordingLogger<FileBackedLicenseService>();
+        var service = CreateService(
+            new LicenseOptions
+            {
+                LicenseContentSecretRef = "env:HONUA_LICENSE",
+                LicenseContent = Encoding.UTF8.GetString(license.LicenseData),
+                TrustedKeys = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    [LicenseTestSupport.KeyId] = license.PublicKeySetting
+                }
+            },
+            logger,
+            resolver);
+
+        await service.StartAsync(CancellationToken.None);
+
+        var snapshot = service.GetSnapshot();
+        snapshot.Edition.Should().Be(HonuaEdition.Pro);
+        snapshot.IsValid.Should().BeTrue();
+        snapshot.HasEntitlement("analytics.clustering").Should().BeTrue();
+        resolver.ResolveCallCount.Should().Be(0);
+        logger.Entries.Should().Contain(entry => entry.EventId == 10011 && entry.Level == LogLevel.Warning);
+    }
+
+    [UnitTest]
     public async Task UploadLicenseAsync_OversizedStream_StopsReadingAfterSizeLimit()
     {
         var tempDirectory = Directory.CreateTempSubdirectory();
@@ -302,11 +425,54 @@ public sealed class FileBackedLicenseServiceTests
 
     private static FileBackedLicenseService CreateService(
         LicenseOptions options,
-        RecordingLogger<FileBackedLicenseService> logger)
+        RecordingLogger<FileBackedLicenseService> logger,
+        ILicenseContentSecretResolver? secretResolver = null)
         => new(
             Options.Create(options),
             new BouncyCastleEd25519Verifier(),
-            logger);
+            logger,
+            secretResolver);
+
+    /// <summary>
+    /// Stand-in for a cloud secret store (e.g. AWS Secrets Manager) that returns the
+    /// configured license envelope content for a matching reference. Mirrors the
+    /// fail-safe contract of <see cref="ILicenseContentSecretResolver"/>.
+    /// </summary>
+    private sealed class FakeLicenseSecretResolver : ILicenseContentSecretResolver
+    {
+        private readonly string _prefix;
+        private readonly string? _content;
+        private readonly Exception? _failure;
+
+        public FakeLicenseSecretResolver(
+            string? content,
+            string prefix = "aws:secretsmanager:",
+            Exception? failure = null)
+        {
+            _content = content;
+            _prefix = prefix;
+            _failure = failure;
+        }
+
+        public int ResolveCallCount { get; private set; }
+
+        public bool CanResolve(string? secretReference)
+            => !string.IsNullOrWhiteSpace(secretReference)
+               && secretReference.StartsWith(_prefix, StringComparison.OrdinalIgnoreCase);
+
+        public Task<string?> ResolveLicenseContentAsync(
+            string secretReference,
+            CancellationToken cancellationToken = default)
+        {
+            ResolveCallCount++;
+            if (_failure is not null)
+            {
+                throw _failure;
+            }
+
+            return Task.FromResult(_content);
+        }
+    }
 
     private sealed class RecordingLogger<T> : ILogger<T>
     {

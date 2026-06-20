@@ -25,17 +25,20 @@ internal sealed class FileBackedLicenseService :
     private readonly IOptions<LicenseOptions> _options;
     private readonly IEd25519Verifier _verifier;
     private readonly ILogger<FileBackedLicenseService> _logger;
+    private readonly ILicenseContentSecretResolver? _secretResolver;
     private LicenseSnapshot _snapshot;
     private long _snapshotVersion;
 
     public FileBackedLicenseService(
         IOptions<LicenseOptions> options,
         IEd25519Verifier verifier,
-        ILogger<FileBackedLicenseService> logger)
+        ILogger<FileBackedLicenseService> logger,
+        ILicenseContentSecretResolver? secretResolver = null)
     {
         _options = options;
         _verifier = verifier;
         _logger = logger;
+        _secretResolver = secretResolver;
         _snapshot = CreateCommunitySnapshot(
             LicenseValidationState.NoLicenseConfigured,
             isValid: true,
@@ -233,30 +236,24 @@ internal sealed class FileBackedLicenseService :
     {
         var options = _options.Value;
 
+        // A secret-store reference takes highest precedence: the ~2KB signed envelope is
+        // fetched from a secret manager (e.g. AWS Secrets Manager) at startup so it does not
+        // have to fit a serverless environment-variable size limit or be baked into the image.
+        // Resolution is fail-safe — a missing resolver / unreachable secret degrades to Community
+        // rather than crashing the host.
+        var secretContent = await TryResolveLicenseContentSecretAsync(options, cancellationToken)
+            .ConfigureAwait(false);
+        if (!string.IsNullOrWhiteSpace(secretContent))
+        {
+            ApplyInlineLicenseContent(secretContent, options);
+            return;
+        }
+
         // Inline content takes precedence over a file path so the license can be
-        // delivered on a read-only/serverless filesystem (e.g. AWS Lambda), typically
-        // via a Licensing:LicenseContent=aws:secretsmanager:<arn> secret reference.
+        // delivered on a read-only/serverless filesystem (e.g. AWS Lambda).
         if (!string.IsNullOrWhiteSpace(options.LicenseContent))
         {
-            try
-            {
-                var inlineData = System.Text.Encoding.UTF8.GetBytes(options.LicenseContent);
-                var inlineResult = ValidateLicenseData(inlineData, options);
-                PublishSnapshot(inlineResult.Snapshot);
-                LogValidationResult(inlineResult);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                var snapshot = CreateCommunitySnapshot(
-                    LicenseValidationState.Malformed,
-                    isValid: false,
-                    NextSnapshotVersion(),
-                    payload: null,
-                    keyId: null);
-                PublishSnapshot(snapshot);
-                LicenseRuntimeLog.LicenseMalformed(_logger, ex.GetType().Name);
-            }
-
+            ApplyInlineLicenseContent(options.LicenseContent, options);
             return;
         }
 
@@ -287,6 +284,82 @@ internal sealed class FileBackedLicenseService :
             var result = ValidateLicenseData(licenseData, options);
             PublishSnapshot(result.Snapshot);
             LogValidationResult(result);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            var snapshot = CreateCommunitySnapshot(
+                LicenseValidationState.Malformed,
+                isValid: false,
+                NextSnapshotVersion(),
+                payload: null,
+                keyId: null);
+            PublishSnapshot(snapshot);
+            LicenseRuntimeLog.LicenseMalformed(_logger, ex.GetType().Name);
+        }
+    }
+
+    /// <summary>
+    /// Resolves <see cref="LicenseOptions.LicenseContentSecretRef"/> through the registered
+    /// <see cref="ILicenseContentSecretResolver"/>, if any. Never throws: a missing resolver,
+    /// an unsupported reference, or an unreachable secret returns <c>null</c> so the caller
+    /// falls through to inline content / file / Community.
+    /// </summary>
+    private async Task<string?> TryResolveLicenseContentSecretAsync(
+        LicenseOptions options,
+        CancellationToken cancellationToken)
+    {
+        var secretRef = options.LicenseContentSecretRef;
+        if (string.IsNullOrWhiteSpace(secretRef))
+        {
+            return null;
+        }
+
+        if (_secretResolver is null)
+        {
+            LicenseRuntimeLog.LicenseSecretResolverUnavailable(_logger);
+            return null;
+        }
+
+        if (!_secretResolver.CanResolve(secretRef))
+        {
+            LicenseRuntimeLog.LicenseSecretReferenceUnsupported(_logger);
+            return null;
+        }
+
+        try
+        {
+            var content = await _secretResolver
+                .ResolveLicenseContentAsync(secretRef, cancellationToken)
+                .ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(content))
+            {
+                LicenseRuntimeLog.LicenseSecretResolutionEmpty(_logger);
+                return null;
+            }
+
+            LicenseRuntimeLog.LicenseLoadedFromSecret(_logger);
+            return content;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            LicenseRuntimeLog.LicenseSecretResolutionFailed(_logger, ex.GetType().Name);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Validates an in-memory signed-license envelope (UTF-8 JSON, from inline config or a
+    /// resolved secret) and publishes the resulting snapshot. Malformed content publishes a
+    /// safe Community snapshot rather than throwing.
+    /// </summary>
+    private void ApplyInlineLicenseContent(string licenseContent, LicenseOptions options)
+    {
+        try
+        {
+            var inlineData = System.Text.Encoding.UTF8.GetBytes(licenseContent);
+            var inlineResult = ValidateLicenseData(inlineData, options);
+            PublishSnapshot(inlineResult.Snapshot);
+            LogValidationResult(inlineResult);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
