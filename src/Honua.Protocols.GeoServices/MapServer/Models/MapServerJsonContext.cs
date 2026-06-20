@@ -18,6 +18,8 @@ namespace Honua.Protocols.GeoServices.MapServer.Models;
 [JsonSerializable(typeof(MapServerLayerResponse))]
 [JsonSerializable(typeof(MapServerFieldInfo))]
 [JsonSerializable(typeof(MapServerFieldInfo[]))]
+[JsonSerializable(typeof(FeatureServer.Models.LayerRelationshipInfo))]
+[JsonSerializable(typeof(FeatureServer.Models.LayerRelationshipInfo[]))]
 [JsonSerializable(typeof(IdentifyResponse))]
 [JsonSerializable(typeof(IdentifyResult))]
 [JsonSerializable(typeof(IdentifyResult[]))]

@@ -587,6 +587,13 @@ internal sealed class MapServerLayerResponse
     public bool HasAttachments { get; init; }
 
     /// <summary>
+    /// Layer-to-layer relationship metadata, mirrored from the underlying layer so the
+    /// MapServer sublayer surfaces the same relationships the FeatureServer layer advertises.
+    /// </summary>
+    [JsonPropertyName("relationships")]
+    public FeatureServer.Models.LayerRelationshipInfo[] Relationships { get; init; } = [];
+
+    /// <summary>
     /// Min scale visibility threshold.
     /// </summary>
     [JsonPropertyName("minScale")]
