@@ -1531,6 +1531,36 @@ internal sealed class PostgresRasterStore : IRasterStore
             ? $",\n                       {sort.Column} AS {sort.Column}"
             : string.Empty;
 
+        // esriMosaicNadir (#1870): the union's ORDER BY references an off_nadir column, so project
+        // the off-nadir angle from the per-raster sensor metadata into the source CTE. The angle
+        // lives in the exterior_orientation JSONB payload (offNadirAngle / off_nadir_angle); a LEFT
+        // JOIN keeps rasters without a sensor row (their off_nadir is NULL and ranks last). The
+        // JSONB keys are compile-time constants, never caller free text. Nadir and seamline ordering
+        // are mutually exclusive, so this join is added only on the bare-table (non-seamline) path
+        // and uses the bare `id` column the source select already references.
+        var nadirRequested = ordering == RasterMosaicOrdering.Nadir;
+        if (nadirRequested)
+        {
+            sourceFromClause = $"""
+                {_rasterDataTable}
+                LEFT JOIN {_rasterSensorMetadataTable} sm ON sm.raster_data_id = {_rasterDataTable}.id
+                """;
+        }
+
+        var nadirProjection = nadirRequested
+            ? ",\n                       NULLIF(COALESCE(sm.exterior_orientation->>'offNadirAngle', sm.exterior_orientation->>'off_nadir_angle'), '')::double precision AS off_nadir"
+            : string.Empty;
+
+        // The nadir LEFT JOIN makes the bare column names ambiguous; qualify them with the raster
+        // table name (the join alias is `sm`, so the table name still resolves unambiguously).
+        if (nadirRequested)
+        {
+            idColumn = $"{_rasterDataTable}.id";
+            createdAtColumn = $"{_rasterDataTable}.created_at";
+            acquisitionColumn = $"{_rasterDataTable}.acquisition_date";
+            layerIdColumn = $"{_rasterDataTable}.layer_id";
+        }
+
         await using var command = connection.CreateCommand();
         command.CommandText = $"""
             WITH requested AS (
@@ -1540,7 +1570,7 @@ internal sealed class PostgresRasterStore : IRasterStore
                 SELECT {sourceSelectExpr} AS rast,
                        {idColumn} AS id,
                        {createdAtColumn} AS created_at,
-                       COALESCE({acquisitionColumn}, {createdAtColumn}) AS effective_acquisition{attributeProjection}
+                       COALESCE({acquisitionColumn}, {createdAtColumn}) AS effective_acquisition{attributeProjection}{nadirProjection}
                 FROM {sourceFromClause}
                 WHERE {layerIdColumn} = @layerId
                   AND {idColumn} IN (SELECT raster_id FROM requested)

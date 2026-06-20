@@ -19,7 +19,7 @@ Status vocabulary:
 | --- | --- | --- | --- |
 | [FeatureServer](#featureserver) | Partial | Query (7 output formats), edits, attachments, related records, domains, replication with incremental change tracking, contingent values, 3D (Z/M) queries, estimates, calculate, validateSQL, append, bins/date bins/top features, generateRenderer, spatial analytics extensions (Pro) | Shared-template/asset data models, true curves, automated contingent-value import |
 | [MapServer](#mapserver--wms--wmts) | Partial | Export, identify, find, legend/queryLegends, query, mapLayer + allowlisted workspace (`dataLayer`) dynamicLayers, allowlisted `joinTable` dynamicLayers joins (left-outer/inner, application-side, surfaced through identify + dynamicLayer metadata), tiles with cloud-storage cache, storage-backed exportTiles (ZIP + Esri exploded-cache TPK), generateKml, WMS 1.3/1.1.1, WMTS 1.0 (WebMercatorQuad + WorldCRS84Quad gridsets) | Esri compact TPKX cache + async exportTiles job child resources, dynamicLayers `queryTable` (raw SQL) data sources, several child resources |
-| [ImageServer](#imageserver) | Partial | Service metadata, exportImage, identify, tile with cloud-storage cache, catalog query, find (orientation-ranked when sensor metadata present), measure (Basic + DEM-backed height), statistics/histograms, getSamples, queryBoundary, computePixelLocation, project (incl. RPC image-CS warp), storage-backed exportTiles (ZIP + Esri exploded-cache TPK), dynamic computeCacheInfo, legend, admin raster CRUD (delete/update via admin API), WMTS 1.0 GetCapabilities/GetTile/GetFeatureInfo, WCS 2.0.1 KVP | GeoServices-REST catalog mutation shim, Esri compact TPKX cache + async exportTiles job child resources, shadow/photogrammetric height mensuration, Esri compact/generated tile-cache management, multi-factor camera-model find scoring, per-slice multidimensional pixel subsetting, `esriMosaicNadir`/non-date `esriMosaicByAttribute` mosaic methods, automatic seamline generation/editing; renderingRule applied in exportImage and identify (Stretch + Colormap explicit/named + Clip incl. keep-outside + ExtractBand + BandArithmetic NDVI/SAVI/NDWI + Hillshade/Slope/Aspect terrain), on both single-raster and mosaic paths; `esriMosaicByAttribute`/`esriMosaicNorthwest`/`esriMosaicLockRaster`/`esriMosaicSeamline` ordering honoured; persisted overview pyramids reused on the low-zoom tile path; WMTS is WebMercatorQuad only |
+| [ImageServer](#imageserver) | Partial | Service metadata, exportImage, identify, tile with cloud-storage cache, catalog query, find (orientation-ranked when sensor metadata present), measure (Basic + DEM-backed height), statistics/histograms, getSamples, queryBoundary, computePixelLocation, project (incl. RPC image-CS warp), storage-backed exportTiles (ZIP + Esri exploded-cache TPK), dynamic computeCacheInfo, legend, admin raster CRUD (delete/update via admin API), WMTS 1.0 GetCapabilities/GetTile/GetFeatureInfo, WCS 2.0.1 KVP | GeoServices-REST catalog mutation shim, Esri compact TPKX cache + async exportTiles job child resources, shadow/photogrammetric height mensuration, Esri compact/generated tile-cache management, multi-factor camera-model find scoring, per-slice multidimensional pixel subsetting, non-allowlisted (raw sensor/orientation) `esriMosaicByAttribute` + `esriMosaicCenter`/`esriMosaicViewpoint` mosaic methods, automatic seamline generation/editing; renderingRule applied in exportImage, identify, and computeStatisticsHistograms (Stretch + Colormap explicit/named + Clip incl. keep-outside + ExtractBand + BandArithmetic NDVI/SAVI/NDWI + Hillshade/Slope/Aspect terrain), on both single-raster and mosaic paths; `esriMosaicByAttribute`/`esriMosaicNorthwest`/`esriMosaicLockRaster`/`esriMosaicSeamline`/`esriMosaicNadir` ordering honoured; persisted overview pyramids reused on the low-zoom tile path; WMTS is WebMercatorQuad only |
 | [Geometry Service](#geometry-service) | Complete | Root metadata plus all 23 ArcGIS geometry operations | None at operation level; parameter-level caveats only |
 | GeocodeServer | Partial | Service metadata, findAddressCandidates, reverseGeocode (incl. provider-dependent `distance`/`featureTypes`), suggest, geocodeAddresses, `outFields` projection, `outSR` reprojection, `magicKey` suggest→candidate round-trip (self-issued signed token, all providers), `category` filtering (all providers, on provider-supplied address type) | `forStorage`/`matchOutOfRange` (re-deferred; no backing provider models them) — see [GeocodeServer matrix](../../internal/spikes/geocode-server-matrix.md) |
 | GPServer | Partial | PrintingTools; generic adapter with catalog-backed task metadata, async submitJob, synchronous `execute` for the deterministic single-geometry `geometry.*`/`conversion.geometry-format` family (inline over the canonical job runtime), job status/cancel/results over 34 seeded processes | Heavyweight/layer-scoped tasks stay async-only (their `execute` returns a 400 pointing at submitJob); `env:*` rejected on submitJob (sync `execute` honors `env:outSR`) — see [run geoprocessing](../../guides/query-analyze/run-geoprocessing.md) |
@@ -132,19 +132,23 @@ sort order), `esriMosaicByAttribute` over an allowlisted NON-date attribute (#18
 wins by default, lowest when `ascending` is set; non-allowlisted/sensor fields stay
 unsupported), `esriMosaicNorthwest` (the upper-left-most raster wins),
 `esriMosaicLockRaster` (only the pinned raster IDs participate, newest-acquisition
-tiebreak), and `esriMosaicSeamline` (each raster is clipped to its persisted
+tiebreak), `esriMosaicSeamline` (each raster is clipped to its persisted
 seamline/cutline before the union, so a contested pixel is resolved by the
 per-raster seamline geometry; rasters without a seamline contribute their full
-footprint, and the seam falls back to a newest-acquisition tiebreak); an `id ASC`
-tiebreaker is always appended for determinism. A per-raster footprint and a default
-seamline (equal to the footprint) are persisted at import; automatic seamline
-generation/editing is out of scope. The merge strategy (pixel-resolution operation)
-is the request `mosaicRule.operation`, then the layer default, then `newest`
-(`newest`/`oldest`/`average`/`max`/`min` via PostGIS `ST_Union`). `esriMosaicNadir`
-and `esriMosaicByAttribute` over a non-allowlisted (e.g. sensor/orientation) field
-return 501 when more than one raster is selected — `esriMosaicNadir` in particular
-stays deferred until sensor/orientation metadata is modeled. Temporal `time` filters
-use newest-batch semantics (see
+footprint, and the seam falls back to a newest-acquisition tiebreak), and
+`esriMosaicNadir` (#1870 — the raster acquired closest to straight-down wins,
+ranked by the off-nadir angle persisted in the per-raster sensor/orientation
+metadata `raster_sensor_metadata.exterior_orientation` (`offNadirAngle`); rasters
+with no recorded off-nadir angle rank last, with a newest-acquisition tiebreak among
+equal/unknown angles); an `id ASC` tiebreaker is always appended for determinism. A
+per-raster footprint and a default seamline (equal to the footprint) are persisted at
+import; automatic seamline generation/editing is out of scope. The merge strategy
+(pixel-resolution operation) is the request `mosaicRule.operation`, then the layer
+default, then `newest` (`newest`/`oldest`/`average`/`max`/`min` via PostGIS
+`ST_Union`). `esriMosaicByAttribute` over a non-allowlisted (e.g. raw
+sensor/orientation) field and the remaining unmodeled methods (`esriMosaicCenter`,
+`esriMosaicViewpoint`) return 501 when more than one raster is selected. Temporal
+`time` filters use newest-batch semantics (see
 [known limitations](clients.md#known-limitations)).
 
 ## Geometry Service
