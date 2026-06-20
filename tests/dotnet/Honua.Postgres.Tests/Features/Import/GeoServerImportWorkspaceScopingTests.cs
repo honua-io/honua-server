@@ -260,15 +260,18 @@ public sealed class GeoServerImportWorkspaceScopingTests
 
         private static async Task EnsureHonuaServicesSchemaAsync(PostgresFixture postgresFixture)
         {
-            await using var connection = await postgresFixture.DataSource.OpenConnectionAsync();
-            await using var command = connection.CreateCommand();
+            // honua-server#1568 (signature 2): this DDL creates/ALTERs the literal, process-global
+            // honua.services / honua.migration_data_sources tables (search_path isolation does not
+            // scope them), so apply it under the shared seed advisory lock to keep parallel
+            // [Collection("Database")] tests off the 40P01 deadlock path racing ACCESS EXCLUSIVE
+            // catalog locks on the same global objects.
             // NOTE: This must remain column-compatible with the canonical
             // honua.services schema asserted by tests/seed/server.yaml — the
             // Postgres testcontainer is shared across the suite, so a
             // CREATE TABLE IF NOT EXISTS without metadata/connection_id would
             // shadow the seeded schema for any test that runs after this one
             // and break inserts that reference those columns.
-            command.CommandText = """
+            await postgresFixture.ApplyGlobalSeedSqlAsync("""
                 CREATE SCHEMA IF NOT EXISTS honua;
                 CREATE TABLE IF NOT EXISTS honua.services (
                     service_name VARCHAR(64) PRIMARY KEY,
@@ -283,6 +286,11 @@ public sealed class GeoServerImportWorkspaceScopingTests
                     created_at TIMESTAMPTZ DEFAULT NOW(),
                     updated_at TIMESTAMPTZ DEFAULT NOW()
                 );
+                -- honua-server#1568: keep column-compatible with base-schema.sql /
+                -- server.yaml when a peer test created honua.services first under the
+                -- shared seed advisory lock (max_record_count is in the canonical schema).
+                ALTER TABLE honua.services
+                    ADD COLUMN IF NOT EXISTS max_record_count INT NOT NULL DEFAULT 1000;
                 ALTER TABLE honua.services
                     ADD COLUMN IF NOT EXISTS metadata JSONB;
                 ALTER TABLE honua.services
@@ -297,8 +305,7 @@ public sealed class GeoServerImportWorkspaceScopingTests
                     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     PRIMARY KEY (source_kind, source_id)
                 );
-                """;
-            await command.ExecuteNonQueryAsync();
+                """);
         }
 
         private static async Task<HashSet<string>> ListServiceNamesAsync(PostgresFixture postgresFixture)
