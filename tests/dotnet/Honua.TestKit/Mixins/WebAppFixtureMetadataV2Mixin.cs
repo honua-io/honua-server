@@ -244,6 +244,15 @@ internal static class WebAppFixtureMetadataV2Mixin
                     .Append("style-layer-0-esri")
                     .Distinct(StringComparer.Ordinal)
                     .ToArray(),
+                // Opt the canonical test layer into attachments so both the FeatureServer
+                // and MapServer layer metadata advertise hasAttachments:true (#1923).
+                Metadata = resources[i].Metadata with
+                {
+                    Annotations = new Dictionary<string, string>(resources[i].Metadata.Annotations, StringComparer.Ordinal)
+                    {
+                        ["honua.io/attachments"] = "true",
+                    },
+                },
                 Relationships =
                 [
                     new MetadataV2Relationship

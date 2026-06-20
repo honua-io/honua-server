@@ -665,7 +665,7 @@ internal static partial class FeatureServerEndpoints
     /// no publication exists on this service for the related resource, the relationship is
     /// skipped (clients can't address it as an integer layer id anyway).
     /// </summary>
-    private static LayerRelationshipInfo[] BuildRelationshipResponseV2(
+    internal static LayerRelationshipInfo[] BuildRelationshipResponseV2(
         MetadataV2Resource resource,
         MetadataV2GraphSnapshot snapshot)
     {
@@ -893,7 +893,7 @@ internal static partial class FeatureServerEndpoints
     /// canonical resource shape; the resource opts in via <c>resource.Metadata.Annotations</c>
     /// (<c>honua.io/attachments=true</c>) or the legacy <c>"supportsAttachments"</c> annotation.
     /// </summary>
-    private static bool ResourceSupportsAttachmentsV2(MetadataV2Resource resource)
+    internal static bool ResourceSupportsAttachmentsV2(MetadataV2Resource resource)
     {
         // Canonical annotation key. Keep the legacy spelling alongside so resources migrated
         // verbatim from v1 still resolve.
