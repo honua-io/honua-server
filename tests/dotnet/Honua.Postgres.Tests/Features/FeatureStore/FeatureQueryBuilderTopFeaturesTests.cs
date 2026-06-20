@@ -45,6 +45,62 @@ public sealed class FeatureQueryBuilderTopFeaturesTests
         result.WhereParameters.Should().ContainInOrder("alpha", 5);
     }
 
+    [Fact]
+    public void BuildTopFeaturesQuery_WithLimitAndOffset_AppendsTrailingPagingPlaceholders()
+    {
+        // resultRecordCount/resultOffset must page the top-feature result; the LIMIT/OFFSET
+        // placeholders are bound after the where/topCount parameters, so they must be the
+        // trailing placeholders in numeric order (#1906).
+        var queryBuilder = CreateQueryBuilder();
+        var query = new FeatureQuery
+        {
+            TopFilter = CreateTopFilter(topCount: 5),
+            Limit = 1,
+            Offset = 2
+        };
+
+        var result = queryBuilder.BuildTopFeaturesQuery(layerId: 1, query);
+
+        // $1 = layerId, $2 = topCount, $3 = LIMIT, $4 = OFFSET.
+        result.Sql.Should().Contain(") sub WHERE sub.rn <= $2");
+        result.Sql.Should().Contain("LIMIT $3");
+        result.Sql.Should().Contain("OFFSET $4");
+    }
+
+    [Fact]
+    public void BuildTopFeaturesQuery_WithoutPaging_OmitsLimitAndOffset()
+    {
+        var queryBuilder = CreateQueryBuilder();
+        var query = new FeatureQuery
+        {
+            TopFilter = CreateTopFilter(topCount: 3)
+        };
+
+        var result = queryBuilder.BuildTopFeaturesQuery(layerId: 1, query);
+
+        result.Sql.Should().NotContain("LIMIT");
+        result.Sql.Should().NotContain("OFFSET");
+    }
+
+    [Fact]
+    public void BuildTopFeaturesQuery_WithOutputSrid_TransformsGeometry()
+    {
+        // outSR (OutputSrid) must reproject output geometry via ST_Transform, mirroring
+        // the normal query path (#1906).
+        var queryBuilder = CreateQueryBuilder();
+        var query = new FeatureQuery
+        {
+            TopFilter = CreateTopFilter(topCount: 3),
+            SpatialReferenceSrid = 4326,
+            OutputSrid = 3857
+        };
+
+        var result = queryBuilder.BuildTopFeaturesQuery(layerId: 1, query);
+
+        result.Sql.Should().Contain("ST_Transform");
+        result.Sql.Should().Contain("3857");
+    }
+
     private static TopFilter CreateTopFilter(int topCount)
         => new()
         {

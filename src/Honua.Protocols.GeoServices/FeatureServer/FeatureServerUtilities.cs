@@ -160,27 +160,17 @@ internal static partial class FeatureServerEndpoints
         public static readonly FrozenSet<string> Relationships =
             new[] { "f" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
-        public static readonly FrozenSet<string> QueryTopFeatures = new[]
-            {
-                "topFilter",
-                "where",
-                "outFields",
-                "orderByFields",
-                "geometry",
-                "inSR",
-                "outSR",
-                "geometryType",
-                "spatialRel",
-                "returnGeometry",
-                "returnZ",
-                "returnM",
-                "returnCountOnly",
-                "resultOffset",
-                "resultRecordCount",
-                "time",
-                "f"
-            }
-            .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+        // Esri's queryTopFeatures accepts the standard FeatureServer layer-query
+        // parameter family on top of its own "topFilter". The ArcGIS API for Python
+        // query_top_features() always appends returnIdsOnly (and the other common
+        // query flags), so a hand-rolled allowlist that omitted them returned 400
+        // ("Unknown query parameter: returnIdsOnly") and made the operation unusable
+        // from real Esri clients (#1906). Derive the set from the shared layer-query
+        // allowlist so the two operations stay in lockstep, then add "topFilter".
+        public static readonly FrozenSet<string> QueryTopFeatures =
+            GeoServicesRequestValueHelpers.LayerQueryAllowedParameters
+                .Append("topFilter")
+                .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
         public static readonly FrozenSet<string> QueryDateBins = new[]
             {
