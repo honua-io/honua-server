@@ -511,13 +511,14 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         FeatureQuery? query,
         Core.Features.Tiles.TileOptions tileOptions,
         Core.Configuration.TileLimits tileLimits,
+        Core.Features.Tiles.GridGeometry? gridGeometry = null,
         CancellationToken cancellationToken = default)
     {
         query = query.HasValue
             ? await ApplyPermanentFilterAsync(layerId, query.Value, cancellationToken).ConfigureAwait(false)
             : await ApplyPermanentFilterAsync(layerId, new FeatureQuery(), cancellationToken).ConfigureAwait(false);
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
-        var tileQuery = _queryBuilder.BuildMvtTileQuery(layerId, x, y, z, query, tileOptions, tileLimits, geometryStorageType);
+        var tileQuery = _queryBuilder.BuildMvtTileQuery(layerId, x, y, z, query, tileOptions, tileLimits, geometryStorageType, gridGeometry);
         return await _dataAccess.GetMvtTileAsync(layerId, tileQuery, cancellationToken);
     }
 

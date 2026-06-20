@@ -1339,6 +1339,7 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
         FeatureQuery? query,
         Honua.Core.Features.Tiles.TileOptions tileOptions,
         Honua.Core.Configuration.TileLimits tileLimits,
+        Honua.Core.Features.Tiles.GridGeometry? gridGeometry = null,
         CancellationToken cancellationToken = default)
     {
         // Return a simple mock MVT tile for testing

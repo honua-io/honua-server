@@ -90,6 +90,80 @@ public class ZarrSubsetReaderTests
     }
 
     [Fact]
+    public async Task ReadSubsetAsync_V3UncompressedCPrefixedChunks_ReturnsContiguousRowMajor()
+    {
+        var objects = ZarrFixtureBuilder.BuildV3SingleArray(
+            root: "datasets/v3temp",
+            rows: 8,
+            cols: 8,
+            chunkRows: 4,
+            chunkCols: 4,
+            sample: (r, c) => r * 100 + c,
+            gzip: false);
+        var reader = new InMemoryZarrRangeReader(objects);
+        var metadata = await new ZarrMetadataExtractor().ReadMetadataAsync(reader, "bucket", "datasets/v3temp");
+
+        var request = new ZarrSubsetRequest
+        {
+            Variable = "v3temp",
+            Start = new[] { 2, 2 },
+            Stop = new[] { 6, 6 }
+        };
+
+        var subset = await new ZarrSubsetReader().ReadSubsetAsync(reader, "bucket", "datasets/v3temp", metadata, request);
+
+        subset.Shape.Should().Equal(4, 4);
+        subset.DataType.Should().Be("<f4");
+        for (var r = 0; r < 4; r++)
+        {
+            for (var c = 0; c < 4; c++)
+            {
+                var globalRow = r + 2;
+                var globalCol = c + 2;
+                var expected = (float)(globalRow * 100 + globalCol);
+                var actual = BitConverter.ToSingle(subset.Data, (r * 4 + c) * sizeof(float));
+                actual.Should().Be(expected, $"v3 cell ({r},{c}) should reflect global ({globalRow},{globalCol})");
+            }
+        }
+    }
+
+    [Fact]
+    public async Task ReadSubsetAsync_V3GzipCoded_DecodesCorrectly()
+    {
+        var objects = ZarrFixtureBuilder.BuildV3SingleArray(
+            root: "datasets/v3gzip",
+            rows: 8,
+            cols: 8,
+            chunkRows: 4,
+            chunkCols: 4,
+            sample: (r, c) => r + c * 0.5f,
+            gzip: true);
+        var reader = new InMemoryZarrRangeReader(objects);
+        var metadata = await new ZarrMetadataExtractor().ReadMetadataAsync(reader, "bucket", "datasets/v3gzip");
+        metadata.Arrays[0].Compressor.Should().Be("gzip");
+
+        var request = new ZarrSubsetRequest
+        {
+            Variable = "v3gzip",
+            Start = new[] { 0, 0 },
+            Stop = new[] { 5, 5 }
+        };
+
+        var subset = await new ZarrSubsetReader().ReadSubsetAsync(reader, "bucket", "datasets/v3gzip", metadata, request);
+
+        subset.Shape.Should().Equal(5, 5);
+        for (var r = 0; r < 5; r++)
+        {
+            for (var c = 0; c < 5; c++)
+            {
+                var expected = r + c * 0.5f;
+                var actual = BitConverter.ToSingle(subset.Data, (r * 5 + c) * sizeof(float));
+                actual.Should().Be(expected);
+            }
+        }
+    }
+
+    [Fact]
     public async Task ReadSubsetAsync_OutOfBounds_Throws()
     {
         var objects = ZarrFixtureBuilder.BuildSingleVariableUncompressed(

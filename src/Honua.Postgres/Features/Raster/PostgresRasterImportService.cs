@@ -52,6 +52,8 @@ internal sealed class PostgresRasterImportService : IRasterImportService
     private readonly string _rasterDataTable;
     private readonly string _rasterStatisticsTable;
     private readonly string _rasterTilesTable;
+    private readonly string _rasterOverviewsTable;
+    private readonly string _rasterFootprintsTable;
 
     public PostgresRasterImportService(
         IAdoNetDatabaseConnectionProvider connectionProvider,
@@ -66,6 +68,8 @@ internal sealed class PostgresRasterImportService : IRasterImportService
         _rasterDataTable = SchemaSearchPath.QualifyTable("raster_data", schemaName);
         _rasterStatisticsTable = SchemaSearchPath.QualifyTable("raster_statistics", schemaName);
         _rasterTilesTable = SchemaSearchPath.QualifyTable("raster_tiles", schemaName);
+        _rasterOverviewsTable = SchemaSearchPath.QualifyTable("raster_overviews", schemaName);
+        _rasterFootprintsTable = SchemaSearchPath.QualifyTable("raster_footprints", schemaName);
     }
 
     /// <inheritdoc />
@@ -183,6 +187,30 @@ internal sealed class PostgresRasterImportService : IRasterImportService
                 else if (request.TileZoomLevels.Length > 0 && srid <= 0)
                 {
                     warnings.Add("Tile pre-generation skipped: raster has no known CRS (SRID 0). Set 'srid' explicitly to enable tiling.");
+                }
+
+                // Phase 5: Build persisted overview pyramids (reduced-resolution copies in
+                // EPSG:3857) so the dynamic tile read path reuses a pyramid level instead of
+                // recomputing an ST_Rescale reduction per low-zoom request (#1836). Best-effort:
+                // a missing raster_overviews table (schema predates migration 061) is tolerated.
+                if (request.OverviewFactors.Length > 0 && srid > 0)
+                {
+                    await GenerateAndStoreOverviewsAsync(
+                        connection, transaction, rasterId, request.OverviewFactors, warnings, cancellationToken).ConfigureAwait(false);
+                }
+                else if (request.OverviewFactors.Length > 0 && srid <= 0)
+                {
+                    warnings.Add("Overview pyramid build skipped: raster has no known CRS (SRID 0). Set 'srid' explicitly to enable overviews.");
+                }
+
+                // Phase 6: Persist the per-raster footprint (and a default seamline equal to the
+                // footprint) so esriMosaicSeamline can clip each raster to its cutline before the
+                // union (#1804). Best-effort: a missing raster_footprints table (schema predates
+                // migration 062) is tolerated; seamline mosaics then fall back to the footprint.
+                if (srid > 0)
+                {
+                    await GenerateAndStoreFootprintAsync(
+                        connection, transaction, rasterId, srid, warnings, cancellationToken).ConfigureAwait(false);
                 }
 
                 await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
@@ -434,6 +462,62 @@ internal sealed class PostgresRasterImportService : IRasterImportService
             // The provider may already have aborted the transaction after a
             // server-side raster error. Preserve the original failure path.
         }
+    }
+
+    // Identifier used for the best-effort-phase savepoints. Constant (only one best-effort
+    // phase is in flight at a time) so the SET/RELEASE/ROLLBACK TO names always match.
+    private const string BestEffortSavepointName = "honua_raster_best_effort";
+
+    /// <summary>
+    /// Runs a best-effort enrichment phase inside a SQL savepoint so that ANY failure (a missing
+    /// table on a schema that predates the migration, or a PostGIS/GDAL function quirk on a
+    /// particular server build) rolls back to the savepoint and leaves the surrounding import
+    /// transaction usable, downgrading to a warning instead of aborting the import.
+    /// </summary>
+    /// <remarks>
+    /// Without the savepoint, a failed statement in one of these phases aborts the whole
+    /// transaction; the catch handler swallows the original error but every subsequent
+    /// statement then fails with <c>25P02 (in_failed_sql_transaction)</c>, breaking an import
+    /// that does not even depend on the enrichment having succeeded (honua-server#1804/#1836).
+    /// </remarks>
+    private static async Task RunBestEffortPhaseAsync(
+        DbConnection connection,
+        DbTransaction transaction,
+        Func<Task> work,
+        Func<PostgresException, string> warningFactory,
+        List<string> warnings,
+        CancellationToken cancellationToken)
+    {
+        await ExecuteSavepointCommandAsync(
+            connection, transaction, $"SAVEPOINT {BestEffortSavepointName}", cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await work().ConfigureAwait(false);
+            await ExecuteSavepointCommandAsync(
+                connection, transaction, $"RELEASE SAVEPOINT {BestEffortSavepointName}", cancellationToken).ConfigureAwait(false);
+        }
+        catch (PostgresException ex)
+        {
+            // Roll the failed statement back to the savepoint so the import transaction is
+            // usable again (clearing the 25P02 abort state), then downgrade to a warning.
+            await ExecuteSavepointCommandAsync(
+                connection, transaction, $"ROLLBACK TO SAVEPOINT {BestEffortSavepointName}", cancellationToken).ConfigureAwait(false);
+            await ExecuteSavepointCommandAsync(
+                connection, transaction, $"RELEASE SAVEPOINT {BestEffortSavepointName}", cancellationToken).ConfigureAwait(false);
+            warnings.Add(warningFactory(ex));
+        }
+    }
+
+    private static async Task ExecuteSavepointCommandAsync(
+        DbConnection connection,
+        DbTransaction transaction,
+        string sql,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = sql;
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -814,6 +898,154 @@ internal sealed class PostgresRasterImportService : IRasterImportService
         }
 
         return totalTiles;
+    }
+
+    // =============================================================================
+    // Overview pyramids (#1836)
+    // =============================================================================
+
+    /// <summary>
+    /// Builds and persists power-of-two reduced-resolution overview rasters (reprojected to
+    /// EPSG:3857) into <c>raster_overviews</c>. Only factors that actually coarsen the source
+    /// (target ground resolution &gt; the source's 3857 resolution) are stored, so a finer factor
+    /// than the source already provides is skipped rather than producing an upsampled copy.
+    /// Best-effort: a missing table (schema predates migration 061) downgrades to a warning.
+    /// </summary>
+    private async Task GenerateAndStoreOverviewsAsync(
+        DbConnection connection,
+        DbTransaction transaction,
+        long rasterId,
+        int[] overviewFactors,
+        List<string> warnings,
+        CancellationToken cancellationToken)
+    {
+        // Distinct, ascending, power-of-two-ish factors >= 2. Anything < 2 cannot coarsen.
+        var factors = overviewFactors.Where(f => f >= 2).Distinct().Order().ToArray();
+        if (factors.Length == 0)
+        {
+            return;
+        }
+
+        var built = 0;
+        foreach (var factor in factors)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            // Best-effort: a missing raster_overviews table (schema predates migration 061) or any
+            // PostGIS/GDAL quirk (ST_Transform/ST_Rescale behaviour varying by server build) must
+            // NOT abort the import transaction. Each factor runs inside its own savepoint so a
+            // failure rolls back to the savepoint and downgrades to a warning, leaving the
+            // transaction usable for the next factor and the remaining import phases.
+            await RunBestEffortPhaseAsync(
+                connection,
+                transaction,
+                async () =>
+                {
+                    await using var command = connection.CreateCommand();
+                    command.Transaction = transaction;
+                    command.CommandTimeout = OverviewComputeTimeoutSeconds;
+                    // Reproject the source to the tile CRS once, then rescale to factor x its 3857
+                    // ground resolution. ground_resolution caches the resulting metres/pixel so the
+                    // read path can pick a level without detoasting the raster payload. The factor is
+                    // skipped when it would not coarsen the source (target res <= source res).
+                    command.CommandText = $"""
+                        WITH src AS (
+                            SELECT ST_Transform(raster, 3857) AS rast
+                            FROM {_rasterDataTable}
+                            WHERE id = @rasterId
+                        ),
+                        scaled AS (
+                            SELECT
+                                GREATEST(abs(ST_ScaleX(rast)) * @factor, abs(ST_ScaleX(rast))) AS target_res,
+                                rast
+                            FROM src
+                        )
+                        INSERT INTO {_rasterOverviewsTable} (raster_data_id, overview_factor, raster, ground_resolution)
+                        SELECT @rasterId, @factor,
+                               ST_Rescale(rast, target_res, -target_res, 'NearestNeighbor'),
+                               target_res
+                        FROM scaled
+                        WHERE target_res > abs(ST_ScaleX(rast))
+                        ON CONFLICT (raster_data_id, overview_factor) DO UPDATE SET
+                            raster = EXCLUDED.raster,
+                            ground_resolution = EXCLUDED.ground_resolution,
+                            created_at = NOW()
+                        """;
+                    command.AddParameter("@rasterId", rasterId);
+                    command.AddParameter("@factor", factor);
+
+                    built += await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+                },
+                ex => ex.SqlState == PostgresErrorCodes.UndefinedTable
+                    ? "Overview pyramid build skipped: raster_overviews table is not provisioned (apply migration 061)."
+                    : $"Overview pyramid build skipped for factor {factor}: {ex.SqlState}.",
+                warnings,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        PostgresRasterImportLog.OverviewsBuilt(_logger, rasterId, built, factors.Length);
+    }
+
+    // Building a pyramid level runs ST_Rescale across the full raster; give it the same generous
+    // budget the statistics backfill uses so county-scale imagery finishes within the import.
+    private const int OverviewComputeTimeoutSeconds = 300;
+
+    // =============================================================================
+    // Footprint / seamline store (#1804)
+    // =============================================================================
+
+    /// <summary>
+    /// Persists the per-raster footprint (the convex hull of the raster's valid-data envelope)
+    /// and a default seamline equal to that footprint into <c>raster_footprints</c>. The default
+    /// seamline gives <c>esriMosaicSeamline</c> a deterministic per-raster clip even before a
+    /// hand-authored cutline is supplied; a later operation can replace the seamline geometry.
+    /// Best-effort: a missing table (schema predates migration 062) downgrades to a warning, and
+    /// seamline mosaics then contribute each raster's full footprint.
+    /// </summary>
+    private async Task GenerateAndStoreFootprintAsync(
+        DbConnection connection,
+        DbTransaction transaction,
+        long rasterId,
+        int srid,
+        List<string> warnings,
+        CancellationToken cancellationToken)
+    {
+        // Best-effort: a missing raster_footprints table (schema predates migration 062) or any
+        // PostGIS/GDAL quirk (ST_ConvexHull behaviour varying by server build) must NOT abort the
+        // import transaction. The work runs inside a savepoint so a failure rolls back to the
+        // savepoint and downgrades to a warning, leaving the transaction usable for the commit.
+        await RunBestEffortPhaseAsync(
+            connection,
+            transaction,
+            async () =>
+            {
+                await using var command = connection.CreateCommand();
+                command.Transaction = transaction;
+                command.CommandText = $"""
+                    INSERT INTO {_rasterFootprintsTable} (raster_data_id, footprint, seamline, srid, updated_at)
+                    SELECT @rasterId, hull, hull, @srid, NOW()
+                    FROM (
+                        SELECT ST_ConvexHull(raster) AS hull
+                        FROM {_rasterDataTable}
+                        WHERE id = @rasterId
+                    ) AS f
+                    WHERE hull IS NOT NULL
+                    ON CONFLICT (raster_data_id) DO UPDATE SET
+                        footprint = EXCLUDED.footprint,
+                        seamline = EXCLUDED.seamline,
+                        srid = EXCLUDED.srid,
+                        updated_at = NOW()
+                    """;
+                command.AddParameter("@rasterId", rasterId);
+                command.AddParameter("@srid", srid);
+
+                await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            },
+            ex => ex.SqlState == PostgresErrorCodes.UndefinedTable
+                ? "Footprint/seamline store skipped: raster_footprints table is not provisioned (apply migration 062)."
+                : $"Footprint/seamline store skipped: {ex.SqlState}.",
+            warnings,
+            cancellationToken).ConfigureAwait(false);
     }
 
     // =============================================================================

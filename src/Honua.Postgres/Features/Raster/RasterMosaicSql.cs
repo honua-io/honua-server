@@ -74,6 +74,8 @@ internal static class RasterMosaicSql
         RasterMosaicOrdering.Northwest =>
             "ST_YMax(ST_Envelope(rast)) ASC, ST_XMin(ST_Envelope(rast)) DESC, id ASC",
 
+        // Seamline clips each raster to its cutline upstream (in the source CTE); among the
+        // clipped pieces the union still resolves any residual overlap by newest acquisition.
         // LockOrder composites the caller-pinned set ordered by newest acquisition, matching
         // the default newest-wins behaviour among the locked rasters.
         // AcquisitionNewest (default): ascending acquisition so the newest raster sorts last

@@ -59,4 +59,10 @@ internal static partial class PostgresRasterImportLog
         int newBandCount,
         int expectedSrid,
         int expectedBandCount);
+
+    [LoggerMessage(
+        EventId = 7827,
+        Level = LogLevel.Information,
+        Message = "Overview pyramids built for raster {RasterId}: {BuiltCount} of {RequestedCount} requested factors")]
+    public static partial void OverviewsBuilt(ILogger logger, long rasterId, int builtCount, int requestedCount);
 }
