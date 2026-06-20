@@ -221,7 +221,7 @@ sql:
       );
   - "CREATE INDEX IF NOT EXISTS idx_raster_statistics_raster_data_id ON honua.raster_statistics(raster_data_id);"
   # Sensor/camera/orientation/RPC companion table (#1879/#1880/#1881).
-  # Keep in sync with src/Honua.Server/Migrations/059_AddRasterSensorMetadata.sql.
+  # Keep in sync with src/Honua.Server/Migrations/060_AddRasterSensorMetadata.sql.
   - |
       CREATE TABLE IF NOT EXISTS honua.raster_sensor_metadata (
           raster_data_id BIGINT PRIMARY KEY REFERENCES honua.raster_data(id) ON DELETE CASCADE,

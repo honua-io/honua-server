@@ -259,9 +259,9 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
     [Fact]
     public async Task DbUpMigrations_RasterSensorMetadata_CreatesCompanionTableAndCascades()
     {
-        // Arrange — run the full Server migration set. Migration 059 guards on raster_data, which
+        // Arrange — run the full Server migration set. Migration 060 guards on raster_data, which
         // is provisioned outside the Server set, so on a fresh schema it is a no-op until the raster
-        // schema exists. After provisioning raster_data we re-run the embedded 059 script (it is
+        // schema exists. After provisioning raster_data we re-run the embedded 060 script (it is
         // idempotent / IF NOT EXISTS) and assert the companion table + FK cascade.
         var connectionStringBuilder = new Npgsql.NpgsqlConnectionStringBuilder(_connectionString)
         {
@@ -286,7 +286,7 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         await using var connection = await _postgres.GetConnectionAsync(_schemaName);
 
         // Provision the raster_data parent (normally created with the raster schema), then apply
-        // the embedded 059 migration SQL so the guarded companion table is created.
+        // the embedded 060 migration SQL so the guarded companion table is created.
         await using (var createParent = connection.CreateCommand())
         {
             createParent.CommandText = $"""
@@ -303,7 +303,7 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         // The shipped migration hard-codes the honua.* schema (matching the runtime deployment).
         // Retarget it to the isolated test schema so this round-trip stays parallel-safe and does
         // not collide with the shared honua schema other tests use.
-        var migrationSql = (await ReadEmbeddedMigrationAsync("059_AddRasterSensorMetadata.sql"))
+        var migrationSql = (await ReadEmbeddedMigrationAsync("060_AddRasterSensorMetadata.sql"))
             .Replace("honua.", $"{_schemaName}.", StringComparison.Ordinal);
         await using (var apply = connection.CreateCommand())
         {
