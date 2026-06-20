@@ -313,9 +313,12 @@ public sealed class GeoServerImportServiceDataSourceApplyTests
         /// </summary>
         private async Task SetUpHonuaCatalogAsync(string schemaName)
         {
-            await using var conn = await fixture.GetConnectionAsync();
-            await using var cmd = conn.CreateCommand();
-            cmd.CommandText = """
+            // honua-server#1568 (signature 2): this DDL creates/ALTERs the literal, process-global
+            // honua / honua_data catalog schemas and tables (search_path isolation does not scope
+            // them), so apply it under the shared seed advisory lock to keep parallel
+            // [Collection("Database")] tests off the 40P01 deadlock path racing ACCESS EXCLUSIVE
+            // catalog locks on the same global objects.
+            await fixture.ApplyGlobalSeedSqlAsync("""
                 CREATE SCHEMA IF NOT EXISTS honua;
                 CREATE SCHEMA IF NOT EXISTS honua_data;
                 -- Schema MUST stay column-compatible with the canonical
@@ -329,6 +332,7 @@ public sealed class GeoServerImportServiceDataSourceApplyTests
                     service_name VARCHAR(64) PRIMARY KEY,
                     description TEXT NOT NULL DEFAULT '',
                     srid INT NOT NULL DEFAULT 4326,
+                    max_record_count INT NOT NULL DEFAULT 1000,
                     supported_formats TEXT[] NOT NULL DEFAULT '{JSON,GeoJSON}',
                     capabilities TEXT[] NOT NULL DEFAULT '{Query,Extract}',
                     service_extent GEOMETRY,
@@ -337,6 +341,11 @@ public sealed class GeoServerImportServiceDataSourceApplyTests
                     created_at TIMESTAMPTZ DEFAULT NOW(),
                     updated_at TIMESTAMPTZ DEFAULT NOW()
                 );
+                -- honua-server#1568: keep column-compatible with base-schema.sql /
+                -- server.yaml when a peer test created honua.services first under the
+                -- shared seed advisory lock (max_record_count is in the canonical schema).
+                ALTER TABLE honua.services
+                    ADD COLUMN IF NOT EXISTS max_record_count INT NOT NULL DEFAULT 1000;
                 ALTER TABLE honua.services
                     ADD COLUMN IF NOT EXISTS service_extent GEOMETRY;
                 ALTER TABLE honua.services
@@ -353,8 +362,7 @@ public sealed class GeoServerImportServiceDataSourceApplyTests
                     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     PRIMARY KEY (source_kind, source_id)
                 );
-                """;
-            await cmd.ExecuteNonQueryAsync();
+                """);
         }
 
         /// <summary>

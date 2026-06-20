@@ -149,10 +149,11 @@ public sealed class GeoservicesImportCatalogReconciliationTests(PostgresFixture 
     private async Task EnsureCatalogSchemaAsync()
     {
         var sql = await File.ReadAllTextAsync(RepositoryPaths.Resolve("tests", "seed", "base-schema.sql"));
-        await using var connection = await fixture.GetConnectionAsync();
-        await using var command = connection.CreateCommand();
-        command.CommandText = $"SET search_path TO honua, public;\n{sql}";
-        await command.ExecuteNonQueryAsync();
+        // honua-server#1568 (signature 2): base-schema.sql creates/ALTERs the literal,
+        // process-global honua.* catalog tables (search_path isolation does not scope them), so
+        // apply it under the shared seed advisory lock to keep parallel [Collection("Database")]
+        // tests off the 40P01 deadlock path. The seed's own SET search_path stays first.
+        await fixture.ApplyGlobalSeedSqlAsync($"SET search_path TO honua, public;\n{sql}");
     }
 
     private async Task CleanupCatalogAsync(string serviceName)
