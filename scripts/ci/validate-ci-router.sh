@@ -219,6 +219,22 @@ assert_excludes_shard \
   "src/Honua.Protocols.Scene/SceneServerEndpoints.cs" \
   "FeatureServer Endpoints"
 
+# A Geocoding (GeocodeServer) change targets the dedicated Geocoding shard and
+# excludes unrelated shards. Before this shard existed, geocoding source lived
+# under the unmapped-source net AND its tests matched no shard filter, so any
+# geocoding-only PR escalated to run_all while never running geocoding tests in
+# a targeted run. This locks in that a geocoding change is now targeted.
+assert_descriptor \
+  "geocoding-targeted" \
+  "src/Honua.Geocoding/Features/Geocoding/Domain/GeocodeMagicKey.cs" \
+  "targeted" \
+  "false" \
+  "Geocoding"
+assert_excludes_shard \
+  "geocoding-excludes-imageserver" \
+  "src/Honua.Server/Features/Geocoding/GeocodingHandler.cs" \
+  "GeoServices ImageServer"
+
 # Cross-cutting safety preserved: the shared test harness (TestKit /
 # PostgresFixture / SeedRunner) and the shared canonical query pipeline in
 # Honua.Core/Queries still escalate to run_all.
