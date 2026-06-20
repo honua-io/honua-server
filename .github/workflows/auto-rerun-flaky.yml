@@ -26,6 +26,7 @@ jobs:
     steps:
       - uses: actions/github-script@v9
         with:
+          github-token: ${{ secrets.MERGE_TRAIN_TOKEN }}
           script: |
             const owner = context.repo.owner, repo = context.repo.repo;
             const run = context.payload.workflow_run;
