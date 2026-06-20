@@ -437,44 +437,14 @@ internal static partial class FeatureServerEndpoints
         var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
         var queryLimits = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value.Query;
 
-        // Special case: sinceGeneration == 0 means pre-migration data or first sync;
-        // fall back to "all features as adds" for backward compatibility.
-        if (sinceGeneration == 0)
-        {
-            foreach (var layer in replicaLayers)
-            {
-                var result = await featureReader.QueryAsync(
-                    layer.StorageLayerId,
-                    new FeatureQuery { Limit = queryLimits.MaxRecordCount + 1 },
-                    cancellationToken);
-                if (result.HasMoreResults || result.Items.Length > queryLimits.MaxRecordCount)
-                {
-                    return (null, StandardErrorHelpers.CreateBadRequest(
-                        context,
-                        $"Replica '{replicaId}' initial extract exceeds the configured per-layer record limit.",
-                        [$"Layer {layer.PublicLayerId} returned more than {queryLimits.MaxRecordCount} features."]));
-                }
-
-                var addFeatures = result.Items
-                    .Select(f => ConvertFeatureToGeoServices(f, layer.Resource))
-                    .ToArray();
-
-                layerChanges.Add(new LayerChanges
-                {
-                    Id = layer.PublicLayerId,
-                    Adds = addFeatures.Length,
-                    Updates = 0,
-                    Deletes = 0,
-                    AddFeatures = addFeatures,
-                    UpdateFeatures = null,
-                    DeleteIds = null
-                });
-            }
-
-            return (layerChanges.ToArray(), null);
-        }
-
-        // Query real incremental deltas from the change log
+        // Query real incremental deltas from the change log. For sinceGeneration == 0 (a first sync,
+        // or data that predates migration 012) this returns the baseline Insert rows seeded by
+        // migration 059 for every pre-migration feature plus any subsequent edits, so the first
+        // gen-0 sync delivers a one-time snapshot-as-adds and every later sync is a pure delta from
+        // the recorded server generation (#1876). The all-features fallback below is only taken for a
+        // layer that has features but NO change-log coverage at all — a backend whose change tracker
+        // is a no-op (DuckDB/MySql/SQL Server) or a layer the trigger never observed — so those
+        // backends still receive a full snapshot on first sync.
         var changes = await changeTracker.GetChangesSinceAsync(
             sinceGeneration,
             replicaLayers.Select(layer => layer.StorageLayerId).Distinct().ToArray(),
@@ -547,6 +517,21 @@ internal static partial class FeatureServerEndpoints
                     DeleteIds = deleteIds.Length > 0 ? deleteIds : null
                 });
             }
+            else if (sinceGeneration == 0)
+            {
+                // First sync (gen 0) for a layer the change log does not cover: fall back to a full
+                // snapshot delivered as adds. After migration 059 a Postgres layer with rows always
+                // has baseline coverage and takes the change-log branch above; this fallback is the
+                // first-sync snapshot for no-op-change-tracker backends and for a genuinely empty log.
+                var (snapshotChanges, snapshotError) = await BuildLayerSnapshotAddsAsync(
+                    context, replicaId, layer, featureReader, queryLimits, cancellationToken);
+                if (snapshotError is not null)
+                {
+                    return (null, snapshotError);
+                }
+
+                layerChanges.Add(snapshotChanges!);
+            }
             else
             {
                 layerChanges.Add(new LayerChanges
@@ -560,6 +545,50 @@ internal static partial class FeatureServerEndpoints
         }
 
         return (layerChanges.ToArray(), null);
+    }
+
+    /// <summary>
+    /// Builds a full-snapshot <see cref="LayerChanges"/> (every current feature reported as an add) for
+    /// a layer that has no change-log coverage on a first (generation 0) sync. This is the first-sync
+    /// baseline path for change-tracking backends whose tracker is a no-op (DuckDB / MySql / SQL Server)
+    /// and for a genuinely empty change log; Postgres layers with rows are covered by the baseline rows
+    /// migration 059 seeds and resolve through the incremental change-log path instead (#1876). Returns a
+    /// bad-request <see cref="IResult"/> when the snapshot exceeds the configured per-layer record limit.
+    /// </summary>
+    private static async Task<(LayerChanges? Changes, IResult? Error)> BuildLayerSnapshotAddsAsync(
+        HttpContext context,
+        string replicaId,
+        ReplicaLayerV2 layer,
+        IFeatureReader featureReader,
+        Honua.Core.Configuration.QueryLimits queryLimits,
+        CancellationToken cancellationToken)
+    {
+        var result = await featureReader.QueryAsync(
+            layer.StorageLayerId,
+            new FeatureQuery { Limit = queryLimits.MaxRecordCount + 1 },
+            cancellationToken);
+        if (result.HasMoreResults || result.Items.Length > queryLimits.MaxRecordCount)
+        {
+            return (null, StandardErrorHelpers.CreateBadRequest(
+                context,
+                $"Replica '{replicaId}' initial extract exceeds the configured per-layer record limit.",
+                [$"Layer {layer.PublicLayerId} returned more than {queryLimits.MaxRecordCount} features."]));
+        }
+
+        var addFeatures = result.Items
+            .Select(f => ConvertFeatureToGeoServices(f, layer.Resource))
+            .ToArray();
+
+        return (new LayerChanges
+        {
+            Id = layer.PublicLayerId,
+            Adds = addFeatures.Length,
+            Updates = 0,
+            Deletes = 0,
+            AddFeatures = addFeatures,
+            UpdateFeatures = null,
+            DeleteIds = null
+        }, null);
     }
 
     /// <summary>

@@ -31,7 +31,13 @@ internal sealed class GeometryProcessor : IGeometryProcessor
             baseGeometry = DatumTransformSql.BuildTransformExpression(baseGeometry, query.OutputSrid.Value, query.OutputDatumTransformation);
         }
 
-        return $"ST_AsBinary({baseGeometry}) AS {FeatureQueryEncoding.GeometryColumn}";
+        // Default to 2D OGC WKB (ST_AsBinary) — byte-identical to the historical read path. When the
+        // canonical query asks to preserve Z/M, read extended WKB (ST_AsEWKB) so the higher ordinates
+        // survive to the output formatter; ST_AsBinary silently drops them. The WKB consumers (NTS
+        // WKBReader and the GeoServices fast-point parser) read EWKB transparently, including the SRID
+        // prefix, so the switch is safe for the geometries that actually carry Z/M.
+        var geometryEncoder = query.IncludeZ || query.IncludeM ? "ST_AsEWKB" : "ST_AsBinary";
+        return $"{geometryEncoder}({baseGeometry}) AS {FeatureQueryEncoding.GeometryColumn}";
     }
 
     public string GetGeometryGmlExpression(CoreGeometryStorageType storageType, FeatureQuery query)
