@@ -75,6 +75,45 @@ class TestStacClientCompatibility:
             detail=f"collection_id={collection.id} item_id={item.id}",
         )
 
+    def test_every_seeded_item_satisfies_datetime_invariant(
+        self,
+        stac_http_client,
+        test_collection_id: str,
+        evidence_collector: CompatibilityEvidenceCollector,
+    ):
+        """Every seeded Item must carry a valid datetime (non-null, or null with both bounds)."""
+        response = stac_http_client.get(
+            f"/stac/collections/{test_collection_id}/items",
+            params={"limit": 100},
+        )
+        assert response.status_code == 200
+
+        features = response.json()["features"]
+        assert features, "expected at least one seeded item"
+
+        for feature in features:
+            props = feature["properties"]
+            assert "datetime" in props, (
+                f"item {feature.get('id')} omits the required 'datetime' property"
+            )
+            if props["datetime"] is None:
+                # STAC 1.0.0: datetime may be null ONLY with both bounds present and non-null.
+                assert props.get("start_datetime"), (
+                    f"item {feature.get('id')} has datetime:null without start_datetime"
+                )
+                assert props.get("end_datetime"), (
+                    f"item {feature.get('id')} has datetime:null without end_datetime"
+                )
+            # pystac enforces the same invariant during hydration.
+            pystac.Item.from_dict(feature, preserve_dict=False).validate()
+
+        evidence_collector.record(
+            "test_every_seeded_item_satisfies_datetime_invariant",
+            "Every seeded STAC Item satisfies the datetime invariant and hydrates under pystac",
+            "pass",
+            detail=f"checked={len(features)} items",
+        )
+
     def test_pystac_client_discovers_seeded_collection(
         self,
         stac_api_url: str,
