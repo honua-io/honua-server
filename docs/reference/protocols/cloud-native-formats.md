@@ -46,8 +46,6 @@ NetCDF4, HDF5, and GRIB sources are registered via `POST /api/v1/admin/multidim-
 
 The Zarr reader (`ZarrMetadataExtractor`/`ZarrSubsetReader`) reads both **Zarr v2** (`.zgroup`/`.zarray`/`.zattrs`) and **Zarr v3** (`zarr.json`, `node_type` group/array). For v3 it normalizes the `data_type` name (e.g. `float32` → numpy `<f4`), reads the `c/`-prefixed default chunk-key encoding (or the `v2` dotted encoding), and gates the codec pipeline — uncompressed and `gzip`-coded little-endian chunks are supported; `blosc`, `zstd`, sharding, `crc32c`, and big-endian are rejected cleanly.
 
-Registered Zarr coverages can also be rendered as PNG map tiles via `GET /api/v1/datacubes/{layerId}/tiles/{tileMatrixSetId}/{z}/{x}/{y}` (optional `variable`, `datetime`, and `elevation` grid-index query parameters). This is a read-only serving surface that does not advertise an OGC tiles conformance class. The tile gridset CRS must match the coverage storage CRS today; cross-CRS reprojection of the tile window is a follow-up.
-
 ## Related
 
 - [Data formats matrix](../data-formats.md) — full import/export format support
