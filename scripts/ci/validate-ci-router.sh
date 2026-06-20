@@ -91,6 +91,29 @@ assert_descriptor() {
   fi
 }
 
+# Assert that a given changed-file set routes to a targeted subset that EXCLUDES
+# an unrelated shard. This is the correctness guard for #1897: a single-protocol
+# change must not silently drag in unrelated shards (e.g. a FeatureServer-only
+# change must NOT select GeoServices ImageServer), and must not be run_all.
+assert_excludes_shard() {
+  local name="$1"
+  local changed_files="$2"
+  local excluded_shard="$3"
+  local descriptor
+
+  descriptor="$(printf '%s\n' "${changed_files}" | scripts/ci/honua-server-targeted-tests.sh --stdin)"
+  echo "${name}: ${descriptor}"
+
+  # Must be a targeted (non-run_all) descriptor.
+  jq -e '.run_all == false and .reason == "targeted"' <<< "${descriptor}" >/dev/null
+
+  # The excluded shard must NOT be present.
+  if jq -e --arg s "${excluded_shard}" '.shards | index($s)' <<< "${descriptor}" >/dev/null; then
+    echo "::error::${name}: expected shard '${excluded_shard}' to be EXCLUDED but it was selected" >&2
+    exit 1
+  fi
+}
+
 echo "Dry-running shard router cases..."
 assert_descriptor \
   "ci-shards-only" \
@@ -145,5 +168,92 @@ assert_descriptor \
   "targeted" \
   "false" \
   "OGC API Features"
+
+# ---------------------------------------------------------------------------
+# #1897 guard cases: feature PRs must route to a targeted subset, not run_all,
+# and must not pull in unrelated shards — while genuinely cross-cutting changes
+# still escalate to run_all. These lock in the routing fix against regression.
+# ---------------------------------------------------------------------------
+
+# A project add/remove that only touches Honua.sln (no other signal) must NOT
+# run all 40 shards. With Honua.sln removed from infrastructure_paths it falls
+# to the smoke shard via default_shards_when_no_match.
+assert_descriptor \
+  "sln-only-not-run-all" \
+  "Honua.sln" \
+  "no_path_match" \
+  "false" \
+  "Core"
+
+# A single GeoServices FeatureServer change targets the FeatureServer shards and
+# must EXCLUDE the unrelated GeoServices ImageServer shard (correctness: do not
+# over-run, but do not under-test the FeatureServer family).
+assert_excludes_shard \
+  "featureserver-excludes-imageserver" \
+  "src/Honua.Protocols.GeoServices/FeatureServer/FeatureServerQueryHandler.cs" \
+  "GeoServices ImageServer"
+
+# Conversely, a single GeoServices ImageServer change targets ImageServer and
+# must EXCLUDE the FeatureServer Endpoints shard.
+assert_excludes_shard \
+  "imageserver-excludes-featureserver" \
+  "src/Honua.Protocols.GeoServices/ImageServer/ImageServerEndpoints.cs" \
+  "FeatureServer Endpoints"
+
+# An OData-only feature change targets the OData shard family (targeted, not
+# run_all) and excludes an unrelated protocol shard.
+assert_excludes_shard \
+  "odata-excludes-wfs" \
+  "src/Honua.Protocols.OData/Features/ODataEndpoints.cs" \
+  "WFS"
+
+# A Scene-only change targets the Scene shard and excludes FeatureServer.
+assert_descriptor \
+  "scene-targeted" \
+  "src/Honua.Protocols.Scene/SceneServerEndpoints.cs" \
+  "targeted" \
+  "false" \
+  "Scene"
+assert_excludes_shard \
+  "scene-excludes-featureserver" \
+  "src/Honua.Protocols.Scene/SceneServerEndpoints.cs" \
+  "FeatureServer Endpoints"
+
+# Cross-cutting safety preserved: the shared test harness (TestKit /
+# PostgresFixture / SeedRunner) and the shared canonical query pipeline in
+# Honua.Core/Queries still escalate to run_all.
+assert_descriptor \
+  "testkit-still-run-all" \
+  "tests/dotnet/Honua.TestKit/PostgresFixture.cs" \
+  "infrastructure_change" \
+  "true" \
+  "Core"
+
+assert_descriptor \
+  "core-query-pipeline-still-run-all" \
+  "src/Honua.Core/Queries/FeatureQuery.cs" \
+  "infrastructure_change" \
+  "true" \
+  "Core"
+
+# A brand-new, not-yet-mapped top-level protocol area (e.g. a future
+# src/Honua.Protocols.SensorThings/ landing before its shard is added) trips the
+# unmapped-source safety net and runs run_all until an owning shard is mapped —
+# never a silent skip.
+assert_descriptor \
+  "new-unmapped-protocol-run-all" \
+  "src/Honua.Protocols.SensorThings/SensorThingsEndpoints.cs" \
+  "unmapped_source_change" \
+  "true" \
+  "Core"
+
+# The shared host-rendering pipeline (Honua.Hosting) is cross-cutting: a change
+# there must run_all rather than mis-route to a single render protocol.
+assert_descriptor \
+  "hosting-rendering-run-all" \
+  "src/Honua.Hosting/Features/Rendering/RasterMapRenderingPipeline.cs" \
+  "unmapped_source_change" \
+  "true" \
+  "Core"
 
 echo "CI router validation passed."
