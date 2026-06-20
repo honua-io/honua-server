@@ -2383,6 +2383,48 @@
       ]
     },
     {
+      "surfaceId": "sensorthings-1.1",
+      "displayName": "OGC SensorThings API (STA v1.1)",
+      "surfaceKind": "http-route-family",
+      "protocol": "OGC SensorThings API v1.1",
+      "canonicalIdentifier": "/sta/v1.1",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/sta/v1.1"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus endpoint integration tests for the SensorThings API (STA v1.1) Phase 1 read surface: Things/Sensors/ObservedProperties/Datastreams/Observations collections, by-id reads, and Datastream Observations navigation",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Protocols.SensorThings.Tests/Source/SensorThingsReadEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "honua-server#1747",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "scenario-depth",
+          "proofMechanism": "SensorThings read integration tests retain conformance-shaped envelopes (@iot.id/@iot.selfLink/@iot.navigationLink), $expand=Observations inlining, $filter happy-path and negative-path ($filter 400), and $orderby descending observation ordering",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "tests/dotnet/Honua.Protocols.SensorThings.Tests/Source/SensorThingsReadEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "honua-server#1747",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
       "surfaceId": "ogc-api-maps-and-static-rendering",
       "displayName": "OGC API Maps and static rendering",
       "surfaceKind": "http-route-family",
