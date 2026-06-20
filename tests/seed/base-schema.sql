@@ -546,6 +546,21 @@ BEGIN
                 -- to anonymous only when no policy was seeded. (honua-server#1345.)
                 COALESCE(s.metadata -> 'accessPolicy', jsonb_build_object('allowAnonymous', true)) AS service_access_policy,
                 COALESCE(l.metadata -> 'accessPolicy', jsonb_build_object('allowAnonymous', true)) AS layer_access_policy,
+                -- Temporal (time-aware) configuration carried through from v1 layer
+                -- metadata so a layer published with timeInfo compiles into the v2
+                -- resource's typed temporal slot. Without this the GeoServices
+                -- FeatureServer layer metadata omits timeInfo and the temporalExtent
+                -- resource cannot resolve the dimension. Only surfaced when a non-empty
+                -- startTimeField is present. (honua-server#1910.)
+                CASE
+                    WHEN NULLIF(l.metadata #>> '{timeInfo,startTimeField}', '') IS NOT NULL THEN
+                        jsonb_strip_nulls(jsonb_build_object(
+                            'startTimeField', l.metadata #>> '{timeInfo,startTimeField}',
+                            'endTimeField', l.metadata #>> '{timeInfo,endTimeField}',
+                            'trackIdField', l.metadata #>> '{timeInfo,trackIdField}'
+                        ))
+                    ELSE NULL
+                END AS layer_temporal,
                 l.srid,
                 ST_XMin(l.extent)::double precision AS west,
                 ST_YMin(l.extent)::double precision AS south,
@@ -659,7 +674,14 @@ BEGIN
                     'accessPolicy', layer_access_policy,
                     'status', (SELECT value FROM status_doc),
                     'extensions', '{}'::jsonb
-                ) AS value,
+                )
+                -- Attach the typed temporal slot only when the v1 layer declared a
+                -- start-time field, so non-time-aware layers stay free of a temporal
+                -- block (opt-in contract). (#1910.)
+                || CASE WHEN layer_temporal IS NOT NULL
+                        THEN jsonb_build_object('temporal', layer_temporal)
+                        ELSE '{}'::jsonb END
+                AS value,
                 ('res-layer-' || layer_part) AS sort_key
             FROM layer_rows
 
