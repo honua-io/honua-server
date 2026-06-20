@@ -227,6 +227,79 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    public async Task UpdateLayerMetadata_WithTimeInfoPayload_ReturnsOkAndRoundTrips()
+    {
+        // Regression for honua-io/honua-server#1910 symptom 3: PUTting a timeInfo block
+        // on a layer must succeed (HTTP 200) and round-trip the configured fields rather
+        // than 500ing with a NullReferenceException. The typed V2 temporal write path
+        // (ToV2Temporal -> MutateResourcesForLayerAsync) must null-guard every slot it
+        // consumes.
+        var body = """
+            {
+              "timeInfo": {
+                "startTimeField": "timestamp",
+                "endTimeField": "event_date"
+              }
+            }
+            """;
+        var content = new StringContent(body, Encoding.UTF8, "application/json");
+
+        var response = await _client.PutAsync("/api/v1/admin/services/test/layers/0/metadata", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var payload = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(payload);
+        var data = document.RootElement.GetProperty("data");
+
+        var timeInfo = data.GetProperty("timeInfo");
+        timeInfo.ValueKind.Should().Be(JsonValueKind.Object);
+        timeInfo.GetProperty("startTimeField").GetString().Should().Be("timestamp");
+        timeInfo.GetProperty("endTimeField").GetString().Should().Be("event_date");
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    public async Task UpdateLayerMetadata_WithEmptyTimeInfo_ClearsTemporalWithoutError()
+    {
+        // Companion to the timeInfo round-trip: an empty-field timeInfo clears the
+        // temporal slot (returns it as null) and must not NRE on the clear path.
+        var setBody = """
+            {
+              "timeInfo": {
+                "startTimeField": "timestamp"
+              }
+            }
+            """;
+        await _client.PutAsync(
+            "/api/v1/admin/services/test/layers/0/metadata",
+            new StringContent(setBody, Encoding.UTF8, "application/json"));
+
+        var clearBody = """
+            {
+              "timeInfo": {
+                "startTimeField": ""
+              }
+            }
+            """;
+        var response = await _client.PutAsync(
+            "/api/v1/admin/services/test/layers/0/metadata",
+            new StringContent(clearBody, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var payload = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(payload);
+        var data = document.RootElement.GetProperty("data");
+
+        if (data.TryGetProperty("timeInfo", out var timeInfo))
+        {
+            timeInfo.ValueKind.Should().Be(JsonValueKind.Null);
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
     public async Task UpdateLayerMetadata_WithRasterMosaicPayload_ReturnsUpdatedMergeStrategy()
     {
         var body = """
