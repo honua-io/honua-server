@@ -433,11 +433,27 @@ if (connectedRedis != null)
         Honua.Core.Features.ControlPlane.Abstractions.IMetadataReleaseOperationReconciler,
         Honua.ControlPlane.MetadataReleaseReconciler>();
 
+    // Coordinated platform-upgrade release lifecycle (Demo C): conducts a container rollout, an
+    // additive DB script migration, and a metadata-v2 activation as one ordered, gated,
+    // rollback-able operation. Composes the deploy and metadata-release services via thin step
+    // executors rather than a parallel lifecycle.
+    builder.Services.AddSingleton<Honua.ControlPlane.CoordinatedReleaseControlService>();
+    builder.Services.AddSingleton<
+        Honua.Core.Features.ControlPlane.Abstractions.ICoordinatedContainerStepExecutor,
+        Honua.ControlPlane.CoordinatedContainerStepExecutor>();
+    builder.Services.AddSingleton<
+        Honua.Core.Features.ControlPlane.Abstractions.ICoordinatedMetadataStepExecutor,
+        Honua.ControlPlane.CoordinatedMetadataStepExecutor>();
+    builder.Services.AddSingleton<
+        Honua.Core.Features.ControlPlane.Abstractions.ICoordinatedReleaseReconciler,
+        Honua.ControlPlane.CoordinatedReleaseReconciler>();
+
     if (!isTestEnvironment)
     {
         builder.Services.AddHostedService<DeployWorkflowReconcilerBackgroundService>();
         builder.Services.AddHostedService<ExecutionJobReconcilerBackgroundService>();
         builder.Services.AddHostedService<Honua.ControlPlane.MetadataReleaseReconcilerBackgroundService>();
+        builder.Services.AddHostedService<Honua.ControlPlane.CoordinatedReleaseReconcilerBackgroundService>();
     }
 
     // Agent-operation approval surface (#1692/#1693): durable proposal store +
@@ -748,6 +764,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Admin.Models.MetadataPrevalidationJsonContext.Default,
         Honua.Core.Features.Publishing.Content.Domain.ContentPublicationJsonContext.Default,
         Honua.Server.Features.Admin.Models.DeployControlJsonContext.Default,
+        Honua.Server.Features.Admin.Models.CoordinatedReleaseJsonContext.Default,
         Honua.Infrastructure.Monitoring.MetricsJsonContext.Default,
         Honua.Import.FileImport.ImportJsonContext.Default,
         Honua.Import.RasterImport.RasterImportJsonContext.Default,
@@ -1241,6 +1258,7 @@ app.MapServiceSettingsEndpoints();
 app.MapMetadataReleaseEndpoints();
 app.MapMetadataReleaseOperationEndpoints();
 app.MapMetadataReleaseControlEndpoints();
+app.MapCoordinatedReleaseControlEndpoints();
 app.MapMetadataPrevalidationEndpoints();
 app.MapDeployControlEndpoints();
 
