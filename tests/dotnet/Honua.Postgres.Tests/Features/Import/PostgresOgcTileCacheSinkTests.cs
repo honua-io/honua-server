@@ -26,9 +26,12 @@ public sealed class PostgresOgcTileCacheSinkTests(PostgresFixture fixture)
 
     private async Task EnsureTileCacheSchemaAsync()
     {
-        await using var conn = await fixture.GetConnectionAsync();
-        await using var cmd = conn.CreateCommand();
-        cmd.CommandText = """
+        // honua-server#1568 (signature 2): this DDL creates the literal, process-global
+        // honua.tile_caches/_entries tables (search_path isolation does not scope them), so apply
+        // it under the shared seed advisory lock to keep parallel [Collection("Database")] tests
+        // off the 40P01 deadlock path racing ACCESS EXCLUSIVE catalog locks on the same global
+        // objects.
+        await fixture.ApplyGlobalSeedSqlAsync("""
             CREATE SCHEMA IF NOT EXISTS honua;
             CREATE TABLE IF NOT EXISTS honua.tile_caches (
                 tile_cache_id      TEXT PRIMARY KEY,
@@ -54,8 +57,7 @@ public sealed class PostgresOgcTileCacheSinkTests(PostgresFixture fixture)
                 created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 PRIMARY KEY (tile_cache_id, zoom_level, tile_column, tile_row)
             );
-            """;
-        await cmd.ExecuteNonQueryAsync();
+            """);
     }
 
     [Fact]

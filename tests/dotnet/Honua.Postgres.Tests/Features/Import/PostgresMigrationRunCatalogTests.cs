@@ -185,9 +185,11 @@ public sealed class PostgresMigrationRunCatalogTests(PostgresFixture fixture)
     /// </summary>
     private async Task EnsureMigrationRunsTableAsync()
     {
-        await using var conn = await fixture.GetConnectionAsync();
-        await using var cmd = conn.CreateCommand();
-        cmd.CommandText = """
+        // honua-server#1568 (signature 2): this DDL creates/ALTERs the literal, process-global
+        // honua.migration_runs table (search_path isolation does not scope it), so apply it under
+        // the shared seed advisory lock to keep parallel [Collection("Database")] tests off the
+        // 40P01 deadlock path racing ACCESS EXCLUSIVE catalog locks on the same global object.
+        await fixture.ApplyGlobalSeedSqlAsync("""
             CREATE SCHEMA IF NOT EXISTS honua;
             CREATE TABLE IF NOT EXISTS honua.migration_runs (
                 run_id                      VARCHAR(64)  PRIMARY KEY,
@@ -215,8 +217,7 @@ public sealed class PostgresMigrationRunCatalogTests(PostgresFixture fixture)
                 ON honua.migration_runs (status);
             CREATE INDEX IF NOT EXISTS idx_migration_runs_source_kind
                 ON honua.migration_runs (source_kind);
-            """;
-        await cmd.ExecuteNonQueryAsync();
+            """);
     }
 
     private static MigrationRunRecord NewRecord(string runId, MigrationRunStatus status) => new()

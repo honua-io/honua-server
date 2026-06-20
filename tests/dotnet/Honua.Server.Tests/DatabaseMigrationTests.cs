@@ -189,11 +189,16 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         var baselineSeedPath = RepositoryPaths.Resolve("tests", "seed", "mobile-offline-demo-v1.sql");
         var conflictSeedPath = RepositoryPaths.Resolve("tests", "seed", "mobile-offline-demo-conflict-delta.sql");
 
-        await using var connection = await _postgres.GetConnectionAsync(_schemaName);
-
         // Act
-        await ExecuteSqlFileAsync(connection, baselineSeedPath);
-        await ExecuteSqlFileAsync(connection, conflictSeedPath);
+        // honua-server#1568 (signature 2): both seeds run idempotent ALTER/INSERT DDL against the
+        // literal, process-global honua schema (which per-test search_path isolation does not
+        // scope), so apply them under the shared seed advisory lock — like SeedRunner and the
+        // DbUp upgrade above — to keep parallel global-honua mutation off the deadlock (40P01)
+        // path rather than racing ACCESS EXCLUSIVE catalog/table locks.
+        await ExecuteSeedFileAsync(baselineSeedPath);
+        await ExecuteSeedFileAsync(conflictSeedPath);
+
+        await using var connection = await _postgres.GetConnectionAsync(_schemaName);
 
         // Assert
         await using var countCmd = connection.CreateCommand();
@@ -270,10 +275,9 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         result.Error.Should().NotBeNull("error details should be provided");
     }
 
-    private static async Task ExecuteSqlFileAsync(Npgsql.NpgsqlConnection connection, string path)
+    private async Task ExecuteSeedFileAsync(string path)
     {
-        await using var command = connection.CreateCommand();
-        command.CommandText = await File.ReadAllTextAsync(path);
-        await command.ExecuteNonQueryAsync();
+        var sql = await File.ReadAllTextAsync(path);
+        await _postgres.ApplyGlobalSeedSqlAsync(sql, _schemaName);
     }
 }
