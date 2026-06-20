@@ -60,9 +60,9 @@ curl "https://server.example.com/wfs?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeatur
 | --- | --- |
 | `GetCapabilities` | `ACCEPTVERSIONS` (must include `2.0.1` when supplied), `SECTIONS`. |
 | `DescribeCoverage` | `COVERAGEID` — one or more bare integer layer ids (`COVERAGEID=0,1`). |
-| `GetCoverage` | `COVERAGEID` (exactly one), `FORMAT` (default `image/tiff`; also GeoTIFF/PNG/JPEG aliases), `SUBSET=axis(low,high)` trims, `BBOX` (convenience alias, not combinable with `SUBSET`), `SUBSETTINGCRS`/`BBOXCRS`, `OUTPUTCRS`. |
+| `GetCoverage` | `COVERAGEID` (exactly one), `FORMAT` (default `image/tiff`; also GeoTIFF/PNG/JPEG aliases), `SUBSET=axis(low,high)` trims, `BBOX` (convenience alias, not combinable with `SUBSET`), `SUBSETTINGCRS`/`BBOXCRS`, `OUTPUTCRS`, `RANGESUBSET` (band selection), scaling (`SCALESIZE`/`SCALEFACTOR`/`SCALEAXES`/`SCALEEXTENT`), `INTERPOLATION` (nearest/linear/cubic resampling), and temporal subsetting (`SUBSET=phenomenonTime(...)`, plus `DATETIME`/`TIME` aliases). |
 
-Unsupported `GetCoverage` extensions (`RANGESUBSET`, scaling, interpolation, `MEDIATYPE`, time slicing, XML POST) return a 501 OWS `ExceptionReport` rather than being silently ignored. Errors use OWS 2.0 `ExceptionReport` XML with stable exception codes.
+Temporal subsetting selects the coverage only when its acquisition instant falls inside the requested window; a non-intersecting window yields an `InvalidSubsetting` exception. Unsupported `GetCoverage` parameters (`SIZE`/`WIDTH`/`HEIGHT`/`RESOLUTION`, `MEDIATYPE`, XML POST) return a 501 OWS `ExceptionReport` rather than being silently ignored; an unsupported `INTERPOLATION` method returns an `InterpolationMethodNotSupported` exception. The additive read parameters are CITE-neutral (no new conformance class is advertised). Errors use OWS 2.0 `ExceptionReport` XML with stable exception codes.
 
 ```bash
 curl -o coverage.tif "https://server.example.com/rest/services/0/ImageServer/WCS?SERVICE=WCS&VERSION=2.0.1&REQUEST=GetCoverage&COVERAGEID=0&FORMAT=image/tiff&SUBSET=Long(-122.4,-122.3)&SUBSET=Lat(37.7,37.8)"

@@ -55,6 +55,9 @@ internal sealed class Wcs20Handler
         Wcs20Utilities.Parameters.ScaleFactor,
         Wcs20Utilities.Parameters.ScaleAxes,
         Wcs20Utilities.Parameters.ScaleExtent,
+        Wcs20Utilities.Parameters.Interpolation,
+        Wcs20Utilities.Parameters.DateTime,
+        Wcs20Utilities.Parameters.Time,
     };
 
     private static readonly HashSet<string> _explicitlyUnsupportedGetCoverageParameters = new(StringComparer.OrdinalIgnoreCase)
@@ -63,10 +66,7 @@ internal sealed class Wcs20Handler
         "WIDTH",
         "HEIGHT",
         "RESOLUTION",
-        "INTERPOLATION",
         "MEDIATYPE",
-        "DATETIME",
-        "TIME",
     };
 
     private readonly IMetadataV2GraphProvider _graphProvider;
@@ -1010,7 +1010,70 @@ internal sealed class Wcs20Handler
             rasterQuery = rasterQuery with { OutputHeight = height.Value };
         }
 
+        if (!TryResolveInterpolation(query, out var resampling, out error))
+        {
+            return false;
+        }
+
+        if (resampling.HasValue)
+        {
+            rasterQuery = rasterQuery with { ResamplingAlgorithm = resampling.Value };
+        }
+
         return true;
+    }
+
+    // WCS 2.0 Interpolation extension: INTERPOLATION selects the resampling method
+    // used when the coverage is scaled/reprojected. Accepts the OGC interpolation
+    // method URIs, their trailing tokens, and common aliases, mapping each to the
+    // shared raster ResamplingAlgorithm. Unknown methods are rejected with the
+    // dedicated InterpolationMethodNotSupported exception code.
+    private static bool TryResolveInterpolation(
+        IQueryCollection query,
+        out ResamplingAlgorithm? resampling,
+        out WcsParameterError error)
+    {
+        resampling = null;
+        error = default;
+
+        var raw = GetQueryValue(query, Wcs20Utilities.Parameters.Interpolation);
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return true;
+        }
+
+        var normalized = raw.Trim();
+        var lastSlash = normalized.LastIndexOf('/');
+        var token = lastSlash >= 0 && lastSlash < normalized.Length - 1
+            ? normalized[(lastSlash + 1)..]
+            : normalized;
+
+        switch (token.ToLowerInvariant())
+        {
+            case "nearest":
+            case "nearestneighbor":
+            case "nearestneighbour":
+                resampling = ResamplingAlgorithm.NearestNeighbor;
+                return true;
+            case "linear":
+            case "bilinear":
+                resampling = ResamplingAlgorithm.Bilinear;
+                return true;
+            case "cubic":
+            case "bicubic":
+            case "cubicconvolution":
+                resampling = ResamplingAlgorithm.Bicubic;
+                return true;
+            case "lanczos":
+                resampling = ResamplingAlgorithm.Lanczos;
+                return true;
+            default:
+                error = new WcsParameterError(
+                    Wcs20Utilities.ExceptionCodes.InterpolationMethodNotSupported,
+                    $"INTERPOLATION method '{raw}' is not supported. Supported methods are nearest, linear, and cubic.",
+                    Wcs20Utilities.Parameters.Interpolation);
+                return false;
+        }
     }
 
     // Returns the SUBSET values that target spatial axes, dropping temporal
@@ -1089,7 +1152,85 @@ internal sealed class Wcs20Handler
             }
         }
 
+        // DATETIME (OGC API style) and TIME (classic) aliases select the same
+        // single-acquisition coverage as SUBSET=phenomenonTime. They are additive
+        // conveniences over the SUBSET temporal path and share its window semantics.
+        if (!TryApplyTemporalAlias(query, Wcs20Utilities.Parameters.DateTime, acquisition, out error) ||
+            !TryApplyTemporalAlias(query, Wcs20Utilities.Parameters.Time, acquisition, out error))
+        {
+            return false;
+        }
+
         return true;
+    }
+
+    private static bool TryApplyTemporalAlias(
+        IQueryCollection query,
+        string parameter,
+        DateTimeOffset acquisition,
+        out WcsParameterError error)
+    {
+        error = default;
+
+        var raw = GetQueryValue(query, parameter);
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return true;
+        }
+
+        if (!TryParseTemporalAlias(raw, out var low, out var high))
+        {
+            error = new WcsParameterError(
+                Wcs20Utilities.ExceptionCodes.InvalidSubsetting,
+                $"{parameter} must be an ISO 8601 instant or a start/end interval (low/high, '..' for open-ended).",
+                parameter);
+            return false;
+        }
+
+        if (acquisition < low || acquisition > high)
+        {
+            error = new WcsParameterError(
+                Wcs20Utilities.ExceptionCodes.InvalidSubsetting,
+                $"The requested {parameter} window does not intersect the coverage acquisition time.",
+                parameter);
+            return false;
+        }
+
+        return true;
+    }
+
+    // Parses a DATETIME/TIME alias value: an instant ("2024-01-01"), a closed or
+    // half-open interval using the OGC '/' separator ("t0/t1", "../t1", "t0/.."),
+    // or a comma-separated pair. Reuses the SUBSET temporal-bound parser so date-only
+    // instants expand to a whole-day window consistently.
+    private static bool TryParseTemporalAlias(string value, out DateTimeOffset low, out DateTimeOffset high)
+    {
+        low = default;
+        high = default;
+
+        var trimmed = value.Trim();
+        if (trimmed.Length == 0)
+        {
+            return false;
+        }
+
+        var separator = trimmed.Contains('/', StringComparison.Ordinal) ? '/' : ',';
+        var parts = trimmed.Split(separator);
+        if (parts.Length is < 1 or > 2)
+        {
+            return false;
+        }
+
+        if (parts.Length == 1)
+        {
+            return TryParseTemporalBound(parts[0], isLowerBound: true, out low) &&
+                   TryParseTemporalBound(parts[0], isLowerBound: false, out high) &&
+                   high >= low;
+        }
+
+        return TryParseTemporalBound(parts[0], isLowerBound: true, out low) &&
+               TryParseTemporalBound(parts[1], isLowerBound: false, out high) &&
+               high >= low;
     }
 
     private static bool TryParseTemporalSubset(string subsetValue, out DateTimeOffset low, out DateTimeOffset high)
@@ -1135,9 +1276,11 @@ internal sealed class Wcs20Handler
     {
         bound = default;
         var value = token.Trim().Trim('"', '\'');
-        if (string.IsNullOrWhiteSpace(value) || string.Equals(value, "*", StringComparison.Ordinal))
+        if (string.IsNullOrWhiteSpace(value) ||
+            string.Equals(value, "*", StringComparison.Ordinal) ||
+            string.Equals(value, "..", StringComparison.Ordinal))
         {
-            // Open-ended bound.
+            // Open-ended bound ('*' for WCS subset, '..' for OGC datetime intervals).
             bound = isLowerBound ? DateTimeOffset.MinValue : DateTimeOffset.MaxValue;
             return true;
         }

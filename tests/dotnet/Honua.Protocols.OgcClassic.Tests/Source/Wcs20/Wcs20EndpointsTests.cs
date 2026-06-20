@@ -286,6 +286,92 @@ public sealed class Wcs20EndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.Export)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    public async Task Wcs_GetCoverage_WithInterpolationCubic_SetsResamplingAlgorithm()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0&FORMAT=image/tiff&INTERPOLATION=http://www.opengis.net/def/interpolation/OGC/1/cubic");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        _exportQueries.Should().ContainSingle();
+        _exportQueries.Single().ResamplingAlgorithm.Should().Be(ResamplingAlgorithm.Bicubic);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    public async Task Wcs_GetCoverage_WithInterpolationNearestToken_SetsResamplingAlgorithm()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0&FORMAT=image/tiff&INTERPOLATION=nearest");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        _exportQueries.Should().ContainSingle();
+        _exportQueries.Single().ResamplingAlgorithm.Should().Be(ResamplingAlgorithm.NearestNeighbor);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    public async Task Wcs_GetCoverage_WithUnsupportedInterpolation_ReturnsException()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0&FORMAT=image/tiff&INTERPOLATION=quintic");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("exceptionCode=\"InterpolationMethodNotSupported\"");
+        content.Should().Contain("locator=\"INTERPOLATION\"");
+        _exportQueries.Should().BeEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    public async Task Wcs_GetCoverage_WithMatchingDatetime_ReturnsCoverage()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0&FORMAT=image/tiff&DATETIME=2023-12-01T00:00:00Z/2024-02-01T00:00:00Z");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        _exportQueries.Should().ContainSingle();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    public async Task Wcs_GetCoverage_WithMatchingTimeInstant_ReturnsCoverage()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0&FORMAT=image/tiff&TIME=2024-01-01");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        _exportQueries.Should().ContainSingle();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    public async Task Wcs_GetCoverage_WithNonIntersectingDatetime_ReturnsInvalidSubsetting()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0&FORMAT=image/tiff&DATETIME=2030-01-01T00:00:00Z");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound, content);
+        content.Should().Contain("exceptionCode=\"InvalidSubsetting\"");
+        content.Should().Contain("locator=\"DATETIME\"");
+        _exportQueries.Should().BeEmpty();
+    }
+
+    [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
     [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
     [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
