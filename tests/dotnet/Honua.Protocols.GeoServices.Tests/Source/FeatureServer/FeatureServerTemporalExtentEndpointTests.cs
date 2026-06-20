@@ -223,6 +223,42 @@ public sealed class FeatureServerTemporalExtentEndpointTests : IAsyncLifetime
             .Should().Be("timestamp");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/temporalExtent")]
+    public async Task TemporalExtent_EpochMillisStoredValues_ReturnsExtent()
+    {
+        // Regression for honua-io/honua-server#1910 symptom 2: a time field whose JSONB
+        // value is stored as epoch-milliseconds (a JSON number, as Esri applyEdits posts
+        // it) must NOT 500 with Postgres 22008 "date/time field value out of range". The
+        // MIN/MAX temporal-extent cast has to detect numeric epoch-ms and convert via
+        // to_timestamp, mirroring the WHERE/filter path. Insert a row whose `timestamp`
+        // attribute is a raw epoch-ms number alongside the ISO-string seed rows.
+        await ConfigureLayerAsTimeAwareAsync();
+
+        var epochMs = new DateTimeOffset(2023, 1, 2, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
+        await _fixture.Postgres.ExecuteAsync(
+            "INSERT INTO features (layer_id, geometry, attributes) VALUES " +
+            $"(0, NULL, jsonb_build_object('name', 'epoch-row', 'timestamp', {epochMs}::bigint));",
+            _fixture.CurrentSchema);
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/temporalExtent?f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+        var root = document.RootElement;
+
+        root.TryGetProperty("minEpochMs", out var minEpoch).Should().BeTrue();
+        root.TryGetProperty("maxEpochMs", out var maxEpoch).Should().BeTrue();
+        minEpoch.ValueKind.Should().Be(JsonValueKind.Number);
+        maxEpoch.ValueKind.Should().Be(JsonValueKind.Number);
+        // The epoch-ms row's instant must participate in the resolved extent.
+        minEpoch.GetInt64().Should().BeLessThanOrEqualTo(epochMs);
+    }
+
     private Task ConfigureLayerAsTimeAwareAsync()
     {
         // V2 cutover (#1035 72/N): TimeInfo now lives on MetadataV2Resource.Temporal.
