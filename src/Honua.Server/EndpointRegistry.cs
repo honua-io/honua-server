@@ -446,6 +446,8 @@ public static class EndpointRegistry
         // v1 admin import endpoints (Raster)
         new("POST", "/api/v1/admin/import/raster"),
         new("GET", "/api/v1/admin/import/raster/formats"),
+        new("DELETE", "/api/v1/admin/import/raster/{rasterId}"),
+        new("PATCH", "/api/v1/admin/import/raster/{rasterId}"),
 
         // v1 admin migration performance evidence endpoints (#1033 slice 5)
         new("GET", "/api/v1/admin/migration/performance-evidence/latest"),
