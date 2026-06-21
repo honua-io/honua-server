@@ -314,6 +314,51 @@ public sealed class McpResourceSerializationTests
     }
 
     [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://catalog/features")]
+    public async Task FeatureCatalogResource_ServesEmbeddedEvidenceBackedCatalog()
+    {
+        var resource = new FeatureCatalogResource(_jobService, NullLogger<FeatureCatalogResource>.Instance);
+
+        var result = await resource.ReadAsync(
+            McpTestFactory.AuthenticatedHttpContext(),
+            "honua://catalog/features",
+            CancellationToken.None);
+
+        result.Contents.Should().HaveCount(1);
+        var content = result.Contents[0];
+        content.Uri.Should().Be("honua://catalog/features");
+        content.MimeType.Should().Be("application/json");
+
+        var body = McpTestFactory.ParseJson(content.Text);
+        body.GetProperty("schema_version").GetString().Should().NotBeNullOrWhiteSpace();
+        body.GetProperty("tracking_issue").GetString().Should().Be("#1946");
+        var entries = body.GetProperty("entries");
+        entries.GetArrayLength().Should().BeGreaterThan(0);
+
+        // Every served entry is evidence-backed: a route, at least one proving
+        // test, and the implemented maturity tier (slice 1 invariant, #1946).
+        foreach (var entry in entries.EnumerateArray())
+        {
+            entry.GetProperty("route").GetString().Should().NotBeNullOrWhiteSpace();
+            entry.GetProperty("method").GetString().Should().NotBeNullOrWhiteSpace();
+            entry.GetProperty("proving_tests").GetArrayLength().Should().BeGreaterThan(0);
+            entry.GetProperty("maturity").GetString().Should().Be("implemented");
+        }
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read")]
+    public void FeatureCatalogResource_CanHandle_MatchesOnlyFeatureCatalogUri()
+    {
+        var resource = new FeatureCatalogResource(_jobService, NullLogger<FeatureCatalogResource>.Instance);
+
+        resource.CanHandle("honua://catalog/features").Should().BeTrue();
+        resource.CanHandle("honua://catalog/features/foo").Should().BeFalse();
+        resource.CanHandle("honua://catalog/processes").Should().BeFalse();
+        resource.CanHandle("honua://catalog").Should().BeFalse();
+    }
+
+    [UnitTest]
     [Endpoint("POST /mcp resources/read")]
     public void JobStatusResource_CanHandle_MatchesOnlyBareJobUris()
     {

@@ -47,6 +47,19 @@ public sealed class McpServiceCollectionExtensionsTests
     }
 
     [UnitTest]
+    public void AddMcpOperatorSurface_RegistersFeatureCatalogResource()
+    {
+        var services = BuildBaseServices();
+        services.AddMcpOperatorSurface(new ConfigurationBuilder().Build());
+
+        RegisteredResourceHandlers(services)
+            .Should().Contain(typeof(FeatureCatalogResource),
+                "honua://catalog/features serves a static embedded drift-gated artifact (#1946), "
+                + "so it is registered in the default composition unlike the persistence-backed "
+                + "promotion resources.");
+    }
+
+    [UnitTest]
     public void AddMcpOperatorSurface_DoesNotRegisterFallbackPromotionStores()
     {
         var services = BuildBaseServices();
