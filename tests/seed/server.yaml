@@ -2301,3 +2301,30 @@ sql:
       END;
       $$;
   - "SELECT honua.seed_metadata_v2_compat_snapshot();"
+  # Network-dataset registry (#1882). Mirrors migrations 062 + 066 so the editing
+  # surface (admin CRUD) has its table when HONUA_SKIP_MIGRATIONS bypasses the runner.
+  - |
+      CREATE TABLE IF NOT EXISTS honua.network_datasets (
+          id               TEXT        NOT NULL PRIMARY KEY,
+          name             TEXT        NOT NULL,
+          edge_table       TEXT        NOT NULL,
+          vertex_table     TEXT        NOT NULL,
+          srid             INTEGER     NOT NULL DEFAULT 4326,
+          status           TEXT        NOT NULL DEFAULT 'active',
+          topology_version INTEGER     NOT NULL DEFAULT 1,
+          needs_rebuild    BOOLEAN     NOT NULL DEFAULT false,
+          description      TEXT,
+          created_by       TEXT,
+          updated_by       TEXT,
+          created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+          updated_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+          CONSTRAINT network_datasets_valid_status
+              CHECK (status IN ('active', 'building', 'disabled'))
+      );
+  - "ALTER TABLE IF EXISTS honua.network_datasets ADD COLUMN IF NOT EXISTS description TEXT;"
+  - "ALTER TABLE IF EXISTS honua.network_datasets ADD COLUMN IF NOT EXISTS created_by TEXT;"
+  - "ALTER TABLE IF EXISTS honua.network_datasets ADD COLUMN IF NOT EXISTS updated_by TEXT;"
+  - |
+      INSERT INTO honua.network_datasets (id, name, edge_table, vertex_table, srid, status)
+      VALUES ('default', 'Default network dataset', 'public.ways', 'public.ways_vertices_pgr', 4326, 'active')
+      ON CONFLICT (id) DO NOTHING;
