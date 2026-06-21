@@ -27,6 +27,7 @@ namespace Honua.Ai.Protocols.Mcp.Models;
 [JsonSerializable(typeof(McpServerInfo))]
 [JsonSerializable(typeof(McpToolsListResult))]
 [JsonSerializable(typeof(McpToolDescriptor))]
+[JsonSerializable(typeof(McpToolAnnotations))]
 [JsonSerializable(typeof(McpToolsCallParams))]
 [JsonSerializable(typeof(McpToolsCallResult))]
 [JsonSerializable(typeof(McpContentBlock))]
