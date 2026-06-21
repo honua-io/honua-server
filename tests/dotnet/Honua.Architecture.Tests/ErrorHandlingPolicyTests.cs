@@ -72,6 +72,9 @@ public sealed class ErrorHandlingPolicyTests
         Path.Combine("src", "Honua.Server", "Features", "Admin", "GeocodingAdminEndpoints.cs"),
         Path.Combine("src", "Honua.Server", "Features", "Admin", "LicenseAdminEndpoints.cs"),
         Path.Combine("src", "Honua.Server", "Features", "Collaboration", "CollaborationEndpoints.cs"),
+        // Pure route-table wiring; all request validation + error shaping (StandardErrorHelpers
+        // BadRequest/NotFound/NotImplemented) lives in the companion DataEnrichmentRequestHandlers.cs.
+        Path.Combine("src", "Honua.Server", "Features", "DataEnrichment", "DataEnrichmentEndpoints.cs"),
         Path.Combine("src", "Honua.Server", "Features", "FileStorage", "FileStorageEndpoints.cs"),
         Path.Combine("src", "Honua.Server", "Features", "Forms", "FormPackageEndpoints.cs"),
         Path.Combine("src", "Honua.Server", "Features", "FieldWorkflows", "Review", "FieldReviewEndpoints.cs"),
