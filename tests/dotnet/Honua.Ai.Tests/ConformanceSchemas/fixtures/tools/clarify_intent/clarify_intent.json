@@ -1,0 +1,18 @@
+{
+  "id": "clarify_intent.answers",
+  "schemaRef": "tools/clarify_intent.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "goal": "Assess flood exposure for critical facilities in the county.",
+    "intentId": "intent_8c21",
+    "assumptionPolicy": "AskWhenMaterial",
+    "response": {
+      "answers": {
+        "q_buffer_distance": ["500"],
+        "q_hazard_layer": ["dataset:fema_100yr_floodplain"]
+      }
+    }
+  },
+  "expected": "tool_result",
+  "canonicalRefs": ["ClarificationResponse", "AnalysisIntent"]
+}

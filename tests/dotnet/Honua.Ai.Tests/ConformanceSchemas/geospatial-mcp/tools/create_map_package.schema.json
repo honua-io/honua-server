@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/create_map_package.schema.json",
+  "title": "create_map_package inputSchema",
+  "description": "Argument shape for create_map_package (Analyze, Build App map-composition family; returns a MapPackage). Responsibility-level: the concrete MapPackage authoring field set is finalizing upstream (honua-server#731), so this schema pins the stable composition inputs (source bindings, style/theme selection, template, initial view) and permits additional properties. See taxonomy.md §Map composition and resources.md §honua://maps/{map_package_id}.",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "templateId": {
+      "type": "string",
+      "description": "Registry-defined MapTemplate identifier seeding the composition (e.g. analysis_default)."
+    },
+    "sourceBindings": {
+      "type": "array",
+      "description": "Protocol-aware bindings of map layers to data sources (canonical SourceBinding entries).",
+      "items": { "type": "object", "additionalProperties": true }
+    },
+    "styleId": {
+      "type": "string",
+      "description": "StyleRef selection (style_… ) applied to the composition."
+    },
+    "themeId": {
+      "type": "string",
+      "description": "ThemeSpec selection (theme_… ) applied to the composition."
+    },
+    "initialView": {
+      "type": "object",
+      "description": "Initial view geometry: bounding box and CRS.",
+      "additionalProperties": true,
+      "properties": {
+        "bbox": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": { "type": "number" }
+        },
+        "crs": { "type": ["string", "integer"] }
+      }
+    }
+  }
+}
