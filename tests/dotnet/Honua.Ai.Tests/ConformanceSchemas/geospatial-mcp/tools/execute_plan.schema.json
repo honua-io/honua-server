@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/execute_plan.schema.json",
+  "title": "execute_plan inputSchema",
+  "description": "Argument shape for the execute_plan tool (Analyze, Publish Data; handoff returns an ExecutionJob reference for Analyze). Reference advertised name: honua_execute_plan. Submission rejects a missing planId or empty steps, so the executable plan REQUIRES planId and at least one step (contrast validate_plan). See planning.md §5.2.",
+  "type": "object",
+  "required": ["plan"],
+  "properties": {
+    "plan": { "$ref": "#/$defs/executablePlan" },
+    "idempotencyKey": {
+      "type": "string",
+      "description": "Optional deduplication key. Replays with the same key return the same job record."
+    }
+  },
+  "$defs": {
+    "executablePlan": {
+      "type": "object",
+      "description": "Canonical AnalysisPlan in executable form. planId and a non-empty steps array are mandatory.",
+      "required": ["planId", "steps"],
+      "properties": {
+        "planId": { "type": "string", "minLength": 1 },
+        "intentId": { "type": "string" },
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/planStep" }
+        },
+        "outputs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/artifactKind" }
+        },
+        "warnings": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "planStep": {
+      "type": "object",
+      "required": ["stepId", "kind"],
+      "properties": {
+        "stepId": { "type": "string" },
+        "kind": { "$ref": "#/$defs/planStepKind" },
+        "processId": { "type": "string" },
+        "inputs": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "dependsOn": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "planStepKind": {
+      "type": "string",
+      "enum": ["QueryFeatures", "Geoprocess", "Aggregate", "RenderMap", "Export"]
+    },
+    "artifactKind": {
+      "type": "string",
+      "enum": ["Scalar", "FeatureLayer", "Table", "Raster", "File", "Report", "Map", "AppBundle"]
+    }
+  }
+}
