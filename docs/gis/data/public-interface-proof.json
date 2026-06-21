@@ -1063,6 +1063,52 @@
       ]
     },
     {
+      "surfaceId": "data-enrichment",
+      "displayName": "Data enrichment API",
+      "surfaceKind": "http-route-family",
+      "protocol": "Data Enrichment",
+      "canonicalIdentifier": "/api/enrich + /api/enrich/catalog",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [],
+      "endpointExactMatches": [
+        "/api/enrich",
+        "/api/enrich/catalog"
+      ],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus data-enrichment endpoint integration tests (catalog listing, spatial-join enrichment over a registered dataset, unknown-dataset 404, and Pro-edition gate).",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "src/Honua.Server/Features/DataEnrichment/DataEnrichmentEndpoints.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/DataEnrichment/DataEnrichmentEndpointTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "honua-io/honua-server#374",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "contract-governance",
+          "proofMechanism": "Source-generated EnrichmentJsonContext keeps the catalog/request wire shapes AOT-safe; the enrichment join reuses the shared ISpatialAnalyticsReader spatial-join pipeline rather than reimplementing data access, and the operator-curated catalog/registered-layers-only scope plus MVP deferrals are documented in docs/operator/data-enrichment.md.",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "src/Honua.Server/Features/DataEnrichment/Models/EnrichmentJsonContext.cs",
+            "src/Honua.Server/Features/DataEnrichment/DataEnrichmentRequestHandlers.cs",
+            "docs/operator/data-enrichment.md"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "honua-io/honua-server#374",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
       "surfaceId": "versioned-metrics",
       "displayName": "Versioned metrics endpoints",
       "surfaceKind": "http-route-family",

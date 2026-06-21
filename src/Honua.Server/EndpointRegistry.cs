@@ -725,6 +725,11 @@ public static class EndpointRegistry
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/queryBufferAggregate"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/queryDensity"),
 
+        // Data enrichment API (#374): catalog of registered enrichment datasets
+        // plus a spatial-join enrichment facade over the shared analytics pipeline.
+        new("GET", "/api/enrich/catalog"),
+        new("POST", "/api/enrich"),
+
         // Spec-shaped "not implemented" FeatureServer operations (#1402).
         new("GET", "/rest/services/{serviceId}/FeatureServer/queryContingentValues"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/sharedTemplates"),
