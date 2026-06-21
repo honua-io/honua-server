@@ -1,0 +1,41 @@
+name: OGC WMS 1.1.1 CITE Conformance Tests
+
+on:
+  # Tier: nightly — conformance suites are external and heavyweight.
+  # PR/push triggers removed in #485. See docs/internal/ci/gate-model.md.
+  schedule:
+    # Run weekly to track WMS 1.1.1 conformance drift
+    - cron: '0 6 * * 4'
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: 'CITE test profile'
+        required: false
+        default: 'default'
+        type: choice
+        options:
+          - default
+          - minimal
+          - full
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: cite-wms11-conformance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cite:
+    uses: ./.github/workflows/cite-conformance-common.yml
+    with:
+      suite: wms11
+      display-name: WMS 1.1.1
+      runner-script: ./scripts/conformance/cite/run-cite-wms11-tests.sh
+      results-dir: cite-wms11-results
+      summary-file: cite-wms11-summary.md
+      timeout-seconds: 2400
+      job-timeout-minutes: 45
+      cite-profile: ${{ inputs.profile || 'default' }}
+      extra-artifact-paths: docker/cite/wms11/config/

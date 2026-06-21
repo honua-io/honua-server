@@ -1,0 +1,25 @@
+{
+  "ogcapi_features_commit": "94e814bfa9af6ad308c474621ad18548357b0bc8",
+  "cql2_corpus_text_count": 120,
+  "cql2_corpus_json_count": 109,
+  "tms_schemas": [
+    "2DBoundingBox.json",
+    "2DPoint.json",
+    "crs.json",
+    "dataType.json",
+    "geospatialData.json",
+    "link.json",
+    "projJSON.json",
+    "propertiesSchema.json",
+    "style.json",
+    "tileMatrix.json",
+    "tileMatrixLimits.json",
+    "tileMatrixSet.json",
+    "tilePoint.json",
+    "tileSet.json",
+    "timeStamp.json",
+    "variableMatrixWidth.json"
+  ],
+  "tms_source": "https://schemas.opengis.net/tms/2.0/json",
+  "maps_openapi_source": "https://schemas.opengis.net/ogcapi/maps/part1/1.0/openapi/ogcapi-maps-1.bundled.json"
+}
