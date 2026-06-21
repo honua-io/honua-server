@@ -83,7 +83,17 @@ public enum RasterMosaicOrdering
     /// the union orders by newest acquisition. Requires a per-raster seamline in the footprint
     /// store; rasters without one contribute their full footprint.
     /// </summary>
-    Seamline = 5
+    Seamline = 5,
+
+    /// <summary>
+    /// The raster acquired closest to straight-down wins a contested pixel (Esri
+    /// <c>esriMosaicNadir</c>, #1870): rasters are ordered by their persisted off-nadir angle
+    /// (degrees from straight-down) read from the per-raster sensor/orientation metadata, lowest
+    /// off-nadir wins. Rasters without sensor metadata (unknown off-nadir) rank last so a raster
+    /// with a known, more-nadir view always outranks one with no orientation recorded. Falls back
+    /// to newest acquisition as a tiebreaker.
+    /// </summary>
+    Nadir = 6
 }
 
 /// <summary>

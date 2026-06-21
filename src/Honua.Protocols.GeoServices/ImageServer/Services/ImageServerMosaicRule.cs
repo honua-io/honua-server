@@ -9,9 +9,9 @@ namespace Honua.Protocols.GeoServices.ImageServer.Services;
 /// <summary>
 /// The Esri <c>mosaicMethod</c> that an ImageServer <c>mosaicRule</c> selects, normalized to
 /// the subset this service understands. <see cref="Unsupported"/> covers recognized-but-not-yet
-/// implemented methods (for example <c>esriMosaicNadir</c>, or an <c>esriMosaicByAttribute</c>
-/// over a non-acquisition field) which must surface a clean 501 when more than one raster would
-/// be composited.
+/// implemented methods (for example <c>esriMosaicCenter</c>, or an <c>esriMosaicByAttribute</c>
+/// over a non-acquisition, non-allowlisted field) which must surface a clean 501 when more than
+/// one raster would be composited.
 /// </summary>
 public enum MosaicMethod
 {
@@ -50,7 +50,15 @@ public enum MosaicMethod
     Seamline = 5,
 
     /// <summary>
-    /// A recognized Esri mosaic method this service does not yet implement (nadir, center,
+    /// <c>esriMosaicNadir</c> — the raster acquired closest to straight-down wins a contested
+    /// pixel, ranked by the per-raster off-nadir angle from the sensor/orientation metadata
+    /// (#1870, now that #1907 models that metadata). Rasters without a recorded off-nadir angle
+    /// rank last.
+    /// </summary>
+    Nadir = 7,
+
+    /// <summary>
+    /// A recognized Esri mosaic method this service does not yet implement (center,
     /// viewpoint, arbitrary non-date attribute sort). Surfaces a 501 when it would affect
     /// multi-raster pixel selection.
     /// </summary>
@@ -111,6 +119,7 @@ public readonly record struct ImageServerMosaicRule
         MosaicMethod.Northwest => RasterMosaicOrdering.Northwest,
         MosaicMethod.LockRaster => RasterMosaicOrdering.LockOrder,
         MosaicMethod.Seamline => RasterMosaicOrdering.Seamline,
+        MosaicMethod.Nadir => RasterMosaicOrdering.Nadir,
         MosaicMethod.Attribute => RasterMosaicOrdering.Attribute,
         MosaicMethod.ByDate =>
             Ascending ? RasterMosaicOrdering.AcquisitionOldest : RasterMosaicOrdering.AcquisitionNewest,
@@ -256,6 +265,14 @@ public readonly record struct ImageServerMosaicRule
             return MosaicMethod.Seamline;
         }
 
+        // esriMosaicNadir is now executable (#1870): the export path ranks rasters by the off-nadir
+        // angle persisted in the sensor/orientation metadata (#1907). Rasters with no recorded
+        // off-nadir angle rank last; with a single raster the method is a no-op accepted upstream.
+        if (methodName.Equals("esriMosaicNadir", StringComparison.OrdinalIgnoreCase))
+        {
+            return MosaicMethod.Nadir;
+        }
+
         if (methodName.Equals("esriMosaicAttribute", StringComparison.OrdinalIgnoreCase) ||
             methodName.Equals("esriMosaicByAttribute", StringComparison.OrdinalIgnoreCase))
         {
@@ -275,7 +292,7 @@ public readonly record struct ImageServerMosaicRule
             return MosaicMethod.Unsupported;
         }
 
-        // esriMosaicNadir, esriMosaicCenter, esriMosaicViewpoint, etc. remain unimplemented.
+        // esriMosaicCenter, esriMosaicViewpoint, etc. remain unimplemented.
         return MosaicMethod.Unsupported;
     }
 
@@ -284,8 +301,9 @@ public readonly record struct ImageServerMosaicRule
     // permitted; everything else (including sensor/nadir-style fields that are not modeled) is
     // rejected so an arbitrary, injectable, or meaningless sort never reaches the SQL ORDER BY.
     // Accepts the Esri canonical catalog field names and their physical aliases. Sensor- and
-    // orientation-derived fields (e.g. nadir/off-nadir) are intentionally absent: esriMosaicNadir
-    // and sensor-attribute sorts stay deferred until that metadata is modeled.
+    // orientation-derived fields (e.g. off-nadir) are intentionally absent here: the dedicated
+    // esriMosaicNadir method (MosaicMethod.Nadir) ranks by the off-nadir angle from sensor
+    // metadata; an esriMosaicByAttribute sort over a raw sensor field stays unsupported.
     private static bool TryResolveAttributeSortColumn(string? sortField, out string? column)
     {
         column = null;

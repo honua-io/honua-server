@@ -55,8 +55,13 @@ internal sealed class GeocodeTool : IMcpTool
     public McpToolDescriptor Describe() => new()
     {
         Name = ToolName,
+        Title = "Geocode address",
         Description = "Forward-geocode a freeform address and return ranked candidate locations with coordinates and match scores. Requires the Pro 'geocoding.forward' entitlement.",
-        InputSchema = LocationToolSchemas.GeocodeArgumentSchema
+        InputSchema = LocationToolSchemas.GeocodeArgumentSchema,
+        OutputSchema = McpToolOutputSchemas.GeocodeOutputSchema,
+        // Read-only lookup; open-world because resolution can route to external
+        // geocoding providers rather than the server's closed catalog.
+        Annotations = McpToolAnnotationSets.ReadOnlyOpenWorld("Geocode address")
     };
 
     public async Task<McpToolsCallResult> InvokeAsync(

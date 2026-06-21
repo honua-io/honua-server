@@ -102,7 +102,8 @@ internal static partial class TilesEndpoints
     private static async Task<IResult> HandleGetDatasetTilesets(
         HttpContext context,
         [FromServices] IMetadataV2GraphProvider graphProvider,
-        [FromServices] IOptions<LimitsOptions> limitsOptions)
+        [FromServices] IOptions<LimitsOptions> limitsOptions,
+        [FromServices] ITileMatrixSetRegistry tileMatrixSetRegistry)
     {
         var request = context.Request;
         var f = OgcCommonUtilities.GetQueryValue(request, "f");
@@ -131,7 +132,7 @@ internal static partial class TilesEndpoints
         var titleBase = BuildDatasetTitleBase(selectedLayers!);
         var querySuffix = BuildCollectionsQuerySuffix(collections, selectedLayers!);
         var advertiseVectorTiles = selectedLayers!.Length == 1;
-        var tilesets = BuildDatasetTileSetItems(titleBase, baseUrl, tileLimits, querySuffix, advertiseVectorTiles).ToImmutableArray();
+        var tilesets = BuildDatasetTileSetItems(titleBase, baseUrl, tileLimits, querySuffix, advertiseVectorTiles, tileMatrixSetRegistry).ToImmutableArray();
         return BuildTilesetsListResponse(
             request,
             $"{baseUrl}/ogc/tiles/tiles{querySuffix}",
@@ -145,7 +146,8 @@ internal static partial class TilesEndpoints
         string tileMatrixSetId,
         HttpContext context,
         [FromServices] IMetadataV2GraphProvider graphProvider,
-        [FromServices] IOptions<LimitsOptions> limitsOptions)
+        [FromServices] IOptions<LimitsOptions> limitsOptions,
+        [FromServices] ITileMatrixSetRegistry tileMatrixSetRegistry)
     {
         var request = context.Request;
         var f = OgcCommonUtilities.GetQueryValue(request, "f");
@@ -163,11 +165,10 @@ internal static partial class TilesEndpoints
             return CreateFormatError(context, f);
         }
 
-        // The dataset/collection tileset-metadata documents advertise vector + PNG tiles for the
-        // two built-in gridsets only (the MVT tile provider understands those pyramids). Custom
-        // gridsets are advertised through /ogc/tiles/tileMatrixSets and served via GetTile (PNG);
-        // their per-dataset tileset documents are a deferred follow-up.
-        if (!OgcTileMatrixSetDescriptors.TryGet(tileMatrixSetId, out _))
+        // The per-dataset tileset-metadata document is built for any registered gridset: the two
+        // built-in pyramids keep the byte-identical static-descriptor path, while a custom
+        // (operator-defined) gridset is advertised from its registered entry + geometry (#1916).
+        if (!tileMatrixSetRegistry.TryGet(tileMatrixSetId, out var tileMatrixSetEntry))
         {
             return StandardErrorHelpers.CreateNotFound(context, $"Tile matrix set '{tileMatrixSetId}' not found.");
         }
@@ -195,6 +196,8 @@ internal static partial class TilesEndpoints
             ? layers[0].Description
             : $"Dataset tiles across {layers.Length} collections.";
 
+        var (customEntry, customGeometry) = ResolveCustomTilesetGrid(tileMatrixSetEntry, tileMatrixSetRegistry, limitsOptions);
+
         var tileset = BuildTileset(
             titleBase,
             tilesetHref,
@@ -205,9 +208,31 @@ internal static partial class TilesEndpoints
             description,
             tileLimits,
             tileMatrixSetId,
-            advertiseVectorTiles: layers.Length == 1);
+            advertiseVectorTiles: layers.Length == 1,
+            customEntry,
+            customGeometry);
 
         return OgcCommonUtilities.FormatMetadataResponse(tileset, OgcTilesJsonContext.Default.TileSet, outputFormat, "Tileset");
+    }
+
+    // Resolves the custom-gridset entry + geometry to advertise in a per-dataset/per-collection
+    // tileset document. Returns (null, null) for the two built-in gridsets so BuildTileset keeps
+    // the byte-identical static-descriptor path that the CITE snapshots depend on (#1916).
+    private static (TileMatrixSetEntry? Entry, GridGeometry? Geometry) ResolveCustomTilesetGrid(
+        TileMatrixSetEntry entry,
+        ITileMatrixSetRegistry registry,
+        IOptions<LimitsOptions> limitsOptions)
+    {
+        if (entry.IsBuiltIn)
+        {
+            return (null, null);
+        }
+
+        // Custom gridsets carry their own explicit levels (maxLevel is ignored for them).
+        var maxLevel = Math.Max(0, limitsOptions.Value.Tiles.MaxTileZoom);
+        return registry.TryGetGeometry(entry.Id, maxLevel, out var geometry)
+            ? (entry, geometry)
+            : (entry, null);
     }
 
     private static async Task<IResult> HandleGetDatasetTileItem(
@@ -258,7 +283,8 @@ internal static partial class TilesEndpoints
         string collectionId,
         HttpContext context,
         [FromServices] IMetadataV2GraphProvider graphProvider,
-        [FromServices] IOptions<LimitsOptions> limitsOptions)
+        [FromServices] IOptions<LimitsOptions> limitsOptions,
+        [FromServices] ITileMatrixSetRegistry tileMatrixSetRegistry)
     {
         var request = context.Request;
         var f = OgcCommonUtilities.GetQueryValue(request, "f");
@@ -286,7 +312,7 @@ internal static partial class TilesEndpoints
         var layer = resolution.Layer!;
         var tileLimits = limitsOptions.Value.Tiles;
         var encodedCollectionId = Uri.EscapeDataString(collectionId);
-        var tilesets = BuildTileSetItems(layer, baseUrl, tileLimits, encodedCollectionId).ToImmutableArray();
+        var tilesets = BuildTileSetItems(layer, baseUrl, tileLimits, encodedCollectionId, tileMatrixSetRegistry).ToImmutableArray();
         return BuildTilesetsListResponse(
             request,
             $"{baseUrl}/ogc/tiles/collections/{encodedCollectionId}/tiles",
@@ -301,7 +327,8 @@ internal static partial class TilesEndpoints
         string tileMatrixSetId,
         HttpContext context,
         [FromServices] IMetadataV2GraphProvider graphProvider,
-        [FromServices] IOptions<LimitsOptions> limitsOptions)
+        [FromServices] IOptions<LimitsOptions> limitsOptions,
+        [FromServices] ITileMatrixSetRegistry tileMatrixSetRegistry)
     {
         var request = context.Request;
         var f = OgcCommonUtilities.GetQueryValue(request, "f");
@@ -318,11 +345,10 @@ internal static partial class TilesEndpoints
             return CreateFormatError(context, f);
         }
 
-        // The dataset/collection tileset-metadata documents advertise vector + PNG tiles for the
-        // two built-in gridsets only (the MVT tile provider understands those pyramids). Custom
-        // gridsets are advertised through /ogc/tiles/tileMatrixSets and served via GetTile (PNG);
-        // their per-dataset tileset documents are a deferred follow-up.
-        if (!OgcTileMatrixSetDescriptors.TryGet(tileMatrixSetId, out _))
+        // The per-collection tileset-metadata document is built for any registered gridset: the two
+        // built-in pyramids keep the byte-identical static-descriptor path, while a custom
+        // (operator-defined) gridset is advertised from its registered entry + geometry (#1916).
+        if (!tileMatrixSetRegistry.TryGet(tileMatrixSetId, out var tileMatrixSetEntry))
         {
             return StandardErrorHelpers.CreateNotFound(context, $"Tile matrix set '{tileMatrixSetId}' not found.");
         }
@@ -342,6 +368,8 @@ internal static partial class TilesEndpoints
         var tileTemplate = $"{tilesetHref}/{{tileMatrix}}/{{tileRow}}/{{tileCol}}";
         var tileMatrixSetHref = $"{baseUrl}/ogc/tiles/tileMatrixSets/{tileMatrixSetId}";
 
+        var (customEntry, customGeometry) = ResolveCustomTilesetGrid(tileMatrixSetEntry, tileMatrixSetRegistry, limitsOptions);
+
         var tileset = BuildTileset(
             layer.DisplayName,
             tilesetHref,
@@ -351,7 +379,10 @@ internal static partial class TilesEndpoints
             "Collection metadata",
             layer.Description,
             tileLimits,
-            tileMatrixSetId);
+            tileMatrixSetId,
+            advertiseVectorTiles: true,
+            customEntry,
+            customGeometry);
 
         return OgcCommonUtilities.FormatMetadataResponse(tileset, OgcTilesJsonContext.Default.TileSet, outputFormat, "Tileset");
     }
@@ -961,7 +992,8 @@ internal static partial class TilesEndpoints
         string baseUrl,
         TileLimits tileLimits,
         string querySuffix,
-        bool advertiseVectorTiles)
+        bool advertiseVectorTiles,
+        ITileMatrixSetRegistry? registry = null)
     {
         foreach (var descriptor in OgcTileMatrixSetDescriptors.Supported)
         {
@@ -975,13 +1007,29 @@ internal static partial class TilesEndpoints
                 descriptor,
                 advertiseVectorTiles);
         }
+
+        // Append any operator-defined custom gridsets after the two built-ins (#1916). Default
+        // deployments configure none, so the CITE snapshot list output stays byte-identical.
+        foreach (var (entry, geometry) in EnumerateCustomGrids(registry, tileLimits))
+        {
+            yield return BuildCustomTileSetItem(
+                $"{titleBase} ({entry.Id})",
+                $"{baseUrl}/ogc/tiles/tiles/{entry.Id}{querySuffix}",
+                $"{baseUrl}/ogc/tiles/tiles/{entry.Id}/{{tileMatrix}}/{{tileRow}}/{{tileCol}}{querySuffix}",
+                $"{baseUrl}/ogc/tiles/tileMatrixSets/{entry.Id}",
+                "Dataset tileset metadata",
+                entry,
+                geometry,
+                advertiseVectorTiles);
+        }
     }
 
     private static IEnumerable<TileSetItem> BuildTileSetItems(
         TileRequestLayer layer,
         string baseUrl,
         TileLimits tileLimits,
-        string? encodedCollectionId = null)
+        string? encodedCollectionId = null,
+        ITileMatrixSetRegistry? registry = null)
     {
         var collectionId = encodedCollectionId ?? Uri.EscapeDataString(layer.CollectionId);
 
@@ -997,6 +1045,97 @@ internal static partial class TilesEndpoints
                 tileLimits,
                 descriptor);
         }
+
+        // Append any operator-defined custom gridsets after the two built-ins (#1916). Default
+        // deployments configure none, so the CITE snapshot list output stays byte-identical.
+        foreach (var (entry, geometry) in EnumerateCustomGrids(registry, tileLimits))
+        {
+            var href = $"{baseUrl}/ogc/tiles/collections/{collectionId}/tiles/{entry.Id}";
+            yield return BuildCustomTileSetItem(
+                $"{layer.DisplayName} ({entry.Id})",
+                href,
+                $"{href}/{{tileMatrix}}/{{tileRow}}/{{tileCol}}",
+                $"{baseUrl}/ogc/tiles/tileMatrixSets/{entry.Id}",
+                "Tileset metadata",
+                entry,
+                geometry,
+                advertiseVectorTiles: true);
+        }
+    }
+
+    // Yields each registered custom (non-built-in) gridset paired with its resolved geometry.
+    private static IEnumerable<(TileMatrixSetEntry Entry, GridGeometry? Geometry)> EnumerateCustomGrids(
+        ITileMatrixSetRegistry? registry,
+        TileLimits tileLimits)
+    {
+        if (registry is null)
+        {
+            yield break;
+        }
+
+        var maxLevel = Math.Max(0, tileLimits.MaxTileZoom);
+        foreach (var entry in registry.All)
+        {
+            if (entry.IsBuiltIn)
+            {
+                continue;
+            }
+
+            yield return registry.TryGetGeometry(entry.Id, maxLevel, out var geometry)
+                ? (entry, geometry)
+                : (entry, null);
+        }
+    }
+
+    private static TileSetItem BuildCustomTileSetItem(
+        string title,
+        string tilesetHref,
+        string tileTemplate,
+        string tileMatrixSetHref,
+        string selfLinkTitle,
+        TileMatrixSetEntry entry,
+        GridGeometry? geometry,
+        bool advertiseVectorTiles)
+    {
+        var matrixLimits = geometry is { } resolved
+            ? OgcTilesUtilities.BuildTileMatrixSetLimits(resolved)
+            : ImmutableArray<TileMatrixSetLimit>.Empty;
+        var itemMediaType = advertiseVectorTiles ? MediaTypes.Mvt : MediaTypes.Png;
+        var itemTitle = advertiseVectorTiles ? "Vector tiles" : "PNG tiles";
+        var itemHref = advertiseVectorTiles
+            ? tileTemplate
+            : $"{tileTemplate}{(tileTemplate.Contains('?', StringComparison.Ordinal) ? "&" : "?")}f=png";
+
+        var links = ImmutableArray.Create(
+            Link.Create(
+                href: tilesetHref,
+                rel: RelationTypes.Self,
+                type: MediaTypes.Json,
+                title: selfLinkTitle),
+            new Link
+            {
+                Href = itemHref,
+                Rel = "item",
+                Type = itemMediaType,
+                Title = itemTitle,
+                Templated = true
+            },
+            Link.Create(
+                href: tileMatrixSetHref,
+                rel: RelationTypes.TilingScheme,
+                type: MediaTypes.Json,
+                title: "Tile matrix set definition"));
+
+        return new TileSetItem
+        {
+            Title = title,
+            DataType = advertiseVectorTiles ? "vector" : "map",
+            Crs = entry.Crs,
+            TileMatrixSetId = entry.Id,
+            TileMatrixSetUri = entry.Uri,
+            TileMatrixSetLimits = matrixLimits,
+            Links = links
+        };
     }
 
     private static TileSetItem BuildTileSetItemCore(
@@ -1061,17 +1200,41 @@ internal static partial class TilesEndpoints
         string? description,
         TileLimits tileLimits,
         string tileMatrixSetId,
-        bool advertiseVectorTiles = true)
+        bool advertiseVectorTiles = true,
+        TileMatrixSetEntry? customEntry = null,
+        GridGeometry? customGeometry = null)
     {
-        if (!OgcTileMatrixSetDescriptors.TryGet(tileMatrixSetId, out var descriptor))
+        // Built-in gridsets (WebMercatorQuad / WorldCRS84Quad) keep the exact static-descriptor +
+        // formula-driven limit path so the per-dataset/per-collection tileset documents stay
+        // byte-identical for the CITE snapshots. A custom (operator-defined) gridset is advertised
+        // from its registered TileMatrixSetEntry (CRS/URI) and its own grid geometry (full-coverage
+        // per-level limits) — #1916.
+        string crs;
+        string uri;
+        ImmutableArray<TileMatrixSetLimit> matrixLimits;
+        if (customEntry is { IsBuiltIn: false } entry)
         {
-            throw new InvalidOperationException($"Unsupported tile matrix set '{tileMatrixSetId}'.");
+            crs = entry.Crs;
+            uri = entry.Uri;
+            matrixLimits = customGeometry is { } geometry
+                ? OgcTilesUtilities.BuildTileMatrixSetLimits(geometry)
+                : ImmutableArray<TileMatrixSetLimit>.Empty;
+        }
+        else
+        {
+            if (!OgcTileMatrixSetDescriptors.TryGet(tileMatrixSetId, out var descriptor))
+            {
+                throw new InvalidOperationException($"Unsupported tile matrix set '{tileMatrixSetId}'.");
+            }
+
+            crs = descriptor.Crs;
+            uri = descriptor.Uri;
+            var isGeographic = OgcTilesUtilities.IsWorldCrs84Quad(tileMatrixSetId);
+            matrixLimits = isGeographic
+                ? OgcTilesUtilities.BuildWorldCrs84QuadLimits(tileLimits)
+                : BuildTileMatrixSetLimits(tileLimits);
         }
 
-        var isGeographic = OgcTilesUtilities.IsWorldCrs84Quad(tileMatrixSetId);
-        var matrixLimits = isGeographic
-            ? OgcTilesUtilities.BuildWorldCrs84QuadLimits(tileLimits)
-            : BuildTileMatrixSetLimits(tileLimits);
         var itemMediaType = advertiseVectorTiles ? MediaTypes.Mvt : MediaTypes.Png;
         var itemTitle = advertiseVectorTiles ? "Vector tiles" : "PNG tiles";
         var itemHref = advertiseVectorTiles
@@ -1109,9 +1272,9 @@ internal static partial class TilesEndpoints
             Title = $"{titleBase} ({tileMatrixSetId})",
             Description = description,
             DataType = advertiseVectorTiles ? "vector" : "map",
-            Crs = descriptor.Crs,
+            Crs = crs,
             TileMatrixSetId = tileMatrixSetId,
-            TileMatrixSetUri = descriptor.Uri,
+            TileMatrixSetUri = uri,
             TileMatrixSetLimits = matrixLimits,
             Links = links,
             MediaTypes = advertiseVectorTiles

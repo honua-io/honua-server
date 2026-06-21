@@ -339,6 +339,51 @@
       ]
     },
     {
+      "surfaceId": "rls-policy-admin",
+      "displayName": "Row-level security policy admin API",
+      "surfaceKind": "http-route-family",
+      "protocol": "Admin API",
+      "canonicalIdentifier": "/api/v1/admin/rls-policies/**",
+      "parentSurfaceId": "control-plane-admin",
+      "endpointPrefixes": [
+        "/api/v1/admin/rls-policies"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus RowLevelSecurityEndpointsTests integration tests assert RLS policy create/list/get/delete, admin authorization, and that a restricted role's query is filtered to its permitted rows while injection-style claim values stay parameterized.",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "src/Honua.Server/Features/Admin/RlsPolicyEndpoints.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Admin/RowLevelSecurityEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#502",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "scenario-depth",
+          "proofMechanism": "Row-level security predicates are resolved per-request from the caller's roles/claims and AND-ed into the canonical enforced WHERE clause; integration tests prove a restricted role sees only permitted rows and that claim values are bound as parameters (no SQL injection).",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "src/Honua.Hosting/Features/Authentication/RowLevelSecurityFilterSource.cs",
+            "src/Honua.Postgres/Features/FeatureStore/PostgresFeatureStore.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Admin/RowLevelSecurityEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#502",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
       "surfaceId": "console-workflow-packages",
       "displayName": "Console workflow package and node registry API",
       "surfaceKind": "http-route-family",
@@ -1058,6 +1103,52 @@
           "ownerRepo": "honua-server",
           "status": "implemented",
           "linkedTicket": "honua-io/honua-server#923",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
+      "surfaceId": "data-enrichment",
+      "displayName": "Data enrichment API",
+      "surfaceKind": "http-route-family",
+      "protocol": "Data Enrichment",
+      "canonicalIdentifier": "/api/enrich + /api/enrich/catalog",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [],
+      "endpointExactMatches": [
+        "/api/enrich",
+        "/api/enrich/catalog"
+      ],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus data-enrichment endpoint integration tests (catalog listing, spatial-join enrichment over a registered dataset, unknown-dataset 404, and Pro-edition gate).",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "src/Honua.Server/Features/DataEnrichment/DataEnrichmentEndpoints.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/DataEnrichment/DataEnrichmentEndpointTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "honua-io/honua-server#374",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "contract-governance",
+          "proofMechanism": "Source-generated EnrichmentJsonContext keeps the catalog/request wire shapes AOT-safe; the enrichment join reuses the shared ISpatialAnalyticsReader spatial-join pipeline rather than reimplementing data access, and the operator-curated catalog/registered-layers-only scope plus MVP deferrals are documented in docs/operator/data-enrichment.md.",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "src/Honua.Server/Features/DataEnrichment/Models/EnrichmentJsonContext.cs",
+            "src/Honua.Server/Features/DataEnrichment/DataEnrichmentRequestHandlers.cs",
+            "docs/operator/data-enrichment.md"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "honua-io/honua-server#374",
           "versionCaptureRule": null
         }
       ]

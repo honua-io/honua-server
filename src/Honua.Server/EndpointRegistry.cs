@@ -212,6 +212,12 @@ public static class EndpointRegistry
         new("GET", "/api/v1/admin/roles/{id}/permissions"),
         new("PUT", "/api/v1/admin/roles/{id}/permissions"),
 
+        // v1 admin row-level security (RLS) policy endpoints (#502)
+        new("GET", "/api/v1/admin/rls-policies"),
+        new("POST", "/api/v1/admin/rls-policies"),
+        new("GET", "/api/v1/admin/rls-policies/{id}"),
+        new("DELETE", "/api/v1/admin/rls-policies/{id}"),
+
         // v1 console metadata v2 content + RBAC baseline (#1162)
         new("GET", "/api/v1/console/session"),
         new("GET", "/api/v1/console/content"),
@@ -724,6 +730,11 @@ public static class EndpointRegistry
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/spatialJoin"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/queryBufferAggregate"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/queryDensity"),
+
+        // Data enrichment API (#374): catalog of registered enrichment datasets
+        // plus a spatial-join enrichment facade over the shared analytics pipeline.
+        new("GET", "/api/enrich/catalog"),
+        new("POST", "/api/enrich"),
 
         // Spec-shaped "not implemented" FeatureServer operations (#1402).
         new("GET", "/rest/services/{serviceId}/FeatureServer/queryContingentValues"),

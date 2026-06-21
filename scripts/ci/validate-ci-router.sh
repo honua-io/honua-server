@@ -253,15 +253,25 @@ assert_descriptor \
   "Core"
 
 # A brand-new, not-yet-mapped top-level protocol area (e.g. a future
-# src/Honua.Protocols.SensorThings/ landing before its shard is added) trips the
+# src/Honua.Protocols.Wcps/ landing before its shard is added) trips the
 # unmapped-source safety net and runs run_all until an owning shard is mapped —
 # never a silent skip.
 assert_descriptor \
   "new-unmapped-protocol-run-all" \
-  "src/Honua.Protocols.SensorThings/SensorThingsEndpoints.cs" \
+  "src/Honua.Protocols.Wcps/WcpsEndpoints.cs" \
   "unmapped_source_change" \
   "true" \
   "Core"
+
+# SensorThings (STA) now HAS a shard (#1899): a change confined to it must route
+# to the dedicated SensorThings shard (targeted), not run_all and not a silent
+# skip. Before #1899 its tests matched no filter and never ran.
+assert_descriptor \
+  "sensorthings-targeted" \
+  "src/Honua.Protocols.SensorThings/SensorThingsEndpoints.cs" \
+  "targeted" \
+  "false" \
+  "SensorThings"
 
 # The shared host-rendering pipeline (Honua.Hosting) is cross-cutting: a change
 # there must run_all rather than mis-route to a single render protocol.
@@ -271,5 +281,14 @@ assert_descriptor \
   "unmapped_source_change" \
   "true" \
   "Core"
+
+# ---------------------------------------------------------------------------
+# #1899 guard: every Honua.Server.Tests class must be claimed by at least one
+# shard filter (in the correct test assembly) or it never runs in CI. This is
+# the anti-regression check for the coverage hole — a new test class in an
+# unmapped namespace fails CI here instead of silently never running.
+# ---------------------------------------------------------------------------
+echo "Checking server-test shard coverage (no orphaned test classes)..."
+python3 scripts/ci/check-server-test-shard-coverage.py
 
 echo "CI router validation passed."
