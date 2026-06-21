@@ -1,0 +1,8 @@
+{
+  "id": "cancel_job.basic",
+  "schemaRef": "tools/cancel_job.schema.json",
+  "validates": "inputs",
+  "inputs": { "jobId": "job_7f3a" },
+  "expected": "tool_result",
+  "canonicalRefs": ["ExecutionJob"]
+}

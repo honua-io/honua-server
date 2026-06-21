@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/propose_operation.schema.json",
+  "title": "propose_operation inputSchema",
+  "description": "Argument shape for the control-plane proposal tool (advertised name honua_propose_operation). Proposes an in-scope mutating control-plane operation for human approval (never autonomously executed), consistent with the ADR-0028 no-direct-AI-mutation boundary in taxonomy.md §Non-Goals. x-honua-reference-shape: tracks the reference implementation.",
+  "x-honua-reference-shape": true,
+  "type": "object",
+  "required": ["kind"],
+  "properties": {
+    "kind": {
+      "type": "string",
+      "description": "In-scope mutating control-plane operation class to propose.",
+      "enum": ["AdminConfigChange", "Deploy", "MetadataRelease", "Seed"]
+    },
+    "reason": {
+      "type": "string",
+      "description": "Operator-facing reason or change note for the proposal."
+    },
+    "executionPayload": {
+      "type": "string",
+      "description": "Opaque, class-specific JSON execution payload replayed when the proposal is approved."
+    },
+    "idempotencyKey": {
+      "type": "string",
+      "description": "Stable idempotency key for the underlying operation."
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/list_layers.schema.json",
+  "title": "list_layers inputSchema",
+  "description": "Argument shape for the discovery/query layer-listing tool. The bare standard taxonomy models discovery as a CapabilityCatalog read; the reference implementation exposes it as a tool (advertised name honua_list_layers) over the open-core data-access surface. x-honua-reference-shape: this shape tracks the reference implementation.",
+  "x-honua-reference-shape": true,
+  "type": "object",
+  "properties": {
+    "filter": {
+      "type": "string",
+      "description": "Optional case-insensitive substring to match against service and layer name/title. When omitted, all published layers are returned."
+    }
+  }
+}
