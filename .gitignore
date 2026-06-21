@@ -321,3 +321,4 @@ tests/js/test-results/
 
 # Generated 3D Tiles scene output (publish/ingest executors)
 scenes-generated/
+scripts/conformance/ogcapi/node_modules/
