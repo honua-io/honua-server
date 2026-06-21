@@ -4,9 +4,9 @@
 using System.Collections.Immutable;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Core.Features.Validation.Abstractions;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Validation;
 using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Ogc.Api.Maps.Handlers;
 using Honua.Protocols.Ogc.Api.Maps.Models;
@@ -350,16 +350,30 @@ public static partial class OgcMapsEndpoints
         string value,
         CancellationToken cancellationToken)
     {
-        var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
-        var validationResult = await resourceValidator.ValidateCollectionV2Async(value, cancellationToken);
-        if (!validationResult.IsValid || validationResult.Resource is null)
+        // Resolve the publication (not just the resource) so map rendering can fall back to
+        // the publication-scoped storage binding. The previous implementation resolved only
+        // the resource and called ResolveStorageLayerId(resource), which returns null whenever
+        // the storage binding lives on the publication (or is carried as publication.LayerIndex)
+        // rather than on the resource's primary binding — the shape the Postgres compat seed and
+        // test fixtures produce — so every collection 404'd on Maps even though Features and Tiles
+        // resolved the same id. Mirror the Features/Tiles resolution chain through the shared
+        // validator, which also applies the access-policy + Maps protocol-enablement gates that
+        // the resource-only path bypassed.
+        var validation = await LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
+            context,
+            value,
+            requiredProtocol: ServiceProtocols.OgcApiMaps,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (!validation.IsValid || validation.Publication is null || validation.Resource is null)
         {
             return null;
         }
 
         var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        return snapshot.ResolveStorageLayerId(validationResult.Resource);
+        return validation.Publication.LayerIndex
+            ?? snapshot.ResolveStorageLayerId(validation.Publication)
+            ?? snapshot.ResolveStorageLayerId(validation.Resource);
     }
 
     private static bool HasEmptyCommaSeparatedToken(string value)
