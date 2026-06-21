@@ -43,10 +43,25 @@ jobs:
               return;
             }
 
-            // Deterministic gates — a failure here is real, never auto-rerun.
+            // Aggregator roll-ups, NOT independent signals: these fail whenever ANY
+            // downstream job fails, so they carry no information about real-vs-flake.
+            // They must be excluded before classification — otherwise a pure shard
+            // flake that trips `CI Gate` (which it always does) would look like a
+            // deterministic-gate failure and never get its retry. Classify only the
+            // LEAF jobs.
+            const AGGREGATORS = [/CI Gate/i, /Test Suite Summary/i];
+            const leafFailed = failed.filter(n => !AGGREGATORS.some(r => r.test(n)));
+
+            if (leafFailed.length === 0) {
+              core.info(`Only aggregator roll-ups failed (${failed.join(', ')}); no leaf job to rerun — skipping.`);
+              return;
+            }
+
+            // Deterministic gates — a failure in a LEAF gate is real, never auto-rerun.
+            // (CI Gate / Test Suite Summary are aggregators, handled above — not here.)
             const SOLID = [
               /Build & Format/i, /\bFormat\b/i, /Analyze/i, /CodeQL/i,
-              /PR Template/i, /Router/i, /Mergeability/i, /CI Gate/i,
+              /PR Template/i, /Router/i, /Mergeability/i,
               /AOT/i, /Package Compatibility/i, /Type Check/i,
             ];
             // Known-flaky integration/infra shards — transient, eligible for one retry.
@@ -55,14 +70,14 @@ jobs:
               /Docker Build/i, /Integration Tests/i, /Browser/i, /MCP/i,
             ];
 
-            const anySolid = failed.some(n => SOLID.some(r => r.test(n)));
+            const anySolid = leafFailed.some(n => SOLID.some(r => r.test(n)));
             if (anySolid) {
-              core.info(`Deterministic gate failed (${failed.join(', ')}) — not a flake, no rerun.`);
+              core.info(`Deterministic leaf gate failed (${leafFailed.join(', ')}) — not a flake, no rerun.`);
               return;
             }
-            const allFlaky = failed.every(n => FLAKY.some(r => r.test(n)));
+            const allFlaky = leafFailed.every(n => FLAKY.some(r => r.test(n)));
             if (!allFlaky) {
-              core.info(`Failures not all in the known-flaky set (${failed.join(', ')}) — no auto-rerun.`);
+              core.info(`Leaf failures not all in the known-flaky set (${leafFailed.join(', ')}) — no auto-rerun.`);
               return;
             }
 

@@ -76,6 +76,14 @@
                       LogicalName="Honua.Ai.AiBuilder.Fixtures.operations-dashboard-contract-v1.json" />
     <EmbeddedResource Include="..\..\tests\fixtures\ai-builder\workflow-generation-contract-v1.json"
                       LogicalName="Honua.Ai.AiBuilder.Fixtures.workflow-generation-contract-v1.json" />
+    <!-- Evidence-based feature catalog (#1946, ADR-0054). The committed,
+         drift-gated artifact is embedded so the read-only MCP resource
+         honua://catalog/features can serve it from a deployed server that has no
+         repo checkout. The catalog is generated, never authored, and CI fails if
+         the committed file drifts from the live API surface
+         (FeatureCatalogDriftTests). -->
+    <EmbeddedResource Include="..\..\docs\gis\data\feature-catalog.json"
+                      LogicalName="Honua.Ai.Catalog.feature-catalog.json" />
   </ItemGroup>
 
   <ItemGroup>
