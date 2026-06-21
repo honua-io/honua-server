@@ -27,8 +27,13 @@ internal sealed partial class GeoservicesImportService
         {
             if (geometry.TryGetProperty("x", out var x) && geometry.TryGetProperty("y", out var y))
             {
-                // Point
-                return BuildPointGeoJson(x.GetDouble(), y.GetDouble());
+                // Point. Carry the optional Z so elevation-enabled ArcGIS REST
+                // points round-trip instead of being silently flattened to 2D (#1981).
+                double? z = geometry.TryGetProperty("z", out var zElement)
+                    && zElement.ValueKind == JsonValueKind.Number
+                    ? zElement.GetDouble()
+                    : null;
+                return BuildPointGeoJson(x.GetDouble(), y.GetDouble(), z);
             }
 
             if (geometry.TryGetProperty("rings", out var rings))
@@ -52,11 +57,12 @@ internal sealed partial class GeoservicesImportService
 
             if (geometry.TryGetProperty("paths", out var paths))
             {
-                // Polyline
+                // Polyline. Carry the optional Z (coord[2]) so elevation-enabled
+                // ArcGIS REST lines round-trip instead of flattening to 2D (#1981).
                 var coordinates = paths.EnumerateArray()
                     .Select(path => path.EnumerateArray()
                         .Where(coord => coord.GetArrayLength() >= 2)
-                        .Select(coord => new[] { coord[0].GetDouble(), coord[1].GetDouble() })
+                        .Select(ExtractXyz)
                         .ToArray())
                     .Where(path => path.Length >= 2)
                     .ToArray();
@@ -69,10 +75,11 @@ internal sealed partial class GeoservicesImportService
 
             if (geometry.TryGetProperty("points", out var points))
             {
-                // Multipoint
+                // Multipoint. Carry the optional Z (coord[2]) so elevation-enabled
+                // ArcGIS REST multipoints round-trip instead of flattening to 2D (#1981).
                 var coordinates = points.EnumerateArray()
                     .Where(p => p.GetArrayLength() >= 2)
-                    .Select(p => new[] { p[0].GetDouble(), p[1].GetDouble() })
+                    .Select(ExtractXyz)
                     .ToArray();
 
                 if (coordinates.Length == 0)
@@ -130,7 +137,7 @@ internal sealed partial class GeoservicesImportService
         }
     }
 
-    private static string BuildPointGeoJson(double x, double y)
+    private static string BuildPointGeoJson(double x, double y, double? z = null)
         => BuildGeoJson(writer =>
         {
             writer.WriteStartObject();
@@ -139,9 +146,49 @@ internal sealed partial class GeoservicesImportService
             writer.WriteStartArray();
             writer.WriteNumberValue(x);
             writer.WriteNumberValue(y);
+            if (z.HasValue && !double.IsNaN(z.Value))
+            {
+                writer.WriteNumberValue(z.Value);
+            }
             writer.WriteEndArray();
             writer.WriteEndObject();
         });
+
+    /// <summary>
+    /// Projects an Esri coordinate array to <c>[x, y]</c> or <c>[x, y, z]</c>,
+    /// preserving the optional Z ordinate (index 2) when present and finite.
+    /// </summary>
+    private static double[] ExtractXyz(JsonElement coord)
+    {
+        var x = coord[0].GetDouble();
+        var y = coord[1].GetDouble();
+        if (coord.GetArrayLength() >= 3 && coord[2].ValueKind == JsonValueKind.Number)
+        {
+            var z = coord[2].GetDouble();
+            if (!double.IsNaN(z))
+            {
+                return [x, y, z];
+            }
+        }
+
+        return [x, y];
+    }
+
+    /// <summary>
+    /// Writes a single GeoJSON coordinate, emitting the Z ordinate when the
+    /// source coordinate carries one (length &gt;= 3).
+    /// </summary>
+    private static void WriteCoordinate(Utf8JsonWriter writer, double[] coord)
+    {
+        writer.WriteStartArray();
+        writer.WriteNumberValue(coord[0]);
+        writer.WriteNumberValue(coord[1]);
+        if (coord.Length >= 3)
+        {
+            writer.WriteNumberValue(coord[2]);
+        }
+        writer.WriteEndArray();
+    }
 
     private static double[][] EnsureClosedRing(double[][] ring)
     {
@@ -364,10 +411,7 @@ internal sealed partial class GeoservicesImportService
                 writer.WriteStartArray();
                 foreach (var coord in line)
                 {
-                    writer.WriteStartArray();
-                    writer.WriteNumberValue(coord[0]);
-                    writer.WriteNumberValue(coord[1]);
-                    writer.WriteEndArray();
+                    WriteCoordinate(writer, coord);
                 }
                 writer.WriteEndArray();
             }
@@ -384,10 +428,7 @@ internal sealed partial class GeoservicesImportService
             writer.WriteStartArray();
             foreach (var point in points)
             {
-                writer.WriteStartArray();
-                writer.WriteNumberValue(point[0]);
-                writer.WriteNumberValue(point[1]);
-                writer.WriteEndArray();
+                WriteCoordinate(writer, point);
             }
             writer.WriteEndArray();
             writer.WriteEndObject();
