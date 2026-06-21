@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/geocode_address.schema.json",
+  "title": "geocode_address inputSchema",
+  "description": "Argument shape for the analysis/geoprocessing geocode tool (advertised name honua_geocode_address). Resolves a freeform address to ranked candidates. x-honua-reference-shape: this shape tracks the reference implementation.",
+  "x-honua-reference-shape": true,
+  "type": "object",
+  "required": ["address"],
+  "properties": {
+    "address": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Freeform single-line address text to geocode."
+    },
+    "maxResults": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 50,
+      "default": 5,
+      "description": "Maximum number of candidates to return."
+    },
+    "countryCodes": {
+      "type": "string",
+      "description": "Optional comma-separated ISO 3166 country codes to restrict the search."
+    },
+    "outSrid": {
+      "type": "integer",
+      "default": 4326,
+      "description": "Spatial reference (SRID/WKID) for returned candidate coordinates."
+    },
+    "provider": {
+      "type": "string",
+      "description": "Optional preferred geocoding provider name."
+    }
+  }
+}

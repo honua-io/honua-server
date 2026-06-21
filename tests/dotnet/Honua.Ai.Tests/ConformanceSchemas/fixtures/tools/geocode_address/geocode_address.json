@@ -1,0 +1,13 @@
+{
+  "id": "geocode_address.basic",
+  "schemaRef": "tools/geocode_address.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "address": "1100 Congress Ave, Austin, TX 78701",
+    "maxResults": 3,
+    "countryCodes": "us",
+    "outSrid": 4326
+  },
+  "expected": "tool_result",
+  "canonicalRefs": []
+}

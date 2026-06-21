@@ -1,0 +1,11 @@
+{
+  "id": "plan_analysis.basic",
+  "schemaRef": "tools/plan_analysis.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "intent": "Find parcels within 500 meters of the proposed transit corridor and summarize total acreage by zoning class.",
+    "context": { "fixtureScenarioId": "site_selection" }
+  },
+  "expected": "emit_plan",
+  "canonicalRefs": ["AnalysisIntent", "AnalysisPlan"]
+}
