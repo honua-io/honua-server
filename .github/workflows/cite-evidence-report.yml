@@ -102,6 +102,15 @@ jobs:
           run_suite "WFS 1.0" ./scripts/conformance/cite/run-cite-wfs10-tests.sh basic
           run_suite "WFS 1.1" ./scripts/conformance/cite/run-cite-wfs11-tests.sh basic
           run_suite "WFS 2.0" ./scripts/conformance/cite/run-cite-wfs20-tests.sh basic
+          # WFS 2.0 transactional conformance classes (Transaction + LockFeature).
+          # Writes to its own results dir so it coexists with the basic leg in the
+          # evidence bundle instead of overwriting cite-wfs20-results. The env var
+          # is exported (not an inline prefix) because run_suite is a bash function
+          # and inline `VAR=x fn` does not export into a function's environment.
+          export HONUA_CITE_WFS20_RESULTS_DIR=cite-wfs20-transactional-results
+          run_suite "WFS 2.0 Transactional" ./scripts/conformance/cite/run-cite-wfs20-tests.sh transactional
+          unset HONUA_CITE_WFS20_RESULTS_DIR
+          run_suite "WMS 1.1.1" ./scripts/conformance/cite/run-cite-wms11-tests.sh default
           run_suite "WMS 1.3" ./scripts/conformance/cite/run-cite-wms-tests.sh default
           run_suite "WMTS 1.0" ./scripts/conformance/cite/run-cite-wmts-tests.sh default
           run_suite "WCS 2.0" ./scripts/conformance/cite/run-cite-wcs20-tests.sh core

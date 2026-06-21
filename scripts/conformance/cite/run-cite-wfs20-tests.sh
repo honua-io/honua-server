@@ -14,7 +14,13 @@ NC='\033[0m' # No Color
 
 # Configuration
 CITE_COMPOSE_FILE="docker/cite/wfs20/compose.yml"
-CITE_RESULTS_DIR="cite-wfs20-results"
+# Results dir is overridable so the transactional evidence leg can write to its
+# own directory (cite-wfs20-transactional-results) without clobbering the basic
+# run that shares this same runner. The compose `cite-runner` /results mount
+# reads the same HONUA_CITE_WFS20_RESULTS_DIR env so host + container agree.
+CITE_RESULTS_DIR="${HONUA_CITE_WFS20_RESULTS_DIR:-cite-wfs20-results}"
+HONUA_CITE_WFS20_RESULTS_DIR="$CITE_RESULTS_DIR"
+export HONUA_CITE_WFS20_RESULTS_DIR
 CITE_TIMEOUT=1800  # 30 minutes timeout
 HEALTHCHECK_TIMEOUT=300  # 5 minutes
 HONUA_CITE_WFS20_SERVER_PORT="${HONUA_CITE_WFS20_SERVER_PORT:-8090}"

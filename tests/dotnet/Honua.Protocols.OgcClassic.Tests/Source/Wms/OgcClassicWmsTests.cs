@@ -42,6 +42,9 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
         content.Should().Contain("EPSG:4326");
         content.Should().Contain("<GetMap>");
         content.Should().Contain("<GetFeatureInfo>");
+        // WMS GML FeatureInfo conformance class (ets-wms11 wms:wms-getfeatureinfo)
+        // requires the application/vnd.ogc.gml GetFeatureInfo format to be advertised.
+        content.Should().Contain("<Format>application/vnd.ogc.gml</Format>");
         content.Should().Contain("schemaLocation");
     }
 
@@ -561,6 +564,30 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
         response.Content.Headers.ContentType?.MediaType.Should().Be("text/plain");
         content.Should().Contain("Layer=");
+    }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.Wms111)]
+    [Operation(Operations.Wms)]
+    [InterfaceOperation(TestProtocols.Wms111, "GetFeatureInfo")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms111_GetFeatureInfo_WithGmlFormat_ReturnsGml()
+    {
+        // WMS 1.1.1 GML FeatureInfo conformance class (ets-wms11
+        // wms:wms-getfeatureinfo): the advertised application/vnd.ogc.gml
+        // INFO_FORMAT must be served as a well-formed GML document whose
+        // Content-Type echoes the requested format (not a service exception).
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetFeatureInfo&VERSION=1.1.1&BBOX=-180,-90,180,90&SRS=EPSG:4326&WIDTH=256&HEIGHT=256&LAYERS={WebAppFixture.TestLayerId}&QUERY_LAYERS={WebAppFixture.TestLayerId}&INFO_FORMAT=application/vnd.ogc.gml&X=41&Y=74");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.ogc.gml");
+        content.Should().Contain("<?xml");
+        content.Should().Contain("msGMLOutput");
+        // Document must be well-formed XML.
+        var act = () => System.Xml.Linq.XDocument.Parse(content);
+        act.Should().NotThrow();
     }
 
     [IntegrationTest]
