@@ -77,6 +77,11 @@ internal static class ImageServerServiceCollectionExtensions
             new ImageServerMultidimensionalInfoBuilder(
                 provider.GetService<Core.Features.Raster.Multidimensional.Abstractions.IMultidimensionalCoverageStore>()));
 
+        // Per-slice point sampler for getSamples multidimensionalDefinition (#1869).
+        // Reuses the shared Zarr catalog + subset reader; ICloudRangeReader instances
+        // are contributed by the active cloud-storage providers.
+        services.AddScoped<ZarrPointSampler>();
+
         return services;
     }
 }
