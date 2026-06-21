@@ -1,0 +1,24 @@
+{
+  "$comment": "Deterministic fixture exercising the perf-parity gate FAIL path offline (issue #1249). The gate must exit non-zero on this scorecard. Used by parity-scorecard-governance.yml.",
+  "GeneratedAtUtc": "2026-06-18T00:00:00+00:00",
+  "Cases": [
+    {
+      "ServiceCase": "fixture_p95_regression",
+      "LatencyMetrics": {
+        "SampleCount": 9,
+        "SourceP95Ms": 100.0,
+        "HonuaP95Ms": 250.0,
+        "SourceP99Ms": 150.0,
+        "HonuaP99Ms": 180.0,
+        "HonuaToSourceP95Ratio": 2.5,
+        "HonuaToSourceP99Ratio": 1.2
+      },
+      "PerfParity": {
+        "BudgetProfile": "geoservices-parity-default-v1",
+        "Verdict": "Fail",
+        "Summary": "Performance parity failed the budget with 1 metric(s) at fail and 0 metric(s) at warn.",
+        "SampleCount": 9
+      }
+    }
+  ]
+}
