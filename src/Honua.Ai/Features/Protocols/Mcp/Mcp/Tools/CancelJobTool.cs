@@ -32,8 +32,13 @@ internal sealed class CancelJobTool : IMcpTool
     public McpToolDescriptor Describe() => new()
     {
         Name = ToolName,
+        Title = "Cancel job",
         Description = "Request cancellation of an in-flight geoprocessing job by identifier.",
-        InputSchema = McpToolSchemas.CancelJobArgumentSchema
+        InputSchema = McpToolSchemas.CancelJobArgumentSchema,
+        OutputSchema = McpToolOutputSchemas.CancelJobOutputSchema,
+        // Write tool: destructive because it tears down in-flight execution;
+        // idempotent because cancelling an already-cancelled job is a no-op.
+        Annotations = McpToolAnnotationSets.Write("Cancel job", destructive: true, idempotent: true)
     };
 
     public async Task<McpToolsCallResult> InvokeAsync(

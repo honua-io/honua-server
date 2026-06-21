@@ -190,11 +190,92 @@ internal sealed class McpToolDescriptor
     [JsonPropertyName("name")]
     public string Name { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Human-readable display title for the tool. Per the MCP 2025-03-26 tool
+    /// annotations shape this is surfaced both as a top-level <c>title</c> and on
+    /// <see cref="Annotations"/>; a client may prefer either. Null tools omit it.
+    /// </summary>
+    [JsonPropertyName("title")]
+    public string? Title { get; set; }
+
     [JsonPropertyName("description")]
     public string Description { get; set; } = string.Empty;
 
     [JsonPropertyName("inputSchema")]
     public JsonElement InputSchema { get; set; }
+
+    /// <summary>
+    /// JSON-schema document describing the tool's structured result. The MCP
+    /// revision this server advertises (2025-03-26) predates the standard
+    /// <c>outputSchema</c> field (added in 2025-06-18), so the schema is
+    /// published here under the Honua extension key
+    /// <c>structuredContentSchema</c> rather than <c>outputSchema</c>. It
+    /// describes the same <see cref="McpToolsCallResult.StructuredContent"/>
+    /// payload <c>outputSchema</c> would: when the negotiated revision is bumped
+    /// to 2025-06-18+ (honua-server#1954) this moves to the standard
+    /// <c>outputSchema</c> key. Null for tools whose result carries no structured
+    /// content (e.g. image-only renders).
+    /// </summary>
+    [JsonPropertyName("structuredContentSchema")]
+    public JsonElement? OutputSchema { get; set; }
+
+    /// <summary>
+    /// MCP 2025-03-26 tool behavior hints. Lets a client LLM distinguish
+    /// read-only planning/grounding tools from write tools and reason about
+    /// destructiveness/idempotency before invoking. Hints are advisory and must
+    /// not be trusted for security; the server still enforces authorization.
+    /// </summary>
+    [JsonPropertyName("annotations")]
+    public McpToolAnnotations? Annotations { get; set; }
+}
+
+/// <summary>
+/// MCP 2025-03-26 tool annotation hints
+/// (<c>annotations: { title, readOnlyHint, destructiveHint, idempotentHint,
+/// openWorldHint }</c>). Each hint is advisory metadata describing the tool's
+/// behavior so a client LLM can plan tool use; the server does not rely on them
+/// for authorization. See
+/// https://modelcontextprotocol.io/specification/2025-03-26/server/tools#tool-annotations.
+/// </summary>
+internal sealed class McpToolAnnotations
+{
+    /// <summary>Human-readable display title for the tool.</summary>
+    [JsonPropertyName("title")]
+    public string? Title { get; set; }
+
+    /// <summary>
+    /// <c>true</c> when the tool does not modify its environment (planning,
+    /// grounding, validation, preview, read queries). When true,
+    /// <see cref="DestructiveHint"/> and <see cref="IdempotentHint"/> carry no
+    /// meaning and are omitted.
+    /// </summary>
+    [JsonPropertyName("readOnlyHint")]
+    public bool? ReadOnlyHint { get; set; }
+
+    /// <summary>
+    /// <c>true</c> when a write tool may perform destructive updates (e.g.
+    /// cancelling an in-flight job). Only meaningful when
+    /// <see cref="ReadOnlyHint"/> is false; omitted for read-only tools.
+    /// </summary>
+    [JsonPropertyName("destructiveHint")]
+    public bool? DestructiveHint { get; set; }
+
+    /// <summary>
+    /// <c>true</c> when repeated calls with the same arguments have no
+    /// additional effect (e.g. execute honors an idempotency key; cancel is a
+    /// no-op once requested). Only meaningful when <see cref="ReadOnlyHint"/> is
+    /// false; omitted for read-only tools.
+    /// </summary>
+    [JsonPropertyName("idempotentHint")]
+    public bool? IdempotentHint { get; set; }
+
+    /// <summary>
+    /// <c>true</c> when the tool interacts with an open world of external
+    /// entities (e.g. third-party geocoding/routing providers). Omitted when the
+    /// tool operates only over the server's closed catalog.
+    /// </summary>
+    [JsonPropertyName("openWorldHint")]
+    public bool? OpenWorldHint { get; set; }
 }
 
 /// <summary>
