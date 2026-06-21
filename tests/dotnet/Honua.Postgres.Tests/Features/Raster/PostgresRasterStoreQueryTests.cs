@@ -357,6 +357,63 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
     }
 
     [IntegrationTest]
+    public async Task ExportMosaicAsync_NadirOrdering_LowestOffNadirRasterWinsOverlapPixel()
+    {
+        var (schemaName, ids) = await SeedMosaicStackAsync();
+        try
+        {
+            await CreateSensorMetadataTableAsync(schemaName);
+
+            // esriMosaicNadir (#1870): rank by off-nadir angle, lowest (closest to straight-down)
+            // wins. Give west the most-nadir view (2 deg) and overlap-newest a steep off-nadir
+            // (25 deg). Default newest-wins would keep overlap-newest (value 5) at the contested
+            // pixel; the nadir ordering must instead keep west (value 20), proving off-nadir — not
+            // acquisition — drives selection.
+            await InsertSensorOffNadirAsync(schemaName, ids.West, offNadirAngle: 2);
+            await InsertSensorOffNadirAsync(schemaName, ids.OverlapNewest, offNadirAngle: 25);
+
+            var store = CreateStore(schemaName);
+
+            var winner = await ExportAndSampleOverlapPixelAsync(
+                store, [ids.West, ids.OverlapNewest, ids.East],
+                RasterMergeStrategy.Newest, RasterMosaicOrdering.Nadir);
+
+            winner.Should().Be(20, "the most-nadir raster wins the contested pixel");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task ExportMosaicAsync_NadirOrdering_RasterWithoutSensorMetadataRanksLast()
+    {
+        var (schemaName, ids) = await SeedMosaicStackAsync();
+        try
+        {
+            await CreateSensorMetadataTableAsync(schemaName);
+
+            // Only overlap-newest carries an off-nadir angle; west has no sensor row (unknown
+            // off-nadir). A known off-nadir must outrank an unknown one, so overlap-newest (value 5)
+            // wins the contested pixel even though west would otherwise be selectable.
+            await InsertSensorOffNadirAsync(schemaName, ids.OverlapNewest, offNadirAngle: 15);
+
+            var store = CreateStore(schemaName);
+
+            var winner = await ExportAndSampleOverlapPixelAsync(
+                store, [ids.West, ids.OverlapNewest, ids.East],
+                RasterMergeStrategy.Newest, RasterMosaicOrdering.Nadir);
+
+            winner.Should().Be(5, "a raster with a known off-nadir angle outranks one with none");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [IntegrationTest]
     public async Task ExportMosaicAsync_SeamlineOrdering_RasterClippedToSeamlineYieldsSeamWinner()
     {
         var (schemaName, ids) = await SeedMosaicStackAsync();
@@ -549,6 +606,38 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
         command.Parameters.AddWithValue("minY", seamlineEnvelope.MinY);
         command.Parameters.AddWithValue("maxX", seamlineEnvelope.MaxX);
         command.Parameters.AddWithValue("maxY", seamlineEnvelope.MaxY);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private async Task CreateSensorMetadataTableAsync(string schemaName)
+    {
+        await using var connection = await fixture.GetConnectionAsync(schemaName);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            CREATE TABLE IF NOT EXISTS raster_sensor_metadata (
+                raster_data_id BIGINT PRIMARY KEY,
+                sensor_name VARCHAR(255),
+                camera_model VARCHAR(255),
+                interior_orientation JSONB,
+                exterior_orientation JSONB,
+                rpc JSONB,
+                dem_source VARCHAR(512),
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
+            """;
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private async Task InsertSensorOffNadirAsync(string schemaName, long rasterId, double offNadirAngle)
+    {
+        await using var connection = await fixture.GetConnectionAsync(schemaName);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO raster_sensor_metadata (raster_data_id, exterior_orientation)
+            VALUES (@rasterId, jsonb_build_object('offNadirAngle', @angle));
+            """;
+        command.Parameters.AddWithValue("rasterId", rasterId);
+        command.Parameters.AddWithValue("angle", offNadirAngle);
         await command.ExecuteNonQueryAsync();
     }
 
