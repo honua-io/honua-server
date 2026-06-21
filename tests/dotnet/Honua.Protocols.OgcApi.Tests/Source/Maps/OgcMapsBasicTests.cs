@@ -45,6 +45,50 @@ public class OgcMapsBasicTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /ogc/maps")]
+    [Operation(Operations.Metadata)]
+    public async Task GetLandingPage_LinkObjects_OmitNullOptionalFields()
+    {
+        // The OGC API Maps `link` schema types `templated` as boolean and
+        // `hreflang` as string. Emitting `"templated": null` / `"hreflang": null`
+        // for unset optional fields is non-conformant, so the serializer must
+        // omit them rather than write null. (Validated by the OGC API Maps
+        // conformance gate against the published bundled OpenAPI.)
+        var response = await _fixture.Client.GetAsync("/ogc/maps");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var links = json.RootElement.GetProperty("links").EnumerateArray().ToArray();
+        links.Should().NotBeEmpty();
+
+        foreach (var link in links)
+        {
+            // Required field always present.
+            link.TryGetProperty("href", out _).Should().BeTrue();
+
+            // Optional fields, when present, must carry the correct JSON type —
+            // never an explicit null.
+            if (link.TryGetProperty("templated", out var templated))
+            {
+                templated.ValueKind.Should().BeOneOf(JsonValueKind.True, JsonValueKind.False);
+            }
+
+            if (link.TryGetProperty("hreflang", out var hreflang))
+            {
+                hreflang.ValueKind.Should().Be(JsonValueKind.String);
+            }
+
+            foreach (var name in new[] { "rel", "type", "title" })
+            {
+                if (link.TryGetProperty(name, out var value))
+                {
+                    value.ValueKind.Should().NotBe(JsonValueKind.Null);
+                }
+            }
+        }
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /ogc/maps/openapi.json")]
     [Operation(Operations.Metadata)]
     public async Task GetOpenApiSpec_BasicRequest_ReturnsOpenApiDocument()

@@ -70,30 +70,38 @@ public sealed record Link : ILink
     /// Relation type (e.g., "self", "alternate", "describedby").
     /// </summary>
     [JsonPropertyName("rel")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Rel { get; init; }
 
     /// <summary>
     /// MIME type of the linked resource.
     /// </summary>
     [JsonPropertyName("type")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Type { get; init; }
 
     /// <summary>
-    /// Indicates the link is a URI template.
+    /// Indicates the link is a URI template. Omitted (not emitted as
+    /// <c>null</c>) when unset: the OGC <c>link</c> schema types this as a
+    /// boolean, so a literal <c>"templated": null</c> is non-conformant.
     /// </summary>
     [JsonPropertyName("templated")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? Templated { get; init; }
 
     /// <summary>
-    /// Language of the linked resource.
+    /// Language of the linked resource. Omitted when unset (the OGC <c>link</c>
+    /// schema types this as a string; <c>"hreflang": null</c> is non-conformant).
     /// </summary>
     [JsonPropertyName("hreflang")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? HrefLang { get; init; }
 
     /// <summary>
     /// Human-readable title for the link.
     /// </summary>
     [JsonPropertyName("title")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Title { get; init; }
 
     /// <summary>
