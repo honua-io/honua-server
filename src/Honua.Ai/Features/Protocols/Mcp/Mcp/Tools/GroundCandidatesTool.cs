@@ -43,8 +43,11 @@ internal sealed class GroundCandidatesTool : IMcpTool
     public McpToolDescriptor Describe() => new()
     {
         Name = ToolName,
+        Title = "Ground candidates",
         Description = "Ground a natural-language goal to a workflow family, ranked catalog candidates, a draft intent, and an optional clarification envelope.",
-        InputSchema = InputSchemaElement
+        InputSchema = InputSchemaElement,
+        OutputSchema = McpToolOutputSchemas.GroundingOutputSchema,
+        Annotations = McpToolAnnotationSets.ReadOnly("Ground candidates")
     };
 
     public async Task<McpToolsCallResult> InvokeAsync(

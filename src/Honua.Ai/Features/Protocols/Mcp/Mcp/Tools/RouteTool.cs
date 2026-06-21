@@ -55,8 +55,13 @@ internal sealed class RouteTool : IMcpTool
     public McpToolDescriptor Describe() => new()
     {
         Name = ToolName,
+        Title = "Solve route",
         Description = "Solve a multi-stop route through ordered stops and return the route geometry, length, travel time, and turn-by-turn directions. Requires the Pro 'routing.solve' entitlement.",
-        InputSchema = LocationToolSchemas.RouteArgumentSchema
+        InputSchema = LocationToolSchemas.RouteArgumentSchema,
+        OutputSchema = McpToolOutputSchemas.RouteOutputSchema,
+        // Read-only computation; open-world because solving can route to external
+        // routing providers rather than the server's closed catalog.
+        Annotations = McpToolAnnotationSets.ReadOnlyOpenWorld("Solve route")
     };
 
     public async Task<McpToolsCallResult> InvokeAsync(

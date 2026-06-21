@@ -35,8 +35,11 @@ internal sealed class ValidatePlanTool : IMcpTool
     public McpToolDescriptor Describe() => new()
     {
         Name = ToolName,
+        Title = "Validate plan",
         Description = "Validate an analysis plan for executability, policy gates, and approvals.",
-        InputSchema = InputSchemaElement
+        InputSchema = InputSchemaElement,
+        OutputSchema = McpToolOutputSchemas.ValidatePlanOutputSchema,
+        Annotations = McpToolAnnotationSets.ReadOnly("Validate plan")
     };
 
     public async Task<McpToolsCallResult> InvokeAsync(

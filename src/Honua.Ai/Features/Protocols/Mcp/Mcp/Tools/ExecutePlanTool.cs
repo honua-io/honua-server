@@ -52,8 +52,14 @@ internal sealed class ExecutePlanTool : IMcpTool
     public McpToolDescriptor Describe() => new()
     {
         Name = ToolName,
+        Title = "Execute plan",
         Description = "Submit an analysis plan for asynchronous execution and return the job identifier and resource URI.",
-        InputSchema = McpToolSchemas.ExecutePlanArgumentSchema
+        InputSchema = McpToolSchemas.ExecutePlanArgumentSchema,
+        OutputSchema = McpToolOutputSchemas.ExecuteOutputSchema,
+        // Write tool: it submits server-side work. Idempotent because it honors
+        // the optional idempotencyKey (replays return the same job record);
+        // non-destructive because it creates a new job rather than destroying state.
+        Annotations = McpToolAnnotationSets.Write("Execute plan", destructive: false, idempotent: true)
     };
 
     public async Task<McpToolsCallResult> InvokeAsync(
