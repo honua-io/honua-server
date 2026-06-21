@@ -93,7 +93,7 @@ services:
       - HOST_UID=${HOST_UID:-1000}
       - HOST_GID=${HOST_GID:-1000}
     volumes:
-      - ../../../cite-wfs20-results:/results
+      - ../../../${HONUA_CITE_WFS20_RESULTS_DIR:-cite-wfs20-results}:/results
       - ../shared/scripts:/scripts:ro
     networks:
       - cite-network
