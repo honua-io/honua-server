@@ -13,6 +13,11 @@ internal static class OgcClassicRequestHelpers
     internal const string PngMimeType = "image/png";
     internal const string PlainTextMimeType = "text/plain";
     internal const string JsonMimeType = "application/json";
+
+    // WMS GetFeatureInfo GML output. WMS 1.1.1 (OGC 01-068r3) requires the
+    // application/vnd.ogc.gml INFO_FORMAT to be advertised and served for the
+    // GML FeatureInfo conformance class (ets-wms11 wms:wms-getfeatureinfo).
+    internal const string GmlFeatureInfoMimeType = "application/vnd.ogc.gml";
     internal const string CiteServiceName = "cite";
     internal const string CiteTerrainLayerTitle = "cite:Terrain";
 
@@ -72,6 +77,12 @@ internal static class OgcClassicRequestHelpers
         if (string.Equals(format, JsonMimeType, StringComparison.OrdinalIgnoreCase))
         {
             normalizedFormat = JsonMimeType;
+            return true;
+        }
+
+        if (string.Equals(format, GmlFeatureInfoMimeType, StringComparison.OrdinalIgnoreCase))
+        {
+            normalizedFormat = GmlFeatureInfoMimeType;
             return true;
         }
 

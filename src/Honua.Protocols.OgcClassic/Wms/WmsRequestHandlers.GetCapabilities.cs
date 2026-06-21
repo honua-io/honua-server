@@ -403,6 +403,7 @@ internal static partial class WmsRequestHandlers
 
         sb.AppendLine("      <GetFeatureInfo>");
         sb.AppendLine("        <Format>text/plain</Format>");
+        sb.AppendLine("        <Format>application/vnd.ogc.gml</Format>");
         sb.AppendLine("        <Format>application/json</Format>");
         sb.AppendLine("        <DCPType>");
         sb.AppendLine("          <HTTP>");
