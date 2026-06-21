@@ -15,7 +15,23 @@ namespace Honua.Protocols.GeoServices.NAServer;
 /// <param name="MaxFacilities">Maximum number of facilities on a service-area solve.</param>
 /// <param name="MaxBreaks">Maximum number of distinct breaks on a service-area solve.</param>
 /// <param name="MaxBarriers">Maximum number of barriers (point/line/polygon combined) on a solve.</param>
-internal readonly record struct NAServerInputCaps(int MaxStops, int MaxFacilities, int MaxBreaks, int MaxBarriers)
+/// <param name="MaxIncidents">Maximum number of incidents on a closest-facility solve.</param>
+/// <param name="MaxClosestFacilities">Maximum number of facilities on a closest-facility solve.</param>
+/// <param name="MaxOrigins">Maximum number of origins on an OD cost matrix solve.</param>
+/// <param name="MaxDestinations">Maximum number of destinations on an OD cost matrix solve.</param>
+/// <param name="MaxLocationAllocationFacilities">Maximum number of candidate facilities on a location-allocation solve.</param>
+/// <param name="MaxDemandPoints">Maximum number of demand points on a location-allocation solve.</param>
+internal readonly record struct NAServerInputCaps(
+    int MaxStops,
+    int MaxFacilities,
+    int MaxBreaks,
+    int MaxBarriers,
+    int MaxIncidents = 1000,
+    int MaxClosestFacilities = 1000,
+    int MaxOrigins = 1000,
+    int MaxDestinations = 1000,
+    int MaxLocationAllocationFacilities = 1000,
+    int MaxDemandPoints = 1000)
 {
     /// <summary>
     /// Conservative defaults used when no <see cref="RoutingConfiguration"/> is
@@ -35,7 +51,13 @@ internal readonly record struct NAServerInputCaps(int MaxStops, int MaxFacilitie
             configuration.MaxStops,
             configuration.MaxFacilities,
             configuration.MaxBreaks,
-            configuration.MaxBarriers);
+            configuration.MaxBarriers,
+            configuration.MaxIncidents,
+            configuration.MaxClosestFacilities,
+            configuration.MaxOrigins,
+            configuration.MaxDestinations,
+            configuration.MaxLocationAllocationFacilities,
+            configuration.MaxDemandPoints);
     }
 }
 
@@ -156,6 +178,419 @@ internal static class NAServerParameterTranslation
             Barriers = barriers,
             TravelMode = travelMode,
         };
+    }
+
+    /// <summary>
+    /// Builds a canonical <see cref="ClosestFacilitySolveRequest"/> from raw NAServer
+    /// parameters using default input caps.
+    /// </summary>
+    public static ClosestFacilitySolveRequest BuildClosestFacilitySolveRequest(
+        IReadOnlyDictionary<string, string> parameters)
+        => BuildClosestFacilitySolveRequest(parameters, NAServerInputCaps.Default);
+
+    /// <summary>
+    /// Builds a canonical <see cref="ClosestFacilitySolveRequest"/> from raw NAServer
+    /// parameters. Parses <c>incidents</c>, <c>facilities</c>,
+    /// <c>defaultTargetFacilityCount</c>, <c>travelDirection</c>,
+    /// <c>defaultCutoff</c>/<c>cutoff</c>, plus barriers and travel mode. Requires at
+    /// least one incident and one facility, and enforces the supplied caps.
+    /// </summary>
+    public static ClosestFacilitySolveRequest BuildClosestFacilitySolveRequest(
+        IReadOnlyDictionary<string, string> parameters,
+        NAServerInputCaps caps)
+    {
+        ArgumentNullException.ThrowIfNull(parameters);
+
+        var outSrid = ParseOutSr(parameters);
+        var inSrid = ParseInSr(parameters, outSrid);
+
+        var incidents = ParsePoints(GetValue(parameters, "incidents"), "incidents");
+        if (incidents.Count == 0)
+        {
+            throw new NAServerParameterException(
+                "At least one 'incidents' point is required to solve closest facility.");
+        }
+
+        if (incidents.Count > caps.MaxIncidents)
+        {
+            throw new NAServerParameterException(
+                $"'incidents' count {incidents.Count} exceeds the maximum of {caps.MaxIncidents}.");
+        }
+
+        var facilities = ParsePoints(GetValue(parameters, "facilities"), "facilities");
+        if (facilities.Count == 0)
+        {
+            throw new NAServerParameterException(
+                "At least one 'facilities' point is required to solve closest facility.");
+        }
+
+        if (facilities.Count > caps.MaxClosestFacilities)
+        {
+            throw new NAServerParameterException(
+                $"'facilities' count {facilities.Count} exceeds the maximum of {caps.MaxClosestFacilities}.");
+        }
+
+        var targetCount = ParsePositiveInt(GetValue(parameters, "defaultTargetFacilityCount"), "defaultTargetFacilityCount") ?? 1;
+        var cutoff = ParseCutoff(parameters, "defaultCutoff", "cutoff");
+        var direction = ParseClosestFacilityTravelDirection(GetValue(parameters, "travelDirection"));
+        var barriers = ParseBarriers(parameters, caps);
+        var travelMode = ParseTravelMode(parameters);
+
+        return new ClosestFacilitySolveRequest(
+            incidents,
+            facilities,
+            targetCount,
+            cutoff,
+            direction,
+            outSrid)
+        {
+            InSrid = inSrid,
+            Barriers = barriers,
+            TravelMode = travelMode,
+        };
+    }
+
+    /// <summary>
+    /// Builds a canonical <see cref="OdCostMatrixSolveRequest"/> from raw NAServer
+    /// parameters using default input caps.
+    /// </summary>
+    public static OdCostMatrixSolveRequest BuildOdCostMatrixSolveRequest(
+        IReadOnlyDictionary<string, string> parameters)
+        => BuildOdCostMatrixSolveRequest(parameters, NAServerInputCaps.Default);
+
+    /// <summary>
+    /// Builds a canonical <see cref="OdCostMatrixSolveRequest"/> from raw NAServer
+    /// parameters. Parses <c>origins</c>, <c>destinations</c>, <c>defaultCutoff</c>,
+    /// <c>defaultTargetDestinationCount</c>, <c>outputType</c> (cost-only output
+    /// only; geometry output deferred), plus barriers and travel mode.
+    /// </summary>
+    public static OdCostMatrixSolveRequest BuildOdCostMatrixSolveRequest(
+        IReadOnlyDictionary<string, string> parameters,
+        NAServerInputCaps caps)
+    {
+        ArgumentNullException.ThrowIfNull(parameters);
+
+        ValidateOdOutputType(GetValue(parameters, "outputType"));
+
+        var outSrid = ParseOutSr(parameters);
+        var inSrid = ParseInSr(parameters, outSrid);
+
+        var origins = ParsePoints(GetValue(parameters, "origins"), "origins");
+        if (origins.Count == 0)
+        {
+            throw new NAServerParameterException(
+                "At least one 'origins' point is required to solve an OD cost matrix.");
+        }
+
+        if (origins.Count > caps.MaxOrigins)
+        {
+            throw new NAServerParameterException(
+                $"'origins' count {origins.Count} exceeds the maximum of {caps.MaxOrigins}.");
+        }
+
+        var destinations = ParsePoints(GetValue(parameters, "destinations"), "destinations");
+        if (destinations.Count == 0)
+        {
+            throw new NAServerParameterException(
+                "At least one 'destinations' point is required to solve an OD cost matrix.");
+        }
+
+        if (destinations.Count > caps.MaxDestinations)
+        {
+            throw new NAServerParameterException(
+                $"'destinations' count {destinations.Count} exceeds the maximum of {caps.MaxDestinations}.");
+        }
+
+        var cutoff = ParseCutoff(parameters, "defaultCutoff", "cutoff");
+        var destinationCount = ParsePositiveInt(
+            GetValue(parameters, "defaultTargetDestinationCount"), "defaultTargetDestinationCount");
+        var barriers = ParseBarriers(parameters, caps);
+        var travelMode = ParseTravelMode(parameters);
+
+        return new OdCostMatrixSolveRequest(origins, destinations, outSrid)
+        {
+            InSrid = inSrid,
+            Cutoff = cutoff,
+            DestinationCount = destinationCount,
+            Barriers = barriers,
+            TravelMode = travelMode,
+        };
+    }
+
+    /// <summary>
+    /// Builds a canonical <see cref="LocationAllocationSolveRequest"/> from raw
+    /// NAServer parameters. Parses candidate <c>facilities</c>, <c>demandPoints</c>
+    /// (weighted), <c>problem_type</c>, <c>number_facilities_to_find</c>, and
+    /// <c>impedance_cutoff</c>, plus barriers and travel mode.
+    /// </summary>
+    public static LocationAllocationSolveRequest BuildLocationAllocationSolveRequest(
+        IReadOnlyDictionary<string, string> parameters)
+        => BuildLocationAllocationSolveRequest(parameters, NAServerInputCaps.Default);
+
+    /// <summary>
+    /// Builds a canonical <see cref="LocationAllocationSolveRequest"/> from raw
+    /// NAServer parameters, enforcing the supplied caps.
+    /// </summary>
+    public static LocationAllocationSolveRequest BuildLocationAllocationSolveRequest(
+        IReadOnlyDictionary<string, string> parameters,
+        NAServerInputCaps caps)
+    {
+        ArgumentNullException.ThrowIfNull(parameters);
+
+        var outSrid = ParseOutSr(parameters);
+        var inSrid = ParseInSr(parameters, outSrid);
+
+        var facilities = ParsePoints(GetValue(parameters, "facilities"), "facilities");
+        if (facilities.Count == 0)
+        {
+            throw new NAServerParameterException(
+                "At least one candidate 'facilities' point is required to solve location-allocation.");
+        }
+
+        if (facilities.Count > caps.MaxLocationAllocationFacilities)
+        {
+            throw new NAServerParameterException(
+                $"'facilities' count {facilities.Count} exceeds the maximum of {caps.MaxLocationAllocationFacilities}.");
+        }
+
+        var demandPoints = ParseDemandPoints(GetValue(parameters, "demandPoints"));
+        if (demandPoints.Count == 0)
+        {
+            throw new NAServerParameterException(
+                "At least one 'demandPoints' point is required to solve location-allocation.");
+        }
+
+        if (demandPoints.Count > caps.MaxDemandPoints)
+        {
+            throw new NAServerParameterException(
+                $"'demandPoints' count {demandPoints.Count} exceeds the maximum of {caps.MaxDemandPoints}.");
+        }
+
+        var problemType = ParseLocationAllocationProblemType(GetValue(parameters, "problemType"));
+        var facilitiesToFind = ParsePositiveInt(
+            GetValue(parameters, "numberFacilitiesToFind"), "numberFacilitiesToFind") ?? 1;
+        var cutoff = ParseCutoff(parameters, "impedanceCutoff", "defaultCutoff");
+        var barriers = ParseBarriers(parameters, caps);
+        var travelMode = ParseTravelMode(parameters);
+
+        return new LocationAllocationSolveRequest(
+            facilities,
+            demandPoints,
+            problemType,
+            facilitiesToFind,
+            cutoff,
+            outSrid)
+        {
+            InSrid = inSrid,
+            Barriers = barriers,
+            TravelMode = travelMode,
+        };
+    }
+
+    /// <summary>
+    /// Maps the Esri closest-facility <c>travelDirection</c> token to the canonical
+    /// enum. Accepts the Esri string constants and the numeric forms
+    /// (esriNATravelDirectionToFacility = 0 = to facility, FromFacility = 1).
+    /// </summary>
+    public static ClosestFacilityTravelDirection ParseClosestFacilityTravelDirection(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return ClosestFacilityTravelDirection.ToFacility;
+        }
+
+        var trimmed = value.Trim();
+        if (string.Equals(trimmed, "esriNATravelDirectionFromFacility", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(trimmed, "1", StringComparison.Ordinal))
+        {
+            return ClosestFacilityTravelDirection.FromFacility;
+        }
+
+        if (string.Equals(trimmed, "esriNATravelDirectionToFacility", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(trimmed, "0", StringComparison.Ordinal))
+        {
+            return ClosestFacilityTravelDirection.ToFacility;
+        }
+
+        throw new NAServerParameterException(
+            $"'travelDirection' value '{value}' is not recognized. Use " +
+            "'esriNATravelDirectionToFacility' or 'esriNATravelDirectionFromFacility'.");
+    }
+
+    /// <summary>
+    /// Maps the Esri location-allocation <c>problem_type</c> token to the canonical
+    /// enum. Only the two implemented types are accepted; other Esri problem types
+    /// throw so the adapter returns a clear "unsupported problem type" 400.
+    /// </summary>
+    public static LocationAllocationProblemType ParseLocationAllocationProblemType(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return LocationAllocationProblemType.MinimizeImpedance;
+        }
+
+        var trimmed = value.Trim();
+        if (string.Equals(trimmed, "esriMFPMinimizeImpedance", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(trimmed, "MinimizeImpedance", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(trimmed, "0", StringComparison.Ordinal))
+        {
+            return LocationAllocationProblemType.MinimizeImpedance;
+        }
+
+        if (string.Equals(trimmed, "esriMFPMaximizeCoverage", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(trimmed, "MaximizeCoverage", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(trimmed, "1", StringComparison.Ordinal))
+        {
+            return LocationAllocationProblemType.MaximizeCoverage;
+        }
+
+        throw new NAServerParameterException(
+            $"location-allocation problem type '{value}' is not supported. Supported types: " +
+            "esriMFPMinimizeImpedance, esriMFPMaximizeCoverage.");
+    }
+
+    /// <summary>
+    /// Validates the OD cost matrix <c>outputType</c>. Only the cost-only output
+    /// (<c>esriNAODOutputNoLines</c>) and straight-line output (treated as cost-only
+    /// — geometry deferred) are accepted; any other value throws.
+    /// </summary>
+    private static void ValidateOdOutputType(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return;
+        }
+
+        var trimmed = value.Trim();
+        if (string.Equals(trimmed, "esriNAODOutputNoLines", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(trimmed, "esriNAODOutputStraightLines", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        throw new NAServerParameterException(
+            $"'outputType' value '{value}' is not supported. Use 'esriNAODOutputNoLines' " +
+            "(true-shape line geometry output is not implemented).");
+    }
+
+    /// <summary>
+    /// Parses weighted demand points from an Esri FeatureSet whose features carry a
+    /// point geometry and (optionally) a <c>Weight</c>/<c>weight</c> attribute
+    /// (defaulting to 1). Falls back to the same point shapes
+    /// <see cref="ParsePoints"/> accepts (weight 1).
+    /// </summary>
+    public static IReadOnlyList<DemandPoint> ParseDemandPoints(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return [];
+        }
+
+        var trimmed = value.Trim();
+        if (trimmed[0] == '{')
+        {
+            JsonDocument doc;
+            try
+            {
+                doc = JsonDocument.Parse(trimmed);
+            }
+            catch (JsonException ex)
+            {
+                throw new NAServerParameterException($"'demandPoints' is not valid JSON: {ex.Message}");
+            }
+
+            using (doc)
+            {
+                var root = doc.RootElement;
+                if (root.ValueKind == JsonValueKind.Object &&
+                    root.TryGetProperty("features", out var features) &&
+                    features.ValueKind == JsonValueKind.Array)
+                {
+                    var demand = new List<DemandPoint>();
+                    foreach (var feature in features.EnumerateArray())
+                    {
+                        if (feature.ValueKind != JsonValueKind.Object ||
+                            !feature.TryGetProperty("geometry", out var geometry) ||
+                            !TryReadXy(geometry, out var point))
+                        {
+                            continue;
+                        }
+
+                        var weight = 1.0;
+                        if (feature.TryGetProperty("attributes", out var attrs) &&
+                            attrs.ValueKind == JsonValueKind.Object &&
+                            TryReadWeight(attrs, out var w))
+                        {
+                            weight = w;
+                        }
+
+                        demand.Add(new DemandPoint(point, weight));
+                    }
+
+                    return demand;
+                }
+            }
+        }
+
+        // Fallback: bare points (weight 1 each).
+        return ParsePoints(value, "demandPoints").Select(p => new DemandPoint(p, 1.0)).ToList();
+    }
+
+    private static bool TryReadWeight(JsonElement attributes, out double weight)
+    {
+        weight = 1.0;
+        foreach (var name in (ReadOnlySpan<string>)["Weight", "weight", "DemandWeight"])
+        {
+            if (attributes.TryGetProperty(name, out var value) &&
+                value.ValueKind == JsonValueKind.Number &&
+                value.TryGetDouble(out var parsed) && parsed >= 0)
+            {
+                weight = parsed;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Reads an impedance cutoff from the first present of the supplied keys. Returns
+    /// <c>null</c> when none is supplied or the value is non-positive.
+    /// </summary>
+    private static double? ParseCutoff(IReadOnlyDictionary<string, string> parameters, params string[] keys)
+    {
+        foreach (var key in keys)
+        {
+            var value = GetValue(parameters, key);
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                continue;
+            }
+
+            if (!double.TryParse(value.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed))
+            {
+                throw new NAServerParameterException($"'{key}' value '{value}' is not a valid number.");
+            }
+
+            return parsed > 0 ? parsed : null;
+        }
+
+        return null;
+    }
+
+    private static int? ParsePositiveInt(string? value, string parameterName)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        if (!int.TryParse(value.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) || parsed <= 0)
+        {
+            throw new NAServerParameterException($"'{parameterName}' value '{value}' must be a positive integer.");
+        }
+
+        return parsed;
     }
 
     /// <summary>

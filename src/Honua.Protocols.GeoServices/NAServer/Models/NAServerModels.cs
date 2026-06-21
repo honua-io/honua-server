@@ -22,15 +22,239 @@ internal sealed class NAServerRouteSolveResponse
 }
 
 /// <summary>
-/// Minimal NAServer closest facility response.
+/// NAServer closest-facility solve response. Carries the ranked incident→facility
+/// routes (a feature set) plus per-route directions, mirroring the ArcGIS
+/// <c>solveClosestFacility</c> envelope.
 /// </summary>
 internal sealed class NAServerClosestFacilityResponse
 {
-    /// <summary>Closest-facility route feature set.</summary>
-    public NAServerRouteFeatureSet? Routes { get; init; }
+    /// <summary>Closest-facility route feature set (ranked incident→facility routes).</summary>
+    public NAServerCfRouteFeatureSet? Routes { get; init; }
 
     /// <summary>Closest-facility directions.</summary>
     public NAServerDirection[] Directions { get; init; } = [];
+
+    /// <summary>Solver messages (informative / warning / error).</summary>
+    public NAServerMessage[]? Messages { get; init; }
+}
+
+/// <summary>
+/// Feature set carrying closest-facility routes.
+/// </summary>
+internal sealed class NAServerCfRouteFeatureSet
+{
+    /// <summary>Esri geometry type for the contained features.</summary>
+    [JsonPropertyName("geometryType")]
+    public string GeometryType { get; init; } = "esriGeometryPolyline";
+
+    /// <summary>Spatial reference of the contained geometries.</summary>
+    public NAServerSpatialReference? SpatialReference { get; init; }
+
+    /// <summary>Closest-facility route features.</summary>
+    public NAServerCfRouteFeature[] Features { get; init; } = [];
+}
+
+/// <summary>
+/// A single closest-facility route feature (incident→ranked facility).
+/// </summary>
+internal sealed class NAServerCfRouteFeature
+{
+    /// <summary>Route polyline geometry.</summary>
+    public NAServerPolylineGeometry? Geometry { get; init; }
+
+    /// <summary>Closest-facility route attributes.</summary>
+    public NAServerCfRouteAttributes Attributes { get; init; } = new();
+}
+
+/// <summary>
+/// Attributes of a closest-facility route parsed by Esri routing clients.
+/// </summary>
+internal sealed class NAServerCfRouteAttributes
+{
+    /// <summary>Route name.</summary>
+    [JsonPropertyName("Name")]
+    public string Name { get; init; } = string.Empty;
+
+    /// <summary>Incident identifier (1-based, Esri convention).</summary>
+    [JsonPropertyName("IncidentID")]
+    public int IncidentId { get; init; }
+
+    /// <summary>Facility identifier (1-based, Esri convention).</summary>
+    [JsonPropertyName("FacilityID")]
+    public int FacilityId { get; init; }
+
+    /// <summary>Rank of the facility for the incident (1 = closest).</summary>
+    [JsonPropertyName("FacilityRank")]
+    public int FacilityRank { get; init; }
+
+    /// <summary>Total route length in meters.</summary>
+    [JsonPropertyName("Total_Length")]
+    public double TotalLength { get; init; }
+
+    /// <summary>Total travel time in minutes.</summary>
+    [JsonPropertyName("Total_TravelTime")]
+    public double TotalTravelTime { get; init; }
+}
+
+/// <summary>
+/// NAServer OD cost matrix solve response. Carries the origin→destination lines
+/// (attribute-only cost cells) mirroring the ArcGIS <c>solveODCostMatrix</c>
+/// envelope's <c>odLines</c>.
+/// </summary>
+internal sealed class NAServerOdCostMatrixResponse
+{
+    /// <summary>OD cost matrix line feature set.</summary>
+    public NAServerOdLinesFeatureSet OdLines { get; init; } = new();
+
+    /// <summary>Solver messages (informative / warning / error).</summary>
+    public NAServerMessage[]? Messages { get; init; }
+}
+
+/// <summary>
+/// Feature set carrying OD cost matrix lines (attribute-only; no geometry in the
+/// cost-only output).
+/// </summary>
+internal sealed class NAServerOdLinesFeatureSet
+{
+    /// <summary>Esri geometry type (none for cost-only output).</summary>
+    [JsonPropertyName("geometryType")]
+    public string? GeometryType { get; init; }
+
+    /// <summary>OD line features.</summary>
+    public NAServerOdLineFeature[] Features { get; init; } = [];
+}
+
+/// <summary>
+/// A single OD cost matrix line feature (one origin→destination cell).
+/// </summary>
+internal sealed class NAServerOdLineFeature
+{
+    /// <summary>OD line attributes.</summary>
+    public NAServerOdLineAttributes Attributes { get; init; } = new();
+}
+
+/// <summary>
+/// Attributes of an OD cost matrix line parsed by Esri routing clients.
+/// </summary>
+internal sealed class NAServerOdLineAttributes
+{
+    /// <summary>Origin identifier (1-based, Esri convention).</summary>
+    [JsonPropertyName("OriginID")]
+    public int OriginId { get; init; }
+
+    /// <summary>Destination identifier (1-based, Esri convention).</summary>
+    [JsonPropertyName("DestinationID")]
+    public int DestinationId { get; init; }
+
+    /// <summary>Rank of the destination for the origin (1 = closest).</summary>
+    [JsonPropertyName("DestinationRank")]
+    public int DestinationRank { get; init; }
+
+    /// <summary>Total travel time in minutes.</summary>
+    [JsonPropertyName("Total_Time")]
+    public double TotalTime { get; init; }
+
+    /// <summary>Total distance in meters (0 for cost-only output).</summary>
+    [JsonPropertyName("Total_Distance")]
+    public double TotalDistance { get; init; }
+}
+
+/// <summary>
+/// NAServer location-allocation solve response. Carries the chosen facilities and
+/// the demand-point allocations mirroring the ArcGIS <c>solveLocationAllocation</c>
+/// envelope.
+/// </summary>
+internal sealed class NAServerLocationAllocationResponse
+{
+    /// <summary>Chosen-facility feature set.</summary>
+    public NAServerLaFacilitiesFeatureSet Facilities { get; init; } = new();
+
+    /// <summary>Allocated demand-point feature set.</summary>
+    public NAServerLaDemandPointsFeatureSet DemandPoints { get; init; } = new();
+
+    /// <summary>Solver messages (informative / warning / error).</summary>
+    public NAServerMessage[]? Messages { get; init; }
+}
+
+/// <summary>
+/// Feature set carrying the chosen location-allocation facilities.
+/// </summary>
+internal sealed class NAServerLaFacilitiesFeatureSet
+{
+    /// <summary>Chosen-facility features.</summary>
+    public NAServerLaFacilityFeature[] Features { get; init; } = [];
+}
+
+/// <summary>
+/// A single chosen location-allocation facility feature.
+/// </summary>
+internal sealed class NAServerLaFacilityFeature
+{
+    /// <summary>Facility attributes.</summary>
+    public NAServerLaFacilityAttributes Attributes { get; init; } = new();
+}
+
+/// <summary>
+/// Attributes of a chosen location-allocation facility.
+/// </summary>
+internal sealed class NAServerLaFacilityAttributes
+{
+    /// <summary>Facility identifier (1-based, Esri convention).</summary>
+    [JsonPropertyName("FacilityID")]
+    public int FacilityId { get; init; }
+
+    /// <summary>Whether the facility was chosen by the solver (always 1 here).</summary>
+    [JsonPropertyName("FacilityType")]
+    public int FacilityType { get; init; } = 3;
+
+    /// <summary>Total demand weight allocated to this facility.</summary>
+    [JsonPropertyName("DemandWeight")]
+    public double DemandWeight { get; init; }
+}
+
+/// <summary>
+/// Feature set carrying the allocated demand points.
+/// </summary>
+internal sealed class NAServerLaDemandPointsFeatureSet
+{
+    /// <summary>Allocated demand-point features.</summary>
+    public NAServerLaDemandPointFeature[] Features { get; init; } = [];
+}
+
+/// <summary>
+/// A single allocated demand-point feature.
+/// </summary>
+internal sealed class NAServerLaDemandPointFeature
+{
+    /// <summary>Demand-point attributes.</summary>
+    public NAServerLaDemandPointAttributes Attributes { get; init; } = new();
+}
+
+/// <summary>
+/// Attributes of an allocated demand point parsed by Esri routing clients.
+/// </summary>
+internal sealed class NAServerLaDemandPointAttributes
+{
+    /// <summary>Demand-point identifier (1-based, Esri convention).</summary>
+    [JsonPropertyName("DemandOID")]
+    public int DemandOid { get; init; }
+
+    /// <summary>
+    /// Identifier of the facility the demand point is allocated to (1-based), or 0
+    /// when unallocated.
+    /// </summary>
+    [JsonPropertyName("FacilityID")]
+    public int FacilityId { get; init; }
+
+    /// <summary>Demand weight.</summary>
+    [JsonPropertyName("Weight")]
+    public double Weight { get; init; }
+
+    /// <summary>
+    /// Allocated impedance (minutes) to the facility, or -1 when unallocated.
+    /// </summary>
+    [JsonPropertyName("AllocatedTime")]
+    public double AllocatedTime { get; init; }
 }
 
 /// <summary>

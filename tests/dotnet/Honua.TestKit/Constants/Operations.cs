@@ -30,6 +30,8 @@ public static class Operations
     public const string OptimizeRoute = "OptimizeRoute";
     public const string ServiceArea = "ServiceArea";
     public const string ClosestFacility = "ClosestFacility";
+    public const string OdCostMatrix = "OdCostMatrix";
+    public const string LocationAllocation = "LocationAllocation";
 
     // Geometry Service Operations
     public const string Buffer = "Buffer";

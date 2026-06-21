@@ -7,6 +7,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Routing.Features.Routing.Abstractions;
 using Honua.Routing.Features.Routing.Domain;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Routing.Features.Routing.Providers;
 
@@ -30,30 +31,94 @@ internal sealed class PgRoutingProvider : IRoutingProvider
     /// </summary>
     public const string ProviderName = "pgrouting";
 
-    // Edges-SQL for outbound traversal (cost from source to target) and for the
-    // reversed graph (source/target swapped) so service-area "to facility" coverage
-    // computes who can reach the facility within the cost cutoff. Both are constants
-    // — no user value is interpolated.
-    private const string OutboundEdgesSql =
-        "SELECT gid AS id, source, target, cost, reverse_cost FROM public.ways";
-    private const string ReversedEdgesSql =
-        "SELECT gid AS id, target AS source, source AS target, cost, reverse_cost FROM public.ways";
-
     private readonly IDatabaseSessionFactory _sessionFactory;
     private readonly ILogger<PgRoutingProvider> _logger;
+    private readonly INetworkDatasetResolver _datasetResolver;
+    private readonly string _networkDatasetId;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="PgRoutingProvider"/> class.
+    /// Initializes a new instance of the <see cref="PgRoutingProvider"/> class
+    /// bound to the built-in default network dataset (the existing
+    /// <c>public.ways</c> topology). Retained for direct construction (tests) that
+    /// do not exercise multi-dataset resolution.
     /// </summary>
     /// <param name="sessionFactory">Shared database session factory.</param>
     /// <param name="logger">Logger.</param>
     public PgRoutingProvider(
         IDatabaseSessionFactory sessionFactory,
         ILogger<PgRoutingProvider> logger)
+        : this(
+            sessionFactory,
+            logger,
+            new DefaultNetworkDatasetResolver(),
+            NetworkDataset.DefaultId)
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="PgRoutingProvider"/> class
+    /// resolving its edge/vertex tables from the configured network dataset
+    /// (Phase 0 of #1882).
+    /// </summary>
+    /// <param name="sessionFactory">Shared database session factory.</param>
+    /// <param name="logger">Logger.</param>
+    /// <param name="datasetResolver">Network-dataset resolver.</param>
+    /// <param name="options">Bound routing configuration (selects the dataset id).</param>
+    public PgRoutingProvider(
+        IDatabaseSessionFactory sessionFactory,
+        ILogger<PgRoutingProvider> logger,
+        INetworkDatasetResolver datasetResolver,
+        IOptions<RoutingConfiguration> options)
+        : this(
+            sessionFactory,
+            logger,
+            datasetResolver,
+            (options ?? throw new ArgumentNullException(nameof(options))).Value.NetworkDatasetId)
+    {
+    }
+
+    private PgRoutingProvider(
+        IDatabaseSessionFactory sessionFactory,
+        ILogger<PgRoutingProvider> logger,
+        INetworkDatasetResolver datasetResolver,
+        string networkDatasetId)
     {
         _sessionFactory = sessionFactory ?? throw new ArgumentNullException(nameof(sessionFactory));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _datasetResolver = datasetResolver ?? throw new ArgumentNullException(nameof(datasetResolver));
+        _networkDatasetId = string.IsNullOrWhiteSpace(networkDatasetId)
+            ? NetworkDataset.DefaultId
+            : networkDatasetId;
     }
+
+    /// <summary>
+    /// Resolves the active network dataset, throwing a clear error when the
+    /// configured id is not registered. The dataset's edge/vertex table names are
+    /// threaded into the solve SQL.
+    /// </summary>
+    private async Task<NetworkDataset> ResolveDatasetAsync(CancellationToken cancellationToken)
+    {
+        var dataset = await _datasetResolver.ResolveAsync(_networkDatasetId, cancellationToken).ConfigureAwait(false);
+        return dataset ?? throw new InvalidOperationException(
+            $"Network dataset '{_networkDatasetId}' is not registered.");
+    }
+
+    // Edges-SQL builders for outbound traversal (cost from source to target) and for
+    // the reversed graph (source/target swapped) so service-area "to facility"
+    // coverage computes who can reach the facility within the cost cutoff. The edge
+    // table name comes from the resolved NetworkDataset; it is a validated
+    // schema-qualified identifier (the registry rejects non-conforming names and the
+    // built-in default is a trusted constant), so it is safe to embed in the SQL text
+    // that pgRouting re-parses (which cannot reference bound parameters). No user
+    // value is interpolated.
+    private static string OutboundEdgesSql(NetworkDataset dataset)
+        => $"SELECT gid AS id, source, target, cost, reverse_cost FROM {dataset.EdgeTable}";
+
+    private static string ReversedEdgesSql(NetworkDataset dataset)
+        => $"SELECT gid AS id, target AS source, source AS target, cost, reverse_cost FROM {dataset.EdgeTable}";
+
+    private static string RouteBaseEdgesSqlFor(NetworkDataset dataset)
+        => $"SELECT gid AS id, source, target, cost, reverse_cost FROM {dataset.EdgeTable}";
 
     /// <inheritdoc />
     public string Name => ProviderName;
@@ -70,7 +135,10 @@ internal sealed class PgRoutingProvider : IRoutingProvider
     /// <inheritdoc />
     public RoutingProviderCapabilities Capabilities { get; } = new(
         SupportsRoute: true,
-        SupportsServiceArea: true)
+        SupportsServiceArea: true,
+        SupportsClosestFacility: true,
+        SupportsOdCostMatrix: true,
+        SupportsLocationAllocation: true)
     {
         // pgRouting honours all three barrier families by excluding the graph
         // edges each barrier geometry interacts with (see BuildBlockedEdgeFilter).
@@ -84,6 +152,14 @@ internal sealed class PgRoutingProvider : IRoutingProvider
         // Single stored cost weight => driving only. The request surface accepts
         // and validates travelMode, but only this mode is genuinely routable.
         SupportedTravelModes = [DrivingTravelMode],
+
+        // The two cost-matrix problem types implemented for #1874. Other Esri
+        // problem types are gated with a 400 by the adapter.
+        SupportedLocationAllocationProblemTypes =
+        [
+            LocationAllocationProblemType.MinimizeImpedance,
+            LocationAllocationProblemType.MaximizeCoverage,
+        ],
     };
 
     /// <inheritdoc />
@@ -108,14 +184,16 @@ internal sealed class PgRoutingProvider : IRoutingProvider
             }
 
             await using var session = await _sessionFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
+            var dataset = await ResolveDatasetAsync(cancellationToken).ConfigureAwait(false);
+            activity?.SetTag("honua.routing.dataset", dataset.Id);
 
             // Resolve barrier-restricted edges first so the same exclusion set
             // applies to every leg. Empty when no barriers are supplied.
             var blockedEdges = await ResolveBlockedEdgesAsync(
-                session, request.Barriers, request.InSrid, cancellationToken).ConfigureAwait(false);
+                session, dataset, request.Barriers, request.InSrid, cancellationToken).ConfigureAwait(false);
             activity?.SetTag("honua.routing.barriers", request.Barriers.Count);
             activity?.SetTag("honua.routing.blocked_edges", blockedEdges.Count);
-            var edgesSql = BuildRouteEdgesSql(blockedEdges);
+            var edgesSql = BuildRouteEdgesSql(dataset, blockedEdges);
 
             // Snap each stop to its nearest graph vertex (input transformed from the
             // request SRID to the graph SRID 4326 before the KNN snap).
@@ -123,7 +201,7 @@ internal sealed class PgRoutingProvider : IRoutingProvider
             for (var i = 0; i < request.Stops.Count; i++)
             {
                 var vertexId = await SnapToNearestVertexAsync(
-                        session, request.Stops[i], request.InSrid, cancellationToken)
+                        session, dataset, request.Stops[i], request.InSrid, cancellationToken)
                     .ConfigureAwait(false);
                 if (vertexId is null)
                 {
@@ -164,7 +242,7 @@ internal sealed class PgRoutingProvider : IRoutingProvider
             }
 
             var (geometryGeoJson, lengthMeters) = await MergeEdgeGeometryAsync(
-                session, steps, request.OutSrid, cancellationToken).ConfigureAwait(false);
+                session, dataset, steps, request.OutSrid, cancellationToken).ConfigureAwait(false);
 
             // The pgRouting cost weight is treated as travel-time minutes for the MVP;
             // the geodesic length is computed from the geometry in meters.
@@ -215,11 +293,13 @@ internal sealed class PgRoutingProvider : IRoutingProvider
             }
 
             await using var session = await _sessionFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
+            var dataset = await ResolveDatasetAsync(cancellationToken).ConfigureAwait(false);
+            activity?.SetTag("honua.routing.dataset", dataset.Id);
 
             // Resolve barrier-restricted edges once and exclude them from the
             // reachability graph for every facility/break.
             var blockedEdges = await ResolveBlockedEdgesAsync(
-                session, request.Barriers, request.InSrid, cancellationToken).ConfigureAwait(false);
+                session, dataset, request.Barriers, request.InSrid, cancellationToken).ConfigureAwait(false);
             activity?.SetTag("honua.routing.barriers", request.Barriers.Count);
             activity?.SetTag("honua.routing.blocked_edges", blockedEdges.Count);
 
@@ -227,8 +307,8 @@ internal sealed class PgRoutingProvider : IRoutingProvider
             // (source/target swapped) so it computes who can reach the facility
             // within the cost cutoff; FromFacility uses the outbound graph.
             var baseEdgesSql = request.TravelDirection == ServiceAreaTravelDirection.ToFacility
-                ? ReversedEdgesSql
-                : OutboundEdgesSql;
+                ? ReversedEdgesSql(dataset)
+                : OutboundEdgesSql(dataset);
             var edgesSql = ApplyBlockedEdgeFilter(baseEdgesSql, blockedEdges);
 
             var polygons = new List<ServiceAreaPolygon>();
@@ -236,7 +316,7 @@ internal sealed class PgRoutingProvider : IRoutingProvider
             for (var facilityId = 0; facilityId < request.Facilities.Count; facilityId++)
             {
                 var vertexId = await SnapToNearestVertexAsync(
-                        session, request.Facilities[facilityId], request.InSrid, cancellationToken)
+                        session, dataset, request.Facilities[facilityId], request.InSrid, cancellationToken)
                     .ConfigureAwait(false);
                 if (vertexId is null)
                 {
@@ -250,7 +330,7 @@ internal sealed class PgRoutingProvider : IRoutingProvider
                     cancellationToken.ThrowIfCancellationRequested();
 
                     var geometry = await SolveServiceAreaRingAsync(
-                        session, vertexId.Value, toBreak, edgesSql, request.OutSrid, cancellationToken)
+                        session, dataset, vertexId.Value, toBreak, edgesSql, request.OutSrid, cancellationToken)
                         .ConfigureAwait(false);
 
                     // Skip degenerate rings: pgRouting may reach fewer than three
@@ -280,18 +360,390 @@ internal sealed class PgRoutingProvider : IRoutingProvider
         }
     }
 
+    /// <inheritdoc />
+    public async Task<ClosestFacilitySolveResult> SolveClosestFacilityAsync(
+        ClosestFacilitySolveRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        using var activity = RoutingTelemetry.Source.StartActivity("routing.solveClosestFacility");
+        activity?.SetTag("honua.routing.provider", ProviderName);
+        activity?.SetTag("honua.routing.incidents", request.Incidents.Count);
+        activity?.SetTag("honua.routing.facilities", request.Facilities.Count);
+
+        try
+        {
+            var targetCount = Math.Max(1, request.DefaultTargetFacilityCount);
+            if (request.Incidents.Count == 0 || request.Facilities.Count == 0)
+            {
+                activity?.SetTag("honua.routing.solved", false);
+                return new ClosestFacilitySolveResult([]);
+            }
+
+            await using var session = await _sessionFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
+            var dataset = await ResolveDatasetAsync(cancellationToken).ConfigureAwait(false);
+            activity?.SetTag("honua.routing.dataset", dataset.Id);
+
+            var blockedEdges = await ResolveBlockedEdgesAsync(
+                session, dataset, request.Barriers, request.InSrid, cancellationToken).ConfigureAwait(false);
+
+            // ToFacility ranks by the cost incident -> facility over the outbound
+            // graph; FromFacility ranks by facility -> incident, which is the cost
+            // incident -> facility over the reversed graph (so the same one-to-many
+            // probe from the incident vertex applies).
+            var baseEdgesSql = request.Direction == ClosestFacilityTravelDirection.FromFacility
+                ? ReversedEdgesSql(dataset)
+                : OutboundEdgesSql(dataset);
+            var edgesSql = ApplyBlockedEdgeFilter(baseEdgesSql, blockedEdges);
+
+            // Snap facilities once; reused across incidents.
+            var facilityVertices = await SnapAllAsync(
+                session, dataset, request.Facilities, request.InSrid, cancellationToken).ConfigureAwait(false);
+
+            var routes = new List<ClosestFacilityRoute>();
+            for (var incidentId = 0; incidentId < request.Incidents.Count; incidentId++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var incidentVertex = await SnapToNearestVertexAsync(
+                    session, dataset, request.Incidents[incidentId], request.InSrid, cancellationToken)
+                    .ConfigureAwait(false);
+                if (incidentVertex is null)
+                {
+                    continue;
+                }
+
+                // One-to-many cost from the incident vertex to all facility vertices.
+                var destVids = facilityVertices
+                    .Where(f => f.VertexId is not null)
+                    .Select(f => f.VertexId!.Value)
+                    .Distinct()
+                    .ToArray();
+                if (destVids.Length == 0)
+                {
+                    continue;
+                }
+
+                var costs = await OneToManyCostAsync(
+                    session, edgesSql, incidentVertex.Value, destVids, cancellationToken).ConfigureAwait(false);
+
+                // Rank facilities by cost. Each facility maps to its snapped vertex;
+                // multiple facilities may share a vertex, so resolve cost per facility.
+                var ranked = facilityVertices
+                    .Select((f, idx) => (FacilityId: idx, f.VertexId))
+                    .Where(x => x.VertexId is not null && costs.TryGetValue(x.VertexId!.Value, out _))
+                    .Select(x => (x.FacilityId, Cost: costs[x.VertexId!.Value]))
+                    .Where(x => request.Cutoff is not { } cutoff || x.Cost <= cutoff)
+                    .OrderBy(x => x.Cost)
+                    .Take(targetCount)
+                    .ToList();
+
+                var rank = 1;
+                foreach (var (facilityId, cost) in ranked)
+                {
+                    // Materialize the route geometry for the chosen pair via a single
+                    // pgr_dijkstra leg, then merge into a LineString.
+                    var leg = await SolveDijkstraLegAsync(
+                        session, edgesSql, incidentVertex.Value, facilityVertices[facilityId].VertexId!.Value, cancellationToken)
+                        .ConfigureAwait(false);
+
+                    var geometry = string.Empty;
+                    var length = 0.0;
+                    if (leg is { } legValue && legValue.Steps.Count > 0)
+                    {
+                        (geometry, length) = await MergeEdgeGeometryAsync(
+                            session, dataset, legValue.Steps, request.OutSrid, cancellationToken).ConfigureAwait(false);
+                    }
+
+                    routes.Add(new ClosestFacilityRoute(
+                        incidentId,
+                        facilityId,
+                        rank,
+                        geometry,
+                        length,
+                        cost,
+                        [new RouteDirectionStep($"Incident {incidentId} - Facility {facilityId}", length, cost, "straight")]));
+                    rank++;
+                }
+            }
+
+            activity?.SetTag("honua.routing.solved", routes.Count > 0);
+            activity?.SetTag("honua.routing.routes", routes.Count);
+            return new ClosestFacilitySolveResult(routes);
+        }
+        catch (Exception ex)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            throw;
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<OdCostMatrixSolveResult> SolveOdCostMatrixAsync(
+        OdCostMatrixSolveRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        using var activity = RoutingTelemetry.Source.StartActivity("routing.solveOdCostMatrix");
+        activity?.SetTag("honua.routing.provider", ProviderName);
+        activity?.SetTag("honua.routing.origins", request.Origins.Count);
+        activity?.SetTag("honua.routing.destinations", request.Destinations.Count);
+
+        try
+        {
+            if (request.Origins.Count == 0 || request.Destinations.Count == 0)
+            {
+                activity?.SetTag("honua.routing.solved", false);
+                return new OdCostMatrixSolveResult([]);
+            }
+
+            await using var session = await _sessionFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
+            var dataset = await ResolveDatasetAsync(cancellationToken).ConfigureAwait(false);
+            activity?.SetTag("honua.routing.dataset", dataset.Id);
+
+            var blockedEdges = await ResolveBlockedEdgesAsync(
+                session, dataset, request.Barriers, request.InSrid, cancellationToken).ConfigureAwait(false);
+            var edgesSql = ApplyBlockedEdgeFilter(OutboundEdgesSql(dataset), blockedEdges);
+
+            var originVertices = await SnapAllAsync(
+                session, dataset, request.Origins, request.InSrid, cancellationToken).ConfigureAwait(false);
+            var destVertices = await SnapAllAsync(
+                session, dataset, request.Destinations, request.InSrid, cancellationToken).ConfigureAwait(false);
+
+            var lines = new List<OdLine>();
+            for (var originId = 0; originId < originVertices.Count; originId++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var originVid = originVertices[originId].VertexId;
+                if (originVid is null)
+                {
+                    continue;
+                }
+
+                var destVids = destVertices
+                    .Where(d => d.VertexId is not null)
+                    .Select(d => d.VertexId!.Value)
+                    .Distinct()
+                    .ToArray();
+                if (destVids.Length == 0)
+                {
+                    continue;
+                }
+
+                var costs = await OneToManyCostAsync(
+                    session, edgesSql, originVid.Value, destVids, cancellationToken).ConfigureAwait(false);
+
+                var perOrigin = new List<(int DestinationId, double Cost)>();
+                for (var destId = 0; destId < destVertices.Count; destId++)
+                {
+                    var destVid = destVertices[destId].VertexId;
+                    if (destVid is null || !costs.TryGetValue(destVid.Value, out var cost))
+                    {
+                        continue;
+                    }
+
+                    if (request.Cutoff is { } cutoff && cost > cutoff)
+                    {
+                        continue;
+                    }
+
+                    perOrigin.Add((destId, cost));
+                }
+
+                var ranked = perOrigin.OrderBy(x => x.Cost).AsEnumerable();
+                if (request.DestinationCount is { } k && k > 0)
+                {
+                    ranked = ranked.Take(k);
+                }
+
+                var rank = 1;
+                foreach (var (destinationId, cost) in ranked)
+                {
+                    lines.Add(new OdLine(originId, destinationId, rank, cost, 0));
+                    rank++;
+                }
+            }
+
+            activity?.SetTag("honua.routing.solved", lines.Count > 0);
+            activity?.SetTag("honua.routing.lines", lines.Count);
+            return new OdCostMatrixSolveResult(lines);
+        }
+        catch (Exception ex)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            throw;
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<LocationAllocationSolveResult> SolveLocationAllocationAsync(
+        LocationAllocationSolveRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        using var activity = RoutingTelemetry.Source.StartActivity("routing.solveLocationAllocation");
+        activity?.SetTag("honua.routing.provider", ProviderName);
+        activity?.SetTag("honua.routing.facilities", request.Facilities.Count);
+        activity?.SetTag("honua.routing.demand_points", request.DemandPoints.Count);
+        activity?.SetTag("honua.routing.problem_type", request.ProblemType.ToString());
+
+        try
+        {
+            if (request.Facilities.Count == 0 || request.DemandPoints.Count == 0)
+            {
+                activity?.SetTag("honua.routing.solved", false);
+                return new LocationAllocationSolveResult([], [], 0, 0);
+            }
+
+            await using var session = await _sessionFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
+            var dataset = await ResolveDatasetAsync(cancellationToken).ConfigureAwait(false);
+            activity?.SetTag("honua.routing.dataset", dataset.Id);
+
+            var blockedEdges = await ResolveBlockedEdgesAsync(
+                session, dataset, request.Barriers, request.InSrid, cancellationToken).ConfigureAwait(false);
+            var edgesSql = ApplyBlockedEdgeFilter(OutboundEdgesSql(dataset), blockedEdges);
+
+            // Build the candidate-facility × demand-point impedance matrix:
+            // matrix[facility][demand] = network cost (PositiveInfinity when
+            // unreachable / beyond the cutoff). Demand -> facility distance equals
+            // facility -> demand over the outbound graph for a symmetric profile; we
+            // probe from each facility vertex to all demand vertices.
+            var facilityVertices = await SnapAllAsync(
+                session, dataset, request.Facilities, request.InSrid, cancellationToken).ConfigureAwait(false);
+            var demandVertices = await SnapAllAsync(
+                session, dataset, request.DemandPoints.Select(d => d.Location).ToList(), request.InSrid, cancellationToken)
+                .ConfigureAwait(false);
+
+            var matrix = new double[request.Facilities.Count][];
+            for (var f = 0; f < request.Facilities.Count; f++)
+            {
+                matrix[f] = new double[request.DemandPoints.Count];
+                Array.Fill(matrix[f], double.PositiveInfinity);
+
+                var facilityVid = facilityVertices[f].VertexId;
+                if (facilityVid is null)
+                {
+                    continue;
+                }
+
+                var demandVids = demandVertices
+                    .Where(d => d.VertexId is not null)
+                    .Select(d => d.VertexId!.Value)
+                    .Distinct()
+                    .ToArray();
+                if (demandVids.Length == 0)
+                {
+                    continue;
+                }
+
+                var costs = await OneToManyCostAsync(
+                    session, edgesSql, facilityVid.Value, demandVids, cancellationToken).ConfigureAwait(false);
+                for (var d = 0; d < request.DemandPoints.Count; d++)
+                {
+                    var demandVid = demandVertices[d].VertexId;
+                    if (demandVid is not null && costs.TryGetValue(demandVid.Value, out var cost))
+                    {
+                        matrix[f][d] = cost;
+                    }
+                }
+            }
+
+            var result = LocationAllocationSolver.Solve(request, matrix);
+            activity?.SetTag("honua.routing.solved", result.ChosenFacilityIds.Count > 0);
+            activity?.SetTag("honua.routing.chosen_facilities", result.ChosenFacilityIds.Count);
+            return result;
+        }
+        catch (Exception ex)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Snaps a list of points to their nearest graph vertices, preserving input order
+    /// (null vertex id for a point that could not be snapped).
+    /// </summary>
+    private static async Task<IReadOnlyList<(RoutePoint Point, long? VertexId)>> SnapAllAsync(
+        IDatabaseSession session,
+        NetworkDataset dataset,
+        IReadOnlyList<RoutePoint> points,
+        int inSrid,
+        CancellationToken cancellationToken)
+    {
+        var snapped = new (RoutePoint, long?)[points.Count];
+        for (var i = 0; i < points.Count; i++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var vertexId = await SnapToNearestVertexAsync(session, dataset, points[i], inSrid, cancellationToken)
+                .ConfigureAwait(false);
+            snapped[i] = (points[i], vertexId);
+        }
+
+        return snapped;
+    }
+
+    /// <summary>
+    /// Runs a one-to-many <c>pgr_dijkstraCost</c> from a single source vertex to the
+    /// supplied destination vertices over the (already barrier-filtered) edges-SQL,
+    /// returning a destination-vertex → aggregate-cost map. The edges-SQL is bound as
+    /// a parameter; the source/destination vertex ids are server-derived bound
+    /// arrays.
+    /// </summary>
+    private static async Task<IReadOnlyDictionary<long, double>> OneToManyCostAsync(
+        IDatabaseSession session,
+        string edgesSql,
+        long sourceVertex,
+        long[] destinationVertices,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT end_vid, agg_cost
+            FROM pgr_dijkstraCost(
+                @edges_sql,
+                @source, @targets, directed => true);
+            """;
+
+        var costs = new Dictionary<long, double>();
+        await foreach (var row in session.QueryAsync(
+                           sql,
+                           static row => (
+                               EndVid: row.GetFieldValue<long>(0),
+                               Cost: row.GetFieldValue<double>(1)),
+                           new Dictionary<string, object?>
+                           {
+                               ["edges_sql"] = edgesSql,
+                               ["source"] = sourceVertex,
+                               ["targets"] = destinationVertices,
+                           },
+                           cancellationToken).ConfigureAwait(false))
+        {
+            // pgr_dijkstraCost returns the minimum agg_cost per (start,end) pair.
+            costs[row.EndVid] = row.Cost;
+        }
+
+        return costs;
+    }
+
     private static async Task<long?> SnapToNearestVertexAsync(
         IDatabaseSession session,
+        NetworkDataset dataset,
         RoutePoint point,
         int inSrid,
         CancellationToken cancellationToken)
     {
-        // KNN nearest-vertex snap using the GiST <-> operator on ways_vertices_pgr.
-        // The probe point is built in the request SRID then transformed to the graph
-        // SRID (4326); when @in_srid = 4326 the transform is an identity no-op.
-        const string sql = """
+        // KNN nearest-vertex snap using the GiST <-> operator on the dataset's vertex
+        // table. The probe point is built in the request SRID then transformed to the
+        // graph SRID (4326); when @in_srid = 4326 the transform is an identity no-op.
+        // The vertex table name is a validated schema-qualified identifier (not a user
+        // value), safe to embed.
+        var sql = $"""
             SELECT id
-            FROM public.ways_vertices_pgr
+            FROM {dataset.VertexTable}
             ORDER BY the_geom <-> ST_Transform(
                 ST_SetSRID(ST_MakePoint(@lon, @lat), @in_srid), 4326)
             LIMIT 1;
@@ -370,6 +822,7 @@ internal sealed class PgRoutingProvider : IRoutingProvider
 
     private static async Task<(string GeometryGeoJson, double LengthMeters)> MergeEdgeGeometryAsync(
         IDatabaseSession session,
+        NetworkDataset dataset,
         IReadOnlyList<RouteStep> steps,
         int outSrid,
         CancellationToken cancellationToken)
@@ -380,8 +833,8 @@ internal sealed class PgRoutingProvider : IRoutingProvider
         // step's node). The geodesic length sums each oriented edge's length in
         // meters (ST_Length over geography), which stays correct across legs and
         // revisits. Ordered parallel arrays (@edge_ids, @nodes) bind as two array
-        // parameters.
-        const string sql = """
+        // parameters. The edge table name is a validated identifier.
+        var sql = $"""
             WITH steps AS (
                 SELECT e.gid, n.node, e.ord
                 FROM unnest(@edge_ids) WITH ORDINALITY AS e(gid, ord)
@@ -392,7 +845,7 @@ internal sealed class PgRoutingProvider : IRoutingProvider
                     s.ord,
                     CASE WHEN w.source = s.node THEN w.the_geom ELSE ST_Reverse(w.the_geom) END AS the_geom
                 FROM steps s
-                JOIN public.ways w ON w.gid = s.gid
+                JOIN {dataset.EdgeTable} w ON w.gid = s.gid
             )
             SELECT
                 ST_AsGeoJSON(ST_Transform(ST_MakeLine(the_geom ORDER BY ord), @out_srid)) AS geojson,
@@ -419,6 +872,7 @@ internal sealed class PgRoutingProvider : IRoutingProvider
 
     private static async Task<string> SolveServiceAreaRingAsync(
         IDatabaseSession session,
+        NetworkDataset dataset,
         long facilityVertex,
         double breakCost,
         string edgesSql,
@@ -430,12 +884,12 @@ internal sealed class PgRoutingProvider : IRoutingProvider
         // points. ST_ConcaveHull (target_percent 0.9) is used as a pragmatic MVP in
         // place of pgr_alphaShape, which is fiddly about collinear/degenerate inputs;
         // the concave hull is robust and good enough for a coverage estimate. The
-        // edges-SQL is selected by travel direction (outbound vs. reversed graph);
-        // both forms are constants, so the @edges_sql text is a bound parameter and
-        // no user value is interpolated. ST_ConcaveHull yields a non-polygon (point
-        // or line) when fewer than three non-collinear vertices are reachable; the
-        // type guard returns NULL (mapped to empty) so the caller can skip it.
-        const string sql = """
+        // edges-SQL is selected by travel direction (outbound vs. reversed graph) and
+        // bound as a parameter; the vertex table name is a validated identifier.
+        // ST_ConcaveHull yields a non-polygon (point or line) when fewer than three
+        // non-collinear vertices are reachable; the type guard returns NULL (mapped to
+        // empty) so the caller can skip it.
+        var sql = $"""
             WITH reachable AS (
                 SELECT dd.node
                 FROM pgr_drivingDistance(
@@ -445,7 +899,7 @@ internal sealed class PgRoutingProvider : IRoutingProvider
             reachable_pts AS (
                 SELECT v.the_geom
                 FROM reachable r
-                JOIN public.ways_vertices_pgr v ON v.id = r.node
+                JOIN {dataset.VertexTable} v ON v.id = r.node
             ),
             hull AS (
                 SELECT ST_ConcaveHull(ST_Collect(the_geom), 0.9) AS geom
@@ -491,6 +945,7 @@ internal sealed class PgRoutingProvider : IRoutingProvider
     /// </remarks>
     private static async Task<IReadOnlyList<long>> ResolveBlockedEdgesAsync(
         IDatabaseSession session,
+        NetworkDataset dataset,
         IReadOnlyList<RouteBarrier> barriers,
         int inSrid,
         CancellationToken cancellationToken)
@@ -514,7 +969,7 @@ internal sealed class PgRoutingProvider : IRoutingProvider
         // (4326). A point barrier (kind 0) restricts the single nearest edge (KNN
         // <-> on the GiST index); a line/polygon barrier (kind 1/2) restricts every
         // edge it intersects. DISTINCT collapses overlapping barriers.
-        const string sql = """
+        var sql = $"""
             WITH input AS (
                 SELECT
                     ST_Transform(ST_SetSRID(ST_GeomFromGeoJSON(g.geojson), @in_srid), 4326) AS geom,
@@ -527,7 +982,7 @@ internal sealed class PgRoutingProvider : IRoutingProvider
                 FROM input i
                 CROSS JOIN LATERAL (
                     SELECT w.gid
-                    FROM public.ways w
+                    FROM {dataset.EdgeTable} w
                     ORDER BY w.the_geom <-> i.geom
                     LIMIT 1
                 ) AS nearest
@@ -536,7 +991,7 @@ internal sealed class PgRoutingProvider : IRoutingProvider
             shape_blocked AS (
                 SELECT w.gid
                 FROM input i
-                JOIN public.ways w ON ST_Intersects(w.the_geom, i.geom)
+                JOIN {dataset.EdgeTable} w ON ST_Intersects(w.the_geom, i.geom)
                 WHERE i.kind <> 0
             )
             SELECT gid FROM point_blocked
@@ -562,18 +1017,14 @@ internal sealed class PgRoutingProvider : IRoutingProvider
         return gids;
     }
 
-    // Constant base edges-SQL for route solves (no barriers).
-    private const string RouteBaseEdgesSql =
-        "SELECT gid AS id, source, target, cost, reverse_cost FROM public.ways";
-
     /// <summary>
-    /// Builds the inner pgr_dijkstra edges-SQL, appending a barrier-exclusion
-    /// <c>WHERE</c> clause listing the server-derived blocked edge gids. Only
-    /// integers (formatted invariantly) are embedded; no user string ever enters
-    /// the SQL text.
+    /// Builds the inner pgr_dijkstra edges-SQL for the dataset, appending a
+    /// barrier-exclusion <c>WHERE</c> clause listing the server-derived blocked edge
+    /// gids. Only the validated edge-table identifier and integers (formatted
+    /// invariantly) are embedded; no user string ever enters the SQL text.
     /// </summary>
-    private static string BuildRouteEdgesSql(IReadOnlyList<long> blockedEdges)
-        => ApplyBlockedEdgeFilter(RouteBaseEdgesSql, blockedEdges);
+    private static string BuildRouteEdgesSql(NetworkDataset dataset, IReadOnlyList<long> blockedEdges)
+        => ApplyBlockedEdgeFilter(RouteBaseEdgesSqlFor(dataset), blockedEdges);
 
     /// <summary>
     /// Appends a <c>WHERE gid NOT IN (...)</c> exclusion of the blocked edge gids to

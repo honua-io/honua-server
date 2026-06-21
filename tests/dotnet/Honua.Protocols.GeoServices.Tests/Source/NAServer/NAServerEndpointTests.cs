@@ -369,13 +369,15 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
     [IntegrationTest]
     [Operation(Operations.ClosestFacility)]
     [Endpoint("POST /rest/services/{serviceId}/NAServer/ClosestFacility/solveClosestFacility")]
-    public async Task SolveClosestFacility_WithIncidentAndFacilityPayload_ReturnsDirections()
+    public async Task SolveClosestFacility_WithIncidentAndFacilities_ReturnsRankedRoute()
     {
         var payload = new FormUrlEncodedContent(
         [
             new KeyValuePair<string, string>("f", "json"),
             new KeyValuePair<string, string>("incidents", "-157.858333,21.306944"),
-            new KeyValuePair<string, string>("facilities", "-157.862,21.31"),
+            // Two facilities: the first is closer, so it ranks 1.
+            new KeyValuePair<string, string>("facilities", "-157.862,21.31;-158.0,21.5"),
+            new KeyValuePair<string, string>("returnDirections", "true"),
         ]);
 
         var response = await _fixture.Client.PostAsync(
@@ -384,10 +386,186 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var feature = document.RootElement.GetProperty("routes").GetProperty("features")[0];
+        feature.GetProperty("attributes").GetProperty("FacilityRank").GetInt32().Should().Be(1);
+        // Esri 1-based ids; the closer facility is index 0 -> FacilityID 1.
+        feature.GetProperty("attributes").GetProperty("FacilityID").GetInt32().Should().Be(1);
+        feature.GetProperty("attributes").GetProperty("Total_TravelTime").GetDouble().Should().BeGreaterThan(0);
         document.RootElement.GetProperty("directions").GetArrayLength().Should().BeGreaterThan(0);
-        document.RootElement.GetProperty("directions")[0]
-            .GetProperty("summary").GetProperty("routeName").GetString().Should().Be("Incident - Facility A");
-        document.RootElement.GetProperty("routes").GetProperty("features").GetArrayLength().Should().BeGreaterThan(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ClosestFacility)]
+    [Endpoint("POST /rest/services/{serviceId}/NAServer/ClosestFacility/solveClosestFacility")]
+    public async Task SolveClosestFacility_ProviderWithoutSupport_Returns400()
+    {
+        var capabilities = new RoutingProviderCapabilities(SupportsClosestFacility: false);
+        var fixture = await CreateFixtureWithCapabilitiesAsync(capabilities);
+        try
+        {
+            var payload = new FormUrlEncodedContent(
+            [
+                new KeyValuePair<string, string>("f", "json"),
+                new KeyValuePair<string, string>("incidents", "-157.858333,21.306944"),
+                new KeyValuePair<string, string>("facilities", "-157.862,21.31"),
+            ]);
+
+            var response = await fixture.Client.PostAsync(
+                "/rest/services/Routing/NAServer/ClosestFacility/solveClosestFacility",
+                payload);
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            document.RootElement.GetProperty("error").GetProperty("details").EnumerateArray()
+                .Select(d => d.GetString()).Should().Contain(d => d!.Contains("Closest-facility solves are not supported"));
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.OdCostMatrix)]
+    [Endpoint("POST /rest/services/{serviceId}/NAServer/ODCostMatrix/solveODCostMatrix")]
+    public async Task SolveOdCostMatrix_TwoByTwo_ReturnsRankedLines()
+    {
+        var payload = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("f", "json"),
+            new KeyValuePair<string, string>("origins", "-157.86,21.30;-157.80,21.40"),
+            new KeyValuePair<string, string>("destinations", "-157.85,21.31;-157.70,21.50"),
+        ]);
+
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/Routing/NAServer/ODCostMatrix/solveODCostMatrix",
+            payload);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var features = document.RootElement.GetProperty("odLines").GetProperty("features");
+        // 2 origins x 2 destinations => 4 lines.
+        features.GetArrayLength().Should().Be(4);
+        var attrs = features[0].GetProperty("attributes");
+        attrs.GetProperty("OriginID").GetInt32().Should().Be(1);
+        attrs.GetProperty("DestinationRank").GetInt32().Should().Be(1);
+        attrs.GetProperty("Total_Time").GetDouble().Should().BeGreaterThan(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.OdCostMatrix)]
+    [Endpoint("POST /rest/services/{serviceId}/NAServer/ODCostMatrix/solveODCostMatrix")]
+    public async Task SolveOdCostMatrix_ProviderWithoutSupport_Returns400()
+    {
+        var capabilities = new RoutingProviderCapabilities(SupportsOdCostMatrix: false);
+        var fixture = await CreateFixtureWithCapabilitiesAsync(capabilities);
+        try
+        {
+            var payload = new FormUrlEncodedContent(
+            [
+                new KeyValuePair<string, string>("f", "json"),
+                new KeyValuePair<string, string>("origins", "-157.86,21.30"),
+                new KeyValuePair<string, string>("destinations", "-157.85,21.31"),
+            ]);
+
+            var response = await fixture.Client.PostAsync(
+                "/rest/services/Routing/NAServer/ODCostMatrix/solveODCostMatrix",
+                payload);
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            document.RootElement.GetProperty("error").GetProperty("details").EnumerateArray()
+                .Select(d => d.GetString()).Should().Contain(d => d!.Contains("OD cost matrix solves are not supported"));
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.LocationAllocation)]
+    [Endpoint("POST /rest/services/{serviceId}/NAServer/LocationAllocation/solveLocationAllocation")]
+    public async Task SolveLocationAllocation_MinimizeImpedance_ChoosesFacilityAndAllocatesDemand()
+    {
+        var payload = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("f", "json"),
+            // Two candidate facilities; demand clusters near the first.
+            new KeyValuePair<string, string>("facilities", "-157.86,21.30;-158.20,21.80"),
+            new KeyValuePair<string, string>(
+                "demandPoints",
+                """{ "features": [ { "geometry": { "x": -157.861, "y": 21.301 }, "attributes": { "Weight": 5 } }, { "geometry": { "x": -157.859, "y": 21.299 } } ] }"""),
+            new KeyValuePair<string, string>("numberFacilitiesToFind", "1"),
+            new KeyValuePair<string, string>("problemType", "esriMFPMinimizeImpedance"),
+        ]);
+
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/Routing/NAServer/LocationAllocation/solveLocationAllocation",
+            payload);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var facilities = document.RootElement.GetProperty("facilities").GetProperty("features");
+        facilities.GetArrayLength().Should().Be(1);
+        // The closer candidate (index 0 -> FacilityID 1) is chosen.
+        facilities[0].GetProperty("attributes").GetProperty("FacilityID").GetInt32().Should().Be(1);
+
+        var demand = document.RootElement.GetProperty("demandPoints").GetProperty("features");
+        demand.GetArrayLength().Should().Be(2);
+        demand[0].GetProperty("attributes").GetProperty("FacilityID").GetInt32().Should().Be(1);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.LocationAllocation)]
+    [Endpoint("POST /rest/services/{serviceId}/NAServer/LocationAllocation/solveLocationAllocation")]
+    public async Task SolveLocationAllocation_UnsupportedProblemType_Returns400()
+    {
+        var payload = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("f", "json"),
+            new KeyValuePair<string, string>("facilities", "-157.86,21.30"),
+            new KeyValuePair<string, string>("demandPoints", "-157.861,21.301"),
+            new KeyValuePair<string, string>("problemType", "esriMFPMaximizeAttendance"),
+        ]);
+
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/Routing/NAServer/LocationAllocation/solveLocationAllocation",
+            payload);
+
+        // An unsupported problem type is rejected at parse time with a 400.
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.LocationAllocation)]
+    [Endpoint("POST /rest/services/{serviceId}/NAServer/LocationAllocation/solveLocationAllocation")]
+    public async Task SolveLocationAllocation_ProviderWithoutSupport_Returns400()
+    {
+        var capabilities = new RoutingProviderCapabilities(SupportsLocationAllocation: false);
+        var fixture = await CreateFixtureWithCapabilitiesAsync(capabilities);
+        try
+        {
+            var payload = new FormUrlEncodedContent(
+            [
+                new KeyValuePair<string, string>("f", "json"),
+                new KeyValuePair<string, string>("facilities", "-157.86,21.30"),
+                new KeyValuePair<string, string>("demandPoints", "-157.861,21.301"),
+            ]);
+
+            var response = await fixture.Client.PostAsync(
+                "/rest/services/Routing/NAServer/LocationAllocation/solveLocationAllocation",
+                payload);
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            document.RootElement.GetProperty("error").GetProperty("details").EnumerateArray()
+                .Select(d => d.GetString()).Should().Contain(d => d!.Contains("Location-allocation solves are not supported"));
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
     }
 }
 
