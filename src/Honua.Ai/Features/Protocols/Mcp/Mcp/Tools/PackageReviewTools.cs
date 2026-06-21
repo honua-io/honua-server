@@ -33,6 +33,8 @@ internal abstract class PackageReviewToolBase : IMcpTool
 
     protected abstract bool IncludePreviewPlan { get; }
 
+    protected abstract string Title { get; }
+
     protected abstract string Description { get; }
 
     public string WorkflowFamily => McpTelemetry.WorkflowFamily.Planning;
@@ -40,8 +42,13 @@ internal abstract class PackageReviewToolBase : IMcpTool
     public McpToolDescriptor Describe() => new()
     {
         Name = Name,
+        Title = Title,
         Description = Description,
-        InputSchema = McpToolSchemas.PackageReviewArgumentSchema
+        InputSchema = McpToolSchemas.PackageReviewArgumentSchema,
+        OutputSchema = McpToolOutputSchemas.PackageReviewOutputSchema,
+        // Validate/preview only inspect a package and (for preview) compute a
+        // read-only preview plan; neither mutates server state.
+        Annotations = McpToolAnnotationSets.ReadOnly(Title)
     };
 
     public async Task<McpToolsCallResult> InvokeAsync(
@@ -86,6 +93,8 @@ internal sealed class ValidatePackageTool : PackageReviewToolBase
 
     protected override bool IncludePreviewPlan => false;
 
+    protected override string Title => "Validate package";
+
     protected override string Description => "Validate any supported Honua package using the canonical package-review response shape.";
 }
 
@@ -106,6 +115,8 @@ internal sealed class PreviewPackageTool : PackageReviewToolBase
     protected override string OperationName => "PreviewPackage";
 
     protected override bool IncludePreviewPlan => true;
+
+    protected override string Title => "Preview package";
 
     protected override string Description => "Validate a package and return a read-only preview plan using the canonical package-review response shape.";
 }
