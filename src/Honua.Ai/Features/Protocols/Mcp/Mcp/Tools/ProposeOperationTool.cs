@@ -36,9 +36,16 @@ internal sealed class ProposeOperationTool : IMcpTool
     public McpToolDescriptor Describe() => new()
     {
         Name = ToolName,
+        Title = "Propose operation",
         Description = "Propose an in-scope mutating control-plane operation (admin config change, deploy, metadata release, or seed). "
             + "Returns the execution result directly when the edition permits, or a proposalId plus honua://proposals/{id} resource URI when human approval is required.",
-        InputSchema = McpToolSchemas.ProposeOperationArgumentSchema
+        InputSchema = McpToolSchemas.ProposeOperationArgumentSchema,
+        OutputSchema = McpToolOutputSchemas.ProposeOperationOutputSchema,
+        // Write tool: it routes a mutating control-plane operation through the
+        // approval gateway. Idempotent because it honors the optional
+        // idempotencyKey; not flagged destructive at the propose layer (the
+        // underlying operation class governs its own destructiveness).
+        Annotations = McpToolAnnotationSets.Write("Propose operation", destructive: false, idempotent: true)
     };
 
     public async Task<McpToolsCallResult> InvokeAsync(

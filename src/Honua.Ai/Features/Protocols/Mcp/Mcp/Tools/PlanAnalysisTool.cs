@@ -43,8 +43,11 @@ internal sealed class PlanAnalysisTool : IMcpTool
     public McpToolDescriptor Describe() => new()
     {
         Name = ToolName,
+        Title = "Plan analysis",
         Description = "Compile a natural-language intent into an executable analysis plan or canonical spec draft.",
-        InputSchema = InputSchemaElement
+        InputSchema = InputSchemaElement,
+        OutputSchema = McpToolOutputSchemas.PlanAnalysisOutputSchema,
+        Annotations = McpToolAnnotationSets.ReadOnly("Plan analysis")
     };
 
     public async Task<McpToolsCallResult> InvokeAsync(

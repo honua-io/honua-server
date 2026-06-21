@@ -42,8 +42,13 @@ internal sealed class RenderMapTool : IMcpTool
     public McpToolDescriptor Describe() => new()
     {
         Name = ToolName,
+        Title = "Render map",
         Description = "Render a map image (PNG) for one or more published layers over a bbox and return it as an inline image. Layers draw bottom-to-top. Width/height are capped at 1024 px.",
-        InputSchema = MapToolSchemas.RenderMapArgumentSchema
+        InputSchema = MapToolSchemas.RenderMapArgumentSchema,
+        // Read-only render. No OutputSchema: this tool returns an image content
+        // block, not a structuredContent payload, so there is no structured
+        // result shape to describe.
+        Annotations = McpToolAnnotationSets.ReadOnly("Render map")
     };
 
     public async Task<McpToolsCallResult> InvokeAsync(
