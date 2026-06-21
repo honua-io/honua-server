@@ -17,4 +17,10 @@ internal static partial class LivePlanAnalysisLog
         Level = LogLevel.Information,
         Message = "Live plan analysis compiled an executable plan (provider={Provider}, steps={StepCount})")]
     public static partial void Planned(ILogger logger, string provider, int stepCount);
+
+    [LoggerMessage(
+        EventId = 6661,
+        Level = LogLevel.Error,
+        Message = "Live plan analysis provider call failed; returning a structured rejection instead of failing the request")]
+    public static partial void ProviderFailed(ILogger logger, Exception exception);
 }

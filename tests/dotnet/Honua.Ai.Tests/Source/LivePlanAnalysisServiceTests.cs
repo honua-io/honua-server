@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Generic;
+using System.Net.Http;
 using FluentAssertions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.WorkflowPackages.Abstractions;
@@ -97,6 +98,60 @@ public sealed class LivePlanAnalysisServiceTests
         output.Status.Should().Be("unsupported");
         output.Plan.Should().BeNull();
         output.CapabilityState!.Name.Should().Be("spatialJoin");
+    }
+
+    [UnitTest]
+    public async Task PlanAsync_ProviderThrows_ReturnsStructuredRejectionNotCrash()
+    {
+        // The provider transport (e.g. the Anthropic Messages API) faults: a
+        // timeout, an HTTP error, or malformed JSON. The live planner must
+        // degrade to a structured 'rejected' turn rather than letting the
+        // exception escape and crash the MCP tool.
+        var service = CreateLiveService(ThrowingProvider.Instance);
+
+        var act = async () => await service.PlanAsync(BufferIntent, context: null, CancellationToken.None);
+
+        var output = await act.Should().NotThrowAsync();
+        output.Subject.Status.Should().Be("rejected");
+        output.Subject.Plan.Should().BeNull();
+        output.Subject.Reason.Should().NotBeNullOrEmpty();
+    }
+
+    [UnitTest]
+    public async Task PlanAsync_ProviderThrows_EchoesContextBackOnRejection()
+    {
+        var service = CreateLiveService(ThrowingProvider.Instance);
+        var context = McpTestFactory.ParseJson("""{"correlationId":"err-1"}""");
+
+        var output = await service.PlanAsync(BufferIntent, context, CancellationToken.None);
+
+        output.Status.Should().Be("rejected");
+        output.Context!.Value.GetProperty("correlationId").GetString().Should().Be("err-1");
+    }
+
+    [UnitTest]
+    public void ShouldUseLivePlanner_EnabledWithAnthropicDefault_IsTrue()
+    {
+        // The Anthropic-direct provider ("claude") is the preferred in-tree live
+        // provider for the server-side planner; enabling it must select the live lane.
+        var configuration = BuildConfiguration(enabled: true, defaultProvider: "claude");
+
+        AiBuilderServiceCollectionExtensions.ShouldUseLivePlanner(configuration).Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void AddAiBuilderPlanAnalysis_AnthropicConfigured_ResolvesLivePlanner()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(Substitute.For<IWorkflowGenerationService>());
+        services.AddSingleton(Substitute.For<IWorkflowNodeRegistry>());
+
+        services.AddAiBuilderPlanAnalysis(BuildConfiguration(enabled: true, defaultProvider: "claude"));
+
+        using var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<IPlanAnalysisService>()
+            .Should().BeOfType<LivePlanAnalysisService>();
     }
 
     [UnitTest]
@@ -331,5 +386,25 @@ public sealed class LivePlanAnalysisServiceTests
             UnmappedRequests = [capability],
             ProviderId = "bedrock"
         });
+    }
+
+    /// <summary>
+    /// Fake provider whose <see cref="GenerateAsync"/> throws — stands in for a
+    /// provider transport fault (Anthropic Messages API error, timeout, or
+    /// malformed response) so the live planner's graceful-degradation path runs
+    /// without any real AI call.
+    /// </summary>
+    private sealed class ThrowingProvider : IWorkflowGenerationProvider
+    {
+        public static readonly ThrowingProvider Instance = new();
+
+        public string ProviderId => "bedrock";
+
+        public bool IsConfigured => true;
+
+        public Task<WorkflowGenerationProposal> GenerateAsync(
+            WorkflowGenerationProviderRequest request,
+            CancellationToken cancellationToken = default)
+            => throw new HttpRequestException("simulated provider transport failure");
     }
 }
