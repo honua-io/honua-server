@@ -70,6 +70,7 @@ internal static class JsonContextRegistration
                 Honua.Server.Features.WorkflowPackages.WorkflowPackagesJsonContext.Default,
                 Honua.Server.Features.Operations.OperationsJsonContext.Default,
                 Honua.Server.Features.Admin.Models.AdminApiKeyJsonContext.Default,
+                Honua.Server.Features.Admin.Models.OAuthClientJsonContext.Default,
                 Honua.Server.Features.Admin.Models.SceneDatasetJsonContext.Default,
                 Honua.Server.Features.Admin.Models.SceneGenerationJsonContext.Default,
                 Honua.Protocols.Scene.Models.PublicSceneDiscoveryJsonContext.Default,

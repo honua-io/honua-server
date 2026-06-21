@@ -73,6 +73,16 @@ public static class EndpointRegistry
         new("POST", "/api/v1/admin/api-keys/{id}/rotate"),
         new("POST", "/api/v1/admin/api-keys/{id}/revoke"),
         new("GET", "/api/v1/admin/api-keys/{id}/effective-permissions"),
+
+        // OAuth2 client registry + scope catalogue (ADR-0053 Increment 2, #1888).
+        new("GET", "/api/v1/admin/oauth-clients"),
+        new("POST", "/api/v1/admin/oauth-clients"),
+        new("GET", "/api/v1/admin/oauth-clients/{id}"),
+        new("DELETE", "/api/v1/admin/oauth-clients/{id}"),
+        new("GET", "/api/v1/admin/oauth-scopes"),
+        new("PUT", "/api/v1/admin/oauth-scopes"),
+        new("DELETE", "/api/v1/admin/oauth-scopes/{scope}"),
+
         new("POST", "/oauth/token"),
         new("GET", "/api/v1/admin/openapi.json"),
         new("POST", "/api/v1/admin/openapi.json"),
