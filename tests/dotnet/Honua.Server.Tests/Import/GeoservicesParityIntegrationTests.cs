@@ -11,6 +11,8 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Migration.Abstractions;
+using Honua.Core.Features.Migration.Domain;
+using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.TestKit;
@@ -56,6 +58,32 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
     private static readonly TimeSpan _importCompletionTimeout = TimeSpan.FromMinutes(5);
 
     private static readonly JsonSerializerOptions _scorecardJsonOptions = new() { WriteIndented = true };
+
+    // Perf-parity budget the scorecard is graded against. Configurable via the
+    // HONUA_TEST_PERF_PARITY_* environment variables so CI/operators can tighten or relax the
+    // latency budget without recompiling; falls back to the GeoServices default budget (#1249).
+    private static readonly PerfParityBudget _perfParityBudget = LoadPerfParityBudget();
+
+    private static PerfParityBudget LoadPerfParityBudget()
+    {
+        var fallback = PerfParityBudget.GeoServicesDefault;
+        return fallback with
+        {
+            WarnP95RatioAtOrAbove = ReadEnvDouble("HONUA_TEST_PERF_PARITY_WARN_P95", fallback.WarnP95RatioAtOrAbove),
+            FailP95RatioAtOrAbove = ReadEnvDouble("HONUA_TEST_PERF_PARITY_FAIL_P95", fallback.FailP95RatioAtOrAbove),
+            WarnP99RatioAtOrAbove = ReadEnvDouble("HONUA_TEST_PERF_PARITY_WARN_P99", fallback.WarnP99RatioAtOrAbove),
+            FailP99RatioAtOrAbove = ReadEnvDouble("HONUA_TEST_PERF_PARITY_FAIL_P99", fallback.FailP99RatioAtOrAbove)
+        };
+    }
+
+    private static double? ReadEnvDouble(string name, double? fallback)
+    {
+        var raw = Environment.GetEnvironmentVariable(name);
+        return !string.IsNullOrWhiteSpace(raw) &&
+               double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : fallback;
+    }
 
     private static readonly ParityServiceCase[] _serviceCases =
     [
@@ -4034,6 +4062,15 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
                 sourceSnapshot.SupportsGeoJsonQuery ? null : "source layer does not advertise geojson support")
         };
 
+        // Grade the already-measured latency ratios against the configurable perf budget and
+        // embed the resulting verdict into the scorecard so the gate (and CI) can enforce it.
+        // This is the performance analogue of the correctness Checks above (issue #1249).
+        var perfParity = GeoServicesPerfParityGate.Evaluate(
+            latencyMetrics.SampleCount,
+            latencyMetrics.HonuaToSourceP95Ratio,
+            latencyMetrics.HonuaToSourceP99Ratio,
+            _perfParityBudget);
+
         _scorecardEntries.Add(new ParityScorecardEntry(
             ServiceCase: serviceCase.Name,
             SourceServiceUrl: serviceCase.ServiceUrl,
@@ -4044,7 +4081,8 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
             GeneratedAtUtc: DateTimeOffset.UtcNow,
             Checks: checks,
             LatencyMetrics: latencyMetrics,
-            TransferLimitMetrics: transferLimitMetrics));
+            TransferLimitMetrics: transferLimitMetrics,
+            PerfParity: perfParity));
     }
 
     private async Task WriteScorecardArtifactAsync()
@@ -4221,7 +4259,8 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
         DateTimeOffset GeneratedAtUtc,
         IReadOnlyList<ParityCheckResult> Checks,
         ParityLatencyMetrics LatencyMetrics,
-        ParityTransferLimitMetrics TransferLimitMetrics);
+        ParityTransferLimitMetrics TransferLimitMetrics,
+        PerfParityVerdict PerfParity);
 
     private sealed record ParityScorecardArtifact(
         DateTimeOffset GeneratedAtUtc,
