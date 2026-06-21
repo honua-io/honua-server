@@ -550,6 +550,15 @@ builder.Services.AddInMemoryControlPlaneIamDefaults();
 // role store when durable RBAC is active.
 builder.Services.AddScoped<Honua.Core.Features.Authorization.Abstractions.IPermissionResolver,
     Honua.Core.Features.Authorization.PermissionResolver>();
+// Row-level security (#502, epic #1275). In-memory policy store as the TryAdd default
+// (PostgresRlsPolicyStore wins when durable storage is active), plus the request-scoped
+// filter source that translates the caller's roles/claims + per-layer policies into the
+// parameterized predicate AND-ed into queries across every protocol.
+builder.Services.TryAddScoped<Honua.Core.Features.Authorization.Abstractions.IRlsPolicyStore,
+    Honua.Server.Features.Admin.Services.InMemoryRlsPolicyStore>();
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<Honua.Core.Features.Authorization.Abstractions.IRowLevelSecurityFilterSource,
+    Honua.Infrastructure.Authentication.RowLevelSecurityFilterSource>();
 builder.Services.AddSingleton<Honua.Infrastructure.Authentication.IAdminApiKeyStore>(sp =>
     new Honua.Infrastructure.Authentication.InMemoryAdminApiKeyStore(sp.GetService<TimeProvider>()));
 // v1 metadata-resource / manifest-approval / gitops-watch admin surface removed in #1035 cutover.
@@ -788,6 +797,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Admin.Models.OidcProviderJsonContext.Default,
         Honua.Server.Features.Admin.Models.UserManagementJsonContext.Default,
         Honua.Server.Features.Admin.Models.RoleJsonContext.Default,
+        Honua.Server.Features.Admin.Models.RlsPolicyJsonContext.Default,
         Honua.Server.Features.Admin.Models.ProposalJsonContext.Default,
         Honua.Server.Features.Console.Models.ConsoleJsonContext.Default,
         Honua.Server.Features.Console.Collaboration.Models.StudioMapCollaborationJsonContext.Default,
@@ -1306,6 +1316,7 @@ app.MapLicenseEndpoints();
 app.MapOidcProviderEndpoints();
 app.MapUserManagementEndpoints();
 app.MapRoleEndpoints();
+app.MapRlsPolicyEndpoints();
 
 // Configure Console metadata v2 content + RBAC endpoints (#1162)
 app.MapConsoleSessionEndpoints();
