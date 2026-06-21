@@ -6,7 +6,8 @@ This directory contains reproducible Docker inputs for OGC CITE and related conf
 
 - `ogc-api-features/` - OGC API Features CITE compose, config, and seed data.
 - `ogc-api-tiles/` - OGC API Tiles CITE compose, config, and seed data.
-- `wfs20/` - WFS 2.0 CITE compose and WFS-specific metadata config.
+- `wfs20/` - WFS 2.0 CITE compose and WFS-specific metadata config. Runs both the `basic` and `transactional` profiles (the transactional leg exercises the Transaction + LockFeature conformance classes).
+- `wms11/` - WMS 1.1.1 CITE compose and config (`ogccite/ets-wms11`).
 - `wms13/` - WMS 1.3 CITE compose and config.
 - `wcs20/` - WCS 2.0 CITE compose, config, and deterministic local raster seed data.
 - `wmts10/` - WMTS 1.0 CITE compose and config.

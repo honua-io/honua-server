@@ -75,6 +75,8 @@ SUITES=(
     "wfs10|WFS 1.0|cite-wfs10-results|cite-wfs10-summary.md"
     "wfs11|WFS 1.1|cite-wfs11-results|cite-wfs11-summary.md"
     "wfs20|WFS 2.0|cite-wfs20-results|cite-summary.md"
+    "wfs20-transactional|WFS 2.0 Transactional|cite-wfs20-transactional-results|cite-summary.md"
+    "wms11|WMS 1.1.1|cite-wms11-results|cite-wms11-summary.md"
     "wms13|WMS 1.3|cite-wms-results|cite-wms-summary.md"
     "wmts10|WMTS 1.0|cite-wmts-results|cite-wmts-summary.md"
     "wcs20|WCS 2.0|cite-wcs20-results|cite-wcs20-summary.md"

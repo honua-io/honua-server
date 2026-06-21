@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<values xmlns:parsers="http://www.occamlab.com/te/parsers">
+  <parsers:session>
+    <parsers:test>ets-wms11</parsers:test>
+    <parsers:profile>queryable</parsers:profile>
+  </parsers:session>
+  <value key="capabilities-url">http://honua-server:8080/rest/services/cite/MapServer/WMS?SERVICE=WMS&amp;REQUEST=GetCapabilities&amp;VERSION=1.1.1</value>
+  <value key="updatesequence">auto</value>
+  <value key="high-updatesequence"></value>
+  <value key="low-updatesequence"></value>
+  <value key="profile">queryable</value>
+  <value key="recommended">true</value>
+  <value key="getfeatureinfo">true</value>
+  <value key="feesconstraints">false</value>
+  <value key="bboxconstraints">either</value>
+</values>
