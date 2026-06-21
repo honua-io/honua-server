@@ -7,6 +7,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Tiles;
 
 namespace Honua.Protocols.GeoServices;
 
@@ -23,7 +24,8 @@ internal static class GeoServicesCloudTileCache
         ICloudFileStorage? storage,
         CloudStorageOptions? storageOptions,
         string objectKey,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ITileCacheKeyIndex? keyIndex = null)
     {
         if (storage is null || storageOptions?.Enabled == false)
         {
@@ -48,6 +50,13 @@ internal static class GeoServicesCloudTileCache
             var contentType = string.IsNullOrWhiteSpace(metadata.ContentType)
                 ? DefaultContentType
                 : metadata.ContentType;
+
+            // Cache hit: refresh the tile's last-access score so hot tiles survive LRU eviction (#1917).
+            if (keyIndex is { IsEnabled: true })
+            {
+                await keyIndex.RecordAccessAsync(objectKey, data.LongLength, cancellationToken).ConfigureAwait(false);
+            }
+
             return new Hit(data, contentType);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -68,7 +77,8 @@ internal static class GeoServicesCloudTileCache
         string contentType,
         string fileName,
         ImmutableDictionary<string, string> metadata,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ITileCacheKeyIndex? keyIndex = null)
     {
         if (storage is null || storageOptions?.Enabled == false || data.Length == 0)
         {
@@ -89,6 +99,12 @@ internal static class GeoServicesCloudTileCache
                 ObjectKeyOverride = objectKey,
                 EnableChunkedUpload = false
             }, cancellationToken).ConfigureAwait(false);
+
+            // Newly stored tile: record it in the live LRU index so the evictor can quota-manage it (#1917).
+            if (keyIndex is { IsEnabled: true })
+            {
+                await keyIndex.RecordAccessAsync(objectKey, data.LongLength, cancellationToken).ConfigureAwait(false);
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

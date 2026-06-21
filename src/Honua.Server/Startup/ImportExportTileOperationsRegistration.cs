@@ -123,6 +123,35 @@ internal static class ImportExportTileOperationsRegistration
             configuration.GetSection(TileCacheExpiryOptions.SectionName));
         services.AddHostedService<TileCacheExpiryHostedService>();
 
+        // Live size-quota / LRU tile-cache evictor (#1917). The pure LRU policy and quota options
+        // landed in #1837; this binds them to a live Redis tile-key index on the hot serve path.
+        // The Redis-backed index is registered only when both eviction is enabled (so the baseline
+        // serve path stays untouched) and a Redis multiplexer is present; otherwise a no-op index
+        // keeps the hot path allocation-free. The evictor service + scheduled sweep are always
+        // registered but no-op when the resolved index is disabled.
+        var evictionEnabled = configuration
+            .GetSection(Honua.Core.Features.Tiles.TileOptions.SectionName)
+            .GetSection("Eviction")
+            .GetValue<bool>("Enabled");
+        var redisConfigured = services.Any(d => d.ServiceType == typeof(IConnectionMultiplexer));
+        if (evictionEnabled && redisConfigured)
+        {
+            services.AddSingleton<Honua.Core.Features.Tiles.ITileCacheKeyIndex>(sp =>
+                new RedisTileCacheKeyIndex(
+                    sp.GetRequiredService<IConnectionMultiplexer>(),
+                    sp.GetRequiredService<ILogger<RedisTileCacheKeyIndex>>()));
+        }
+        else
+        {
+            services.AddSingleton<Honua.Core.Features.Tiles.ITileCacheKeyIndex>(
+                Honua.Core.Features.Tiles.NullTileCacheKeyIndex.Instance);
+        }
+
+        services.Configure<TileCacheEvictionSweepOptions>(
+            configuration.GetSection(TileCacheEvictionSweepOptions.SectionName));
+        services.AddSingleton<TileCacheEvictionService>();
+        services.AddHostedService<TileCacheEvictionHostedService>();
+
         // Batch-dispatched tile-cache / PMTiles execution jobs (issue #1697).
         // The worker-side executor is registered unconditionally so any worker host
         // can claim ExecutionJobKind.TileCache jobs; it is only invoked when the
