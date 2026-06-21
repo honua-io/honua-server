@@ -52,6 +52,22 @@ curl -X PUT "$BASE/api/v1/admin/users/$USER_ID/roles" \
 
 The list replaces the user's role set. `GET /api/v1/admin/users` lists known users (OIDC sign-ins appear after first login). Roles also flow from your IdP's token claims (`Rbac__RoleClaimType`, default `roles`) and from API-key permission labels.
 
+### 5. Restrict which rows a role can see (row-level security)
+
+RBAC grants control whether a role can query a layer; **row-level security (RLS)** narrows *which features* the query returns. An RLS policy attaches a row-visibility predicate — a layer attribute compared against the caller's claim — to a `(role, service, layer)` scope. Matching policies are AND-ed into the query `WHERE` clause server-side, pushed to PostgreSQL, and applied identically across every query protocol (GeoServices REST, OGC API Features, OData).
+
+```bash
+curl -X POST "$BASE/api/v1/admin/rls-policies" \
+  -H "X-API-Key: $HONUA_ADMIN_PASSWORD" -H "Content-Type: application/json" \
+  -d '{"role":"*","service":"*","layer":"*","attribute":"region","claimType":"region","comparison":"in"}'
+```
+
+With this policy in place, a caller whose token carries `region=west` sees only features where `region = 'west'`; a caller with `region=east` sees only `east` features. The claim value is bound as a query parameter, so it can never inject SQL. `comparison` is `in` (default — matches any of the caller's claim values) or `equals`. Use `*` wildcards on `role`/`service`/`layer` to scope broadly, or concrete names to target one layer. `GET /api/v1/admin/rls-policies` lists policies; `DELETE /api/v1/admin/rls-policies/{id}` removes one.
+
+RLS is **fail-secure**: if a matching policy exists but the caller carries no value for the referenced claim, the predicate hides every row rather than revealing them. RLS composes with (and is independent of) a layer's always-on metadata permanent filter — both are AND-ed together.
+
+RLS controls which *rows* a role sees. Restricting which *fields* (columns) a role can read — field-level masking — is tracked separately and not yet available.
+
 ## Verify
 
 ```bash
@@ -73,6 +89,7 @@ Then confirm enforcement: an anonymous `POST .../FeatureServer/0/addFeatures` ag
 | Anonymous reads broke after setting a policy | `allowAnonymous:false` (or any `allowedRoles` list without anonymous) gates reads too; set `allowAnonymous:true` to keep public reads. |
 | Roles from the IdP are ignored | The token's role claim must match `Rbac__RoleClaimType` (default `roles`); adjust the IdP claim mapping or the setting. |
 | Write allowed that you expected blocked | Check global `Rbac__DataEditorRoles` and `data-editor:{service}`-prefixed roles — both grant writes when no explicit write policy applies. |
+| RLS returns zero rows unexpectedly | The caller carries no value for the policy's `claimType` (RLS is fail-secure). Confirm the IdP emits that claim, or that the policy's `attribute`/`claimType` match the data and token. |
 
 More general failures: [Troubleshooting](../deploy/troubleshooting.md).
 
