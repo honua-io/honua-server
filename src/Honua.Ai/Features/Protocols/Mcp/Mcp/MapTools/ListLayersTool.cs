@@ -40,8 +40,11 @@ internal sealed class ListLayersTool : IMcpTool
     public McpToolDescriptor Describe() => new()
     {
         Name = ToolName,
+        Title = "List layers",
         Description = "List the published services and layers available to query or render, with geometry type, extent, and a short description. Use the returned serviceId/layerId with honua_query_features and honua_render_map.",
-        InputSchema = MapToolSchemas.ListLayersArgumentSchema
+        InputSchema = MapToolSchemas.ListLayersArgumentSchema,
+        OutputSchema = McpToolOutputSchemas.ListLayersOutputSchema,
+        Annotations = McpToolAnnotationSets.ReadOnly("List layers")
     };
 
     public async Task<McpToolsCallResult> InvokeAsync(

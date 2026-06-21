@@ -47,8 +47,11 @@ internal sealed class QueryFeaturesTool : IMcpTool
     public McpToolDescriptor Describe() => new()
     {
         Name = ToolName,
+        Title = "Query features",
         Description = "Query features from a published layer (by serviceId/layerId) with an optional attribute WHERE clause, bbox, outFields, and result limit. Returns a GeoJSON FeatureCollection.",
-        InputSchema = MapToolSchemas.QueryFeaturesArgumentSchema
+        InputSchema = MapToolSchemas.QueryFeaturesArgumentSchema,
+        OutputSchema = McpToolOutputSchemas.QueryFeaturesOutputSchema,
+        Annotations = McpToolAnnotationSets.ReadOnly("Query features")
     };
 
     public async Task<McpToolsCallResult> InvokeAsync(
