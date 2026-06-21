@@ -551,7 +551,13 @@ internal static class OgcRecordsEndpoints
                 continue;
             }
 
-            if (datetime is not null && (record.Modified is null || !datetime.Contains(record.Modified.Value)))
+            // A record with no temporal value carries no instant to test against the datetime
+            // filter. These catalog records currently always have a null Modified, so the old
+            // "drop when Modified is null" rule made every datetime query (even an open ../..)
+            // return zero results (#1988). Only exclude records whose known temporal value
+            // falls outside the requested interval; records without a temporal value are not
+            // constrained by datetime.
+            if (datetime is not null && record.Modified is not null && !datetime.Contains(record.Modified.Value))
             {
                 continue;
             }
@@ -649,13 +655,19 @@ internal static class OgcRecordsEndpoints
         }
 
         var parts = value.Split(',', StringSplitOptions.TrimEntries);
-        if (parts.Length != 4 ||
+
+        // Accept the spec-legal 6-element (3D) bbox minx,miny,minz,maxx,maxy,maxz and use the
+        // horizontal coordinates (this 2D surface ignores Z) rather than 400-ing 3D-aware
+        // OGC/ArcGIS clients (#1987). Horizontal max ordinates are at 3,4 for a 6-value box.
+        var maxXIndex = parts.Length == 6 ? 3 : 2;
+        var maxYIndex = parts.Length == 6 ? 4 : 3;
+        if ((parts.Length != 4 && parts.Length != 6) ||
             !double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var minX) ||
             !double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var minY) ||
-            !double.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var maxX) ||
-            !double.TryParse(parts[3], NumberStyles.Float, CultureInfo.InvariantCulture, out var maxY))
+            !double.TryParse(parts[maxXIndex], NumberStyles.Float, CultureInfo.InvariantCulture, out var maxX) ||
+            !double.TryParse(parts[maxYIndex], NumberStyles.Float, CultureInfo.InvariantCulture, out var maxY))
         {
-            error = "bbox must contain four comma-separated numbers: minx,miny,maxx,maxy.";
+            error = "bbox must contain four (minx,miny,maxx,maxy) or six (minx,miny,minz,maxx,maxy,maxz) comma-separated numbers.";
             return false;
         }
 
