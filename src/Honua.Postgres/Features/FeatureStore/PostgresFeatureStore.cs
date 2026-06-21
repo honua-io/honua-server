@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Honua.Core.Exceptions;
+using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
@@ -48,6 +49,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
     private readonly ObjectPool<Dictionary<string, object?>>? _dictionaryPool;
     private readonly IConnectionEncryptionService? _connectionEncryptionService;
     private readonly IFilterExpressionService? _filterExpressionService;
+    private readonly IRowLevelSecurityFilterSource? _rlsFilterSource;
     private readonly ILogger<PostgresStorageMappedFeatureReader>? _storageMappedReaderLogger;
 
     public PostgresFeatureStoreRefactored(
@@ -74,7 +76,8 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         IConnectionEncryptionService? connectionEncryptionService,
         IFilterExpressionService? filterExpressionService = null,
         IMetadataV2GraphProvider? v2Provider = null,
-        ILogger<PostgresStorageMappedFeatureReader>? storageMappedReaderLogger = null)
+        ILogger<PostgresStorageMappedFeatureReader>? storageMappedReaderLogger = null,
+        IRowLevelSecurityFilterSource? rlsFilterSource = null)
     {
         _queryBuilder = queryBuilder ?? throw new ArgumentNullException(nameof(queryBuilder));
         _dataAccess = dataAccess ?? throw new ArgumentNullException(nameof(dataAccess));
@@ -85,6 +88,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         _connectionEncryptionService = connectionEncryptionService;
         _filterExpressionService = filterExpressionService;
         _storageMappedReaderLogger = storageMappedReaderLogger;
+        _rlsFilterSource = rlsFilterSource;
     }
 
     public string ProviderName => DataProviderNames.Postgis;
@@ -911,13 +915,93 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
     }
 
     /// <summary>
-    /// Resolves the layer's metadata-v2 permanent (row-visibility) filter to a
-    /// parameterized SQL fragment, or null when the layer has no enforceable filter.
+    /// Resolves the layer's enforced (row-visibility) filter to a parameterized SQL
+    /// fragment, or null when no filter applies. Combines two independent sources with
+    /// AND so both are honored on every read surface:
+    /// <list type="bullet">
+    ///   <item>the layer's metadata-v2 <em>permanent filter</em> (server-declared,
+    ///   always-on), and</item>
+    ///   <item>the request-scoped <em>row-level security (RLS)</em> predicate (#502),
+    ///   derived from the caller's roles/claims and the layer's RLS policies.</item>
+    /// </list>
+    /// Both fragments are independently parameterized; RLS placeholders are renumbered
+    /// so the merged fragment stays positionally consistent for the provider.
     /// </summary>
-    private Task<SqlFragment?> ResolveEnforcedSqlFilterAsync(
+    private async Task<SqlFragment?> ResolveEnforcedSqlFilterAsync(
         int layerId,
         CancellationToken cancellationToken)
-        => PermanentFilterResolver.ResolveAsync(_v2Provider, _filterExpressionService, layerId, cancellationToken);
+    {
+        var permanentFilter = await PermanentFilterResolver
+            .ResolveAsync(_v2Provider, _filterExpressionService, layerId, cancellationToken)
+            .ConfigureAwait(false);
+
+        var rlsFilter = await ResolveRlsFilterAsync(layerId, cancellationToken).ConfigureAwait(false);
+
+        return CombineEnforcedFilters(permanentFilter, rlsFilter);
+    }
+
+    /// <summary>
+    /// Resolves the request-scoped RLS predicate for the layer, or null when no RLS
+    /// applies (no policy, or no request context). Best-effort metadata lookup so a
+    /// missing resource never throws here; the RLS source itself fails secure.
+    /// </summary>
+    private async Task<SqlFragment?> ResolveRlsFilterAsync(int layerId, CancellationToken cancellationToken)
+    {
+        if (_rlsFilterSource is null || _v2Provider is null)
+        {
+            return null;
+        }
+
+        var snapshot = await _v2Provider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        if (!snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out var resource))
+        {
+            return null;
+        }
+
+        return await _rlsFilterSource.ResolveAsync(resource, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// AND-combines the permanent filter and RLS fragments. Either may be null.
+    /// The RLS fragment's <c>@pN</c> placeholders are shifted past the permanent
+    /// filter's parameters so the merged parameter list lines up positionally.
+    /// </summary>
+    private static SqlFragment? CombineEnforcedFilters(SqlFragment? permanentFilter, SqlFragment? rlsFilter)
+    {
+        if (permanentFilter is null)
+        {
+            return rlsFilter;
+        }
+
+        if (rlsFilter is null)
+        {
+            return permanentFilter;
+        }
+
+        var offset = permanentFilter.Parameters.Count;
+        var shiftedRlsSql = ShiftNamedParameters(rlsFilter.Sql, offset);
+        var parameters = new List<object?>(permanentFilter.Parameters);
+        parameters.AddRange(rlsFilter.Parameters);
+        return new SqlFragment($"({permanentFilter.Sql}) AND ({shiftedRlsSql})", parameters);
+    }
+
+    private static string ShiftNamedParameters(string sql, int offset)
+    {
+        if (offset == 0)
+        {
+            return sql;
+        }
+
+        return System.Text.RegularExpressions.Regex.Replace(
+            sql,
+            @"@p(\d+)",
+            match =>
+            {
+                var index = int.Parse(match.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
+                return $"@p{index + offset}";
+            },
+            System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+    }
 
     private async Task<MetadataV2Resource> GetMetadataResourceAsync(int layerId, CancellationToken cancellationToken)
     {

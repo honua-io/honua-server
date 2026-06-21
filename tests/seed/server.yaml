@@ -98,6 +98,25 @@ sql:
           PRIMARY KEY (layer_id, field_name)
       );
   - "ALTER TABLE IF EXISTS honua.layer_fields ADD COLUMN IF NOT EXISTS hidden BOOLEAN NOT NULL DEFAULT FALSE;"
+  # Row-level security policy store (#502). Mirrors migration
+  # 065_CreateRlsPolicies.sql so the migration-skipping integration fixture has the
+  # table; PostgresRlsPolicyStore persists per-layer row-visibility policies here.
+  - |
+      CREATE TABLE IF NOT EXISTS honua.rbac_rls_policies (
+          policy_id     UUID         PRIMARY KEY,
+          role          VARCHAR(128) NOT NULL,
+          service       VARCHAR(256) NOT NULL,
+          layer         VARCHAR(256) NOT NULL,
+          attribute     VARCHAR(256) NOT NULL,
+          claim_type    VARCHAR(256) NOT NULL,
+          comparison    SMALLINT     NOT NULL DEFAULT 0,
+          description   TEXT,
+          created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+          updated_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+          CONSTRAINT rbac_rls_policies_scope_unique
+              UNIQUE (role, service, layer, attribute, claim_type)
+      );
+  - "CREATE INDEX IF NOT EXISTS idx_rbac_rls_policies_scope ON honua.rbac_rls_policies (service, layer);"
   - |
       CREATE TABLE IF NOT EXISTS honua.analysis_content_items (
           item_id            TEXT        PRIMARY KEY,
