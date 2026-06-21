@@ -348,6 +348,19 @@
       "maturity": "implemented"
     },
     {
+      "id": "delete-api-v1-admin-rls-policies-id",
+      "route": "/api/v1/admin/rls-policies/{id}",
+      "method": "DELETE",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.RowLevelSecurityEndpointsTests.RlsPolicy_FiltersFeatureServerQuery_ByCallerClaim"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
       "id": "delete-api-v1-admin-roles-id",
       "route": "/api/v1/admin/roles/{id}",
       "method": "DELETE",
@@ -653,6 +666,20 @@
         "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.DeleteStyle_Unknown_Returns404"
       ],
       "proof_ledger_surface": "ogc-api-styles",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-api-enrich-catalog",
+      "route": "/api/enrich/catalog",
+      "method": "GET",
+      "family": "Data Enrichment",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentEditionGateTests.Catalog_CommunityEdition_ReturnsPaymentRequired",
+        "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentEndpointTests.Catalog_ListsRegisteredDataset"
+      ],
+      "proof_ledger_surface": "data-enrichment",
       "maturity": "implemented"
     },
     {
@@ -2621,6 +2648,32 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.GetProposal_WhenFound_ReturnsPlanDetail",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.GetProposal_WhenMissing_ReturnsNotFound"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-api-v1-admin-rls-policies",
+      "route": "/api/v1/admin/rls-policies",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.RowLevelSecurityEndpointsTests.RlsPolicy_FiltersFeatureServerQuery_ByCallerClaim"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-api-v1-admin-rls-policies-id",
+      "route": "/api/v1/admin/rls-policies/{id}",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.RowLevelSecurityEndpointsTests.RlsPolicy_FiltersFeatureServerQuery_ByCallerClaim"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented"
@@ -7482,6 +7535,7 @@
         "Honua.Server.Tests.FeatureServerStatisticsHavingTests.QueryStatistics_WithHavingPredicate_FiltersAggregatedGroups",
         "Honua.Server.Tests.FeatureServerStatisticsHavingTests.QueryStatistics_WithoutHaving_ReturnsAllGroups",
         "Honua.Server.Tests.Features.Admin.LayerFieldConfigurationEndpointsTests.UpdateLayerFilter_WithValidPermanentFilter_PersistsAndFiltersPublicQueries",
+        "Honua.Server.Tests.Features.Admin.RowLevelSecurityEndpointsTests.RlsPolicy_FiltersFeatureServerQuery_ByCallerClaim",
         "Honua.Server.Tests.Features.CloudDemo.CloudDemoEndpointsTests.Reset_WithValidToken_SeedsFeatureServerContractAliases",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerExceptionMappingTests.Query_WhenProviderRouterReportsCapabilityMissing_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerExceptionMappingTests.Query_WhenReaderThrowsKnownInvalidQueryInvalidOperation_ReturnsBadRequest",
@@ -10277,6 +10331,21 @@
       "maturity": "implemented"
     },
     {
+      "id": "post-api-enrich",
+      "route": "/api/enrich",
+      "method": "POST",
+      "family": "Data Enrichment",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentEditionGateTests.Enrich_CommunityEdition_ReturnsPaymentRequired",
+        "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentEndpointTests.Enrich_Intersects_ReturnsSourceFeaturesWithMatchCount",
+        "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentEndpointTests.Enrich_UnknownDataset_ReturnsNotFound"
+      ],
+      "proof_ledger_surface": "data-enrichment",
+      "maturity": "implemented"
+    },
+    {
       "id": "post-api-mobile-exceptions",
       "route": "/api/mobile/exceptions",
       "method": "POST",
@@ -11927,6 +11996,20 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.RejectProposal_WithReason_MarksRejected",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.RejectProposal_WithoutReason_ReturnsBadRequest"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "post-api-v1-admin-rls-policies",
+      "route": "/api/v1/admin/rls-policies",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.RowLevelSecurityEndpointsTests.RlsPolicyEndpoints_RejectAnonymousCallers",
+        "Honua.Server.Tests.Features.Admin.RowLevelSecurityEndpointsTests.RlsPolicy_FiltersFeatureServerQuery_ByCallerClaim"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented"
