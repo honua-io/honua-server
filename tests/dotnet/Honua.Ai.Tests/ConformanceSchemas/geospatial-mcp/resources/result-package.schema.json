@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/resources/result-package.schema.json",
+  "title": "Result package resource payload",
+  "description": "Read-only projection returned for honua://results/{result_package_id} (AnalysisResultPackage). See resources.md §Result Package Resources.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["resultPackageId", "status"],
+  "properties": {
+    "resultPackageId": {
+      "type": "string",
+      "description": "Stable identifier (result_…)."
+    },
+    "status": {
+      "type": "string",
+      "description": "GeoprocessingWorkflowStatus (read-only).",
+      "enum": [
+        "Draft",
+        "AwaitingClarification",
+        "Validated",
+        "AwaitingApproval",
+        "AwaitingExecution",
+        "Running",
+        "Completed",
+        "Failed",
+        "Cancelled"
+      ]
+    },
+    "summary": {
+      "type": "object",
+      "description": "Title and description.",
+      "additionalProperties": true,
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" }
+      }
+    },
+    "assumptions": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "artifacts": {
+      "type": "array",
+      "items": { "$ref": "artifact.schema.json" }
+    },
+    "workspaceRefs": {
+      "type": "array",
+      "items": { "$ref": "workspace.schema.json" }
+    },
+    "mapPackageId": {
+      "type": "string",
+      "description": "Deferred reference to a MapPackage (map_…)."
+    },
+    "appPackageId": {
+      "type": "string",
+      "description": "Deferred reference to an AppPackage (app_…)."
+    },
+    "provenance": { "$ref": "provenance.schema.json" },
+    "errors": {
+      "type": "array",
+      "items": { "$ref": "../common/geoprocessing-error.schema.json" }
+    }
+  }
+}

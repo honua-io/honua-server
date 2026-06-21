@@ -1,0 +1,8 @@
+{
+  "id": "list_layers.filter",
+  "schemaRef": "tools/list_layers.schema.json",
+  "validates": "inputs",
+  "inputs": { "filter": "parcels" },
+  "expected": "tool_result",
+  "canonicalRefs": ["CapabilityCatalog", "LayerRef"]
+}

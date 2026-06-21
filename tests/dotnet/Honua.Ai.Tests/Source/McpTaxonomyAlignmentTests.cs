@@ -25,7 +25,7 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 /// Contract Families</c>. A rename on either side trips this test.
 /// </summary>
 [Protocol(TestProtocols.Mcp)]
-public sealed class McpTaxonomyAlignmentTests
+public sealed partial class McpTaxonomyAlignmentTests
 {
     private static readonly string[] TaxonomyToolNames =
     {
