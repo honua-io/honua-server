@@ -232,7 +232,7 @@ public sealed partial class McpTaxonomyAlignmentTests
 
         // properties.plan -> $defs.analysisPlan -> properties.steps.items
         //   -> $defs.planStep -> properties.kind -> $defs.planStepKind.enum
-        var analysisPlan = ResolveRef(root, root, "properties", "plan");
+        var analysisPlan = ResolveRef(root, root.GetProperty("properties"), "plan");
         var steps = analysisPlan.GetProperty("properties").GetProperty("steps");
         var planStep = ResolveRef(root, steps, "items");
         var kind = ResolveRef(root, planStep.GetProperty("properties"), "kind");
