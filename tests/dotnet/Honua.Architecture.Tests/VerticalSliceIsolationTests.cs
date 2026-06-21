@@ -26,6 +26,7 @@ public sealed class VerticalSliceIsolationTests
         "CloudDemo",
         "Collaboration",
         "Console",
+        "DataEnrichment", // Data-enrichment API slice (honua-server#374): curated catalog facade over the shared spatial-join pipeline.
         "Forms",
         "Geocoding",
         "Geoprocessing",

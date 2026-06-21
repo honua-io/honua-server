@@ -104,6 +104,7 @@ internal static class JsonContextRegistration
                 Honua.Server.Features.Protocols.Coverages.Multidimensional.MultidimensionalCoverageJsonContext.Default,
                 Honua.Server.Features.Protocols.Zarr.ZarrJsonContext.Default,
                 Honua.Server.Features.Protocols.SpatialAnalytics.Models.SpatialAnalyticsJsonContext.Default,
+                Honua.Server.Features.DataEnrichment.Models.EnrichmentJsonContext.Default,
                 Honua.Server.Features.Collaboration.Sessions.CollaborationSessionJsonContext.Default,
                 Honua.Server.Features.Collaboration.FeatureLocks.FeatureLockJsonContext.Default,
                 Honua.Core.Features.Authorization.Domain.OperatorAuthorizationJsonContext.Default,

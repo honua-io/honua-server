@@ -14,6 +14,7 @@ using Honua.Server.Features.Capabilities;
 using Honua.Infrastructure.Scene;
 using Honua.Alerts;
 using Honua.Server.Features.CloudDemo;
+using Honua.Server.Features.DataEnrichment;
 using Honua.Server.Features.Protocols.Cog;
 using Honua.Server.Features.Protocols.Coverages.Multidimensional;
 using Honua.Server.Features.Protocols.Zarr;
@@ -150,6 +151,7 @@ internal static class FeatureRegistrationExtensions
         services.AddMcpOperatorSurface(configuration);
         services.AddSpecGrounding();
         services.AddSpatialAnalytics();
+        services.AddDataEnrichment(configuration);
         services.AddSpec(configuration);
         services.AddEnhancedAdminServices();
         services.AddMetadataReleaseServices();
@@ -257,6 +259,7 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapPrintingToolsEndpoints();
         endpoints.MapSpatialAnalyticsRestEndpoints();
         endpoints.MapSpatialAnalyticsOgcEndpoints();
+        endpoints.MapDataEnrichmentEndpoints();
         endpoints.MapGPServerEndpoints();
         endpoints.MapAnalysisContentEndpoints();
         endpoints.MapTemporalHistoryEndpoints();

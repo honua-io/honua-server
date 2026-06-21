@@ -216,6 +216,12 @@ public static class ProtocolNames
     public const string SpatialAnalytics = "SpatialAnalytics";
 
     /// <summary>
+    /// Pro-tier data-enrichment API (#374): spatial-join enrichment over a
+    /// registered enrichment dataset catalog (boundary/POI/demographic layers).
+    /// </summary>
+    public const string DataEnrichment = "DataEnrichment";
+
+    /// <summary>
     /// GeoServices GPServer REST API (geoprocessing tasks).
     /// </summary>
     public const string GPServer = "GPServer";
