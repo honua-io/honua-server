@@ -52,6 +52,7 @@ public sealed class McpTaxonomyAlignmentTests
         "honua://proposals/{proposalId}",
         "honua://workspaces/{workspaceId}",
         "honua://catalog/processes",
+        "honua://catalog/features",
         "honua://published-services",
         "honua://published-services/{serviceId}",
         "honua://deployments",
@@ -581,6 +582,7 @@ public sealed class McpTaxonomyAlignmentTests
                 NullLogger<AnalysisReportResource>.Instance),
             new WorkspaceResource(jobService, NullLogger<WorkspaceResource>.Instance),
             new ProcessCatalogResource(jobService, NullLogger<ProcessCatalogResource>.Instance),
+            new FeatureCatalogResource(jobService, NullLogger<FeatureCatalogResource>.Instance),
             new PublishedServiceResource(
                 services, deployments, jobService,
                 NullLogger<PublishedServiceResource>.Instance),
