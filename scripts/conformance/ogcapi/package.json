@@ -1,0 +1,21 @@
+{
+  "name": "honua-ogcapi-conformance",
+  "version": "1.0.0",
+  "private": true,
+  "description": "OGC API building-block conformance validators (MVT + TMS 2.0 + Maps) for Honua Server",
+  "type": "commonjs",
+  "scripts": {
+    "mvt": "node mvt_validator.mjs",
+    "maps": "node maps_validator.mjs"
+  },
+  "license": "Elastic-2.0",
+  "dependencies": {
+    "@mapbox/vector-tile": "^3.0.0",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "pbf": "^5.1.0"
+  },
+  "optionalDependencies": {
+    "@mapbox/vtvalidate": "^0.4.0"
+  }
+}
