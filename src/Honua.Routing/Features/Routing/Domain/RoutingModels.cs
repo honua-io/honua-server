@@ -245,3 +245,312 @@ public sealed record ServiceAreaPolygon(
 /// </param>
 public sealed record ServiceAreaSolveResult(
     IReadOnlyList<ServiceAreaPolygon> Polygons);
+
+/// <summary>
+/// Direction of travel relative to a closest-facility incident/facility pair.
+/// Mirrors the Esri <c>esriNATravelDirectionToFacility</c> /
+/// <c>esriNATravelDirectionFromFacility</c> options.
+/// </summary>
+public enum ClosestFacilityTravelDirection
+{
+    /// <summary>
+    /// Cost is accumulated travelling from the incident to the facility (the
+    /// common "find the nearest facility a traveller can reach" case).
+    /// </summary>
+    ToFacility = 0,
+
+    /// <summary>
+    /// Cost is accumulated travelling from the facility to the incident (e.g. an
+    /// emergency vehicle dispatched from a facility to an incident).
+    /// </summary>
+    FromFacility = 1,
+}
+
+/// <summary>
+/// Protocol-neutral request to solve closest-facility routes: for each incident,
+/// rank the supplied facilities by network impedance and materialize the route to
+/// the closest <see cref="DefaultTargetFacilityCount"/> of them.
+/// </summary>
+/// <param name="Incidents">Incident points to find the closest facilities for.</param>
+/// <param name="Facilities">Candidate facility points to rank by impedance.</param>
+/// <param name="DefaultTargetFacilityCount">
+/// Number of closest facilities to return per incident (ranked ascending by
+/// impedance). Defaults to 1.
+/// </param>
+/// <param name="Cutoff">
+/// Optional impedance cutoff (minutes). Facilities beyond this cost are excluded.
+/// <c>null</c> applies no cutoff.
+/// </param>
+/// <param name="Direction">Direction of travel relative to the facility.</param>
+/// <param name="OutSrid">Output spatial reference (SRID/WKID). Defaults to 4326.</param>
+public sealed record ClosestFacilitySolveRequest(
+    IReadOnlyList<RoutePoint> Incidents,
+    IReadOnlyList<RoutePoint> Facilities,
+    int DefaultTargetFacilityCount = 1,
+    double? Cutoff = null,
+    ClosestFacilityTravelDirection Direction = ClosestFacilityTravelDirection.ToFacility,
+    int OutSrid = 4326)
+{
+    private readonly int? _inSrid;
+
+    /// <summary>
+    /// Spatial reference (SRID/WKID) the input incident/facility ordinates are
+    /// expressed in. Defaults to <see cref="OutSrid"/>. Used to transform inputs to
+    /// the graph SRID before snapping.
+    /// </summary>
+    public int InSrid
+    {
+        get => _inSrid ?? OutSrid;
+        init => _inSrid = value;
+    }
+
+    /// <summary>
+    /// Point/line/polygon barriers to honour. The provider excludes the graph edges
+    /// each barrier restricts before solving. Empty when no barriers are supplied.
+    /// Only barrier kinds the provider advertises ever reach the provider (the
+    /// adapter rejects unsupported kinds first).
+    /// </summary>
+    public IReadOnlyList<RouteBarrier> Barriers { get; init; } = [];
+
+    /// <summary>
+    /// Esri-style travel-mode identifier. <c>null</c> selects the provider default.
+    /// Validated against
+    /// <see cref="RoutingProviderCapabilities.SupportedTravelModes"/> by the adapter.
+    /// </summary>
+    public string? TravelMode { get; init; }
+}
+
+/// <summary>
+/// One solved closest-facility route from an incident to a ranked facility.
+/// </summary>
+/// <param name="IncidentId">Zero-based index of the incident.</param>
+/// <param name="FacilityId">Zero-based index of the chosen facility.</param>
+/// <param name="Rank">1-based rank of this facility for the incident (1 = closest).</param>
+/// <param name="RouteGeometryGeoJson">
+/// Merged route geometry as a GeoJSON <c>LineString</c> string in the request's
+/// <see cref="ClosestFacilitySolveRequest.OutSrid"/>. Empty when only ranking
+/// (no geometry) was produced.
+/// </param>
+/// <param name="TotalLengthMeters">Route length in meters.</param>
+/// <param name="TotalTimeMinutes">Route travel time (impedance) in minutes.</param>
+/// <param name="Directions">Ordered turn-by-turn steps; may be empty.</param>
+public sealed record ClosestFacilityRoute(
+    int IncidentId,
+    int FacilityId,
+    int Rank,
+    string RouteGeometryGeoJson,
+    double TotalLengthMeters,
+    double TotalTimeMinutes,
+    IReadOnlyList<RouteDirectionStep> Directions);
+
+/// <summary>
+/// Result of solving closest-facility routes.
+/// </summary>
+/// <param name="Routes">
+/// Ranked closest-facility routes, ordered by incident then ascending rank.
+/// </param>
+public sealed record ClosestFacilitySolveResult(
+    IReadOnlyList<ClosestFacilityRoute> Routes);
+
+/// <summary>
+/// Protocol-neutral request to solve an origins×destinations cost matrix. Produces
+/// an impedance value per origin/destination pair (attribute-only; no route
+/// geometry by default).
+/// </summary>
+/// <param name="Origins">Origin points (matrix rows).</param>
+/// <param name="Destinations">Destination points (matrix columns).</param>
+/// <param name="OutSrid">Output spatial reference (SRID/WKID). Defaults to 4326.</param>
+public sealed record OdCostMatrixSolveRequest(
+    IReadOnlyList<RoutePoint> Origins,
+    IReadOnlyList<RoutePoint> Destinations,
+    int OutSrid = 4326)
+{
+    private readonly int? _inSrid;
+
+    /// <summary>
+    /// Spatial reference (SRID/WKID) the input ordinates are expressed in. Defaults
+    /// to <see cref="OutSrid"/>. Used to transform inputs to the graph SRID before
+    /// snapping.
+    /// </summary>
+    public int InSrid
+    {
+        get => _inSrid ?? OutSrid;
+        init => _inSrid = value;
+    }
+
+    /// <summary>
+    /// Optional impedance cutoff (minutes). Origin/destination pairs beyond this
+    /// cost are excluded. <c>null</c> applies no cutoff.
+    /// </summary>
+    public double? Cutoff { get; init; }
+
+    /// <summary>
+    /// Optional k-nearest limit: keep only the closest <c>DestinationCount</c>
+    /// destinations per origin (ranked ascending by cost). <c>null</c> keeps all.
+    /// </summary>
+    public int? DestinationCount { get; init; }
+
+    /// <summary>
+    /// Point/line/polygon barriers to honour. Empty when none are supplied. Only
+    /// barrier kinds the provider advertises reach the provider.
+    /// </summary>
+    public IReadOnlyList<RouteBarrier> Barriers { get; init; } = [];
+
+    /// <summary>
+    /// Esri-style travel-mode identifier. <c>null</c> selects the provider default.
+    /// Validated against the provider's advertised modes by the adapter.
+    /// </summary>
+    public string? TravelMode { get; init; }
+}
+
+/// <summary>
+/// One origin→destination cell of a cost matrix.
+/// </summary>
+/// <param name="OriginId">Zero-based index of the origin.</param>
+/// <param name="DestinationId">Zero-based index of the destination.</param>
+/// <param name="DestinationRank">1-based rank of this destination for the origin (1 = closest).</param>
+/// <param name="TotalCostMinutes">Aggregate impedance (minutes) for the pair.</param>
+/// <param name="TotalLengthMeters">
+/// Aggregate length (meters) for the pair. 0 when length was not materialized
+/// (cost-only matrices estimate length lazily; the MVP returns 0).
+/// </param>
+public sealed record OdLine(
+    int OriginId,
+    int DestinationId,
+    int DestinationRank,
+    double TotalCostMinutes,
+    double TotalLengthMeters);
+
+/// <summary>
+/// Result of solving an OD cost matrix.
+/// </summary>
+/// <param name="Lines">
+/// Origin→destination cells, ordered by origin then ascending rank.
+/// </param>
+public sealed record OdCostMatrixSolveResult(
+    IReadOnlyList<OdLine> Lines);
+
+/// <summary>
+/// A demand point for a location-allocation solve: a location whose demand
+/// (weight) is allocated to the closest chosen facility within the impedance
+/// cutoff.
+/// </summary>
+/// <param name="Location">The demand-point location.</param>
+/// <param name="Weight">
+/// Demand weight (e.g. population). Defaults to 1. Used to weight the impedance
+/// objective and coverage totals.
+/// </param>
+public sealed record DemandPoint(RoutePoint Location, double Weight = 1.0);
+
+/// <summary>
+/// The location-allocation problem type. The MVP implements the two most-requested
+/// types over a precomputed cost matrix; other Esri types are gated with a 400 by
+/// the adapter.
+/// </summary>
+public enum LocationAllocationProblemType
+{
+    /// <summary>
+    /// Choose facilities to minimize the total demand-weighted impedance from each
+    /// demand point to its closest chosen facility (the p-median problem).
+    /// </summary>
+    MinimizeImpedance = 0,
+
+    /// <summary>
+    /// Choose facilities to maximize the total demand weight covered within the
+    /// impedance cutoff (the maximal-coverage problem).
+    /// </summary>
+    MaximizeCoverage = 1,
+}
+
+/// <summary>
+/// Protocol-neutral request to solve a location-allocation problem: choose
+/// <see cref="FacilitiesToFind"/> facilities from the candidate
+/// <see cref="Facilities"/> to optimize the <see cref="ProblemType"/> objective
+/// over the supplied <see cref="DemandPoints"/>.
+/// </summary>
+/// <param name="Facilities">Candidate facility locations to choose from.</param>
+/// <param name="DemandPoints">Weighted demand points to allocate.</param>
+/// <param name="ProblemType">The optimization objective.</param>
+/// <param name="FacilitiesToFind">Number of facilities to choose. Defaults to 1.</param>
+/// <param name="ImpedanceCutoff">
+/// Maximum impedance (minutes) a demand point may be from a facility to be served.
+/// Required for <see cref="LocationAllocationProblemType.MaximizeCoverage"/>;
+/// optional for minimize-impedance (demand beyond the cutoff is treated as
+/// unallocated). <c>null</c> applies no cutoff.
+/// </param>
+/// <param name="OutSrid">Output spatial reference (SRID/WKID). Defaults to 4326.</param>
+public sealed record LocationAllocationSolveRequest(
+    IReadOnlyList<RoutePoint> Facilities,
+    IReadOnlyList<DemandPoint> DemandPoints,
+    LocationAllocationProblemType ProblemType = LocationAllocationProblemType.MinimizeImpedance,
+    int FacilitiesToFind = 1,
+    double? ImpedanceCutoff = null,
+    int OutSrid = 4326)
+{
+    private readonly int? _inSrid;
+
+    /// <summary>
+    /// Spatial reference (SRID/WKID) the input ordinates are expressed in. Defaults
+    /// to <see cref="OutSrid"/>. Used to transform inputs to the graph SRID before
+    /// snapping.
+    /// </summary>
+    public int InSrid
+    {
+        get => _inSrid ?? OutSrid;
+        init => _inSrid = value;
+    }
+
+    /// <summary>
+    /// Point/line/polygon barriers to honour. Empty when none are supplied. Only
+    /// barrier kinds the provider advertises reach the provider.
+    /// </summary>
+    public IReadOnlyList<RouteBarrier> Barriers { get; init; } = [];
+
+    /// <summary>
+    /// Esri-style travel-mode identifier. <c>null</c> selects the provider default.
+    /// Validated against the provider's advertised modes by the adapter.
+    /// </summary>
+    public string? TravelMode { get; init; }
+}
+
+/// <summary>
+/// One demand point's allocation to a chosen facility in a location-allocation solve.
+/// </summary>
+/// <param name="DemandPointId">Zero-based index of the demand point.</param>
+/// <param name="AllocatedFacilityId">
+/// Zero-based index (into the request's candidate facilities) of the facility the
+/// demand point is allocated to, or <c>-1</c> when it is unallocated (no chosen
+/// facility within the cutoff).
+/// </param>
+/// <param name="Weight">The demand point's weight.</param>
+/// <param name="ImpedanceMinutes">
+/// Impedance (minutes) from the demand point to its allocated facility, or
+/// <see cref="double.PositiveInfinity"/> when unallocated.
+/// </param>
+public sealed record DemandAllocation(
+    int DemandPointId,
+    int AllocatedFacilityId,
+    double Weight,
+    double ImpedanceMinutes);
+
+/// <summary>
+/// Result of a location-allocation solve.
+/// </summary>
+/// <param name="ChosenFacilityIds">
+/// Zero-based indices (into the request's candidate facilities) of the chosen
+/// facilities, ordered by index.
+/// </param>
+/// <param name="Allocations">Per-demand-point allocations to chosen facilities.</param>
+/// <param name="TotalWeightedImpedance">
+/// Total demand-weighted impedance of all allocated demand points (the
+/// minimize-impedance objective value). 0 when no demand was allocated.
+/// </param>
+/// <param name="TotalWeightCovered">
+/// Total demand weight allocated within the cutoff (the maximize-coverage objective
+/// value).
+/// </param>
+public sealed record LocationAllocationSolveResult(
+    IReadOnlyList<int> ChosenFacilityIds,
+    IReadOnlyList<DemandAllocation> Allocations,
+    double TotalWeightedImpedance,
+    double TotalWeightCovered);

@@ -48,4 +48,52 @@ public sealed class RoutingConfiguration
     /// bounds the cost of the spatial filter (DoS guard).
     /// </summary>
     public int MaxBarriers { get; set; } = 1000;
+
+    /// <summary>
+    /// Maximum number of incidents accepted on a single closest-facility solve.
+    /// Each incident drives a one-to-many cost query plus per-result route
+    /// materialization, so this bounds total fan-out (DoS guard).
+    /// </summary>
+    public int MaxIncidents { get; set; } = 1000;
+
+    /// <summary>
+    /// Maximum number of facilities accepted on a single closest-facility solve.
+    /// Bounds the candidate set ranked per incident (DoS guard).
+    /// </summary>
+    public int MaxClosestFacilities { get; set; } = 1000;
+
+    /// <summary>
+    /// Maximum number of origins accepted on a single OD cost matrix solve. The
+    /// matrix is O(origins × destinations), so origins must be bounded (DoS guard).
+    /// </summary>
+    public int MaxOrigins { get; set; } = 1000;
+
+    /// <summary>
+    /// Maximum number of destinations accepted on a single OD cost matrix solve.
+    /// The matrix is O(origins × destinations), so destinations must be bounded
+    /// (DoS guard).
+    /// </summary>
+    public int MaxDestinations { get; set; } = 1000;
+
+    /// <summary>
+    /// Maximum number of candidate facilities accepted on a single
+    /// location-allocation solve. The candidate × demand cost matrix is
+    /// O(facilities × demand), so candidates must be bounded (DoS guard).
+    /// </summary>
+    public int MaxLocationAllocationFacilities { get; set; } = 1000;
+
+    /// <summary>
+    /// Maximum number of demand points accepted on a single location-allocation
+    /// solve (DoS guard, mirrors <see cref="MaxLocationAllocationFacilities"/>).
+    /// </summary>
+    public int MaxDemandPoints { get; set; } = 1000;
+
+    /// <summary>
+    /// Identifier of the active network dataset (Phase 0 of #1882). Selects the
+    /// registered edge/vertex topology the routing provider resolves table names
+    /// from. Defaults to <c>"default"</c>, which maps to the existing
+    /// <c>public.ways</c> / <c>public.ways_vertices_pgr</c> topology, so the default
+    /// behaviour is unchanged.
+    /// </summary>
+    public string NetworkDatasetId { get; set; } = "default";
 }

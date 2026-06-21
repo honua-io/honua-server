@@ -1139,6 +1139,8 @@ public static class EndpointRegistry
         new("POST", "/rest/services/{serviceId}/NAServer/Route/solve"),
         new("POST", "/rest/services/{serviceId}/NAServer/ServiceArea/solveServiceArea"),
         new("POST", "/rest/services/{serviceId}/NAServer/ClosestFacility/solveClosestFacility"),
+        new("POST", "/rest/services/{serviceId}/NAServer/ODCostMatrix/solveODCostMatrix"),
+        new("POST", "/rest/services/{serviceId}/NAServer/LocationAllocation/solveLocationAllocation"),
 
         new("GET", "/ogc/maps"),
         new("GET", "/ogc/maps/conformance"),

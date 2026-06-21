@@ -53,4 +53,31 @@ internal sealed class UnavailableRoutingProvider : IRoutingProvider
         ArgumentNullException.ThrowIfNull(request);
         return Task.FromResult(new ServiceAreaSolveResult([]));
     }
+
+    /// <inheritdoc />
+    public Task<ClosestFacilitySolveResult> SolveClosestFacilityAsync(
+        ClosestFacilitySolveRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return Task.FromResult(new ClosestFacilitySolveResult([]));
+    }
+
+    /// <inheritdoc />
+    public Task<OdCostMatrixSolveResult> SolveOdCostMatrixAsync(
+        OdCostMatrixSolveRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return Task.FromResult(new OdCostMatrixSolveResult([]));
+    }
+
+    /// <inheritdoc />
+    public Task<LocationAllocationSolveResult> SolveLocationAllocationAsync(
+        LocationAllocationSolveRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return Task.FromResult(new LocationAllocationSolveResult([], [], 0, 0));
+    }
 }
