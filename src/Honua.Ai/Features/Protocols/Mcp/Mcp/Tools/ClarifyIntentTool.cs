@@ -44,8 +44,11 @@ internal sealed class ClarifyIntentTool : IMcpTool
     public McpToolDescriptor Describe() => new()
     {
         Name = ToolName,
+        Title = "Clarify intent",
         Description = "Continue a grounding pass with operator clarification answers; returns an updated draft intent and (if ambiguity remains) another clarification envelope.",
-        InputSchema = InputSchemaElement
+        InputSchema = InputSchemaElement,
+        OutputSchema = McpToolOutputSchemas.GroundingOutputSchema,
+        Annotations = McpToolAnnotationSets.ReadOnly("Clarify intent")
     };
 
     public async Task<McpToolsCallResult> InvokeAsync(

@@ -41,6 +41,9 @@ internal abstract class NotImplementedToolBase : IMcpTool, IStubMcpTool
     /// </summary>
     protected abstract OperatorOperation AuthorizedOperation { get; }
 
+    /// <summary>Human-readable display title advertised in the tool annotations.</summary>
+    protected abstract string Title { get; }
+
     protected abstract string Description { get; }
 
     protected abstract string BlockedBy { get; }
@@ -52,8 +55,14 @@ internal abstract class NotImplementedToolBase : IMcpTool, IStubMcpTool
     public McpToolDescriptor Describe() => new()
     {
         Name = Name,
+        Title = Title,
         Description = Description,
-        InputSchema = McpToolSchemas.EmptyObjectSchema
+        InputSchema = McpToolSchemas.EmptyObjectSchema,
+        // Contract-first stubs do not yet perform any side effect, so they are
+        // advertised read-only until the backing service ships. The structured
+        // result is the not_implemented envelope.
+        OutputSchema = McpToolOutputSchemas.NotImplementedOutputSchema,
+        Annotations = McpToolAnnotationSets.ReadOnly(Title)
     };
 
     public async Task<McpToolsCallResult> InvokeAsync(

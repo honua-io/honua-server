@@ -187,6 +187,214 @@ public sealed class McpTaxonomyAlignmentTests
         }
     }
 
+    // -------------------------------------------------------------------
+    // Tool annotations (#1953): every tool must advertise read/write hints
+    // -------------------------------------------------------------------
+
+    /// <summary>
+    /// Read-only tools per the geospatial-mcp taxonomy: planning, grounding,
+    /// validation, and map read tools never mutate server state. (The
+    /// package-review tools are read-only too but are constructed separately in
+    /// <c>PackageReviewTools_AreReadOnly_WithOutputSchemas</c> because they take
+    /// extra service dependencies that <see cref="BuildTools"/> does not wire.)
+    /// </summary>
+    private static readonly HashSet<string> ReadOnlyToolNames = new(StringComparer.Ordinal)
+    {
+        "honua_validate_plan",
+        "honua_dry_run_plan",
+        "honua_plan_analysis",
+        "honua_ground_candidates",
+        "honua_clarify_intent",
+        "honua_geocode_address",
+        "honua_solve_route",
+        "honua_list_layers",
+        "honua_query_features",
+        "honua_render_map",
+    };
+
+    /// <summary>
+    /// Write tools and their expected destructive/idempotent classification.
+    /// </summary>
+    private static readonly Dictionary<string, (bool Destructive, bool Idempotent)> WriteToolExpectations =
+        new(StringComparer.Ordinal)
+        {
+            ["honua_execute_plan"] = (Destructive: false, Idempotent: true),
+            ["honua_cancel_job"] = (Destructive: true, Idempotent: true),
+            ["honua_propose_operation"] = (Destructive: false, Idempotent: true),
+        };
+
+    [UnitTest]
+    public void EveryTool_AdvertisesAnnotations_WithTitle()
+    {
+        // Guard test: a NEW tool added without annotations (or without a title)
+        // fails here, forcing the author to classify it read-only vs write.
+        var tools = BuildTools();
+
+        foreach (var tool in tools)
+        {
+            var descriptor = tool.Describe();
+            descriptor.Annotations.Should().NotBeNull(
+                $"tool '{tool.Name}' must advertise MCP tool annotations (#1953)");
+            descriptor.Annotations!.ReadOnlyHint.Should().NotBeNull(
+                $"tool '{tool.Name}' must classify itself read-only vs write");
+            descriptor.Annotations.Title.Should().NotBeNullOrWhiteSpace(
+                $"tool '{tool.Name}' must carry a human-readable annotation title");
+            descriptor.Title.Should().NotBeNullOrWhiteSpace(
+                $"tool '{tool.Name}' must carry a top-level display title");
+        }
+    }
+
+    [UnitTest]
+    public void EveryTool_IsClassifiedInTheExpectedRosters()
+    {
+        // The read-only roster and write roster together must cover every tool;
+        // a tool missing from both rosters fails here so the test stays a
+        // complete guard against an unclassified new tool.
+        var toolNames = BuildTools().Select(t => t.Name).ToHashSet(StringComparer.Ordinal);
+        var classified = new HashSet<string>(ReadOnlyToolNames, StringComparer.Ordinal);
+        classified.UnionWith(WriteToolExpectations.Keys);
+
+        toolNames.Should().BeEquivalentTo(classified,
+            "every tool must appear in exactly one of the read-only or write rosters");
+    }
+
+    [UnitTest]
+    public void ReadOnlyTools_FlagReadOnlyAndNonDestructive()
+    {
+        var tools = BuildTools().Where(t => ReadOnlyToolNames.Contains(t.Name));
+
+        foreach (var tool in tools)
+        {
+            var annotations = tool.Describe().Annotations!;
+            annotations.ReadOnlyHint.Should().BeTrue($"'{tool.Name}' is a read-only tool");
+            annotations.DestructiveHint.Should().BeFalse($"'{tool.Name}' must not be flagged destructive");
+        }
+    }
+
+    [UnitTest]
+    public void WriteTools_AreFlaggedWrite_WithCorrectDestructiveAndIdempotentHints()
+    {
+        var tools = BuildTools().Where(t => WriteToolExpectations.ContainsKey(t.Name));
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var tool in tools)
+        {
+            var annotations = tool.Describe().Annotations!;
+            var (destructive, idempotent) = WriteToolExpectations[tool.Name];
+
+            annotations.ReadOnlyHint.Should().BeFalse($"'{tool.Name}' is a write tool");
+            annotations.DestructiveHint.Should().Be(destructive, $"'{tool.Name}' destructiveHint");
+            annotations.IdempotentHint.Should().Be(idempotent, $"'{tool.Name}' idempotentHint");
+            seen.Add(tool.Name);
+        }
+
+        seen.Should().BeEquivalentTo(WriteToolExpectations.Keys,
+            "every classified write tool must be present in the roster");
+    }
+
+    [UnitTest]
+    public void ExecutePlan_IsFlaggedWriteIdempotentNonDestructive()
+    {
+        var jobService = Substitute.For<IGeoprocessingJobService>();
+        var annotations = new ExecutePlanTool(jobService, NullLogger<ExecutePlanTool>.Instance)
+            .Describe().Annotations!;
+
+        annotations.ReadOnlyHint.Should().BeFalse();
+        annotations.IdempotentHint.Should().BeTrue("execute honors the idempotencyKey");
+        annotations.DestructiveHint.Should().BeFalse("execute creates a new job rather than destroying state");
+    }
+
+    [UnitTest]
+    public void CancelJob_IsFlaggedWriteIdempotentDestructive()
+    {
+        var jobService = Substitute.For<IGeoprocessingJobService>();
+        var annotations = new CancelJobTool(jobService, NullLogger<CancelJobTool>.Instance)
+            .Describe().Annotations!;
+
+        annotations.ReadOnlyHint.Should().BeFalse();
+        annotations.IdempotentHint.Should().BeTrue("cancelling an already-cancelled job is a no-op");
+        annotations.DestructiveHint.Should().BeTrue("cancel tears down in-flight execution");
+    }
+
+    [UnitTest]
+    public void PackageReviewTools_AreReadOnly_WithOutputSchemas()
+    {
+        // validate_package / preview_package only inspect a package (preview also
+        // computes a read-only preview plan); neither mutates server state.
+        var reviewService = Substitute.For<Honua.Core.Features.PackageReview.Abstractions.IPackageReviewService>();
+        var jobService = Substitute.For<IGeoprocessingJobService>();
+
+        IMcpTool[] packageTools =
+        [
+            new ValidatePackageTool(reviewService, jobService, NullLogger<ValidatePackageTool>.Instance),
+            new PreviewPackageTool(reviewService, jobService, NullLogger<PreviewPackageTool>.Instance),
+        ];
+
+        foreach (var tool in packageTools)
+        {
+            var descriptor = tool.Describe();
+            descriptor.Title.Should().NotBeNullOrWhiteSpace();
+            descriptor.Annotations.Should().NotBeNull();
+            descriptor.Annotations!.ReadOnlyHint.Should().BeTrue($"'{tool.Name}' is read-only");
+            descriptor.Annotations.DestructiveHint.Should().BeFalse();
+            descriptor.OutputSchema.Should().NotBeNull($"'{tool.Name}' must publish an output schema");
+            descriptor.OutputSchema!.Value.GetProperty("type").GetString().Should().Be("object");
+        }
+    }
+
+    // -------------------------------------------------------------------
+    // Output schemas (#1953): structuredContent schema per tool result
+    // -------------------------------------------------------------------
+
+    [UnitTest]
+    public void StructuredTools_AdvertiseWellFormedOutputSchemas()
+    {
+        // honua_render_map returns an image content block, not structuredContent,
+        // so it legitimately carries no output schema; every other tool must.
+        var tools = BuildTools().Where(t => t.Name != "honua_render_map");
+
+        foreach (var tool in tools)
+        {
+            var descriptor = tool.Describe();
+            descriptor.OutputSchema.Should().NotBeNull(
+                $"tool '{tool.Name}' must publish a structuredContent output schema (#1953)");
+
+            var schema = descriptor.OutputSchema!.Value;
+            schema.ValueKind.Should().Be(JsonValueKind.Object,
+                $"'{tool.Name}' output schema must be a JSON-schema object");
+            schema.GetProperty("type").GetString().Should().Be("object",
+                $"'{tool.Name}' output schema root must be of type object");
+            schema.TryGetProperty("properties", out var properties).Should().BeTrue(
+                $"'{tool.Name}' output schema must declare properties");
+            properties.ValueKind.Should().Be(JsonValueKind.Object);
+            properties.EnumerateObject().Should().NotBeEmpty(
+                $"'{tool.Name}' output schema must describe at least one property");
+        }
+    }
+
+    [UnitTest]
+    public void RenderMap_HasNoOutputSchema_BecauseItReturnsAnImageBlock()
+    {
+        var jobService = Substitute.For<IGeoprocessingJobService>();
+        var descriptor = new Honua.Ai.Protocols.Mcp.MapTools.RenderMapTool(
+                jobService, NullLogger<Honua.Ai.Protocols.Mcp.MapTools.RenderMapTool>.Instance)
+            .Describe();
+
+        descriptor.OutputSchema.Should().BeNull();
+        descriptor.Annotations!.ReadOnlyHint.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void DryRunOutputSchema_ArtifactEnum_MatchesArtifactKind()
+    {
+        // Like the input schemas, the dry-run output schema sources its artifact
+        // enum from the canonical ArtifactKind so the contract cannot drift.
+        var enumValues = ExtractEnumValues(McpToolOutputSchemas.DryRunOutputSchema,
+            "properties", "estimatedArtifacts", "items", "enum");
+
+        enumValues.Should().BeEquivalentTo(Enum.GetNames<ArtifactKind>());
+    }
+
     [UnitTest]
     public void PlanSchema_StepKindEnum_MatchesAnalysisPlanStepKind()
     {

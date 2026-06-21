@@ -34,8 +34,11 @@ internal sealed class DryRunPlanTool : IMcpTool
     public McpToolDescriptor Describe() => new()
     {
         Name = ToolName,
+        Title = "Dry-run plan",
         Description = "Estimate duration, artifact kinds, and side effects for a plan without executing it.",
-        InputSchema = McpToolSchemas.PlanArgumentSchema
+        InputSchema = McpToolSchemas.PlanArgumentSchema,
+        OutputSchema = McpToolOutputSchemas.DryRunOutputSchema,
+        Annotations = McpToolAnnotationSets.ReadOnly("Dry-run plan")
     };
 
     public async Task<McpToolsCallResult> InvokeAsync(
