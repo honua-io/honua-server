@@ -1,0 +1,84 @@
+name: Cloud-Native-Geospatial Conformance
+
+on:
+  # Tier: nightly — external validators + a full server image build are
+  # heavyweight. Run on schedule and manual dispatch only, mirroring the CITE
+  # suites. See docs/internal/ci/gate-model.md.
+  schedule:
+    # Weekly, offset from the CITE suites (Mon/Tue) to spread runner load.
+    - cron: '0 6 * * 3'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: cng-conformance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cng:
+    name: CNG Conformance
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Set up Go (gpq / go-pmtiles)
+        uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+
+      - name: Set up Node.js (3d-tiles-validator)
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+
+      - name: Install validator toolchain
+        run: |
+          set -euo pipefail
+          # GeoParquet + PMTiles validators (Go).
+          go install github.com/planetlabs/gpq@latest
+          go install github.com/protomaps/go-pmtiles@latest
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          # FlatGeobuf read-back (GDAL ogrinfo).
+          sudo apt-get update -qq
+          sudo apt-get install -y gdal-bin curl jq
+          # 3D Tiles validator (chains the Khronos glTF validator).
+          npm install -g 3d-tiles-validator
+
+      - name: Run CNG conformance lane
+        id: run
+        env:
+          HONUA_CNG_SKIP_BUILD: 'false'
+          HONUA_CNG_CLEANUP: 'true'
+        run: |
+          set +e
+          bash ./scripts/conformance/cng/run-cng-conformance.sh
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Upload CNG results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: cng-conformance-results-${{ github.run_number }}
+          path: |
+            cng-results/
+          retention-days: 30
+
+      - name: Fail on conformance issues
+        if: steps.run.outputs.exit_code != '0'
+        run: |
+          echo "CNG conformance lane reported validator failures."
+          echo "Review cng-results/cng-summary.md and the per-validator logs."
+          exit 1

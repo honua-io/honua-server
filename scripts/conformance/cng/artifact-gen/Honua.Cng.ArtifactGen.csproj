@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Standalone artifact generator for the Cloud-Native-Geospatial (CNG)
+    conformance lane. It is intentionally NOT part of Honua.sln: it is a build-
+    on-demand helper that drives honua's own cloud-native writers
+    (PMTilesWriter, GeometryTileBuilder, TilesetDocumentWriter) to emit the
+    PMTiles archive and 3D Tiles tileset+GLB artifacts that the lane then runs
+    through the canonical first-party validators (`pmtiles verify`,
+    `3d-tiles-validator` + `gltf_validator`). GeoParquet and FlatGeobuf are
+    fetched from the live FeatureServer query endpoint instead, so they do not
+    need this generator.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>preview</LangVersion>
+    <!-- This is a throwaway conformance helper, not shipped server code: keep it
+         out of the strict server analyzer / docs / warnings-as-errors gate. -->
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <EnableNETAnalyzers>false</EnableNETAnalyzers>
+    <IsPackable>false</IsPackable>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\..\src\Honua.Core\Honua.Core.csproj" />
+    <ProjectReference Include="..\..\..\..\src\Honua.Scene\Honua.Scene.csproj" />
+    <ProjectReference Include="..\..\..\..\src\Honua.Hosting\Honua.Hosting.csproj" />
+  </ItemGroup>
+
+</Project>
