@@ -3,12 +3,14 @@
 
 using System.IO.Compression;
 using Honua.Core.Features.Infrastructure.Monitoring;
+using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Observability.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Compression;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.ResponseCompression;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Infrastructure.Monitoring;
@@ -79,6 +81,15 @@ internal static class ObservabilityServiceCollectionExtensions
                 policy.AddPolicy<RouteTagOutputCachePolicy>();
                 policy.AddPolicy<AnonymousOnlyOutputCachePolicy>();
                 policy.VaryByValue(static context => ResolveTenantOutputCacheKey(context));
+                // Metadata responses (service directory, capabilities, collections, STAC,
+                // tiles, styles) are filtered by the process-wide license edition and
+                // entitlements, but the cache key otherwise only varies by route + tenant +
+                // f/Accept. Without an edition fingerprint, anonymous metadata requests that
+                // differ only by license tier collide for the TTL — a cross-tier (and, in
+                // multi-tenant-per-process deployments, cross-tenant) disclosure and the
+                // root cause of the service-directory cache flake (#1983). Add a license
+                // fingerprint so tiers never share a cache entry.
+                policy.VaryByValue(static context => ResolveLicenseOutputCacheKey(context));
             });
 
             // Service metadata caching policy
@@ -559,6 +570,34 @@ internal static class ObservabilityServiceCollectionExtensions
 
     private static KeyValuePair<string, string> ResolveTenantOutputCacheKey(HttpContext context)
         => new("tenant", TenantScopeHelpers.ResolveRequestTenantId(context) ?? "<none>");
+
+    /// <summary>
+    /// Resolves a license fingerprint (edition + validation state) for the output
+    /// cache vary-by so license-tier-filtered metadata responses never share a cache
+    /// entry across editions (#1983). Falls back to a stable sentinel when the license
+    /// provider is unavailable so caching still functions in minimal hosts.
+    /// </summary>
+    private static KeyValuePair<string, string> ResolveLicenseOutputCacheKey(HttpContext context)
+    {
+        var provider = context.RequestServices.GetService<ILicenseStatusProvider>();
+        if (provider is null)
+        {
+            return new KeyValuePair<string, string>("license", "<none>");
+        }
+
+        try
+        {
+            var status = provider.GetCurrentStatus();
+            return new KeyValuePair<string, string>(
+                "license",
+                $"{status.Edition}:{status.ValidationState}:{(status.IsValid ? "1" : "0")}");
+        }
+        catch
+        {
+            // Never let cache-key resolution fault a request; degrade to a sentinel.
+            return new KeyValuePair<string, string>("license", "<unknown>");
+        }
+    }
 
     // Configure response compression for GeoJSON and JSON responses
     private static void ConfigureResponseCompression(IServiceCollection services)
