@@ -307,10 +307,8 @@ internal static partial class WmsRequestHandlers
         sb.Append("<msGMLOutput xmlns:gml=\"http://www.opengis.net/gml\" ")
             .AppendLine("xmlns:xlink=\"http://www.w3.org/1999/xlink\">");
 
-        var featureIndex = 0;
         foreach (var feature in features)
         {
-            featureIndex++;
             var layerElement = ToGmlElementName(feature.Layer);
             sb.Append("  <").Append(layerElement).Append("_layer>").AppendLine();
             sb.Append("    <").Append(layerElement).Append("_feature>").AppendLine();
