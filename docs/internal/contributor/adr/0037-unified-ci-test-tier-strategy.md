@@ -171,6 +171,32 @@ shared-harness / shared-query-pipeline / `Honua.sln` / new-unmapped-module diff
 routes correctly (run_all for the cross-cutting ones, smoke shard for sln-only).
 This guard runs as the `ci-router-validation` job on every PR.
 
+**Coverage invariant (#1899).** Routing (`paths`) decides *which shards run*;
+each shard then runs `dotnet test <csproj> --filter <filter>`, so a test class
+only executes if some shard targeting its assembly has a `filter` that matches
+its fully-qualified name. A class matched by *no* shard filter therefore never
+runs — not even on `run_all`, which just selects every shard while each shard
+still applies its own filter. #1899 found ~218 such orphaned classes (whole
+namespaces: `Features.Admin`/`Console`/`Alerts`, GeoServices
+`VectorTileServer`/`VersionManagementServer`, the `GeometryService` namespace
+whose owning shard targeted the wrong assembly, several OData classes outside
+the class-name-keyed OData filters, `Features.Providers.Bedrock`, the merged
+SensorThings module, etc.). The fix: convert class-name-keyed filters to
+namespace-prefix form where they were the gap (OData Core, Migration), add
+catch-all shards (`Server Features Misc` for any `Features.*` namespace not
+owned by a specific shard; `GeoServices Geometry VectorTile and Versioning` as
+the GeoServices-assembly catch-all), add `Server Features Admin and Console`
+and a `SensorThings` shard, and route `Features.Providers` to the AI shard. The
+anti-regression guard is `scripts/ci/check-server-test-shard-coverage.py`: it
+enumerates every test class across the server-test assemblies, evaluates each
+shard's `filter` (the `dotnet test --filter` mini-grammar) **per target
+assembly**, and fails CI if any class is claimed by zero shards. It runs inside
+`scripts/ci/validate-ci-router.sh` (the `ci-router-validation` job), so a new
+test class in an unmapped namespace fails the PR instead of silently never
+running. A tiny, justified exemption list covers namespaces deliberately routed
+to a non-PR lane (currently `Honua.Server.Tests.Scale`, the `Category=Scale`
+nightly stack).
+
 The `targeted-shards` job then projects the selected shard names into a
 `matrix_include` JSON array by joining against the rich shard records in
 `.github/ci-shards.json` (each record carries `shard_name`,
