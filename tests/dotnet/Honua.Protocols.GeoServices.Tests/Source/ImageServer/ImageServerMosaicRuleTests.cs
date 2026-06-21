@@ -87,10 +87,27 @@ public class ImageServerMosaicRuleTests
 
     [UnitTest]
     [Operation(Operations.Export)]
-    public void TryParse_NadirMethod_StaysUnsupported()
+    public void TryParse_NadirMethod_ResolvesToNadirOrdering()
     {
         var ok = ImageServerMosaicRule.TryParse(
             "{\"mosaicMethod\":\"esriMosaicNadir\"}",
+            out var rule, out var error, out var notImplemented);
+
+        ok.Should().BeTrue();
+        error.Should().BeEmpty();
+        notImplemented.Should().BeFalse();
+        rule.Method.Should().Be(MosaicMethod.Nadir);
+        rule.ToOrdering().Should().Be(RasterMosaicOrdering.Nadir);
+        // Nadir ranks by sensor off-nadir angle in the store, not by an allowlisted attribute sort.
+        rule.ToAttributeSort().Should().BeNull();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public void TryParse_CenterMethod_StaysUnsupported()
+    {
+        var ok = ImageServerMosaicRule.TryParse(
+            "{\"mosaicMethod\":\"esriMosaicCenter\"}",
             out var rule, out _, out _);
 
         ok.Should().BeTrue();
