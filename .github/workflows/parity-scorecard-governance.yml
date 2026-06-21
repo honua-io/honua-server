@@ -8,8 +8,12 @@ on:
     paths:
       - 'tests/dotnet/Honua.Server.Tests/Import/GeoservicesParityIntegrationTests.cs'
       - 'tests/dotnet/Honua.Server.Tests/Import/parity-scorecard-baseline.json'
+      - 'tests/dotnet/Honua.Server.Tests/Import/parity-perf-budget.json'
       - 'scripts/ci/check-parity-scorecard-regression.sh'
       - 'scripts/ci/check-parity-scorecard-baseline-sync.sh'
+      - 'scripts/ci/check-parity-perf-budget.sh'
+      - 'scripts/ci/fixtures/parity-perf-scorecard-pass.json'
+      - 'scripts/ci/fixtures/parity-perf-scorecard-fail.json'
       - '.github/workflows/geoservices-parity-nightly.yml'
       - '.github/workflows/parity-scorecard-governance.yml'
   workflow_dispatch:
@@ -39,3 +43,19 @@ jobs:
       - name: Verify parity baseline sync
         run: |
           bash scripts/ci/check-parity-scorecard-baseline-sync.sh
+
+      - name: Smoke test perf-parity gate (pass fixture)
+        run: |
+          bash scripts/ci/check-parity-perf-budget.sh \
+            scripts/ci/fixtures/parity-perf-scorecard-pass.json \
+            tests/dotnet/Honua.Server.Tests/Import/parity-perf-budget.json
+
+      - name: Smoke test perf-parity gate (fail fixture must be rejected)
+        run: |
+          if bash scripts/ci/check-parity-perf-budget.sh \
+               scripts/ci/fixtures/parity-perf-scorecard-fail.json \
+               tests/dotnet/Honua.Server.Tests/Import/parity-perf-budget.json; then
+            echo "::error::Perf-parity gate accepted a regressing scorecard; the gate is not enforcing the budget." >&2
+            exit 1
+          fi
+          echo "Perf-parity gate correctly rejected the regressing fixture."
