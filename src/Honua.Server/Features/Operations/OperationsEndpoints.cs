@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Security.Claims;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Authorization.Domain;
@@ -123,9 +124,16 @@ internal static class OperationsEndpoints
 
         try
         {
+            // Surface the caller's identity AND role(s) into the policy decision point so a
+            // tier/role-aware engine (Phase 4) can decide per descriptor blast-radius. The
+            // Community pass-through default ignores them. Tier is left unset here until the
+            // tenant-tier resolver lands (deferred — see PR notes).
             var policyContext = new OperationPolicyContext
             {
-                PrincipalId = context.User.Identity?.Name
+                PrincipalId = context.User.Identity?.Name,
+                Roles = context.User.FindAll(ClaimTypes.Role)
+                    .Select(claim => claim.Value)
+                    .ToArray()
             };
 
             var handle = await invoker
