@@ -974,24 +974,19 @@ internal sealed partial class FeatureServerQueryHandler(
                     return await CreateCachedBytesResultAsync(payload, "application/geobuf");
                 }
 
-                // PARQUET/ARROW are encoded-export formats with no dedicated block;
-                // without this guard, an unsupported store falls through to the
-                // generic formatter and throws, which surfaced as an HTTP 500 that
-                // leaked a .NET stack trace. Return the same clean 400 as FGB/GEOBUF
-                // when the store cannot emit encoded output (bug hunt).
-                if ((isParquet || isArrow) &&
-                    !await _queryExecutor.SupportsFlatGeobufOutputAsync(
-                        queryLayer.Service,
-                        queryLayer.Resource,
-                        queryLayer.Publication,
-                        queryLayer.StorageLayerId,
-                        cancellationToken).ConfigureAwait(false))
-                {
-                    return StandardErrorHelpers.CreateBadRequest(
-                        context,
-                        "Unsupported output format",
-                        [$"Output format '{format}' is not supported by the configured feature store."]);
-                }
+                // PARQUET/ARROW are encoded entirely in managed code from the
+                // materialized QueryResult<Feature> (GeoParquetFeatureWriter /
+                // GeoArrow formatter), NOT by a store-native encoder — so unlike
+                // FGB/GEOBUF they do not depend on the resolved store implementing
+                // IFlatGeobufFeatureStore. Every IFeatureReader can materialize
+                // features (QueryWithValidationAsync below), so gating parquet/arrow
+                // on the FlatGeobuf marker incorrectly returned HTTP 400 for the
+                // entire source-backed (provider-routed) FeatureServer surface,
+                // whose storage-mapped reader omits that marker even though the
+                // underlying PostGIS table fully supports GeoParquet export.
+                // The earlier 500-leak this guard protected against was the generic
+                // formatter throwing on a non-materializing store; parquet/arrow do
+                // not hit that path, so no marker check is required here.
 
                 string[]? outFields;
                 if (string.IsNullOrEmpty(validatedParams.OutFields))

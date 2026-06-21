@@ -255,6 +255,7 @@ cite-wcs20-results/
 cite-wms-results/
 cite-wmts-results/
 ogc-maps-results/
+cng-results/
 .tmp-cite/
 client-compat-results/
 # Deferred local scaffolding for issue #320 (not shipping in this PR)
