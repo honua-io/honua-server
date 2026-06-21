@@ -339,6 +339,51 @@
       ]
     },
     {
+      "surfaceId": "rls-policy-admin",
+      "displayName": "Row-level security policy admin API",
+      "surfaceKind": "http-route-family",
+      "protocol": "Admin API",
+      "canonicalIdentifier": "/api/v1/admin/rls-policies/**",
+      "parentSurfaceId": "control-plane-admin",
+      "endpointPrefixes": [
+        "/api/v1/admin/rls-policies"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus RowLevelSecurityEndpointsTests integration tests assert RLS policy create/list/get/delete, admin authorization, and that a restricted role's query is filtered to its permitted rows while injection-style claim values stay parameterized.",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "src/Honua.Server/Features/Admin/RlsPolicyEndpoints.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Admin/RowLevelSecurityEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#502",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "scenario-depth",
+          "proofMechanism": "Row-level security predicates are resolved per-request from the caller's roles/claims and AND-ed into the canonical enforced WHERE clause; integration tests prove a restricted role sees only permitted rows and that claim values are bound as parameters (no SQL injection).",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "src/Honua.Hosting/Features/Authentication/RowLevelSecurityFilterSource.cs",
+            "src/Honua.Postgres/Features/FeatureStore/PostgresFeatureStore.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Admin/RowLevelSecurityEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#502",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
       "surfaceId": "console-workflow-packages",
       "displayName": "Console workflow package and node registry API",
       "surfaceKind": "http-route-family",
