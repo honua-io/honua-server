@@ -107,6 +107,13 @@ internal static class McpServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpResource, WorkspaceResource>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpResource, ProcessCatalogResource>());
 
+        // honua://catalog/features (#1946, ADR-0054): the evidence-based feature
+        // catalog. Registered in the default composition (unlike the promotion
+        // resources) because it serves a static, embedded, drift-gated artifact —
+        // it has no runtime persistence dependency and cannot advertise an empty
+        // or stale surface.
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpResource, FeatureCatalogResource>());
+
         // Only advertise the report resource when the host has actually wired
         // IAnalysisReportService. AddAnalysisReporting is the canonical
         // registrar and is gated on Reporting:Enabled; checking for the

@@ -451,7 +451,8 @@ jobs:
                 upload_operator_eval_report,
                 upload_odata_evidence,
                 filter,
-                csproj: (.csproj // "")
+                csproj: (.csproj // ""),
+                advisory: (.advisory // false)
               })
           ' .github/ci-shards.json)
           if [ "$(printf '%s' "${matrix_include}" | jq 'length')" = "0" ]; then
@@ -780,6 +781,14 @@ jobs:
     runs-on: ubuntu-latest
     needs: [build, changes, targeted-shards]
     timeout-minutes: ${{ matrix.timeout_minutes }}
+    # Advisory shards (matrix.advisory == true in .github/ci-shards.json) RUN and
+    # publish results but do NOT gate the merge queue: continue-on-error makes the
+    # job conclusion `success` even when the test step fails, so CI Gate's
+    # contains(needs.*.result, 'failure') aggregation stays green. Used to keep a
+    # newly-running coverage shard visible while its rotted tests are repaired
+    # (the #1899/#1964 Features.* orphan buckets; tracked in #1965) instead of
+    # blocking unrelated PRs. Delete the shard's `advisory` field to re-block it.
+    continue-on-error: ${{ matrix.advisory == true }}
     strategy:
       fail-fast: false
       matrix:

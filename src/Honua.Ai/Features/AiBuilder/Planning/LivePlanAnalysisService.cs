@@ -58,9 +58,33 @@ internal sealed class LivePlanAnalysisService : IPlanAnalysisService
     {
         using var activity = HonuaTelemetry.ActivitySource.StartActivity("honua.planner.live");
 
-        var result = await _generationService
-            .GenerateAsync(new WorkflowGenerationRequest { Prompt = intent }, cancellationToken)
-            .ConfigureAwait(false);
+        WorkflowGenerationResult result;
+        try
+        {
+            result = await _generationService
+                .GenerateAsync(new WorkflowGenerationRequest { Prompt = intent }, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Caller-driven cancellation is not a planner failure; let it surface.
+            throw;
+        }
+        catch (Exception exception)
+        {
+            // A provider transport/parse failure (e.g. the Anthropic Messages API
+            // returning an error, a timeout, or malformed JSON) must not crash the
+            // MCP tool. Surface it as a structured rejection so the SDK/console can
+            // present it like any other non-success planner turn.
+            LivePlanAnalysisLog.ProviderFailed(_logger, exception);
+            activity?.SetTag("planner.status", "error");
+            return new McpPlanAnalysisOutput
+            {
+                Status = "rejected",
+                Reason = "The live planner provider failed to compile the intent into a plan.",
+                Context = context
+            };
+        }
 
         activity?.SetTag("planner.provider", result.Provider);
         activity?.SetTag("planner.status", result.Status.ToString());
