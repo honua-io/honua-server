@@ -121,6 +121,7 @@ jobs:
             type=raw,value=nightly-aot
             type=raw,value=nightly-aot-{{date 'YYYYMMDD'}}
             type=sha,prefix=nightly-aot-
+            type=raw,value=trunk-aot
           flavor: |
             suffix=-${{ matrix.arch }}
 
@@ -321,6 +322,7 @@ jobs:
             type=raw,value=nightly
             type=raw,value=nightly-{{date 'YYYYMMDD'}}
             type=sha,prefix=nightly-
+            type=raw,value=trunk
           flavor: |
             suffix=-${{ matrix.arch }}
 
@@ -384,6 +386,7 @@ jobs:
             type=raw,value=nightly-aot
             type=raw,value=nightly-aot-{{date 'YYYYMMDD'}}
             type=sha,prefix=nightly-aot-
+            type=raw,value=trunk-aot
 
       - name: Create and push multi-arch manifests
         env:
@@ -432,6 +435,7 @@ jobs:
             type=raw,value=nightly
             type=raw,value=nightly-{{date 'YYYYMMDD'}}
             type=sha,prefix=nightly-
+            type=raw,value=trunk
 
       - name: Create and push multi-arch manifests
         env:
