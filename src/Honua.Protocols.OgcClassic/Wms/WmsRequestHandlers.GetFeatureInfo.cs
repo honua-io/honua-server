@@ -129,7 +129,7 @@ internal static partial class WmsRequestHandlers
 
         if (!TryNormalizeFeatureInfoFormat(GetQueryValue(query, "INFO_FORMAT"), out var infoFormat))
         {
-            return CreateWmsServiceException(context, "InvalidFormat", "Unsupported INFO_FORMAT. Supported values are text/plain and application/json.");
+            return CreateWmsServiceException(context, "InvalidFormat", "Unsupported INFO_FORMAT. Supported values are text/plain, application/vnd.ogc.gml, and application/json.");
         }
 
         var filterResult = TryParseWmsLayerFilters(context, query, mapLayers);
@@ -172,6 +172,7 @@ internal static partial class WmsRequestHandlers
 
         var plainText = new StringBuilder();
         var jsonFeatures = new List<WmsFeatureInfoFeature>();
+        var gmlFeatures = new List<WmsFeatureInfoFeature>();
 
         foreach (var layer in queryLayers)
         {
@@ -245,6 +246,16 @@ internal static partial class WmsRequestHandlers
                     continue;
                 }
 
+                if (string.Equals(infoFormat, GmlFeatureInfoMimeType, StringComparison.OrdinalIgnoreCase))
+                {
+                    gmlFeatures.Add(new WmsFeatureInfoFeature
+                    {
+                        Layer = layerName,
+                        Attributes = attributes
+                    });
+                    continue;
+                }
+
                 plainText.Append("Layer=").Append(layerName).AppendLine();
                 foreach (var attribute in attributes.OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase))
                 {
@@ -268,9 +279,96 @@ internal static partial class WmsRequestHandlers
             return Results.Json(payload, OgcClassicJsonContext.Default.WmsFeatureInfoResponse, contentType: JsonMimeType);
         }
 
+        if (string.Equals(infoFormat, GmlFeatureInfoMimeType, StringComparison.OrdinalIgnoreCase))
+        {
+            var gml = BuildWmsGmlFeatureInfo(gmlFeatures);
+            return Results.Content(gml, GmlFeatureInfoMimeType, Encoding.UTF8, StatusCodes.Status200OK);
+        }
+
         var body = plainText.Length > 0
             ? plainText.ToString().TrimEnd()
             : "No features found.";
         return Results.Content(body, PlainTextMimeType, Encoding.UTF8, StatusCodes.Status200OK);
+    }
+
+    /// <summary>
+    /// Builds a WMS GetFeatureInfo GML response (INFO_FORMAT
+    /// <c>application/vnd.ogc.gml</c>). Emits an OGC FeatureInfoResponse wrapping
+    /// one element per identified feature with its visible attributes as child
+    /// elements. This mirrors the MapServer/GeoServer <c>msGMLOutput</c> shape the
+    /// WMS 1.1.1 GML FeatureInfo conformance class (ets-wms11
+    /// <c>wms:wms-getfeatureinfo</c>) expects: a well-formed XML document whose
+    /// content type matches the advertised GML format.
+    /// </summary>
+    private static string BuildWmsGmlFeatureInfo(IReadOnlyList<WmsFeatureInfoFeature> features)
+    {
+        var sb = new StringBuilder(512);
+        sb.AppendLine("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
+        sb.Append("<msGMLOutput xmlns:gml=\"http://www.opengis.net/gml\" ")
+            .AppendLine("xmlns:xlink=\"http://www.w3.org/1999/xlink\">");
+
+        foreach (var feature in features)
+        {
+            var layerElement = ToGmlElementName(feature.Layer);
+            sb.Append("  <").Append(layerElement).Append("_layer>").AppendLine();
+            sb.Append("    <").Append(layerElement).Append("_feature>").AppendLine();
+            sb.Append("      <gml:name>")
+                .Append(EscapeXml(feature.Layer))
+                .AppendLine("</gml:name>");
+
+            foreach (var attribute in feature.Attributes.OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase))
+            {
+                var element = ToGmlElementName(attribute.Key);
+                sb.Append("      <")
+                    .Append(element)
+                    .Append('>')
+                    .Append(EscapeXml(FormatFeatureInfoValue(attribute.Value)))
+                    .Append("</")
+                    .Append(element)
+                    .AppendLine(">");
+            }
+
+            sb.Append("    </").Append(layerElement).Append("_feature>").AppendLine();
+            sb.Append("  </").Append(layerElement).Append("_layer>").AppendLine();
+        }
+
+        sb.AppendLine("</msGMLOutput>");
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Normalizes an arbitrary layer/attribute name into a safe XML element
+    /// NCName: strips a namespace prefix, replaces non name-char runs with '_',
+    /// and prefixes a leading non-letter so the result is always a valid element
+    /// name. Falls back to <c>field</c> when nothing usable remains.
+    /// </summary>
+    private static string ToGmlElementName(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return "field";
+        }
+
+        var colon = name.LastIndexOf(':');
+        var local = colon >= 0 && colon < name.Length - 1 ? name[(colon + 1)..] : name;
+
+        var sb = new StringBuilder(local.Length);
+        foreach (var ch in local)
+        {
+            sb.Append(char.IsLetterOrDigit(ch) || ch == '_' || ch == '-' || ch == '.' ? ch : '_');
+        }
+
+        var candidate = sb.ToString().Trim('_');
+        if (candidate.Length == 0)
+        {
+            return "field";
+        }
+
+        if (!char.IsLetter(candidate[0]) && candidate[0] != '_')
+        {
+            candidate = "_" + candidate;
+        }
+
+        return candidate;
     }
 }

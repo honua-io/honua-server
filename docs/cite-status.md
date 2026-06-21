@@ -44,7 +44,19 @@ failed, 0 skipped, 0 CantTell.
 | WMTS 1.0 | `default` | 60 / 60 | 100% | 2026-05-17 |
 
 The WFS 2.0 explicit transactional slice is tracked separately and passes
-25 / 25 with 0 failed and 0 skipped as of the same run.
+25 / 25 with 0 failed and 0 skipped as of the same run. It is now promoted into
+the weekly `CITE Evidence Report` as a dedicated leg
+(`cite-wfs20-transactional-results`) alongside the `basic` leg, so the
+Transaction + LockFeature conformance classes are measured every run.
+
+**Newly wired (pending first evidence run):** WMS 1.1.1 (`ets-wms11`,
+`default` profile) is now wired end-to-end — `docker/cite/wms11/`,
+`scripts/conformance/cite/run-cite-wms11-tests.sh`, the weekly
+`cite-wms11-conformance.yml` dispatcher, and the `CITE Evidence Report` master
+list. The first scheduled run will populate its row here. Honua already serves
+and version-negotiates WMS 1.1.1 (1.1.1 axis order, `WMT_MS_Capabilities`,
+`application/vnd.ogc.se_xml` exceptions, `X`/`Y` GetFeatureInfo, and — added
+with this wiring — `application/vnd.ogc.gml` GML FeatureInfo).
 
 ### Common Re-Grading Mistakes To Avoid
 
