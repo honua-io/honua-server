@@ -291,6 +291,60 @@ public sealed class PostgresFixture : IAsyncLifetime
             cancellationToken);
     }
 
+    /// <summary>
+    /// Runs the full embedded DbUp migration set against <paramref name="schemaName"/> while holding
+    /// the shared <see cref="Seeding.SeedRunner.SeedApplicationLockKey"/> advisory lock, retrying on a
+    /// transient <c>40P01</c>/<c>40001</c>.
+    /// </summary>
+    /// <remarks>
+    /// honua-server#1568 follow-up: <c>001_CreateHonuaSchema.sql</c> runs <c>CREATE SCHEMA IF NOT
+    /// EXISTS honua; CREATE TABLE honua.services/layers ...</c> against the literal, process-global
+    /// <c>honua</c> schema, which the per-test <c>search_path</c> isolation does NOT scope. Tests that
+    /// run the embedded migration set directly via <c>DeployChanges...PerformUpgrade()</c> must take
+    /// this same advisory lock; otherwise they are non-participants that race every locked seeder's
+    /// <c>ACCESS EXCLUSIVE</c> catalog/table locks on the same global <c>honua.*</c> objects and
+    /// deadlock the parallel <c>[Collection("Database")]</c> run. The original #1568 fix routed
+    /// <c>DatabaseMigrationTests</c> and the raw <c>.sql</c> seeds through the lock but left the
+    /// <c>BranchVersioning*</c> upgrades unguarded — this helper closes that gap.
+    /// </remarks>
+    /// <param name="schemaName">Isolated schema to deploy into (also the journal/search-path schema).</param>
+    /// <param name="connectionString">Base connection string; its <c>SearchPath</c> is set to the schema.</param>
+    /// <param name="migrationsAssembly">Assembly whose embedded <c>.sql</c> scripts are deployed.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The DbUp upgrade result.</returns>
+    public async Task<DbUp.Engine.DatabaseUpgradeResult> RunEmbeddedMigrationsUnderLockAsync(
+        string schemaName,
+        string connectionString,
+        System.Reflection.Assembly migrationsAssembly,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(schemaName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
+        ArgumentNullException.ThrowIfNull(migrationsAssembly);
+
+        var connectionStringBuilder = new NpgsqlConnectionStringBuilder(connectionString)
+        {
+            SearchPath = $"{schemaName},public",
+        };
+
+        DbUp.Engine.DatabaseUpgradeResult result = null!;
+        await RunUnderSchemaMutationLockAsync(
+            () =>
+            {
+                var upgrader = DbUp.DeployChanges.To
+                    .PostgresqlDatabase(connectionStringBuilder.ToString(), schemaName)
+                    .JournalToPostgresqlTable(schemaName, "schema_versions")
+                    .WithScriptsEmbeddedInAssembly(migrationsAssembly)
+                    .WithTransaction()
+                    .Build();
+                result = upgrader.PerformUpgrade();
+                return Task.CompletedTask;
+            },
+            cancellationToken).ConfigureAwait(false);
+
+        return result;
+    }
+
     private static async Task ExecuteAdvisoryLockCommandAsync(NpgsqlConnection connection, string sql, CancellationToken cancellationToken)
     {
         await using var cmd = connection.CreateCommand();

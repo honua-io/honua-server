@@ -3,7 +3,6 @@
 
 using System.Collections.Immutable;
 using System.Reflection;
-using DbUp;
 using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Postgres.Features.FeatureStore;
@@ -51,17 +50,16 @@ public sealed class BranchVersioningIntegrationTests : IAsyncLifetime
         // Apply the full embedded migration set into the isolated schema so features + the honua.*
         // versioning tables (gdb_versions, version_edits, feature_changes, sync_generation) and their
         // triggers all exist exactly as production runs them.
-        var connectionStringBuilder = new NpgsqlConnectionStringBuilder(_fixture.ConnectionString)
-        {
-            SearchPath = $"{_schema},public"
-        };
-        var upgrader = DeployChanges.To
-            .PostgresqlDatabase(connectionStringBuilder.ToString(), _schema)
-            .JournalToPostgresqlTable(_schema, "schema_versions")
-            .WithScriptsEmbeddedInAssembly(Assembly.GetAssembly(typeof(Program))!)
-            .WithTransaction()
-            .Build();
-        var result = upgrader.PerformUpgrade();
+        //
+        // honua-server#1568 follow-up: 001_CreateHonuaSchema.sql mutates the literal, process-global
+        // honua schema (CREATE SCHEMA IF NOT EXISTS honua; CREATE TABLE honua.services/layers ...),
+        // which per-test search_path isolation does NOT scope. Running this upgrade unlocked made it a
+        // non-participant that raced every locked seeder's ACCESS EXCLUSIVE catalog locks on the same
+        // global honua.* objects and deadlocked the parallel [Collection("Database")] run (40P01).
+        // Route it through the shared seed advisory lock like the seeders.
+        var result = await _fixture.RunEmbeddedMigrationsUnderLockAsync(
+            _schema,
+            Assembly.GetAssembly(typeof(Program))!);
         result.Successful.Should().BeTrue(result.Error?.ToString());
 
         // Register the test layer so the feature store resolves its SRID (4326) and stamps written
