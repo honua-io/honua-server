@@ -36,7 +36,28 @@ These workflows are merge-blocking for all PRs to trunk:
 | `ci.yml` | PR template compliance (gates every downstream job via `pr-template-check` → `pr-readiness`), CI router validation, build, .NET foundation tests, targeted server-test shards, architecture gate, JavaScript typecheck, baseline Postgres compatibility | None (always runs); expensive lanes require `ci/full`, schedule, or manual dispatch |
 | `openapi-contract-governance.yml` | OpenAPI spec stability | `src/**/api-specs/**`, `*.openapi.*` |
 | `control-plane-sdk-governance.yml` | Control plane SDK governance | SDK/control-plane paths |
-| `parity-scorecard-governance.yml` | Parity baseline stability | Parity/baseline asset paths |
+| `parity-scorecard-governance.yml` | Parity baseline stability + perf-parity gate smoke test (pass/fail fixtures) | Parity/baseline/perf-budget asset paths |
+
+### Parity gates: correctness and performance
+
+The migration-reconciliation parity suite (`GeoservicesParityIntegrationTests`) emits a scorecard that
+carries two independent gate lanes per sampled operation:
+
+- **Correctness gate** — the `Checks[]` array (query/geometry/statistics/error-shape parity, etc.) is
+  gated by `scripts/ci/check-parity-scorecard-regression.sh` against
+  `tests/dotnet/Honua.Server.Tests/Import/parity-scorecard-baseline.json` (any `pass`→`fail` flips the
+  gate).
+- **Performance gate (issue #1249)** — the suite already measures Honua-vs-source p95/p99 latency
+  ratios; `GeoServicesPerfParityGate` (in `Honua.Core`) grades those ratios against a configurable
+  `PerfParityBudget` and embeds a Pass/Warn/Fail `PerfParity` verdict into each scorecard case.
+  `scripts/ci/check-parity-perf-budget.sh` enforces that verdict (and re-derives it from the raw
+  ratios) against `tests/dotnet/Honua.Server.Tests/Import/parity-perf-budget.json`, failing the gate
+  when latency regresses past the fail budget (default: p95 ≥ 2.0×, p99 ≥ 2.5× the source). Thresholds
+  are configurable via the budget JSON, the `HONUA_PERF_PARITY_*` env vars (CI), or the
+  `HONUA_TEST_PERF_PARITY_*` env vars (the integration suite). The gating logic, verdict emission, and
+  scorecard shape are covered offline by `GeoServicesPerfParityGateTests` and smoke-tested on every PR
+  via pass/fail fixtures under `scripts/ci/fixtures/`; the live latency measurement runs in
+  `geoservices-parity-nightly.yml` (on-demand).
 
 ## Nightly Lane
 
@@ -53,7 +74,7 @@ These workflows run on schedule and can be dispatched manually:
 | `cite-kml22-conformance.yml` | Fri 3am UTC | OGC KML 2.2 CITE conformance |
 | `cite-gml32-conformance.yml` | Sat 6am UTC | OGC GML 3.2 CITE conformance |
 | `cite-gpkg12-conformance.yml` | Sat 3am UTC | OGC GeoPackage 1.2 CITE conformance |
-| `geoservices-parity-nightly.yml` | On-demand (`workflow_dispatch`) | External GeoServices parity vs live Esri services (deterministic parity stays in Parity Scorecard Governance) |
+| `geoservices-parity-nightly.yml` | On-demand (`workflow_dispatch`) | External GeoServices parity vs live Esri services: runs the correctness regression gate **and** the perf-parity latency gate (issue #1249) over the freshly measured scorecard (deterministic parity stays in Parity Scorecard Governance) |
 | `cross-server-consume-nightly.yml` | Daily 7:00am UTC | Honua-as-client WMS/WFS/WMTS reads against GeoServer and MapServer reference containers |
 | `windows-client-compat-nightly.yml` | Daily 7:15am UTC | Full CERT-\* matrix certification (18 test cases × 4 protocol lanes) with `.cert.json` envelopes + reusable evidence pack |
 | `pyqgis-client-compat-nightly.yml` | Daily 7:30am UTC | PyQGIS desktop client compatibility (OGC Features + WFS) with per-protocol `.cert.json` envelopes |
