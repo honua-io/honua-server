@@ -44,4 +44,44 @@ public interface IRoutingProvider
     Task<ServiceAreaSolveResult> SolveServiceAreaAsync(
         ServiceAreaSolveRequest request,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Solve closest-facility routes: for each incident, rank the supplied
+    /// facilities by network impedance and materialize the route to the closest
+    /// ones. Implementations that do not support this advertise
+    /// <see cref="RoutingProviderCapabilities.SupportsClosestFacility"/> as
+    /// <c>false</c>; the adapter then short-circuits with a 400 before calling this.
+    /// </summary>
+    /// <param name="request">The closest-facility solve request.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The ranked closest-facility routes.</returns>
+    Task<ClosestFacilitySolveResult> SolveClosestFacilityAsync(
+        ClosestFacilitySolveRequest request,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Solve an origins×destinations cost matrix (attribute-only impedance, no
+    /// route geometry). Implementations that do not support this advertise
+    /// <see cref="RoutingProviderCapabilities.SupportsOdCostMatrix"/> as <c>false</c>.
+    /// </summary>
+    /// <param name="request">The OD cost matrix solve request.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The cost matrix lines.</returns>
+    Task<OdCostMatrixSolveResult> SolveOdCostMatrixAsync(
+        OdCostMatrixSolveRequest request,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Solve a location-allocation problem: choose facilities from candidates to
+    /// optimize the requested objective over weighted demand points. Implementations
+    /// that do not support this advertise
+    /// <see cref="RoutingProviderCapabilities.SupportsLocationAllocation"/> as
+    /// <c>false</c>.
+    /// </summary>
+    /// <param name="request">The location-allocation solve request.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The chosen facilities and demand allocations.</returns>
+    Task<LocationAllocationSolveResult> SolveLocationAllocationAsync(
+        LocationAllocationSolveRequest request,
+        CancellationToken cancellationToken = default);
 }

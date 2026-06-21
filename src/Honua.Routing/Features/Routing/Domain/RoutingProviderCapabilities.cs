@@ -14,9 +14,22 @@ namespace Honua.Routing.Features.Routing.Domain;
 /// <param name="SupportsServiceArea">
 /// Whether the provider can solve service-area (isochrone) polygons.
 /// </param>
+/// <param name="SupportsClosestFacility">
+/// Whether the provider can solve closest-facility routes (rank facilities by
+/// network impedance per incident).
+/// </param>
+/// <param name="SupportsOdCostMatrix">
+/// Whether the provider can solve an origins×destinations cost matrix.
+/// </param>
+/// <param name="SupportsLocationAllocation">
+/// Whether the provider can solve location-allocation problems over a cost matrix.
+/// </param>
 public sealed record RoutingProviderCapabilities(
     bool SupportsRoute = true,
-    bool SupportsServiceArea = true)
+    bool SupportsServiceArea = true,
+    bool SupportsClosestFacility = false,
+    bool SupportsOdCostMatrix = false,
+    bool SupportsLocationAllocation = false)
 {
     /// <summary>
     /// Service-area travel directions the provider honors. An empty set means the
@@ -56,4 +69,12 @@ public sealed record RoutingProviderCapabilities(
     /// from <see cref="SupportedTravelModes"/>.
     /// </summary>
     public bool SupportsTravelModes => SupportedTravelModes.Count > 0;
+
+    /// <summary>
+    /// Location-allocation problem types the provider can solve. Empty when
+    /// <see cref="SupportsLocationAllocation"/> is <c>false</c>. The NAServer adapter
+    /// rejects any requested problem type not in this set with a 400 rather than
+    /// silently substituting a different objective.
+    /// </summary>
+    public IReadOnlyList<LocationAllocationProblemType> SupportedLocationAllocationProblemTypes { get; init; } = [];
 }

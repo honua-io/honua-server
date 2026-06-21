@@ -46,6 +46,41 @@ public sealed class RoutingConfigurationValidator : IValidateOptions<RoutingConf
             errors.Add("Routing:MaxBarriers must be greater than 0.");
         }
 
+        if (options.MaxIncidents <= 0)
+        {
+            errors.Add("Routing:MaxIncidents must be greater than 0.");
+        }
+
+        if (options.MaxClosestFacilities <= 0)
+        {
+            errors.Add("Routing:MaxClosestFacilities must be greater than 0.");
+        }
+
+        if (options.MaxOrigins <= 0)
+        {
+            errors.Add("Routing:MaxOrigins must be greater than 0.");
+        }
+
+        if (options.MaxDestinations <= 0)
+        {
+            errors.Add("Routing:MaxDestinations must be greater than 0.");
+        }
+
+        if (options.MaxLocationAllocationFacilities <= 0)
+        {
+            errors.Add("Routing:MaxLocationAllocationFacilities must be greater than 0.");
+        }
+
+        if (options.MaxDemandPoints <= 0)
+        {
+            errors.Add("Routing:MaxDemandPoints must be greater than 0.");
+        }
+
+        if (string.IsNullOrWhiteSpace(options.NetworkDatasetId))
+        {
+            errors.Add("Routing:NetworkDatasetId is required.");
+        }
+
         return errors.Count == 0
             ? ValidateOptionsResult.Success
             : ValidateOptionsResult.Fail(errors);

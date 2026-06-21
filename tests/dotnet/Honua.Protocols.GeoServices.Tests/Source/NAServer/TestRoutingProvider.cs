@@ -28,7 +28,12 @@ internal sealed class TestRoutingProvider : IRoutingProvider
     /// adapter's accept/validate/thread surface be exercised end-to-end.
     /// </summary>
     public TestRoutingProvider()
-        : this(new RoutingProviderCapabilities
+        : this(new RoutingProviderCapabilities(
+            SupportsRoute: true,
+            SupportsServiceArea: true,
+            SupportsClosestFacility: true,
+            SupportsOdCostMatrix: true,
+            SupportsLocationAllocation: true)
         {
             SupportedBarrierKinds =
             [
@@ -37,6 +42,11 @@ internal sealed class TestRoutingProvider : IRoutingProvider
                 RouteBarrierKind.Polygon,
             ],
             SupportedTravelModes = ["driving", "walking"],
+            SupportedLocationAllocationProblemTypes =
+            [
+                LocationAllocationProblemType.MinimizeImpedance,
+                LocationAllocationProblemType.MaximizeCoverage,
+            ],
         })
     {
     }
@@ -107,6 +117,189 @@ internal sealed class TestRoutingProvider : IRoutingProvider
         }
 
         return Task.FromResult(new ServiceAreaSolveResult(polygons));
+    }
+
+    public Task<ClosestFacilitySolveResult> SolveClosestFacilityAsync(
+        ClosestFacilitySolveRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var targetCount = Math.Max(1, request.DefaultTargetFacilityCount);
+        var routes = new List<ClosestFacilityRoute>();
+        for (var incidentId = 0; incidentId < request.Incidents.Count; incidentId++)
+        {
+            var incident = request.Incidents[incidentId];
+            var ranked = request.Facilities
+                .Select((f, fid) => (FacilityId: fid, Facility: f, Meters: HaversineMeters(incident, f)))
+                .Where(x => request.Cutoff is not { } cutoff || x.Meters / MetersPerMinute <= cutoff)
+                .OrderBy(x => x.Meters)
+                .Take(targetCount)
+                .ToList();
+
+            var rank = 1;
+            foreach (var entry in ranked)
+            {
+                var minutes = entry.Meters / MetersPerMinute;
+                routes.Add(new ClosestFacilityRoute(
+                    incidentId,
+                    entry.FacilityId,
+                    rank,
+                    LineStringGeoJson(incident, entry.Facility),
+                    entry.Meters,
+                    minutes,
+                    [new RouteDirectionStep($"Incident {incidentId} - Facility {entry.FacilityId}", entry.Meters, minutes, "straight")]));
+                rank++;
+            }
+        }
+
+        return Task.FromResult(new ClosestFacilitySolveResult(routes));
+    }
+
+    public Task<OdCostMatrixSolveResult> SolveOdCostMatrixAsync(
+        OdCostMatrixSolveRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var lines = new List<OdLine>();
+        for (var originId = 0; originId < request.Origins.Count; originId++)
+        {
+            var origin = request.Origins[originId];
+            var perOrigin = new List<(int DestinationId, double Meters, double Minutes)>();
+            for (var destId = 0; destId < request.Destinations.Count; destId++)
+            {
+                var meters = HaversineMeters(origin, request.Destinations[destId]);
+                var minutes = meters / MetersPerMinute;
+                if (request.Cutoff is { } cutoff && minutes > cutoff)
+                {
+                    continue;
+                }
+
+                perOrigin.Add((destId, meters, minutes));
+            }
+
+            var ranked = perOrigin.OrderBy(x => x.Minutes).AsEnumerable();
+            if (request.DestinationCount is { } k && k > 0)
+            {
+                ranked = ranked.Take(k);
+            }
+
+            var rank = 1;
+            foreach (var entry in ranked)
+            {
+                lines.Add(new OdLine(originId, entry.DestinationId, rank, entry.Minutes, entry.Meters));
+                rank++;
+            }
+        }
+
+        return Task.FromResult(new OdCostMatrixSolveResult(lines));
+    }
+
+    public Task<LocationAllocationSolveResult> SolveLocationAllocationAsync(
+        LocationAllocationSolveRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        // Greedy nearest-facility allocation: choose the requested number of
+        // facilities minimizing demand-weighted haversine impedance.
+        var chosen = new List<int>();
+        var demandBest = new double[request.DemandPoints.Count];
+        Array.Fill(demandBest, double.PositiveInfinity);
+        var toFind = Math.Clamp(request.FacilitiesToFind, 1, Math.Max(1, request.Facilities.Count));
+
+        for (var pick = 0; pick < toFind; pick++)
+        {
+            var bestFacility = -1;
+            var bestGain = double.NegativeInfinity;
+            for (var f = 0; f < request.Facilities.Count; f++)
+            {
+                if (chosen.Contains(f))
+                {
+                    continue;
+                }
+
+                var gain = 0.0;
+                for (var d = 0; d < request.DemandPoints.Count; d++)
+                {
+                    var cost = HaversineMeters(request.Facilities[f], request.DemandPoints[d].Location) / MetersPerMinute;
+                    if (request.ImpedanceCutoff is { } cut && cost > cut)
+                    {
+                        continue;
+                    }
+
+                    if (cost < demandBest[d])
+                    {
+                        gain += (double.IsInfinity(demandBest[d]) ? 1e6 : demandBest[d] - cost) * request.DemandPoints[d].Weight;
+                    }
+                }
+
+                if (gain > bestGain)
+                {
+                    bestGain = gain;
+                    bestFacility = f;
+                }
+            }
+
+            if (bestFacility < 0)
+            {
+                break;
+            }
+
+            chosen.Add(bestFacility);
+            for (var d = 0; d < request.DemandPoints.Count; d++)
+            {
+                var cost = HaversineMeters(request.Facilities[bestFacility], request.DemandPoints[d].Location) / MetersPerMinute;
+                if (request.ImpedanceCutoff is { } cut && cost > cut)
+                {
+                    continue;
+                }
+
+                if (cost < demandBest[d])
+                {
+                    demandBest[d] = cost;
+                }
+            }
+        }
+
+        chosen.Sort();
+        var allocations = new List<DemandAllocation>();
+        double totalImpedance = 0;
+        double totalCovered = 0;
+        for (var d = 0; d < request.DemandPoints.Count; d++)
+        {
+            var bestF = -1;
+            var bestCost = double.PositiveInfinity;
+            foreach (var f in chosen)
+            {
+                var cost = HaversineMeters(request.Facilities[f], request.DemandPoints[d].Location) / MetersPerMinute;
+                if (request.ImpedanceCutoff is { } cut && cost > cut)
+                {
+                    continue;
+                }
+
+                if (cost < bestCost)
+                {
+                    bestCost = cost;
+                    bestF = f;
+                }
+            }
+
+            var weight = request.DemandPoints[d].Weight;
+            if (bestF >= 0)
+            {
+                allocations.Add(new DemandAllocation(d, bestF, weight, bestCost));
+                totalImpedance += bestCost * weight;
+                totalCovered += weight;
+            }
+            else
+            {
+                allocations.Add(new DemandAllocation(d, -1, weight, double.PositiveInfinity));
+            }
+        }
+
+        return Task.FromResult(new LocationAllocationSolveResult(chosen, allocations, totalImpedance, totalCovered));
     }
 
     private static double HaversineMeters(RoutePoint a, RoutePoint b)

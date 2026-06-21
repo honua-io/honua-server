@@ -36,7 +36,10 @@ internal sealed class MockRoutingProvider : IRoutingProvider
     /// <inheritdoc />
     public RoutingProviderCapabilities Capabilities { get; } = new(
         SupportsRoute: true,
-        SupportsServiceArea: true)
+        SupportsServiceArea: true,
+        SupportsClosestFacility: true,
+        SupportsOdCostMatrix: true,
+        SupportsLocationAllocation: true)
     {
         // The mock buffers a symmetric circle, so travel direction does not change
         // the geometry; only FromFacility is meaningfully distinct.
@@ -48,6 +51,12 @@ internal sealed class MockRoutingProvider : IRoutingProvider
         // but the request surface and validation are exercised), so the NAServer
         // travel-mode validation path can be driven without a pgRouting topology.
         SupportedTravelModes = ["driving", "walking", "trucking"],
+
+        SupportedLocationAllocationProblemTypes =
+        [
+            LocationAllocationProblemType.MinimizeImpedance,
+            LocationAllocationProblemType.MaximizeCoverage,
+        ],
     };
 
     /// <inheritdoc />
@@ -120,6 +129,114 @@ internal sealed class MockRoutingProvider : IRoutingProvider
         }
 
         return Task.FromResult(new ServiceAreaSolveResult(polygons));
+    }
+
+    /// <inheritdoc />
+    public Task<ClosestFacilitySolveResult> SolveClosestFacilityAsync(
+        ClosestFacilitySolveRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var targetCount = Math.Max(1, request.DefaultTargetFacilityCount);
+        var routes = new List<ClosestFacilityRoute>();
+
+        for (var incidentId = 0; incidentId < request.Incidents.Count; incidentId++)
+        {
+            var incident = request.Incidents[incidentId];
+            var ranked = request.Facilities
+                .Select((facility, facilityId) =>
+                {
+                    var meters = HaversineMeters(incident, facility);
+                    return (FacilityId: facilityId, Facility: facility, Meters: meters, Minutes: meters / MetersPerMinute);
+                })
+                .Where(x => request.Cutoff is not { } cutoff || x.Minutes <= cutoff)
+                .OrderBy(x => x.Meters)
+                .Take(targetCount)
+                .ToList();
+
+            var rank = 1;
+            foreach (var entry in ranked)
+            {
+                var geometry = LineStringGeoJson([incident, entry.Facility]);
+                routes.Add(new ClosestFacilityRoute(
+                    incidentId,
+                    entry.FacilityId,
+                    rank,
+                    geometry,
+                    entry.Meters,
+                    entry.Minutes,
+                    [new RouteDirectionStep($"Incident {incidentId} - Facility {entry.FacilityId}", entry.Meters, entry.Minutes, "straight")]));
+                rank++;
+            }
+        }
+
+        return Task.FromResult(new ClosestFacilitySolveResult(routes));
+    }
+
+    /// <inheritdoc />
+    public Task<OdCostMatrixSolveResult> SolveOdCostMatrixAsync(
+        OdCostMatrixSolveRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var lines = new List<OdLine>();
+        for (var originId = 0; originId < request.Origins.Count; originId++)
+        {
+            var origin = request.Origins[originId];
+            var perOrigin = new List<(int DestinationId, double Meters, double Minutes)>();
+            for (var destId = 0; destId < request.Destinations.Count; destId++)
+            {
+                var meters = HaversineMeters(origin, request.Destinations[destId]);
+                var minutes = meters / MetersPerMinute;
+                if (request.Cutoff is { } cutoff && minutes > cutoff)
+                {
+                    continue;
+                }
+
+                perOrigin.Add((destId, meters, minutes));
+            }
+
+            var ranked = perOrigin.OrderBy(x => x.Minutes).AsEnumerable();
+            if (request.DestinationCount is { } k && k > 0)
+            {
+                ranked = ranked.Take(k);
+            }
+
+            var rank = 1;
+            foreach (var entry in ranked)
+            {
+                lines.Add(new OdLine(originId, entry.DestinationId, rank, entry.Minutes, entry.Meters));
+                rank++;
+            }
+        }
+
+        return Task.FromResult(new OdCostMatrixSolveResult(lines));
+    }
+
+    /// <inheritdoc />
+    public Task<LocationAllocationSolveResult> SolveLocationAllocationAsync(
+        LocationAllocationSolveRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // Build a haversine impedance matrix (minutes) and reuse the shared solver.
+        var matrix = new double[request.Facilities.Count][];
+        for (var f = 0; f < request.Facilities.Count; f++)
+        {
+            matrix[f] = new double[request.DemandPoints.Count];
+            for (var d = 0; d < request.DemandPoints.Count; d++)
+            {
+                matrix[f][d] = HaversineMeters(request.Facilities[f], request.DemandPoints[d].Location) / MetersPerMinute;
+            }
+        }
+
+        return Task.FromResult(LocationAllocationSolver.Solve(request, matrix));
     }
 
     private static double HaversineMeters(RoutePoint a, RoutePoint b)

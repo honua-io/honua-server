@@ -346,6 +346,182 @@ public sealed class NAServerTranslationUnitTests
     }
 
     [UnitTest]
+    [Operation(Operations.ClosestFacility)]
+    public void BuildClosestFacilitySolveRequest_ParsesIncidentsFacilitiesTargetCountDirection()
+    {
+        var parameters = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["incidents"] = "-157.85,21.30;-157.86,21.31",
+            ["facilities"] = "-157.90,21.40",
+            ["defaultTargetFacilityCount"] = "3",
+            ["travelDirection"] = "esriNATravelDirectionFromFacility",
+            ["defaultCutoff"] = "15",
+        };
+
+        var request = NAServerParameterTranslation.BuildClosestFacilitySolveRequest(parameters);
+
+        request.Incidents.Should().HaveCount(2);
+        request.Facilities.Should().ContainSingle();
+        request.DefaultTargetFacilityCount.Should().Be(3);
+        request.Direction.Should().Be(ClosestFacilityTravelDirection.FromFacility);
+        request.Cutoff.Should().Be(15);
+    }
+
+    [UnitTest]
+    [Operation(Operations.ClosestFacility)]
+    public void BuildClosestFacilitySolveRequest_NoFacilities_Throws()
+    {
+        var parameters = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["incidents"] = "-157.85,21.30",
+        };
+
+        var act = () => NAServerParameterTranslation.BuildClosestFacilitySolveRequest(parameters);
+
+        act.Should().Throw<NAServerParameterTranslation.NAServerParameterException>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.ClosestFacility)]
+    public void MapClosestFacility_RanksRoutesAndUses1BasedIds()
+    {
+        var result = new ClosestFacilitySolveResult(
+        [
+            new ClosestFacilityRoute(
+                IncidentId: 0,
+                FacilityId: 2,
+                Rank: 1,
+                RouteGeometryGeoJson: "{\"type\":\"LineString\",\"coordinates\":[[-157.85,21.30],[-157.86,21.31]]}",
+                TotalLengthMeters: 1500,
+                TotalTimeMinutes: 5,
+                Directions: [new RouteDirectionStep("go", 1500, 5, "straight")]),
+        ]);
+
+        var response = NAServerResultMapping.MapClosestFacility(result, outSrid: 4326, includeDirections: true);
+
+        var feature = response.Routes!.Features.Should().ContainSingle().Subject;
+        feature.Attributes.IncidentId.Should().Be(1);
+        feature.Attributes.FacilityId.Should().Be(3);
+        feature.Attributes.FacilityRank.Should().Be(1);
+        feature.Geometry!.Paths.Should().HaveCount(1);
+        response.Directions.Should().NotBeEmpty();
+    }
+
+    [UnitTest]
+    [Operation(Operations.OdCostMatrix)]
+    public void BuildOdCostMatrixSolveRequest_ParsesOriginsDestinationsCutoffTargetCount()
+    {
+        var parameters = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["origins"] = "-157.85,21.30;-157.86,21.31",
+            ["destinations"] = "-157.90,21.40;-157.91,21.41",
+            ["defaultCutoff"] = "30",
+            ["defaultTargetDestinationCount"] = "1",
+        };
+
+        var request = NAServerParameterTranslation.BuildOdCostMatrixSolveRequest(parameters);
+
+        request.Origins.Should().HaveCount(2);
+        request.Destinations.Should().HaveCount(2);
+        request.Cutoff.Should().Be(30);
+        request.DestinationCount.Should().Be(1);
+    }
+
+    [UnitTest]
+    [Operation(Operations.OdCostMatrix)]
+    public void BuildOdCostMatrixSolveRequest_UnsupportedOutputType_Throws()
+    {
+        var parameters = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["origins"] = "-157.85,21.30",
+            ["destinations"] = "-157.90,21.40",
+            ["outputType"] = "esriNAODOutputTrueShape",
+        };
+
+        var act = () => NAServerParameterTranslation.BuildOdCostMatrixSolveRequest(parameters);
+
+        act.Should().Throw<NAServerParameterTranslation.NAServerParameterException>()
+            .WithMessage("*outputType*");
+    }
+
+    [UnitTest]
+    [Operation(Operations.OdCostMatrix)]
+    public void MapOdCostMatrix_ProducesRankedLinesWith1BasedIds()
+    {
+        var result = new OdCostMatrixSolveResult(
+        [
+            new OdLine(OriginId: 0, DestinationId: 1, DestinationRank: 1, TotalCostMinutes: 4.2, TotalLengthMeters: 0),
+            new OdLine(OriginId: 0, DestinationId: 0, DestinationRank: 2, TotalCostMinutes: 9.9, TotalLengthMeters: 0),
+        ]);
+
+        var response = NAServerResultMapping.MapOdCostMatrix(result);
+
+        response.OdLines.Features.Should().HaveCount(2);
+        response.OdLines.Features[0].Attributes.OriginId.Should().Be(1);
+        response.OdLines.Features[0].Attributes.DestinationId.Should().Be(2);
+        response.OdLines.Features[0].Attributes.DestinationRank.Should().Be(1);
+        response.OdLines.Features[0].Attributes.TotalTime.Should().Be(4.2);
+    }
+
+    [UnitTest]
+    [Operation(Operations.LocationAllocation)]
+    public void ParseLocationAllocationProblemType_KnownAndUnknown()
+    {
+        NAServerParameterTranslation.ParseLocationAllocationProblemType("esriMFPMinimizeImpedance")
+            .Should().Be(LocationAllocationProblemType.MinimizeImpedance);
+        NAServerParameterTranslation.ParseLocationAllocationProblemType("esriMFPMaximizeCoverage")
+            .Should().Be(LocationAllocationProblemType.MaximizeCoverage);
+
+        var act = () => NAServerParameterTranslation.ParseLocationAllocationProblemType("esriMFPTargetMarketShare");
+        act.Should().Throw<NAServerParameterTranslation.NAServerParameterException>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.LocationAllocation)]
+    public void ParseDemandPoints_FeatureSetWithWeights_ReadsWeightDefaultingToOne()
+    {
+        const string featureSet = """
+        { "features": [
+            { "geometry": { "x": -157.85, "y": 21.30 }, "attributes": { "Weight": 7 } },
+            { "geometry": { "x": -157.86, "y": 21.31 } }
+        ] }
+        """;
+
+        var demand = NAServerParameterTranslation.ParseDemandPoints(featureSet);
+
+        demand.Should().HaveCount(2);
+        demand[0].Weight.Should().Be(7);
+        demand[1].Weight.Should().Be(1);
+    }
+
+    [UnitTest]
+    [Operation(Operations.LocationAllocation)]
+    public void MapLocationAllocation_EmitsChosenFacilitiesAndAllocations()
+    {
+        var result = new LocationAllocationSolveResult(
+            ChosenFacilityIds: [1],
+            Allocations:
+            [
+                new DemandAllocation(DemandPointId: 0, AllocatedFacilityId: 1, Weight: 3, ImpedanceMinutes: 4),
+                new DemandAllocation(DemandPointId: 1, AllocatedFacilityId: -1, Weight: 2, ImpedanceMinutes: double.PositiveInfinity),
+            ],
+            TotalWeightedImpedance: 12,
+            TotalWeightCovered: 3);
+
+        var response = NAServerResultMapping.MapLocationAllocation(result);
+
+        var facility = response.Facilities.Features.Should().ContainSingle().Subject;
+        facility.Attributes.FacilityId.Should().Be(2); // 1-based
+        facility.Attributes.DemandWeight.Should().Be(3);
+
+        response.DemandPoints.Features.Should().HaveCount(2);
+        response.DemandPoints.Features[0].Attributes.FacilityId.Should().Be(2);
+        response.DemandPoints.Features[0].Attributes.AllocatedTime.Should().Be(4);
+        response.DemandPoints.Features[1].Attributes.FacilityId.Should().Be(0); // unallocated
+        response.DemandPoints.Features[1].Attributes.AllocatedTime.Should().Be(-1);
+    }
+
+    [UnitTest]
     [Operation(Operations.ServiceArea)]
     public void MapServiceArea_PolygonResult_AssignsFromToBreakAndRings()
     {

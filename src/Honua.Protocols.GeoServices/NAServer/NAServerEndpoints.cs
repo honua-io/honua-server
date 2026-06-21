@@ -14,10 +14,11 @@ namespace Honua.Protocols.GeoServices.NAServer;
 
 /// <summary>
 /// Maps the GeoServices NAServer REST endpoints as a thin protocol adapter over the
-/// shared <see cref="IRoutingProvider"/> pipeline. Route / ServiceArea solves parse
-/// Esri parameters, delegate to the canonical routing provider, and format the Esri
-/// JSON response. The ClosestFacility stub remains a deterministic probe envelope
-/// pending a dedicated closest-facility canonical contract.
+/// shared <see cref="IRoutingProvider"/> pipeline. Route / ServiceArea /
+/// ClosestFacility / ODCostMatrix / LocationAllocation solves parse Esri parameters,
+/// delegate to the canonical routing provider, and format the Esri JSON response.
+/// Unsupported provider capabilities return GeoServices 400 envelopes rather than
+/// fabricated solves.
 /// </summary>
 internal static class NAServerEndpoints
 {
@@ -29,37 +30,6 @@ internal static class NAServerEndpoints
     private static readonly JsonSerializerOptions PrettyJsonOptions = new(NAServerJsonContext.Default.Options)
     {
         WriteIndented = true,
-    };
-
-    private static readonly NAServerClosestFacilityResponse ClosestFacilityResponse = new()
-    {
-        Routes = new NAServerRouteFeatureSet
-        {
-            Features =
-            [
-                new NAServerRouteFeature
-                {
-                    Attributes = new NAServerRouteAttributes
-                    {
-                        Name = "Incident - Facility A",
-                        TotalLength = 2.5,
-                        TotalTravelTime = 8,
-                    },
-                },
-            ],
-        },
-        Directions =
-        [
-            new NAServerDirection
-            {
-                Summary = new NAServerDirectionSummary
-                {
-                    RouteName = "Incident - Facility A",
-                    TotalLength = 2.5,
-                    TotalTime = 8,
-                },
-            },
-        ],
     };
 
     /// <summary>
@@ -97,16 +67,39 @@ internal static class NAServerEndpoints
             .Produces<NAServerServiceAreaResponse>(StatusCodes.Status200OK, JsonContentType)
             .AllowAnonymous();
 
-        // PUBLIC by design (#1144): minimal ClosestFacility compatibility stub that
-        // returns a deterministic envelope for mobile routing client probes. Not yet
-        // adapted over a canonical closest-facility contract (out of scope for #1266).
-        endpoints.MapPost($"{RouteBase}/ClosestFacility/solveClosestFacility", static () => HandleClosestFacility())
+        // ANONYMOUS by design (same rationale as Route/ServiceArea): a stateless
+        // closest-facility computation over the shared routing provider.
+        endpoints.MapPost($"{RouteBase}/ClosestFacility/solveClosestFacility",
+                static (HttpContext context, IRoutingProvider routing, IOptions<RoutingConfiguration> options, CancellationToken ct)
+                    => HandleClosestFacility(context, routing, options.Value, ct))
             .WithDisplayName("NAServer Closest Facility Solve")
             .WithName("NAServerClosestFacilitySolve")
-            .WithSummary("Solve a minimal NAServer closest facility")
-            .WithDescription("Returns a deterministic closest-facility direction envelope for first-party mobile routing integration.")
+            .WithSummary("Solve a NAServer closest facility")
+            .WithDescription("Ranks facilities by network impedance per incident over the shared routing pipeline and returns ranked Esri routes.")
             .WithTags("NAServer")
             .Produces<NAServerClosestFacilityResponse>(StatusCodes.Status200OK, JsonContentType)
+            .AllowAnonymous();
+
+        endpoints.MapPost($"{RouteBase}/ODCostMatrix/solveODCostMatrix",
+                static (HttpContext context, IRoutingProvider routing, IOptions<RoutingConfiguration> options, CancellationToken ct)
+                    => HandleOdCostMatrix(context, routing, options.Value, ct))
+            .WithDisplayName("NAServer OD Cost Matrix Solve")
+            .WithName("NAServerOdCostMatrixSolve")
+            .WithSummary("Solve a NAServer OD cost matrix")
+            .WithDescription("Computes an origins×destinations impedance matrix over the shared routing pipeline and returns Esri odLines.")
+            .WithTags("NAServer")
+            .Produces<NAServerOdCostMatrixResponse>(StatusCodes.Status200OK, JsonContentType)
+            .AllowAnonymous();
+
+        endpoints.MapPost($"{RouteBase}/LocationAllocation/solveLocationAllocation",
+                static (HttpContext context, IRoutingProvider routing, IOptions<RoutingConfiguration> options, CancellationToken ct)
+                    => HandleLocationAllocation(context, routing, options.Value, ct))
+            .WithDisplayName("NAServer Location Allocation Solve")
+            .WithName("NAServerLocationAllocationSolve")
+            .WithSummary("Solve a NAServer location-allocation problem")
+            .WithDescription("Chooses facilities to optimize impedance/coverage over weighted demand points via the shared routing pipeline.")
+            .WithTags("NAServer")
+            .Produces<NAServerLocationAllocationResponse>(StatusCodes.Status200OK, JsonContentType)
             .AllowAnonymous();
 
         return endpoints;
@@ -325,11 +318,175 @@ internal static class NAServerEndpoints
         return format is not null && format.Trim().Equals("pjson", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static IResult HandleClosestFacility()
-        => Results.Json(
-            ClosestFacilityResponse,
-            NAServerJsonContext.Default.NAServerClosestFacilityResponse,
-            contentType: JsonContentType);
+    private static async Task<IResult> HandleClosestFacility(
+        HttpContext context,
+        IRoutingProvider routing,
+        RoutingConfiguration configuration,
+        CancellationToken ct)
+    {
+        EnrichActivity("ClosestFacilitySolve");
+
+        var parameters = await GPServerParameterTranslation.ReadRequestParametersAsync(context, ct);
+        var formatError = ValidateJsonFormat(context, parameters);
+        if (formatError is not null)
+        {
+            return formatError;
+        }
+
+        if (!routing.Capabilities.SupportsClosestFacility)
+        {
+            return SetSpanErrorAndReturn(
+                StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    "Closest-facility solves are not supported by the configured routing provider."),
+                "NAServer closest-facility solves unsupported by provider");
+        }
+
+        try
+        {
+            var caps = NAServerInputCaps.FromConfiguration(configuration);
+            var request = NAServerParameterTranslation.BuildClosestFacilitySolveRequest(parameters, caps);
+            var includeDirections = ReadBool(parameters, "returnDirections", defaultValue: false);
+
+            var capabilityError = ValidateProviderCapabilities(
+                context, routing, request.Barriers, request.TravelMode);
+            if (capabilityError is not null)
+            {
+                return capabilityError;
+            }
+
+            var result = await routing.SolveClosestFacilityAsync(request, ct);
+            var response = NAServerResultMapping.MapClosestFacility(result, request.OutSrid, includeDirections);
+
+            return WriteResponse(
+                context,
+                parameters,
+                response,
+                NAServerJsonContext.Default.NAServerClosestFacilityResponse);
+        }
+        catch (NAServerParameterTranslation.NAServerParameterException ex)
+        {
+            return SetSpanErrorAndReturn(
+                StandardErrorHelpers.CreateBadRequest(context, "Invalid NAServer closest-facility parameters.", [ex.Message]),
+                "Invalid NAServer closest-facility parameters");
+        }
+    }
+
+    private static async Task<IResult> HandleOdCostMatrix(
+        HttpContext context,
+        IRoutingProvider routing,
+        RoutingConfiguration configuration,
+        CancellationToken ct)
+    {
+        EnrichActivity("OdCostMatrixSolve");
+
+        var parameters = await GPServerParameterTranslation.ReadRequestParametersAsync(context, ct);
+        var formatError = ValidateJsonFormat(context, parameters);
+        if (formatError is not null)
+        {
+            return formatError;
+        }
+
+        if (!routing.Capabilities.SupportsOdCostMatrix)
+        {
+            return SetSpanErrorAndReturn(
+                StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    "OD cost matrix solves are not supported by the configured routing provider."),
+                "NAServer OD cost matrix solves unsupported by provider");
+        }
+
+        try
+        {
+            var caps = NAServerInputCaps.FromConfiguration(configuration);
+            var request = NAServerParameterTranslation.BuildOdCostMatrixSolveRequest(parameters, caps);
+
+            var capabilityError = ValidateProviderCapabilities(
+                context, routing, request.Barriers, request.TravelMode);
+            if (capabilityError is not null)
+            {
+                return capabilityError;
+            }
+
+            var result = await routing.SolveOdCostMatrixAsync(request, ct);
+            var response = NAServerResultMapping.MapOdCostMatrix(result);
+
+            return WriteResponse(
+                context,
+                parameters,
+                response,
+                NAServerJsonContext.Default.NAServerOdCostMatrixResponse);
+        }
+        catch (NAServerParameterTranslation.NAServerParameterException ex)
+        {
+            return SetSpanErrorAndReturn(
+                StandardErrorHelpers.CreateBadRequest(context, "Invalid NAServer OD cost matrix parameters.", [ex.Message]),
+                "Invalid NAServer OD cost matrix parameters");
+        }
+    }
+
+    private static async Task<IResult> HandleLocationAllocation(
+        HttpContext context,
+        IRoutingProvider routing,
+        RoutingConfiguration configuration,
+        CancellationToken ct)
+    {
+        EnrichActivity("LocationAllocationSolve");
+
+        var parameters = await GPServerParameterTranslation.ReadRequestParametersAsync(context, ct);
+        var formatError = ValidateJsonFormat(context, parameters);
+        if (formatError is not null)
+        {
+            return formatError;
+        }
+
+        if (!routing.Capabilities.SupportsLocationAllocation)
+        {
+            return SetSpanErrorAndReturn(
+                StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    "Location-allocation solves are not supported by the configured routing provider."),
+                "NAServer location-allocation solves unsupported by provider");
+        }
+
+        try
+        {
+            var caps = NAServerInputCaps.FromConfiguration(configuration);
+            var request = NAServerParameterTranslation.BuildLocationAllocationSolveRequest(parameters, caps);
+
+            // Gate the requested problem type against the provider's advertised set.
+            if (!routing.Capabilities.SupportedLocationAllocationProblemTypes.Contains(request.ProblemType))
+            {
+                return SetSpanErrorAndReturn(
+                    StandardErrorHelpers.CreateBadRequest(
+                        context,
+                        $"location-allocation problem type '{request.ProblemType}' is not supported by the configured routing provider."),
+                    "NAServer location-allocation problem type unsupported by provider");
+            }
+
+            var capabilityError = ValidateProviderCapabilities(
+                context, routing, request.Barriers, request.TravelMode);
+            if (capabilityError is not null)
+            {
+                return capabilityError;
+            }
+
+            var result = await routing.SolveLocationAllocationAsync(request, ct);
+            var response = NAServerResultMapping.MapLocationAllocation(result);
+
+            return WriteResponse(
+                context,
+                parameters,
+                response,
+                NAServerJsonContext.Default.NAServerLocationAllocationResponse);
+        }
+        catch (NAServerParameterTranslation.NAServerParameterException ex)
+        {
+            return SetSpanErrorAndReturn(
+                StandardErrorHelpers.CreateBadRequest(context, "Invalid NAServer location-allocation parameters.", [ex.Message]),
+                "Invalid NAServer location-allocation parameters");
+        }
+    }
 
     private static bool ReadBool(IReadOnlyDictionary<string, string> parameters, string key, bool defaultValue)
     {
