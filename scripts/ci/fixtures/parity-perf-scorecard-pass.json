@@ -1,0 +1,38 @@
+{
+  "$comment": "Deterministic fixture exercising the perf-parity gate PASS path offline (issue #1249). Used by parity-scorecard-governance.yml to smoke-test scripts/ci/check-parity-perf-budget.sh without a live benchmark run.",
+  "GeneratedAtUtc": "2026-06-18T00:00:00+00:00",
+  "Cases": [
+    {
+      "ServiceCase": "fixture_within_budget",
+      "LatencyMetrics": {
+        "SampleCount": 9,
+        "SourceP95Ms": 100.0,
+        "HonuaP95Ms": 110.0,
+        "SourceP99Ms": 150.0,
+        "HonuaP99Ms": 165.0,
+        "HonuaToSourceP95Ratio": 1.1,
+        "HonuaToSourceP99Ratio": 1.1
+      },
+      "PerfParity": {
+        "BudgetProfile": "geoservices-parity-default-v1",
+        "Verdict": "Pass",
+        "Summary": "Performance parity is within budget for all graded metrics.",
+        "SampleCount": 9
+      }
+    },
+    {
+      "ServiceCase": "fixture_too_few_samples_unknown",
+      "LatencyMetrics": {
+        "SampleCount": 2,
+        "HonuaToSourceP95Ratio": 9.0,
+        "HonuaToSourceP99Ratio": 9.0
+      },
+      "PerfParity": {
+        "BudgetProfile": "geoservices-parity-default-v1",
+        "Verdict": "Unknown",
+        "Summary": "Performance parity could not be graded (insufficient samples or no source latency).",
+        "SampleCount": 2
+      }
+    }
+  ]
+}

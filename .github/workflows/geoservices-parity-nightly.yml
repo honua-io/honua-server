@@ -78,6 +78,12 @@ jobs:
             artifacts/parity/current-scorecard.json \
             tests/dotnet/Honua.Server.Tests/Import/parity-scorecard-baseline.json
 
+      - name: Performance-parity gate
+        run: |
+          bash scripts/ci/check-parity-perf-budget.sh \
+            artifacts/parity/current-scorecard.json \
+            tests/dotnet/Honua.Server.Tests/Import/parity-perf-budget.json
+
       - name: Write parity summary
         if: always()
         run: |
@@ -88,13 +94,13 @@ jobs:
           {
             echo "## GeoServices Parity Summary"
             echo
-            echo "| Service Case | p95 Ratio (Honua/Source) | p99 Ratio (Honua/Source) | Transfer Limit Flag Match |"
-            echo "|---|---:|---:|---|"
+            echo "| Service Case | p95 Ratio (Honua/Source) | p99 Ratio (Honua/Source) | Perf Verdict | Transfer Limit Flag Match |"
+            echo "|---|---:|---:|---|---|"
             jq -r '
               .Cases[]
               | . as $case
               | ($case.Checks[] | select(.Name == "transfer_limit_flag_parity")) as $transfer
-              | "| \($case.ServiceCase) | \((($case.LatencyMetrics.HonuaToSourceP95Ratio // 0) | tostring)) | \((($case.LatencyMetrics.HonuaToSourceP99Ratio // 0) | tostring)) | \($transfer.Passed) |"
+              | "| \($case.ServiceCase) | \((($case.LatencyMetrics.HonuaToSourceP95Ratio // 0) | tostring)) | \((($case.LatencyMetrics.HonuaToSourceP99Ratio // 0) | tostring)) | \(($case.PerfParity.Verdict // "n/a")) | \($transfer.Passed) |"
             ' artifacts/parity/current-scorecard.json
           } >> "$GITHUB_STEP_SUMMARY"
 
