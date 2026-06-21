@@ -46,4 +46,20 @@ public interface IDatabaseFixture : IAsyncLifetime
     /// <param name="sql">The raw seed/setup SQL to apply.</param>
     /// <param name="schemaName">Optional schema to set on <c>search_path</c> before applying the SQL.</param>
     Task ApplyGlobalSeedSqlAsync(string sql, string? schemaName = null);
+
+    /// <summary>
+    /// Runs the full embedded DbUp migration set into <paramref name="schemaName"/> while holding the
+    /// shared seed advisory lock (honua-server#1568 follow-up). The migration set includes
+    /// <c>001_CreateHonuaSchema.sql</c>, which mutates the literal, process-global <c>honua</c> schema
+    /// that per-test <c>search_path</c> isolation does NOT scope; routing it through the lock keeps
+    /// parallel <c>[Collection("Database")]</c> upgrades from racing the shared catalog and deadlocking
+    /// (40P01) against locked seeders. Use this instead of a bare
+    /// <c>DeployChanges...PerformUpgrade()</c>.
+    /// </summary>
+    /// <param name="schemaName">Isolated schema to deploy into.</param>
+    /// <param name="migrationsAssembly">Assembly whose embedded migration scripts are deployed.</param>
+    /// <returns>The DbUp upgrade result.</returns>
+    Task<DbUp.Engine.DatabaseUpgradeResult> RunEmbeddedMigrationsUnderLockAsync(
+        string schemaName,
+        System.Reflection.Assembly migrationsAssembly);
 }
