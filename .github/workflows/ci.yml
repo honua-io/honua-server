@@ -266,7 +266,7 @@ jobs:
       full_ci: ${{ steps.filter.outputs.full_ci }}
       postgres_matrix: ${{ steps.filter.outputs.postgres_matrix }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -410,7 +410,7 @@ jobs:
       descriptor: ${{ steps.compute.outputs.descriptor }}
       matrix_include: ${{ steps.compute.outputs.matrix_include }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -470,7 +470,7 @@ jobs:
     needs: changes
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Validate workflow and shard routing metadata
         run: scripts/ci/validate-ci-router.sh
@@ -481,7 +481,7 @@ jobs:
     needs: changes
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Canonical Instruction Check
         run: bash scripts/ci/check-instructions-sync.sh
@@ -581,7 +581,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       # Reclaim runner disk before the full-solution build + coverage run; the
       # modular topology pushed some runners over the free-disk limit. Best-effort.
@@ -817,7 +817,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       # Reclaim runner disk before building. The modular topology (8 protocol
       # assemblies + native packages such as ParquetSharp/Apache.Arrow/SkiaSharp
@@ -920,7 +920,7 @@ jobs:
       TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX: ""
       HONUA_TEST_CONFIGURATION: Release
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
@@ -982,7 +982,7 @@ jobs:
     needs: [build, changes]
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -1046,7 +1046,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Setup Honua Server
         uses: ./.github/actions/setup-honua-server
@@ -1148,7 +1148,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Setup Honua Server
         uses: ./.github/actions/setup-honua-server
@@ -1235,7 +1235,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Setup Python
         uses: actions/setup-python@v6
@@ -1339,7 +1339,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       # Design: skip-if-absent is intentional for cross-repo coordination.
       # Test code lives in honua-sdk-js; this repo provides only CI jobs,
@@ -1439,7 +1439,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Setup Honua MCP environment
         id: setup
@@ -1513,7 +1513,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
@@ -1582,7 +1582,7 @@ jobs:
     needs: build
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
@@ -1680,7 +1680,7 @@ jobs:
     needs: [build, changes, test-all, core-package-compatibility, postgres-compat]
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
@@ -1743,7 +1743,7 @@ jobs:
           --health-retries 5
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Pre-pull BuildKit image with retries
         shell: bash
