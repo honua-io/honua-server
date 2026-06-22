@@ -306,6 +306,10 @@ public sealed class PostgresMetadataV2GraphStoreCompatFallbackTests(PostgresFixt
 
     private static async Task CreateV1CatalogTablesAsync(NpgsqlDataSource dataSource, string schema)
     {
+        // #2020: CREATE EXTENSION is database-global, but this static helper only has a raw
+        // dataSource/schema and no PostgresFixture handle to reach the shared seed advisory
+        // lock. It is idempotent (postgis is pre-created by the test container), so it is left
+        // unlocked here rather than threading a fixture through every call site.
         await ExecuteAsync(dataSource, schema, "CREATE EXTENSION IF NOT EXISTS postgis;");
 
         await ExecuteAsync(dataSource, schema, $$"""

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/cancel_job.schema.json",
+  "title": "cancel_job inputSchema",
+  "description": "Argument shape for the execution-lifecycle cancel tool (advertised name honua_cancel_job). Requests cancellation of a submitted ExecutionJob. x-honua-reference-shape: lifecycle control over the execution handoff; tracks the reference implementation.",
+  "x-honua-reference-shape": true,
+  "type": "object",
+  "required": ["jobId"],
+  "properties": {
+    "jobId": {
+      "type": "string",
+      "description": "Execution job identifier to request cancellation for."
+    }
+  }
+}

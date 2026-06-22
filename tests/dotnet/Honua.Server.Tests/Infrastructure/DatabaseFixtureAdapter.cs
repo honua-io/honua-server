@@ -55,4 +55,14 @@ public sealed class DatabaseFixtureAdapter : IDatabaseFixture
     {
         await _postgresFixture.ApplyGlobalSeedSqlAsync(sql, schemaName);
     }
+
+    public Task<DbUp.Engine.DatabaseUpgradeResult> RunEmbeddedMigrationsUnderLockAsync(
+        string schemaName,
+        System.Reflection.Assembly migrationsAssembly)
+    {
+        return _postgresFixture.RunEmbeddedMigrationsUnderLockAsync(
+            schemaName,
+            ConnectionString,
+            migrationsAssembly);
+    }
 }
