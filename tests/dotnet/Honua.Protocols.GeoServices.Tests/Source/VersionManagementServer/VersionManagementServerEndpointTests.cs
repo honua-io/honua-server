@@ -245,7 +245,8 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
 
         // VersionState.Reconciling == 1; honua.gdb_versions is the global versioning catalog and the
         // version_id GUID targets exactly the version created above.
-        await _fixture.Postgres.ExecuteAsync(
+        // #2020: route the global honua.gdb_versions UPDATE through the schema-mutation advisory lock.
+        await _fixture.Postgres.ApplyGlobalSeedSqlAsync(
             $"UPDATE honua.gdb_versions SET state = 1 WHERE version_id = '{guid}'::uuid");
 
         var editResponse = await PostFormAsync(

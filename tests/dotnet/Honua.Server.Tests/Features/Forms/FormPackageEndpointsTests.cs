@@ -379,7 +379,8 @@ public sealed class FormPackageEndpointsTests : IAsyncLifetime
 
     private async Task EnableEditingCapabilitiesAsync()
     {
-        await _fixture.Postgres.ExecuteAsync("""
+        // #2020: route the global honua.services UPDATE through the schema-mutation advisory lock.
+        await _fixture.Postgres.ApplyGlobalSeedSqlAsync("""
             UPDATE honua.services
             SET capabilities = ARRAY['Query', 'Extract', 'Create', 'Update', 'Delete']
             WHERE service_name = 'test';

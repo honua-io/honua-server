@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/clarify_intent.schema.json",
+  "title": "clarify_intent inputSchema",
+  "description": "Argument shape for the clarify_intent tool (Analyze, Publish Data, Build App). Reference advertised name: honua_clarify_intent. Re-runs grounding with the operator's answers merged in. Extends ground_candidates with required intentId and a response carrying answers keyed by questionId. See planning.md §2.",
+  "type": "object",
+  "required": ["goal", "intentId", "response"],
+  "properties": {
+    "goal": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Freeform natural-language description of the operator's goal."
+    },
+    "intentId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Intent identifier being clarified. Required on a clarification turn."
+    },
+    "workflowFamilyHint": {
+      "type": "string",
+      "enum": ["Analyze", "PublishData", "BuildApp", "AutomateDeploy"]
+    },
+    "assumptionPolicy": {
+      "type": "string",
+      "enum": ["AskAlways", "AskWhenMaterial", "UseDefaults"]
+    },
+    "explicitInputs": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "constraints": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "areaOfInterest": { "type": "string" },
+        "spatialReferenceId": { "type": "integer" },
+        "timeWindowStart": { "type": "string", "format": "date-time" },
+        "timeWindowEnd": { "type": "string", "format": "date-time" },
+        "units": { "type": "string" }
+      }
+    },
+    "context": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "workspaceId": { "type": "string" },
+        "priorIntentId": { "type": "string" },
+        "promotionScope": { "type": "string" }
+      }
+    },
+    "response": {
+      "type": "object",
+      "required": ["answers"],
+      "description": "ClarificationResponse: answers keyed by questionId.",
+      "properties": {
+        "answers": {
+          "type": "object",
+          "minProperties": 1,
+          "description": "Answers keyed by question identifier. Each answer is a non-empty list of values to support multi-select questions.",
+          "additionalProperties": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/validate_plan.schema.json",
+  "title": "validate_plan inputSchema",
+  "description": "Argument shape for the validate_plan tool (Analyze, Publish Data, Build App; also shared by the dry_run_plan preview tool in the reference implementation). Reference advertised name: honua_validate_plan. Accepts a partial AnalysisPlan so the validator can report EMPTY_PLAN_ID / EMPTY_STEPS as structured violations rather than rejecting at ingest — planId and steps are therefore NOT required here (contrast execute_plan). See planning.md §5.1.",
+  "type": "object",
+  "required": ["plan"],
+  "properties": {
+    "plan": { "$ref": "#/$defs/analysisPlan" }
+  },
+  "$defs": {
+    "analysisPlan": {
+      "type": "object",
+      "description": "Canonical AnalysisPlan expressed as MCP plan input. Partial plans are permitted at validate time.",
+      "required": [],
+      "properties": {
+        "planId": { "type": "string" },
+        "intentId": { "type": "string" },
+        "steps": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/planStep" }
+        },
+        "outputs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/artifactKind" }
+        },
+        "warnings": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "planStep": {
+      "type": "object",
+      "required": ["stepId", "kind"],
+      "properties": {
+        "stepId": { "type": "string" },
+        "kind": { "$ref": "#/$defs/planStepKind" },
+        "processId": { "type": "string" },
+        "inputs": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "dependsOn": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "planStepKind": {
+      "type": "string",
+      "description": "Canonical AnalysisPlanStepKind value. Server parsing is case-insensitive but clients should send the canonical PascalCase spelling.",
+      "enum": ["QueryFeatures", "Geoprocess", "Aggregate", "RenderMap", "Export"]
+    },
+    "artifactKind": {
+      "type": "string",
+      "description": "Canonical ArtifactKind value.",
+      "enum": ["Scalar", "FeatureLayer", "Table", "Raster", "File", "Report", "Map", "AppBundle"]
+    }
+  }
+}

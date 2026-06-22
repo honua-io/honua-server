@@ -1,0 +1,225 @@
+name: CI failure triage
+
+# Event-driven AI merge-coordinator triage (#2021). AUGMENTS the existing
+# webhook coordinator — it does NOT replace it:
+#   * pr-merge-train.yml     merges the oldest CLEAN PR / freshens the oldest BEHIND one.
+#   * auto-rerun-flaky.yml   gives a PR's CI exactly ONE retry when only known-flaky
+#                            shards failed.
+# Both stay AS-IS. This workflow adds the missing piece that made session-side
+# polling necessary: AI triage of GENUINELY-real failures, so a human/Claude loop
+# no longer has to babysit the queue.
+#
+# It fires on CI completion, resolves the PR(s) from the run's head SHA, and runs
+# the SAME deterministic classifier auto-rerun uses (scripts/ci/ci-failure-classifier.js
+# — the single shared source of the leaf/aggregator + FLAKY/SOLID regex sets):
+#   * clean        → nothing to do (the train handles merge/freshen).
+#   * flake-only   → ensure exactly ONE rerun happened (guarded by run_attempt so a
+#                    run is never rerun more than once — no storms). auto-rerun owns
+#                    attempt 1; this is the backstop if auto-rerun missed it.
+#   * real-failure → gather the failing job's log tail, call Bedrock for a triage
+#                    verdict, post it as a PR comment, and label `ci-needs-triage`.
+# AI is used ONLY in the real-failure branch. Everything else is deterministic.
+#
+# Bedrock auth: the standard AWS credential chain via aws-actions/configure-aws-credentials.
+# If no Bedrock creds/role are configured in CI, the AI step DEGRADES GRACEFULLY —
+# it still labels the PR and posts a "triage skipped" notice instead of hard-failing.
+# See docs/internal/contributor/merge-coordination-runbook.md to enable it.
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+permissions:
+  actions: write          # gh run rerun
+  contents: read
+  pull-requests: write    # comment + label
+  id-token: write         # OIDC for configure-aws-credentials (no-op if no role configured)
+
+concurrency:
+  group: triage-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+jobs:
+  triage:
+    if: >
+      github.event.workflow_run.conclusion == 'failure' &&
+      github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (for the shared classifier + triage scripts)
+        uses: actions/checkout@v7
+        with:
+          # Always check out the default branch's scripts, not the PR's — a PR
+          # must not be able to rewrite its own triage logic.
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      # Configure AWS credentials for Bedrock. This step is BEST-EFFORT: with no
+      # role/secret configured it produces no usable credentials, and the triage
+      # script then degrades gracefully (skips AI, still labels). continue-on-error
+      # keeps a missing/again-misconfigured role from failing the job.
+      - name: Configure AWS credentials (Bedrock) — best effort
+        id: aws
+        if: ${{ vars.BEDROCK_TRIAGE_ROLE_ARN != '' }}
+        continue-on-error: true
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.BEDROCK_TRIAGE_ROLE_ARN }}
+          aws-region: ${{ vars.BEDROCK_TRIAGE_REGION || 'us-west-2' }}
+
+      - name: Install Bedrock SDK (only if a triage role is configured)
+        if: ${{ vars.BEDROCK_TRIAGE_ROLE_ARN != '' }}
+        continue-on-error: true
+        run: npm install --no-save @aws-sdk/client-bedrock-runtime@^3
+
+      - name: Classify, rerun-or-triage
+        uses: actions/github-script@v9
+        env:
+          AWS_REGION: ${{ vars.BEDROCK_TRIAGE_REGION || 'us-west-2' }}
+          BEDROCK_TRIAGE_MODEL: ${{ vars.BEDROCK_TRIAGE_MODEL }}
+        with:
+          # Workflow-scoped token so triage can comment / label PRs whose delta
+          # touches .github/workflows/** (GITHUB_TOKEN is forbidden from that),
+          # matching pr-merge-train.yml and auto-rerun-flaky.yml.
+          github-token: ${{ secrets.MERGE_TRAIN_TOKEN }}
+          script: |
+            const owner = context.repo.owner, repo = context.repo.repo;
+            const run = context.payload.workflow_run;
+            const { classifyFailures } = require('./scripts/ci/ci-failure-classifier.js');
+            const { runTriage } = require('./scripts/ci/bedrock-triage.js');
+
+            const LABEL = 'ci-needs-triage';
+            const HOLD = 'hold';
+
+            // 1) Resolve the associated PR(s) from the run's head SHA.
+            //    workflow_run carries pull_requests only for same-repo PRs; fall
+            //    back to a head-SHA search so fork PRs resolve too.
+            let prs = run.pull_requests || [];
+            if (prs.length === 0) {
+              const { data } = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+                owner, repo, commit_sha: run.head_sha,
+              });
+              prs = data.filter(p => p.state === 'open');
+            }
+            if (prs.length === 0) {
+              core.info(`No open PR associated with ${run.head_sha} — nothing to triage.`);
+              return;
+            }
+
+            // 2) Deterministic classify (shared logic) on the LATEST attempt's jobs.
+            const { data: jobsResp } = await github.rest.actions.listJobsForWorkflowRun({
+              owner, repo, run_id: run.id, per_page: 100, filter: 'latest',
+            });
+            const failedJobs = jobsResp.jobs.filter(j => j.conclusion === 'failure');
+            const { verdict, leafFailed, solidFailed, unknownFailed, flakyFailed, reason } =
+              classifyFailures(failedJobs.map(j => j.name));
+            core.info(`Verdict: ${verdict} — ${reason}`);
+
+            if (verdict === 'clean') {
+              core.info('Only aggregator roll-ups failed; the merge train handles the rest.');
+              return;
+            }
+
+            // 3) flake-only → ensure a rerun happened, AT MOST ONCE.
+            //    auto-rerun-flaky.yml owns the first retry (it fires on run_attempt == 1).
+            //    This is the backstop: only act on attempt 1 (so a run is never rerun
+            //    more than once — no storms), and only if auto-rerun didn't already.
+            if (verdict === 'flake-only') {
+              if (run.run_attempt > 1) {
+                core.info(`Run already on attempt ${run.run_attempt}; flake rerun budget spent — not rerunning.`);
+                return;
+              }
+              try {
+                await github.rest.actions.reRunWorkflowFailedJobs({ owner, repo, run_id: run.id });
+                core.info(`Backstop rerun of failed flaky jobs: ${flakyFailed.join(', ')}`);
+              } catch (e) {
+                // auto-rerun likely already triggered it (GitHub rejects a second
+                // rerun of the same attempt) — that's the desired "at most once".
+                core.info(`Rerun not issued (already rerun by auto-rerun, or in progress): ${e.message}`);
+              }
+              return;
+            }
+
+            // 4) real-failure → AI triage + label. Pick the most informative failing
+            //    leaf job (prefer a SOLID gate, else the first unknown leaf).
+            const failedNames = new Set([...solidFailed, ...unknownFailed]);
+            const targetJob = failedJobs.find(j => failedNames.has(j.name)) || failedJobs[0];
+
+            // Pull the failing job's log tail.
+            let logTail = '';
+            try {
+              const logResp = await github.request(
+                'GET /repos/{owner}/{repo}/actions/jobs/{job_id}/logs',
+                { owner, repo, job_id: targetJob.id }
+              );
+              logTail = typeof logResp.data === 'string'
+                ? logResp.data
+                : Buffer.from(logResp.data).toString('utf8');
+            } catch (e) {
+              logTail = `(could not fetch logs for job ${targetJob.name}: ${e.message})`;
+            }
+
+            const runUrl = `${run.html_url}`;
+            for (const pr of prs) {
+              // Skip held PRs — same escape hatch the merge train respects.
+              const { data: full } = await github.rest.pulls.get({ owner, repo, pull_number: pr.number });
+              if (full.labels.some(l => l.name === HOLD)) {
+                core.info(`#${pr.number} is on hold — skipping triage.`);
+                continue;
+              }
+
+              // Ensure the label exists, then apply it.
+              try {
+                await github.rest.issues.getLabel({ owner, repo, name: LABEL });
+              } catch {
+                await github.rest.issues.createLabel({
+                  owner, repo, name: LABEL, color: 'B60205',
+                  description: 'CI failed on a real gate/shard; AI-triaged, needs a human or fix.',
+                }).catch(() => {});
+              }
+              await github.rest.issues.addLabels({
+                owner, repo, issue_number: pr.number, labels: [LABEL],
+              }).catch(e => core.warning(`Label add failed: ${e.message}`));
+
+              // AI triage (graceful-degrade if no creds/SDK).
+              let triage;
+              try {
+                triage = await runTriage({
+                  jobName: targetJob.name, prNumber: pr.number, logTail,
+                });
+              } catch (e) {
+                triage = { available: false, notice: `Bedrock triage errored (non-fatal): ${e.message}` };
+              }
+
+              let body;
+              if (triage.available) {
+                body = [
+                  `### CI triage — \`${targetJob.name}\` (real failure)`,
+                  '',
+                  `${reason}`,
+                  '',
+                  `**AI classification:** \`${triage.classification}\``,
+                  `**Root cause:** ${triage.rootCause || '_n/a_'}`,
+                  `**Suggested action:** ${triage.suggestedAction || '_n/a_'}`,
+                  '',
+                  `Run: ${runUrl} · model: \`${triage.model}\``,
+                  `<sub>Posted by ci-failure-triage (#2021). Deterministic classifier verdict: real-failure.</sub>`,
+                ].join('\n');
+              } else {
+                body = [
+                  `### CI triage — \`${targetJob.name}\` (real failure)`,
+                  '',
+                  `${reason}`,
+                  '',
+                  `> AI triage was skipped: ${triage.notice}`,
+                  '',
+                  `Run: ${runUrl}`,
+                  `<sub>Posted by ci-failure-triage (#2021). Labelled \`${LABEL}\`; resolve the gate and push, or add the \`hold\` label.</sub>`,
+                ].join('\n');
+              }
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: pr.number, body,
+              }).catch(e => core.warning(`Comment failed: ${e.message}`));
+              core.info(`Triaged #${pr.number} (AI ${triage.available ? 'ran' : 'skipped'}).`);
+            }
