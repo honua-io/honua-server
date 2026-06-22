@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/plan_analysis.schema.json",
+  "title": "plan_analysis inputSchema",
+  "description": "Argument shape for the plan_analysis tool (Analyze family; emits an AnalysisPlan). Reference advertised name: honua_plan_analysis. Compiles a natural-language intent into an analysis plan / canonical spec draft. See taxonomy.md §Intent and planning.",
+  "type": "object",
+  "required": ["intent"],
+  "properties": {
+    "intent": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Natural-language intent to compile into an analysis plan or canonical spec draft."
+    },
+    "context": {
+      "type": "object",
+      "description": "Optional caller context. Echoed back unchanged by the reference implementation."
+    }
+  }
+}

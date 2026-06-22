@@ -8,14 +8,20 @@ on:
   pull_request:
     branches: [trunk]
     types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
-  # Merge queue: GitHub batches approved PRs and runs CI once on the combined
-  # result before fast-forwarding trunk (replaces manual PR bundling). A
-  # merge_group event is a non-pull_request event, so the existing job logic
-  # already routes it down the FULL integration lane (changes/targeted-shards
-  # else-branches => run_all; PR-only jobs short-circuit to success), making
-  # the queue the thorough trunk-protecting gate while the PR lane stays
-  # selective/fast. Enable in branch protection with "CI Gate" as the required
-  # status check (see docs/internal/ci/merge-queue.md).
+  # Merge queue (LEAN gate): GitHub batches approved PRs and runs CI once on
+  # the combined commit before fast-forwarding trunk. The full ~45-job matrix
+  # (AOT, docker, the 30+-shard Server Tests fanout, browser/MCP lanes) already
+  # gated each PR on its own `pull_request` run BEFORE it entered the queue, so
+  # re-running that matrix on every batch is pure waste — and at batch sizes of
+  # 5 it caused runner starvation, ejected the front PR, reformed the group,
+  # spawned zombie runs, and spiralled (merge queue disabled 2026-06-18,
+  # ruleset 17808547). The merge_group event therefore runs ONLY the lean
+  # `merge-queue-gate` job (build + format + fast unit/architecture smoke) to
+  # catch semantic conflicts from BATCHING — not to re-validate each PR. Every
+  # heavy job is `if:`-gated to `pull_request`/schedule and SKIPS on
+  # merge_group; the PR-time aggregator `CI Gate` likewise does not run on
+  # merge_group. The merge-queue REQUIRED check must be `Merge Queue Gate`,
+  # NOT `CI Gate`. See docs/internal/contributor/merge-queue-runbook.md.
   merge_group:
     types: [checks_requested]
   workflow_dispatch:
@@ -26,6 +32,15 @@ on:
         default: ''
 
 concurrency:
+  # PR runs key on the PR number (re-push cancels the prior run). merge_group
+  # and other non-PR events key on github.ref. For merge_group, github.ref is
+  # the unique per-batch queue ref (refs/heads/gh-readonly-queue/trunk/pr-...),
+  # so each batch gets its OWN concurrency group: a reformed group runs under a
+  # NEW ref and is NOT cancelled-in-progress by the prior batch (and cannot be
+  # cancelled BY it). This is deliberate — the historical zombie-run spiral came
+  # from re-running the full matrix per batch, not from this key; with the lean
+  # gate the per-batch group is cheap, so leave cancel-in-progress on (it still
+  # collapses duplicate checks_requested events for the SAME batch ref).
   group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
@@ -53,8 +68,9 @@ jobs:
     # Gate every heavy CI job on PR-body template compliance. For non-PR events
     # (schedule, workflow_dispatch) this job short-circuits to success so
     # nightly/manual runs are never blocked. Dependabot PRs skip the check to
-    # match the previous standalone workflow's behavior.
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
+    # match the previous standalone workflow's behavior. Skips on merge_group —
+    # the batched commit has no PR body and the lean gate does not template-check.
+    if: ${{ github.event_name != 'merge_group' && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') }}
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
@@ -209,6 +225,9 @@ jobs:
     # #1736/#1737 needed a manual re-trigger). pr-template-check is still a
     # first-class job and still feeds CI Gate (so a template failure still
     # fails the gate), but it no longer gates whether the code is validated.
+    # Skips on merge_group (no PR to check mergeability/freshness for; the queue
+    # enforces up-to-date-ness itself).
+    if: ${{ github.event_name != 'merge_group' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -256,6 +275,12 @@ jobs:
 
   changes:
     name: Detect Non-Test Changes
+    # Skips on merge_group: the lean merge-queue gate does not consult the
+    # change-detection / shard-routing graph (it always runs build + format +
+    # fast smoke). Skipping `changes` cascades a skip to every heavy job that
+    # `needs: changes` (build, *-tests, postgres-compat, aot-build, docker-build,
+    # browser/MCP lanes), so the full matrix never runs on a batched commit.
+    if: ${{ github.event_name != 'merge_group' }}
     needs: pr-readiness
     runs-on: ubuntu-latest
     outputs:
@@ -266,7 +291,7 @@ jobs:
       full_ci: ${{ steps.filter.outputs.full_ci }}
       postgres_matrix: ${{ steps.filter.outputs.postgres_matrix }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -410,7 +435,7 @@ jobs:
       descriptor: ${{ steps.compute.outputs.descriptor }}
       matrix_include: ${{ steps.compute.outputs.matrix_include }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -470,7 +495,7 @@ jobs:
     needs: changes
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Validate workflow and shard routing metadata
         run: scripts/ci/validate-ci-router.sh
@@ -481,7 +506,7 @@ jobs:
     needs: changes
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Canonical Instruction Check
         run: bash scripts/ci/check-instructions-sync.sh
@@ -581,7 +606,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       # Reclaim runner disk before the full-solution build + coverage run; the
       # modular topology pushed some runners over the free-disk limit. Best-effort.
@@ -782,13 +807,16 @@ jobs:
     needs: [build, changes, targeted-shards]
     timeout-minutes: ${{ matrix.timeout_minutes }}
     # Advisory shards (matrix.advisory == true in .github/ci-shards.json) RUN and
-    # publish results but do NOT gate the merge queue: continue-on-error makes the
-    # job conclusion `success` even when the test step fails, so CI Gate's
-    # contains(needs.*.result, 'failure') aggregation stays green. Used to keep a
-    # newly-running coverage shard visible while its rotted tests are repaired
-    # (the #1899/#1964 Features.* orphan buckets; tracked in #1965) instead of
-    # blocking unrelated PRs. Delete the shard's `advisory` field to re-block it.
-    continue-on-error: ${{ matrix.advisory == true }}
+    # publish results but do NOT gate the merge: continue-on-error is applied to the
+    # "Run server test shard" STEP (below), so an advisory test failure is swallowed
+    # there and the JOB CONCLUDES SUCCESS. That keeps CI Gate green (needs.*.result
+    # has no failure) AND keeps the job's check-run green — so the PR's
+    # mergeStateStatus stays CLEAN and the clean-only merge-train can auto-merge it.
+    # (A job-LEVEL continue-on-error kept CI Gate green but still published a FAILING
+    # check-run for the shard, forcing every PR to UNSTABLE and stalling auto-drain.)
+    # Used to keep a newly-running coverage shard visible while its rotted tests are
+    # repaired (the #1899/#1964 Features.* orphan buckets; tracked in #1965) instead
+    # of blocking unrelated PRs. Delete the shard's `advisory` field to re-block it.
     strategy:
       fail-fast: false
       matrix:
@@ -814,7 +842,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       # Reclaim runner disk before building. The modular topology (8 protocol
       # assemblies + native packages such as ParquetSharp/Apache.Arrow/SkiaSharp
@@ -858,6 +886,11 @@ jobs:
             --configuration Release
 
       - name: Run server test shard
+        # Advisory shards (matrix.advisory==true) swallow their test failure HERE so
+        # the job concludes success and the PR stays CLEAN (see job comment above).
+        # Non-advisory shards (false) fail the job as normal. A build failure in an
+        # earlier step still fails the job regardless — only the test run is swallowed.
+        continue-on-error: ${{ matrix.advisory == true }}
         shell: bash
         env:
           HONUA_SERVER_TEST_SHARD_NAME: ${{ matrix.shard_name }}
@@ -912,7 +945,7 @@ jobs:
       TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX: ""
       HONUA_TEST_CONFIGURATION: Release
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
@@ -974,7 +1007,7 @@ jobs:
     needs: [build, changes]
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -993,7 +1026,10 @@ jobs:
 
   test-all:
     name: Test Suite Summary
-    if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') }}
+    # `always()` would otherwise let this run on merge_group with all test
+    # needs skipped (a misleading all-skipped "pass"); exclude merge_group so
+    # the heavy test lane is fully dormant on a batched commit.
+    if: ${{ github.event_name != 'merge_group' && always() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') }}
     runs-on: ubuntu-latest
     needs:
       - dotnet-foundation-tests
@@ -1038,7 +1074,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Setup Honua Server
         uses: ./.github/actions/setup-honua-server
@@ -1140,7 +1176,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Setup Honua Server
         uses: ./.github/actions/setup-honua-server
@@ -1227,7 +1263,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Setup Python
         uses: actions/setup-python@v6
@@ -1331,7 +1367,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       # Design: skip-if-absent is intentional for cross-repo coordination.
       # Test code lives in honua-sdk-js; this repo provides only CI jobs,
@@ -1431,7 +1467,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Setup Honua MCP environment
         id: setup
@@ -1505,7 +1541,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
@@ -1574,7 +1610,7 @@ jobs:
     needs: build
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
@@ -1672,7 +1708,7 @@ jobs:
     needs: [build, changes, test-all, core-package-compatibility, postgres-compat]
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
@@ -1735,7 +1771,7 @@ jobs:
           --health-retries 5
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Pre-pull BuildKit image with retries
         shell: bash
@@ -1876,13 +1912,108 @@ jobs:
           docker stop honua-test || true
           docker rm honua-test || true
 
+  # ===========================================================================
+  # LEAN MERGE-QUEUE GATE
+  # ===========================================================================
+  # Runs ONLY on merge_group (the batched/combined commit GitHub forms from the
+  # queued PRs). It is the queue's REQUIRED status check — set branch
+  # protection / ruleset 17808547's merge_group required check to "Merge Queue
+  # Gate", NOT "CI Gate". It is deliberately LEAN: build (warnings-as-errors) +
+  # format + the Fast/architecture unit smoke. It does NOT run AOT, docker, the
+  # Server Tests shard matrix, the browser/MCP/Postgres lanes, or any
+  # integration suite — those already gated each PR on its own pull_request run
+  # before the PR entered the queue. The queue only needs to catch SEMANTIC
+  # conflicts introduced by BATCHING (e.g. two PRs that each compile alone but
+  # not together, a format drift, an architecture-rule break). Keeping it lean
+  # is the fix for the 2026-06-18 runner-starvation spiral: a batch of 5 no
+  # longer fans out to ~225 concurrent jobs, so the group finishes inside
+  # check_response_timeout_minutes and the front PR is not ejected.
+  merge-queue-gate:
+    name: Merge Queue Gate
+    if: ${{ github.event_name == 'merge_group' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      # Mirror the build job's disk reclaim — the full-solution build can
+      # exhaust ubuntu-latest disk once every project writes Release outputs.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android || true
+          sudo rm -rf /usr/share/swift || true
+          sudo rm -rf /usr/local/.ghcup || true
+          sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+          df -h / || true
+
+      - name: Setup .NET
+        uses: ./.github/actions/setup-dotnet-ci
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        run: scripts/ci/dotnet-restore-retry.sh Honua.sln
+
+      # Full-solution warnings-as-errors build. On a BATCHED commit the
+      # "affected projects" optimization is unsafe (the merge_group ref's diff
+      # base is the queue base, not a single PR), so build the whole solution —
+      # this is the one place we want the combined batch fully compiled.
+      - name: Build (warnings as errors)
+        timeout-minutes: 20
+        run: |
+          dotnet build Honua.sln \
+            --no-restore \
+            --configuration Release \
+            /p:TreatWarningsAsErrors=true
+
+      - name: Format Check
+        run: dotnet format Honua.sln --verify-no-changes --verbosity diagnostic
+
+      - name: Create Test Results Directory
+        run: mkdir -p ./tests/TestResults
+
+      # Fast unit smoke — the same coverage-free Fast tier the PR lane runs, to
+      # catch a batch that compiles but breaks shared unit behavior. NOT the
+      # Postgres/integration shards (those ran per-PR and need the DB service).
+      - name: Run .NET Tests (Server Fast Tier)
+        timeout-minutes: 15
+        run: |
+          dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
+            --no-build \
+            --no-restore \
+            --configuration Release \
+            --filter "Tier=Fast" \
+            --logger "trx;LogFileName=merge-queue-server-fast.trx" \
+            --logger "console;verbosity=minimal" \
+            --results-directory ./tests/TestResults
+
+      # Architecture-enforcement tests are cheap and catch the BLOCKING
+      # dependency-direction / controller / encapsulation regressions that a
+      # batch could reintroduce by combining two otherwise-clean PRs.
+      - name: Run .NET Tests (Architecture)
+        timeout-minutes: 10
+        run: |
+          dotnet test tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj \
+            --no-build \
+            --no-restore \
+            --configuration Release \
+            --logger "trx;LogFileName=merge-queue-architecture.trx" \
+            --logger "console;verbosity=minimal" \
+            --results-directory ./tests/TestResults
+
   # Summary gate: a single job that branch-protection can require.
   # Add every job whose failure should block merge.
   ci-gate:
     name: CI Gate
     # When a newer run supersedes this one via workflow concurrency, avoid
     # publishing a false failing gate from the cancelled run.
-    if: ${{ always() && !cancelled() }}
+    #
+    # Does NOT run on merge_group: CI Gate is the PR-TIME aggregator (it needs
+    # the full heavy matrix, all of which is skipped on a batched commit). The
+    # merge queue's required check is the separate `Merge Queue Gate` job below,
+    # NOT this one. Keeping CI Gate off merge_group avoids a misleading all-
+    # skipped "pass" status appearing in the queue context.
+    if: ${{ github.event_name != 'merge_group' && always() && !cancelled() }}
     needs: [pr-template-check, pr-readiness, changes, targeted-shards, ci-router-validation, build, test-all, aot-build, js-integration-tests, esri-leaflet-browser-tests, maplibre-compat, mcp-certification, core-package-compatibility, postgres-compat, docker-build]
     runs-on: ubuntu-latest
     steps:

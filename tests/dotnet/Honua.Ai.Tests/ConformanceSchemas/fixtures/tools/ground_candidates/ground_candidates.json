@@ -1,0 +1,17 @@
+{
+  "id": "ground_candidates.initial",
+  "schemaRef": "tools/ground_candidates.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "goal": "Assess flood exposure for critical facilities in the county.",
+    "assumptionPolicy": "AskWhenMaterial",
+    "explicitInputs": ["dataset:critical_facilities"],
+    "constraints": {
+      "areaOfInterest": "named:Travis County",
+      "spatialReferenceId": 4326,
+      "units": "meters"
+    }
+  },
+  "expected": "tool_result",
+  "canonicalRefs": ["CapabilityCatalog", "AnalysisIntent", "ClarificationRequest"]
+}

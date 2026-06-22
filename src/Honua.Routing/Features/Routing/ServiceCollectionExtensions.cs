@@ -67,6 +67,15 @@ public static class ServiceCollectionExtensions
         // pgRouting provider consumes it.
         services.AddScoped<INetworkDatasetResolver, NetworkDatasetRegistry>();
 
+        // Network-dataset editing store (#1882 editing surface): admin CRUD over the
+        // honua.network_datasets registry. The registry table is Postgres-only, so the
+        // store is registered only when the active data provider is Postgres (the admin
+        // endpoints no-op when it is absent, mirroring the scene-dataset registry).
+        if (UsesPostgresDataProvider(configuration))
+        {
+            services.AddScoped<INetworkDatasetStore, PostgresNetworkDatasetStore>();
+        }
+
         // Resolve the selected provider. The Routing:Provider key remains the
         // authoritative selector; the bound RoutingConfiguration.Provider mirrors it.
         var providerName = configuration[ProviderConfigurationKey];

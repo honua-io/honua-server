@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/ground_candidates.schema.json",
+  "title": "ground_candidates inputSchema",
+  "description": "Argument shape for the ground_candidates tool (Analyze, Publish Data). Reference advertised name: honua_ground_candidates. Grounds a natural-language goal to a workflow family, ranked candidates, a draft intent, and an optional clarification envelope. See taxonomy.md §Intent and planning and planning.md §2.",
+  "type": "object",
+  "required": ["goal"],
+  "properties": {
+    "goal": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Freeform natural-language description of the operator's goal."
+    },
+    "intentId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Intent identifier. Optional on the initial grounding call (server allocates one); required on a clarification turn."
+    },
+    "workflowFamilyHint": {
+      "type": "string",
+      "description": "Optional workflow-family override (one of the canonical WorkflowFamily names).",
+      "enum": ["Analyze", "PublishData", "BuildApp", "AutomateDeploy"]
+    },
+    "assumptionPolicy": {
+      "type": "string",
+      "description": "Policy controlling when inferred assumptions trigger a clarification. See planning.md §2.3.",
+      "enum": ["AskAlways", "AskWhenMaterial", "UseDefaults"]
+    },
+    "explicitInputs": {
+      "type": "array",
+      "description": "Dataset, layer, or artifact identifiers the caller has already pinned.",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "constraints": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Optional analysis constraints.",
+      "properties": {
+        "areaOfInterest": {
+          "type": "string",
+          "description": "AOI as WKT, bounding-box string, or named area."
+        },
+        "spatialReferenceId": {
+          "type": "integer",
+          "description": "EPSG SRID for the AOI (defaults to 4326)."
+        },
+        "timeWindowStart": { "type": "string", "format": "date-time" },
+        "timeWindowEnd": { "type": "string", "format": "date-time" },
+        "units": {
+          "type": "string",
+          "description": "Preferred unit system (e.g. 'meters', 'feet')."
+        }
+      }
+    },
+    "context": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Optional workflow context.",
+      "properties": {
+        "workspaceId": { "type": "string" },
+        "priorIntentId": { "type": "string" },
+        "promotionScope": { "type": "string" }
+      }
+    }
+  }
+}
