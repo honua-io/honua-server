@@ -25,6 +25,13 @@ internal sealed partial class GeoservicesImportService
         // This converts common geometry types to GeoJSON
         try
         {
+            // Esri geometries carry explicit hasZ/hasM flags. When hasZ is false but
+            // hasM is true, the third ordinate in each coordinate is M, NOT Z — so we
+            // must not promote it to GeoJSON Z. When the flag is absent (older/partial
+            // payloads) we keep the historical behavior of treating index 2 as Z.
+            var coordsCarryZ = !geometry.TryGetProperty("hasZ", out var hasZFlag)
+                || hasZFlag.ValueKind != JsonValueKind.False;
+
             if (geometry.TryGetProperty("x", out var x) && geometry.TryGetProperty("y", out var y))
             {
                 // Point. Carry the optional Z so elevation-enabled ArcGIS REST
@@ -38,11 +45,19 @@ internal sealed partial class GeoservicesImportService
 
             if (geometry.TryGetProperty("rings", out var rings))
             {
-                // Polygon
+                // Polygon. Carry the optional Z (coord[2]) through ring extraction,
+                // closing, classification, and orientation so elevation-enabled
+                // ArcGIS REST polygons round-trip instead of flattening to 2-D (#1981).
+                // The ring math (signed area, point-in-ring, orientation) reads only
+                // X/Y (indices 0/1), so longer coordinate arrays pass through intact.
+                // Esri M is intentionally dropped on this path: the converter targets
+                // GeoJSON consumed by ST_GeomFromGeoJSON, which (per the GeoJSON spec)
+                // has no M ordinate. The file-import path (FileGDB/shapefile) carries M
+                // through WKB instead.
                 var ringCoordinates = rings.EnumerateArray()
                     .Select(ring => ring.EnumerateArray()
                         .Where(coord => coord.GetArrayLength() >= 2)
-                        .Select(coord => new[] { coord[0].GetDouble(), coord[1].GetDouble() })
+                        .Select(coord => ExtractXyz(coord, coordsCarryZ))
                         .ToArray())
                     .Select(EnsureClosedRing)
                     .Where(ring => ring.Length >= 4)
@@ -62,7 +77,7 @@ internal sealed partial class GeoservicesImportService
                 var coordinates = paths.EnumerateArray()
                     .Select(path => path.EnumerateArray()
                         .Where(coord => coord.GetArrayLength() >= 2)
-                        .Select(ExtractXyz)
+                        .Select(coord => ExtractXyz(coord, coordsCarryZ))
                         .ToArray())
                     .Where(path => path.Length >= 2)
                     .ToArray();
@@ -79,7 +94,7 @@ internal sealed partial class GeoservicesImportService
                 // ArcGIS REST multipoints round-trip instead of flattening to 2D (#1981).
                 var coordinates = points.EnumerateArray()
                     .Where(p => p.GetArrayLength() >= 2)
-                    .Select(ExtractXyz)
+                    .Select(coord => ExtractXyz(coord, coordsCarryZ))
                     .ToArray();
 
                 if (coordinates.Length == 0)
@@ -157,12 +172,14 @@ internal sealed partial class GeoservicesImportService
     /// <summary>
     /// Projects an Esri coordinate array to <c>[x, y]</c> or <c>[x, y, z]</c>,
     /// preserving the optional Z ordinate (index 2) when present and finite.
+    /// When <paramref name="carryZ"/> is <c>false</c> the third ordinate is an M
+    /// (measure) value rather than Z and is not promoted to GeoJSON Z (#1981).
     /// </summary>
-    private static double[] ExtractXyz(JsonElement coord)
+    private static double[] ExtractXyz(JsonElement coord, bool carryZ = true)
     {
         var x = coord[0].GetDouble();
         var y = coord[1].GetDouble();
-        if (coord.GetArrayLength() >= 3 && coord[2].ValueKind == JsonValueKind.Number)
+        if (carryZ && coord.GetArrayLength() >= 3 && coord[2].ValueKind == JsonValueKind.Number)
         {
             var z = coord[2].GetDouble();
             if (!double.IsNaN(z))
@@ -206,7 +223,8 @@ internal sealed partial class GeoservicesImportService
 
         var closed = new double[ring.Length + 1][];
         Array.Copy(ring, closed, ring.Length);
-        closed[^1] = [first[0], first[1]];
+        // Duplicate the first vertex verbatim (including any Z) to close the ring.
+        closed[^1] = first;
         return closed;
     }
 
@@ -349,9 +367,9 @@ internal sealed partial class GeoservicesImportService
 
     private static double[][] ReverseRing(double[][] ring)
     {
-        var reversed = ring.Reverse()
-            .Select(coord => new[] { coord[0], coord[1] })
-            .ToArray();
+        // Preserve each vertex verbatim (including any Z) while reversing winding,
+        // so polygon orientation fixes don't drop the elevation ordinate (#1981).
+        var reversed = ring.Reverse().ToArray();
         return EnsureClosedRing(reversed);
     }
 
@@ -386,10 +404,7 @@ internal sealed partial class GeoservicesImportService
                     writer.WriteStartArray();
                     foreach (var coord in ring)
                     {
-                        writer.WriteStartArray();
-                        writer.WriteNumberValue(coord[0]);
-                        writer.WriteNumberValue(coord[1]);
-                        writer.WriteEndArray();
+                        WriteCoordinate(writer, coord);
                     }
                     writer.WriteEndArray();
                 }
