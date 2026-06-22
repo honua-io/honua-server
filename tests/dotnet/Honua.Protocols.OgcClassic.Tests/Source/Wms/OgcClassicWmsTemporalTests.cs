@@ -217,14 +217,15 @@ public sealed class OgcClassicWmsTemporalTests : IAsyncLifetime
         // CITE-supported tokens like "current" before the CITE branch runs.
         // V2 cutover: the bypass keys on the V2 resource name.
         _fixture.UpdateV2ResourceName(WebAppFixture.TestLayerId, "cite:Autos");
-        await using (var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!))
-        await using (var command = connection.CreateCommand())
-        {
-            command.CommandText = "UPDATE honua.layers SET layer_name = @layerName WHERE layer_id = @layerId;";
-            command.Parameters.Add(new NpgsqlParameter { ParameterName = "layerName", Value = "cite:Autos" });
-            command.Parameters.Add(new NpgsqlParameter { ParameterName = "layerId", Value = WebAppFixture.TestLayerId });
-            await command.ExecuteNonQueryAsync();
-        }
+        // #2020: route the global honua.layers UPDATE through the schema-mutation advisory lock.
+        await _fixture.Postgres.ApplyGlobalSeedSqlAsync(
+            "UPDATE honua.layers SET layer_name = @layerName WHERE layer_id = @layerId;",
+            command =>
+            {
+                command.Parameters.Add(new NpgsqlParameter { ParameterName = "layerName", Value = "cite:Autos" });
+                command.Parameters.Add(new NpgsqlParameter { ParameterName = "layerId", Value = WebAppFixture.TestLayerId });
+            },
+            _fixture.CurrentSchema);
 
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-90,-180,90,180&WIDTH=256&HEIGHT=256&CRS=EPSG:4326&LAYERS={WebAppFixture.TestLayerId}&STYLES=&FORMAT=image/png&TIME=current");
@@ -257,14 +258,15 @@ public sealed class OgcClassicWmsTemporalTests : IAsyncLifetime
         // Rename layer 1 to cite:Autos so the request can mix both layers in
         // a single LAYERS= argument while keeping layer 0 time-aware.
         _fixture.UpdateV2ResourceName(1, "cite:Autos");
-        await using (var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!))
-        await using (var command = connection.CreateCommand())
-        {
-            command.CommandText = "UPDATE honua.layers SET layer_name = @layerName WHERE layer_id = @layerId;";
-            command.Parameters.Add(new NpgsqlParameter { ParameterName = "layerName", Value = "cite:Autos" });
-            command.Parameters.Add(new NpgsqlParameter { ParameterName = "layerId", Value = 1 });
-            await command.ExecuteNonQueryAsync();
-        }
+        // #2020: route the global honua.layers UPDATE through the schema-mutation advisory lock.
+        await _fixture.Postgres.ApplyGlobalSeedSqlAsync(
+            "UPDATE honua.layers SET layer_name = @layerName WHERE layer_id = @layerId;",
+            command =>
+            {
+                command.Parameters.Add(new NpgsqlParameter { ParameterName = "layerName", Value = "cite:Autos" });
+                command.Parameters.Add(new NpgsqlParameter { ParameterName = "layerId", Value = 1 });
+            },
+            _fixture.CurrentSchema);
 
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-90,-180,90,180&WIDTH=256&HEIGHT=256&CRS=EPSG:4326&LAYERS={WebAppFixture.TestLayerId},1&STYLES=,&FORMAT=image/png&TIME=current");
@@ -284,14 +286,15 @@ public sealed class OgcClassicWmsTemporalTests : IAsyncLifetime
         // OgcTemporalFilterParser (only RFC 3339 instants/intervals). Verify
         // the bypass also covers this CITE-only form. V2 cutover: rename via V2.
         _fixture.UpdateV2ResourceName(WebAppFixture.TestLayerId, "cite:Autos");
-        await using (var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!))
-        await using (var command = connection.CreateCommand())
-        {
-            command.CommandText = "UPDATE honua.layers SET layer_name = @layerName WHERE layer_id = @layerId;";
-            command.Parameters.Add(new NpgsqlParameter { ParameterName = "layerName", Value = "cite:Autos" });
-            command.Parameters.Add(new NpgsqlParameter { ParameterName = "layerId", Value = WebAppFixture.TestLayerId });
-            await command.ExecuteNonQueryAsync();
-        }
+        // #2020: route the global honua.layers UPDATE through the schema-mutation advisory lock.
+        await _fixture.Postgres.ApplyGlobalSeedSqlAsync(
+            "UPDATE honua.layers SET layer_name = @layerName WHERE layer_id = @layerId;",
+            command =>
+            {
+                command.Parameters.Add(new NpgsqlParameter { ParameterName = "layerName", Value = "cite:Autos" });
+                command.Parameters.Add(new NpgsqlParameter { ParameterName = "layerId", Value = WebAppFixture.TestLayerId });
+            },
+            _fixture.CurrentSchema);
 
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-90,-180,90,180&WIDTH=256&HEIGHT=256&CRS=EPSG:4326&LAYERS={WebAppFixture.TestLayerId}&STYLES=&FORMAT=image/png&TIME=2000-01-01T00:00:00Z,2000-01-01T00:00:30Z");

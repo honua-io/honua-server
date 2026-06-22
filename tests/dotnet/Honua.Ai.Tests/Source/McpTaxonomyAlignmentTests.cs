@@ -25,7 +25,7 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 /// Contract Families</c>. A rename on either side trips this test.
 /// </summary>
 [Protocol(TestProtocols.Mcp)]
-public sealed class McpTaxonomyAlignmentTests
+public sealed partial class McpTaxonomyAlignmentTests
 {
     private static readonly string[] TaxonomyToolNames =
     {
@@ -34,6 +34,7 @@ public sealed class McpTaxonomyAlignmentTests
         "honua_dry_run_plan",
         "honua_cancel_job",
         "honua_propose_operation",
+        "honua_publish_service",
         "honua_plan_analysis",
         "honua_ground_candidates",
         "honua_clarify_intent",
@@ -222,6 +223,7 @@ public sealed class McpTaxonomyAlignmentTests
             ["honua_execute_plan"] = (Destructive: false, Idempotent: true),
             ["honua_cancel_job"] = (Destructive: true, Idempotent: true),
             ["honua_propose_operation"] = (Destructive: false, Idempotent: true),
+            ["honua_publish_service"] = (Destructive: false, Idempotent: false),
         };
 
     [UnitTest]
@@ -549,6 +551,7 @@ public sealed class McpTaxonomyAlignmentTests
             new ExecutePlanTool(jobService, NullLogger<ExecutePlanTool>.Instance),
             new CancelJobTool(jobService, NullLogger<CancelJobTool>.Instance),
             new ProposeOperationTool(NullLogger<ProposeOperationTool>.Instance),
+            new PublishServiceTool(NullLogger<PublishServiceTool>.Instance),
             new PlanAnalysisTool(
                 Substitute.For<Honua.Ai.AiBuilder.Planning.IPlanAnalysisService>(),
                 jobService,

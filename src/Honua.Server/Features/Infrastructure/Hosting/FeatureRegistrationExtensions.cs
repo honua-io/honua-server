@@ -195,6 +195,24 @@ internal static class FeatureRegistrationExtensions
         services.AddOrchestration();
         services.AddPMTilesProxy();
 
+        // Hosted-promotion MCP surface (#1951): advertise
+        // honua://published-services|deployments|map-packages|app-packages on the
+        // deployed server, but ONLY when canonical promotion persistence is wired.
+        // The promotion resource handlers depend on IPublishedServiceStore /
+        // IDeploymentStore; advertising them without a backing store would surface
+        // an always-empty surface and break the honesty invariant the MCP
+        // tools/list contract relies on. AddMcpPromotionSurface deliberately wires
+        // no fallback stores, so this gate is the single place the default
+        // composition opts in once a provider has registered the canonical stores
+        // earlier in the composition root (for example AddPostgreSqlServices). On a
+        // store-less profile this is a no-op and the resources stay off — the same
+        // gating contract the operator-surface tools use.
+        if (services.Any(d => d.ServiceType == typeof(Honua.Core.Features.Publishing.Abstractions.IPublishedServiceStore))
+            && services.Any(d => d.ServiceType == typeof(Honua.Core.Features.Deployment.Abstractions.IDeploymentStore)))
+        {
+            services.AddMcpPromotionSurface();
+        }
+
         return services;
     }
 
@@ -233,6 +251,7 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapSceneEndpoints();
         endpoints.MapI3sSceneServerEndpoints();
         endpoints.MapSceneDatasetEndpoints();
+        endpoints.MapNetworkDatasetAdminEndpoints();
         endpoints.MapElevationEndpoints();
         endpoints.MapSceneAnalysisEndpoints();
         endpoints.MapVisibilityAnalysisEndpoints();
