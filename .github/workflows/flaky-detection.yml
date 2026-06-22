@@ -54,7 +54,7 @@ jobs:
       CSPROJ: ${{ github.event.inputs.project || 'tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj' }}
       HONUA_TEST_DB_URL: "Host=localhost;Port=5432;Database=honua_test;Username=honua;Password=honua"
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
