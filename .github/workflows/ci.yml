@@ -808,7 +808,7 @@ jobs:
     # painting every PR red kept PRs UNSTABLE (blocking the clean-only merge-train).
     # They still run on scheduled/manual full-matrix runs so the coverage signal
     # isn't lost. Delete the matrix.advisory clause once #1965 fixes the tests.
-    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && !(github.event_name == 'pull_request' && matrix.advisory == true) }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
     runs-on: ubuntu-latest
     needs: [build, changes, targeted-shards]
     timeout-minutes: ${{ matrix.timeout_minutes }}
