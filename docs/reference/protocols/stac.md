@@ -14,6 +14,8 @@ Honua serves a STAC API v1.0.0 (SpatioTemporal Asset Catalog) at `/stac` for sta
 | GET | `/stac/collections/{collectionId}/items` | Items in a collection. |
 | GET | `/stac/collections/{collectionId}/items/{itemId}` | Single item. |
 | GET, POST | `/stac/search` | Cross-collection item search (GET query string or POST JSON body). |
+| GET | `/stac/queryables` | Catalog-level queryables (JSON Schema of filterable properties). |
+| GET | `/stac/collections/{collectionId}/queryables` | Per-collection queryables (JSON Schema). |
 
 ## Search parameters
 
@@ -42,6 +44,19 @@ Accepted on `GET /stac/search` as query parameters and on `POST /stac/search` as
 - `https://api.stacspec.org/v1.0.0/item-search#fields`
 - `https://api.stacspec.org/v1.0.0/item-search#sort`
 - `https://api.stacspec.org/v1.0.0/item-search#filter`
+
+## Filter Extension (CQL2)
+
+The Item Search Filter Extension is conformant against `stac-api-validator` (`--conformance filter`):
+
+- The landing page (`/stac`) and each collection advertise their queryables document through the
+  `http://www.opengis.net/def/rel/ogc/1.0/queryables` link relation; the link `href` matches the
+  queryables document's `$id`.
+- Queryables documents are JSON Schema (draft 2019-09) `type: object` documents describing the
+  filterable properties.
+- The queryables documents declare `additionalProperties: false`. A CQL2 filter that references a
+  property outside the declared queryables set is rejected with a structured `400` (problem+json),
+  which is the spec-permitted behavior for that declaration.
 
 ## Examples
 
