@@ -12300,6 +12300,19 @@
       "maturity": "implemented"
     },
     {
+      "id": "post-api-v1-admin-tile-operations-evict",
+      "route": "/api/v1/admin/tile-operations/evict",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.TileOperationsEndpointsTests.Evict_WhenEvictionDisabled_ReturnsOkAndReportsDisabled"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
       "id": "post-api-v1-admin-tile-operations-jobs",
       "route": "/api/v1/admin/tile-operations/jobs",
       "method": "POST",
