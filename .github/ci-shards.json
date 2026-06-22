@@ -179,7 +179,8 @@
         "tests/dotnet/Honua.Server.Tests/PostgresFeatureStoreTests.cs",
         "tests/dotnet/Honua.Server.Tests/PostgresLayerCatalogTests.cs",
         "tests/dotnet/Honua.Server.Tests/SpatialCorrectnessTests.cs",
-        "tests/dotnet/Honua.Server.Tests/SpatialGeometryValidationTests.cs"
+        "tests/dotnet/Honua.Server.Tests/SpatialGeometryValidationTests.cs",
+        "src/Honua.Hosting/Features/Services/"
       ]
     },
     {
@@ -405,7 +406,8 @@
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerQueryTopFeaturesTests.cs",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerQueryAttachmentsFilterTests.cs",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerQueryGapsTests.cs",
-        "src/Honua.Core/Features/Validation/"
+        "src/Honua.Core/Features/Validation/",
+        "src/Honua.Hosting/Features/Services/"
       ],
       "csproj": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj"
     },
@@ -430,7 +432,8 @@
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/ReplicaManagementEndpointTests.cs",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/MobileOfflineDemoFixtureReplicationTests.cs",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerReplicaSyncTests.cs",
-        "src/Honua.Core/Features/Validation/"
+        "src/Honua.Core/Features/Validation/",
+        "src/Honua.Hosting/Features/Services/"
       ],
       "csproj": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj"
     },
@@ -453,7 +456,8 @@
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerTemporalExtentEndpointTests.cs",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/GeoServicesTemporalQueryBuilderTests.cs",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerExtrusionTests.cs",
-        "src/Honua.Core/Features/Validation/"
+        "src/Honua.Core/Features/Validation/",
+        "src/Honua.Hosting/Features/Services/"
       ],
       "csproj": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj"
     },
@@ -484,7 +488,8 @@
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/GeoServicesGeometryParserTests.cs",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/GeometryValidationTests.cs",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/DatumTransformationParserTests.cs",
-        "src/Honua.Core/Features/Validation/"
+        "src/Honua.Core/Features/Validation/",
+        "src/Honua.Hosting/Features/Services/"
       ],
       "csproj": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj"
     },
@@ -504,7 +509,8 @@
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/Services/",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/Models/",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GeoServicesSpatialFilterBuilderTests.cs",
-        "src/Honua.Core/Features/Validation/"
+        "src/Honua.Core/Features/Validation/",
+        "src/Honua.Hosting/Features/Services/"
       ],
       "csproj": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj"
     },
@@ -546,7 +552,8 @@
       "paths": [
         "src/Honua.Protocols.OgcApi/Features/",
         "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Features/",
-        "src/Honua.Core/Features/Validation/"
+        "src/Honua.Core/Features/Validation/",
+        "src/Honua.Hosting/Features/Services/"
       ]
     },
     {
@@ -565,7 +572,8 @@
       "paths": [
         "src/Honua.Protocols.OgcApi/Features/",
         "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Features/",
-        "src/Honua.Core/Features/Validation/"
+        "src/Honua.Core/Features/Validation/",
+        "src/Honua.Hosting/Features/Services/"
       ]
     },
     {
@@ -584,9 +592,11 @@
       "paths": [
         "src/Honua.Protocols.OgcClassic/Wfs20/",
         "src/Honua.Protocols.OgcClassic/Wcs20/",
+        "src/Honua.Core/Features/Raster/",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wcs20/",
-        "src/Honua.Core/Features/Validation/"
+        "src/Honua.Core/Features/Validation/",
+        "src/Honua.Hosting/Features/Services/"
       ]
     },
     {
@@ -650,7 +660,8 @@
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataQueryHandlerTests.cs",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataSearchServiceSqlTests.cs",
         "tests/dotnet/Honua.TestKit/Helpers/ODataTestHelpers.cs",
-        "src/Honua.Core/Features/Validation/"
+        "src/Honua.Core/Features/Validation/",
+        "src/Honua.Hosting/Features/Services/"
       ]
     },
     {
@@ -676,7 +687,8 @@
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataSpatialReferenceTests.cs",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataTemporalFilteringTests.cs",
         "tests/dotnet/Honua.TestKit/Helpers/ODataTestHelpers.cs",
-        "src/Honua.Core/Features/Validation/"
+        "src/Honua.Core/Features/Validation/",
+        "src/Honua.Hosting/Features/Services/"
       ]
     },
     {
@@ -702,7 +714,8 @@
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataGeometryCrudTests.cs",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataMultipartBatchTests.cs",
         "tests/dotnet/Honua.TestKit/Helpers/ODataTestHelpers.cs",
-        "src/Honua.Core/Features/Validation/"
+        "src/Honua.Core/Features/Validation/",
+        "src/Honua.Hosting/Features/Services/"
       ]
     },
     {
@@ -723,7 +736,8 @@
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataClientIntegrationTests.cs",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataClientModels.cs",
         "tests/dotnet/Honua.TestKit/Helpers/ODataTestHelpers.cs",
-        "src/Honua.Core/Features/Validation/"
+        "src/Honua.Core/Features/Validation/",
+        "src/Honua.Hosting/Features/Services/"
       ]
     },
     {
@@ -764,6 +778,7 @@
         "src/Honua.Protocols.OgcApi/Tiles/",
         "src/Honua.Protocols.OgcApi/Coverages/",
         "src/Honua.Protocols.OgcApi/Processes/",
+        "src/Honua.Core/Features/Raster/",
         "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Tiles/",
         "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Coverages/",
         "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Processes/",
@@ -838,9 +853,12 @@
       "upload_odata_evidence": false,
       "_comment": "ADR-0037 finer-sharding: narrowed to the ImageServer + Catalog namespaces; GPServer and NAServer were carved into the GeoServices GPServer and NAServer shard. ImageServer and GPServer/NAServer use disjoint namespaces, so the two shards partition the original suite with no gaps or overlaps.",
       "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.Catalog",
+      "_paths_comment": "src-dir->shard map (#1897 follow-up): src/Honua.Core/Features/Raster/ is the shared raster/coverage pipeline (Zarr/COG sampling, mosaic, statistics) that ImageServer adapts; it is mapped here (and to the OGC API Tiles/Coverages and WFS=Wcs shards) so a raster change like #1939 targets the raster-rendering protocol shards instead of tripping the unmapped-source net. Raster unit tests live in Honua.Core.Tests (not in the shard matrix); the server-test coverage of Raster flows through these protocol shards.",
       "paths": [
         "src/Honua.Protocols.GeoServices/ImageServer/",
         "src/Honua.Protocols.GeoServices/Catalog/",
+        "src/Honua.Core/Features/Raster/",
+        "src/Honua.Postgres/Features/Raster/",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Catalog/",
         "src/Honua.Core/Features/Validation/"
@@ -924,23 +942,32 @@
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
       "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Infrastructure|FullyQualifiedName~Honua.Server.Tests.Features.Caching|FullyQualifiedName~Honua.Server.Tests.Features.Security|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.Catalog|FullyQualifiedName~Honua.Server.Tests.Features.FileStorage|FullyQualifiedName~Honua.Server.Tests.Features.Styling",
+      "_paths_comment": "src-dir->shard map (#1897 follow-up to #2035): claims the SOURCE trees whose tests this shard's filter runs (Features.Infrastructure, Caching, Security, Styling, GeoServices.Catalog, FileStorage). src/Honua.Server/Features/Infrastructure/ is claimed here so an Infrastructure-feature change (ControlPlane/Errors/Helpers/Compression/etc.) targets this shard instead of tripping the unmapped-source net; the shared host-wiring subdirs (Hosting/Middleware/Services/Monitoring) still escalate to run_all because they are listed in infrastructure_paths, which short-circuits (step 3) BEFORE this path match (step 4). Core/Postgres Caching/Security/Styling slices map here too so a provider-side change to those features targets this shard.",
       "paths": [
         "src/Honua.Server/Features/Caching/",
+        "src/Honua.Core/Features/Caching/",
         "src/Honua.Io/Features/FileStorage/",
         "src/Honua.Server/Features/FileStorage/",
         "src/Honua.Server/Features/Authorization/",
         "src/Honua.Server/Features/Security/",
+        "src/Honua.Core/Features/Security/",
+        "src/Honua.Postgres/Features/Security/",
         "src/Honua.Server/Features/Styling/",
+        "src/Honua.Core/Features/Styling/",
+        "src/Honua.Postgres/Features/Styling/",
+        "src/Honua.Server/Features/Infrastructure/",
         "src/Honua.Protocols.GeoServices/Catalog/",
         "tests/dotnet/Honua.Server.Tests/Features/Authorization/",
         "tests/dotnet/Honua.Server.Tests/Features/Caching/",
         "tests/dotnet/Honua.Server.Tests/Features/FileStorage/",
         "tests/dotnet/Honua.Server.Tests/Features/Security/",
         "tests/dotnet/Honua.Server.Tests/Features/Styling/",
+        "tests/dotnet/Honua.Server.Tests/Features/Infrastructure/",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Catalog/",
         "src/Honua.Io/Features/Export/",
         "tests/dotnet/Honua.Server.Tests/Features/Export/",
-        "src/Honua.Core/Features/Validation/"
+        "src/Honua.Core/Features/Validation/",
+        "src/Honua.Hosting/Features/Services/"
       ]
     },
     {
@@ -1078,10 +1105,17 @@
       "_advisory_comment": "ADVISORY (#1965 — train-unblock followup to #1899/#1964): this shard RUNS but does NOT gate the merge queue (server-tests sets continue-on-error when advisory==true, so a failing run reports a green job and CI Gate's contains(needs.*.result,'failure') check stays green). When #1899/#1964 turned these orphaned Features.* test classes ON for the first time, the long-rotted tests began failing on EVERY PR (UpdateLayerMetadata_WithEmptyTimeInfo, TestDraftConnection_UsesRequestedSslMode, etc.), wedging the whole queue. Keeping the shard visible-but-advisory preserves the #1899 coverage signal (the failures still show up, and the no-gap coverage guard stays satisfied) without blocking unrelated PRs. Re-block by deleting this field (and the Misc twin) once the orphaned Features.* failures are fixed — tracked in #1965.",
       "advisory": true,
       "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Admin.|FullyQualifiedName~Honua.Server.Tests.Features.Console.|FullyQualifiedName~Honua.Server.Tests.Features.Alerts.)&FullyQualifiedName!~RoleEndpointsTests",
+      "_paths_comment": "src-dir->shard map (#1897 follow-up): claims the SOURCE trees whose tests this shard's filter runs (Features.Admin/Console/Alerts). src/Honua.Server/Features/Admin/ covers the #1963 OAuth admin endpoints (OAuthClientEndpointsTests is Features.Admin.*). Core/Postgres Admin/Console/Alerts slices map here so a provider-side change targets this shard.",
       "paths": [
         "src/Honua.Server/Features/Admin/",
+        "src/Honua.Core/Features/Admin/",
+        "src/Honua.Postgres/Features/Admin/",
         "src/Honua.Server/Features/Console/",
+        "src/Honua.Core/Features/Console/",
+        "src/Honua.Postgres/Features/Console/",
         "src/Honua.Server/Features/Alerts/",
+        "src/Honua.Core/Features/Alerts/",
+        "src/Honua.Postgres/Features/Alerts/",
         "tests/dotnet/Honua.Server.Tests/Features/Admin/",
         "tests/dotnet/Honua.Server.Tests/Features/Console/",
         "tests/dotnet/Honua.Server.Tests/Features/Alerts/",
@@ -1103,9 +1137,59 @@
       "_advisory_comment": "ADVISORY (#1965 — train-unblock followup to #1899/#1964): this shard RUNS but does NOT gate the merge queue (server-tests sets continue-on-error when advisory==true). Same rationale as the Server Features Admin and Console twin: turning these orphaned Features.* classes ON for the first time surfaced ~14 long-rotted failures (SubmitForm_*, PushChange_WithApiKey, Compatibility_*, PackageLifecycle_*, StoreSubmissionClaim_*, ReconcileWorkflowRun_*, Reset_/StoryCollection_ seeding, Apply_CommunityEdition guardrail-gate, etc.) that fired on EVERY PR and wedged the queue. Keeping it visible-but-advisory preserves the #1899 coverage signal without blocking unrelated PRs. Re-block by deleting this field (and the Admin/Console twin) once the orphaned Features.* failures are fixed — tracked in #1965.",
       "advisory": true,
       "filter": "FullyQualifiedName~Honua.Server.Tests.Features.&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.&FullyQualifiedName!~Honua.Server.Tests.Features.Console.&FullyQualifiedName!~Honua.Server.Tests.Features.Alerts.&FullyQualifiedName!~Honua.Server.Tests.Features.API&FullyQualifiedName!~Honua.Server.Tests.Features.AiBuilder&FullyQualifiedName!~Honua.Server.Tests.Features.Caching&FullyQualifiedName!~Honua.Server.Tests.Features.Eval&FullyQualifiedName!~Honua.Server.Tests.Features.FileStorage&FullyQualifiedName!~Honua.Server.Tests.Features.Geocoding&FullyQualifiedName!~Honua.Server.Tests.Features.Geoprocessing&FullyQualifiedName!~Honua.Server.Tests.Features.Infrastructure&FullyQualifiedName!~Honua.Server.Tests.Features.Security&FullyQualifiedName!~Honua.Server.Tests.Features.Styling&FullyQualifiedName!~Honua.Server.Tests.Features.WorkflowPackages&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Cog&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Elevation&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Grpc&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Mcp&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.OData&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Ogc.Api&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Ogc.Classic&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Scene&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Stac&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Terrain&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Tiles",
+      "_paths_comment": "src-dir->shard map (#1897 follow-up to #2035): this catch-all owns every Features.* test namespace not claimed by a more specific shard, so it must also claim those features' SOURCE trees or a change to them trips the unmapped-source net (the #1939 collaboration / #1961 / #1963 Sharing class of run_all). Mapped namespaces and their src: AnalysisContent, Authorization, Capabilities, CloudDemo, Collaboration, DataEnrichment, FeatureStore, FieldWorkflows, Forms, Grounding, Mobile, Ogc, OperationsToolset, Orchestration, PackageReview, Plugins, PrintingTools, Reporting, Sharing, SpatialAnalytics, Spec, StaticMap, Streaming, Studio, Temporal, and Protocols.Coverages.Multidimensional + Protocols.SpatialAnalytics + Protocols.Zarr. Sharing lives in src/Honua.Protocols.GeoServices/Sharing/ (REST/OAuth2 sharing surface) whose tests are Features.Sharing.*. The matching Core/Postgres provider slices are mapped too. Genuinely cross-cutting Core (Queries/Geometry/Shared/Infrastructure) stays in the unmapped/infra net and is NOT listed here.",
       "paths": [
         "tests/dotnet/Honua.Server.Tests/Features/",
-        "src/Honua.Core/Features/Validation/"
+        "src/Honua.Server/Features/Capabilities/",
+        "src/Honua.Server/Features/CloudDemo/",
+        "src/Honua.Server/Features/Collaboration/",
+        "src/Honua.Core/Features/Collaboration/",
+        "src/Honua.Server/Features/DataEnrichment/",
+        "src/Honua.Core/Features/DataEnrichment/",
+        "src/Honua.Server/Features/FieldWorkflows/",
+        "src/Honua.Core/Features/FieldWorkflows/",
+        "src/Honua.Postgres/Features/FieldWorkflows/",
+        "src/Honua.Server/Features/Forms/",
+        "src/Honua.Core/Features/Forms/",
+        "src/Honua.Postgres/Features/Forms/",
+        "src/Honua.Server/Features/Mobile/",
+        "src/Honua.Core/Features/Mobile/",
+        "src/Honua.Postgres/Features/Mobile/",
+        "src/Honua.Server/Features/Operations/",
+        "src/Honua.Core/Features/Operations/",
+        "src/Honua.Server/Features/Orchestration/",
+        "src/Honua.Core/Features/Orchestration/",
+        "src/Honua.Server/Features/PackageReview/",
+        "src/Honua.Core/Features/PackageReview/",
+        "src/Honua.Server/Features/Plugins/",
+        "src/Honua.Server/Features/PrintingTools/",
+        "src/Honua.Server/Features/Reporting/",
+        "src/Honua.Core/Features/Reporting/",
+        "src/Honua.Server/Features/Spec/",
+        "src/Honua.Server/Features/StaticMap/",
+        "src/Honua.Server/Features/Streaming/",
+        "src/Honua.Server/Features/Studio/",
+        "src/Honua.Core/Features/Studio/",
+        "src/Honua.Postgres/Features/Studio/",
+        "src/Honua.Server/Features/Temporal/",
+        "src/Honua.Core/Features/Temporal/",
+        "src/Honua.Core/Features/AnalysisContent/",
+        "src/Honua.Postgres/Features/AnalysisContent/",
+        "src/Honua.Core/Features/Authorization/",
+        "src/Honua.Postgres/Features/Authorization/",
+        "src/Honua.Core/Features/FeatureStore/",
+        "src/Honua.Postgres/Features/FeatureStore/",
+        "src/Honua.Core/Features/Grounding/",
+        "src/Honua.Core/Features/SpatialAnalytics/",
+        "src/Honua.Postgres/Features/SpatialAnalytics/",
+        "src/Honua.Core/Features/Share/",
+        "src/Honua.Postgres/Features/Share/",
+        "src/Honua.Protocols.GeoServices/Sharing/",
+        "src/Honua.Server/Features/Protocols/Coverages/",
+        "src/Honua.Server/Features/Protocols/SpatialAnalytics/",
+        "src/Honua.Server/Features/Protocols/Zarr/",
+        "src/Honua.Core/Features/Validation/",
+        "src/Honua.Hosting/Features/Services/"
       ],
       "csproj": ""
     }
