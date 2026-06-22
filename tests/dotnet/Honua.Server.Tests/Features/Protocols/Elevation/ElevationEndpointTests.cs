@@ -658,10 +658,11 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
         var schemaName = _fixture.CurrentSchema
             ?? throw new InvalidOperationException("Fixture schema is not initialized.");
 
-        await using var connection = await _fixture.Postgres.GetConnectionAsync(schemaName);
-        await using var delete = connection.CreateCommand();
-        delete.CommandText = "DELETE FROM honua.raster_data WHERE layer_id = @layerId;";
-        delete.Parameters.AddWithValue("layerId", WebAppFixture.TestLayerId);
-        await delete.ExecuteNonQueryAsync();
+        // #2020: route the global honua.raster_data DELETE through the schema-mutation advisory
+        // lock (parameterized overload).
+        await _fixture.Postgres.ApplyGlobalSeedSqlAsync(
+            "DELETE FROM honua.raster_data WHERE layer_id = @layerId;",
+            command => command.Parameters.AddWithValue("layerId", WebAppFixture.TestLayerId),
+            schemaName);
     }
 }
