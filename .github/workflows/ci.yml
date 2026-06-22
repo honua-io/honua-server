@@ -782,13 +782,16 @@ jobs:
     needs: [build, changes, targeted-shards]
     timeout-minutes: ${{ matrix.timeout_minutes }}
     # Advisory shards (matrix.advisory == true in .github/ci-shards.json) RUN and
-    # publish results but do NOT gate the merge queue: continue-on-error makes the
-    # job conclusion `success` even when the test step fails, so CI Gate's
-    # contains(needs.*.result, 'failure') aggregation stays green. Used to keep a
-    # newly-running coverage shard visible while its rotted tests are repaired
-    # (the #1899/#1964 Features.* orphan buckets; tracked in #1965) instead of
-    # blocking unrelated PRs. Delete the shard's `advisory` field to re-block it.
-    continue-on-error: ${{ matrix.advisory == true }}
+    # publish results but do NOT gate the merge: continue-on-error is applied to the
+    # "Run server test shard" STEP (below), so an advisory test failure is swallowed
+    # there and the JOB CONCLUDES SUCCESS. That keeps CI Gate green (needs.*.result
+    # has no failure) AND keeps the job's check-run green — so the PR's
+    # mergeStateStatus stays CLEAN and the clean-only merge-train can auto-merge it.
+    # (A job-LEVEL continue-on-error kept CI Gate green but still published a FAILING
+    # check-run for the shard, forcing every PR to UNSTABLE and stalling auto-drain.)
+    # Used to keep a newly-running coverage shard visible while its rotted tests are
+    # repaired (the #1899/#1964 Features.* orphan buckets; tracked in #1965) instead
+    # of blocking unrelated PRs. Delete the shard's `advisory` field to re-block it.
     strategy:
       fail-fast: false
       matrix:
@@ -858,6 +861,11 @@ jobs:
             --configuration Release
 
       - name: Run server test shard
+        # Advisory shards (matrix.advisory==true) swallow their test failure HERE so
+        # the job concludes success and the PR stays CLEAN (see job comment above).
+        # Non-advisory shards (false) fail the job as normal. A build failure in an
+        # earlier step still fails the job regardless — only the test run is swallowed.
+        continue-on-error: ${{ matrix.advisory == true }}
         shell: bash
         env:
           HONUA_SERVER_TEST_SHARD_NAME: ${{ matrix.shard_name }}
