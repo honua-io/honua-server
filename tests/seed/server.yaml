@@ -1261,13 +1261,23 @@ sql:
   - "DELETE FROM honua.replicas;"
   - "DELETE FROM honua.encryption_keys;"
   - "DELETE FROM honua.data_connections;"
-  - "DELETE FROM honua.scene_datasets;"
+  # honua-server#1568 follow-up (#2020): the shared honua.* catalog is process-global and is
+  # NOT scoped by per-test search_path isolation, so this server-fixture cleanup runs against the
+  # same rows the mobile-offline-demo fixture seeds (service 'mobile_offline_demo', layers
+  # 68910/68920, scene 'downtown-honolulu'). Once #2020 routed DropSchemaAsync through the shared
+  # schema-mutation advisory lock, the heavier serialization made this unscoped wipe reliably
+  # interleave between DatabaseMigrationTests' mobile seed commit and its assertion, deleting the
+  # fixture's catalog rows (DbUpMigrations_MobileOfflineDemoSeed then sees 0 service-layers).
+  # The mobile seed owns and self-cleans its own IDs, so exclude that fixture's footprint here —
+  # this keeps the deterministic server-catalog reset while leaving the mobile fixture intact and
+  # does not touch the advisory-lock serialization that fixes the 40P01 deadlock.
+  - "DELETE FROM honua.scene_datasets WHERE id <> 'downtown-honolulu';"
   # v1 metadata-graph tables dropped by migration 038_DropV1MetadataGraphTables.sql.
-  - "DELETE FROM honua.relationships;"
-  - "DELETE FROM honua.service_layers;"
-  - "DELETE FROM honua.layer_fields;"
-  - "DELETE FROM honua.layers;"
-  - "DELETE FROM honua.services;"
+  - "DELETE FROM honua.relationships WHERE layer_id NOT IN (68910, 68920) AND related_layer_id NOT IN (68910, 68920);"
+  - "DELETE FROM honua.service_layers WHERE service_name <> 'mobile_offline_demo' AND layer_id NOT IN (68910, 68920);"
+  - "DELETE FROM honua.layer_fields WHERE layer_id NOT IN (68910, 68920);"
+  - "DELETE FROM honua.layers WHERE layer_id NOT IN (68910, 68920);"
+  - "DELETE FROM honua.services WHERE service_name <> 'mobile_offline_demo';"
   - "DELETE FROM features WHERE layer_id IN (0, 1, 2, 9);"
   - |
       INSERT INTO honua.encryption_keys (key_version, key_hash, created_by)
