@@ -48,6 +48,25 @@ internal sealed class ArcGisRestFeatureStore : IFeatureDataProvider, IFeatureRea
         }
     };
 
+    /// <summary>
+    /// Per-page <c>resultRecordCount</c> requested when the caller did not cap the
+    /// query with an explicit <see cref="FeatureQuery.Limit"/>. The upstream service
+    /// still clamps each page to its own <c>maxRecordCount</c> (commonly 1000–2000)
+    /// and flags <c>exceededTransferLimit</c>; the provider advances by the actual
+    /// page length, so this value only bounds the request size, not correctness.
+    /// </summary>
+    internal const int DefaultPageSize = 2000;
+
+    /// <summary>
+    /// Hard cap on the number of <c>/query</c> round-trips a single
+    /// <see cref="QueryAsync(int, FeatureQuery, CancellationToken)"/> /
+    /// <see cref="QueryObjectIdsAsync(int, FeatureQuery, CancellationToken)"/> call
+    /// will issue, guarding against an unbounded fetch when a misbehaving upstream
+    /// keeps flagging <c>exceededTransferLimit</c> without advancing the offset. At
+    /// the default page size this still admits millions of records.
+    /// </summary>
+    private const int MaxPageIterations = 10_000;
+
     private readonly IArcGisRestFeatureClient _client;
     private readonly FeatureProviderBinding? _binding;
 
@@ -98,37 +117,93 @@ internal sealed class ArcGisRestFeatureStore : IFeatureDataProvider, IFeatureRea
     {
         var context = ResolveBinding(layerId);
         var authHeader = ArcGisRestQueryParameters.BuildAuthorizationHeader(context.ServiceLocation.Token);
-        var url = ArcGisRestQueryParameters.BuildFeatureQueryUrl(
-            context.ServiceLocation.ServiceUrl,
-            context.ArcGisLayerId,
-            query);
-
-        var response = await _client.QueryAsync(url, authHeader, cancellationToken).ConfigureAwait(false);
-        EnsureNoUpstreamError(response.Error);
 
         var geometryType = ResolveDeclaredGeometryType(context.Resource);
-        var objectIdFieldName = ResolveObjectIdFieldName(response.ObjectIdFieldName, context.Resource);
-
         var items = ImmutableArray.CreateBuilder<Feature>();
-        if (response.Features is { Length: > 0 })
+
+        // The caller-supplied paging window. The upstream service truncates each
+        // /query response at its own maxRecordCount (commonly 1000–2000) and flags
+        // exceededTransferLimit; a single request therefore surfaces only the first
+        // page. Loop on resultOffset until the upstream stops flagging more results
+        // (or the caller's explicit limit is satisfied) so SupportsQuery=true does
+        // not silently truncate large result sets.
+        var baseOffset = query.Offset is int o && o > 0 ? o : 0;
+        var requestedLimit = query.Limit is int l && l > 0 ? l : (int?)null;
+
+        string? objectIdFieldName = null;
+        var exceededTransferLimit = false;
+        var pageOffset = baseOffset;
+
+        for (var iteration = 0; iteration < MaxPageIterations; iteration++)
         {
-            foreach (var sourceFeature in response.Features)
+            // Cap the page to the caller's remaining budget when a limit was supplied,
+            // so an explicit limit is honored exactly and the loop never over-fetches.
+            int pageSize;
+            if (requestedLimit is int limit)
             {
-                items.Add(ProjectFeature(sourceFeature, objectIdFieldName, geometryType));
+                var remaining = limit - items.Count;
+                if (remaining <= 0)
+                {
+                    break;
+                }
+
+                pageSize = Math.Min(remaining, DefaultPageSize);
             }
+            else
+            {
+                pageSize = DefaultPageSize;
+            }
+
+            var pageQuery = query with { Offset = pageOffset, Limit = pageSize };
+            var url = ArcGisRestQueryParameters.BuildFeatureQueryUrl(
+                context.ServiceLocation.ServiceUrl,
+                context.ArcGisLayerId,
+                pageQuery);
+
+            var response = await _client.QueryAsync(url, authHeader, cancellationToken).ConfigureAwait(false);
+            EnsureNoUpstreamError(response.Error);
+
+            // The object-id field name only needs resolving once; later pages echo
+            // the same wire field (or none at all on a returnGeometry-only page).
+            objectIdFieldName ??= ResolveObjectIdFieldName(response.ObjectIdFieldName, context.Resource);
+
+            var pageLength = response.Features is { Length: > 0 } ? response.Features.Length : 0;
+            if (pageLength > 0)
+            {
+                foreach (var sourceFeature in response.Features!)
+                {
+                    items.Add(ProjectFeature(sourceFeature, objectIdFieldName, geometryType));
+                }
+            }
+
+            exceededTransferLimit = response.ExceededTransferLimit;
+
+            // Stop when the upstream reports no further results, or returned an empty
+            // page (guards against an infinite loop if a hostile/buggy upstream keeps
+            // flagging exceededTransferLimit without advancing). Advance by the actual
+            // page length so an upstream maxRecordCount smaller than the requested
+            // pageSize still pages correctly.
+            if (!exceededTransferLimit || pageLength == 0)
+            {
+                break;
+            }
+
+            pageOffset += pageLength;
         }
 
+        objectIdFieldName ??= ResolveObjectIdFieldName(wireField: null, context.Resource);
         var built = items.ToImmutable();
 
-        // When ExceededTransferLimit is false the upstream returned all matching records
-        // in this response; the page length equals the total count. When more results exist
-        // we need the true total so callers (SearchEndpoints.ExecuteSearchAcrossPublicationsAsync,
-        // OGC Features next-link computation) can report numberMatched and generate correct
-        // next-page links. Issue a returnCountOnly request to get the accurate total.
+        // When the loop drained every matching record (the final page did not flag
+        // exceededTransferLimit) the materialized count is the true total. When a
+        // caller-supplied limit stopped the loop early while more records remain,
+        // issue a returnCountOnly request so callers
+        // (SearchEndpoints.ExecuteSearchAcrossPublicationsAsync, OGC Features
+        // next-link computation) can report an accurate numberMatched.
         long totalCount;
-        if (!response.ExceededTransferLimit)
+        if (!exceededTransferLimit)
         {
-            totalCount = built.Length;
+            totalCount = baseOffset + built.Length;
         }
         else
         {
@@ -141,7 +216,7 @@ internal sealed class ArcGisRestFeatureStore : IFeatureDataProvider, IFeatureRea
             totalCount = countResponse.Count;
         }
 
-        return QueryResult<Feature>.Create(totalCount, built, response.ExceededTransferLimit);
+        return QueryResult<Feature>.Create(totalCount, built, exceededTransferLimit);
     }
 
     /// <inheritdoc />
@@ -157,17 +232,62 @@ internal sealed class ArcGisRestFeatureStore : IFeatureDataProvider, IFeatureRea
     {
         var context = ResolveBinding(layerId);
         var authHeader = ArcGisRestQueryParameters.BuildAuthorizationHeader(context.ServiceLocation.Token);
-        var url = ArcGisRestQueryParameters.BuildObjectIdsUrl(
-            context.ServiceLocation.ServiceUrl,
-            context.ArcGisLayerId,
-            query);
 
-        var response = await _client.QueryObjectIdsAsync(url, authHeader, cancellationToken).ConfigureAwait(false);
-        EnsureNoUpstreamError(response.Error);
+        // returnIdsOnly responses are likewise truncated at the upstream
+        // maxRecordCount, so page on resultOffset until the upstream stops
+        // returning ids (or returns a short/empty page) — otherwise the
+        // provider would advertise only the first page of object ids.
+        var baseOffset = query.Offset is int o && o > 0 ? o : 0;
+        var requestedLimit = query.Limit is int l && l > 0 ? l : (int?)null;
 
-        return response.ObjectIds is { Length: > 0 } ids
-            ? ImmutableArray.Create(ids)
-            : ImmutableArray<long>.Empty;
+        var ids = ImmutableArray.CreateBuilder<long>();
+        var pageOffset = baseOffset;
+
+        for (var iteration = 0; iteration < MaxPageIterations; iteration++)
+        {
+            if (requestedLimit is int limit && ids.Count >= limit)
+            {
+                break;
+            }
+
+            // returnIdsOnly responses carry no exceededTransferLimit flag, so a page
+            // shorter than the *requested* page size marks the end. Always request a
+            // full DefaultPageSize page (rather than the caller's smaller remaining
+            // budget) so the short-page signal stays meaningful even when the
+            // upstream maxRecordCount is below the caller's limit; trim to the
+            // caller's limit after accumulating.
+            var pageQuery = query with { Offset = pageOffset, Limit = DefaultPageSize };
+            var url = ArcGisRestQueryParameters.BuildObjectIdsUrl(
+                context.ServiceLocation.ServiceUrl,
+                context.ArcGisLayerId,
+                pageQuery);
+
+            var response = await _client.QueryObjectIdsAsync(url, authHeader, cancellationToken).ConfigureAwait(false);
+            EnsureNoUpstreamError(response.Error);
+
+            var pageLength = response.ObjectIds is { Length: > 0 } ? response.ObjectIds.Length : 0;
+            if (pageLength > 0)
+            {
+                ids.AddRange(response.ObjectIds!);
+            }
+
+            // A short or empty page means the upstream returned everything it has;
+            // this also bounds the loop against a non-advancing upstream.
+            if (pageLength < DefaultPageSize)
+            {
+                break;
+            }
+
+            pageOffset += pageLength;
+        }
+
+        if (requestedLimit is int cap && ids.Count > cap)
+        {
+            // Trim any overrun from the final full page down to the caller's limit.
+            return ids.ToImmutable()[..cap];
+        }
+
+        return ids.Count == 0 ? ImmutableArray<long>.Empty : ids.ToImmutable();
     }
 
     /// <inheritdoc />
