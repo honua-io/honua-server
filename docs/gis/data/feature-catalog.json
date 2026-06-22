@@ -294,6 +294,20 @@
       "maturity": "implemented"
     },
     {
+      "id": "delete-api-v1-admin-network-datasets-id",
+      "route": "/api/v1/admin/network-datasets/{id}",
+      "method": "DELETE",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.NetworkDatasetAdminEndpointsTests.Delete_Missing_Returns404",
+        "Honua.Server.Tests.Features.Admin.NetworkDatasetAdminEndpointsTests.Delete_RemovesDataset"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
       "id": "delete-api-v1-admin-oidc-providers-id",
       "route": "/api/v1/admin/oidc/providers/{id}",
       "method": "DELETE",
@@ -2180,6 +2194,34 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.Coverages.Multidimensional.MultidimensionalCoverageEndpointTests.Get_WithNonexistentId_Returns404"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-api-v1-admin-network-datasets",
+      "route": "/api/v1/admin/network-datasets",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.NetworkDatasetAdminEndpointsTests.List_Anonymous_IsDenied",
+        "Honua.Server.Tests.Features.Admin.NetworkDatasetAdminEndpointsTests.List_IncludesRegisteredDataset"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-api-v1-admin-network-datasets-id",
+      "route": "/api/v1/admin/network-datasets/{id}",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.NetworkDatasetAdminEndpointsTests.Get_AfterRegister_ReturnsDataset",
+        "Honua.Server.Tests.Features.Admin.NetworkDatasetAdminEndpointsTests.Get_Missing_Returns404"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented"
@@ -11800,6 +11842,24 @@
       "maturity": "implemented"
     },
     {
+      "id": "post-api-v1-admin-network-datasets",
+      "route": "/api/v1/admin/network-datasets",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.NetworkDatasetAdminEndpointsTests.Register_BadIdSlug_Returns400",
+        "Honua.Server.Tests.Features.Admin.NetworkDatasetAdminEndpointsTests.Register_BadSrid_Returns400",
+        "Honua.Server.Tests.Features.Admin.NetworkDatasetAdminEndpointsTests.Register_BadStatus_Returns400",
+        "Honua.Server.Tests.Features.Admin.NetworkDatasetAdminEndpointsTests.Register_DuplicateId_Returns409",
+        "Honua.Server.Tests.Features.Admin.NetworkDatasetAdminEndpointsTests.Register_UnsafeEdgeTable_Returns400",
+        "Honua.Server.Tests.Features.Admin.NetworkDatasetAdminEndpointsTests.Register_ValidPayload_Returns201WithDto"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
       "id": "post-api-v1-admin-observability-alerts-eventid-acknowledge",
       "route": "/api/v1/admin/observability/alerts/{eventId}/acknowledge",
       "method": "POST",
@@ -16448,6 +16508,21 @@
         "Honua.Server.Tests.Features.Admin.LayerStyleEndpointsTests.UpdateLayerStyle_WithMapLibreStyle_UpdatesAndReturnsStyle",
         "Honua.Server.Tests.Features.Styling.StyleCatalogPhase2Tests.OneCatalogStyle_CanBeReferencedByManyLayers",
         "Honua.Server.Tests.Features.Styling.StyleCatalogPhase2Tests.UpdatingLayerStyle_PopulatesStyleResourceIdsWithTypeStyleResource"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "put-api-v1-admin-network-datasets-id",
+      "route": "/api/v1/admin/network-datasets/{id}",
+      "method": "PUT",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.NetworkDatasetAdminEndpointsTests.Update_ChangesMutableFields",
+        "Honua.Server.Tests.Features.Admin.NetworkDatasetAdminEndpointsTests.Update_Missing_Returns404",
+        "Honua.Server.Tests.Features.Admin.NetworkDatasetAdminEndpointsTests.Update_UnsafeVertexTable_Returns400"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented"

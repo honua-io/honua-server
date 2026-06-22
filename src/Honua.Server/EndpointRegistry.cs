@@ -806,6 +806,13 @@ public static class EndpointRegistry
         // LAS/LAZ/COPC point-cloud scene ingest admin endpoint (#1201).
         new("POST", "/api/v1/admin/scenes/ingest/pointcloud"),
 
+        // Network-dataset registry editing admin endpoints (#1882).
+        new("GET", "/api/v1/admin/network-datasets"),
+        new("POST", "/api/v1/admin/network-datasets"),
+        new("GET", "/api/v1/admin/network-datasets/{id}"),
+        new("PUT", "/api/v1/admin/network-datasets/{id}"),
+        new("DELETE", "/api/v1/admin/network-datasets/{id}"),
+
         new("GET", "/elevation/{datasetId}/value"),
         new("GET", "/elevation/{datasetId}/profile"),
 

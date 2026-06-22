@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/query_features.schema.json",
+  "title": "query_features inputSchema",
+  "description": "Argument shape for the discovery/query feature-query tool (advertised name honua_query_features). Reads features from a published layer with an optional attribute and spatial filter. x-honua-reference-shape: this shape tracks the reference implementation.",
+  "x-honua-reference-shape": true,
+  "type": "object",
+  "required": ["serviceId", "layerId"],
+  "properties": {
+    "serviceId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Published service identifier or name (from list_layers.serviceId)."
+    },
+    "layerId": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Service-local layer index (from list_layers.layerId)."
+    },
+    "where": {
+      "type": "string",
+      "description": "Optional attribute filter expressed as an ArcGIS/SQL WHERE clause."
+    },
+    "bbox": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": { "type": "number" },
+      "description": "Optional spatial filter envelope as [minX, minY, maxX, maxY]."
+    },
+    "bboxSrid": {
+      "type": "integer",
+      "default": 4326,
+      "description": "Spatial reference (SRID/WKID) of the bbox ordinates."
+    },
+    "outFields": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Optional attribute fields to return; omit for all fields."
+    },
+    "limit": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000,
+      "default": 100,
+      "description": "Maximum number of features to return (capped at 1000)."
+    },
+    "outSrid": {
+      "type": "integer",
+      "default": 4326,
+      "description": "Output spatial reference (SRID/WKID) for returned geometries."
+    }
+  }
+}

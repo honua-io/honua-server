@@ -178,14 +178,32 @@ internal sealed class GroundingService : IGroundingService
             classification,
             ranking,
             requiredParameterGaps,
-            _options);
+            _options,
+            out var resolvedBindings);
         findings = FilterAnsweredFindings(findings, appliedIds);
 
         // 5. Build draft intent.
         var intentId = string.IsNullOrWhiteSpace(request.IntentId)
             ? $"grounding-{Guid.NewGuid():N}"
             : request.IntentId;
-        var assumptions = CollectAssumptions(request, applied.ResolvedParameters);
+
+        // Auto-resolved bindings (single dominant candidate, no clarification)
+        // are recorded as inspectable provenance assumptions and logged so the
+        // silent bind stays auditable — which catalog candidate, its score, and
+        // the margin over the runner-up. A binding answered by a prior
+        // clarification turn would already be pinned to the top of the ranking,
+        // so it does not re-emit here.
+        foreach (var resolved in resolvedBindings)
+        {
+            GroundingLog.BindingAutoResolved(
+                _logger,
+                resolved.QuestionId,
+                resolved.CandidateId,
+                resolved.Score,
+                resolved.RunnerUpMargin);
+        }
+
+        var assumptions = CollectAssumptions(request, applied.ResolvedParameters, resolvedBindings);
         var clarificationQuestionIds = findings.Select(f => f.QuestionId).ToArray();
         var draft = IntentDrafter.Draft(
             request,
@@ -482,9 +500,10 @@ internal sealed class GroundingService : IGroundingService
 
     private static List<string> CollectAssumptions(
         GroundingRequest request,
-        IReadOnlyDictionary<string, string> resolvedParameters)
+        IReadOnlyDictionary<string, string> resolvedParameters,
+        IReadOnlyList<ResolvedBinding> resolvedBindings)
     {
-        var assumptions = new List<string>(capacity: 2 + resolvedParameters.Count);
+        var assumptions = new List<string>(capacity: 2 + resolvedParameters.Count + resolvedBindings.Count);
         if (request.Constraints?.Units is { Length: > 0 } units)
         {
             assumptions.Add($"units={units}");
@@ -522,6 +541,23 @@ internal sealed class GroundingService : IGroundingService
             foreach (var name in parameterNames)
             {
                 assumptions.Add($"param.{name}={resolvedParameters[name]}");
+            }
+        }
+
+        // Auto-resolved entity→candidate bindings flow through as inspectable
+        // assumptions (id + score) so the plan/spec can consume the deterministic
+        // binding and an audit reader can see why no clarification was asked.
+        // Sorted by question id so the assumption sequence stays deterministic
+        // for a fixed request + catalog snapshot.
+        if (resolvedBindings.Count > 0)
+        {
+            var ordered = resolvedBindings
+                .OrderBy(b => b.QuestionId, StringComparer.Ordinal)
+                .ToArray();
+            foreach (var b in ordered)
+            {
+                assumptions.Add(
+                    $"binding.{b.QuestionId}={b.CandidateId} (auto-resolved, score={b.Score.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)})");
             }
         }
 

@@ -1,0 +1,16 @@
+{
+  "id": "solve_route.three_stops",
+  "schemaRef": "tools/solve_route.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "stops": [
+      { "lon": -97.7431, "lat": 30.2672 },
+      { "lon": -97.7341, "lat": 30.2849 },
+      { "lon": -97.7011, "lat": 30.3079 }
+    ],
+    "travelProfile": "driving",
+    "outSrid": 4326
+  },
+  "expected": "tool_result",
+  "canonicalRefs": []
+}

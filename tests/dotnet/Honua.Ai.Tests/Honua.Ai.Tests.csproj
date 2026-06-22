@@ -22,6 +22,18 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="Newtonsoft.Json.Schema" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Vendored copy of the published geospatial-mcp JSON Schemas + conformance
+      fixtures (geospatial-mcp spec/schemas/). McpTaxonomyAlignmentTests
+      validates Honua's live /mcp advertised tool input schemas and resource
+      shapes against these so Honua provably conforms to the standard it
+      champions. See ConformanceSchemas/README.md.
+    -->
+    <Content Include="ConformanceSchemas\**\*.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

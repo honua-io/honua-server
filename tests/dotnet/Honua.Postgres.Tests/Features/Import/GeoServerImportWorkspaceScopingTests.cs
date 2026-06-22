@@ -325,20 +325,22 @@ public sealed class GeoServerImportWorkspaceScopingTests
 
         private static async Task CleanupServiceNamesAsync(PostgresFixture postgresFixture, params string[] serviceNames)
         {
-            await using var connection = await postgresFixture.DataSource.OpenConnectionAsync();
-            await using var command = connection.CreateCommand();
-            command.CommandText = "DELETE FROM honua.services WHERE service_name = ANY(@names)";
-            command.Parameters.Add(new NpgsqlParameter("@names", serviceNames));
-            await command.ExecuteNonQueryAsync();
+            // #2020: honua.services is a literal, process-global catalog table (not
+            // search_path isolated), so route this DELETE through the shared seed advisory
+            // lock to keep parallel [Collection("Database")] tests off the 40P01 deadlock path.
+            await postgresFixture.ApplyGlobalSeedSqlAsync(
+                "DELETE FROM honua.services WHERE service_name = ANY(@names)",
+                command => command.Parameters.Add(new NpgsqlParameter("@names", serviceNames)));
         }
 
         private static async Task CleanupDataSourceRowsAsync(PostgresFixture postgresFixture, params string[] sourceIds)
         {
-            await using var connection = await postgresFixture.DataSource.OpenConnectionAsync();
-            await using var command = connection.CreateCommand();
-            command.CommandText = "DELETE FROM honua.migration_data_sources WHERE source_id = ANY(@sourceIds)";
-            command.Parameters.Add(new NpgsqlParameter("@sourceIds", sourceIds));
-            await command.ExecuteNonQueryAsync();
+            // #2020: honua.migration_data_sources is a literal, process-global catalog table
+            // (not search_path isolated), so route this DELETE through the shared seed advisory
+            // lock to keep parallel [Collection("Database")] tests off the 40P01 deadlock path.
+            await postgresFixture.ApplyGlobalSeedSqlAsync(
+                "DELETE FROM honua.migration_data_sources WHERE source_id = ANY(@sourceIds)",
+                command => command.Parameters.Add(new NpgsqlParameter("@sourceIds", sourceIds)));
         }
 
         private static GeoServerImportService CreateServiceWithRealConnection(

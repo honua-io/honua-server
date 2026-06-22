@@ -749,68 +749,78 @@ public sealed class FieldCollectionSyncEndpointsTests : IAsyncLifetime
         using var scope = _fixture.Services.CreateScope();
         var dataSource = scope.ServiceProvider.GetRequiredService<NpgsqlDataSource>();
 
-        // Holder: acquire the advisory lock and stage the idempotency row, but
-        // do not commit yet. The loser HTTP push will block on the same lock.
-        await using var holderConnection = await dataSource.OpenConnectionAsync();
-        await using var holderTransaction = await holderConnection.BeginTransactionAsync(IsolationLevel.ReadCommitted);
-
-        await using (var lockCmd = new NpgsqlCommand(
-            "SELECT pg_advisory_xact_lock(@namespace, hashtext(@change_lock_key))",
-            holderConnection,
-            holderTransaction))
+        // #2020: the staged INSERT mutates the global honua.fieldcollection_pushed_changes table,
+        // but the existing per-feature pg_advisory_xact_lock (FieldCollectionPushLockNamespace) is
+        // load-bearing — it is the holder/loser race the test exercises — so it must be preserved.
+        // Additionally take the shared schema-mutation advisory lock around the whole holder block so
+        // this global mutation serializes against other assemblies' honua.* mutations. The loser HTTP
+        // push runs through the app path (which does NOT take the schema-mutation lock) and so still
+        // blocks only on the per-feature advisory lock, preserving the race semantics.
+        await _fixture.Postgres.RunUnderSchemaMutationLockAsync(async () =>
         {
-            lockCmd.Parameters.AddWithValue("namespace", NpgsqlDbType.Integer, FieldCollectionPushLockNamespace);
-            lockCmd.Parameters.AddWithValue("change_lock_key", NpgsqlDbType.Text, $"{clientId}:{changeId}");
-            _ = await lockCmd.ExecuteScalarAsync();
-        }
+            // Holder: acquire the advisory lock and stage the idempotency row, but
+            // do not commit yet. The loser HTTP push will block on the same lock.
+            await using var holderConnection = await dataSource.OpenConnectionAsync();
+            await using var holderTransaction = await holderConnection.BeginTransactionAsync(IsolationLevel.ReadCommitted);
 
-        await using (var insertCmd = new NpgsqlCommand(
-            """
-            INSERT INTO honua.fieldcollection_pushed_changes (
-                client_id, change_id, feature_id, layer_id, operation, outcome, response_payload, pushed_at)
-            VALUES (
-                @client_id, @change_id, @feature_id, @layer_id, 1, 1, @payload::jsonb, now())
-            """,
-            holderConnection,
-            holderTransaction))
-        {
-            insertCmd.Parameters.AddWithValue("client_id", NpgsqlDbType.Text, clientId);
-            insertCmd.Parameters.AddWithValue("change_id", NpgsqlDbType.Text, changeId);
-            insertCmd.Parameters.AddWithValue("feature_id", NpgsqlDbType.Text, featureId);
-            insertCmd.Parameters.AddWithValue("layer_id", NpgsqlDbType.Integer, layerId);
-            insertCmd.Parameters.AddWithValue("payload", NpgsqlDbType.Text, stagedResponse);
-            _ = await insertCmd.ExecuteNonQueryAsync();
-        }
+            await using (var lockCmd = new NpgsqlCommand(
+                "SELECT pg_advisory_xact_lock(@namespace, hashtext(@change_lock_key))",
+                holderConnection,
+                holderTransaction))
+            {
+                lockCmd.Parameters.AddWithValue("namespace", NpgsqlDbType.Integer, FieldCollectionPushLockNamespace);
+                lockCmd.Parameters.AddWithValue("change_lock_key", NpgsqlDbType.Text, $"{clientId}:{changeId}");
+                _ = await lockCmd.ExecuteScalarAsync();
+            }
 
-        // Kick off the loser push — it must enter its transaction and start
-        // waiting on the advisory lock before the holder commits.
-        var loserPayload = new
-        {
-            changeId,
-            featureId,
-            layerId,
-            operation = "insert",
-            timestamp = DateTimeOffset.UtcNow,
-            feature = NewFeaturePayload(longitude: 12.5, latitude: 6.0),
-        };
-        var loserTask = _client.PostAsJsonAsync(ChangesPath, loserPayload);
+            await using (var insertCmd = new NpgsqlCommand(
+                """
+                INSERT INTO honua.fieldcollection_pushed_changes (
+                    client_id, change_id, feature_id, layer_id, operation, outcome, response_payload, pushed_at)
+                VALUES (
+                    @client_id, @change_id, @feature_id, @layer_id, 1, 1, @payload::jsonb, now())
+                """,
+                holderConnection,
+                holderTransaction))
+            {
+                insertCmd.Parameters.AddWithValue("client_id", NpgsqlDbType.Text, clientId);
+                insertCmd.Parameters.AddWithValue("change_id", NpgsqlDbType.Text, changeId);
+                insertCmd.Parameters.AddWithValue("feature_id", NpgsqlDbType.Text, featureId);
+                insertCmd.Parameters.AddWithValue("layer_id", NpgsqlDbType.Integer, layerId);
+                insertCmd.Parameters.AddWithValue("payload", NpgsqlDbType.Text, stagedResponse);
+                _ = await insertCmd.ExecuteNonQueryAsync();
+            }
 
-        // Give the loser a moment to reach the BeginTransaction → advisory lock
-        // wait. 750ms is comfortably more than a request takes to set up.
-        await Task.Delay(750);
-        loserTask.IsCompleted.Should().BeFalse(
-            "the loser must be parked on the advisory lock until the holder commits");
+            // Kick off the loser push — it must enter its transaction and start
+            // waiting on the advisory lock before the holder commits.
+            var loserPayload = new
+            {
+                changeId,
+                featureId,
+                layerId,
+                operation = "insert",
+                timestamp = DateTimeOffset.UtcNow,
+                feature = NewFeaturePayload(longitude: 12.5, latitude: 6.0),
+            };
+            var loserTask = _client.PostAsJsonAsync(ChangesPath, loserPayload);
 
-        await holderTransaction.CommitAsync();
+            // Give the loser a moment to reach the BeginTransaction → advisory lock
+            // wait. 750ms is comfortably more than a request takes to set up.
+            await Task.Delay(750);
+            loserTask.IsCompleted.Should().BeFalse(
+                "the loser must be parked on the advisory lock until the holder commits");
 
-        var loserResponse = await loserTask;
-        var loserBody = await loserResponse.Content.ReadAsStringAsync();
-        loserResponse.StatusCode.Should().Be(HttpStatusCode.OK, "loser body: {0}", loserBody);
-        using var loserJson = JsonDocument.Parse(loserBody);
-        loserJson.RootElement.GetProperty("changeId").GetString().Should().Be(changeId);
-        loserJson.RootElement.GetProperty("outcome").GetString().Should().Be("applied");
-        loserJson.RootElement.GetProperty("serverGeneration").GetInt64().Should().Be(999999);
-        loserJson.RootElement.GetProperty("version").GetInt64().Should().Be(1);
+            await holderTransaction.CommitAsync();
+
+            var loserResponse = await loserTask;
+            var loserBody = await loserResponse.Content.ReadAsStringAsync();
+            loserResponse.StatusCode.Should().Be(HttpStatusCode.OK, "loser body: {0}", loserBody);
+            using var loserJson = JsonDocument.Parse(loserBody);
+            loserJson.RootElement.GetProperty("changeId").GetString().Should().Be(changeId);
+            loserJson.RootElement.GetProperty("outcome").GetString().Should().Be("applied");
+            loserJson.RootElement.GetProperty("serverGeneration").GetInt64().Should().Be(999999);
+            loserJson.RootElement.GetProperty("version").GetInt64().Should().Be(1);
+        });
     }
 
     [IntegrationTest]
