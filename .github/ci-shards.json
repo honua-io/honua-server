@@ -46,6 +46,66 @@
   "default_shards_when_no_match": [
     "Core"
   ],
+  "_targeted_override_prefixes_comment": "Narrows over-broad run_all triggers (ADR-0037 targeting follow-up). A changed file under one of these prefixes is CLAIMED by the listed shard subset instead of escalating to run_all: it is excluded from the infrastructure_paths short-circuit and the unmapped_source_run_all_prefixes net, and the listed shards are unioned into the targeted result. Evaluated AFTER the empty-diff guard and BEFORE the infrastructure_paths check. Two over-broad triggers are narrowed: (1) endpoint-registration PLUMBING — src/Honua.Server/EndpointRegistry.cs, src/Honua.Server/Program.cs, and src/Honua.Server/Startup/JsonContextRegistration.cs — which almost every feature PR touches; these route to a representative SMOKE subset spanning the main protocol families (FeatureServer, OGC API Features, one classic OGC = WMS, OData, MCP) plus the always-on API/governance and admin-infrastructure shards, NOT all 45. The architecture/governance guards that run on EVERY PR (EndpointRegistry/OperationRegistry drift + coverage, proof-ledger, in Honua.Architecture.Tests on the build job) are the safety net that catches a registration mistake regardless of which server-test shards run, which is what makes a smoke subset safe here. (2) shared FEATURE-AREA dirs under src/Honua.Hosting/ — Authentication/ and Security/ — route to the auth/security-relevant shards (Infra and Security, Admin & Infrastructure, OData Core which carries ODataAuthorizationTests), NOT all 45. IMPORTANT: keep these prefixes SPECIFIC. They MUST be narrower than the genuinely cross-cutting paths that must stay run_all: do NOT add Honua.Core abstractions, DI/host bootstrap (Honua.Hosting.csproj, Startup/InfrastructureCompositionRoot.cs), the rest of src/Honua.Hosting/Features/ (Rendering/Caching/etc. stay run_all via the unmapped net), Directory.Build.props/Directory.Packages.props, .github/workflows/**, ci-shards.json, the router scripts, or *.sln here. A registration override prefix must point at a SPECIFIC plumbing file, not a whole shared directory.",
+  "targeted_override_prefixes": [
+    {
+      "prefix": "src/Honua.Server/EndpointRegistry.cs",
+      "reason": "endpoint_registration_plumbing",
+      "shards": [
+        "FeatureServer Endpoints",
+        "OGC API Features",
+        "OGC Classic Maps",
+        "OData Core",
+        "MCP",
+        "STAC and API Governance",
+        "Admin & Infrastructure"
+      ]
+    },
+    {
+      "prefix": "src/Honua.Server/Program.cs",
+      "reason": "endpoint_registration_plumbing",
+      "shards": [
+        "FeatureServer Endpoints",
+        "OGC API Features",
+        "OGC Classic Maps",
+        "OData Core",
+        "MCP",
+        "STAC and API Governance",
+        "Admin & Infrastructure"
+      ]
+    },
+    {
+      "prefix": "src/Honua.Server/Startup/JsonContextRegistration.cs",
+      "reason": "endpoint_registration_plumbing",
+      "shards": [
+        "FeatureServer Endpoints",
+        "OGC API Features",
+        "OGC Classic Maps",
+        "OData Core",
+        "MCP",
+        "STAC and API Governance",
+        "Admin & Infrastructure"
+      ]
+    },
+    {
+      "prefix": "src/Honua.Hosting/Features/Authentication/",
+      "reason": "shared_auth_feature_area",
+      "shards": [
+        "Infra and Security",
+        "Admin & Infrastructure",
+        "OData Core"
+      ]
+    },
+    {
+      "prefix": "src/Honua.Hosting/Features/Security/",
+      "reason": "shared_security_feature_area",
+      "shards": [
+        "Infra and Security",
+        "Admin & Infrastructure",
+        "OData Core"
+      ]
+    }
+  ],
   "shards": [
     {
       "name": "Core Endpoints",

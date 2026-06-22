@@ -127,6 +127,16 @@ internal static class CatalogEndpoints
                 type: MediaTypes.Json,
                 title: "Collections"));
 
+            // Queryables — the Item Search Filter Extension requires the landing page to
+            // advertise the catalog-level queryables document via the OGC queryables rel so
+            // clients (and stac-api-validator) can discover the filterable property set. The
+            // href must match the queryables document's $id exactly.
+            links.Add(Link.Create(
+                href: $"{stacBase}/queryables",
+                rel: RelationTypes.Queryables,
+                type: MediaTypes.SchemaJson,
+                title: "Queryables"));
+
             // Search — STAC API spec requires one rel=search link per supported HTTP method so
             // that clients know both GET and POST are available on /stac/search.
             links.Add(Link.Create(

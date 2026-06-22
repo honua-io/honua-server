@@ -45,7 +45,29 @@ jq -e '
   and (([.shards[].name] | length) == ([.shards[].name] | unique | length))
   and (([.shards[].artifact_suffix] | length) == ([.shards[].artifact_suffix] | unique | length))
   and (([.shards[].log_name] | length) == ([.shards[].log_name] | unique | length))
+  and (
+    # targeted_override_prefixes (optional) must be well-formed: each entry has a
+    # non-empty prefix, a reason, and a non-empty shard list whose names ALL
+    # reference real shards (a typo would silently route to no shard).
+    (.targeted_override_prefixes // []) | (
+      type == "array"
+      and ([
+        .[]
+        | (.prefix | type == "string" and length > 0)
+          and (.reason | type == "string" and length > 0)
+          and (.shards | type == "array" and length > 0)
+      ] | all)
+    )
+  )
 ' .github/ci-shards.json >/dev/null
+
+echo "Validating targeted_override_prefixes reference real shards..."
+jq -e '
+  ([.shards[].name]) as $names
+  | (.targeted_override_prefixes // [])
+  | all(.shards[] | . as $s | $names | index($s) != null)
+' .github/ci-shards.json >/dev/null \
+  || { echo "::error::a targeted_override_prefixes entry references an unknown shard name" >&2; exit 1; }
 
 echo "Checking shell script syntax..."
 bash -n scripts/ci/*.sh
@@ -279,6 +301,117 @@ assert_descriptor \
   "hosting-rendering-run-all" \
   "src/Honua.Hosting/Features/Rendering/RasterMapRenderingPipeline.cs" \
   "unmapped_source_change" \
+  "true" \
+  "Core"
+
+# ---------------------------------------------------------------------------
+# targeted_override_prefixes guard (ADR-0037 targeting follow-up): endpoint-
+# registration PLUMBING and shared Honua.Hosting FEATURE-AREA dirs route to a
+# representative SMOKE / auth subset instead of run_all. The always-on
+# architecture/governance guards (EndpointRegistry/OperationRegistry drift +
+# coverage, proof-ledger; Honua.Architecture.Tests on the build job) run on
+# every PR regardless and catch a registration mistake, so a smoke subset here
+# is safe. These lock in the narrowed triggers against regression.
+# ---------------------------------------------------------------------------
+
+# EndpointRegistry.cs alone: registration plumbing -> smoke subset, NOT run_all,
+# and NOT a silent skip. Includes the API/governance shard.
+assert_descriptor \
+  "endpoint-registry-plumbing-smoke" \
+  "src/Honua.Server/EndpointRegistry.cs" \
+  "targeted" \
+  "false" \
+  "STAC and API Governance"
+assert_excludes_shard \
+  "endpoint-registry-excludes-wfs-endpoints" \
+  "src/Honua.Server/EndpointRegistry.cs" \
+  "WFS Endpoints"
+
+# Program.cs (route registration) -> same smoke subset, NOT run_all.
+assert_descriptor \
+  "program-registration-smoke" \
+  "src/Honua.Server/Program.cs" \
+  "targeted" \
+  "false" \
+  "FeatureServer Endpoints"
+
+# Startup/JsonContextRegistration.cs sits under the infrastructure_paths prefix
+# src/Honua.Server/Startup/ but the override must WIN so a JSON-context tweak
+# routes to the smoke subset instead of forcing run_all.
+assert_descriptor \
+  "jsoncontext-registration-smoke" \
+  "src/Honua.Server/Startup/JsonContextRegistration.cs" \
+  "targeted" \
+  "false" \
+  "OData Core"
+
+# An endpoint-ADDING feature PR touches the registration plumbing AND a feature
+# dir under a shard's paths: it runs the smoke subset PLUS that feature's owning
+# shard (here GeoServices ImageServer), and is targeted, not run_all.
+assert_descriptor \
+  "endpoint-adding-feature-includes-feature-shard" \
+  "$(printf '%s\n%s\n%s' \
+      'src/Honua.Server/EndpointRegistry.cs' \
+      'src/Honua.Server/Program.cs' \
+      'src/Honua.Protocols.GeoServices/ImageServer/ImageServerEndpoints.cs')" \
+  "targeted" \
+  "false" \
+  "GeoServices ImageServer"
+assert_descriptor \
+  "endpoint-adding-feature-includes-smoke" \
+  "$(printf '%s\n%s' \
+      'src/Honua.Server/EndpointRegistry.cs' \
+      'src/Honua.Protocols.GeoServices/ImageServer/ImageServerEndpoints.cs')" \
+  "targeted" \
+  "false" \
+  "MCP"
+
+# A Honua.Hosting/Features/Authentication/ change -> auth/security shards, NOT
+# run_all and NOT a silent skip.
+assert_descriptor \
+  "hosting-authentication-auth-shards" \
+  "src/Honua.Hosting/Features/Authentication/JwtBearerSupport.cs" \
+  "targeted" \
+  "false" \
+  "Infra and Security"
+assert_excludes_shard \
+  "hosting-authentication-excludes-featureserver" \
+  "src/Honua.Hosting/Features/Authentication/JwtBearerSupport.cs" \
+  "FeatureServer Endpoints"
+
+# A Honua.Hosting/Features/Security/ change -> same auth/security shards.
+assert_descriptor \
+  "hosting-security-auth-shards" \
+  "src/Honua.Hosting/Features/Security/SecretReferenceResolver.cs" \
+  "targeted" \
+  "false" \
+  "Infra and Security"
+
+# Conservatism guards: the override must NOT widen run_all coverage. A NON-override
+# Startup file (DI/host bootstrap core) must STILL run_all, and a generic unmapped
+# Honua.Server source file must STILL run_all.
+assert_descriptor \
+  "startup-bootstrap-core-still-run-all" \
+  "src/Honua.Server/Startup/InfrastructureCompositionRoot.cs" \
+  "infrastructure_change" \
+  "true" \
+  "Core"
+assert_descriptor \
+  "non-override-hosting-feature-still-run-all" \
+  "src/Honua.Hosting/Features/Caching/HostResponseCache.cs" \
+  "unmapped_source_change" \
+  "true" \
+  "Core"
+
+# A registration override mixed with a genuinely cross-cutting Core change still
+# escalates to run_all (the Core file is not override-claimed): override must not
+# mask a real infrastructure change.
+assert_descriptor \
+  "override-plus-core-still-run-all" \
+  "$(printf '%s\n%s' \
+      'src/Honua.Server/Startup/JsonContextRegistration.cs' \
+      'src/Honua.Core/Queries/FeatureQuery.cs')" \
+  "infrastructure_change" \
   "true" \
   "Core"
 
