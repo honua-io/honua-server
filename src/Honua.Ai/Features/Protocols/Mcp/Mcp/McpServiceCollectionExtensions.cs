@@ -56,6 +56,19 @@ internal static class McpServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ExecutePlanTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, CancelJobTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ProposeOperationTool>());
+
+        // honua_publish_service (#1951): the authoring/publishing tool. It routes
+        // through the canonical IOperationInvoker (operations toolset) →
+        // ServicePublishExecutor → ILayerPublishingService rather than
+        // reimplementing publish. Registered unconditionally and gated at
+        // invocation time: the operations toolset (AddOperationsToolset) is wired
+        // later in the server composition root than AddMcpOperatorSurface, so a
+        // descriptor-list check here would never see IOperationInvoker. Instead
+        // the tool resolves the invoker per-request and returns a structured
+        // "unavailable" handle when no operations toolset is composed — the same
+        // pattern ProposeOperationTool uses for the operation gateway.
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, PublishServiceTool>());
+
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, PlanAnalysisTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, GroundCandidatesTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ClarifyIntentTool>());

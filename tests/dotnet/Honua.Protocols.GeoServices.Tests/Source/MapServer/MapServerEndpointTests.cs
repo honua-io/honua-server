@@ -2069,7 +2069,9 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
                 (90113, 113, ST_Transform(ST_SetSRID(ST_MakePoint(-157.80, 21.30), 4326), 3857), jsonb_build_object('objectid', 90113, 'name', 'KML Projected Point Feature'));
             """;
 
-        await _fixture.Postgres.ExecuteAsync(sql, schema);
+        // #2020: route the global honua.services/layers/service_layers/layer_fields seed through
+        // the schema-mutation advisory lock (combined statement also seeds the per-schema features).
+        await _fixture.Postgres.ApplyGlobalSeedSqlAsync(sql, schema);
         await SeedGenerateKmlMetadataV2GraphAsync(serviceName);
         return serviceName;
     }

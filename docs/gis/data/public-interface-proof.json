@@ -3127,6 +3127,52 @@
       ]
     },
     {
+      "surfaceId": "network-dataset-registry-admin",
+      "displayName": "Network dataset registry admin API",
+      "surfaceKind": "http-route-family",
+      "protocol": "Admin API",
+      "canonicalIdentifier": "/api/v1/admin/network-datasets + /api/v1/admin/network-datasets/{id}",
+      "parentSurfaceId": "naserver-routing",
+      "endpointPrefixes": [
+        "/api/v1/admin/network-datasets"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry entries plus admin endpoint integration tests and deployed-route drift checks",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "src/Honua.Server/Features/Admin/NetworkDatasetAdminEndpoints.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Admin/NetworkDatasetAdminEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1882",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "scenario-depth",
+          "proofMechanism": "Register/list/get/update/delete happy paths over the honua.network_datasets registry, validation rejections (id slug, unsafe schema-qualified edge/vertex identifier, srid bounds, status enum), duplicate-id conflict, not-found handling, and anonymous-access auth gate exercised by integration tests plus identifier/srid/status validation unit tests. Edge/vertex feature editing, turn/restriction-attribute editing, and topology rebuild are deferred.",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "tests/dotnet/Honua.Server.Tests/Features/Admin/NetworkDatasetAdminEndpointsTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Routing/NetworkDatasetValidationTests.cs",
+            "src/Honua.Routing/Features/Routing/Domain/NetworkDatasetValidation.cs",
+            "docs/reference/compatibility/geoservices-parity.md"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1882",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
       "surfaceId": "scene-generation-admin",
       "displayName": "3D Tiles generation admin API",
       "surfaceKind": "http-route-family",

@@ -3,7 +3,6 @@
 
 using System.Collections.Immutable;
 using System.Reflection;
-using DbUp;
 using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -18,7 +17,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.ObjectPool;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
-using Npgsql;
 
 namespace Honua.Server.Tests.Features.FeatureStore;
 
@@ -52,20 +50,18 @@ public sealed class BranchVersioningAsyncReconcileTests : IAsyncLifetime
     {
         await _fixture.ExecuteAsync($"CREATE SCHEMA {_schema}");
 
-        var connectionStringBuilder = new NpgsqlConnectionStringBuilder(_fixture.ConnectionString)
-        {
-            SearchPath = $"{_schema},public"
-        };
-        var upgrader = DeployChanges.To
-            .PostgresqlDatabase(connectionStringBuilder.ToString(), _schema)
-            .JournalToPostgresqlTable(_schema, "schema_versions")
-            .WithScriptsEmbeddedInAssembly(Assembly.GetAssembly(typeof(Program))!)
-            .WithTransaction()
-            .Build();
-        var result = upgrader.PerformUpgrade();
+        // honua-server#1568 follow-up: serialize the embedded migration set (it mutates the literal,
+        // process-global honua schema, which per-test search_path isolation does NOT scope) under the
+        // shared seed advisory lock so this upgrade does not race locked seeders on the shared catalog
+        // and deadlock (40P01) the parallel [Collection("Database")] run.
+        var result = await _fixture.RunEmbeddedMigrationsUnderLockAsync(
+            _schema,
+            Assembly.GetAssembly(typeof(Program))!);
         result.Successful.Should().BeTrue(result.Error?.ToString());
 
-        await _fixture.ExecuteAsync($"""
+        // #2020: route the literal honua.layers INSERT through the shared schema-mutation advisory
+        // lock so it serializes with parallel-collection seeders instead of racing the catalog (40P01).
+        await _fixture.ApplyGlobalSeedSqlAsync($"""
             INSERT INTO honua.layers (layer_id, layer_name, table_schema, table_name, geometry_type, srid)
             VALUES ({PointsLayerId}, 'BV Async Points', '{_schema}', 'features', 'Point', 4326)
             ON CONFLICT (layer_id) DO UPDATE SET srid = EXCLUDED.srid;
@@ -74,7 +70,8 @@ public sealed class BranchVersioningAsyncReconcileTests : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        await _fixture.ExecuteAsync($"DROP SCHEMA {_schema} CASCADE");
+        // #2020: serialize the CASCADE drop on the shared advisory lock (catalog churn).
+        await _fixture.DropSchemaAsync(_schema);
     }
 
     [Fact]
