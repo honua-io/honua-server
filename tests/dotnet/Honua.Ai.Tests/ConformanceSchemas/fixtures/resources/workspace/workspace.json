@@ -1,0 +1,17 @@
+{
+  "id": "workspace.active_temp",
+  "schemaRef": "resources/workspace.schema.json",
+  "validates": "inputs",
+  "uri": "honua://workspaces/ws_91",
+  "inputs": {
+    "workspaceId": "ws_91",
+    "kind": "temp_layer",
+    "label": "Flood analysis scratch",
+    "uri": "honua://workspaces/ws_91",
+    "expiresAt": "2026-06-28T00:00:00Z",
+    "status": "active",
+    "resultsUri": "honua://jobs/job_7f3a/results"
+  },
+  "expected": "resource_projection",
+  "canonicalRefs": ["WorkspaceRef"]
+}

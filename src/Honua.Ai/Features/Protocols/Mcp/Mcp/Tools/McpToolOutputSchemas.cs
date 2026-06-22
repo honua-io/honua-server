@@ -123,6 +123,51 @@ internal static class McpToolOutputSchemas
         """);
 
     /// <summary>
+    /// Schema for <see cref="Models.McpPublishServiceOutput"/>. Projects the
+    /// canonical <c>OperationHandle</c>: <c>status</c> is the
+    /// <c>OperationHandleStatus</c> (Completed | Queued | RequiresApproval |
+    /// Running | Failed); a completed publish carries <c>serviceUri</c>,
+    /// <c>layerId</c>, and <c>metadataRevision</c>; a requires-approval outcome
+    /// carries <c>approvalLane</c>; a queued outcome carries <c>jobId</c>.
+    /// </summary>
+    public static readonly JsonElement PublishServiceOutputSchema = Parse(
+        """
+        {
+          "type": "object",
+          "required": ["status", "requiresApproval", "operationId", "handleId"],
+          "properties": {
+            "status": {
+              "type": "string",
+              "description": "Operation handle status: Completed, Queued, Running, RequiresApproval, or Failed."
+            },
+            "requiresApproval": { "type": "boolean" },
+            "operationId": { "type": "string" },
+            "handleId": { "type": "string" },
+            "serviceUri": {
+              "type": ["string", "null"],
+              "description": "honua://published-services/{serviceName} URI of the published service when the publish completed."
+            },
+            "layerId": { "type": ["string", "null"] },
+            "serviceName": { "type": ["string", "null"] },
+            "metadataRevision": {
+              "type": ["integer", "null"],
+              "description": "Metadata v2 graph revision produced by the publish."
+            },
+            "jobId": {
+              "type": ["string", "null"],
+              "description": "Durable job id when the operation was queued."
+            },
+            "approvalLane": {
+              "type": ["string", "null"],
+              "description": "Approval lane to wait on when the publish requires human approval."
+            },
+            "summary": { "type": ["string", "null"] },
+            "message": { "type": ["string", "null"] }
+          }
+        }
+        """);
+
+    /// <summary>
     /// Schema for <see cref="Models.McpPlanAnalysisOutput"/>. The compiled plan,
     /// spec draft, clarification, and estimate are deep nested shapes; the schema
     /// pins the top-level envelope and leaves those sub-objects open so the

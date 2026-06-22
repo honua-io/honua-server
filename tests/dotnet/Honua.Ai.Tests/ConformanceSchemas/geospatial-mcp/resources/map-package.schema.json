@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/resources/map-package.schema.json",
+  "title": "Map package resource payload",
+  "description": "Responsibility-level projection of a MapPackage at honua://maps/{map_package_id}. Concrete field spellings finalize upstream (honua-server#731); only the stable mapPackageId is pinned and additional properties are permitted. Responsibilities: package format/template binding, source bindings, styling composition, map-spec document, initial view, legend/popup/label composition, artifact bindings. See resources.md §honua://maps/{map_package_id}.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["mapPackageId"],
+  "properties": {
+    "mapPackageId": {
+      "type": "string",
+      "description": "Stable identifier (map_…)."
+    },
+    "templateId": { "type": "string", "description": "Bound MapTemplate." },
+    "sourceBindings": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
+    "styleId": { "type": "string" },
+    "themeId": { "type": "string" },
+    "initialView": { "type": "object", "additionalProperties": true },
+    "previewArtifactId": { "type": "string" }
+  }
+}
