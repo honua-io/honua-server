@@ -158,20 +158,24 @@ public sealed class GeoservicesImportCatalogReconciliationTests(PostgresFixture 
 
     private async Task CleanupCatalogAsync(string serviceName)
     {
-        await using var connection = await fixture.GetConnectionAsync();
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
+        // #2020: these DELETEs mutate the literal, process-global honua.* catalog
+        // tables (search_path isolation does not scope them), so route them through the
+        // shared seed advisory lock to keep parallel [Collection("Database")] tests off
+        // the 40P01 deadlock path.
+        const string sql = """
             DELETE FROM honua.layer_fields
             WHERE layer_id IN (
                 SELECT layer_id FROM honua.service_layers WHERE service_name = @serviceName);
             DELETE FROM honua.service_layers WHERE service_name = @serviceName;
             DELETE FROM honua.services WHERE service_name = @serviceName;
             """;
-        var parameter = command.CreateParameter();
-        parameter.ParameterName = "serviceName";
-        parameter.Value = serviceName;
-        command.Parameters.Add(parameter);
-        await command.ExecuteNonQueryAsync();
+        await fixture.ApplyGlobalSeedSqlAsync(sql, command =>
+        {
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = "serviceName";
+            parameter.Value = serviceName;
+            command.Parameters.Add(parameter);
+        });
     }
 
     // Minimal faithful ArcGIS FeatureServer mock: a point layer in WKID 4326 with an OBJECTID, a

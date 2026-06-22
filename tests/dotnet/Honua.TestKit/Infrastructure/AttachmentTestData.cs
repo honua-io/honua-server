@@ -51,46 +51,54 @@ public static class AttachmentTestData
             throw new InvalidOperationException("Failed to seed attachment file test2.jpg");
         }
 
-        await using var connection = await fixture.DataSource.OpenConnectionAsync();
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            DELETE FROM honua.attachments
-            WHERE layer_id = @layerId AND feature_id = @featureId;
-
-            INSERT INTO honua.attachments (
-                id,
-                feature_id,
-                layer_id,
-                filename,
-                content_type,
-                size,
-                created_at,
-                storage_path,
-                keywords
-            )
-            VALUES
-                (1, @featureId, @layerId, @file1Name, 'text/plain', @file1Size, @file1CreatedAt, @storagePath1, 'test,document'),
-                (2, @featureId, @layerId, @file2Name, 'image/jpeg', @file2Size, @file2CreatedAt, @storagePath2, 'test,image');
-
-            SELECT setval(
-                pg_get_serial_sequence('honua.attachments', 'id'),
-                (SELECT COALESCE(MAX(id), 0) FROM honua.attachments)
-            );
-            """;
-        command.Parameters.AddWithValue("layerId", layerId);
-        command.Parameters.AddWithValue("featureId", featureId);
-        command.Parameters.AddWithValue("file1Name", file1Name);
-        command.Parameters.AddWithValue("file1Size", upload1.File.SizeBytes);
-        command.Parameters.AddWithValue("file1CreatedAt", upload1.File.UploadedAt.UtcDateTime);
-        command.Parameters.AddWithValue("storagePath1", upload1.File.FileId);
-        command.Parameters.AddWithValue("file2Name", file2Name);
-        command.Parameters.AddWithValue("file2Size", upload2.File.SizeBytes);
-        command.Parameters.AddWithValue("file2CreatedAt", upload2.File.UploadedAt.UtcDateTime);
-        command.Parameters.AddWithValue("storagePath2", upload2.File.FileId);
-
+        // #2020: serialize the global honua.attachments DELETE + INSERT + setval seed under the
+        // schema-mutation advisory lock (multi-statement, parameterized, sequence reset). The
+        // file-cleanup compensation stays OUTSIDE the lock action so it runs only after the lock
+        // helper has exhausted its bounded 40P01/40001 retries — a transient deadlock retries the
+        // seed without prematurely deleting the uploaded blobs.
         try
         {
-            await command.ExecuteNonQueryAsync();
+            await fixture.RunUnderSchemaMutationLockAsync(async () =>
+            {
+                await using var connection = await fixture.DataSource.OpenConnectionAsync();
+                await using var command = connection.CreateCommand();
+                command.CommandText = """
+                    DELETE FROM honua.attachments
+                    WHERE layer_id = @layerId AND feature_id = @featureId;
+
+                    INSERT INTO honua.attachments (
+                        id,
+                        feature_id,
+                        layer_id,
+                        filename,
+                        content_type,
+                        size,
+                        created_at,
+                        storage_path,
+                        keywords
+                    )
+                    VALUES
+                        (1, @featureId, @layerId, @file1Name, 'text/plain', @file1Size, @file1CreatedAt, @storagePath1, 'test,document'),
+                        (2, @featureId, @layerId, @file2Name, 'image/jpeg', @file2Size, @file2CreatedAt, @storagePath2, 'test,image');
+
+                    SELECT setval(
+                        pg_get_serial_sequence('honua.attachments', 'id'),
+                        (SELECT COALESCE(MAX(id), 0) FROM honua.attachments)
+                    );
+                    """;
+                command.Parameters.AddWithValue("layerId", layerId);
+                command.Parameters.AddWithValue("featureId", featureId);
+                command.Parameters.AddWithValue("file1Name", file1Name);
+                command.Parameters.AddWithValue("file1Size", upload1.File.SizeBytes);
+                command.Parameters.AddWithValue("file1CreatedAt", upload1.File.UploadedAt.UtcDateTime);
+                command.Parameters.AddWithValue("storagePath1", upload1.File.FileId);
+                command.Parameters.AddWithValue("file2Name", file2Name);
+                command.Parameters.AddWithValue("file2Size", upload2.File.SizeBytes);
+                command.Parameters.AddWithValue("file2CreatedAt", upload2.File.UploadedAt.UtcDateTime);
+                command.Parameters.AddWithValue("storagePath2", upload2.File.FileId);
+
+                await command.ExecuteNonQueryAsync();
+            });
         }
         catch
         {
@@ -128,17 +136,18 @@ public static class AttachmentTestData
             }
         }
 
-        await using (var connection = await fixture.DataSource.OpenConnectionAsync())
-        await using (var command = connection.CreateCommand())
-        {
-            command.CommandText = """
-                DELETE FROM honua.attachments
-                WHERE layer_id = @layerId AND feature_id = @featureId;
-                """;
-            command.Parameters.AddWithValue("layerId", layerId);
-            command.Parameters.AddWithValue("featureId", featureId);
-            await command.ExecuteNonQueryAsync();
-        }
+        // #2020: route the global honua.attachments DELETE through the schema-mutation advisory
+        // lock (parameterized overload). The preceding SELECT is read-only and stays unlocked.
+        await fixture.ApplyGlobalSeedSqlAsync(
+            """
+            DELETE FROM honua.attachments
+            WHERE layer_id = @layerId AND feature_id = @featureId;
+            """,
+            command =>
+            {
+                command.Parameters.AddWithValue("layerId", layerId);
+                command.Parameters.AddWithValue("featureId", featureId);
+            });
 
         foreach (var fileId in fileIds)
         {
