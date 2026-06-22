@@ -416,6 +416,111 @@ assert_descriptor \
   "Core"
 
 # ---------------------------------------------------------------------------
+# #1897 src-dir->shard mapping (follow-up to #2035): mapping each feature's
+# SOURCE tree to the shard(s) whose filter runs its tests stops the
+# unmapped_source_change run_all from firing on normal feature PRs. These lock
+# in the four MEASURED regressions (#1939/#1944/#1961/#1963) — each must now be
+# targeted AND must include the shard that runs its OWN feature's tests.
+# ---------------------------------------------------------------------------
+
+# #1939 raster: src/Honua.Core/Features/Raster/ is the shared raster pipeline
+# adapted by ImageServer + OGC API Coverages + Wcs(WFS). A raster change targets
+# those raster-rendering shards (incl. GeoServices ImageServer which runs the
+# ImageServer raster-sampling tests), NOT run_all.
+assert_descriptor \
+  "raster-core-targeted" \
+  "src/Honua.Core/Features/Raster/ZarrParser/ZarrMetadataExtractor.cs" \
+  "targeted" \
+  "false" \
+  "GeoServices ImageServer"
+assert_excludes_shard \
+  "raster-core-excludes-featureserver" \
+  "src/Honua.Core/Features/Raster/ZarrParser/ZarrMetadataExtractor.cs" \
+  "FeatureServer Endpoints"
+
+# #1944 collaboration: src/Honua.Server/Features/Collaboration/ (and the Core
+# slice) is owned by the Server Features Misc catch-all (Features.Collaboration.*
+# tests). A collaboration change targets that shard, NOT run_all.
+assert_descriptor \
+  "collaboration-targeted" \
+  "$(printf '%s\n%s' \
+      'src/Honua.Core/Features/Collaboration/FeatureLocks/FeatureEditGuard.cs' \
+      'src/Honua.Server/Features/Collaboration/FeatureLocks/FeatureLockServices.cs')" \
+  "targeted" \
+  "false" \
+  "Server Features Misc"
+
+# #1961 output-formats: the shared format/geometry host services in
+# src/Honua.Hosting/Features/Services/ (GeoParquet writer, GeometryService,
+# SpatialReference/Raster helpers) are mapped to every query/format consumer
+# shard (FeatureServer/OData/OGC Features/WFS families, Infra & Security which
+# runs GeometryService/RasterParsingHelpers tests, Server Features Misc which
+# runs Export/FeatureStore, and Core). A change there is targeted across that
+# consumer set, NOT run_all — and includes the FeatureServer query shard that
+# the #1961 FeatureServerQueryHandler change exercises.
+assert_descriptor \
+  "hosting-output-format-services-targeted" \
+  "$(printf '%s\n%s' \
+      'src/Honua.Hosting/Features/Services/GeoParquetFeatureWriter.cs' \
+      'src/Honua.Protocols.GeoServices/FeatureServer/FeatureServerQueryHandler.cs')" \
+  "targeted" \
+  "false" \
+  "FeatureServer Query"
+# Its own OData query path is included too.
+assert_descriptor \
+  "hosting-output-format-services-includes-odata" \
+  "src/Honua.Hosting/Features/Services/GeoParquetFeatureWriter.cs" \
+  "targeted" \
+  "false" \
+  "OData Core"
+
+# #1963 oauth: the GeoServices Sharing source (src/Honua.Protocols.GeoServices/
+# Sharing/) is owned by the Server Features Misc catch-all (Features.Sharing.*),
+# the Admin OAuth endpoints by the Admin & Console shard (Features.Admin.*), and
+# the Hosting/Features/Authentication override routes to the auth/security
+# shards. The combined PR is targeted, NOT run_all, and runs its own tests'
+# shards (Server Features Admin and Console for OAuthClientEndpointsTests).
+assert_descriptor \
+  "oauth-sharing-source-targeted" \
+  "src/Honua.Protocols.GeoServices/Sharing/SharingOAuth2Endpoints.cs" \
+  "targeted" \
+  "false" \
+  "Server Features Misc"
+assert_descriptor \
+  "oauth-admin-endpoints-targeted" \
+  "src/Honua.Server/Features/Admin/OAuthClientEndpoints.cs" \
+  "targeted" \
+  "false" \
+  "Server Features Admin and Console"
+
+# A Server/Features/Infrastructure FEATURE subdir (ControlPlane/Errors/Helpers)
+# maps to Infra and Security (Features.Infrastructure.* tests), NOT run_all —
+# while the shared host-wiring subdirs (Hosting/Middleware/Services/Monitoring)
+# still escalate via infrastructure_paths (asserted below).
+assert_descriptor \
+  "infra-feature-controlplane-targeted" \
+  "src/Honua.Server/Features/Infrastructure/ControlPlane/DeployWorkflowService.cs" \
+  "targeted" \
+  "false" \
+  "Infra and Security"
+assert_descriptor \
+  "infra-hosting-wiring-still-run-all" \
+  "src/Honua.Server/Features/Infrastructure/Hosting/FeatureRegistrationExtensions.cs" \
+  "infrastructure_change" \
+  "true" \
+  "Core"
+
+# Cross-cutting Core feature trees NOT mapped to a shard still run_all (the
+# unmapped-source net): e.g. src/Honua.Core/Features/Geometry/ has no owning
+# shard and must not be silently narrowed.
+assert_descriptor \
+  "core-geometry-feature-still-run-all" \
+  "src/Honua.Core/Features/Geometry/GeometryOperations.cs" \
+  "unmapped_source_change" \
+  "true" \
+  "Core"
+
+# ---------------------------------------------------------------------------
 # #1899 guard: every Honua.Server.Tests class must be claimed by at least one
 # shard filter (in the correct test assembly) or it never runs in CI. This is
 # the anti-regression check for the coverage hole — a new test class in an
