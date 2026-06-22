@@ -7,25 +7,39 @@
 #   1. When no files changed (empty diff), emit
 #      {"run_all": true, "reason": "no_changed_files"} so a manual replay still
 #      exercises the full matrix.
-#   2. When the diff touches a path under `infrastructure_paths` in
+#   2. Compute the `targeted_override_prefixes` set: changed files under one of
+#      those prefixes are "claimed" by an explicit smoke/feature-area shard
+#      subset instead of escalating to run_all. This narrows the over-broad
+#      run_all triggers for endpoint-registration PLUMBING
+#      (EndpointRegistry.cs, Program.cs registration, Startup/JsonContextRegistration.cs)
+#      and for shared FEATURE-AREA dirs (e.g. Honua.Hosting/Features/Authentication/,
+#      .../Security/). Files matched here are removed from the infrastructure_paths
+#      escalation (step 3) and the unmapped-source net (step 5), and the override's
+#      shard list is unioned into the targeted result. The always-on architecture/
+#      governance guards (EndpointRegistry/OperationRegistry drift + coverage,
+#      proof-ledger) run on every PR regardless and catch registration mistakes,
+#      which is what makes targeting these plumbing paths safe rather than run_all.
+#   3. When the diff touches a path under `infrastructure_paths` in
 #      ci-shards.json (TestKit, Core/Postgres project and shared
 #      infrastructure paths, Honua.ServiceDefaults,
-#      src/Honua.Server/Features/Infrastructure/, Honua.sln), emit
+#      src/Honua.Server/Features/Infrastructure/, src/Honua.Server/Startup/) that
+#      is NOT already claimed by a `targeted_override_prefixes` entry, emit
 #      {"run_all": true, "reason": "infrastructure_change"}.
-#   3. Otherwise, walk every changed file, match it against shard `paths`
+#   4. Otherwise, walk every changed file, match it against shard `paths`
 #      prefixes, and union the shard names that claim it.
-#   4. When the diff touches a path under `unmapped_source_run_all_prefixes`
+#   5. When the diff touches a path under `unmapped_source_run_all_prefixes`
 #      (src/Honua.Server/, src/Honua.DuckDB/, tests/dotnet/Honua.Server.Tests/)
-#      that no shard's `paths` claims, emit
+#      that no shard's `paths` claims AND that is not claimed by a
+#      `targeted_override_prefixes` entry, emit
 #      {"run_all": true, "reason": "unmapped_source_change"} so a new feature
 #      directory does not silently fall back to the Core shard whose filter
 #      excludes Honua.Server.Tests.Features.*.
-#   5. When the union from step 3 is empty (e.g. doc-only or CI-only diffs
-#      that did not trigger steps 2 or 4), fall back to
+#   6. When the union from steps 4 + 2 is empty (e.g. doc-only or CI-only diffs
+#      that did not trigger steps 3 or 5), fall back to
 #      `default_shards_when_no_match` (currently ["Core"]) with reason
 #      "no_path_match" so the smoke shard still runs.
-#   6. Otherwise emit {"run_all": false, "shards": [...], "reason": "targeted"}
-#      with the matched shard set.
+#   7. Otherwise emit {"run_all": false, "shards": [...], "reason": "targeted"}
+#      with the matched + override shard set.
 #
 # Usage:
 #   honua-server-targeted-tests.sh                    # auto-detect base ref
@@ -131,15 +145,44 @@ if [[ -z "${CHANGED_FILES}" ]]; then
   exit 0
 fi
 
-# Detect whether any shared-infrastructure path was touched.
+# Compute the targeted-override contribution: the union of shard names declared
+# by every `targeted_override_prefixes` entry whose prefix matches a changed
+# file. These prefixes deliberately route endpoint-registration PLUMBING and
+# shared FEATURE-AREA dirs to a small representative subset instead of run_all.
+# A file under such a prefix is "override-claimed" — it must NOT escalate the
+# infrastructure_paths short-circuit (step 3) nor trip the unmapped-source net
+# (step 5). The shards collected here are unioned into the targeted result.
+OVERRIDE_SHARDS_JSON="$(
+  printf '%s\n' "${CHANGED_FILES}" \
+    | jq -Rsc --slurpfile cfg "${CONFIG_FILE}" '
+        split("\n")
+        | map(select(length > 0)) as $files
+        | ($cfg[0].targeted_override_prefixes // [])
+        | map(
+            . as $entry
+            | select($files | any(. as $f | $f | startswith($entry.prefix)))
+            | $entry.shards[]
+          )
+        | unique
+      '
+)"
+
+# Detect whether any shared-infrastructure path was touched. A file that is also
+# claimed by a targeted-override prefix is excluded so registration plumbing
+# (e.g. src/Honua.Server/Startup/JsonContextRegistration.cs, which sits under the
+# infrastructure_paths prefix src/Honua.Server/Startup/) routes to the override's
+# smoke subset instead of forcing run_all. Non-override infrastructure files
+# (the TestKit harness, the Core/Postgres canonical pipeline, etc.) still
+# escalate as before.
 INFRA_HIT="$(
   printf '%s\n' "${CHANGED_FILES}" \
     | jq -Rsc --slurpfile cfg "${CONFIG_FILE}" '
         split("\n")
-        | map(select(length > 0))
-        | . as $files
+        | map(select(length > 0)) as $files
+        | ($cfg[0].targeted_override_prefixes // []) as $overrides
+        | ($files | map(select(. as $f | ($overrides | any(. as $o | $f | startswith($o.prefix))) | not))) as $unclaimed
         | $cfg[0].infrastructure_paths
-        | any(. as $prefix | $files | any(startswith($prefix)))
+        | any(. as $prefix | $unclaimed | any(startswith($prefix)))
       '
 )"
 
@@ -179,11 +222,13 @@ UNMAPPED_SOURCE_HIT="$(
         | map(select(length > 0)) as $files
         | ($cfg[0].unmapped_source_run_all_prefixes // []) as $watched
         | ($cfg[0].shards | map(.paths) | flatten) as $known_paths
+        | ($cfg[0].targeted_override_prefixes // []) as $overrides
         | $files
         | any(
             . as $f
             | ($watched | any(. as $p | $f | startswith($p)))
               and (($known_paths | any(. as $p | $f | startswith($p))) | not)
+              and (($overrides | any(. as $o | $f | startswith($o.prefix))) | not)
           )
       '
 )"
@@ -194,9 +239,20 @@ if [[ "${UNMAPPED_SOURCE_HIT}" == "true" ]]; then
   exit 0
 fi
 
+# Union the targeted-override shards (step 2) into the matched set. An
+# endpoint-adding PR that touches both a registration-plumbing override prefix
+# AND a feature dir under a shard's `paths` thus runs the override smoke subset
+# PLUS that feature's owning shard(s).
+TARGETED_SHARDS_JSON="$(
+  jq -nc \
+    --argjson matched "${TARGETED_SHARDS_JSON}" \
+    --argjson overrides "${OVERRIDE_SHARDS_JSON}" \
+    '($matched + $overrides) | unique'
+)"
+
 # Apply default-when-no-match. Only reached when no source under a watched
-# prefix was touched (e.g. docs- or workflow-only diffs that did not already
-# trigger the infrastructure_paths short-circuit).
+# prefix was touched AND no override prefix matched (e.g. docs- or workflow-only
+# diffs that did not already trigger the infrastructure_paths short-circuit).
 SHARDS_LEN="$(printf '%s' "${TARGETED_SHARDS_JSON}" | jq 'length')"
 if [[ "${SHARDS_LEN}" == "0" ]]; then
   TARGETED_SHARDS_JSON="$(jq -c '.default_shards_when_no_match' "${CONFIG_FILE}")"
