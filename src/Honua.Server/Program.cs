@@ -810,6 +810,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Admin.Models.AdminApiKeyJsonContext.Default,
         Honua.Server.Features.Admin.Models.OAuthClientJsonContext.Default,
         Honua.Server.Features.Admin.Models.SceneDatasetJsonContext.Default,
+        Honua.Server.Features.Admin.Models.NetworkDatasetAdminJsonContext.Default,
         Honua.Server.Features.Admin.Models.SceneGenerationJsonContext.Default,
         Honua.Server.Features.Admin.Models.SceneBimIngestJsonContext.Default,
         Honua.Server.Features.Admin.Models.ScenePointCloudIngestJsonContext.Default,

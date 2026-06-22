@@ -1,0 +1,19 @@
+{
+  "id": "validate_plan.partial",
+  "schemaRef": "tools/validate_plan.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "plan": {
+      "planId": "plan_a1",
+      "intentId": "intent_8c21",
+      "steps": [
+        { "stepId": "s1", "kind": "QueryFeatures", "inputs": { "datasetId": "critical_facilities" } },
+        { "stepId": "s2", "kind": "Geoprocess", "processId": "buffer", "inputs": { "distance": "500" }, "dependsOn": ["s1"] },
+        { "stepId": "s3", "kind": "Aggregate", "dependsOn": ["s2"] }
+      ],
+      "outputs": ["FeatureLayer", "Report"]
+    }
+  },
+  "expected": "plan_validation",
+  "canonicalRefs": ["AnalysisPlan", "PlanValidationResult"]
+}

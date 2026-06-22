@@ -1,0 +1,20 @@
+{
+  "id": "provenance.full",
+  "schemaRef": "resources/provenance.schema.json",
+  "validates": "inputs",
+  "uri": "honua://results/result_3f21/provenance",
+  "inputs": {
+    "sources": [
+      { "datasetId": "critical_facilities", "version": "2026.05", "description": "County critical facilities registry." },
+      { "datasetId": "fema_100yr_floodplain", "version": "2024", "description": "FEMA 100-year floodplain." }
+    ],
+    "processDefinitions": ["intersect"],
+    "assumptions": ["Used FEMA 2024 100-year floodplain layer."],
+    "clarificationsAsked": ["q_hazard_layer"],
+    "clarificationsAnswered": ["q_hazard_layer"],
+    "executedAt": "2026-06-21T14:02:11Z",
+    "generatedArtifactIds": ["artifact_exposed_facilities"]
+  },
+  "expected": "resource_projection",
+  "canonicalRefs": ["ProvenanceRecord"]
+}

@@ -325,20 +325,25 @@ public sealed class SldImportExportEndpointsTests : IAsyncLifetime
 
     private async Task StoreMapLibreStyleAsync(string styleJson)
     {
-        await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            UPDATE honua.layers
-            SET maplibre_style = @style::jsonb,
-                geoservices_drawing_info = NULL,
-                style_version = COALESCE(style_version, 0) + 1
-            WHERE layer_id = @layerId;
-            """;
-        _ = command.Parameters.AddWithValue("@style", styleJson);
-        _ = command.Parameters.AddWithValue("@layerId", WebAppFixture.TestLayerId);
+        // #2020: route the global honua.layers UPDATE through the schema-mutation advisory lock
+        // (RunUnderSchemaMutationLockAsync preserves the row-count assertion below).
+        await _fixture.Postgres.RunUnderSchemaMutationLockAsync(async () =>
+        {
+            await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!);
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                UPDATE honua.layers
+                SET maplibre_style = @style::jsonb,
+                    geoservices_drawing_info = NULL,
+                    style_version = COALESCE(style_version, 0) + 1
+                WHERE layer_id = @layerId;
+                """;
+            _ = command.Parameters.AddWithValue("@style", styleJson);
+            _ = command.Parameters.AddWithValue("@layerId", WebAppFixture.TestLayerId);
 
-        var rows = await command.ExecuteNonQueryAsync();
-        rows.Should().Be(1);
+            var rows = await command.ExecuteNonQueryAsync();
+            rows.Should().Be(1);
+        });
     }
 
     private static string LoadFixture(string fileName)

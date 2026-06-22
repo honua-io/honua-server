@@ -107,19 +107,24 @@ public static class RasterIntegrationTestData
         var schemaName = fixture.CurrentSchema
             ?? throw new InvalidOperationException("Fixture schema is not initialized.");
 
-        await using var connection = await fixture.Postgres.GetConnectionAsync(schemaName).ConfigureAwait(false);
-
-        await using (var delete = connection.CreateCommand())
+        // #2020: serialize the global honua.raster_data DELETE + INSERT(s) under the schema-mutation
+        // advisory lock (multi-statement, parameterized, on one schema-scoped connection).
+        await fixture.Postgres.RunUnderSchemaMutationLockAsync(async () =>
         {
-            delete.CommandText = "DELETE FROM honua.raster_data WHERE layer_id = @layerId;";
-            delete.Parameters.AddWithValue("layerId", layerId);
-            await delete.ExecuteNonQueryAsync().ConfigureAwait(false);
-        }
+            await using var connection = await fixture.Postgres.GetConnectionAsync(schemaName).ConfigureAwait(false);
 
-        foreach (var raster in rasters)
-        {
-            await InsertConstantRasterAsync(connection, layerId, raster).ConfigureAwait(false);
-        }
+            await using (var delete = connection.CreateCommand())
+            {
+                delete.CommandText = "DELETE FROM honua.raster_data WHERE layer_id = @layerId;";
+                delete.Parameters.AddWithValue("layerId", layerId);
+                await delete.ExecuteNonQueryAsync().ConfigureAwait(false);
+            }
+
+            foreach (var raster in rasters)
+            {
+                await InsertConstantRasterAsync(connection, layerId, raster).ConfigureAwait(false);
+            }
+        }).ConfigureAwait(false);
     }
 
     private static async Task InsertConstantRasterAsync(
