@@ -45,15 +45,10 @@ internal sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
             };
         }
 
-        // Configure HTTP client
-        _httpClient.Timeout = TimeSpan.FromSeconds(configuration.TimeoutSeconds);
-
-        // Send the subscription key as a request header so it is not emitted in the
-        // URL (and therefore not captured by default HttpClient request-logging or
-        // outbound proxy access logs).  Azure Maps accepts `subscription-key` as
-        // either a query-string parameter or an HTTP header; the header form is
-        // preferred for secrets.
-        _httpClient.DefaultRequestHeaders.Add("subscription-key", configuration.SubscriptionKey);
+        // The injected HttpClient may be a shared/pooled typed client. Mutating its Timeout or
+        // DefaultRequestHeaders here would throw once a request has started and would bleed the
+        // subscription key across scopes, so the subscription-key header and request timeout are
+        // applied on each outbound request instead (see SendGetAsync).
     }
 
     /// <inheritdoc />
@@ -102,7 +97,7 @@ internal sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
         try
         {
             var url = BuildSearchUrl(request);
-            using var response = await _httpClient.GetAsync(url, cancellationToken).ConfigureAwait(false);
+            using var response = await SendGetAsync(url, cancellationToken).ConfigureAwait(false);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -164,7 +159,7 @@ internal sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
         try
         {
             var url = BuildReverseUrl(request);
-            using var response = await _httpClient.GetAsync(url, cancellationToken).ConfigureAwait(false);
+            using var response = await SendGetAsync(url, cancellationToken).ConfigureAwait(false);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -223,7 +218,7 @@ internal sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
         try
         {
             var url = BuildSuggestUrl(request);
-            using var response = await _httpClient.GetAsync(url, cancellationToken).ConfigureAwait(false);
+            using var response = await SendGetAsync(url, cancellationToken).ConfigureAwait(false);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -278,7 +273,7 @@ internal sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
                       "&query=1%20Microsoft%20Way%2C%20Redmond%2C%20WA" +
                       "&limit=1";
 
-            using var response = await _httpClient.GetAsync(url, cancellationToken).ConfigureAwait(false);
+            using var response = await SendGetAsync(url, cancellationToken).ConfigureAwait(false);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -302,6 +297,25 @@ internal sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
                 ErrorCode = GeocodeErrorCodes.NetworkTimeout
             };
         }
+    }
+
+    /// <summary>
+    /// Issues a GET against the injected (potentially shared) HttpClient, applying the Azure Maps
+    /// subscription-key header and request timeout per request rather than mutating the shared
+    /// client. The key is sent as a header so it is not captured by URL request-logging. The
+    /// caller owns disposal of the returned response.
+    /// </summary>
+    private async Task<HttpResponseMessage> SendGetAsync(string url, CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.Add("subscription-key", _configuration.SubscriptionKey);
+
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(TimeSpan.FromSeconds(_configuration.TimeoutSeconds));
+
+        return await _httpClient
+            .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeoutCts.Token)
+            .ConfigureAwait(false);
     }
 
     private async Task EnsureSafeBaseUrlAsync(CancellationToken cancellationToken)
