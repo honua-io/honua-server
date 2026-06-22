@@ -179,6 +179,140 @@ public sealed class MaterialAmbiguityEvaluatorTests
         findings.Should().NotContain(f => f.ReasonCode == ClarificationReasonCode.AmbiguousDataset);
     }
 
+    // -----------------------------------------------------------------------
+    // Auto-resolve unambiguous single-candidate bindings (#1949)
+    // -----------------------------------------------------------------------
+
+    [UnitTest]
+    public void Evaluate_SingleHighConfidenceDataset_AutoResolvesBindingWithoutClarification()
+    {
+        // A single dominant catalog match must NOT round-trip a clarification:
+        // it is auto-bound and reported as a resolved binding the plan can use.
+        var ranking = new CandidateRanking
+        {
+            Datasets = [Candidate("parcels-layer", 0.91, CandidateKind.Dataset)]
+        };
+
+        var findings = MaterialAmbiguityEvaluator.Evaluate(
+            BaselineRequest,
+            HighConfidenceAnalyze(),
+            ranking,
+            requiredParameterGaps: [],
+            _options,
+            out var bindings);
+
+        findings.Should().NotContain(f => f.ReasonCode == ClarificationReasonCode.AmbiguousDataset);
+        var binding = bindings.Should().ContainSingle().Which;
+        binding.QuestionId.Should().Be("dataset.selection");
+        binding.Kind.Should().Be(CandidateKind.Dataset);
+        binding.CandidateId.Should().Be("parcels-layer");
+        binding.Score.Should().Be(0.91);
+        binding.RunnerUpMargin.Should().Be(1.0, "there was no runner-up to compete with");
+    }
+
+    [UnitTest]
+    public void Evaluate_DominantDatasetBeyondSpread_AutoResolvesLeadAndRecordsMargin()
+    {
+        // Lead clears the floor and beats the runner-up by more than the
+        // material spread → dominant single candidate, auto-bound. The
+        // recorded margin makes the silent bind auditable.
+        var ranking = new CandidateRanking
+        {
+            Datasets =
+            [
+                Candidate("ds-a", 0.95, CandidateKind.Dataset),
+                Candidate("ds-b", 0.72, CandidateKind.Dataset)
+            ]
+        };
+
+        var findings = MaterialAmbiguityEvaluator.Evaluate(
+            BaselineRequest,
+            HighConfidenceAnalyze(),
+            ranking,
+            requiredParameterGaps: [],
+            _options,
+            out var bindings);
+
+        findings.Should().NotContain(f => f.ReasonCode == ClarificationReasonCode.AmbiguousDataset);
+        var binding = bindings.Should().ContainSingle().Which;
+        binding.CandidateId.Should().Be("ds-a");
+        binding.RunnerUpMargin.Should().BeApproximately(0.23, 0.0001);
+    }
+
+    [UnitTest]
+    public void Evaluate_TwoCloseHighConfidenceDatasets_ClarifiesAndEmitsNoBinding()
+    {
+        // Two viable candidates within the material spread are genuinely
+        // ambiguous: keep asking, do NOT auto-bind either.
+        var ranking = new CandidateRanking
+        {
+            Datasets =
+            [
+                Candidate("ds-a", 0.92, CandidateKind.Dataset),
+                Candidate("ds-b", 0.90, CandidateKind.Dataset)
+            ]
+        };
+
+        var findings = MaterialAmbiguityEvaluator.Evaluate(
+            BaselineRequest,
+            HighConfidenceAnalyze(),
+            ranking,
+            requiredParameterGaps: [],
+            _options,
+            out var bindings);
+
+        findings.Should().Contain(f => f.ReasonCode == ClarificationReasonCode.AmbiguousDataset);
+        bindings.Should().BeEmpty("a near-tie must not silently auto-bind a candidate");
+    }
+
+    [UnitTest]
+    public void Evaluate_NoDatasetClearsFloor_EmitsNeitherBindingNorAmbiguity()
+    {
+        // Zero viable candidates keep the existing missing-entity path: no
+        // ambiguity finding here and no auto-resolved binding.
+        var ranking = new CandidateRanking
+        {
+            Datasets =
+            [
+                Candidate("ds-a", 0.55, CandidateKind.Dataset),
+                Candidate("ds-b", 0.50, CandidateKind.Dataset)
+            ]
+        };
+
+        var findings = MaterialAmbiguityEvaluator.Evaluate(
+            BaselineRequest,
+            HighConfidenceAnalyze(),
+            ranking,
+            requiredParameterGaps: [],
+            _options,
+            out var bindings);
+
+        findings.Should().NotContain(f => f.ReasonCode == ClarificationReasonCode.AmbiguousDataset);
+        bindings.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public void Evaluate_SingleHighConfidenceProcess_AutoResolvesProcessBinding()
+    {
+        var ranking = new CandidateRanking
+        {
+            Processes = [Candidate("geometry.buffer", 0.93, CandidateKind.Process)]
+        };
+
+        var findings = MaterialAmbiguityEvaluator.Evaluate(
+            BaselineRequest,
+            HighConfidenceAnalyze(),
+            ranking,
+            requiredParameterGaps: [],
+            _options,
+            out var bindings);
+
+        findings.Should().NotContain(f => f.ReasonCode == ClarificationReasonCode.AmbiguousProcess);
+        bindings.Should().ContainSingle(b => b.QuestionId == "process.selection"
+            && b.Kind == CandidateKind.Process
+            && b.CandidateId == "geometry.buffer");
+    }
+
     [UnitTest]
     public void Evaluate_TwoHighConfidenceProcessesWithinSpread_SurfacesAmbiguousProcess()
     {

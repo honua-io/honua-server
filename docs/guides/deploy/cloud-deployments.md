@@ -18,6 +18,20 @@ Infrastructure-as-code for all of these patterns ships as private Terraform modu
 
 Generic web images are published to Docker Hub (`honuaio/honua-server`) and GHCR (`ghcr.io/honua-io/honua-server`). Cloud-targeted tags (`*-ecs`, `*-lambda`, `*-functions`, each with `-aot` variants) are published by CI to ECR/ACR. Prefer the AOT tags — faster start, lower memory; keep JIT tags as a debug fallback.
 
+### Which tag to pull
+
+On the generic web image (Docker Hub + GHCR), tags have distinct contracts. Pick by whether you want the latest *release* or the latest *trunk* build:
+
+| Tag | Means | Moves when | Published by |
+|---|---|---|---|
+| `latest` / `latest-aot` | Latest stable **release** | A `v*` release tag is cut | `deploy.yml` |
+| `vX.Y.Z` / `vX.Y.Z-aot` | A specific pinned release | Never (immutable) | `deploy.yml` |
+| `trunk` / `trunk-aot` | Latest **trunk** build (HEAD of the default branch) | Every nightly build | `nightly-container-build.yml` |
+| `nightly` / `nightly-aot`, `nightly-YYYYMMDD`, `nightly-<sha>` | Same trunk build as `trunk`/`trunk-aot`, plus dated/sha-pinned variants | Every nightly build | `nightly-container-build.yml` |
+
+- **Production / demos**: pull `latest` (or a pinned `vX.Y.Z`). `latest` deliberately tracks the latest *release*, not trunk, so it never silently advances to an unreleased build.
+- **Trunk-following consumers** (certification harnesses, "test against current trunk" CI, bleeding-edge previews): pull `trunk` / `trunk-aot`. These are the documented, obviously-named moving tags for the head of the default branch and are refreshed by the nightly build. Do **not** reach for `latest` expecting trunk — it can lag a release cycle behind.
+
 ## Pattern by team size
 
 - **Dev/test (1–5 people)**: single host with [Docker Compose](docker-compose.md); no HA, local volumes.

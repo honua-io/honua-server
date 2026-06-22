@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Text.RegularExpressions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Routing.Features.Routing.Abstractions;
 using Honua.Routing.Features.Routing.Domain;
@@ -25,14 +24,8 @@ namespace Honua.Routing.Features.Routing.Providers;
 /// is rejected rather than embedded. The built-in default's names are trusted
 /// constants.
 /// </remarks>
-internal sealed partial class NetworkDatasetRegistry : INetworkDatasetResolver
+internal sealed class NetworkDatasetRegistry : INetworkDatasetResolver
 {
-    // Schema-qualified or bare lowercase identifier: optional schema "." table, each
-    // part starting with a letter/underscore and limited to [a-z0-9_]. Conservative
-    // by design because the value is interpolated into SQL text, not bound.
-    [GeneratedRegex(@"^[a-z_][a-z0-9_]*(\.[a-z_][a-z0-9_]*)?$", RegexOptions.CultureInvariant)]
-    private static partial Regex IdentifierPattern();
-
     private readonly IDatabaseSessionFactory _sessionFactory;
 
     /// <summary>
@@ -128,11 +121,12 @@ internal sealed partial class NetworkDatasetRegistry : INetworkDatasetResolver
     /// <summary>
     /// Validates that a registered table name is a safe schema-qualified identifier
     /// before it is interpolated into the pgRouting edges-SQL string. Throws
-    /// <see cref="InvalidOperationException"/> on a non-conforming name.
+    /// <see cref="InvalidOperationException"/> on a non-conforming name. Shares the rule
+    /// with the admin editing surface via <see cref="NetworkDatasetValidation"/>.
     /// </summary>
     private static void ValidateIdentifier(string identifier, string role)
     {
-        if (!IdentifierPattern().IsMatch(identifier))
+        if (!NetworkDatasetValidation.IsValidTableIdentifier(identifier))
         {
             throw new InvalidOperationException(
                 $"Network dataset {role} '{identifier}' is not a valid schema-qualified identifier.");
