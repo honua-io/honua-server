@@ -63,6 +63,46 @@ public sealed class AwsS3FileStorageTests
         }
     }
 
+    [EmulatorTest(BucketEnv, RegionEnv, AccessKeyEnv, SecretKeyEnv, ServiceUrlEnv, ForcePathStyleEnv)]
+    public async Task ListFilesAsync_WithoutMetadata_ReturnsSizeAndKeyWithoutHeadObject()
+    {
+        var storage = await CreateStorageAsync();
+        var content = "S3 list content"u8.ToArray();
+        var request = new ByteArrayUploadRequest
+        {
+            Content = content,
+            FileName = "list-test.txt",
+            ContentType = "text/plain"
+        };
+
+        string? fileId = null;
+        try
+        {
+            var uploaded = await storage.UploadAsync(request);
+            uploaded.Success.Should().BeTrue();
+            fileId = uploaded.File!.FileId;
+
+            // Cheap listing path: size/last-modified come straight from ListObjectsV2 (no HEAD).
+            var lite = await storage.ListFilesAsync(includeMetadata: false);
+            var liteEntry = lite.Should().ContainSingle(f => f.FileId == fileId).Subject;
+            liteEntry.SizeBytes.Should().Be(content.Length);
+            liteEntry.StoragePath.Should().Be(fileId);
+
+            // Full listing path: per-object metadata (original file name) is fetched via HEAD.
+            var full = await storage.ListFilesAsync(includeMetadata: true);
+            var fullEntry = full.Should().ContainSingle(f => f.FileId == fileId).Subject;
+            fullEntry.FileName.Should().Be("list-test.txt");
+            fullEntry.SizeBytes.Should().Be(content.Length);
+        }
+        finally
+        {
+            if (!string.IsNullOrEmpty(fileId))
+            {
+                await storage.DeleteAsync(fileId);
+            }
+        }
+    }
+
     private static async Task<AwsS3FileStorage> CreateStorageAsync()
     {
         var options = GetOptionsOrSkip();
