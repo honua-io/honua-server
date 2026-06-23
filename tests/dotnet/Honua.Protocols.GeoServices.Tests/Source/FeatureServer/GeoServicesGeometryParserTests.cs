@@ -74,6 +74,23 @@ public sealed class GeoServicesGeometryParserTests
         error.Should().Contain("geometryType").And.Contain("esriGeometryBogus");
     }
 
+    [UnitTest]
+    public void TryParse_WithShortEnvelopeCoordinates_Fails()
+    {
+        // A two-coordinate list declared as an envelope previously read xmax/ymax from the
+        // zero-initialized stackalloc tail and silently queried a different window (#1990).
+        var parsed = GeoServicesGeometryParser.TryParseGeoServicesGeometry(
+            "1,2",
+            "esriGeometryEnvelope",
+            out var geometry,
+            out var error);
+
+        parsed.Should().BeFalse();
+        geometry.Should().BeNull();
+        error.Should().NotBeNull();
+        error!.Should().Contain("four");
+    }
+
     [Theory]
     [InlineData("esriGeometryPoint")]
     [InlineData("esriGeometryMultipoint")]

@@ -94,6 +94,16 @@ internal static class ItemEndpoints
                     $"Publication {publication.Metadata.Id} has no LayerIndex; the STAC items handler requires one.");
             var resourceSrid = resource.ReadSrid() ?? Wgs84Srid;
 
+            // Reject limit < 1 with 400 to match the canonical POST /search surface
+            // (SearchEndpoints), which 400s on limit < 1. Previously this path silently
+            // clamped limit=0 up to 1 while search rejected it — an inconsistent contract
+            // across the two STAC item-listing surfaces (#1988).
+            if (limit is < 1)
+            {
+                StacTelemetry.SetFailed(activity, "invalid_limit");
+                return StandardErrorHelpers.CreateBadRequest(context, "limit must be greater than or equal to 1.");
+            }
+
             var effectiveLimit = Math.Clamp(limit ?? StacConstants.DefaultSearchLimit, 1, StacConstants.MaxSearchLimit);
             var effectiveOffset = Math.Max(offset ?? 0, 0);
 
