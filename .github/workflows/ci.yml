@@ -5,9 +5,15 @@ on:
     # Full integration lane. PR CI is selective; release workflows own
     # packaging/publishing smoke.
     - cron: '0 9 * * *'
-  pull_request:
-    branches: [trunk]
-    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
+  # NO per-PR `pull_request` trigger. In the optimistic merge-train model the
+  # ONE batch CI (dispatched by the train on a `train/batch/*` branch via
+  # workflow_dispatch) is the authoritative gate; running the full matrix on
+  # every individual PR too is pure double-work — N per-PR runs + the batch run
+  # — and the flood of per-PR CI completions storms the train's `workflow_run`
+  # trigger so badly that no train run survives to land. The heavy jobs below
+  # gate on `event_name != 'merge_group'`, so the train's workflow_dispatch (and
+  # the nightly schedule) still run them; only the per-PR fan-out is dropped.
+  # A genuinely-broken PR is caught when the train batches it (attribute+drop).
   # Merge queue (LEAN gate): GitHub batches approved PRs and runs CI once on
   # the combined commit before fast-forwarding trunk. The full ~45-job matrix
   # (AOT, docker, the 30+-shard Server Tests fanout, browser/MCP lanes) already
