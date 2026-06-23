@@ -66,6 +66,15 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Configure git identity
+        # REQUIRED: the train creates real commits (assemble merge commits,
+        # forward-fix commits). Without an identity `git merge --no-ff -m ...`
+        # fails with "empty ident name", which assemble.sh would otherwise
+        # mis-report as a conflict and skip every PR. Author = repo owner.
+        run: |
+          git config --global user.name "Mike McDougall"
+          git config --global user.email "mike@honua.io"
+
       - name: Set up gh + jq
         run: |
           jq --version
