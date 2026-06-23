@@ -120,11 +120,50 @@ internal static class GdalJobInputReader
         out byte[] bytes,
         out string error)
     {
-        if (!TryGetBase64Input(parameters, name, out bytes, out error))
+        bytes = [];
+        error = "";
+
+        if (!TryGetInput(parameters, name, out var raw))
         {
+            error = $"missing required input '{name}'";
             return false;
         }
 
+        // Reject oversized payloads BEFORE decoding so the MaxArtifactBytes
+        // ceiling caps the decode-time allocation rather than letting an
+        // attacker materialize ~0.75x the (unbounded) base64 length first.
+        // Base64 packs 4 encoded chars into 3 decoded bytes, so the decoded
+        // size is at most (raw.Length / 4) * 3. Any whitespace/newlines the
+        // encoder may have inserted only make the real decoded size smaller,
+        // so this remains a valid (conservative) upper bound on the payload.
+        // Use long arithmetic to avoid int overflow on huge inputs.
+        if ((long)raw.Length / 4 * 3 > maxBytes)
+        {
+            error = $"input '{name}' size exceeds configured MaxArtifactBytes={maxBytes}";
+            return false;
+        }
+
+        try
+        {
+            bytes = Convert.FromBase64String(raw);
+        }
+        catch (FormatException)
+        {
+            error = $"input '{name}' is not valid base64";
+            return false;
+        }
+
+        if (bytes.Length == 0)
+        {
+            error = $"input '{name}' decoded to zero bytes";
+            bytes = [];
+            return false;
+        }
+
+        // Belt-and-suspenders exact check: the upper-bound pre-check above can
+        // admit a payload slightly over the cap when '=' padding shrinks the
+        // real decoded length below the conservative bound. Cheap now that the
+        // input is bounded.
         if (bytes.Length > maxBytes)
         {
             error = $"input '{name}' size {bytes.Length} bytes exceeds configured MaxArtifactBytes={maxBytes}";

@@ -22,6 +22,12 @@ namespace Honua.Protocols.Stac;
 /// </summary>
 internal static class CollectionEndpoints
 {
+    // stac-api-validator (Filter Extension) only accepts JSON Schema draft 2019-09 or
+    // draft-07 for the queryables document's "$schema". The shared QueryablesSchema model
+    // defaults to draft 2020-12 (used by OGC API Features Part 3), so the STAC queryables
+    // documents pin draft 2019-09 explicitly to satisfy the validator.
+    private const string QueryablesJsonSchemaDraft = "https://json-schema.org/draft/2019-09/schema";
+
     /// <summary>
     /// Maps STAC collection endpoints.
     /// </summary>
@@ -317,6 +323,7 @@ internal static class CollectionEndpoints
         return new QueryablesSchema
         {
             Id = schemaId,
+            Schema = QueryablesJsonSchemaDraft,
             Type = "object",
             Title = "STAC Catalog Queryables",
             Description = "Common queryable properties available across all STAC collections",
@@ -374,6 +381,7 @@ internal static class CollectionEndpoints
         return new QueryablesSchema
         {
             Id = schemaId,
+            Schema = QueryablesJsonSchemaDraft,
             Type = "object",
             Title = $"Queryables for {displayName}",
             Description = $"Schema for queryable properties of the {displayName} collection",

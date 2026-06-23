@@ -1,9 +1,44 @@
-# Force LF line endings for files that execute inside Linux containers.
-# Without this, Windows checkouts (core.autocrlf=true) inject CR bytes that
-# cause /bin/sh to fail with "set: Illegal option -" on the very first line
-# of restore-dotnet-with-github-packages.sh (and any other *.sh entrypoints).
-*.sh text eol=lf
+# Normalize all text files to LF in the index and on checkout. git stores this
+# repository's text content with LF, and its scripts, container entrypoints, CI
+# workflows, and generated/golden fixtures run or are compared on Linux. Without
+# a global rule, Windows checkouts (core.autocrlf=true) inject CR bytes into the
+# working tree, which:
+#   - breaks /bin/sh entrypoints ("set: Illegal option -" on the first line), and
+#   - fails architecture tests that read committed files verbatim and compare
+#     them against freshly-generated LF output (feature-catalog drift) or assert
+#     on LF-delimited boundaries (e.g. "- name: ...\n        if: always()" in the
+#     SDK compatibility workflow).
+# `text=auto` lets git auto-detect binary files, so they are left untouched.
+* text=auto eol=lf
 
-# Container entrypoints that are not *.sh but must stay LF inside the image.
+# Explicit LF for files that execute inside Linux containers (documentary;
+# covered by the global rule above).
+*.sh text eol=lf
 docker/cloud/lambda/bootstrap.sh text eol=lf
 docker/cloud/azure-functions/handler.sh text eol=lf
+
+# Common binary types: never normalize or diff as text.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.pdf binary
+*.zip binary
+*.gz binary
+*.tar binary
+*.parquet binary
+*.fgb binary
+*.gpkg binary
+*.mbtiles binary
+*.pmtiles binary
+*.cog binary
+*.tif binary
+*.tiff binary
+*.woff binary
+*.woff2 binary
+*.dll binary
+*.so binary
+*.dylib binary
+*.snk binary

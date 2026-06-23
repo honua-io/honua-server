@@ -293,10 +293,12 @@ public sealed class GeoServerImportServiceDataSourceApplyTests
             {
                 try
                 {
-                    await using var conn = await fixture.GetConnectionAsync();
-                    await using var cmd = conn.CreateCommand();
-                    cmd.CommandText = $"DROP TABLE IF EXISTS honua_data.\"{table}\";";
-                    await cmd.ExecuteNonQueryAsync();
+                    // #2020: honua_data.* is a process-global schema (not search_path
+                    // isolated), so route this DROP through the shared seed advisory lock to
+                    // keep parallel [Collection("Database")] tests off the 40P01 deadlock path.
+                    // The table name is interpolated (not a bind parameter), so use the plain
+                    // non-parameterized overload.
+                    await fixture.ApplyGlobalSeedSqlAsync($"DROP TABLE IF EXISTS honua_data.\"{table}\";");
                 }
                 catch (NpgsqlException)
                 {

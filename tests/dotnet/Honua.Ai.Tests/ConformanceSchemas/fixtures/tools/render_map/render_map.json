@@ -1,0 +1,18 @@
+{
+  "id": "render_map.two_layers",
+  "schemaRef": "tools/render_map.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "layers": [
+      { "serviceId": "basemap", "layerId": 0 },
+      { "serviceId": "county_parcels", "layerId": 0 }
+    ],
+    "bbox": [-97.95, 30.15, -97.55, 30.55],
+    "bboxSrid": 4326,
+    "width": 800,
+    "height": 600,
+    "transparent": false
+  },
+  "expected": "tool_result",
+  "canonicalRefs": ["LayerRef"]
+}

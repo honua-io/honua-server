@@ -635,7 +635,9 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
             var publishedLayer = await PublishLayerAsync(publishRequest);
             _layerId = publishedLayer.LayerId;
 
-            await _fixture.Postgres.ExecuteAsync(FormattableString.Invariant($"""
+            // #2020: route global honua.layers/honua.services UPDATEs through the schema-mutation
+            // advisory lock (combined statement also seeds the per-test public table).
+            await _fixture.Postgres.ApplyGlobalSeedSqlAsync(FormattableString.Invariant($"""
                 INSERT INTO public.{projectedTable} (id, name, population, geom)
                 VALUES (
                     2,
@@ -760,7 +762,9 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
                 Enabled = false
             });
 
-            await _fixture.Postgres.ExecuteAsync($"""
+            // #2020: route global honua.layers/honua.services UPDATEs through the schema-mutation
+            // advisory lock (combined statement also clears the per-test public table).
+            await _fixture.Postgres.ApplyGlobalSeedSqlAsync($"""
                 DELETE FROM public.{emptyTable};
 
                 UPDATE honua.layers
@@ -1763,37 +1767,42 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
             return;
         }
 
-        await using var connection = await _fixture.Postgres.GetConnectionAsync();
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            DELETE FROM features
-            WHERE (@hasLayerId AND layer_id = @layerId)
-               OR layer_id IN (
-                    SELECT layer_id
-                    FROM honua.service_layers
-                    WHERE service_name = @serviceName
-               );
-
-            DELETE FROM honua.layers
-            WHERE (@hasLayerId AND layer_id = @layerId)
-               OR layer_id IN (
-                    SELECT layer_id
-                    FROM honua.service_layers
-                    WHERE service_name = @serviceName
-               );
-            """;
-        command.Parameters.AddWithValue("hasLayerId", _layerId.HasValue);
-        command.Parameters.AddWithValue("layerId", _layerId.GetValueOrDefault());
-        command.Parameters.AddWithValue("serviceName", _serviceName);
-        await command.ExecuteNonQueryAsync();
-
-        if (!string.IsNullOrWhiteSpace(_serviceName))
+        // #2020: serialize global honua.layers/honua.services cleanup deletes under the
+        // schema-mutation advisory lock (multi-statement, parameterized).
+        await _fixture.Postgres.RunUnderSchemaMutationLockAsync(async () =>
         {
-            await using var serviceCommand = connection.CreateCommand();
-            serviceCommand.CommandText = "DELETE FROM honua.services WHERE service_name = @serviceName;";
-            serviceCommand.Parameters.AddWithValue("serviceName", _serviceName);
-            await serviceCommand.ExecuteNonQueryAsync();
-        }
+            await using var connection = await _fixture.Postgres.GetConnectionAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                DELETE FROM features
+                WHERE (@hasLayerId AND layer_id = @layerId)
+                   OR layer_id IN (
+                        SELECT layer_id
+                        FROM honua.service_layers
+                        WHERE service_name = @serviceName
+                   );
+
+                DELETE FROM honua.layers
+                WHERE (@hasLayerId AND layer_id = @layerId)
+                   OR layer_id IN (
+                        SELECT layer_id
+                        FROM honua.service_layers
+                        WHERE service_name = @serviceName
+                   );
+                """;
+            command.Parameters.AddWithValue("hasLayerId", _layerId.HasValue);
+            command.Parameters.AddWithValue("layerId", _layerId.GetValueOrDefault());
+            command.Parameters.AddWithValue("serviceName", _serviceName);
+            await command.ExecuteNonQueryAsync();
+
+            if (!string.IsNullOrWhiteSpace(_serviceName))
+            {
+                await using var serviceCommand = connection.CreateCommand();
+                serviceCommand.CommandText = "DELETE FROM honua.services WHERE service_name = @serviceName;";
+                serviceCommand.Parameters.AddWithValue("serviceName", _serviceName);
+                await serviceCommand.ExecuteNonQueryAsync();
+            }
+        });
     }
 
     [IntegrationTest]
@@ -1940,14 +1949,12 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
 
     private async Task ResetPublishedMetadataAsync()
     {
-        await using var connection = await _fixture.Postgres.GetConnectionAsync();
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
+        // #2020: serialize global honua.* metadata reset under the schema-mutation advisory lock.
+        await _fixture.Postgres.ApplyGlobalSeedSqlAsync("""
             DELETE FROM honua.layer_fields;
             DELETE FROM honua.service_layers;
             DELETE FROM honua.layers;
             DELETE FROM honua.services;
-            """;
-        await command.ExecuteNonQueryAsync();
+            """);
     }
 }

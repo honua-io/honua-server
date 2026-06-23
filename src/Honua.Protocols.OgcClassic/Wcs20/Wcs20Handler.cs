@@ -10,6 +10,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Core.Features.Raster.ZarrParser;
 using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Infrastructure.Authentication;
@@ -72,15 +73,18 @@ internal sealed class Wcs20Handler
 
     private readonly IMetadataV2GraphProvider _graphProvider;
     private readonly IRasterStore _rasterStore;
+    private readonly IZarrStore _zarrStore;
     private readonly ILogger<Wcs20Handler> _logger;
 
     public Wcs20Handler(
         IMetadataV2GraphProvider graphProvider,
         IRasterStore rasterStore,
+        IZarrStore zarrStore,
         ILogger<Wcs20Handler> logger)
     {
         _graphProvider = graphProvider ?? throw new ArgumentNullException(nameof(graphProvider));
         _rasterStore = rasterStore ?? throw new ArgumentNullException(nameof(rasterStore));
+        _zarrStore = zarrStore ?? throw new ArgumentNullException(nameof(zarrStore));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -325,7 +329,13 @@ internal sealed class Wcs20Handler
                 Wcs20Utilities.Parameters.Format);
         }
 
-        if (!TryResolveCoverageQuery(context.Request.Query, coverage.Coverage.Value.Raster, outputFormat, out var query, out var queryError))
+        // Additional (non-spatial, non-temporal) dimension axes this coverage declares
+        // via a registered multidimensional (Zarr) store for the layer (#1872). Empty
+        // for plain 2D rasters.
+        var additionalAxes = await ResolveAdditionalDimensionAxesAsync(
+            coverage.Coverage.Value.LayerId, cancellationToken).ConfigureAwait(false);
+
+        if (!TryResolveCoverageQuery(context.Request.Query, coverage.Coverage.Value.Raster, additionalAxes, outputFormat, out var query, out var queryError))
         {
             Wcs20Log.ValidationFailed(_logger, Wcs20Utilities.Operations.GetCoverage, queryError.Detail);
             return CreateGetCoverageParameterError(queryError);
@@ -927,6 +937,7 @@ internal sealed class Wcs20Handler
     private static bool TryResolveCoverageQuery(
         IQueryCollection query,
         RasterInfo raster,
+        IReadOnlyList<ZarrAxis> additionalAxes,
         RasterFormat outputFormat,
         out RasterQuery rasterQuery,
         out WcsParameterError error)
@@ -952,7 +963,7 @@ internal sealed class Wcs20Handler
         // slice on an axis the coverage does not carry surfaces a precise
         // InvalidAxisLabel, and a malformed one surfaces InvalidSubsetting.
         var allSubsetValues = GetQueryValues(query, Wcs20Utilities.Parameters.Subset);
-        if (!TryValidateAdditionalDimensionSubsets(allSubsetValues, raster, out error))
+        if (!TryValidateAdditionalDimensionSubsets(allSubsetValues, raster, additionalAxes, out error))
         {
             return false;
         }
@@ -1137,32 +1148,28 @@ internal sealed class Wcs20Handler
     // #1872: WCS 2.0 additional-dimension subsetting beyond phenomenonTime.
     //
     // Coverages may declare named dimension axes in addition to the two spatial axes
-    // and the temporal axis — for example a vertical/elevation axis on a
-    // multidimensional (Zarr) coverage resolved through the same coordinate/time-axis
-    // indexer the OGC API Coverages `datetime` path uses (#1790). This pass parses
-    // and validates any SUBSET entry that targets neither a spatial axis nor the
-    // temporal axis, and resolves it against the coverage's registered additional
-    // dimension axes.
+    // and the temporal axis — for example a vertical/elevation/pressure-level axis on a
+    // multidimensional (Zarr) coverage. This pass parses and validates any SUBSET entry
+    // that targets neither a spatial axis nor the temporal axis, and resolves it against
+    // the coverage's registered additional dimension axes via the shared coordinate-axis
+    // indexer (the same resolver the OGC API Coverages surface uses, #1790/#1872).
     //
-    // The classic WCS GetCoverage path serves over the primary 2D raster via
-    // IRasterStore, which carries no non-spatial dimension axes today, so the set of
-    // registered additional axes is empty: any well-formed additional-dimension slice
-    // therefore names an axis this coverage does not offer and yields InvalidAxisLabel,
-    // while a malformed one yields InvalidSubsetting. When the multidimensional (Zarr)
-    // read path is wired into classic WCS, the resolved axis index would be carried on
-    // the canonical raster query here instead of being rejected. See the plan note on
-    // ticket #1872.
+    // A SUBSET on an axis this coverage does NOT declare yields InvalidAxisLabel; a
+    // malformed value yields InvalidSubsetting. A SUBSET on a DECLARED additional axis
+    // is resolved to a concrete grid-index slice here (proving the coordinate->index
+    // resolution end-to-end through classic WCS); because the classic GetCoverage export
+    // path (IRasterStore.ExportImageAsync over the primary 2D raster) cannot yet read a
+    // Zarr slice's pixels, a resolved-but-unservable slice surfaces a precise
+    // OperationNotSupported error rather than the previous blanket rejection. See the
+    // ticket #1872 plan note: serving those pixels needs the Zarr export path wired into
+    // classic WCS.
     private static bool TryValidateAdditionalDimensionSubsets(
         StringValues subsetValues,
         RasterInfo raster,
+        IReadOnlyList<ZarrAxis> additionalAxes,
         out WcsParameterError error)
     {
         error = default;
-
-        // Registered additional (non-spatial, non-temporal) dimension axes for this
-        // coverage. Empty for the primary-raster path; this is the extension point for
-        // multidimensional coverages.
-        var additionalAxes = ResolveAdditionalDimensionAxes(raster);
 
         foreach (var rawValue in subsetValues)
         {
@@ -1171,7 +1178,7 @@ internal sealed class Wcs20Handler
                 continue;
             }
 
-            if (!TryParseSingleSubset(rawValue, out var normalizedAxis, out _, out _, out _))
+            if (!TryParseSingleSubset(rawValue, out var normalizedAxis, out var low, out var high, out _))
             {
                 // Could not parse axis(low) / axis(low,high). If the raw label is a
                 // recognised spatial axis the spatial parser will surface the precise
@@ -1195,24 +1202,41 @@ internal sealed class Wcs20Handler
             }
 
             // A well-formed slice/trim on a named axis that is neither spatial nor
-            // temporal. Resolve it against the coverage's additional dimension axes.
-            if (!additionalAxes.Contains(normalizedAxis))
+            // temporal. Resolve it against the coverage's declared additional axes.
+            var axis = FindAdditionalAxis(additionalAxes, normalizedAxis);
+            if (axis is null)
             {
                 error = new WcsParameterError(
                     Wcs20Utilities.ExceptionCodes.InvalidAxisLabel,
                     $"Unsupported SUBSET axis label '{normalizedAxis}'. This coverage offers the spatial axes (x, y and their E/N/Long/Lat aliases)" +
-                    (raster.AcquisitionDate is null ? "." : " and the temporal axis (phenomenonTime).") +
-                    " No additional dimension axes are available for this coverage.",
+                    (raster.AcquisitionDate is null ? string.Empty : ", the temporal axis (phenomenonTime),") +
+                    (additionalAxes.Count == 0
+                        ? " and no additional dimension axes."
+                        : $" and the additional dimension axes: {string.Join(", ", additionalAxes.Select(a => a.Name))}."),
                     Wcs20Utilities.Parameters.Subset);
                 return false;
             }
 
-            // A registered additional axis was matched but the multidimensional read
-            // path is not wired into classic WCS yet; surface a precise, spec-correct
-            // error rather than silently ignoring the requested slice (#1872).
+            // Resolve the coordinate value(s) to a grid-index slice. This validates the
+            // request against the real axis extent — an out-of-range coordinate is a
+            // spec-correct InvalidSubsetting.
+            double? reqLow = low;
+            double? reqHigh = high;
+            if (!CfCoordinateAxisIndexer.TryResolveIndexRange(axis, reqLow, reqHigh, out _, out _, out var resolveError))
+            {
+                error = new WcsParameterError(
+                    Wcs20Utilities.ExceptionCodes.InvalidSubsetting,
+                    resolveError ?? $"SUBSET on axis '{normalizedAxis}' does not intersect the coverage.",
+                    Wcs20Utilities.Parameters.Subset);
+                return false;
+            }
+
+            // The slice resolved cleanly, but the classic GetCoverage export pipeline
+            // cannot yet read Zarr-slice pixels; surface a precise, spec-correct error
+            // rather than serving the wrong (dimension-collapsed) raster (#1872).
             error = new WcsParameterError(
-                Wcs20Utilities.ExceptionCodes.InvalidSubsetting,
-                $"SUBSET on the '{normalizedAxis}' dimension axis is recognised but not yet served by this coverage endpoint.",
+                Wcs20Utilities.ExceptionCodes.OperationNotSupported,
+                $"SUBSET on the '{normalizedAxis}' dimension axis resolves to a coverage slice, but classic WCS GetCoverage does not yet serve multidimensional slice pixels for this coverage. Use the OGC API - Coverages endpoint for per-slice access.",
                 Wcs20Utilities.Parameters.Subset);
             return false;
         }
@@ -1220,14 +1244,42 @@ internal sealed class Wcs20Handler
         return true;
     }
 
-    // The set of additional (non-spatial, non-temporal) dimension axes a coverage
-    // offers. The primary-raster IRasterStore path exposes none; this is the hook for
-    // multidimensional (Zarr) coverages once their slice read path is wired into
-    // classic WCS (#1872).
-    private static ImmutableHashSet<string> ResolveAdditionalDimensionAxes(RasterInfo raster)
+    private static ZarrAxis? FindAdditionalAxis(IReadOnlyList<ZarrAxis> axes, string axisLabel)
     {
-        _ = raster;
-        return ImmutableHashSet<string>.Empty;
+        foreach (var axis in axes)
+        {
+            if (string.Equals(axis.Name, axisLabel, StringComparison.OrdinalIgnoreCase))
+            {
+                return axis;
+            }
+        }
+        return null;
+    }
+
+    // Resolves the additional (non-spatial, non-temporal) dimension axes a coverage
+    // offers from a registered multidimensional (Zarr) store for the layer. Returns an
+    // empty list for plain 2D rasters or layers without a scanned Zarr registration.
+    private async Task<IReadOnlyList<ZarrAxis>> ResolveAdditionalDimensionAxesAsync(int layerId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var registrations = await _zarrStore.ListByLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+            foreach (var registration in registrations)
+            {
+                if (registration.Metadata is { Axes.Length: > 0 } metadata)
+                {
+                    return metadata.Axes;
+                }
+            }
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or NotSupportedException)
+        {
+            // A misconfigured or unavailable Zarr catalog must not break plain raster
+            // GetCoverage; fall back to "no additional axes".
+            Wcs20Log.ValidationFailed(_logger, Wcs20Utilities.Operations.GetCoverage, ex.Message);
+        }
+
+        return [];
     }
 
     // True when the trimmed SUBSET value's axis label (the text before the first

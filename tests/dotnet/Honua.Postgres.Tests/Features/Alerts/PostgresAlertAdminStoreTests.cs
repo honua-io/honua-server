@@ -211,9 +211,14 @@ public sealed class PostgresAlertAdminStoreTests(PostgresFixture fixture)
             """);
     }
 
+    // #2020: every literal honua.* mutation (TRUNCATE teardown + INSERT helpers) routes
+    // through the shared schema-mutation advisory lock so this parallelized collection
+    // serializes its global-schema writes with sibling collections instead of racing the
+    // catalog and deadlocking (40P01). The DDL setup (EnsureAlertSchemaAsync) was already
+    // locked via ApplyGlobalSeedSqlAsync; only these data paths leaked.
     private async Task ClearAlertTablesAsync()
     {
-        await fixture.ExecuteAsync("""
+        await fixture.ApplyGlobalSeedSqlAsync("""
             TRUNCATE TABLE
                 honua.alert_dispatch,
                 honua.alert_event_lifecycle,
@@ -227,42 +232,44 @@ public sealed class PostgresAlertAdminStoreTests(PostgresFixture fixture)
 
     private async Task InsertRuleAsync(long ruleId, short triggerType, string conditionsJson)
     {
-        await using var connection = await fixture.GetConnectionAsync();
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
+        await fixture.ApplyGlobalSeedSqlAsync(
+            """
             INSERT INTO honua.alert_rules (
                 rule_id, service_id, layer_id, rule_name, trigger_type, conditions,
                 cooldown_seconds, severity, edition_required, channels, is_active)
             VALUES (
                 @rule_id, 'svc-a', 1, @rule_name, @trigger_type, @conditions::jsonb,
                 0, 'warning', 1, '{}'::text[], TRUE);
-            """;
-        command.Parameters.AddWithValue("rule_id", ruleId);
-        command.Parameters.AddWithValue("rule_name", "rule-" + ruleId.ToString(CultureInfo.InvariantCulture));
-        command.Parameters.AddWithValue("trigger_type", triggerType);
-        command.Parameters.AddWithValue("conditions", conditionsJson);
-        await command.ExecuteNonQueryAsync();
+            """,
+            command =>
+            {
+                command.Parameters.AddWithValue("rule_id", ruleId);
+                command.Parameters.AddWithValue("rule_name", "rule-" + ruleId.ToString(CultureInfo.InvariantCulture));
+                command.Parameters.AddWithValue("trigger_type", triggerType);
+                command.Parameters.AddWithValue("conditions", conditionsJson);
+            });
     }
 
     private async Task InsertStateAsync(long ruleId, long objectId, bool inside, string thresholdStateJson)
     {
-        await using var connection = await fixture.GetConnectionAsync();
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
+        await fixture.ApplyGlobalSeedSqlAsync(
+            """
             INSERT INTO honua.alert_state (
                 rule_id, layer_id, objectid, inside, entered_at, last_evaluated_at,
                 last_alert_at, last_generation, threshold_state)
             VALUES (
                 @rule_id, 1, @objectid, @inside, NULL, @last_evaluated_at,
                 @last_alert_at, 1, @threshold_state::jsonb);
-            """;
-        command.Parameters.AddWithValue("rule_id", ruleId);
-        command.Parameters.AddWithValue("objectid", objectId);
-        command.Parameters.AddWithValue("inside", inside);
-        command.Parameters.AddWithValue("last_evaluated_at", new DateTimeOffset(2026, 5, 24, 9, 0, 0, TimeSpan.Zero));
-        command.Parameters.AddWithValue("last_alert_at", new DateTimeOffset(2026, 5, 24, 9, 1, 0, TimeSpan.Zero));
-        command.Parameters.AddWithValue("threshold_state", thresholdStateJson);
-        await command.ExecuteNonQueryAsync();
+            """,
+            command =>
+            {
+                command.Parameters.AddWithValue("rule_id", ruleId);
+                command.Parameters.AddWithValue("objectid", objectId);
+                command.Parameters.AddWithValue("inside", inside);
+                command.Parameters.AddWithValue("last_evaluated_at", new DateTimeOffset(2026, 5, 24, 9, 0, 0, TimeSpan.Zero));
+                command.Parameters.AddWithValue("last_alert_at", new DateTimeOffset(2026, 5, 24, 9, 1, 0, TimeSpan.Zero));
+                command.Parameters.AddWithValue("threshold_state", thresholdStateJson);
+            });
     }
 
     private async Task<long> InsertEventAsync(
@@ -272,41 +279,47 @@ public sealed class PostgresAlertAdminStoreTests(PostgresFixture fixture)
         DateTimeOffset occurredAt,
         long objectId)
     {
-        await using var connection = await fixture.GetConnectionAsync();
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            INSERT INTO honua.alert_events (
-                dedupe_key, rule_id, service_id, layer_id, objectid, trigger_type, generation,
-                severity, occurred_at, payload, incident_status, incident_duration_ms)
-            VALUES (
-                @dedupe_key, @rule_id, 'svc-a', 1, @objectid, @trigger_type, 1,
-                'warning', @occurred_at, '{}'::jsonb, @incident_status, 0)
-            RETURNING event_id;
-            """;
-        command.Parameters.AddWithValue("dedupe_key", Guid.NewGuid().ToString("N"));
-        command.Parameters.AddWithValue("rule_id", ruleId);
-        command.Parameters.AddWithValue("objectid", objectId);
-        command.Parameters.AddWithValue("trigger_type", triggerType);
-        command.Parameters.AddWithValue("occurred_at", occurredAt);
-        command.Parameters.AddWithValue("incident_status", incidentStatus);
-        var result = await command.ExecuteScalarAsync();
-        return Convert.ToInt64(result, CultureInfo.InvariantCulture);
+        long eventId = 0;
+        await fixture.RunUnderSchemaMutationLockAsync(async () =>
+        {
+            await using var connection = await fixture.GetConnectionAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                INSERT INTO honua.alert_events (
+                    dedupe_key, rule_id, service_id, layer_id, objectid, trigger_type, generation,
+                    severity, occurred_at, payload, incident_status, incident_duration_ms)
+                VALUES (
+                    @dedupe_key, @rule_id, 'svc-a', 1, @objectid, @trigger_type, 1,
+                    'warning', @occurred_at, '{}'::jsonb, @incident_status, 0)
+                RETURNING event_id;
+                """;
+            command.Parameters.AddWithValue("dedupe_key", Guid.NewGuid().ToString("N"));
+            command.Parameters.AddWithValue("rule_id", ruleId);
+            command.Parameters.AddWithValue("objectid", objectId);
+            command.Parameters.AddWithValue("trigger_type", triggerType);
+            command.Parameters.AddWithValue("occurred_at", occurredAt);
+            command.Parameters.AddWithValue("incident_status", incidentStatus);
+            var result = await command.ExecuteScalarAsync();
+            eventId = Convert.ToInt64(result, CultureInfo.InvariantCulture);
+        });
+        return eventId;
     }
 
     private async Task InsertDispatchAsync(long eventId, string lastError)
     {
-        await using var connection = await fixture.GetConnectionAsync();
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
+        await fixture.ApplyGlobalSeedSqlAsync(
+            """
             INSERT INTO honua.alert_dispatch (
                 event_id, channel_type, status, attempts, max_attempts, next_attempt_at,
                 last_attempt_at, last_error)
             VALUES (
                 @event_id, 1, 3, 1, 5, now(), now(), @last_error);
-            """;
-        command.Parameters.AddWithValue("event_id", eventId);
-        command.Parameters.AddWithValue("last_error", lastError);
-        await command.ExecuteNonQueryAsync();
+            """,
+            command =>
+            {
+                command.Parameters.AddWithValue("event_id", eventId);
+                command.Parameters.AddWithValue("last_error", lastError);
+            });
     }
 
     private sealed class TestConnectionProvider(NpgsqlDataSource dataSource) : IAdoNetDatabaseConnectionProvider
