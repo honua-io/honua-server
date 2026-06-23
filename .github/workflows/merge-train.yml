@@ -16,11 +16,11 @@ on:
   # Cadence: dry-run report every 15 minutes (never acts).
   schedule:
     - cron: '*/15 * * * *'
-  # React to CI completions so a freshly-green PR is considered promptly.
-  # (Still dry-run unless a human dispatches with train_apply=true.)
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
+  # NO workflow_run trigger. It fired on EVERY CI completion (formerly per-PR
+  # runs, now the train's own batch CIs), spawning a storm of train runs that
+  # thrashed the concurrency group so badly that runs were cancelled mid-batch-CI
+  # wait before they could land. The 15-minute schedule is the SOLE automatic
+  # driver — one clean run at a time, which always survives to land.
   # Manual control. This is the ONLY path that can act, and only when the
   # operator explicitly sets train_apply=true.
   workflow_dispatch:
