@@ -34,6 +34,19 @@ set -euo pipefail
 # is treated as environmental and rerun once; reproducing twice => real.
 : "${TRAIN_FLAKE_REGEX:=40P01|deadlock detected|ryuk|Testcontainers.*(timed out|connection refused)}"
 
+# Heavy CI jobs the train treats as NON-BLOCKING. They run on EVERY batch (not
+# shard-targeted), flake on environment (Docker registry, browser, JS/Python
+# integration env), and would wedge every batch. The train lands on its SHARD
+# results; real regressions in these are caught by post-merge trunk CI. The CI
+# Gate / Test Suite Summary aggregators are included so a batch red ONLY on these
+# (no real shard failure) lands. Newline-separated; env-overridable.
+: "${TRAIN_NONBLOCKING_JOBS:=CI Gate
+Test Suite Summary
+Docker Build & Integration Test
+Esri Leaflet Browser Tests
+JavaScript Integration Tests
+Python Integration Tests}"
+
 # Labels (the train's vocabulary). The existing repo `hold` label is ALSO
 # honored as an opt-out (documented "merge-train opt-out") in addition to the
 # canonical train:hold below.
