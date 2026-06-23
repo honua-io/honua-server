@@ -13,6 +13,7 @@ using Honua.Core.Features.FileImport.Services;
 using Honua.Postgres.Features.Migration;
 using Honua.Postgres.Features.FileImport;
 using Honua.TestKit.Infrastructure;
+using NetTopologySuite.Features;
 
 namespace Honua.Postgres.Tests.Features.Import;
 
@@ -111,6 +112,28 @@ public sealed class CsvPreviewTests
 
         exception.Message.Should().Contain("CSV record exceeds maximum size limit");
         exception.Message.Should().Contain("10,485,760 bytes");
+    }
+
+    [Fact]
+    public async Task ReadStreamingAsync_CsvWithVeryLongHeader_DoesNotStackOverflow()
+    {
+        var longHeader = new string('x', 8 * 1024);
+        var csv = string.Join(
+            Environment.NewLine,
+            $"{longHeader},longitude,latitude",
+            "value,-122.4194,37.7749");
+
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(csv));
+
+        var features = new List<IFeature>();
+        await foreach (var feature in CsvFormatReader.ReadStreamingAsync(stream, CancellationToken.None))
+        {
+            features.Add(feature);
+        }
+
+        features.Should().ContainSingle();
+        features[0].Attributes.Exists(longHeader).Should().BeTrue();
+        features[0].Attributes[longHeader].Should().Be("value");
     }
 
     private static IFileImportService CreateService() =>
