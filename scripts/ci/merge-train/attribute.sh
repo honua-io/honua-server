@@ -94,3 +94,27 @@ train_drop_pr() {
   train_side_effect gh pr comment "${pr}" --body \
     "Merge train dropped this PR from the batch: ${reason}. Rebuild the batch will exclude it until the ${TRAIN_LABEL_ESCALATED} label is removed."
 }
+
+# train_escalate_batch <included-csv> <reason>: the loop-bug fix. When the train
+# escalates a WHOLE batch (a real, unfixable failure that is not attributable to,
+# or not fixable in, a single member), it MUST do BOTH of the following or the
+# next scheduled run re-selects the same doomed batch forever:
+#   1. apply train:escalated to EVERY culprit PR (so select excludes them), and
+#   2. remove the transient train:landing label from each (no longer in flight),
+#      and comment so the author knows why.
+# The caller is responsible for separately CLEARING active_batch from the state
+# issue (train.sh does this via _write_state "" ... "select" after escalating) so
+# the next run starts a fresh selection instead of resuming the escalated batch.
+# Side-effecting (gated by TRAIN_APPLY via train_side_effect).
+train_escalate_batch() {
+  local included_csv="$1" reason="$2"
+  local pr
+  for pr in $(tr ',' ' ' <<<"${included_csv}"); do
+    [[ -z "${pr}" ]] && continue
+    train_side_effect gh pr edit "${pr}" --add-label "${TRAIN_LABEL_ESCALATED}"
+    train_side_effect gh pr edit "${pr}" --remove-label "${TRAIN_LABEL_LANDING}"
+    train_side_effect gh pr comment "${pr}" --body \
+      "Merge train escalated this batch to a human: ${reason}. This PR is held out of future batches until the ${TRAIN_LABEL_ESCALATED} label is removed."
+    train_decision "ESCALATE #${pr}: labeled ${TRAIN_LABEL_ESCALATED}, removed ${TRAIN_LABEL_LANDING}"
+  done
+}

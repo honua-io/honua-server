@@ -8,8 +8,16 @@
 #
 # Phases (also the resume points written to the state issue before each
 # side-effecting step):
-#   select -> assemble -> smart-ci -> [forward-fix] -> [classify-flake] ->
-#   [attribute -> rebuild] -> land -> done
+#   select -> assemble -> smart-ci -> [forward-fix] -> [pre-existing-filter] ->
+#   [classify-flake] -> [autofix (Bedrock fix-agent + surgical re-verify)] ->
+#   [attribute -> rebuild | escalate] -> land -> done
+#
+# Roll-forward auto-fix loop (autonomous): the ci-gate eval no longer dead-ends a
+# non-format failure straight to a human. It (1) subtracts trunk's pre-existing
+# failures (land if zero batch-introduced), (3) surgically re-verifies only the
+# failed tests, and (4) — when TRAIN_AUTOFIX=1 — patches the batch FORWARD via an
+# AI fix-agent (Claude/Bedrock), landing if green and escalating only when truly
+# stuck (and THEN labeling culprits + clearing active_batch so it never loops).
 #
 # Usage:
 #   TRAIN_APPLY=0 scripts/ci/merge-train/train.sh            # shadow / dry-run
@@ -34,6 +42,12 @@ TRAIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "${TRAIN_DIR}/forward-fix.sh"
 # shellcheck source=classify-flake.sh
 . "${TRAIN_DIR}/classify-flake.sh"
+# shellcheck source=surgical.sh
+. "${TRAIN_DIR}/surgical.sh"
+# shellcheck source=preexisting.sh
+. "${TRAIN_DIR}/preexisting.sh"
+# shellcheck source=autofix.sh
+. "${TRAIN_DIR}/autofix.sh"
 # shellcheck source=attribute.sh
 . "${TRAIN_DIR}/attribute.sh"
 # shellcheck source=land.sh
@@ -167,9 +181,13 @@ main() {
     return 0
   fi
 
-  # Live-mode gate handling (forward-fix -> flake -> attribute -> land).
-  train_group ci-gate "evaluate CI Gate; forward-fix / classify-flake / attribute"
+  # Live-mode gate handling. Roll-forward pipeline (each step independently
+  # valuable, evaluated in this order):
+  #   forward-fix(format) -> PRE-EXISTING FILTER -> classify-flake ->
+  #   [AUTOFIX (Bedrock fix-agent + surgical re-verify)] -> attribute/escalate.
+  train_group ci-gate "evaluate CI Gate; forward-fix / pre-existing filter / flake / autofix / attribute"
   train_step_begin ci-gate
+  local autofix_attempts=0
   while [[ "${gate}" != "SUCCESS" ]]; do
     local run_id; run_id="$(cat "${TRAIN_RUN_ID_FILE}" 2>/dev/null || echo "")"
     local failing; failing="$(train_failing_jobs "${run_id}")"
@@ -186,7 +204,25 @@ main() {
       fi
     fi
 
-    # classify-flake BEFORE attribute.
+    # --- (1) PRE-EXISTING-FAILURE FILTER (deterministic, no AI) --------------
+    # Subtract trunk's latest-CI failing jobs from the batch's failing jobs. If
+    # ZERO batch-introduced failures remain, the batch is red ONLY because trunk
+    # is already red (e.g. a STAC api-validator conformance test) — treat the
+    # batch as PASS and land. Otherwise narrow the working set to the
+    # batch-introduced failures for flake/autofix/attribute.
+    _write_state "${batch}" "${trunk_sha}" "${included}" "preexisting-filter" "${run_id}" "${fwdfix}" "${flake_reruns}"
+    local introduced rc_pe=0
+    introduced="$(train_preexisting_filter "${run_id}" "${failing}")" || rc_pe=$?
+    if [[ "${rc_pe}" == "11" ]]; then
+      train_metric_set preexisting_passes 1
+      train_notice "pre-existing filter: all batch failures are pre-existing on trunk; landing"
+      gate="SUCCESS"
+      continue
+    fi
+    # From here on, evaluate only the BATCH-INTRODUCED failing jobs.
+    failing="${introduced}"
+
+    # --- classify-flake (on the batch-introduced failures) -------------------
     _write_state "${batch}" "${trunk_sha}" "${included}" "classify-flake" "${run_id}" "${fwdfix}" "${flake_reruns}"
     if train_classify_flake "${run_id}" "${flake_reruns}"; then
       flake_reruns=$((flake_reruns + 1))
@@ -202,15 +238,46 @@ main() {
       continue
     fi
 
-    # attribute (real failure).
+    # --- (4) ROLL-FORWARD AI FIX-AGENT (capstone; gated TRAIN_AUTOFIX) -------
+    # A REAL, batch-introduced, non-flake failure. With autofix enabled, ask the
+    # Bedrock fix-agent to patch the batch branch forward, then SURGICALLY
+    # re-verify only the failed tests. On green, re-run smart-CI and continue;
+    # if still failing after the cap, fall through to escalate.
+    if autofix_enabled; then
+      _write_state "${batch}" "${trunk_sha}" "${included}" "autofix" "${run_id}" "${fwdfix}" "${flake_reruns}"
+      local fqns errout
+      fqns="$(train_failed_test_names "${run_id}")"
+      errout="$(gh run view "${run_id}" --log-failed 2>/dev/null | tail -c 12000 || echo "")"
+      if train_autofix_attempt "${batch}" "${failing}" "${fqns}" "${errout}" "${autofix_attempts}"; then
+        autofix_attempts=$((autofix_attempts + 1))
+        train_metric_set autofix_attempts "${autofix_attempts}"
+        # Surgically re-verify ONLY the failed tests (never a full shard rerun).
+        if [[ -n "$(printf '%s' "${fqns}" | sed '/^$/d')" ]] && train_surgical_rerun "${run_id}" "${fqns}"; then
+          train_metric_set autofix_fixes "$(( $(train_metric_get autofix_fixes 0) + 1 ))"
+          train_notice "autofix verified by surgical rerun; pushing fix and re-running smart-CI on ${batch}"
+          gate="$(train_smart_ci_run "${batch}")"
+          continue
+        else
+          train_warn "autofix commit did not pass surgical re-verify; re-running smart-CI to re-evaluate"
+          gate="$(train_smart_ci_run "${batch}")"
+          continue
+        fi
+      fi
+      # autofix declined / produced no commit / cap reached => escalate below.
+      train_warn "autofix did not produce a landable fix; escalating as genuinely-hard"
+    fi
+
+    # --- (2) attribute + escalate (real failure, not autofixed) -------------
     _write_state "${batch}" "${trunk_sha}" "${included}" "attribute" "${run_id}" "${fwdfix}" "${flake_reruns}"
     local culprits; culprits="$(train_attribute "${failing}" "${TRAIN_INCLUDED_FILE}")"
     if [[ "${culprits}" == "ESCALATE_BATCH" ]]; then
       train_metric_inc escalated "$(grep -c . "${TRAIN_INCLUDED_FILE}" 2>/dev/null || echo 0)"
       train_annotate_warn "escalating entire batch; manual triage required"
-      for pr in $(tr ',' ' ' <<<"${included}"); do
-        train_side_effect gh pr edit "${pr}" --remove-label "${TRAIN_LABEL_LANDING}"
-      done
+      # LOOP-BUG FIX: label EVERY member train:escalated (so select excludes them)
+      # AND clear active_batch from the state issue, or the next run re-selects
+      # the same doomed batch forever.
+      train_escalate_batch "${included}" "CI failure not attributable to a single member diff (and not autofixable)"
+      _write_state "" "${trunk_sha}" "" "select" "" 0 0
       train_step_end ci-gate >/dev/null; train_endgroup
       _emit_metrics "escalated-batch" "${trunk_sha}" "" "${shard_descriptor}"
       _dashboard "${batch}" "${selected}" "${trunk_sha}" "${shard_descriptor}" \
@@ -228,6 +295,9 @@ main() {
     done
     if [[ -z "${remaining}" ]]; then
       train_annotate_warn "all members dropped; batch empty"
+      # Clear active_batch so the next run starts a fresh selection (the dropped
+      # PRs already carry train:escalated and are excluded by select).
+      _write_state "" "${trunk_sha}" "" "select" "" 0 0
       train_step_end ci-gate >/dev/null; train_endgroup
       _emit_metrics "all-dropped" "${trunk_sha}" "" "${shard_descriptor}"
       _dashboard "${batch}" "${selected}" "${trunk_sha}" "${shard_descriptor}" \
@@ -381,7 +451,10 @@ _dashboard() {
   train_summary "| Included | $(train_metric_get included 0) |"
   train_summary "| Skipped (conflict) | $(train_metric_get skipped_conflict 0) |"
   train_summary "| Forward-fixes applied | $(train_metric_get forward_fixes 0) |"
+  train_summary "| Pre-existing-only passes | $(train_metric_get preexisting_passes 0) |"
   train_summary "| Flake reruns | $(train_metric_get flake_reruns 0) |"
+  train_summary "| Autofix attempts | $(train_metric_get autofix_attempts 0) |"
+  train_summary "| Autofix fixes landed | $(train_metric_get autofix_fixes 0) |"
   train_summary "| Attribution drops | $(train_metric_get attribution_drops 0) |"
   train_summary "| Escalated | $(train_metric_get escalated 0) |"
   train_summary "| Landed | $(train_metric_get landed 0) |"

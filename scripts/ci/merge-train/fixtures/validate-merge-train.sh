@@ -15,6 +15,18 @@
 #   7. ff-cas-race       -> concurrent trunk advance => FF push rejected +
 #                           re-assemble signaled (rc=10).
 #
+# Roll-forward auto-fix loop (offline-mocked; NO real Bedrock/AI calls):
+#   Cap.1 pre-existing filter -> all-pre-existing => rc11 (land); some
+#                                batch-introduced => survives (rc0); subtraction.
+#   Cap.3 surgical retry      -> FQN parse (VSTest + xUnit) => dotnet-test
+#                                --filter "FullyQualifiedName=..." (+ JS/Py); no
+#                                FQNs => rc2 (fall back, never a full shard rerun).
+#   Cap.2 escalation          -> labels every culprit train:escalated, removes
+#                                train:landing, clears active_batch (phase=select).
+#   Cap.4 autofix gate        -> TRAIN_AUTOFIX=0 inert (escalate like today);
+#                                TRAIN_AUTOFIX=1 fix path (mock agent commits,
+#                                no bot attribution; cap enforced; decline=>escalate).
+#
 # Run: scripts/ci/merge-train/fixtures/validate-merge-train.sh
 # Exit 0 = all pass.
 
@@ -83,6 +95,9 @@ export TRAIN_REPO_ROOT="${WORK}"
 . "${TRAIN_DIR}/smart-ci.sh"
 . "${TRAIN_DIR}/forward-fix.sh"
 . "${TRAIN_DIR}/classify-flake.sh"
+. "${TRAIN_DIR}/surgical.sh"
+. "${TRAIN_DIR}/preexisting.sh"
+. "${TRAIN_DIR}/autofix.sh"
 . "${TRAIN_DIR}/attribute.sh"
 . "${TRAIN_DIR}/land.sh"
 . "${TRAIN_DIR}/select.sh"
@@ -465,6 +480,168 @@ FAKE_BEDROCK_ANSWER="${BEDROCK_ERROR_SENTINEL}" train_forward_fix_heal_safe "ser
 TRAIN_LLM=0 ans_disabled="$(bedrock_ask sys usr)"; assert_eq "p2 bedrock_ask: disabled => sentinel" "${ans_disabled}" "${BEDROCK_ERROR_SENTINEL}"
 
 unset TRAIN_BEDROCK_ASK_CMD FAKE_BEDROCK_ANSWER TRAIN_LLM
+
+echo
+echo "== Roll-forward Cap. 1: pre-existing-failure filter (deterministic, no AI) =="
+# Mock trunk's latest CI run id + its failing jobs/tests. The batch's failing
+# jobs are subtracted against trunk's; only batch-INTRODUCED ones survive.
+export TRAIN_TRUNK_RUN_ID=trunk-run-1
+__trunk_jobs() {  # <run-id>
+  case "${PE_CASE:-}" in
+    all_pre)  printf 'Server Tests (STAC and API Governance)\n' ;;   # trunk already red here
+    some_new) printf 'Server Tests (STAC and API Governance)\n' ;;
+    none_pre) : ;;
+    *) : ;;
+  esac
+}
+export -f __trunk_jobs
+export TRAIN_FAILING_JOBS_FOR_RUN=__trunk_jobs
+
+# (a) ALL batch failures are also on trunk => filter returns rc11 (treat as PASS).
+set +e
+PE_CASE=all_pre train_preexisting_filter batch-run-9 "Server Tests (STAC and API Governance)" >/dev/null
+rc_pe=$?
+set -e
+assert_eq "preexisting: all-pre-existing => rc11 (land)" "${rc_pe}" "11"
+
+# (b) The batch introduced a NEW failing job not on trunk => it survives (rc0)
+# and only the introduced job is emitted (the pre-existing STAC one is stripped).
+set +e
+survivors="$(PE_CASE=some_new train_preexisting_filter batch-run-9 \
+  $'Server Tests (STAC and API Governance)\nServer Tests (FeatureServer Endpoints)')"
+rc_pe2=$?
+set -e
+assert_eq "preexisting: some-introduced => rc0 (act)" "${rc_pe2}" "0"
+assert_contains "preexisting: introduced job survives" "${survivors}" "FeatureServer Endpoints"
+assert_not_contains "preexisting: pre-existing job stripped" "${survivors}" "STAC and API Governance"
+
+# (c) trunk has NO failures => every batch failure is batch-introduced (rc0).
+set +e
+survivors2="$(PE_CASE=none_pre train_preexisting_filter batch-run-9 'Server Tests (FeatureServer Endpoints)')"
+rc_pe3=$?
+set -e
+assert_eq "preexisting: clean-trunk => all introduced (rc0)" "${rc_pe3}" "0"
+assert_contains "preexisting: introduced survives on clean trunk" "${survivors2}" "FeatureServer Endpoints"
+# subtraction primitive
+assert_eq "preexisting: subtract removes baseline lines" \
+  "$(train_subtract_lines $'a\nb' $'a\nb\nc' | tr '\n' ' ' | xargs)" "c"
+unset TRAIN_TRUNK_RUN_ID TRAIN_FAILING_JOBS_FOR_RUN
+
+echo
+echo "== Roll-forward Cap. 3: surgical retry (filter built from failed FQNs) =="
+# Parse failed FQNs from VSTest + xUnit reporter lines, then build the
+# dotnet-test --filter and the JS/Python equivalents.
+LOG=$'Failed Honua.Core.Tests.Query.FilterTests.Parses_Nested [12 ms]\n[xUnit.net 00:00:00.42]    Honua.Server.Tests.Stac.ItemTests.Returns200 [FAIL]\n  Passed Honua.Core.Tests.Query.FilterTests.Other [1 ms]'
+fqns="$(train_parse_failed_test_names "${LOG}")"
+assert_contains "surgical: parsed VSTest FQN" "${fqns}" "Honua.Core.Tests.Query.FilterTests.Parses_Nested"
+assert_contains "surgical: parsed xUnit [FAIL] FQN" "${fqns}" "Honua.Server.Tests.Stac.ItemTests.Returns200"
+assert_not_contains "surgical: passed test not collected" "${fqns}" "FilterTests.Other"
+filter="$(train_build_test_filter "${fqns}")"
+assert_contains "surgical: --filter has FullyQualifiedName= for each FQN" "${filter}" "FullyQualifiedName=Honua.Core.Tests.Query.FilterTests.Parses_Nested"
+assert_contains "surgical: --filter OR-joins FQNs" "${filter}" "|FullyQualifiedName=Honua.Server.Tests.Stac.ItemTests.Returns200"
+# Exactly two FQNs => exactly one pipe separator.
+assert_eq "surgical: two FQNs => single pipe" "$(awk -F'|' '{print NF-1}' <<<"${filter}")" "1"
+# JS + Python equivalents (leaf-name based).
+js="$(train_build_js_test_pattern "${fqns}")"
+assert_contains "surgical(js): jest -t pattern uses leaf names" "${js}" "Parses_Nested"
+py="$(train_build_py_test_pattern "${fqns}")"
+assert_contains "surgical(py): pytest -k uses ' or ' join" "${py}" " or "
+# Surgical rerun honors the test-runner seam and reports pass/fail per project.
+export TRAIN_TEST_PROJECT_FOR=__test_proj
+__test_proj() { printf 'tests/dotnet/Fake.Tests/Fake.Tests.csproj\n'; }
+export -f __test_proj
+GOT_FILTER="${SCRATCH}/got_filter"; : >"${GOT_FILTER}"
+__runner_ok() { printf '%s\n' "$2" >"${GOT_FILTER}"; return 0; }
+__runner_fail() { return 1; }
+export -f __runner_ok __runner_fail
+export TRAIN_SURGICAL_RUNNER=__runner_ok
+train_surgical_rerun some-run "${fqns}" && ok "surgical: green rerun => rc0" || bad "surgical: should pass"
+assert_contains "surgical: runner received the FullyQualifiedName filter" "$(cat "${GOT_FILTER}")" "FullyQualifiedName="
+export TRAIN_SURGICAL_RUNNER=__runner_fail
+train_surgical_rerun some-run "${fqns}" && bad "surgical: failing rerun should be rc!=0" || ok "surgical: failing rerun => rc1"
+# No FQNs => rc2 (caller must fall back, never a full rerun).
+set +e; train_surgical_rerun some-run ""; rc_sr=$?; set -e
+assert_eq "surgical: no FQNs => rc2 (fall back, no full shard rerun)" "${rc_sr}" "2"
+unset TRAIN_SURGICAL_RUNNER TRAIN_TEST_PROJECT_FOR
+
+echo
+echo "== Roll-forward Cap. 2: escalation labels culprits + clears active_batch =="
+# train_escalate_batch (dry-run logs the side effects): assert it would add
+# train:escalated to EVERY member, remove train:landing, and that the state-issue
+# write that clears active_batch renders included:[] phase:select.
+ESC_LOG="$(TRAIN_APPLY=0 train_escalate_batch "1944,1961,1969,1971,1972" "not attributable" 2>&1)"
+for n in 1944 1961 1969 1971 1972; do
+  assert_contains "escalate: #${n} gets train:escalated" "${ESC_LOG}" "gh pr edit ${n} --add-label train:escalated"
+  assert_contains "escalate: #${n} loses train:landing" "${ESC_LOG}" "gh pr edit ${n} --remove-label train:landing"
+done
+# Clearing active_batch: the state body the train writes on escalation.
+cleared="$(train_state_render "" deadbeef "" select "" 0 0 null)"
+csj="$(printf '%s\n' "${cleared}" | awk '/^```json/{f=1;next}/^```/{f=0}f')"
+assert_eq "escalate: active_batch.branch cleared" "$(jq -r '.active_batch.branch' <<<"${csj}")" ""
+assert_eq "escalate: active_batch.included cleared" "$(jq -rc '.active_batch.included' <<<"${csj}")" "[]"
+assert_eq "escalate: phase reset to select" "$(jq -r '.active_batch.phase' <<<"${csj}")" "select"
+
+echo
+echo "== Roll-forward Cap. 4: autofix disabled (TRAIN_AUTOFIX=0) => behaves like today =="
+export TRAIN_AUTOFIX=0
+# autofix gate is inert: no attempt, returns rc1 (caller escalates), no commit.
+set +e
+TRAIN_AUTOFIX=0 train_autofix_attempt some-batch "Server Tests (X)" "Pkg.Tests.T1" "boom" 0
+rc_af=$?
+set -e
+assert_eq "autofix(off): disabled => rc1 (escalate path, like Phase 1)" "${rc_af}" "1"
+assert_eq "autofix(off): autofix_enabled is false" "$(autofix_enabled && echo on || echo off)" "off"
+
+echo "== Roll-forward Cap. 4: autofix enabled => fix path (mocked, no real Bedrock) =="
+export TRAIN_AUTOFIX=1 TRAIN_APPLY=1
+export TRAIN_WORK="${SCRATCH}"
+export TRAIN_AUTOFIX_REQUEST_FILE="${SCRATCH}/autofix-req.md"
+export TRAIN_AUTOFIX_PREHEAD_FILE="${SCRATCH}/autofix-prehead"
+# A fake fix-agent that, like a real one, commits a change on the batch branch.
+git fetch -q origin trunk; git checkout -q -B autofix-batch origin/trunk
+export TRAIN_AUTOFIX_DIFF_CMD=__af_diff
+__af_diff() { printf 'diff --git a/x b/x\n+changed\n'; }
+export -f __af_diff
+__fake_fixagent() {  # <batch> <request-file>
+  # The agent edits + commits on the batch branch (NO bot attribution).
+  echo "fixed" >> shared.txt
+  git add -A
+  git commit -q -m "fix(merge-train): correct brittle test assertion"
+}
+export -f __fake_fixagent
+export TRAIN_AUTOFIX_STEP_CMD=__fake_fixagent
+set +e
+train_autofix_attempt autofix-batch "Server Tests (X)" $'Pkg.Tests.T1\nPkg.Tests.T2' "Assert.Equal failure" 0
+rc_af2=$?
+set -e
+assert_eq "autofix(on): agent committed a fix => rc0 (verify path)" "${rc_af2}" "0"
+# The request prompt embeds the fix-forward contract + the failing FQNs + diff.
+req_body="$(cat "${TRAIN_AUTOFIX_REQUEST_FILE}")"
+assert_contains "autofix(on): request embeds failing FQN" "${req_body}" "Pkg.Tests.T1"
+assert_contains "autofix(on): request says fix FORWARD" "${req_body}" "Fix forward"
+assert_contains "autofix(on): request forbids bot attribution" "${req_body}" "Add NO bot attribution"
+assert_contains "autofix(on): request authors as Mike McDougall" "${req_body}" "Mike McDougall"
+# The fix commit carries NO bot attribution.
+git -C "${WORK}" log -1 --pretty='%an <%ae>%n%b' autofix-batch | grep -Eqi 'co-authored-by|generated with|🤖' \
+  && bad "autofix(on): bot attribution present" || ok "autofix(on): fix commit has no bot attribution"
+# Cap: at the cap, no attempt is made (rc1 => escalate).
+set +e
+TRAIN_AUTOFIX_CAP=2 train_autofix_attempt autofix-batch "Server Tests (X)" "Pkg.Tests.T1" "boom" 2
+rc_cap=$?
+set -e
+assert_eq "autofix(on): at cap => rc1 (escalate genuinely-hard)" "${rc_cap}" "1"
+# Agent declines (makes no commit) => rc1 (escalate).
+__noop_agent() { :; }
+export -f __noop_agent
+export TRAIN_AUTOFIX_STEP_CMD=__noop_agent
+set +e
+train_autofix_attempt autofix-batch "Server Tests (X)" "Pkg.Tests.T1" "boom" 0
+rc_noc=$?
+set -e
+assert_eq "autofix(on): agent declined (no commit) => rc1 (escalate)" "${rc_noc}" "1"
+unset TRAIN_AUTOFIX TRAIN_AUTOFIX_STEP_CMD TRAIN_AUTOFIX_DIFF_CMD TRAIN_AUTOFIX_CAP
+export TRAIN_APPLY=0
+git checkout -q origin/trunk 2>/dev/null || true
 
 echo
 printf 'RESULT: %d passed, %d failed\n' "${PASS}" "${FAIL}"
