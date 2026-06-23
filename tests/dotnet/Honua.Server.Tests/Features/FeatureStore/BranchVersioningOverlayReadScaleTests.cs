@@ -93,7 +93,9 @@ public sealed class BranchVersioningOverlayReadScaleTests : IAsyncLifetime
             Assembly.GetAssembly(typeof(Program))!);
         result.Successful.Should().BeTrue(result.Error?.ToString());
 
-        await _fixture.ExecuteAsync($"""
+        // #2020: route the literal honua.layers INSERT through the shared schema-mutation advisory
+        // lock so it serializes with parallel-collection seeders instead of racing the catalog (40P01).
+        await _fixture.ApplyGlobalSeedSqlAsync($"""
             INSERT INTO honua.layers (layer_id, layer_name, table_schema, table_name, geometry_type, srid)
             VALUES ({PointsLayerId}, 'BV Scale Points', '{_schema}', 'features', 'Point', 4326)
             ON CONFLICT (layer_id) DO UPDATE SET srid = EXCLUDED.srid;
@@ -108,15 +110,19 @@ public sealed class BranchVersioningOverlayReadScaleTests : IAsyncLifetime
         // The version row and its overlay live in the global honua.* tables, not the per-test schema, so
         // remove them explicitly (deleting the version cascades honua.version_edits) before dropping the
         // schema, keeping the shared container clean for the rest of the Database collection.
+        //
+        // #2020: every global-honua.* mutation here (the cleanup DELETEs and the CASCADE drop) goes
+        // through the shared schema-mutation advisory lock so this teardown serializes with concurrent
+        // seeders instead of racing the catalog (40P01).
         if (_versionId != Guid.Empty)
         {
-            await _fixture.ExecuteAsync($"DELETE FROM honua.feature_changes WHERE version_id = '{_versionId}'");
-            await _fixture.ExecuteAsync($"DELETE FROM honua.version_edits WHERE version_id = '{_versionId}'");
-            await _fixture.ExecuteAsync($"DELETE FROM honua.gdb_versions WHERE version_id = '{_versionId}'");
+            await _fixture.ApplyGlobalSeedSqlAsync($"DELETE FROM honua.feature_changes WHERE version_id = '{_versionId}'");
+            await _fixture.ApplyGlobalSeedSqlAsync($"DELETE FROM honua.version_edits WHERE version_id = '{_versionId}'");
+            await _fixture.ApplyGlobalSeedSqlAsync($"DELETE FROM honua.gdb_versions WHERE version_id = '{_versionId}'");
         }
 
-        await _fixture.ExecuteAsync($"DELETE FROM honua.layers WHERE layer_id = {PointsLayerId}");
-        await _fixture.ExecuteAsync($"DROP SCHEMA {_schema} CASCADE");
+        await _fixture.ApplyGlobalSeedSqlAsync($"DELETE FROM honua.layers WHERE layer_id = {PointsLayerId}");
+        await _fixture.DropSchemaAsync(_schema);
     }
 
     /// <summary>
@@ -261,7 +267,9 @@ public sealed class BranchVersioningOverlayReadScaleTests : IAsyncLifetime
         // Make the version highly divergent: thousands of overlay updates shadowing base noise rows
         // (operation 2), all far outside B. Seeded directly so the test exercises the read at scale
         // without paying thousands of write round-trips; the overlay trigger stamps branch_gen.
-        await _fixture.ExecuteAsync($"""
+        // #2020: this bulk INSERT into the global honua.version_edits runs through the shared
+        // schema-mutation advisory lock so it serializes with concurrent seeders (40P01).
+        await _fixture.ApplyGlobalSeedSqlAsync($"""
             INSERT INTO honua.version_edits (version_id, layer_id, objectid, operation, geometry, attributes, branch_gen)
             SELECT '{version.VersionId}',
                    {PointsLayerId},

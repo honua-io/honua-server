@@ -65,7 +65,11 @@ public sealed class BranchVersioningIntegrationTests : IAsyncLifetime
         // Register the test layer so the feature store resolves its SRID (4326) and stamps written
         // geometries; without it the geography GIST index expression (ST_Transform(...,4326)) rejects
         // the SRID-0 WKB the test produces.
-        await _fixture.ExecuteAsync($"""
+        //
+        // #2020: this INSERT mutates the literal, process-global honua.layers table; route it through
+        // the shared schema-mutation advisory lock (like the migration above) so it serializes with
+        // parallel-collection seeders instead of racing the catalog (40P01).
+        await _fixture.ApplyGlobalSeedSqlAsync($"""
             INSERT INTO honua.layers (layer_id, layer_name, table_schema, table_name, geometry_type, srid)
             VALUES ({PointsLayerId}, 'BV Points', '{_schema}', 'features', 'Point', 4326)
             ON CONFLICT (layer_id) DO UPDATE SET srid = EXCLUDED.srid;
@@ -74,7 +78,10 @@ public sealed class BranchVersioningIntegrationTests : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        await _fixture.ExecuteAsync($"DROP SCHEMA {_schema} CASCADE");
+        // #2020: DROP SCHEMA ... CASCADE churns the global pg_catalog; serialize it on the shared
+        // schema-mutation advisory lock so teardown orders behind in-flight seeders rather than
+        // deadlocking them.
+        await _fixture.DropSchemaAsync(_schema);
     }
 
     [Fact]
