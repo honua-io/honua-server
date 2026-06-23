@@ -110,6 +110,7 @@ internal static partial class MapServerEndpoints
             var serviceSrid = ResolveTileServiceSrid(service, publishedLayers);
             var storage = context.RequestServices.GetService<ICloudFileStorage>();
             var storageOptions = context.RequestServices.GetService<IOptions<CloudStorageOptions>>()?.Value;
+            var tileCacheKeyIndex = context.RequestServices.GetService<ITileCacheKeyIndex>();
             var tileCacheKey = BuildMapServerTileCacheKey(
                 storageOptions,
                 snapshot,
@@ -122,7 +123,7 @@ internal static partial class MapServerEndpoints
                 y,
                 x);
 
-            if (await GeoServicesCloudTileCache.TryReadAsync(storage, storageOptions, tileCacheKey, cancellationToken).ConfigureAwait(false) is { } cachedTile)
+            if (await GeoServicesCloudTileCache.TryReadAsync(storage, storageOptions, tileCacheKey, cancellationToken, tileCacheKeyIndex).ConfigureAwait(false) is { } cachedTile)
             {
                 stopwatch.Stop();
                 MapServerLog.TileCompleted(logger, serviceId, 0, stopwatch.Elapsed.TotalMilliseconds);
@@ -166,7 +167,8 @@ internal static partial class MapServerEndpoints
                     .Add("x", x.ToString(CultureInfo.InvariantCulture))
                     .Add("y", y.ToString(CultureInfo.InvariantCulture))
                     .Add("metadataEtag", snapshot.Etag),
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken,
+                tileCacheKeyIndex).ConfigureAwait(false);
 
             return Results.Bytes(renderResult.ImageBytes, "image/png");
         }

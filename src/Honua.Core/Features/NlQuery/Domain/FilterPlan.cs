@@ -19,10 +19,18 @@ public sealed class FilterPlan
     public FilterPlanCombinator Combinator { get; set; }
 
     /// <summary>
-    /// The filter clauses to combine.
+    /// The filter clauses to combine. Never null: a literal <c>"clauses": null</c> in the
+    /// provider response is coalesced to an empty array so consumers can safely read
+    /// <c>Clauses.Length</c> without a NullReferenceException escaping the parse path (#1986).
     /// </summary>
     [JsonPropertyName("clauses")]
-    public FilterPlanClause[] Clauses { get; set; } = [];
+    public FilterPlanClause[] Clauses
+    {
+        get => _clauses;
+        set => _clauses = value ?? [];
+    }
+
+    private FilterPlanClause[] _clauses = [];
 }
 
 /// <summary>
@@ -172,8 +180,15 @@ public sealed class NestedClause
     public FilterPlanCombinator Combinator { get; set; }
 
     /// <summary>
-    /// The nested filter clauses.
+    /// The nested filter clauses. Never null: a literal <c>"clauses": null</c> is coalesced
+    /// to an empty array so consumers can safely read <c>Clauses.Length</c> (#1986).
     /// </summary>
     [JsonPropertyName("clauses")]
-    public FilterPlanClause[] Clauses { get; set; } = [];
+    public FilterPlanClause[] Clauses
+    {
+        get => _clauses;
+        set => _clauses = value ?? [];
+    }
+
+    private FilterPlanClause[] _clauses = [];
 }

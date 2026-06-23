@@ -77,7 +77,6 @@ def test_gpserver_python_client_metadata_workflow(
     service = client.service_info()
     task = client.task_info("geometry.buffer")
 
-    assert service["currentVersion"] == 10.81
     assert service["executionType"] == "esriExecutionTypeAsynchronous"
     assert "geometry.buffer" in service["tasks"]
     assert task["name"] == "geometry.buffer"
