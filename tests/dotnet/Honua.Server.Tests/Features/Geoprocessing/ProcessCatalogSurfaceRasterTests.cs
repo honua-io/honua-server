@@ -23,8 +23,128 @@ public sealed class ProcessCatalogSurfaceRasterTests
         // reproject executed out-of-process by the GDAL worker).
         _catalog.GetProcessesByCategory("raster").Should().HaveCount(6);
         // 4 managed conversion idioms + gdal.ogr2ogr (the native-profile vector
-        // conversion executed out-of-process by the GDAL worker).
-        _catalog.GetProcessesByCategory("conversion").Should().HaveCount(5);
+        // conversion executed out-of-process by the GDAL worker) + pcloud.translate
+        // (the native-profile LAZ/COPC decompress + projected-CRS reproject, #1854).
+        _catalog.GetProcessesByCategory("conversion").Should().HaveCount(6);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Catalog_PointCloudTranslate_DeclaresNativeProfile_RequiresSource_OptionalSourceSrs()
+    {
+        // pcloud.translate is executed out-of-process by the GDAL/PDAL worker
+        // (PdalPointCloudConvertJobExecutor), so it MUST declare the native
+        // runtime profile and REQUIRE the canonical 'source' base64 LAZ/COPC input
+        // while keeping the reprojection 'sourceSrs' hint optional (a geographic
+        // source is decompressed verbatim).
+        var definition = _catalog.GetProcess("pcloud.translate");
+
+        definition.Should().NotBeNull();
+        definition!.RuntimeProfile.Should().Be(
+            Core.Features.ControlPlane.Domain.RuntimeProfiles.Native);
+        definition.Category.Should().Be("conversion");
+        definition.Parameters.Should().Contain(p => p.Name == "source" && p.Required);
+        definition.Parameters.Should().Contain(p => p.Name == "sourceSrs" && !p.Required);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_PointCloudTranslate_WithoutSource_ProducesMissingRequiredParameterViolation()
+    {
+        // The native worker decompresses inline LAZ/COPC bytes; a plan without
+        // 'source' would route to the worker and fail there, so the catalog
+        // rejects it at submit-time validation instead.
+        var plan = CreateSingleStepPlan(
+            "pcloud.translate",
+            new Dictionary<string, string>
+            {
+                ["sourceSrs"] = "EPSG:32610"
+            });
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().Contain(v =>
+            v.Code == "MISSING_REQUIRED_PARAMETER"
+            && v.FieldPath == "steps[s1].inputs.source");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_PointCloudTranslate_WithProjectedSourceCrs_ProducesNoViolations()
+    {
+        // A projected source CRS (UTM zone 10N) is the reprojection path: it must
+        // pass validation so the worker reprojects to geographic EPSG:4979.
+        var plan = CreateSingleStepPlan(
+            "pcloud.translate",
+            new Dictionary<string, string>
+            {
+                ["source"] = StubBase64,
+                ["sourceSrs"] = "EPSG:32610"
+            });
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_PointCloudTranslate_WithBareEpsgInteger_ProducesNoViolations()
+    {
+        var plan = CreateSingleStepPlan(
+            "pcloud.translate",
+            new Dictionary<string, string>
+            {
+                ["source"] = StubBase64,
+                ["sourceSrs"] = "26910"
+            });
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_PointCloudTranslate_WithInjectionSourceCrs_ProducesViolation()
+    {
+        // The submit-time token guard mirrors the worker's IsValidSrsToken so a
+        // shell-influencing CRS value is rejected before it can reach the CLI.
+        var plan = CreateSingleStepPlan(
+            "pcloud.translate",
+            new Dictionary<string, string>
+            {
+                ["source"] = StubBase64,
+                ["sourceSrs"] = "EPSG:32610; rm -rf /"
+            });
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().ContainSingle(v => v.FieldPath == "steps[s1].inputs.sourceSrs");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_PointCloudTranslate_WithoutSourceSrs_ProducesNoViolations()
+    {
+        // A geographic source omits sourceSrs entirely; the worker decompresses
+        // verbatim. Omission must not be flagged.
+        var plan = CreateSingleStepPlan(
+            "pcloud.translate",
+            new Dictionary<string, string>
+            {
+                ["source"] = StubBase64
+            });
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().BeEmpty();
     }
 
     [UnitTest]
