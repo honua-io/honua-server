@@ -99,12 +99,46 @@ public sealed class ODataPageSizeClampTests
     }
 
     [UnitTest]
-    public void ClampPageSize_NonPositiveValue_ReturnsMaxPageSize()
+    public void ClampPageSize_NegativeValue_ReturnsMaxPageSize()
     {
         var service = CreateService(maxPageSize: 1000);
 
-        service.ClampPageSize(0).Should().Be(1000);
         service.ClampPageSize(-5).Should().Be(1000);
+    }
+
+    [UnitTest]
+    public void ClampPageSize_Zero_ReturnsZero()
+    {
+        // OData v4 $top=0 requests a deliberately empty page; the explicit zero must be
+        // preserved rather than promoted to a full server page (#1989).
+        var service = CreateService(maxPageSize: 1000);
+
+        service.ClampPageSize(0).Should().Be(0);
+    }
+
+    [UnitTest]
+    public void ValidateAndNormalizePagination_TopZero_ReturnsZeroLimit()
+    {
+        // $top=0 is a valid OData v4 request (empty value, commonly with $count=true).
+        // It must validate (no 400) and yield an effective page size of 0.
+        var service = CreateService(maxPageSize: 1000);
+
+        var result = service.ValidateAndNormalizePagination(offset: 0, limit: 0);
+
+        result.IsValid.Should().BeTrue();
+        result.Value!.Limit.Should().Be(0);
+        result.Value.Offset.Should().Be(0);
+    }
+
+    [UnitTest]
+    public void ValidateAndNormalizePagination_NegativeTop_FailsValidation()
+    {
+        // A negative $top remains a 400; only $top=0 (not < 0) is allowed.
+        var service = CreateService(maxPageSize: 1000);
+
+        var result = service.ValidateAndNormalizePagination(offset: 0, limit: -1);
+
+        result.IsValid.Should().BeFalse();
     }
 
     [UnitTest]
