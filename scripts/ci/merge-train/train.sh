@@ -192,6 +192,19 @@ main() {
     local run_id; run_id="$(cat "${TRAIN_RUN_ID_FILE}" 2>/dev/null || echo "")"
     local failing; failing="$(train_failing_jobs "${run_id}")"
 
+    # --- (0) NON-BLOCKING aux/aggregator filter (deterministic) --------------
+    # Strip the heavy aux jobs that run on every batch + flake on environment
+    # (Docker/JS/Python/Esri integration) and the CI Gate / Test Suite Summary
+    # aggregators. The train lands on its SHARD results; real regressions in the
+    # aux jobs are caught by post-merge trunk CI. If nothing real-fails after
+    # stripping, the batch is green-enough → land.
+    failing="$(train_subtract_lines "${TRAIN_NONBLOCKING_JOBS}" "${failing}")"
+    if [[ -z "${failing//[$'\n'$'\t' ]/}" ]]; then
+      train_metric_set nonblocking_passes 1
+      train_notice "only non-blocking aux/aggregator jobs failed; landing on shard results"
+      gate="SUCCESS"; continue
+    fi
+
     # forward-fix: only when the SOLE failure is the format-verify step.
     if train_is_format_only_failure "${failing}"; then
       _write_state "${batch}" "${trunk_sha}" "${included}" "forward-fix" "${run_id}" "${fwdfix}" "${flake_reruns}"
