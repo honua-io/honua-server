@@ -48,6 +48,33 @@ internal static class TileOperationsEndpoints
             .WithName("RetryTileOperationJob")
             .WithSummary("Retry tile operation job")
             .WithDescription("Queues a retry of a failed or cancelled tile operation job");
+
+        _ = group.MapPost("/evict", HandleEvict)
+            .WithName("EvictTileCache")
+            .WithSummary("Run a tile-cache eviction sweep")
+            .WithDescription("Triggers a synchronous size-quota / LRU eviction sweep over the live Redis tile-key index, dropping least-recently-used tiles that exceed the configured TileOptions:Eviction quota (#1917)");
+    }
+
+    private static async Task<IResult> HandleEvict(
+        HttpContext context,
+        [FromServices] TileCacheEvictionService evictionService,
+        CancellationToken cancellationToken)
+    {
+        var result = await evictionService.SweepAsync(cancellationToken).ConfigureAwait(false);
+        var response = new TileCacheEvictionResponse
+        {
+            Enabled = result.Enabled,
+            Scanned = result.Scanned,
+            Evicted = result.Evicted,
+            Message = result.Enabled
+                ? $"Evicted {result.Evicted} of {result.Scanned} tracked tile(s)."
+                : "Tile-cache eviction is disabled (set TileOptions:Eviction:Enabled with a Redis backend to enable)."
+        };
+
+        return Results.Json(
+            response,
+            TileOperationsJsonContext.Default.TileCacheEvictionResponse,
+            statusCode: StatusCodes.Status200OK);
     }
 
     private static async Task<Results<JsonHttpResult<TileOperationStartResponse>, JsonHttpResult<ProblemDetailsResponse>>> HandleStartJob(
@@ -294,6 +321,24 @@ internal sealed record TileOperationListResponse
     public required int TotalCount { get; init; }
 }
 
+/// <summary>
+/// Response for an on-demand tile-cache eviction sweep (#1917).
+/// </summary>
+internal sealed record TileCacheEvictionResponse
+{
+    /// <summary>Whether eviction was enabled and a live tile-key index was available.</summary>
+    public required bool Enabled { get; init; }
+
+    /// <summary>The number of tracked tile entries scanned at the start of the sweep.</summary>
+    public required int Scanned { get; init; }
+
+    /// <summary>The number of least-recently-used tiles evicted from the cache store and index.</summary>
+    public required int Evicted { get; init; }
+
+    /// <summary>A human-readable summary of the sweep outcome.</summary>
+    public required string Message { get; init; }
+}
+
 [System.Text.Json.Serialization.JsonSourceGenerationOptions(System.Text.Json.JsonSerializerDefaults.General)]
 [System.Text.Json.Serialization.JsonSerializable(typeof(TileOperationStartRequest))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(PersistedTileOperationRequest))]
@@ -303,6 +348,7 @@ internal sealed record TileOperationListResponse
 [System.Text.Json.Serialization.JsonSerializable(typeof(TileOperationCancelResponse))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(TileOperationRetryResponse))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(TileOperationListResponse))]
+[System.Text.Json.Serialization.JsonSerializable(typeof(TileCacheEvictionResponse))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(Honua.Core.Features.Tiles.PMTiles.PMTilesArtifactDescriptor))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(Honua.Core.Features.Tiles.PMTiles.PMTilesUrlStrategy))]
 internal sealed partial class TileOperationsJsonContext : System.Text.Json.Serialization.JsonSerializerContext

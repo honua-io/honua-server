@@ -165,9 +165,19 @@ internal sealed class AnthropicWorkflowGenerationProvider : IWorkflowGenerationP
 
             if (toolInput is not { } input || input.ValueKind == JsonValueKind.Undefined)
             {
-                const string Reason = "Provider did not return the expected tool output.";
-                WorkflowGenerationLog.GenerationFailed(_logger, _providerId, Reason);
-                return WorkflowGenerationProposal.Error(Reason, _providerId, model);
+                // No emit_workflow tool_use block. If the model returned text instead
+                // (a needs-clarification or soft refusal), surface that rationale rather
+                // than the opaque generic message so the caller sees why (#1986).
+                var modelText = messagesResponse?.Content?
+                    .Where(block => string.Equals(block.Type, "text", StringComparison.Ordinal))
+                    .Select(block => block.Text)
+                    .FirstOrDefault(text => !string.IsNullOrWhiteSpace(text));
+
+                var reason = string.IsNullOrWhiteSpace(modelText)
+                    ? "Provider did not return the expected tool output."
+                    : $"Provider returned a message instead of a workflow: {Truncate(modelText, 500)}";
+                WorkflowGenerationLog.GenerationFailed(_logger, _providerId, reason);
+                return WorkflowGenerationProposal.Error(reason, _providerId, model);
             }
 
             var proposalModel = input.Deserialize(WorkflowGenerationJsonContext.Default.WorkflowGenerationModelProposal);

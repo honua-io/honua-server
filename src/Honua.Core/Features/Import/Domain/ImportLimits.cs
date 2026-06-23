@@ -101,6 +101,17 @@ public sealed record ImportLimits
     public long MaxWkbSize { get; init; } = FileSizeConstants.OneMB;
 
     /// <summary>
+    /// Maximum number of bytes that may be buffered in memory for a single,
+    /// not-yet-closed feature (or any pre-feature leftover) while streaming a
+    /// feature collection. Caps unbounded in-memory accumulation when a reader
+    /// streams at feature granularity but receives one pathologically large
+    /// feature object (or an array-start that never closes); the reader fails
+    /// fast once the leftover buffer would exceed this budget.
+    /// Default: 64MB (67108864 bytes).
+    /// </summary>
+    public long MaxSingleFeatureBytes { get; init; } = 64 * FileSizeConstants.OneMB;
+
+    /// <summary>
     /// Maximum uncompressed bytes extracted from a single archive entry during ZIP/KMZ import.
     /// Default: 500MB (524288000 bytes).
     /// </summary>
