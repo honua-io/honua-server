@@ -32,7 +32,7 @@ public sealed class SpecEndpointsTests
     [Endpoint("POST /v1/spec/validate")]
     public async Task Validate_TextSpec_ReturnsDiagnosticsAndCanonicalJson()
     {
-        using var factory = new TestWebApplicationFactory();
+        using var factory = CreateFactory();
         using var client = factory.CreateClient();
 
         using var response = await client.PostAsync("/v1/spec/validate", JsonContent(new
@@ -69,7 +69,7 @@ public sealed class SpecEndpointsTests
     [Endpoint("POST /v1/spec/validate")]
     public async Task Validate_TextSpecWithUnknownOperator_ReturnsInvalidWithDiagnostic()
     {
-        using var factory = new TestWebApplicationFactory();
+        using var factory = CreateFactory();
         using var client = factory.CreateClient();
 
         using var response = await client.PostAsync("/v1/spec/validate", JsonContent(new
@@ -98,7 +98,7 @@ public sealed class SpecEndpointsTests
     [Endpoint("POST /v1/spec/validate")]
     public async Task Validate_CanonicalSpecObject_RunsSameValidator()
     {
-        using var factory = new TestWebApplicationFactory();
+        using var factory = CreateFactory();
         using var client = factory.CreateClient();
 
         using var response = await client.PostAsync("/v1/spec/validate", JsonContent(new
@@ -139,7 +139,7 @@ public sealed class SpecEndpointsTests
     [Endpoint("POST /v1/spec/validate")]
     public async Task Validate_CanonicalSpecObjectWithOutOfRangeNumber_ReturnsParseDiagnostic()
     {
-        using var factory = new TestWebApplicationFactory();
+        using var factory = CreateFactory();
         using var client = factory.CreateClient();
 
         using var response = await client.PostAsync(
@@ -189,7 +189,7 @@ public sealed class SpecEndpointsTests
     [Endpoint("POST /v1/spec/validate")]
     public async Task Validate_WithoutSource_Returns400WithInvalidRequestBody()
     {
-        using var factory = new TestWebApplicationFactory();
+        using var factory = CreateFactory();
         using var client = factory.CreateClient();
 
         using var response = await client.PostAsync(
@@ -206,7 +206,7 @@ public sealed class SpecEndpointsTests
     [Endpoint("POST /v1/spec/plan")]
     public async Task Plan_LinearChain_ReturnsDagWithContentHashesInTopologicalOrder()
     {
-        using var factory = new TestWebApplicationFactory();
+        using var factory = CreateFactory();
         using var client = factory.CreateClient();
 
         var document = BuildDocument(
@@ -237,7 +237,7 @@ public sealed class SpecEndpointsTests
     [Endpoint("POST /v1/spec/plan")]
     public async Task Plan_MalformedJson_Returns400WithInvalidRequestBody()
     {
-        using var factory = new TestWebApplicationFactory();
+        using var factory = CreateFactory();
         using var client = factory.CreateClient();
 
         using var response = await client.PostAsync(
@@ -257,7 +257,7 @@ public sealed class SpecEndpointsTests
         // Blank grammar/process-family versions collide in the content-hash
         // cache key. The planner rejects at the entry point so REST maps to
         // 400 / `version-skew` before the executor is reached.
-        using var factory = new TestWebApplicationFactory();
+        using var factory = CreateFactory();
         using var client = factory.CreateClient();
 
         var document = new Dictionary<string, object?>(StringComparer.Ordinal)
@@ -279,7 +279,7 @@ public sealed class SpecEndpointsTests
     [Endpoint("POST /v1/spec/apply")]
     public async Task Apply_MissingProcessFamilyVersion_Returns400WithoutOpeningStream()
     {
-        using var factory = new TestWebApplicationFactory();
+        using var factory = CreateFactory();
         using var client = factory.CreateClient();
 
         var document = new Dictionary<string, object?>(StringComparer.Ordinal)
@@ -310,7 +310,7 @@ public sealed class SpecEndpointsTests
         // Missing 'kind' must not silently coerce to Compute — operators need an
         // explicit rejection so a typo or omission does not accidentally
         // dispatch through the compute executor.
-        using var factory = new TestWebApplicationFactory();
+        using var factory = CreateFactory();
         using var client = factory.CreateClient();
 
         var nodeWithoutKind = new Dictionary<string, object?>(StringComparer.Ordinal)
@@ -333,7 +333,7 @@ public sealed class SpecEndpointsTests
     [Endpoint("POST /v1/spec/apply")]
     public async Task Apply_NodeWithoutKind_Returns400WithoutOpeningStream()
     {
-        using var factory = new TestWebApplicationFactory();
+        using var factory = CreateFactory();
         using var client = factory.CreateClient();
 
         var nodeWithoutKind = new Dictionary<string, object?>(StringComparer.Ordinal)
@@ -366,7 +366,7 @@ public sealed class SpecEndpointsTests
         // (SpecResourceKind)999 that passes the null check and flows through to
         // the orchestrator. The transport-boundary whitelist must reject it
         // with the same `unknown-kind` code operators already handle.
-        using var factory = new TestWebApplicationFactory();
+        using var factory = CreateFactory();
         using var client = factory.CreateClient();
 
         var numericKindNode = new Dictionary<string, object?>(StringComparer.Ordinal)
@@ -390,7 +390,7 @@ public sealed class SpecEndpointsTests
     [Endpoint("POST /v1/spec/apply")]
     public async Task Apply_NumericKindOutOfRange_Returns400WithoutOpeningStream()
     {
-        using var factory = new TestWebApplicationFactory();
+        using var factory = CreateFactory();
         using var client = factory.CreateClient();
 
         var numericKindNode = new Dictionary<string, object?>(StringComparer.Ordinal)
@@ -424,7 +424,7 @@ public sealed class SpecEndpointsTests
         // mapping's catch-all arm and silently flow through as ReadWrite. The
         // transport boundary must reject with the stable `unknown-cache-mode`
         // code before the apply starts.
-        using var factory = new TestWebApplicationFactory();
+        using var factory = CreateFactory();
         using var client = factory.CreateClient();
 
         var document = new Dictionary<string, object?>(StringComparer.Ordinal)
@@ -453,7 +453,7 @@ public sealed class SpecEndpointsTests
     [Endpoint("POST /v1/spec/plan")]
     public async Task Plan_Cycle_Returns400WithDagCycleCode()
     {
-        using var factory = new TestWebApplicationFactory();
+        using var factory = CreateFactory();
         using var client = factory.CreateClient();
 
         var document = BuildDocument(
@@ -472,7 +472,7 @@ public sealed class SpecEndpointsTests
     [Endpoint("POST /v1/spec/apply")]
     public async Task Apply_MalformedJson_Returns400WithInvalidRequestBody()
     {
-        using var factory = new TestWebApplicationFactory();
+        using var factory = CreateFactory();
         using var client = factory.CreateClient();
 
         using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/spec/apply")
@@ -492,7 +492,7 @@ public sealed class SpecEndpointsTests
     [Endpoint("POST /v1/spec/apply")]
     public async Task Apply_DuplicateNodeIds_Returns400WithoutOpeningStream()
     {
-        using var factory = new TestWebApplicationFactory();
+        using var factory = CreateFactory();
         using var client = factory.CreateClient();
 
         var document = BuildDocument(
@@ -521,7 +521,7 @@ public sealed class SpecEndpointsTests
         // values in the event stream. The resolver now rejects them with a
         // stable `invalid-node-id` diagnostic that surfaces at the REST
         // boundary.
-        using var factory = new TestWebApplicationFactory();
+        using var factory = CreateFactory();
         using var client = factory.CreateClient();
 
         var document = BuildDocument(ComputeNode(""));
@@ -542,7 +542,7 @@ public sealed class SpecEndpointsTests
         // explicit null. Previously the transport swallowed it and the
         // downstream enumeration tripped a NullReferenceException — today the
         // boundary validates and maps to the documented 400 contract.
-        using var factory = new TestWebApplicationFactory();
+        using var factory = CreateFactory();
         using var client = factory.CreateClient();
 
         var document = new Dictionary<string, object?>(StringComparer.Ordinal)
@@ -567,7 +567,7 @@ public sealed class SpecEndpointsTests
         // `[null]` deserialises as a real null entry inside the nodes list. The
         // boundary rejects it with a stable diagnostic instead of throwing NRE
         // at the first enumeration.
-        using var factory = new TestWebApplicationFactory();
+        using var factory = CreateFactory();
         using var client = factory.CreateClient();
 
         var document = new Dictionary<string, object?>(StringComparer.Ordinal)
@@ -589,7 +589,7 @@ public sealed class SpecEndpointsTests
     [Endpoint("POST /v1/spec/apply")]
     public async Task Apply_NullNodeEntry_Returns400WithoutOpeningStream()
     {
-        using var factory = new TestWebApplicationFactory();
+        using var factory = CreateFactory();
         using var client = factory.CreateClient();
 
         var document = new Dictionary<string, object?>(StringComparer.Ordinal)
@@ -617,7 +617,7 @@ public sealed class SpecEndpointsTests
     [Endpoint("POST /v1/spec/apply")]
     public async Task Apply_BlankNodeId_Returns400WithoutOpeningStream()
     {
-        using var factory = new TestWebApplicationFactory();
+        using var factory = CreateFactory();
         using var client = factory.CreateClient();
 
         var document = BuildDocument(ComputeNode("   "));
@@ -640,7 +640,7 @@ public sealed class SpecEndpointsTests
     [Endpoint("POST /v1/spec/apply")]
     public async Task Apply_Cycle_Returns400WithoutOpeningStream()
     {
-        using var factory = new TestWebApplicationFactory();
+        using var factory = CreateFactory();
         using var client = factory.CreateClient();
 
         var document = BuildDocument(
@@ -711,7 +711,7 @@ public sealed class SpecEndpointsTests
     [Endpoint("POST /v1/spec/apply")]
     public async Task Apply_WithoutEventStreamAccept_Returns400()
     {
-        using var factory = new TestWebApplicationFactory();
+        using var factory = CreateFactory();
         using var client = factory.CreateClient();
 
         var document = BuildDocument(ComputeNode("a"));
@@ -784,7 +784,7 @@ public sealed class SpecEndpointsTests
     [Endpoint("POST /v1/spec/cancel")]
     public async Task Cancel_UnknownToken_Returns404WithApplyTokenUnknown()
     {
-        using var factory = new TestWebApplicationFactory();
+        using var factory = CreateFactory();
         using var client = factory.CreateClient();
 
         using var response = await client.PostAsync(
@@ -801,7 +801,7 @@ public sealed class SpecEndpointsTests
     [Endpoint("POST /v1/spec/cancel")]
     public async Task Cancel_MissingToken_Returns400()
     {
-        using var factory = new TestWebApplicationFactory();
+        using var factory = CreateFactory();
         using var client = factory.CreateClient();
 
         using var response = await client.PostAsync(
@@ -818,7 +818,7 @@ public sealed class SpecEndpointsTests
     [Endpoint("GET /v1/spec/artifact/{hash}")]
     public async Task Artifact_UnknownHash_Returns404WithArtifactNotFound()
     {
-        using var factory = new TestWebApplicationFactory();
+        using var factory = CreateFactory();
         using var client = factory.CreateClient();
 
         using var response = await client.GetAsync("/v1/spec/artifact/deadbeef");
@@ -933,12 +933,33 @@ public sealed class SpecEndpointsTests
     {
         var factory = new TestWebApplicationFactory();
         return factory.WithWebHostBuilder(builder =>
+        {
+            ApplySpecAuthBypass(builder);
             builder.ConfigureTestServices(services =>
             {
                 services.AddSingleton<ILicenseEntitlementService>(license);
                 services.AddSingleton<ILicenseStatusProvider>(license);
-            }));
+            });
+        });
     }
+
+    /// <summary>
+    /// The <c>/v1/spec/*</c> endpoints are admin-gated (#1984). Enable the
+    /// Test-only development auth bypass — the same posture the shared
+    /// integration fixtures use — so these endpoint tests authenticate without
+    /// attaching an API key at every call site.
+    /// </summary>
+    private static void ApplySpecAuthBypass(IWebHostBuilder builder)
+    {
+        builder.UseSetting("HONUA_DEV_AUTH", "true");
+        builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "true");
+    }
+
+    /// <summary>
+    /// Creates the default admin-authorized test host for the spec surface.
+    /// </summary>
+    private static WebApplicationFactory<Program> CreateFactory()
+        => new TestWebApplicationFactory().WithWebHostBuilder(ApplySpecAuthBypass);
 
     private static async Task<HttpResponseMessage> SendApplyAsync(HttpClient client, object document)
     {
@@ -984,6 +1005,7 @@ public sealed class SpecEndpointsTests
         return new TestWebApplicationFactory()
             .WithWebHostBuilder(builder =>
             {
+                ApplySpecAuthBypass(builder);
                 builder.ConfigureServices(services =>
                 {
                     services.Replace(ServiceDescriptor.Singleton<ILicenseEntitlementService>(license));
