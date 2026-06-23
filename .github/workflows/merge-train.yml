@@ -35,6 +35,11 @@ on:
         type: string
         required: false
         default: '3'
+      use_llm:
+        description: 'Enable the OPTIONAL gated Bedrock LLM judgment layer (TRAIN_LLM=1). Off by default; every gate has a deterministic fallback. Requires secrets.HONUA_BEDROCK_ROLE_ARN.'
+        type: boolean
+        required: false
+        default: false
 
 # Serialize train runs: a batch in flight must finish before the next starts.
 # cancel-in-progress:false so we never abandon a half-landed batch mid-flight.
@@ -47,6 +52,7 @@ permissions:
   pull-requests: write   # merge PRs, edit labels, comment
   actions: write         # dispatch and rerun CI runs
   issues: write          # maintain the Merge Train State issue
+  id-token: write        # GitHub OIDC: assume the Bedrock role (no long-lived keys)
 
 jobs:
   train:
@@ -72,6 +78,8 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           DISPATCH_APPLY: ${{ github.event.inputs.train_apply }}
           DISPATCH_MAX_BATCH: ${{ github.event.inputs.max_batch }}
+          DISPATCH_USE_LLM: ${{ github.event.inputs.use_llm }}
+          HAVE_BEDROCK_ROLE: ${{ secrets.HONUA_BEDROCK_ROLE_ARN != '' }}
         run: |
           set -euo pipefail
           # Only an explicit workflow_dispatch with train_apply=true acts.
@@ -83,7 +91,29 @@ jobs:
           echo "train_apply=${apply}" >> "$GITHUB_OUTPUT"
           mb="${DISPATCH_MAX_BATCH:-3}"; [[ -z "${mb}" ]] && mb=3
           echo "max_batch=${mb}" >> "$GITHUB_OUTPUT"
-          echo "Resolved TRAIN_APPLY=${apply} (event=${EVENT_NAME}) MAX_BATCH=${mb}"
+          # TRAIN_LLM defaults to 0 for ALL triggers. It can only turn on via an
+          # explicit workflow_dispatch with use_llm=true AND a configured
+          # Bedrock role ARN. Scheduled / workflow_run are always deterministic.
+          llm=0
+          if [[ "${EVENT_NAME}" == "workflow_dispatch" && "${DISPATCH_USE_LLM}" == "true" ]]; then
+            if [[ "${HAVE_BEDROCK_ROLE}" == "true" ]]; then
+              llm=1
+            else
+              echo "::warning::use_llm=true but secrets.HONUA_BEDROCK_ROLE_ARN is unset; running deterministic (TRAIN_LLM=0). Configure the OIDC Bedrock role to enable the LLM layer."
+            fi
+          fi
+          echo "train_llm=${llm}" >> "$GITHUB_OUTPUT"
+          echo "Resolved TRAIN_APPLY=${apply} (event=${EVENT_NAME}) MAX_BATCH=${mb} TRAIN_LLM=${llm}"
+
+      # OIDC -> assume the Bedrock IAM role (scoped to bedrock:InvokeModel on the
+      # one model). Only runs when the LLM layer was actually enabled this run, so
+      # no AWS calls happen on the default deterministic path. No long-lived keys.
+      - name: Configure AWS credentials (Bedrock, OIDC)
+        if: steps.mode.outputs.train_llm == '1'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.HONUA_BEDROCK_ROLE_ARN }}
+          aws-region: ${{ vars.HONUA_BEDROCK_REGION || 'us-west-2' }}
 
       - name: Run train
         env:
@@ -95,6 +125,11 @@ jobs:
           GH_TOKEN: ${{ secrets.HONUA_MERGE_TOKEN || secrets.GITHUB_TOKEN }}
           TRAIN_APPLY: ${{ steps.mode.outputs.train_apply }}
           MAX_BATCH: ${{ steps.mode.outputs.max_batch }}
+          # OPTIONAL gated LLM layer. TRAIN_LLM=0 here on every default path; the
+          # gates are inert and make zero Bedrock calls unless this is 1.
+          TRAIN_LLM: ${{ steps.mode.outputs.train_llm }}
+          AWS_REGION: ${{ vars.HONUA_BEDROCK_REGION || 'us-west-2' }}
+          BEDROCK_MODEL_ID: ${{ vars.HONUA_BEDROCK_MODEL_ID || 'us.anthropic.claude-haiku-4-5-20251001-v1:0' }}
         run: |
           set -euo pipefail
           if [[ -z "${{ secrets.HONUA_MERGE_TOKEN }}" ]]; then

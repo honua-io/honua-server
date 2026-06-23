@@ -114,3 +114,67 @@ train_select() {
     fi
   done <<<"${ordered}"
 }
+
+# --- Phase 2 gate: overlap-dependency judgment (gated LLM) --------------------
+# When two candidate PRs heavily overlap in the files they change, landing the
+# newer one first can silently strand a logical dependency. The deterministic
+# Phase-1 behavior keeps strict oldest-first ordering; Phase 2 OPTIONALLY asks
+# Bedrock, only in the ambiguous (heavy-overlap) case, whether the later PR (B)
+# should wait for the earlier PR (A) to land first.
+#
+# train_pr_overlap_ratio <filesA-newline> <filesB-newline>: emit an integer
+# percentage (0-100) of B's files that also appear in A (|A∩B|/|B|). Pure +
+# testable; no network.
+train_pr_overlap_ratio() {
+  local files_a="$1" files_b="$2"
+  awk -v a="${files_a}" '
+    BEGIN { n = split(a, arr, "\n"); for (i=1;i<=n;i++) if (arr[i]!="") inA[arr[i]]=1 }
+    { if ($0 != "") { tot++; if ($0 in inA) hit++ } }
+    END { if (tot == 0) { print 0 } else { printf "%d\n", (hit*100)/tot } }
+  ' <<<"${files_b}"
+}
+
+# train_select_should_wait <prA> <filesA-newline> <prB> <filesB-newline>:
+# Decide whether candidate PR B should WAIT for PR A (B is the later/newer one).
+# Returns 0 = WAIT (skip B this batch), 1 = proceed (include B).
+#
+# Deterministic fallback (TRAIN_LLM=0, Bedrock error, or below-threshold
+# overlap): NEVER wait — keep oldest-first ordering, i.e. exactly Phase 1.
+# The LLM is consulted ONLY when overlap >= TRAIN_OVERLAP_PCT (default 60),
+# which is the "ambiguous" condition. Logs prompt-class + decision via train_log.
+: "${TRAIN_OVERLAP_PCT:=60}"
+train_select_should_wait() {
+  local pr_a="$1" files_a="$2" pr_b="$3" files_b="$4"
+
+  # Deterministic guard first: only an ambiguous heavy overlap consults the LLM.
+  local ratio; ratio="$(train_pr_overlap_ratio "${files_a}" "${files_b}")"
+  if [[ "${ratio}" -lt "${TRAIN_OVERLAP_PCT}" ]]; then
+    return 1   # not ambiguous: proceed (Phase-1 ordering)
+  fi
+  if ! declare -F bedrock_enabled >/dev/null 2>&1 || ! bedrock_enabled; then
+    train_log "llm[select.overlap] disabled; fallback=PROCEED (#${pr_b} not held; overlap ${ratio}%)"
+    return 1   # fallback: keep oldest-first, include B
+  fi
+
+  local sys usr ans
+  sys="You order code-review pull requests for a merge train. Two PRs change a heavily overlapping set of files. Answer with exactly one word: YES if PR B should wait for PR A to land first (e.g. B builds on A or would conflict/strand A), or NO if they are independent and B can land now. Output only YES or NO."
+  usr="PR A (#${pr_a}) changed files:
+$(printf '%s\n' "${files_a}" | sed '/^$/d')
+
+PR B (#${pr_b}) changed files:
+$(printf '%s\n' "${files_b}" | sed '/^$/d')
+
+File overlap of B onto A: ${ratio}%. Should PR B wait for PR A to land first? Answer YES or NO."
+  ans="$(bedrock_ask "${sys}" "${usr}")"
+
+  if bedrock_is_error "${ans}"; then
+    train_log "llm[select.overlap] bedrock error; fallback=PROCEED (#${pr_b} not held)"
+    return 1   # fallback on any LLM failure
+  fi
+  if bedrock_first_word_yes "${ans}"; then
+    train_log "llm[select.overlap] decision=WAIT (#${pr_b} waits for #${pr_a}; overlap ${ratio}%)"
+    return 0   # hold B this batch
+  fi
+  train_log "llm[select.overlap] decision=PROCEED (#${pr_b} independent of #${pr_a}; overlap ${ratio}%)"
+  return 1
+}

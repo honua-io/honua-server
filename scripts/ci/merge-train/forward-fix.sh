@@ -52,3 +52,63 @@ train_forward_fix() {
   train_log "forward-fix committed on ${batch}"
   return 0
 }
+
+# --- Phase 2 gate: drift-heal-safety judgment (gated LLM) ---------------------
+# Invoked ONLY when a NON-format drift failure appears (proof-ledger / OpenAPI /
+# feature-catalog drift) — the ambiguous case the deterministic train would
+# otherwise escalate outright. Asks Bedrock whether the drift is SAFELY
+# auto-healable by a known idempotent generator, or whether it needs a human.
+#
+# Returns 0 = a known generator is named on stdout (caller MAY run it), or
+#         1 = ESCALATE (no safe generator).
+#
+# Deterministic fallback (TRAIN_LLM=0, Bedrock error, or anything other than a
+# confident, allowlisted generator answer): ESCALATE — never auto-patch. This is
+# both the fallback AND the expected usual answer; the gate exists to catch the
+# rare, unambiguous "regenerate the OpenAPI snapshot" case, not to be clever.
+#
+# SAFETY: only generators on the TRAIN_HEAL_ALLOWLIST are ever accepted, so an
+# LLM hallucination cannot make the train run an arbitrary command. The caller is
+# still responsible for actually invoking the generator under the build lock and
+# re-running CI; this gate only DECIDES, it does not execute.
+: "${TRAIN_HEAL_ALLOWLIST:=update-openapi-snapshot|regenerate-feature-catalog|regenerate-proof-ledger}"
+train_forward_fix_heal_safe() {
+  local failing="$1" drift_detail="${2:-}"
+
+  if ! declare -F bedrock_enabled >/dev/null 2>&1 || ! bedrock_enabled; then
+    train_log "llm[forwardfix.heal] disabled; fallback=ESCALATE"
+    return 1   # fallback: escalate, never auto-patch
+  fi
+
+  local sys usr ans verdict gen
+  sys="You guard a merge train's auto-heal. A NON-format CI drift failure appeared (e.g. OpenAPI snapshot, feature catalog, or proof ledger out of date). Decide if it is SAFELY auto-healable by re-running a known deterministic generator, or if a human must fix it. Respond on the FIRST line with exactly one word: HEAL or ESCALATE. If HEAL, add a SECOND line naming exactly one generator from this allowlist: ${TRAIN_HEAL_ALLOWLIST//|/, }. If you are not certain, answer ESCALATE."
+  usr="Failing job(s):
+$(printf '%s\n' "${failing}" | sed '/^$/d')
+
+Drift detail:
+${drift_detail}
+
+Is this safely auto-healable by a known generator, or must a human fix it? First line: HEAL or ESCALATE. Optional second line: the generator name."
+  ans="$(bedrock_ask "${sys}" "${usr}")"
+
+  if bedrock_is_error "${ans}"; then
+    train_log "llm[forwardfix.heal] bedrock error; fallback=ESCALATE"
+    return 1
+  fi
+
+  verdict="$(printf '%s\n' "${ans}" | head -1 | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+  if [[ "${verdict}" != heal* ]]; then
+    train_log "llm[forwardfix.heal] decision=ESCALATE"
+    return 1
+  fi
+
+  gen="$(printf '%s\n' "${ans}" | sed -n '2p' | sed 's/^ *//; s/ *$//')"
+  if [[ -z "${gen}" ]] || ! printf '%s' "${gen}" | grep -Eq "^(${TRAIN_HEAL_ALLOWLIST})$"; then
+    # HEAL with no/invalid generator is unsafe: fall back to escalation.
+    train_warn "llm[forwardfix.heal] HEAL with non-allowlisted generator [${gen}]; fallback=ESCALATE"
+    return 1
+  fi
+  train_log "llm[forwardfix.heal] decision=HEAL generator=[${gen}]"
+  printf '%s\n' "${gen}"
+  return 0
+}
