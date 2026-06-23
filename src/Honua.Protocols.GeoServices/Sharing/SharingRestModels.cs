@@ -61,6 +61,14 @@ internal sealed record OAuth2TokenResponse
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? RefreshToken { get; init; }
 
+    /// <summary>
+    /// Space-delimited scopes actually granted (RFC 6749 §5.1), present for the
+    /// first-class client_credentials grant (#1888) when scopes were granted.
+    /// </summary>
+    [JsonPropertyName("scope")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Scope { get; init; }
+
     /// <summary>Token type; always <c>Bearer</c>.</summary>
     [JsonPropertyName("token_type")]
     public string TokenType { get; init; } = "Bearer";

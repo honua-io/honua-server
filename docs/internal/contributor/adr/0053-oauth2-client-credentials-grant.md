@@ -2,7 +2,10 @@
 
 ## Status
 
-Proposed (first increment opt-in / off-by-default; phased rollout below).
+Proposed. Increment 1 (opt-in / off-by-default `client_credentials` over the
+Admin API-key store) and Increment 2 (first-class OAuth2 client registry + scope
+catalogue, #1888) are implemented; Increments 3-4 remain follow-ups. Phased
+rollout below.
 
 ## Context
 
@@ -146,14 +149,59 @@ mapping is deferred (below).
 - **Off by default** means a deployment that has not consciously enabled
   service-to-service OAuth2 has zero new attack surface.
 
+## Increment 2 — first-class client registry + scope catalogue (#1888)
+
+Increment 2 replaces the "client_id is a label" stand-in with a real
+per-application client identity and a scope→permission catalogue, while keeping
+Increment 1 working unchanged.
+
+### Client registry (`IOAuthClientStore`)
+
+- A distinct `client_id`/`client_secret` pair per registered client, with
+  client-type metadata (`confidential` / `public`, RFC 6749 §2.1), allowed grant
+  types, redirect URIs, and the subset of catalogue scopes the client may request.
+- The secret is **never stored in plaintext**: SHA-256 hashed at rest, compared
+  with `CryptographicOperations.FixedTimeEquals`, expiry- and revocation-aware —
+  the same hardening as the Admin API-key store. The plaintext secret is returned
+  exactly once at registration. **Public** clients mint no secret.
+- Admin surface (admin-authorized): `GET/POST /api/v1/admin/oauth-clients`,
+  `GET/DELETE /api/v1/admin/oauth-clients/{id}`.
+- In-memory store, mirroring the established `IAdminApiKeyStore` pattern — **no
+  new durable token/identity store** (ADR-0049). Backing the registry with the
+  durable store is a non-breaking future change behind the same interface.
+
+### Scope catalogue (`IOAuthScopeCatalogue`)
+
+- Operators define named scopes and the RBAC permissions each grants:
+  `GET /api/v1/admin/oauth-scopes`, `PUT /api/v1/admin/oauth-scopes`,
+  `DELETE /api/v1/admin/oauth-scopes/{scope}`.
+- On a first-class `client_credentials` request the requested `scope` is resolved
+  to permissions **bounded by the client's allowed scopes**: a scope outside the
+  allow-list, or one not defined in the catalogue, grants nothing — never an
+  escalation. The minted token carries exactly the granted permissions as roles
+  (so the existing RBAC resolver decides per-operation access), and the token
+  response reports the granted `scope` (RFC 6749 §5.1).
+- When no `scope` is requested the client is granted its full registered
+  allowed-scope set (RFC 6749 §3.3 default scope); an empty allow-list grants
+  nothing.
+
+### Token endpoint resolution order (backward compatible)
+
+`oauth2/token` (flag-gated) now, for `client_credentials`: (1) if the presented
+`client_id`/`client_secret` matches a **first-class client**, mint via the scope
+catalogue; otherwise (2) fall back to validating the secret against the **Admin
+API-key store** exactly as Increment 1 did. Credential validation precedes the
+IP-binding check so an unknown/bad credential always returns `invalid_client`.
+A first-class client not authorized for the grant returns `unauthorized_client`.
+
 ## Phased rollout
 
-1. **Increment 1 (this PR):** `client_credentials` over the existing API-key
+1. **Increment 1 (shipped):** `client_credentials` over the existing API-key
    store, opaque token, off by default. Tests prove issuance, validation on the
    request path, credential rejection, and flag-off = unchanged behaviour.
-2. **Increment 2 (follow-up):** first-class OAuth2 *client registration* admin
-   surface (`client_id`/`client_secret` pairs distinct from human API keys),
-   client-type metadata, and `scope` catalogue → permission mapping.
+2. **Increment 2 (shipped, #1888):** first-class OAuth2 *client registration*
+   admin surface (`client_id`/`client_secret` pairs distinct from human API
+   keys), client-type metadata, and `scope` catalogue → permission mapping.
 3. **Increment 3 (follow-up):** optional pluggable IdP/OIDC federation for
    `client_credentials` (delegate to an external token endpoint /
    introspection) for operators who centralise machine identity in their IdP.
@@ -167,10 +215,11 @@ mapping is deferred (below).
 and no new behaviour by default; ArcGIS "App login" works; one token format and
 one validator preserved.
 
-**Harder / explicit trade-offs:** `client_id` is a label, not an independent
-credential, until Increment 2 ships a real client registry — adequate for the
-machine-credential use case but not a substitute for per-application client
-identities. Documented here so it is an accepted scope boundary, not a surprise.
+**Harder / explicit trade-offs:** In Increment 1 `client_id` was a label, not an
+independent credential — adequate for the machine-credential use case but not a
+substitute for per-application client identities. Increment 2 (#1888) closes that
+gap with a real client registry + scope catalogue, while the Increment-1 API-key
+fallback remains so existing deployments are unaffected.
 
 ## Cross-references
 
