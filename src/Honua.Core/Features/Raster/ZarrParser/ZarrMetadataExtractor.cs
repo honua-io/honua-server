@@ -88,7 +88,7 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
             throw new InvalidDataException("Zarr store contains no arrays.");
         }
 
-        var (srid, extent, primary, xDim, yDim, tDim, temporal) =
+        var (srid, extent, primary, xDim, yDim, tDim, temporal, axes) =
             ResolveStoreGeoreferencing(attrsDoc?.RootElement, arrays);
 
         return new ZarrStoreMetadata(
@@ -100,7 +100,8 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
             SpatialXDimension: xDim,
             SpatialYDimension: yDim,
             TemporalDimension: tDim,
-            Temporal: temporal);
+            Temporal: temporal,
+            Axes: axes);
     }
 
     private static string NormalizeRootPath(string rootPath)
@@ -350,7 +351,7 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
             throw new InvalidDataException("Zarr v3 store contains no arrays.");
         }
 
-        var (srid, extent, primary, xDim, yDim, tDim, temporal) =
+        var (srid, extent, primary, xDim, yDim, tDim, temporal, axes) =
             ResolveStoreGeoreferencing(storeAttrs.ValueKind == JsonValueKind.Object ? storeAttrs : (JsonElement?)null, arrays);
 
         return new ZarrStoreMetadata(
@@ -362,7 +363,8 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
             SpatialXDimension: xDim,
             SpatialYDimension: yDim,
             TemporalDimension: tDim,
-            Temporal: temporal);
+            Temporal: temporal,
+            Axes: axes);
     }
 
     private static List<string> ResolveV3Variables(JsonElement attributes)
@@ -751,7 +753,7 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
         return fallback;
     }
 
-    private static (int Srid, RasterExtent Extent, string? PrimaryVariable, string? XDim, string? YDim, string? TDim, TemporalExtent? Temporal)
+    private static (int Srid, RasterExtent Extent, string? PrimaryVariable, string? XDim, string? YDim, string? TDim, TemporalExtent? Temporal, ZarrAxis[] Axes)
         ResolveStoreGeoreferencing(JsonElement? attrsElement, List<ZarrArrayMetadata> arrays)
     {
         var srid = 0;
@@ -762,6 +764,7 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
         string? yDim = null;
         string? tDim = null;
         TemporalExtent? temporal = null;
+        ZarrAxis[] axes = [];
 
         if (attrsElement is { ValueKind: JsonValueKind.Object } root)
         {
@@ -802,6 +805,7 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
             yDim = ReadOptionalString(root, "y_dimension");
             tDim = ReadOptionalString(root, "t_dimension");
             temporal = ResolveTemporalExtent(root, tDim, arrays);
+            axes = ResolveAdditionalAxes(root, xDim, yDim, tDim, arrays);
         }
 
         if (string.IsNullOrEmpty(primary) && arrays.Count > 0)
@@ -818,7 +822,122 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
             Srid = srid
         };
 
-        return (srid, extent, primary, xDim, yDim, tDim, temporal);
+        return (srid, extent, primary, xDim, yDim, tDim, temporal, axes);
+    }
+
+    /// <summary>
+    /// Builds the additional (non-spatial, non-temporal) coordinate axes from an
+    /// optional <c>axes</c> manifest in the store <c>.zattrs</c>. Each entry is a
+    /// <c>{ "name", "coordinates":[...] }</c> object for an explicit (possibly
+    /// irregular) axis, or a <c>{ "name", "start", "end" }</c> object for an
+    /// evenly-spaced axis; the sample count is taken from the matching array
+    /// dimension. Spatial and temporal dimensions are excluded so they keep their
+    /// dedicated handling. Entries that do not match any array dimension, or that
+    /// declare neither coordinates nor a start/end pair, are skipped.
+    /// </summary>
+    private static ZarrAxis[] ResolveAdditionalAxes(
+        JsonElement root,
+        string? xDim,
+        string? yDim,
+        string? tDim,
+        List<ZarrArrayMetadata> arrays)
+    {
+        if (!root.TryGetProperty("axes", out var axesEl) || axesEl.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        var result = new List<ZarrAxis>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in axesEl.EnumerateArray())
+        {
+            if (entry.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            var name = ReadOptionalString(entry, "name");
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                continue;
+            }
+
+            // Spatial and temporal axes keep their dedicated handling.
+            if (IsSameDimension(name, xDim) || IsSameDimension(name, yDim) || IsSameDimension(name, tDim))
+            {
+                continue;
+            }
+
+            var count = ResolveDimensionLength(name!, arrays);
+            if (count <= 0 || !seen.Add(name!))
+            {
+                continue;
+            }
+
+            var unit = ReadOptionalString(entry, "unit");
+            var positive = ReadOptionalString(entry, "positive");
+
+            if (entry.TryGetProperty("coordinates", out var coordsEl) && coordsEl.ValueKind == JsonValueKind.Array)
+            {
+                var coords = ReadDoubleArray(coordsEl);
+                if (coords.Length != count)
+                {
+                    continue;
+                }
+                result.Add(new ZarrAxis(name!, count, coords, coords[0], coords[^1], unit, positive));
+                continue;
+            }
+
+            if (TryReadDouble(entry, "start", out var start) && TryReadDouble(entry, "end", out var end))
+            {
+                result.Add(new ZarrAxis(name!, count, Coordinates: null, start, end, unit, positive));
+            }
+        }
+
+        return result.ToArray();
+    }
+
+    private static bool IsSameDimension(string name, string? dimension)
+        => dimension is not null && string.Equals(name, dimension, StringComparison.OrdinalIgnoreCase);
+
+    private static long ResolveDimensionLength(string dimension, List<ZarrArrayMetadata> arrays)
+    {
+        foreach (var array in arrays)
+        {
+            for (var i = 0; i < array.DimensionNames.Length; i++)
+            {
+                if (string.Equals(array.DimensionNames[i], dimension, StringComparison.OrdinalIgnoreCase))
+                {
+                    return array.Shape[i];
+                }
+            }
+        }
+        return 0;
+    }
+
+    private static double[] ReadDoubleArray(JsonElement element)
+    {
+        var values = new List<double>();
+        foreach (var entry in element.EnumerateArray())
+        {
+            if (entry.ValueKind == JsonValueKind.Number && entry.TryGetDouble(out var d))
+            {
+                values.Add(d);
+            }
+            else
+            {
+                return [];
+            }
+        }
+        return values.ToArray();
+    }
+
+    private static bool TryReadDouble(JsonElement root, string property, out double value)
+    {
+        value = 0;
+        return root.TryGetProperty(property, out var el) &&
+               el.ValueKind == JsonValueKind.Number &&
+               el.TryGetDouble(out value);
     }
 
     /// <summary>

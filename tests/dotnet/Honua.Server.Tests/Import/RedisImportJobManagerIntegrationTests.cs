@@ -126,7 +126,11 @@ public sealed class RedisImportJobManagerIntegrationTests
             (await electionA.TryAcquireLeadershipAsync()).Should().BeTrue();
             (await electionB.TryAcquireLeadershipAsync()).Should().BeFalse();
 
-            electionA.Dispose();
+            // Await the deterministic release path (DisposeAsync) rather than the synchronous
+            // Dispose(): the latter schedules the Redis LockRelease as a fire-and-forget Task.Run,
+            // so the lock can still be held when B polls immediately after, intermittently failing
+            // this test. DisposeAsync awaits the release before returning, removing that race.
+            await electionA.DisposeAsync();
             disposedA = true;
 
             (await electionB.TryAcquireLeadershipAsync()).Should().BeTrue(
@@ -136,10 +140,10 @@ public sealed class RedisImportJobManagerIntegrationTests
         {
             if (!disposedA)
             {
-                electionA.Dispose();
+                await electionA.DisposeAsync();
             }
 
-            electionB.Dispose();
+            await electionB.DisposeAsync();
         }
     }
 

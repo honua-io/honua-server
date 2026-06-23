@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/refine_map_package.schema.json",
+  "title": "refine_map_package inputSchema",
+  "description": "Argument shape for refine_map_package (Analyze, Build App; returns the updated MapPackage). Refines an existing map package's composition. Responsibility-level: targets a mapPackageId and carries a refinement delta whose concrete field set finalizes upstream (honua-server#731). See taxonomy.md §Map composition.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["mapPackageId"],
+  "properties": {
+    "mapPackageId": {
+      "type": "string",
+      "description": "Identifier (map_…) of the MapPackage to refine."
+    },
+    "styleId": { "type": "string" },
+    "themeId": { "type": "string" },
+    "sourceBindings": {
+      "type": "array",
+      "items": { "type": "object", "additionalProperties": true }
+    },
+    "initialView": { "type": "object", "additionalProperties": true }
+  }
+}

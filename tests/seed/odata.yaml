@@ -99,11 +99,15 @@ sql:
   - "CREATE INDEX IF NOT EXISTS idx_features_geometry ON features USING GIST(geometry);"
   - "CREATE INDEX IF NOT EXISTS idx_features_geography ON features USING GIST ((ST_Transform(geometry, 4326)::geography));"
   - "CREATE INDEX IF NOT EXISTS idx_features_attributes ON features USING GIN(attributes);"
-  - "DELETE FROM honua.relationships;"
-  - "DELETE FROM honua.service_layers;"
-  - "DELETE FROM honua.layer_fields;"
-  - "DELETE FROM honua.layers;"
-  - "DELETE FROM honua.services;"
+  # honua-server#1568 follow-up (#2020): the honua.* catalog is process-global and not scoped by
+  # per-test search_path isolation, so preserve the mobile-offline-demo fixture's rows (service
+  # 'mobile_offline_demo', layers 68910/68920) that DatabaseMigrationTests seeds in parallel. See
+  # tests/seed/server.yaml for the full rationale.
+  - "DELETE FROM honua.relationships WHERE layer_id NOT IN (68910, 68920) AND related_layer_id NOT IN (68910, 68920);"
+  - "DELETE FROM honua.service_layers WHERE service_name <> 'mobile_offline_demo' AND layer_id NOT IN (68910, 68920);"
+  - "DELETE FROM honua.layer_fields WHERE layer_id NOT IN (68910, 68920);"
+  - "DELETE FROM honua.layers WHERE layer_id NOT IN (68910, 68920);"
+  - "DELETE FROM honua.services WHERE service_name <> 'mobile_offline_demo';"
   - "DELETE FROM features WHERE layer_id IN (0, 1);"
   - |
       INSERT INTO honua.services (

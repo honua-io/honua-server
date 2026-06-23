@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/resources/artifact.schema.json",
+  "title": "Artifact resource payload",
+  "description": "Read-only projection of an ArtifactRef, addressable as honua://results/{rpid}/artifacts/{aid} (outcome view) or honua://workspaces/{wsid}/artifacts/{aid} (lifecycle view). lifecycleState is an MCP-layer projection, not a field of ArtifactRef. See resources.md §honua://results/{result_package_id}/artifacts/{artifact_id}.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["artifactId", "kind"],
+  "properties": {
+    "artifactId": {
+      "type": "string",
+      "description": "Stable identifier (artifact_…)."
+    },
+    "kind": {
+      "type": "string",
+      "description": "ArtifactKind.",
+      "enum": ["Scalar", "FeatureLayer", "Table", "Raster", "File", "Report", "Map", "AppBundle"]
+    },
+    "label": { "type": "string", "description": "Human-readable label." },
+    "uri": {
+      "type": "string",
+      "description": "Canonical content locator (workspace-scoped). NOT the inspection URI."
+    },
+    "contentType": { "type": "string", "description": "MIME type." },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "description": "Canonical metadata map."
+    },
+    "lifecycleState": {
+      "type": "string",
+      "description": "ArtifactLifecycleState (MCP-layer projection from the workspace lifecycle service).",
+      "enum": ["Pending", "Available", "Promoted", "Expired", "Deleted"]
+    },
+    "promotionSourceReady": {
+      "type": "boolean",
+      "description": "Workspace-rooted reads only: source-side promotion preconditions met. Result-rooted reads do not resolve promotion readiness."
+    },
+    "sourceWorkspaceKind": {
+      "type": "string",
+      "enum": ["Scratch", "Persistent", "TempLayer", "SavedLayer", "ResultCollection"]
+    }
+  }
+}

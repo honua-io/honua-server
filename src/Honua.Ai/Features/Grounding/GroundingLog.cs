@@ -21,4 +21,7 @@ internal static partial class GroundingLog
 
     [LoggerMessage(8203, LogLevel.Debug, "Grounding candidate filtered: Kind={Kind}, Id={Id}, Reason={Reason}")]
     public static partial void CandidateFiltered(ILogger logger, string kind, string id, string reason);
+
+    [LoggerMessage(8204, LogLevel.Information, "Grounding binding auto-resolved: Question={QuestionId}, Candidate={CandidateId}, Score={Score}, RunnerUpMargin={RunnerUpMargin}")]
+    public static partial void BindingAutoResolved(ILogger logger, string questionId, string candidateId, double score, double runnerUpMargin);
 }
