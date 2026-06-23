@@ -57,12 +57,23 @@ internal static class ODataSkipTokenService
             return false;
         }
 
-        // Support legacy integer-only tokens for backward compatibility
+        // Support legacy integer-only tokens for backward compatibility, but ONLY when the
+        // request carries no $filter/$orderby. A bare integer has no embedded fingerprint, so
+        // accepting it for a filtered/ordered query lets a token minted for one query be reused
+        // as a raw offset against a different one — defeating the cross-query-reuse guard the
+        // opaque tokens enforce (#1989). When a filter or orderby is present, require the
+        // fingerprinted opaque token.
         if (int.TryParse(token, NumberStyles.Integer, CultureInfo.InvariantCulture, out var legacyOffset))
         {
             if (legacyOffset < 0)
             {
                 errorMessage = "$skiptoken offset must not be negative.";
+                return false;
+            }
+
+            if (!string.IsNullOrEmpty(filter) || !string.IsNullOrEmpty(orderby))
+            {
+                errorMessage = "$skiptoken is not valid for this query. The token may have been generated for a different filter or orderby clause.";
                 return false;
             }
 

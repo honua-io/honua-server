@@ -493,14 +493,13 @@ internal sealed partial class OgcFilterProcessor
             return BboxParseResult.Failure("Bounding box must contain 4 or 6 comma-separated values.");
         }
 
-        // A 3D (6-value) bbox carries vertical (minZ/maxZ) components this 2D feature
-        // surface cannot filter on. Reject it explicitly rather than silently dropping the
-        // Z values so callers learn the vertical constraint was not honored.
-        var hasZ = partCount == 6;
-        if (hasZ)
-        {
-            return BboxParseResult.Failure("3D bounding boxes are not supported.");
-        }
+        // A 6-value bbox (minx,miny,minz,maxx,maxy,maxz) is spec-legal per OGC API Features
+        // Part 1. This 2D feature surface cannot filter on the vertical (minZ/maxZ) component,
+        // so use the horizontal coordinates and ignore Z rather than rejecting the request —
+        // 3D-aware OGC/ArcGIS clients send 6-element boxes (#1987). The horizontal ordinates
+        // live at indices 0,1,3,4 in a 6-value box and 0,1,2,3 in a 4-value box.
+        var maxLowIndex = partCount == 6 ? 3 : 2; // index of the max-X (or max-lat in NE order)
+        var maxHighIndex = partCount == 6 ? 4 : 3; // index of the max-Y (or max-lon in NE order)
 
         double minX;
         double minY;
@@ -509,19 +508,19 @@ internal sealed partial class OgcFilterProcessor
 
         if (crsDefinition.AxisOrder == AxisOrder.NorthEast)
         {
-            // NE axis order: lat, lon, lat, lon  →  lat→Y, lon→X
+            // NE axis order: lat, lon (, z), lat, lon (, z)  →  lat→Y, lon→X
             minX = parts[1];
             minY = parts[0];
-            maxX = parts[3];
-            maxY = parts[2];
+            maxX = parts[maxHighIndex];
+            maxY = parts[maxLowIndex];
         }
         else
         {
-            // Default (EastNorth / CRS84): lon, lat, lon, lat
+            // Default (EastNorth / CRS84): lon, lat (, z), lon, lat (, z)
             minX = parts[0];
             minY = parts[1];
-            maxX = parts[2];
-            maxY = parts[3];
+            maxX = parts[maxLowIndex];
+            maxY = parts[maxHighIndex];
         }
 
         if (minY > maxY)
