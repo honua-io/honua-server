@@ -9555,6 +9555,7 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Infrastructure.EmptyServerCatalogEndpointTests.GetStacCatalog_FreshServer_Returns200WithEmptyChildLinks",
         "Honua.Server.Tests.Features.Infrastructure.EmptyServerCatalogEndpointTests.GetStacCatalog_FreshServer_ReturnsValidContentType",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacCatalogTests.GetCatalog_AdvertisesQueryablesRelLink",
         "Honua.Server.Tests.Features.Protocols.Stac.StacCatalogTests.GetCatalog_AdvertisesValidatorRequiredHypermediaLinks",
         "Honua.Server.Tests.Features.Protocols.Stac.StacCatalogTests.GetCatalog_ContainsConformanceClasses",
         "Honua.Server.Tests.Features.Protocols.Stac.StacCatalogTests.GetCatalog_EmitsBothGetAndPostSearchLinksWithMethodField",
@@ -9593,7 +9594,8 @@
         "Honua.Server.Tests.Features.Protocols.Stac.StacCollectionsTests.GetCollection_ById_ReturnsStrongETagAndSupportsConditionalRequest",
         "Honua.Server.Tests.Features.Protocols.Stac.StacCollectionsTests.GetCollection_HasCrossProtocolLinks",
         "Honua.Server.Tests.Features.Protocols.Stac.StacCollectionsTests.GetCollection_NotFound_Returns404",
-        "Honua.Server.Tests.Features.Protocols.Stac.StacCollectionsTests.GetCollection_WithProjectedExtent_UsesTransformFallbackForSpatialBbox"
+        "Honua.Server.Tests.Features.Protocols.Stac.StacCollectionsTests.GetCollection_WithProjectedExtent_UsesTransformFallbackForSpatialBbox",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacQueryablesTests.GetCollection_AdvertisesQueryablesRelLink"
       ],
       "proof_ledger_surface": "stac-api",
       "maturity": "implemented"
@@ -9719,6 +9721,7 @@
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_WithSortBy_ReturnsHonuaSortedItems",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_WithStringIds_FiltersByStacItemId",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_WithThreeDimensionalBbox_ReturnsItems",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_WithUndeclaredQueryable_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_WithUnsupportedExplicitGeometryCrsInFilter_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_WithValidatorFieldsSyntax_ProjectsTopLevelFields"
       ],
