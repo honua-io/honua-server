@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/resources/deployment.schema.json",
+  "title": "Deployment resource payload",
+  "description": "Responsibility-level projection of a Deployment at honua://deployments/{deployment_id}. Concrete field spellings finalize upstream (honua-server#732); only the stable deploymentId is pinned. Responsibilities: deployment kind, target binding (targetRef → AppPackage|MapPackage|PublishedService|opaque Process/Pipeline), hosting mode, route configuration, revision id, runtime profile, delivery artifact refs, runtime config, visibility scope, auth/approval policy refs, publication lifecycle state. Read-only — no control paths. See resources.md §honua://deployments/{deployment_id}.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["deploymentId"],
+  "properties": {
+    "deploymentId": {
+      "type": "string",
+      "description": "Stable identifier (dep_…)."
+    },
+    "kind": {
+      "type": "string",
+      "description": "Package class.",
+      "enum": ["app_package", "published_service", "process", "pipeline"]
+    },
+    "targetRef": {
+      "type": "string",
+      "description": "Resolves to AppPackage | MapPackage | PublishedService; Process/Pipeline targets are opaque identifiers."
+    },
+    "hostingMode": { "type": "string" },
+    "revisionId": { "type": "string", "description": "Revision identifier (rev_…)." },
+    "publicationState": { "type": "string", "description": "Read-only publication lifecycle projection." }
+  }
+}

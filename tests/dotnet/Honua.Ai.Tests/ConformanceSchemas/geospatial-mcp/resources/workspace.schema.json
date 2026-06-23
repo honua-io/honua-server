@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/resources/workspace.schema.json",
+  "title": "Workspace resource payload",
+  "description": "Read-only projection of a WorkspaceRef, addressable as honua://workspaces/{workspace_id}. The canonical kind values are Scratch/Persistent/TempLayer/SavedLayer/ResultCollection; the reference implementation projects lower_snake_case wire spellings (x-honua-reference-shape). lifecycleState is an MCP-layer projection. See resources.md §honua://workspaces/{workspace_id}.",
+  "x-honua-reference-shape": true,
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["workspaceId"],
+  "properties": {
+    "workspaceId": {
+      "type": "string",
+      "description": "Stable identifier (ws_…)."
+    },
+    "kind": {
+      "type": "string",
+      "description": "WorkspaceKind. Canonical enum names are Scratch/Persistent/TempLayer/SavedLayer/ResultCollection; the reference implementation emits the lower_snake_case wire spelling.",
+      "enum": [
+        "scratch",
+        "persistent",
+        "temp_layer",
+        "saved_layer",
+        "result_collection",
+        "Scratch",
+        "Persistent",
+        "TempLayer",
+        "SavedLayer",
+        "ResultCollection",
+        ""
+      ]
+    },
+    "label": { "type": "string", "description": "Human-readable label." },
+    "uri": { "type": "string", "description": "Canonical URI." },
+    "expiresAt": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "Expiration timestamp when applicable."
+    },
+    "status": {
+      "type": "string",
+      "description": "WorkspaceLifecycleState projection. Reference wire spellings: active, cleanup_pending, sealed, not_found, degraded.",
+      "enum": ["active", "cleanup_pending", "sealed", "not_found", "degraded"]
+    },
+    "cleanupScheduledAt": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "resultsUri": { "type": ["string", "null"] },
+    "notImplementedReason": { "type": "string" }
+  }
+}

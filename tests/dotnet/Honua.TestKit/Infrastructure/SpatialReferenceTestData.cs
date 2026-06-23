@@ -150,7 +150,11 @@ public static class SpatialReferenceTestData
             DELETE FROM honua.services WHERE service_name = '{SpatialReferenceTestLayerCatalog.ServiceId}';
             """;
 
-        await fixture.ExecuteAsync(sql, schemaName);
+        // #2020: this shared cleanup deletes from literal honua.* catalog tables; route it
+        // through the schema-mutation advisory lock so it serializes with concurrent
+        // seeders instead of racing the catalog (40P01). Callers span OGC API / GeoServices /
+        // OData spatial-reference suites that run in sibling collections.
+        await fixture.ApplyGlobalSeedSqlAsync(sql, schemaName);
     }
 
     private static string ResolveSeedPath()
