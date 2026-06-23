@@ -31,8 +31,14 @@ set -euo pipefail
 : "${TRAIN_FLAKE_RERUN_CAP:=1}" # max flake reruns per failing run.
 
 # Flake signature regex (classify-flake). A failing job whose log matches this
-# is treated as environmental and rerun once; reproducing twice => real.
-: "${TRAIN_FLAKE_REGEX:=40P01|deadlock detected|ryuk|Testcontainers.*(timed out|connection refused)}"
+# is treated as environmental and rerun once; reproducing twice => real. Beyond
+# the Postgres deadlock/Testcontainers signatures, the test harness's isolation
+# race surfaces as transient schema-setup errors ("relation/column/schema ...
+# does not exist", "does not exist at character N") when a test runs before its
+# per-test schema is migrated (honua-server#1568/#2049). These are intermittent:
+# the rerun clears a true race, while a genuine missing-migration bug reproduces
+# and still escalates — so it is safe to treat them as flake candidates.
+: "${TRAIN_FLAKE_REGEX:=40P01|deadlock detected|ryuk|Testcontainers.*(timed out|connection refused)|relation .* does not exist|column .* does not exist|schema .* does not exist|does not exist at character}"
 
 # Heavy CI jobs the train treats as NON-BLOCKING. They run on EVERY batch (not
 # shard-targeted), flake on environment (Docker registry, browser, JS/Python
