@@ -293,9 +293,71 @@ assert_eq "select: oldest-first, draft/hold/conflict/fail excluded" "${sel}" "[1
 unset TRAIN_PR_LIST_JSON
 # CI Gate state mapping.
 assert_eq "select: COMPLETED+SUCCESS => SUCCESS" "$(train_select_ci_gate_state '[{"name":"CI Gate","status":"COMPLETED","conclusion":"SUCCESS"}]')" "SUCCESS"
+# A bare FAILURE rollup with no detailsUrl/jobs => conservative FAIL (unchanged).
 assert_eq "select: COMPLETED+FAILURE => FAIL" "$(train_select_ci_gate_state '[{"name":"CI Gate","status":"COMPLETED","conclusion":"FAILURE"}]')" "FAIL"
 assert_eq "select: QUEUED => PENDING" "$(train_select_ci_gate_state '[{"name":"CI Gate","status":"QUEUED","conclusion":""}]')" "PENDING"
 assert_eq "select: absent => MISSING" "$(train_select_ci_gate_state '[]')" "MISSING"
+
+echo
+echo "== select: merge-through-flakes (FAILURE => FLAKE only when flake-only) =="
+# Mock the run-id + per-run failing-job + per-job-log lookups (no network).
+# A CI Gate FAILURE rollup carries a detailsUrl with the run id; the classifier
+# fetches that run's failed leaf jobs, then (for shard jobs) their logs.
+GATE_FAIL='[{"name":"CI Gate","status":"COMPLETED","conclusion":"FAILURE","detailsUrl":"https://github.com/honua-io/honua-server/actions/runs/424242/job/9"}]'
+export TRAIN_SELECT_FAILED_JOBS_FOR_RUN=__sel_failed_jobs
+export TRAIN_SELECT_JOB_LOG_FOR=__sel_job_log
+# Per-fixture job/log fixtures keyed off SEL_CASE. Each failing-job line is
+# "<conclusion>\t<name>" (matching the live `gh run view --json jobs` shape).
+__sel_failed_jobs() {  # <run-id>
+  case "${SEL_CASE:-}" in
+    aggregator)  printf 'failure\tCI Gate\nfailure\tTest Suite Summary\n' ;;
+    cancelshard) printf 'cancelled\tServer Tests (Server Features Misc)\nfailure\tTest Suite Summary\nfailure\tCI Gate\n' ;;
+    shard_flake) printf 'failure\tServer Tests (STAC and API Governance)\nfailure\tTest Suite Summary\nfailure\tCI Gate\n' ;;
+    foundation)  printf 'failure\t.NET Foundation Tests\nfailure\tServer Tests (STAC and API Governance)\nfailure\tTest Suite Summary\nfailure\tCI Gate\n' ;;
+    buildfmt)    printf 'failure\tBuild & Format\nfailure\tTest Suite Summary\nfailure\tCI Gate\n' ;;
+    shard_real)  printf 'failure\tServer Tests (STAC and API Governance)\nfailure\tTest Suite Summary\nfailure\tCI Gate\n' ;;
+    nojobs)      : ;;
+    *) : ;;
+  esac
+}
+__sel_job_log() {  # <run-id> <job-name>
+  case "${SEL_CASE:-}" in
+    shard_flake) printf 'ERROR 40P01: deadlock detected during seed\n' ;;
+    shard_real)  printf 'Assert.Equal() Failure: expected 3 actual 4\n' ;;
+    *) : ;;
+  esac
+}
+export -f __sel_failed_jobs __sel_job_log
+
+# (a) aggregator-only failure (CI Gate + Test Suite Summary) => FLAKE (ready).
+assert_eq "select(flake): aggregator-only FAILURE => FLAKE" \
+  "$(SEL_CASE=aggregator train_select_ci_gate_state "${GATE_FAIL}")" "FLAKE"
+# (b) shard FAILURE whose log matches 40P01 flake regex => FLAKE.
+assert_eq "select(flake): 40P01 shard log => FLAKE" \
+  "$(SEL_CASE=shard_flake train_select_ci_gate_state "${GATE_FAIL}")" "FLAKE"
+# (b2) a CANCELLED shard alongside aggregators (cancel-cascade) => FLAKE.
+assert_eq "select(flake): cancelled shard => FLAKE" \
+  "$(SEL_CASE=cancelshard train_select_ci_gate_state "${GATE_FAIL}")" "FLAKE"
+# (c) real-gate job (.NET Foundation Tests) failed => FAIL (skip).
+assert_eq "select(flake): .NET Foundation Tests failed => FAIL" \
+  "$(SEL_CASE=foundation train_select_ci_gate_state "${GATE_FAIL}")" "FAIL"
+# (d) real-gate job (Build & Format) failed => FAIL.
+assert_eq "select(flake): Build & Format failed => FAIL" \
+  "$(SEL_CASE=buildfmt train_select_ci_gate_state "${GATE_FAIL}")" "FAIL"
+# (extra) shard FAILURE with a real assertion log (no flake regex) => FAIL.
+assert_eq "select(flake): real shard assertion => FAIL" \
+  "$(SEL_CASE=shard_real train_select_ci_gate_state "${GATE_FAIL}")" "FAIL"
+# (extra) no failing jobs fetchable => conservative FAIL.
+assert_eq "select(flake): unfetchable jobs => FAIL (conservative)" \
+  "$(SEL_CASE=nojobs train_select_ci_gate_state "${GATE_FAIL}")" "FAIL"
+# (e) SUCCESS unchanged (and PENDING/MISSING never touch the run lookups).
+assert_eq "select(flake): SUCCESS unchanged" \
+  "$(train_select_ci_gate_state '[{"name":"CI Gate","status":"COMPLETED","conclusion":"SUCCESS"}]')" "SUCCESS"
+assert_eq "select(flake): PENDING unchanged" \
+  "$(train_select_ci_gate_state '[{"name":"CI Gate","status":"IN_PROGRESS","conclusion":""}]')" "PENDING"
+assert_eq "select(flake): MISSING unchanged" \
+  "$(train_select_ci_gate_state '[]')" "MISSING"
+unset TRAIN_SELECT_FAILED_JOBS_FOR_RUN TRAIN_SELECT_JOB_LOG_FOR
 
 echo
 echo "== Phase 2: gated Bedrock LLM judgments (mock; no real Bedrock) =="
