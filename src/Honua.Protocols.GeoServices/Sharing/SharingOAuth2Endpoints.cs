@@ -231,6 +231,7 @@ internal static class SharingOAuth2Endpoints
             AccessToken = result.AccessToken!,
             ExpiresIn = result.ExpiresInSeconds,
             RefreshToken = result.RefreshToken,
+            Scope = result.Scope,
         };
 
         return Results.Json(response, SharingRestJsonContext.Default.OAuth2TokenResponse, contentType: JsonContentType);

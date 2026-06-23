@@ -29,6 +29,14 @@ public sealed class PortalOAuthClientCredentialsTests
 {
     private const string ClientIp = "203.0.113.10";
 
+    private static readonly string[] ClientCredentialsGrantTypes = ["client_credentials"];
+    private static readonly string[] AuthorizationCodeGrantTypes = ["authorization_code"];
+    private static readonly string[] ReadOnlyScopes = ["features:read"];
+    private static readonly string[] ReadWriteScopes = ["features:read", "features:write"];
+    private static readonly string[] ServicesRead = ["services:read"];
+    private static readonly string[] ServicesWrite = ["services:write"];
+    private static readonly string[] AdminAll = ["admin:*"];
+
     [UnitTest]
     public async Task Exchange_ClientCredentials_WhenDisabled_ReturnsUnsupportedGrantType()
     {
@@ -141,6 +149,150 @@ public sealed class PortalOAuthClientCredentialsTests
         result.Error.Should().Be("invalid_request");
     }
 
+    [UnitTest]
+    public async Task Exchange_FirstClassClient_MintsTokenCarryingGrantedScopesMappedToPermissions()
+    {
+        var (service, issuer, clientId, secret) = await CreateFirstClassServiceAsync(
+            allowedGrantTypes: ClientCredentialsGrantTypes,
+            allowedScopes: ReadWriteScopes,
+            scopeDefinitions:
+            [
+                ("features:read", ServicesRead),
+                ("features:write", ServicesWrite),
+            ]);
+
+        var request = FirstClassRequest(clientId, secret) with { Scope = "features:read" };
+        var result = await service.ExchangeAsync(request, requestBinding: "x", CancellationToken.None);
+
+        result.Succeeded.Should().BeTrue();
+        // The token response carries exactly the granted scope (RFC 6749 §5.1).
+        result.Scope.Should().Be("features:read");
+        result.RefreshToken.Should().BeNull();
+
+        var validation = await issuer.ValidateAsync(
+            result.AccessToken!,
+            new PortalTokenBinding(Referer: null, ClientIp: ClientIp),
+            CancellationToken.None);
+        validation.Should().NotBeNull();
+        // The granted scope maps to its catalogue permission; the unrequested scope's
+        // permission is absent (scope narrowing through the catalogue).
+        validation!.Principal.IsInRole("services:read").Should().BeTrue();
+        validation.Principal.IsInRole("services:write").Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task Exchange_FirstClassClient_RequestedScopeOutsideAllowList_IsDropped()
+    {
+        var (service, issuer, clientId, secret) = await CreateFirstClassServiceAsync(
+            allowedGrantTypes: ClientCredentialsGrantTypes,
+            allowedScopes: ReadOnlyScopes,
+            scopeDefinitions:
+            [
+                ("features:read", ServicesRead),
+                ("admin:all", AdminAll),
+            ]);
+
+        var request = FirstClassRequest(clientId, secret) with { Scope = "features:read admin:all" };
+        var result = await service.ExchangeAsync(request, requestBinding: "x", CancellationToken.None);
+
+        result.Succeeded.Should().BeTrue();
+        result.Scope.Should().Be("features:read");
+
+        var validation = await issuer.ValidateAsync(
+            result.AccessToken!,
+            new PortalTokenBinding(Referer: null, ClientIp: ClientIp),
+            CancellationToken.None);
+        validation!.Principal.IsInRole("services:read").Should().BeTrue();
+        validation.Principal.IsInRole("admin:*").Should().BeFalse("a scope outside the client allow-list is never escalated");
+    }
+
+    [UnitTest]
+    public async Task Exchange_FirstClassClient_NotAuthorizedForGrant_ReturnsUnauthorizedClient()
+    {
+        var (service, _, clientId, secret) = await CreateFirstClassServiceAsync(
+            allowedGrantTypes: AuthorizationCodeGrantTypes,
+            allowedScopes: ReadOnlyScopes,
+            scopeDefinitions: Array.Empty<(string, string[])>());
+
+        var result = await service.ExchangeAsync(
+            FirstClassRequest(clientId, secret),
+            requestBinding: "x",
+            CancellationToken.None);
+
+        result.Succeeded.Should().BeFalse();
+        result.Error.Should().Be("unauthorized_client");
+    }
+
+    [UnitTest]
+    public async Task Exchange_FirstClassClient_WrongSecret_FallsBackAndFailsInvalidClient()
+    {
+        var (service, _, clientId, _) = await CreateFirstClassServiceAsync(
+            allowedGrantTypes: ClientCredentialsGrantTypes,
+            allowedScopes: ReadOnlyScopes,
+            scopeDefinitions: Array.Empty<(string, string[])>());
+
+        var result = await service.ExchangeAsync(
+            FirstClassRequest(clientId, "secret_wrong"),
+            requestBinding: "x",
+            CancellationToken.None);
+
+        result.Succeeded.Should().BeFalse();
+        result.Error.Should().Be("invalid_client");
+    }
+
+    private static PortalOAuthTokenRequest FirstClassRequest(string clientId, string? clientSecret)
+        => new(
+            GrantType: "client_credentials",
+            Code: null,
+            CodeVerifier: null,
+            RedirectUri: null,
+            ClientId: clientId,
+            RefreshToken: null,
+            IncludeRefreshToken: false,
+            ClientSecret: clientSecret,
+            Scope: null,
+            ClientIp: ClientIp);
+
+    private static async Task<(PortalOAuthTokenService Service, IPortalTokenIssuer Issuer, string ClientId, string Secret)>
+        CreateFirstClassServiceAsync(
+            IReadOnlyList<string> allowedGrantTypes,
+            IReadOnlyList<string> allowedScopes,
+            IReadOnlyList<(string Scope, string[] Permissions)> scopeDefinitions)
+    {
+        var memoryCache = new MemoryCache(new MemoryCacheOptions());
+        var issuer = new PortalTokenIssuer(memoryCache, NullLogger<PortalTokenIssuer>.Instance);
+        var store = new PortalOAuthStore(memoryCache, NullLogger<PortalOAuthStore>.Instance);
+        var apiKeyStore = new InMemoryAdminApiKeyStore();
+
+        var clientStore = new InMemoryOAuthClientStore();
+        var created = await clientStore.CreateAsync(
+            new OAuthClientRegistration(
+                Name: "etl-worker",
+                ClientType: OAuthClientType.Confidential,
+                AllowedGrantTypes: allowedGrantTypes,
+                RedirectUris: [],
+                AllowedScopes: allowedScopes,
+                ExpiresAt: null,
+                CreatedBy: "test"),
+            CancellationToken.None);
+
+        var scopeCatalogue = new InMemoryOAuthScopeCatalogue();
+        foreach (var (scope, permissions) in scopeDefinitions)
+        {
+            await scopeCatalogue.DefineAsync(
+                new OAuthScopeDefinition(scope, scope, permissions),
+                CancellationToken.None);
+        }
+
+        var options = Options.Create(new PortalTokenAuthenticationOptions
+        {
+            OAuth2 = new PortalOAuth2Options { EnableClientCredentials = true },
+        });
+
+        var service = new PortalOAuthTokenService(issuer, store, apiKeyStore, clientStore, scopeCatalogue, options);
+        return (service, issuer, created.Record.ClientId, created.Secret!);
+    }
+
     private static PortalOAuthTokenRequest ClientCredentialsRequest(string? clientSecret)
         => new(
             GrantType: "client_credentials",
@@ -174,7 +326,9 @@ public sealed class PortalOAuthClientCredentialsTests
             OAuth2 = new PortalOAuth2Options { EnableClientCredentials = enableClientCredentials },
         });
 
-        var service = new PortalOAuthTokenService(issuer, store, apiKeyStore, options);
+        var clientStore = new InMemoryOAuthClientStore();
+        var scopeCatalogue = new InMemoryOAuthScopeCatalogue();
+        var service = new PortalOAuthTokenService(issuer, store, apiKeyStore, clientStore, scopeCatalogue, options);
         return (service, issuer, created.Key);
     }
 }

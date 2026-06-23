@@ -128,6 +128,15 @@ public static class PortalTokenAuthenticationExtensions
         // the request like the credential verifier; the store is registered as a
         // singleton because it is stateless over the shared distributed/memory cache.
         services.TryAddSingleton<PortalOAuthStore>();
+
+        // First-class OAuth2 client registry + scope catalogue (ADR-0053 Increment 2,
+        // #1888). Singletons mirror the in-memory IAdminApiKeyStore pattern: no
+        // parallel durable token store (ADR-0049). They are additive — the flag-gated
+        // Increment-1 client_credentials path keeps working via the API-key fallback.
+        services.TryAddSingleton<IOAuthClientStore>(
+            sp => new InMemoryOAuthClientStore(sp.GetService<TimeProvider>()));
+        services.TryAddSingleton<IOAuthScopeCatalogue, InMemoryOAuthScopeCatalogue>();
+
         services.AddScoped<PortalOAuthBroker>();
         services.AddScoped<PortalOAuthTokenService>();
 

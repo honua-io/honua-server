@@ -22,6 +22,8 @@ internal sealed class PortalOAuthTokenService(
     IPortalTokenIssuer tokenIssuer,
     PortalOAuthStore store,
     IAdminApiKeyStore apiKeyStore,
+    IOAuthClientStore clientStore,
+    IOAuthScopeCatalogue scopeCatalogue,
     IOptions<PortalTokenAuthenticationOptions> tokenOptions)
 {
     private const string AuthorizationCodeGrant = "authorization_code";
@@ -36,6 +38,8 @@ internal sealed class PortalOAuthTokenService(
     private readonly IPortalTokenIssuer _tokenIssuer = tokenIssuer;
     private readonly PortalOAuthStore _store = store;
     private readonly IAdminApiKeyStore _apiKeyStore = apiKeyStore;
+    private readonly IOAuthClientStore _clientStore = clientStore;
+    private readonly IOAuthScopeCatalogue _scopeCatalogue = scopeCatalogue;
     private readonly PortalTokenAuthenticationOptions _tokenOptions = tokenOptions.Value;
 
     /// <summary>Exchanges a grant for an Esri-shaped token envelope.</summary>
@@ -66,11 +70,6 @@ internal sealed class PortalOAuthTokenService(
         PortalOAuthTokenRequest request,
         CancellationToken cancellationToken)
     {
-        // The client_secret is the service client's credential. Per ADR-0049/0053 it
-        // is validated against the existing Admin API-key store rather than a new
-        // secret store: the same SHA-256-hashed, expiry-aware, revocable key that
-        // X-API-Key automation already uses. client_id is a human-readable label, not
-        // a second secret — the secret alone authenticates.
         var secret = request.ClientSecret;
         if (string.IsNullOrWhiteSpace(secret))
         {
@@ -78,34 +77,119 @@ internal sealed class PortalOAuthTokenService(
             return PortalOAuthTokenResult.Failure("invalid_client", "client_secret is required for the client_credentials grant.");
         }
 
-        var validation = await _apiKeyStore.ValidateAsync(secret, cancellationToken).ConfigureAwait(false);
-        if (validation is null)
+        // Increment 2 (ADR-0053, #1888): prefer the first-class OAuth client registry.
+        // A client presents a real client_id/client_secret pair; the secret is matched
+        // against the per-application registry (SHA-256-hashed at rest, revocable,
+        // expiry-aware). Roles come from the scope catalogue: the requested scope is
+        // resolved to RBAC permissions, bounded by the client's allowed scopes. The
+        // credential is validated before the IP-binding check so an unknown/bad
+        // credential always returns invalid_client (RFC 6749 §5.2), never leaking the
+        // binding-resolution failure mode.
+        OAuthClientRecord? client = null;
+        if (!string.IsNullOrWhiteSpace(request.ClientId))
         {
-            // Do not distinguish unknown-client from bad-secret (RFC 6749 §5.2).
-            return PortalOAuthTokenResult.Failure("invalid_client", "Client authentication failed.");
+            client = await _clientStore
+                .ValidateSecretAsync(request.ClientId, secret, cancellationToken)
+                .ConfigureAwait(false);
         }
 
-        // Bind the token to the issuing client's IP: service clients have no browser
-        // referer, so an IP binding mirrors how API-key automation reaches the request
-        // path and is validated by PortalTokenAuthenticationHandler (binding.ClientIp).
+        // Increment 1 backward-compatible fallback (ADR-0053): when no first-class
+        // client matches, the client_secret is validated against the existing Admin
+        // API-key store — the same SHA-256-hashed, expiry-aware, revocable key that
+        // X-API-Key automation already uses. client_id is a human-readable label; the
+        // secret alone authenticates. This keeps every flag-gated Increment-1
+        // deployment working byte-for-byte.
+        AdminApiKeyValidationResult? validation = null;
+        if (client is null)
+        {
+            validation = await _apiKeyStore.ValidateAsync(secret, cancellationToken).ConfigureAwait(false);
+            if (validation is null)
+            {
+                // Do not distinguish unknown-client from bad-secret (RFC 6749 §5.2).
+                return PortalOAuthTokenResult.Failure("invalid_client", "Client authentication failed.");
+            }
+        }
+
+        // The credential is valid; now bind the token to the issuing client's IP.
+        // Service clients have no browser referer, so an IP binding mirrors how API-key
+        // automation reaches the request path and is validated by
+        // PortalTokenAuthenticationHandler (binding.ClientIp).
         var clientIp = request.ClientIp;
         if (string.IsNullOrWhiteSpace(clientIp))
         {
             return PortalOAuthTokenResult.Failure("invalid_request", "Client IP could not be determined for token binding.");
         }
 
+        if (client is not null)
+        {
+            return await IssueClientCredentialsAsync(client, request.Scope, clientIp, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         // Identity is the API-key record: its name labels the principal and its
         // permissions become the principal's roles, so the existing RBAC resolver
         // (#1375) makes the per-operation decision exactly as for any other principal.
-        var roles = ResolveRoles(validation.Record.Permissions, request.Scope);
+        var roles = ResolveRoles(validation!.Record.Permissions, request.Scope);
 
+        return await MintClientCredentialsTokenAsync(
+            principalId: validation.Record.Name,
+            roles: roles,
+            clientIp: clientIp,
+            grantedScope: null,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<PortalOAuthTokenResult> IssueClientCredentialsAsync(
+        OAuthClientRecord client,
+        string? requestedScope,
+        string clientIp,
+        CancellationToken cancellationToken)
+    {
+        // A first-class client must be permitted to use the client_credentials grant.
+        // When no grant types are registered the client is unrestricted (back-compat
+        // for a registration that omitted them); otherwise the grant must be listed.
+        if (client.AllowedGrantTypes.Count > 0 &&
+            !client.AllowedGrantTypes.Contains(ClientCredentialsGrant, StringComparer.OrdinalIgnoreCase))
+        {
+            // RFC 6749 §5.2: the client is not authorized for this grant type.
+            return PortalOAuthTokenResult.Failure(
+                "unauthorized_client",
+                "This client is not authorized to use the client_credentials grant.");
+        }
+
+        // Resolve the requested scope to RBAC permissions through the catalogue,
+        // bounded by the client's allowed scopes. Unknown/disallowed scopes are
+        // dropped — never escalated. The token carries exactly the granted scopes.
+        var grant = await _scopeCatalogue
+            .ResolveGrantAsync(requestedScope, client.AllowedScopes, cancellationToken)
+            .ConfigureAwait(false);
+
+        var grantedScope = grant.GrantedScopes.Count > 0
+            ? string.Join(' ', grant.GrantedScopes)
+            : null;
+
+        return await MintClientCredentialsTokenAsync(
+            principalId: client.ClientId,
+            roles: grant.GrantedPermissions,
+            clientIp: clientIp,
+            grantedScope: grantedScope,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<PortalOAuthTokenResult> MintClientCredentialsTokenAsync(
+        string principalId,
+        IReadOnlyList<string> roles,
+        string clientIp,
+        string? grantedScope,
+        CancellationToken cancellationToken)
+    {
         var ttlMinutes = ResolveExpirationMinutes(requested: null);
         var expiresAt = DateTimeOffset.UtcNow.AddMinutes(ttlMinutes);
 
         var issuance = await _tokenIssuer.IssueAsync(
             new PortalTokenIssueRequest(
-                PrincipalId: validation.Record.Name,
-                DisplayName: validation.Record.Name,
+                PrincipalId: principalId,
+                DisplayName: principalId,
                 TenantId: null,
                 Roles: roles,
                 ClientType: PortalTokenClientType.Ip,
@@ -117,7 +201,7 @@ internal sealed class PortalOAuthTokenService(
 
         // No refresh token for client_credentials (RFC 6749 §4.4.3): the client simply
         // re-requests with its own secret, avoiding a long-lived secondary credential.
-        return PortalOAuthTokenResult.Success(issuance.Token, expiresInSeconds, refreshToken: null);
+        return PortalOAuthTokenResult.Success(issuance.Token, expiresInSeconds, refreshToken: null, scope: grantedScope);
     }
 
     private static IReadOnlyList<string> ResolveRoles(IReadOnlyList<string> keyPermissions, string? requestedScope)
@@ -372,11 +456,14 @@ internal sealed record PortalOAuthTokenResult(
     long ExpiresInSeconds,
     string? RefreshToken,
     string? Error,
-    string? ErrorDescription)
+    string? ErrorDescription,
+    // Space-delimited scopes actually granted (RFC 6749 §5.1), set for the
+    // first-class client_credentials grant (#1888). Null when no scope applies.
+    string? Scope = null)
 {
     /// <summary>Builds a successful token result.</summary>
-    public static PortalOAuthTokenResult Success(string accessToken, long expiresInSeconds, string? refreshToken)
-        => new(true, accessToken, expiresInSeconds, refreshToken, null, null);
+    public static PortalOAuthTokenResult Success(string accessToken, long expiresInSeconds, string? refreshToken, string? scope = null)
+        => new(true, accessToken, expiresInSeconds, refreshToken, null, null, scope);
 
     /// <summary>Builds an OAuth2 error result.</summary>
     public static PortalOAuthTokenResult Failure(string error, string description)
