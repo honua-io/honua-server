@@ -264,6 +264,9 @@ train_metrics_render() {
     --argjson skipped_select "$(train_metric_get skipped_select 0)" \
     --argjson flake_reruns "$(train_metric_get flake_reruns 0)" \
     --argjson forward_fixes "$(train_metric_get forward_fixes 0)" \
+    --argjson preexisting_passes "$(train_metric_get preexisting_passes 0)" \
+    --argjson autofix_attempts "$(train_metric_get autofix_attempts 0)" \
+    --argjson autofix_fixes "$(train_metric_get autofix_fixes 0)" \
     --argjson attribution_drops "$(train_metric_get attribution_drops 0)" \
     --argjson shard_count "${shard_count:-0}" \
     --argjson run_all "${run_all:-false}" \
@@ -284,6 +287,9 @@ train_metrics_render() {
         escalated: $escalated,
         flake_reruns: $flake_reruns,
         forward_fixes: $forward_fixes,
+        preexisting_passes: $preexisting_passes,
+        autofix_attempts: $autofix_attempts,
+        autofix_fixes: $autofix_fixes,
         attribution_drops: $attribution_drops
       },
       smart_ci: { shard_count: $shard_count, run_all: $run_all },

@@ -40,6 +40,16 @@ on:
         type: boolean
         required: false
         default: false
+      use_autofix:
+        description: 'Enable the OPTIONAL roll-forward AI fix-agent (TRAIN_AUTOFIX=1). Off by default. When on, a batch-introduced REAL failure (after the pre-existing filter, not a flake) is patched FORWARD by Claude via Bedrock, surgically re-verified, then landed — instead of escalating. Capped at 2 attempts; still-failing => escalate. Requires the BEDROCK_AWS_* secrets.'
+        type: boolean
+        required: false
+        default: false
+      autofix_model:
+        description: 'Bedrock model id for the AI fix-agent (code edits). Default a Sonnet-class model; override per your account entitlement.'
+        type: string
+        required: false
+        default: ''
 
 # Serialize train runs: a batch in flight must finish before the next starts.
 # cancel-in-progress:false so we never abandon a half-landed batch mid-flight.
@@ -52,6 +62,7 @@ permissions:
   pull-requests: write   # merge PRs, edit labels, comment
   actions: write         # dispatch and rerun CI runs
   issues: write          # maintain the Merge Train State issue
+  id-token: write        # OIDC for AWS Bedrock (claude-code-action), when autofix on
 
 jobs:
   train:
@@ -87,6 +98,8 @@ jobs:
           DISPATCH_APPLY: ${{ github.event.inputs.train_apply }}
           DISPATCH_MAX_BATCH: ${{ github.event.inputs.max_batch }}
           DISPATCH_USE_LLM: ${{ github.event.inputs.use_llm }}
+          DISPATCH_USE_AUTOFIX: ${{ github.event.inputs.use_autofix }}
+          DISPATCH_AUTOFIX_MODEL: ${{ github.event.inputs.autofix_model }}
           HAVE_BEDROCK_KEYS: ${{ secrets.BEDROCK_AWS_ACCESS_KEY_ID != '' && secrets.BEDROCK_AWS_SECRET_ACCESS_KEY != '' }}
         run: |
           set -euo pipefail
@@ -111,7 +124,43 @@ jobs:
             fi
           fi
           echo "train_llm=${llm}" >> "$GITHUB_OUTPUT"
-          echo "Resolved TRAIN_APPLY=${apply} (event=${EVENT_NAME}) MAX_BATCH=${mb} TRAIN_LLM=${llm}"
+          # TRAIN_AUTOFIX defaults to 0 for ALL triggers (like TRAIN_LLM). It can
+          # only turn on via an explicit workflow_dispatch with use_autofix=true,
+          # train_apply=true (autofix is a LIVE landing path), AND configured
+          # Bedrock access-key secrets. Scheduled / workflow_run are never autofix.
+          autofix=0
+          if [[ "${EVENT_NAME}" == "workflow_dispatch" && "${DISPATCH_USE_AUTOFIX}" == "true" ]]; then
+            if [[ "${apply}" != "1" ]]; then
+              echo "::warning::use_autofix=true ignored: autofix only runs in LIVE mode (train_apply=true). Running without autofix."
+            elif [[ "${HAVE_BEDROCK_KEYS}" != "true" ]]; then
+              echo "::warning::use_autofix=true but secrets.BEDROCK_AWS_ACCESS_KEY_ID / BEDROCK_AWS_SECRET_ACCESS_KEY are unset; running without the AI fix-agent (TRAIN_AUTOFIX=0)."
+            else
+              autofix=1
+            fi
+          fi
+          echo "train_autofix=${autofix}" >> "$GITHUB_OUTPUT"
+          echo "autofix_model=${DISPATCH_AUTOFIX_MODEL}" >> "$GITHUB_OUTPUT"
+          echo "Resolved TRAIN_APPLY=${apply} (event=${EVENT_NAME}) MAX_BATCH=${mb} TRAIN_LLM=${llm} TRAIN_AUTOFIX=${autofix}"
+
+      # --- Roll-forward AI fix-agent setup (autofix only) --------------------
+      # These steps run ONLY when autofix is enabled (TRAIN_AUTOFIX=1), which is
+      # itself only possible on an explicit live workflow_dispatch with the
+      # Bedrock secrets present. They wire Claude-via-Bedrock so train.sh's
+      # in-loop fix step (TRAIN_AUTOFIX_STEP_CMD -> autofix-agent.sh) can patch a
+      # failing batch forward. The claude-code-action engine (its CLI) is the
+      # same one anthropics/claude-code-action wraps; we install it here and
+      # route it to Bedrock per docs/cloud-providers.md.
+      - name: Configure AWS credentials for Bedrock (autofix)
+        if: steps.mode.outputs.train_autofix == '1'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.BEDROCK_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.BEDROCK_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.HONUA_BEDROCK_REGION || 'us-west-2' }}
+
+      - name: Install Claude Code CLI (autofix fix-agent engine, Bedrock)
+        if: steps.mode.outputs.train_autofix == '1'
+        run: npm install -g @anthropic-ai/claude-code
 
       - name: Run train
         env:
@@ -144,6 +193,22 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.BEDROCK_AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: ${{ vars.HONUA_BEDROCK_REGION || 'us-west-2' }}
           BEDROCK_MODEL_ID: ${{ vars.HONUA_BEDROCK_MODEL_ID || 'us.anthropic.claude-haiku-4-5-20251001-v1:0' }}
+          # OPTIONAL roll-forward AI fix-agent. TRAIN_AUTOFIX=0 on every default
+          # path; the autofix gate is inert and the train escalates fixable
+          # failures exactly like Phase 1. When 1 (explicit live dispatch +
+          # Bedrock secrets), a batch-introduced REAL failure is patched forward
+          # by the fix-agent (autofix-agent.sh, wired below), surgically
+          # re-verified, and landed; still-failing after the cap => escalate.
+          TRAIN_AUTOFIX: ${{ steps.mode.outputs.train_autofix }}
+          # The fix model (code edits) — a Sonnet-class default unless overridden.
+          TRAIN_AUTOFIX_MODEL: ${{ steps.mode.outputs.autofix_model != '' && steps.mode.outputs.autofix_model || (vars.HONUA_BEDROCK_AUTOFIX_MODEL_ID || 'us.anthropic.claude-sonnet-4-5-20250929-v1:0') }}
+          # CLAUDE_CODE_USE_BEDROCK routes the fix-agent CLI to Bedrock (matching
+          # anthropics/claude-code-action's use_bedrock:true). Only consumed when
+          # TRAIN_AUTOFIX=1; ignored otherwise.
+          CLAUDE_CODE_USE_BEDROCK: 1
+          # The in-loop fix step: train.sh invokes this wrapper as
+          # "<cmd> <batch> <request-file>". Only reached when TRAIN_AUTOFIX=1.
+          TRAIN_AUTOFIX_STEP_CMD: ${{ github.workspace }}/scripts/ci/merge-train/autofix-agent.sh
         run: |
           set -euo pipefail
           # Stamp a real ISO-8601 instant (the repository updated_at above is only
