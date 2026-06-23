@@ -135,9 +135,19 @@ internal sealed partial class ODataQueryHandler(
                 layerQuery = layerQuery.Skip(pagination.Offset);
             }
 
-            layerQuery = layerQuery.Take(pagination.Limit);
+            // Probe one extra layer beyond the requested page so a followable
+            // @odata.nextLink is emitted whenever a full page was returned. The Layers
+            // collection paginates in memory; without this continuation a client that
+            // requests /odata/Layers?$top=N over >N layers concludes there are no more
+            // (#1989). $top=0 (Limit == 0) yields an empty page and no continuation.
+            var probeLimit = pagination.Limit < int.MaxValue ? pagination.Limit + 1 : pagination.Limit;
+            var layerData = layerQuery.Take(probeLimit).ToArray();
 
-            var layerData = layerQuery.ToArray();
+            var hasMoreLayers = pagination.Limit > 0 && layerData.Length > pagination.Limit;
+            if (hasMoreLayers)
+            {
+                layerData = layerData[..pagination.Limit];
+            }
 
             // Apply field selection if specified
             object[] result = string.IsNullOrWhiteSpace(select)
@@ -146,11 +156,35 @@ internal sealed partial class ODataQueryHandler(
 
             var baseUrl = ODataUtilityService.GetBaseUrl(context.Request);
             var includeContext = ODataUtilityService.ShouldIncludeContext(context.Request, format);
+
+            string? nextLink = null;
+            if (hasMoreLayers)
+            {
+                var nextSkip = ODataUtilityService.CalculateNextSkip(pagination.Offset, pagination.Limit);
+                // The Layers collection paginates in memory and decodes an incoming
+                // $skiptoken without a filter/orderby fingerprint, so emit a plain $skip
+                // continuation (a standard OData system query option) rather than an
+                // opaque skiptoken whose fingerprint would not round-trip here.
+                nextLink = ODataUtilityService.GenerateNextLink(
+                    context.Request,
+                    nextSkip,
+                    pagination.Limit,
+                    filter,
+                    select,
+                    orderby,
+                    countValue,
+                    expand: null,
+                    useSkipToken: false,
+                    compute: null,
+                    format: format);
+            }
+
             var response = ODataUtilityService.CreateODataResponse(
                 baseUrl,
                 "Layers",
                 result,
                 totalCount,
+                nextLink: nextLink,
                 select: select,
                 includeContext: includeContext);
 
@@ -435,11 +469,46 @@ internal sealed partial class ODataQueryHandler(
                 ? ODataDeltaService.BuildDeltaFilter(filter, deltaSince.Value, deltaState?.UpperBoundTimestamp)
                 : filter;
 
-            // Build feature query using query service
+            // OData v4 allows $top=0: a deliberately empty page. Short-circuit before
+            // building/executing the data query so the empty page never emits an
+            // @odata.nextLink, while $count=true still reports the true total via a
+            // dedicated count query (independent of the data page). GeoParquet export
+            // keeps its own materialization path so the response stays a (zero-row)
+            // Parquet payload rather than an empty JSON document.
+            if (pagination.Limit == 0 && !ODataUtilityService.IsParquetFormat(format))
+            {
+                return await HandleEmptyFeaturesPageAsync(
+                    context,
+                    featureActivity,
+                    effectiveFilter,
+                    orderby,
+                    pagination,
+                    resource,
+                    select,
+                    expand,
+                    count,
+                    compute,
+                    format,
+                    bbox,
+                    storageLayerId.Value,
+                    effectiveToken);
+            }
+
+            // Build feature query using query service. Probe one extra row beyond the
+            // requested page (Limit + 1) so @odata.nextLink can be decided from whether a
+            // full page came back, independent of provider TotalCount fidelity. The
+            // optimized Postgres path derives TotalCount from a COUNT(*) OVER() column, but
+            // the ExtractTotalCount fallback (and read-only non-Postgres providers) can
+            // degrade TotalCount to the page length, which would suppress nextLink and
+            // silently truncate paging. The streaming path guards this the same way (#1989).
+            // A $top=0 GeoParquet export keeps Limit 0 (an empty page, no probe row).
+            var probeLimit = pagination.Limit is > 0 and < int.MaxValue
+                ? pagination.Limit + 1
+                : pagination.Limit;
             var (featureQuery, queryError) = await _querySearchService.BuildFeatureQueryAsync(
                 effectiveFilter,
                 orderby,
-                pagination.Limit,
+                probeLimit,
                 pagination.Offset,
                 resource,
                 select,
@@ -489,6 +558,16 @@ internal sealed partial class ODataQueryHandler(
 
             // Execute query
             var queryResult = await _featureReader.QueryAsync(storageLayerId.Value, featureQuery, effectiveToken);
+
+            // The query fetched up to pagination.Limit + 1 rows as a continuation probe.
+            // A returned count exceeding the requested page size means more rows remain,
+            // regardless of the provider-reported TotalCount. Trim the probe row off the
+            // materialized page so the response never returns more than the requested $top.
+            var hasMoreResults = queryResult.Items.Length > pagination.Limit;
+            if (hasMoreResults)
+            {
+                queryResult = queryResult with { Items = queryResult.Items[..pagination.Limit] };
+            }
 
             // GeoParquet export ($format=parquet): emit the materialized page through the
             // shared cloud-native writer so OData reaches parity with the GeoServices
@@ -546,9 +625,11 @@ internal sealed partial class ODataQueryHandler(
 
             var baseUrl = ODataUtilityService.GetBaseUrl(context.Request);
 
-            // Calculate @odata.nextLink if there are more results
+            // Calculate @odata.nextLink if there are more results. The continuation probe
+            // (Limit + 1 fetch) is the source of truth here so paging is not truncated when
+            // the provider TotalCount degrades to the page length (#1989).
             string? nextLink = null;
-            if (ODataUtilityService.ShouldPaginate(result.Length, pagination.Offset, queryResult.TotalCount, pagination.Limit))
+            if (hasMoreResults)
             {
                 var nextSkip = ODataUtilityService.CalculateNextSkip(pagination.Offset, pagination.Limit);
                 nextLink = !string.IsNullOrWhiteSpace(deltatoken)
@@ -661,6 +742,71 @@ internal sealed partial class ODataQueryHandler(
         {
             featureActivity?.Dispose();
         }
+    }
+
+    /// <summary>
+    /// Handles an OData <c>$top=0</c> request: returns a 200 with an empty <c>value</c>
+    /// array and no <c>@odata.nextLink</c>. When <c>$count=true</c> the true total is
+    /// computed with a dedicated count query so the empty page still reports the count,
+    /// independent of any data-page TotalCount fidelity.
+    /// </summary>
+    private async Task<IResult> HandleEmptyFeaturesPageAsync(
+        HttpContext context,
+        Activity? featureActivity,
+        string? filter,
+        string? orderby,
+        Honua.Core.Features.Validation.PaginationValues pagination,
+        MetadataV2Resource resource,
+        string? select,
+        string? expand,
+        bool? count,
+        string? compute,
+        string? format,
+        BoundingBox? bbox,
+        int storageLayerId,
+        CancellationToken cancellationToken)
+    {
+        long? totalCount = null;
+        if (count == true)
+        {
+            var (countQuery, queryError) = await _querySearchService.BuildFeatureQueryAsync(
+                filter,
+                orderby,
+                pagination.Limit,
+                pagination.Offset,
+                resource,
+                select,
+                expand,
+                count,
+                compute,
+                format,
+                bbox,
+                cancellationToken);
+
+            if (queryError != null)
+            {
+                return ODataUtilityService.CreateODataError(context, "InvalidQuery", queryError);
+            }
+
+            totalCount = await _featureReader.CountAsync(storageLayerId, countQuery, cancellationToken);
+        }
+
+        var baseUrl = ODataUtilityService.GetBaseUrl(context.Request);
+        var response = new ODataResponse
+        {
+            Context = ODataUtilityService.ShouldIncludeContext(context.Request, format)
+                ? ODataUtilityService.BuildContextUrl(baseUrl, "Features", select: select, expand: expand)
+                : null,
+            Count = totalCount,
+            NextLink = null,
+            DeltaLink = null,
+            Value = Array.Empty<object>()
+        };
+
+        ODataUtilityService.SetODataHeaders(context);
+        HonuaTelemetry.SetSuccess(featureActivity, 0);
+        return Results.Json(response, ODataJsonContext.Default.ODataResponse,
+            contentType: ODataUtilityService.GetODataContentType(context.Request, format));
     }
 
     /// <summary>

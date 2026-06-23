@@ -17,7 +17,10 @@ internal sealed class ODataValidationService
     private readonly ICommonQueryValidator _commonQueryValidator;
     private readonly int _maxPageSize;
     private static readonly PaginationValidationOptions _odataPagination =
-        new(MinOffset: 0, MinLimit: 1, OffsetParameterName: "$skip", LimitParameterName: "$top");
+        // OData v4 allows $top=0 (a deliberately empty page, commonly paired with
+        // $count=true to retrieve only the total). MinLimit: 0 lets $top=0 validate
+        // instead of returning a spec-violating 400; negative $top is still rejected.
+        new(MinOffset: 0, MinLimit: 0, OffsetParameterName: "$skip", LimitParameterName: "$top");
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ODataValidationService"/> class.
@@ -88,10 +91,16 @@ internal sealed class ODataValidationService
 
     /// <summary>
     /// Clamps a requested page size to the configured server-driven paging cap.
-    /// A non-positive limit yields the cap so callers always materialize a
-    /// bounded page.
+    /// A negative limit yields the cap so callers always materialize a bounded
+    /// page; an explicit limit of <c>0</c> (OData <c>$top=0</c>) is preserved so
+    /// the caller returns an empty page rather than a full server page.
     /// </summary>
-    public int ClampPageSize(int limit) => limit <= 0 ? _maxPageSize : Math.Min(limit, _maxPageSize);
+    public int ClampPageSize(int limit) => limit switch
+    {
+        0 => 0,
+        < 0 => _maxPageSize,
+        _ => Math.Min(limit, _maxPageSize),
+    };
 
     /// <summary>
     /// Validates and normalizes pagination parameters, returning effective values with defaults.
