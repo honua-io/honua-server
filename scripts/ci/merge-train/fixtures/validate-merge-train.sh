@@ -304,7 +304,10 @@ export TRAIN_PR_LIST_JSON='[
   {"number":15,"headRefOid":"fff","isDraft":false,"mergeable":"MERGEABLE","mergeStateStatus":"BLOCKED","labels":[],"createdAt":"2026-01-06T00:00:00Z","gate":"FAIL"}
 ]'
 MAX_BATCH=3 sel="$(MAX_BATCH=3 train_select | jq -s -c '[.[].number]')"
-assert_eq "select: oldest-first, draft/hold/conflict/fail excluded" "${sel}" "[11,10]"
+# Optimistic batch-and-fix: draft/hold/conflict are still excluded, but a CI
+# FAILURE no longer excludes a PR — it is batched and judged by the ONE batch CI
+# (autofix/attribute handle real breaks). #15 (gate=FAIL) is now INCLUDED.
+assert_eq "select: oldest-first; draft/hold/conflict excluded; CI-fail INCLUDED" "${sel}" "[11,10,15]"
 unset TRAIN_PR_LIST_JSON
 # CI Gate state mapping.
 assert_eq "select: COMPLETED+SUCCESS => SUCCESS" "$(train_select_ci_gate_state '[{"name":"CI Gate","status":"COMPLETED","conclusion":"SUCCESS"}]')" "SUCCESS"
