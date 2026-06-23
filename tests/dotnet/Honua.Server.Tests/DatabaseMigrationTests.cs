@@ -11,8 +11,19 @@ using Honua.TestKit.Constants;
 namespace Honua.Server.Tests;
 
 /// <summary>
-/// Tests for database migration functionality using DbUp
+/// Tests for database migration functionality using DbUp.
 /// </summary>
+/// <remarks>
+/// These tests run raw DbUp migrations and seeds that target the hard-coded
+/// <c>honua</c>/<c>honua_data</c> schemas and take catalog-wide DDL locks. The
+/// <c>Database.*</c> collections run in parallel against a single shared PostGIS
+/// database and rely on per-test <c>search_path</c> schema isolation. That isolation
+/// does NOT protect fixed-name schemas or catalog locks, so these migration/seed tests
+/// otherwise collide with sibling collections that also create/populate the
+/// <c>honua</c> schema (intermittent count-assertion failures and <c>40P01</c>
+/// deadlocks). Each instance therefore provisions its own dedicated, uniquely-named
+/// database so its schema, DDL locks, and seed data are fully private.
+/// </remarks>
 [Protocol(TestProtocols.TestQuality)]
 [Collection("Database.CoreFeatureStore")]
 public sealed class DatabaseMigrationTests : IAsyncLifetime
@@ -20,17 +31,33 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
     private readonly PostgresFixture _postgres = new();
     private string _connectionString = null!;
     private string _schemaName = null!;
+    private string _databaseName = null!;
 
     public async Task InitializeAsync()
     {
         await _postgres.InitializeAsync();
-        _schemaName = await _postgres.CreateIsolatedSchemaAsync(nameof(DatabaseMigrationTests));
-        _connectionString = _postgres.ConnectionString;
+
+        // Dedicated database: isolates the literal honua/honua_data schemas and the
+        // catalog-level DDL locks DbUp takes, which per-test search_path schemas cannot.
+        _connectionString = await _postgres.CreateIsolatedDatabaseAsync(nameof(DatabaseMigrationTests));
+        _databaseName = new Npgsql.NpgsqlConnectionStringBuilder(_connectionString).Database!;
+
+        // A per-test schema inside the dedicated database keeps unqualified objects
+        // (the `features` table and seed inserts) resolving through `current_schema()`,
+        // preserving the storage-binding semantics the seed asserts.
+        _schemaName = $"migration_{Guid.NewGuid():N}";
+        await using var connection = new Npgsql.NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = $"""
+            CREATE SCHEMA {_schemaName};
+            """;
+        await cmd.ExecuteNonQueryAsync();
     }
 
     public async Task DisposeAsync()
     {
-        await _postgres.DropSchemaAsync(_schemaName);
+        await _postgres.DropDatabaseAsync(_databaseName);
         await _postgres.DisposeAsync();
     }
 
@@ -52,12 +79,7 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
             .Build();
 
         // Act
-        DbUp.Engine.DatabaseUpgradeResult result = null!;
-        await _postgres.RunUnderSchemaMutationLockAsync(() =>
-        {
-            result = upgrader.PerformUpgrade();
-            return Task.CompletedTask;
-        });
+        var result = upgrader.PerformUpgrade();
 
         // Assert
         if (!result.Successful)
@@ -68,7 +90,7 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         result.Scripts.Should().HaveCountGreaterThan(0, "at least one migration script should exist");
 
         // Verify schema was created
-        await using var connection = await _postgres.GetConnectionAsync(_schemaName);
+        await using var connection = await OpenSchemaConnectionAsync();
 
         // Check metadata and operational-data schemas exist
         await using var schemaCmd = connection.CreateCommand();
@@ -145,14 +167,8 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
             .Build();
 
         // Act - Run migrations twice
-        DbUp.Engine.DatabaseUpgradeResult firstResult = null!;
-        DbUp.Engine.DatabaseUpgradeResult secondResult = null!;
-        await _postgres.RunUnderSchemaMutationLockAsync(() =>
-        {
-            firstResult = upgrader.PerformUpgrade();
-            secondResult = upgrader.PerformUpgrade();
-            return Task.CompletedTask;
-        });
+        var firstResult = upgrader.PerformUpgrade();
+        var secondResult = upgrader.PerformUpgrade();
 
         // Assert
         firstResult.Successful.Should().BeTrue($"first migration should succeed. Error: {firstResult.Error}");
@@ -178,27 +194,19 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
             .WithTransaction()
             .Build();
 
-        DbUp.Engine.DatabaseUpgradeResult migrationResult = null!;
-        await _postgres.RunUnderSchemaMutationLockAsync(() =>
-        {
-            migrationResult = upgrader.PerformUpgrade();
-            return Task.CompletedTask;
-        });
+        var migrationResult = upgrader.PerformUpgrade();
         migrationResult.Successful.Should().BeTrue($"migrations should complete successfully. Error: {migrationResult.Error}");
 
         var baselineSeedPath = RepositoryPaths.Resolve("tests", "seed", "mobile-offline-demo-v1.sql");
         var conflictSeedPath = RepositoryPaths.Resolve("tests", "seed", "mobile-offline-demo-conflict-delta.sql");
 
         // Act
-        // honua-server#1568 (signature 2): both seeds run idempotent ALTER/INSERT DDL against the
-        // literal, process-global honua schema (which per-test search_path isolation does not
-        // scope), so apply them under the shared seed advisory lock — like SeedRunner and the
-        // DbUp upgrade above — to keep parallel global-honua mutation off the deadlock (40P01)
-        // path rather than racing ACCESS EXCLUSIVE catalog/table locks.
-        await ExecuteSeedFileAsync(baselineSeedPath);
-        await ExecuteSeedFileAsync(conflictSeedPath);
-
-        await using var connection = await _postgres.GetConnectionAsync(_schemaName);
+        // The seeds run idempotent ALTER/INSERT DDL against the literal honua schema. Because
+        // this test owns a dedicated database, that schema is fully private — no advisory lock or
+        // cross-collection serialization is required to keep the mutation off the deadlock path.
+        await using var connection = await OpenSchemaConnectionAsync();
+        await ExecuteSeedFileAsync(connection, baselineSeedPath);
+        await ExecuteSeedFileAsync(connection, conflictSeedPath);
 
         // Assert
         await using var countCmd = connection.CreateCommand();
@@ -275,15 +283,10 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
             .WithTransaction()
             .Build();
 
-        DbUp.Engine.DatabaseUpgradeResult migrationResult = null!;
-        await _postgres.RunUnderSchemaMutationLockAsync(() =>
-        {
-            migrationResult = upgrader.PerformUpgrade();
-            return Task.CompletedTask;
-        });
+        var migrationResult = upgrader.PerformUpgrade();
         migrationResult.Successful.Should().BeTrue($"migrations should complete successfully. Error: {migrationResult.Error}");
 
-        await using var connection = await _postgres.GetConnectionAsync(_schemaName);
+        await using var connection = await OpenSchemaConnectionAsync();
 
         // Provision the raster_data parent (normally created with the raster schema), then apply
         // the embedded 060 migration SQL so the guarded companion table is created.
@@ -410,9 +413,20 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         result.Error.Should().NotBeNull("error details should be provided");
     }
 
-    private async Task ExecuteSeedFileAsync(string path)
+    private async Task<Npgsql.NpgsqlConnection> OpenSchemaConnectionAsync()
     {
-        var sql = await File.ReadAllTextAsync(path);
-        await _postgres.ApplyGlobalSeedSqlAsync(sql, _schemaName);
+        var connection = new Npgsql.NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = $"SET search_path TO {_schemaName}, public;";
+        await cmd.ExecuteNonQueryAsync();
+        return connection;
+    }
+
+    private static async Task ExecuteSeedFileAsync(Npgsql.NpgsqlConnection connection, string path)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = await File.ReadAllTextAsync(path);
+        await command.ExecuteNonQueryAsync();
     }
 }
